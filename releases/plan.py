@@ -11,12 +11,21 @@ from release_set import COMPONENTS, SCHEMA, VALIDATOR, require_compatible_contra
 
 SHA = re.compile(r"[a-f0-9]{40}")
 VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+# The release's root tag, vX.Y.Z: created last, after everything published (TAL-2342).
+ROOT_TAG = re.compile("v" + VERSION)
 CONTRACT_PEERS = {"appWeb": ("app", "web"), "webRelay": ("web", "relay"),
                   "appRelay": ("app", "relay"), "activityScene": ("app", "relay")}
 
 
 def git(root, *args):
     return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
+
+
+def tag_commit(root, tag):
+    """The commit a local tag names, or None when there is no such tag."""
+    result = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}"],
+                            capture_output=True, text=True, check=False)
+    return result.stdout.strip() or None
 
 
 def read_at(root, source, path):
@@ -43,7 +52,7 @@ def validate_request(request):
 
 
 def resolve(root, request, previous=None):
-    """Resolve immutable local refs. Signature/remote-CI authorization is separate."""
+    """Resolve the plan from the release source and the previous set. Remote-CI authorization is separate."""
     validate_request(request)
     source, deployment = request["sourceRevision"], request["relayDeploymentId"]
     if git(root, "rev-parse", f"{source}^{{commit}}") != source:
@@ -60,12 +69,11 @@ def resolve(root, request, previous=None):
         prefix = r"web-(?:exp-)?v" if name == "web" else name + "-v"
         if not isinstance(tag, str) or not re.fullmatch(prefix + VERSION, tag):
             raise ValueError(f"invalid {name} tag")
-        revision = git(root, "rev-parse", f"refs/tags/{tag}^{{commit}}")
         prior = previous["components"][name] if previous else None
         changed = prior is None or tag != prior["tag"]
         plan["changed"][name] = changed
         if not changed:
-            if revision != prior["sourceRevision"]:
+            if tag_commit(root, tag) != prior["sourceRevision"]:
                 raise ValueError(f"reused {name} tag moved")
             component = deepcopy(prior)
             capabilities = {contract: previous["contracts"][contract][name]
@@ -81,8 +89,11 @@ def resolve(root, request, previous=None):
                     git(root, "merge-base", "--is-ancestor", prior["sourceRevision"], source)
                 except subprocess.CalledProcessError as error:
                     raise ValueError(f"changed {name} source must descend from its released source") from error
-            if revision != source:
-                raise ValueError(f"changed {name} must use the release-set source")
+            # Tags last (TAL-2342): a changed component's tag is created after publication. One that already names
+            # another commit is a version an earlier release used, and would only fail after this one published.
+            existing = tag_commit(root, tag)
+            if existing and existing != source:
+                raise ValueError(f"{tag} already names {existing}; release a new version")
             component = {"tag": tag, "version": tag.split("-v")[-1],
                          "sourceRevision": source, "releaseSet": source}
             if name == "app":

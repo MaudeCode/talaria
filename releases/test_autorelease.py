@@ -1,11 +1,11 @@
-"""One-step release request (TAL-336): local Git only, no credentials or publication."""
+"""Release request from the dispatched version and commit (TAL-2342): local Git only, no credentials or publication."""
 
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-from autorelease import ensure_component_tags, request_for
+from autorelease import request_for
 
 
 class AutoReleaseTests(unittest.TestCase):
@@ -42,51 +42,31 @@ class AutoReleaseTests(unittest.TestCase):
         return self.git("rev-parse", "HEAD")
 
     def release(self, tag="v1.10.1"):
-        self.git("tag", "-a", "-m", "root", tag)
-        return request_for(self.root, tag, self.previous)
+        return request_for(self.root, tag, self.git("rev-parse", "HEAD"), self.previous)
 
     def test_only_changed_components_get_the_release_version(self):
         self.write("app/source.txt", "changed")
         self.write("web/source.txt", "changed")
         self.write("changelog.d/TAL-1.json", "{}")
         source = self.commit("app and web change")
-        request, changed = self.release()
+        # A later commit on main does not move the release: it is planned from the dispatched commit.
+        self.write("relay/source.txt", "changed after the dispatch")
+        self.commit("relay change")
+        request, changed = request_for(self.root, "v1.10.1", source, self.previous)
         self.assertEqual(changed, ["app", "web"])
         self.assertEqual(request, {"sourceRevision": source, "relayDeploymentId": "synthetic-relay",
                                    "tags": {"app": "app-v1.10.1", "web": "web-v1.10.1", "relay": "relay-v0.2.0"}})
 
-    def test_nothing_changed_and_malformed_tags_are_refused(self):
+    def test_nothing_changed_and_malformed_versions_are_refused(self):
         self.write("docs.md", "outside every component")
-        self.commit("docs only")
+        source = self.commit("docs only")
         with self.assertRaisesRegex(ValueError, "nothing changed"):
             self.release()
-        for tag in ("1.10.1", "v1.10", "app-v1.10.1", "v01.1.0"):
+        for tag in ("1.10.1", "v1.10", "app-v1.10.1", "v01.1.0", "v1.10.1-rc.1"):
             with self.assertRaisesRegex(ValueError, "must be vX.Y.Z"):
-                request_for(self.root, tag, self.previous)
-
-    def test_component_tags_are_created_once_at_the_release_source(self):
-        self.write("app/source.txt", "changed")
-        source = self.commit("app change")
-        request, changed = self.release()
-        self.assertEqual(ensure_component_tags(self.root, request, changed, "v1.10.1"),
-                         ["app-v1.10.1", f"release-set-{source}"])
-        self.assertEqual(self.git("rev-parse", "app-v1.10.1^{commit}"), source)
-        self.assertEqual(self.git("cat-file", "-t", "app-v1.10.1"), "tag")
-        # The manifest's tag is created up front, plain, as publish-set would (TAL-421).
-        self.assertEqual(self.git("cat-file", "-t", f"release-set-{source}"), "commit")
-        self.assertEqual(self.git("rev-parse", f"release-set-{source}"), source)
-        # A retried run reuses the tag it made.
-        self.assertEqual(ensure_component_tags(self.root, request, changed, "v1.10.1"), [])
-
-    def test_a_component_tag_at_another_commit_blocks_the_release(self):
-        self.write("app/source.txt", "first")
-        self.commit("first attempt")
-        self.git("tag", "-a", "-m", "earlier", "app-v1.10.1")
-        self.write("app/source.txt", "fixed")
-        self.commit("fix")
-        request, changed = self.release()
-        with self.assertRaisesRegex(ValueError, "already exists"):
-            ensure_component_tags(self.root, request, changed, "v1.10.1")
+                request_for(self.root, tag, source, self.previous)
+        with self.assertRaisesRegex(ValueError, "full commit SHA"):
+            request_for(self.root, "v1.10.1", source[:7], self.previous)
 
 
 if __name__ == "__main__":

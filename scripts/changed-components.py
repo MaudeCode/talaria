@@ -47,7 +47,6 @@ WORKFLOWS = {
     "relay-bridge-image.yml": {"relay", "tooling"},
     "repository-tooling.yml": {"tooling"},
     "web-docs.yml": {"tooling"},
-    "release.yml": {"tooling"},
     "release-set.yml": {"tooling"},
     "nightly.yml": {"tooling"},
     "web-experimental.yml": {"tooling"},

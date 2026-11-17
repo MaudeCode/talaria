@@ -44,7 +44,7 @@ FEEDBACK_OPERATOR_TOKEN_SHA256
 
 `FEEDBACK_OPERATOR_TOKEN_SHA256` is the lowercase hex SHA-256 of the feedback bridge's bearer token (`printf %s "$TOKEN" | shasum -a 256`). Feedback routes answer 404 until it is set; the token itself stays with the bridge.
 
-Signed `relay-vX.Y.Z` tags validate release identity. The authorized root
+A `relay-vX.Y.Z` tag marks a Relay release that shipped. The authorized root
 `production-cutover.yml` workflow deploys changed Relay releases into the existing
 production deployment, using `CONVEX_DEPLOY_KEY` from the `relay-production`
 environment. It verifies readiness and provenance before Web or App publication.

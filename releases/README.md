@@ -52,9 +52,9 @@ requires no accounts, credentials, tags or running services.
 
 The Web updater's publication contract is a GitHub release named
 `release-set-<releaseSet SHA>` with a `release-set.json` asset. Prepare it as a
-draft; publication of the completed manifest is the final step after component
-build, compatibility and publication receipts succeed. Never replace a published
-manifest. Component notes and signed tags keep their own App/Web/Relay namespaces.
+draft; publication of the completed manifest follows component build,
+compatibility and publication receipts, and only the version tags follow it. Never replace a published
+manifest. Component notes and tags keep their own App/Web/Relay namespaces.
 See [Web update behavior](../web/docs/talaria-updates.md) for authentication and
 source-install safety boundaries.
 
@@ -84,7 +84,7 @@ dependency:
 
 A release that ships the App needs the App's simulator-hosted unit tests to
 have passed on the exact release source, dry runs included (TAL-1550).
-`release.yml` already waited for main CI on that commit, so
+The release's preflight already waited for main CI on that commit, so
 `app-hosted-tests-lookup` (`app/ci/find-hosted-tests-run`) looks for a
 completed, successful main-push CI run of `ci.yml` on exactly that SHA whose
 `App / App hosted tests` job succeeded, and records that job's URL in the
@@ -161,14 +161,13 @@ main CI's hosted tests needs two:
   compiled file is valid for both.
 
 The planned critical path of a release that reuses main CI's hosted tests, in
-minutes from the cutover run's start (the tag push is about a minute earlier
-when main CI on the tag commit is already green). The times come from the
+minutes from the start of the release workflow's `prepare` job. The times come from the
 measured jobs of cutover run 40795594849 and the sharded Agent gate's plan;
 the `timeline` job measures each run:
 
 | Time | Event |
 |---|---|
-| 0:00-2:10 | `authorization`, then `prepare` (plan and the Agent jobs) |
+| 0:00-2:10 | `prepare` (plan and the Agent jobs) |
 | 2:10 | every gate and build starts; `app-hosted-tests-lookup` finds main CI's hosted tests within a minute |
 | 8:50 | `contracts` done; the signed App build at 10:45 |
 | about 10:00 | the slowest `agent-release` shard done (setup, the selected server build, provisioning and the probe, then its third of the suite beside the image check); `agent` about 0:40 later |
@@ -262,16 +261,16 @@ token.
 
 ## Workflow commands
 
-`cli.py prepare` checks exact-main CI, resolves component tags, generates notes,
+`cli.py prepare` checks exact-main CI, plans the component versions, generates notes,
 and records the previous published App source. Its request contains only
 `sourceRevision`, `tags` (App/Web/Relay), and `relayDeploymentId`. A previous
 manifest is downloaded with `cli.py previous SHA`; drafts and inconsistent
 identities are rejected. Unchanged components retain their complete prior
 records and compatibility metadata.
 
-Preparation in dry-run mode may create ephemeral signed tags in a disposable
-local clone. These signatures validate the rehearsal only. Production requires
-the existing tags' GitHub-verified signatures. Neither mode pushes tags.
+Preparation creates no tag in either mode. A changed component is planned from
+`sourceRevision` alone; its tag must not exist yet, except at that commit from an
+earlier attempt. An unchanged component's tag must still name its released source.
 
 `smoke_npm.py SPEC` installs an npm spec (a tarball path or
 `@maudecode/talaria-web@<version>`) with the updater's `npm install --global
@@ -357,32 +356,51 @@ runs every TalariaKit test against the live fixture.
 
 ## Root workflow
 
-Release in one step (TAL-336): sign and push one tag on a green `main` commit.
+Release by dispatching `production-cutover.yml` (titled **Release**) on `main`,
+following the shared tag-last contract in `MaudeCode/.github`'s `RELEASES.md`
+(TAL-2342). The GitHub Scheduler's Releases page dispatches it; from a terminal:
 
 ```sh
-git tag -s v1.10.1 <main commit> -m "Talaria 1.10.1" && git push origin v1.10.1
+gh workflow run production-cutover.yml --repo MaudeCode/talaria --ref main -f tag=v1.10.1
 ```
 
-Only organization admins can create `v*` tags, and release tags are immutable,
-so the signed root tag is the release authorization. `release.yml` then:
+`sha` is optional: left empty, the release is of `main`'s head when the run
+started; given, the run is refused if `main` has moved past it. Every job reads
+the commit from preflight's `sha` output. The run, titled `Release v1.10.1`:
 
-1. verifies the tag's GitHub signature and that its commit is on `main`;
+1. `preflight` runs `release-preflight` (pinned to a full commit SHA), which
+   refuses anything but a dispatch on `main`, a `sha` that is not the run's
+   commit, a malformed or existing `vX.Y.Z` tag, and a version that does not come
+   after every existing one;
 2. waits for that commit's `main` CI, failing as soon as that run fails; rerun
-   its failed jobs (`gh run rerun <id> --failed`), then rerun the release run,
-   which revalidates the same tag;
-3. reads the latest published release set and selects the components whose
-   `app/`, `web/` or `relay/` sources changed since their released source;
-4. creates `<component>-vX.Y.Z` tags at the same commit for the changed
-   components (unchanged ones keep their previous tags); `validate_release_tag`
-   accepts these because the signed root `vX.Y.Z` sits on the same commit;
-5. starts `production-cutover.yml` on `main` with the resulting request and
-   `confirm_publication=true`.
+   its failed jobs (`gh run rerun <id> --failed`), then rerun the release run;
+3. reads the latest published release set and plans `<component>-vX.Y.Z` for the
+   components whose `app/`, `web/` or `relay/` sources changed since their
+   released source (`releases/autorelease.py`); unchanged ones keep their tags;
+4. pushes `release-set-<sha>`, which is not a version tag, while `main` still
+   matches the source: `GITHUB_TOKEN` may not create a ref whose workflows differ
+   from `main`'s (TAL-421), and `publish-set` attaches the manifest to it;
+5. runs `release-set.yml` with the plan: every gate and build, then publication;
+6. after `publish-set` published the completed set, the `tag` job creates the
+   changed components' annotated tags at the source with their GitHub releases,
+   and then the root `vX.Y.Z` tag with `release-tag`. Nothing else creates a
+   version tag, and each step accepts what an earlier attempt created.
 
-The whole release shares one version. A version is used once: if a release
-fails and needs a code fix, push the next patch version.
+No version tag exists until everything published. A release that fails before
+`publish-set` leaves its version unused: fix the cause and dispatch the same
+version again. A version that published anything (a Relay deployment, an npm
+version, a TestFlight build) cannot publish other bytes, so a fix after that
+ships as the next patch version. Publication authority is unchanged: the run is
+a `workflow_dispatch` on `refs/heads/main` whose caller is
+`production-cutover.yml@refs/heads/main`, which `release-set.yml`,
+`publish.py authorize`, `ios-release-build.yml` and `recover.py` require.
 
-The cutover takes a JSON `request` with this shape, which `release.yml` builds;
-direct dispatches (and `release-set.yml` dry runs) use the same shape:
+If the `tag` job fails, everything has published: re-run that job. Creating a tag
+uses `GITHUB_TOKEN`, so if `main`'s workflow files changed after the source,
+GitHub may refuse it as it did for TAL-421; then an admin pushes the planned
+tags at the source by hand (the job log and the plan list them).
+
+The plan's request has this shape; `release-set.yml` dry runs take the same:
 
 ```json
 {
@@ -392,10 +410,9 @@ direct dispatches (and `release-set.yml` dry runs) use the same shape:
 }
 ```
 
-`previous_release_set` is the last completed set's SHA; empty only for
-bootstrap. Preparation checks all published root releases and rejects a missing
-or stale predecessor once a release set exists. Changed tags must point to
-`sourceRevision`; unchanged tags must match the previous manifest.
+`previous_release_set` is the last completed set's SHA. Preparation checks all
+published root releases and rejects a missing or stale predecessor once a
+release set exists.
 
 The cutover repeats every gate (selected-source and previous-App contracts,
 the App's hosted unit tests on the release source when the App ships, reused
@@ -417,9 +434,9 @@ constraints that hold (TAL-414):
   published, and installations upgrade their Web on their own schedule anyway.
   The TestFlight upload, whose processing to `VALID` is the longest publication,
   therefore starts right after the Relay deployment.
-- The manifest publishes last, only after every selected publication read back
+- The manifest publishes after every selected publication read back
   (`check_results.py publication`): the Web updater reads only that manifest.
-  The component releases are drafts until then.
+  The component releases and every version tag follow it in the `tag` job.
 
 Publication is fail-closed rather than all-or-nothing: a failed Relay
 deployment stops Web and the App before they publish, but Web and the App no
@@ -446,11 +463,10 @@ allowed. Production releases use no long-lived npm token. The caller and
 reusable release jobs both grant `id-token: write`; npm publication needs a
 GitHub-hosted runner because self-hosted OIDC publishing is unsupported.
 
-The root manifest is published last. Fresh dispatches require unused component
-release names. If only the final `publish-set` job fails, use **Re-run failed
-jobs** on that same Actions run. It verifies the original manifest fingerprint,
-notes and asset checksums before reusing matching component/root releases,
-finishing missing draft uploads and publishing the root last. Conflicting
+Fresh dispatches require unused component release names. If only `publish-set`
+or `tag` fails, use **Re-run failed jobs** on that same Actions run. It verifies
+the original manifest fingerprint, notes and asset checksums before reusing
+matching root and component releases and tags, finishing missing draft uploads. Conflicting
 records are rejected; published assets are never overwritten.
 
 The App publication job also supports **Re-run failed jobs** on the same run.
@@ -478,7 +494,8 @@ publication** workflow on main. Supply the original production-cutover run and
 attempt, and explicitly confirm publication. It authenticates the original
 GitHub job results, downloads that run's handoff artifacts with the recovery
 job's token and checks each against its recorded hash, checks that the release is still current, and
-resumes the same IPA/upload using reviewed publishing tools. Release handoffs expire
+resumes the same IPA/upload using reviewed publishing tools, publishes the completed set, and
+then creates the component tags and the root tag the original run did not reach. Release handoffs expire
 after 30 days, so recovery must start within that window.
 Original receipts keep their original run URLs; resumed upload evidence names
 the actual recovery run. It neither rebuilds the App nor republishes Relay/Web.

@@ -14,15 +14,14 @@ from pathlib import Path
 from build import next_patch
 from cli import REPOSITORY, ROOT
 from experimental import newest_published
+from plan import tag_commit
 from publish import upload_testflight, verify_ipa
 
 TAG = "nightly"
 
 
 def last_nightly(root):
-    result = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "--quiet", f"refs/tags/{TAG}^{{commit}}"],
-                            capture_output=True, text=True, check=False)
-    return result.stdout.strip() or None
+    return tag_commit(root, TAG)
 
 
 def green_commits():

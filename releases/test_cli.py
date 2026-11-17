@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import cli
+from release_set import COMMON_GATES
 
 
 class WorkflowCommandTests(unittest.TestCase):
@@ -59,9 +60,26 @@ class WorkflowCommandTests(unittest.TestCase):
                 patch.object(cli, "run_url", return_value="https://github.com/MaudeCode/talaria/actions/runs/1"), patch.object(cli, "require_latest_predecessor", return_value=published), \
                 patch.object(cli, "unused_release"), patch.object(cli, "resolve", return_value=plan), \
                 patch.object(cli, "git"), patch.object(cli.subprocess, "run", side_effect=run) as calls:
-            cli.prepare(SimpleNamespace(request="request", previous="previous", dry_run=False, output=Path(temporary) / "out"))
+            cli.prepare(SimpleNamespace(request="request", previous="previous", dry_run=False, release_tag=None, output=Path(temporary) / "out"))
             checked = [call for call in calls.call_args_list if call.args[0][0].endswith("require_successful_main_ci")]
             self.assertEqual(len(checked), 1)
+            # Preparation records only the check it ran (main CI; no tag signature is checked any more), and with the
+            # gate jobs' receipts that covers every gate a manifest requires.
+            written = {path.stem for path in (Path(temporary) / "out/receipts").glob("*.json")}
+            self.assertEqual(written, {"mainCI"})
+            self.assertEqual(written | {"currentContracts", "previousAppContracts", "agentCompatibility"}, COMMON_GATES)
+
+    def test_the_release_version_names_every_changed_component(self):
+        from test_release_set import candidate
+
+        plan = candidate()
+        plan["changed"] = {"app": True, "web": False, "relay": True}
+        for name in ("app", "relay"):
+            plan["components"][name].update(tag=f"{name}-v1.4.0", version="1.4.0")
+        self.assertEqual(cli.release_tag("v1.4.0", plan), "v1.4.0")
+        for tag in ("v1.4.1", "1.4.0", "v1.4.0-rc.1"):
+            with self.subTest(tag=tag), self.assertRaises(ValueError):
+                cli.release_tag(tag, plan)
 
     def test_version_history_survives_channel_switches(self):
         from release_set import require_version_advance

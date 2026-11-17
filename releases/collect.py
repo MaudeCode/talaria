@@ -22,7 +22,7 @@ def collect(source, destination):
         path = source / bucket / "receipt.json"
         if path.is_file():
             paths.append(path)
-    gates = {"mainCI", "signedTags", "currentContracts", "previousAppContracts", "agentCompatibility",
+    gates = {"mainCI", "currentContracts", "previousAppContracts", "agentCompatibility",
              "buildApp", "buildWeb", "buildRelay", "buildBridge", "uploadApp", "publishWeb", "deployRelay", "publishBridge"}
     for path in paths:
         value = load(path)

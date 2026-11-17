@@ -3,8 +3,8 @@
 
 from copy import deepcopy
 import json
-import fnmatch
 from pathlib import Path
+import re
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -67,31 +67,47 @@ class ReleaseSetTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValidationError):
                 VALIDATOR.validate(broken)
 
-    def test_root_tag_workflow_only_starts_the_main_cutover(self):
-        # One step (TAL-336): a signed vX.Y.Z push validates, tags changed components and dispatches the
-        # production cutover on main; it holds no publishing credentials and publishes nothing itself.
-        workflow = Path(__file__).resolve().parents[1] / ".github/workflows/release.yml"
+    def test_release_is_one_dispatch_that_reads_its_commit_from_preflight(self):
+        # Tags last (TAL-2342, MaudeCode/.github RELEASES.md): production-cutover.yml is the release. It starts only by a
+        # dispatch with a version and an optional commit, checks that first, and every job takes the commit preflight
+        # resolved, since the input may be empty.
+        workflow = Path(__file__).resolve().parents[1] / ".github/workflows/production-cutover.yml"
         document = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e",
             "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(workflow),
         ], text=True))
         triggers = document.get("on", document.get("true"))
-        self.assertEqual(set(triggers), {"push"})
-        patterns = triggers["push"]["tags"]
-        self.assertTrue(any(fnmatch.fnmatchcase("v1.10.1", pattern) for pattern in patterns))
-        for component_tag in ("app-v1.9.0", "web-v1.0.0", "web-exp-v1.0.0", "relay-v0.2.0"):
-            self.assertFalse(any(fnmatch.fnmatchcase(component_tag, pattern) for pattern in patterns))
-        self.assertEqual(document["permissions"], {"actions": "write", "contents": "write"})
-        for job in document["jobs"].values():
-            self.assertNotIn("environment", job)
-            self.assertNotIn("secrets", job)
-            self.assertNotIn("uses", job)  # Publication happens only in the dispatched main cutover.
-            self.assertNotIn("permissions", job)
-        commands = "\n".join(step.get("run", "") for job in document["jobs"].values() for step in job["steps"])
-        for required in ("app/ci/validate_release_tag", "app/ci/require_successful_main_ci", "releases/autorelease.py",
-                         "gh workflow run production-cutover.yml --repo \"$GITHUB_REPOSITORY\" --ref main"):
+        self.assertEqual(set(triggers), {"workflow_dispatch"})
+        inputs = triggers["workflow_dispatch"]["inputs"]
+        self.assertEqual({name: (spec["type"], spec["required"]) for name, spec in inputs.items()},
+                         {"tag": ("string", True), "sha": ("string", False)})
+        self.assertEqual(document["run-name"], "Release ${{ inputs.tag }}")
+        self.assertFalse(Path(workflow.parent / "release.yml").exists(), "no tag push starts a release")
+        jobs = document["jobs"]
+        check = jobs["preflight"]["steps"][0]
+        self.assertRegex(check["uses"], r"^MaudeCode/\.github/actions/release-preflight@[0-9a-f]{40}$")
+        self.assertEqual(check["with"], {"tag": "${{ inputs.tag }}", "sha": "${{ inputs.sha }}"})
+        self.assertEqual(jobs["preflight"]["outputs"]["sha"], "${{ steps.%s.outputs.sha }}" % check["id"])
+        for name, job in jobs.items():
+            if name != "preflight":
+                self.assertIn("preflight", job["needs"] if isinstance(job["needs"], list) else [job["needs"]], name)
+        rest = json.dumps({**jobs, "preflight": {**jobs["preflight"], "steps": jobs["preflight"]["steps"][1:]}})
+        self.assertNotIn("inputs.sha", rest, "jobs read the commit from preflight, never the possibly empty input")
+        steps = jobs["preflight"]["steps"]
+        checkout = next(step for step in steps if step.get("uses", "").startswith("actions/checkout@"))
+        self.assertEqual(checkout["with"]["ref"], "${{ steps.check.outputs.sha }}")
+        commands = "\n".join(step.get("run", "") for step in steps)
+        for required in ("app/ci/require_successful_main_ci", "releases/autorelease.py"):
             self.assertIn(required, commands)
-        self.assertIn("app/ci/require_successful_main_ci", commands)
+        # Preflight creates no version tag: the only ref it may push is the release set's, which is not a version.
+        pushes = re.findall(r"git push origin (\S+)", commands)
+        self.assertEqual(pushes, ['"${SOURCE}:refs/tags/release-set-${SOURCE}"'])
+        for job in jobs.values():
+            self.assertNotIn("environment", job)
+        self.assertEqual(jobs["release"]["uses"], "./.github/workflows/release-set.yml")
+        self.assertEqual(jobs["release"]["with"], {
+            "request": "${{ needs.preflight.outputs.request }}", "previous_release_set": "${{ needs.preflight.outputs.previous }}",
+            "dry_run": False, "release_tag": "${{ needs.preflight.outputs.tag }}"})
 
     def test_independent_versions_and_expanded_contracts(self):
         self.assertEqual(validate(candidate()), list(COMPONENTS))
