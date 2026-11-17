@@ -56,7 +56,8 @@ describe('Web Push channel', () => {
     await settle()
     expect(push.pushes).toHaveLength(0)
 
-    s.deps.pending.submitApproval(sid, { request_id: 'r1', tool: 'shell' })
+    // TAL-2336: the alert names the call the approval holds.
+    s.deps.pending.submitApproval(sid, { request_id: 'r1', tool: { name: 'terminal', kind: 'shell', target: 'npm publish' } })
     await settle()
     expect(push.pushes).toHaveLength(1)
     const [sent] = push.pushes as [Push]
@@ -65,7 +66,7 @@ describe('Web Push channel', () => {
     expect(sent.init.method).toBe('POST')
     expect(sent.init.headers).toMatchObject({ TTL: '3600', Urgency: 'high', 'Content-Encoding': 'aes128gcm' })
     expect(verifyVapid(sent.init.headers!.Authorization!, publicKey)).toMatchObject({ aud: 'https://push.example' })
-    expect(keys.decrypt(Buffer.from(sent.init.body as Uint8Array))).toEqual({ title: 'Deploy review', body: 'Approval needed', tag: sid, url: `/session/${sid}` })
+    expect(keys.decrypt(Buffer.from(sent.init.body as Uint8Array))).toEqual({ title: 'Deploy review', body: 'Approval needed · Run npm publish', tag: sid, url: `/session/${sid}` })
 
     // The same phase published again sends nothing.
     await settle()

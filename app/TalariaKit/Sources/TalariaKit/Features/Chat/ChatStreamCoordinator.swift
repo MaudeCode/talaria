@@ -107,6 +107,9 @@ public final class ChatStreamCoordinator {
     }
     var sessionActivityGeneration: Int { responseGeneration }
     private var sessionActivityPhase: String?
+    /// TAL-2336: the run's calls still running, oldest first, by call id: a finished call is named only once none runs,
+    /// as the server picks the current call for Relay.
+    private var runningActivityTools: [(id: String, tool: AgentRunActivityTool)] = []
     private var sessionActivityStreamID: String?
     private let timing: ChatStreamCoordinatorTiming
     private let now: () -> Date
@@ -226,6 +229,7 @@ public final class ChatStreamCoordinator {
 
     public func prepareForNewResponse() {
         sessionActivityPhase = nil
+        runningActivityTools = []
         applyRunStatus(nil, hasServerField: false)
         delegate?.streamCoordinatorCacheRunStatus(nil)
         delegate?.streamCoordinatorSetWarningMessage(nil)
@@ -778,7 +782,12 @@ public final class ChatStreamCoordinator {
                 markProgress()
             }
         case .toolStarted(let payload):
-            liveActivityManager?.update(.toolStarted(kind: payload.kind, name: payload.name))
+            // TAL-2336: a call the transcript leaves out (TAL-2331 `hidden`) is named nowhere else either.
+            if !payload.isHidden {
+                let tool = AgentRunActivityTool(payload, done: false)
+                if let id = payload.stableID { runningActivityTools.append((id, tool)) }
+                liveActivityManager?.update(.toolStarted(tool))
+            }
             if delegate?.streamCoordinatorAppendToolCall(payload) == true {
                 markProgress()
             }
@@ -787,7 +796,7 @@ public final class ChatStreamCoordinator {
                 markProgress()
             }
         case .toolCompleted(let payload):
-            liveActivityManager?.update(.toolCompleted)
+            if !payload.isHidden { liveActivityManager?.update(completedActivityTool(payload)) }
             if delegate?.streamCoordinatorCompleteToolCall(payload) == true {
                 markProgress()
             }
@@ -816,7 +825,7 @@ public final class ChatStreamCoordinator {
             // An empty update is the settled prompt (`approval_cleared`); the run goes on. Allow sits beside the server's
             // `action_text` only (TAL-1469).
             liveActivityManager?.update(
-                update.pending.map { .waitingForApproval(headID: $0.headId, text: $0.actionText) } ?? .promptSettled
+                update.pending.map { .waitingForApproval(headID: $0.headId, text: $0.actionText, tool: $0.tool.map(AgentRunActivityTool.held)) } ?? .promptSettled
             )
             delegate?.streamCoordinatorApplyApprovalUpdate(update)
             markProgress()
@@ -899,6 +908,21 @@ public final class ChatStreamCoordinator {
         case .ignored:
             break
         }
+    }
+
+    /// TAL-2336: the activity's next call once `payload` finished: another call still running stays named, else the finished
+    /// call, its target and app from its start when the completion frame carries none.
+    private func completedActivityTool(_ payload: ToolStreamEvent) -> AgentLiveActivityEvent {
+        let started = runningActivityTools.firstIndex { $0.id == payload.stableID }.map { runningActivityTools.remove(at: $0).tool }
+        if let running = runningActivityTools.last { return .toolStarted(running.tool) }
+        var completed = AgentRunActivityTool(payload, done: true)
+        if let started, completed.target.isEmpty {
+            completed.kind = started.kind
+            completed.target = started.target
+            completed.app = completed.app ?? started.app
+            completed.verb = completed.verb ?? started.verb
+        }
+        return .toolCompleted(completed)
     }
 
     private func handleTransportError(_ message: String) {

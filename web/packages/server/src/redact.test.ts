@@ -3,7 +3,7 @@ import { subscribe, unsubscribe } from 'node:diagnostics_channel'
 import { describe, expect, it, vi } from 'vitest'
 import { isRasterDataUri } from './raster-image.js'
 import { toolOutcome } from './sessions/merge.js'
-import { mightContainSensitiveText, publicToolFrame, redactNestedMessageContainers, redactSensitive, redactSessionData, redactText } from './redact.js'
+import { activityText, activityTool, mightContainSensitiveText, publicToolFrame, redactNestedMessageContainers, redactSensitive, redactSessionData, redactText } from './redact.js'
 import { MessageSchema } from '@maudecode/talaria-web-contracts'
 import { sanitizeShareMessage } from './sessions/shares.js'
 import { hydrateAnchorActivityScenes, withTurnIds } from './sessions/anchor.js'
@@ -1694,4 +1694,27 @@ describe('tool argument and result rows (TAL-2318)', () => {
     // A bare completion carries no rows of its own, so its start frame's stay.
     expect(publicToolFrame({ name: 'session_search', args: {} }, true)).not.toHaveProperty('args_fields')
   })
+})
+
+// TAL-2336: a Live Activity names no call its transcript leaves out: a tool lookup while lookups are hidden (TAL-2331).
+it('names no hidden tool lookup on a Live Activity, and a failed one as its row shows it', () => {
+  const lookup = { name: 'tool_search', args: { query: 'calendar' }, tid: 't', done: true }
+  expect(activityTool(lookup, true, null)).toBeUndefined()
+  expect(activityTool({ ...lookup, is_error: true }, true, null)).toMatchObject({ kind: 'search', done: true, failed: true })
+})
+
+// TAL-2336: Relay and the contract count UTF-16 code units, so a cut target fits both and never splits an emoji.
+it('caps a Live Activity text in UTF-16 code units without splitting a character', () => {
+  const capped = activityText(`echo ${'😀'.repeat(40)}`)
+  expect(capped.length).toBeLessThanOrEqual(64)
+  expect(capped).toBe(`echo ${'😀'.repeat(29)}…`)
+  expect(activityText('  npm   test ')).toBe('npm test')
+})
+
+// TAL-2336: with `activity_call_details` off a call carries its kind, tense and outcome key, never a text it named.
+it('leaves a call\'s target, app and outcome value off a Live Activity without call details', () => {
+  const call = { name: 'connectors__slack__send_message', args: { text: 'hi' }, tid: 't', done: true, is_error: true, result_view: { outcome: { key: 'failed', tone: 'error', value: 'channel #ops not found' } } }
+  const named = activityTool(call, true, null)
+  expect(named).toMatchObject({ kind: 'connector', app: { name: 'Slack' }, outcome: { value: 'channel #ops not found' } })
+  expect(activityTool(call, true, null, false)).toEqual({ kind: 'connector', target: '', done: true, failed: true, outcome: { key: 'failed', tone: 'error' } })
 })

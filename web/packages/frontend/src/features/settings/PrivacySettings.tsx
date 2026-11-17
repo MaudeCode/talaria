@@ -1,4 +1,4 @@
-import { ChartLine, ExternalLink, EyeOff, Link } from 'lucide-react'
+import { ChartLine, ExternalLink, EyeOff, Link, Smartphone } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { useBootstrap } from '../../app/bootstrap'
@@ -18,6 +18,8 @@ export function PrivacySettings() {
       {/* TAL-2160: the sync copies every Web chat into the Agent's database through the sidecar. */}
       <Toggle label={m.settings_label_sync_insights()} settingKey="sync_to_insights" icon={ChartLine} disabled={!canManage || settings.data.sync_to_insights_available === false} />
       <Toggle label={m.settings_label_api_redact()} settingKey="api_redact_enabled" fallback disabled={!canManage} icon={EyeOff} />
+      {/* TAL-2336: off, Live Activities and push alerts name a call only by its kind. */}
+      <Toggle label={m.settings_label_activity_call_details()} settingKey="activity_call_details" fallback disabled={!canManage} icon={Smartphone} />
       <Toggle label={m.settings_label_confirm_external_links()} settingKey="confirm_external_links" fallback disabled={!canManage} icon={ExternalLink} />
       {/* TAL-2143: closed to the server's count of its normalized hosts, one per line. */}
       <SettingText label={m.settings_label_trusted_link_hosts()} hint={m.settings_desc_trusted_link_hosts()} id="settingsTrustedLinkHosts" settingKey="trusted_link_hosts" icon={Link} multiline placeholder="docs.example.com" disabled={!canManage}

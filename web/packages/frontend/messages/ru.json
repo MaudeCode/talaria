@@ -1696,6 +1696,7 @@
 	"settings_help_issue_link": "Открыть GitHub Issues",
 	"settings_help_meta": "Ресурсы и поддержка Talaria Web.",
 	"settings_items_shown": "Показано: {shown} из {total}",
+	"settings_label_activity_call_details": "Подробности вызовов инструментов в Live Activities и уведомлениях",
 	"settings_label_api_redact": "Скрывать конфиденциальные данные в ответах API",
 	"settings_label_auto_scroll_follow": "Следовать за новым содержимым",
 	"settings_label_auto_title_refresh": "Обновлять названия чатов",

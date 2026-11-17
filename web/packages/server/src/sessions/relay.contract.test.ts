@@ -22,7 +22,10 @@ it('publishes exactly the shared publisher-snapshot fixture', async () => {
     const registry = new StreamRegistry()
     registry.activeRuns.set('contract-stream', { stream_id: 'contract-stream', session_id: 'contract-session', started_at: expected.states[0]!.startedAt / 1000, phase: 'running', workspace: home, model: null, provider: null, ephemeral: false })
     registry.noteToolEvent('contract-stream', now - 20, true)
-    registry.noteToolEvent('contract-stream', expected.states[0]!.activityAt / 1000, true)
+    // TAL-2336: the run's latest running call is its current one.
+    const call = { name: 'terminal', args: { command: 'npm test' }, tid: 'contract-call', done: false }
+    registry.liveToolCalls.set('contract-stream', [call])
+    registry.noteToolEvent('contract-stream', expected.states[0]!.activityAt / 1000, true, call)
     registry.notePlan('contract-stream', { completed: 2, total: 5 })
     const presence = new PresenceLeases(() => now)
     presence.renew('default', 'tab_contract')
@@ -59,7 +62,7 @@ it('publishes the shared approval queue head fixture for a pending approval', as
     const requests: { url: string; body: string }[] = []
     const deps = {
       documents: new JsonDocuments(home, () => home), registry, presence: new PresenceLeases(() => now), now: () => now, log: vi.fn(),
-      pending: { approvalPending: () => ({ pending: { approval_id: 'contract-approval', command: 'private command' }, pending_count: 1 }), clarifyPending: () => ({ pending: null, pending_count: 0 }) },
+      pending: { approvalPending: () => ({ pending: { approval_id: 'contract-approval', command: 'private command', tool: { name: 'terminal', kind: 'shell', target: 'npm publish' } }, pending_count: 1 }), clarifyPending: () => ({ pending: null, pending_count: 0 }) },
       store: { sessions: new Map(), exists: () => Promise.resolve(true), get: () => ({ title: 'Contract fixture', profile: 'default' }) },
       background: { sessionIds: () => Promise.resolve([]), snapshot: () => Promise.resolve({ activity_phase: 'waiting_for_approval', worker_count: 0 }) },
       profileHome: () => home,

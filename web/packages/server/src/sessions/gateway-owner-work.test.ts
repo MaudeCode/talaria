@@ -2,6 +2,7 @@
  * TAL-1336: a native-owner chat's processes and subagents in Background Work, read and controlled only through the owner
  * that runs them. A synthetic owner answers the sidecar's work actions; no live provider or process is involved.
  */
+import { activityTool } from '../redact.js'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
@@ -234,6 +235,19 @@ describe('native owner background work (TAL-1336)', () => {
       watch.event('tool.complete', { tool_call_id: 'call-ls', name: 'terminal', args: { command: 'ls' }, result: JSON.stringify({ output: 'a', exit_code: 0 }), is_error: false })
       watch.event('tool.complete', { tool_call_id: 'call-dev', name: 'terminal', args: { command: 'npm run dev', background: true }, result: JSON.stringify({ output: 'Background process started', session_id: 'proc_0123456789ab', pid: 7 }), is_error: false })
       await vi.waitFor(() => { expect(announced()).toEqual([['background_task', expect.objectContaining({ sessionId: sid })]]) })
+    } finally { watch.finish(); await watch.read }
+  })
+
+  // TAL-2336: a failed owner call is named as failed on the run's Live Activity, as its transcript row shows it.
+  it('keeps an owner call\'s failure on the run\'s current call', async () => {
+    const { observeOwner } = ownerHelpers(() => ({ s, sidecar }))
+    const watch = await observeOwner(snapshot({ running: true, pending: [] }))
+    const current = () => [...s.deps.registry.activeRuns.values()].find((run) => run.session_id === sid)?.current_call
+    try {
+      watch.event('tool.start', { tool_call_id: 'call-test', name: 'terminal', args: { command: 'npm test' } })
+      watch.event('tool.complete', { tool_call_id: 'call-test', name: 'terminal', args: { command: 'npm test' }, result: JSON.stringify({ output: 'boom', exit_code: 1 }), is_error: true })
+      await vi.waitFor(() => { expect(current()?.done).toBe(true) })
+      expect(activityTool(current()!, true, null)).toMatchObject({ kind: 'shell', target: 'npm test', done: true, failed: true })
     } finally { watch.finish(); await watch.read }
   })
 })

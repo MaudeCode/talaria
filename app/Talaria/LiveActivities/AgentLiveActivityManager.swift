@@ -228,22 +228,23 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             updateCurrentState { state in
                 AgentRunActivityStateReducer.reasoning(text, state: state)
             }
-        case .toolStarted(let kind, let name):
+        case .toolStarted(let tool):
             updateCurrentState { state in
-                AgentRunActivityStateReducer.toolStarted(kind: kind, name: name, state: state)
+                AgentRunActivityStateReducer.toolStarted(tool, state: state)
             }
-        case .toolCompleted:
+        case .toolCompleted(let tool):
             updateCurrentState { state in
-                AgentRunActivityStateReducer.toolCompleted(state: state)
+                AgentRunActivityStateReducer.toolCompleted(tool, state: state)
             }
-        case .waitingForApproval(let headID, let text):
+        case .waitingForApproval(let headID, let text, let tool):
             updateCurrentState { state in
-                // A phase-only update keeps the approval already shown, with its text.
+                // A phase-only update keeps the approval already shown, with its text and call.
                 let keeps = headID == nil && state.status == .waitingForApproval
                 return AgentRunActivityStateReducer.waitingForApproval(
                     state: state,
                     approvalHeadID: keeps ? state.approvalHeadID : headID,
-                    approvalText: keeps ? state.approvalText : text
+                    approvalText: keeps ? state.approvalText : text,
+                    tool: keeps ? state.currentTool : tool
                 )
             }
         case .waitingForClarification:

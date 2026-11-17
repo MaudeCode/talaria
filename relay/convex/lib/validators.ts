@@ -35,6 +35,22 @@ export const preferencesValidator = v.object({
   notifyOnBackground: v.optional(v.boolean()),
 });
 
+// TAL-2336: the call a Live Activity names, as the publisher sent it (`ActivityTool` in http.ts parses it).
+export const activityToolValidator = v.object({
+  kind: v.string(),
+  target: v.string(),
+  done: v.boolean(),
+  failed: v.optional(v.boolean()),
+  verb: v.optional(v.string()),
+  app: v.optional(v.object({ name: v.string() })),
+  outcome: v.optional(v.object({
+    key: v.string(),
+    tone: v.union(v.literal("neutral"), v.literal("error"), v.literal("attention")),
+    count: v.optional(v.number()),
+    value: v.optional(v.string()),
+  })),
+});
+
 export const aggregateRowValidator = v.object({
   completionId: v.optional(v.string()),
   publisherId: v.string(),
@@ -48,6 +64,7 @@ export const aggregateRowValidator = v.object({
   updatedAt: v.number(),
   toolCount: v.optional(v.number()),
   activityAt: v.optional(v.number()),
+  currentTool: v.optional(activityToolValidator),
   planCompleted: v.optional(v.number()),
   planTotal: v.optional(v.number()),
   workerCount: v.optional(v.number()),
@@ -86,6 +103,7 @@ export const sessionStateContentValidator = v.object({
   updatedAt: v.number(),
   toolCount: v.optional(v.number()),
   activityAt: v.optional(v.number()),
+  currentTool: v.optional(activityToolValidator),
   planCompleted: v.optional(v.number()),
   planTotal: v.optional(v.number()),
   workerCount: v.optional(v.number()),
@@ -121,6 +139,7 @@ export const storedSessionStateValidator = v.object({
   updatedAt: v.number(),
   toolCount: v.optional(v.number()),
   activityAt: v.optional(v.number()),
+  currentTool: v.optional(activityToolValidator),
   planCompleted: v.optional(v.number()),
   planTotal: v.optional(v.number()),
   workerCount: v.optional(v.number()),

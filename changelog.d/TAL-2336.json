@@ -1,0 +1,35 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Live Activities and the Dynamic Island name the call a run is making with the same icon and wording as the chat, such as \"Running npm test\", and show \"Waiting for approval\" when a call needs you.",
+      "highlight": false,
+      "components": [
+        "web",
+        "relay",
+        "app"
+      ],
+      "announce": false
+    },
+    {
+      "category": "Changed",
+      "summary": "Approval and input notifications in the browser say which call is waiting, such as \"Approval needed · Run npm publish\".",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    },
+    {
+      "category": "Added",
+      "summary": "A server setting can keep tool call details off Live Activities and notifications, so they show only what kind of call is running.",
+      "highlight": false,
+      "components": [
+        "web",
+        "app",
+        "relay"
+      ],
+      "announce": false
+    }
+  ]
+}

@@ -13,7 +13,7 @@ import { vettedAddresses, type DnsLookup, type PinnedFetch } from '../../http/pi
 import type { DocumentBackend } from '../storage/backend.js'
 import { readDocument, updateDocument } from '../storage/document.js'
 import type { ActivityState, ActivityStates, AgentNotice } from './activity.js'
-import { agentNotifyAlerts, ALERT_BODY, alertForTransition, completionNotification, DEFAULT_ALERT_PREFERENCES, type AlertKind, type AlertPreferences } from './alerts.js'
+import { agentNotifyAlerts, ALERT_BODY, alertBody, alertForTransition, completionNotification, DEFAULT_ALERT_PREFERENCES, type AlertKind, type AlertPreferences } from './alerts.js'
 import type { NotificationChannel } from './channel.js'
 import { personMaySee, type PersonAccess } from '../../auth/person.js'
 
@@ -280,7 +280,7 @@ export class WebPushChannel implements NotificationChannel {
         ? { title: ALERT_BODY.decision, body: row.decisionReviewTitle ?? '', tag: `decision:${row.decisionReviewId}`, url: `/decisions/${encodeURIComponent(row.decisionReviewId)}` }
         : alert === 'completion'
           ? completionNotification(row.sessionId, await this.deps.session?.(row.sessionId).catch(() => null) ?? { title: row.title }, this.deps.redactEnabled?.() ?? true)
-          : { title: row.title, body: ALERT_BODY[alert], tag: row.sessionId, url: session })
+          : { title: row.title, body: alertBody(alert, row.currentTool), tag: row.sessionId, url: session })
     const urgent = typeof alert === 'object' ? alert.level === 'attention' : alert === 'approval' || alert === 'input'
     const details = webpush.generateRequestDetails({ endpoint: sub.endpoint, keys: sub.keys }, payload, {
       vapidDetails: { subject: this.subject(sub), publicKey: vapid.publicKey, privateKey: vapid.privateKey },

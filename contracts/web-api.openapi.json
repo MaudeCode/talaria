@@ -799,6 +799,10 @@
                                 "type": "string"
                               }
                             },
+                            "activity_call_details": {
+                              "type": "boolean",
+                              "description": "TAL-2336: Live Activities, Relay and push alerts name a call by its target, app and outcome text (default true); off, they carry only its kind, tense and outcome key. Changing it needs an owner session."
+                            },
                             "trusted_link_hosts_count": {
                               "type": "integer",
                               "minimum": -9007199254740991,
@@ -113409,6 +113413,10 @@
                         "type": "string"
                       }
                     },
+                    "activity_call_details": {
+                      "type": "boolean",
+                      "description": "TAL-2336: Live Activities, Relay and push alerts name a call by its target, app and outcome text (default true); off, they carry only its kind, tense and outcome key. Changing it needs an owner session."
+                    },
                     "trusted_link_hosts_count": {
                       "type": "integer",
                       "minimum": -9007199254740991,
@@ -113885,6 +113893,10 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "activity_call_details": {
+                      "type": "boolean",
+                      "description": "TAL-2336: Live Activities, Relay and push alerts name a call by its target, app and outcome text (default true); off, they carry only its kind, tense and outcome key. Changing it needs an owner session."
                     },
                     "trusted_link_hosts_count": {
                       "type": "integer",

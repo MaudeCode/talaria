@@ -14,6 +14,7 @@
         "updatedAt": 1800000000000,
         "toolCount": 0,
         "activityAt": 1799999940000,
+        "currentTool": { "kind": "shell", "target": "npm publish", "done": false, "outcome": { "key": "pending_approval", "tone": "attention" } },
         "planCompleted": 0,
         "planTotal": 0,
         "workerCount": 0,

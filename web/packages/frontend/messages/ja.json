@@ -1531,6 +1531,7 @@
 	"settings_help_issue_link": "GitHub Issues を開く",
 	"settings_help_meta": "Talaria Web のリソースとサポート。",
 	"settings_items_shown": "{total} 件中 {shown} 件を表示",
+	"settings_label_activity_call_details": "ライブアクティビティと通知にツール呼び出しの詳細を表示",
 	"settings_label_api_redact": "API 応答内の機密データをマスク",
 	"settings_label_auto_scroll_follow": "新しい内容を追う",
 	"settings_label_auto_title_refresh": "チャットのタイトルを更新",

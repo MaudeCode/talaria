@@ -296,6 +296,22 @@ export type ToolOutcomeKey = z.infer<typeof ToolOutcomeKeySchema>
 export const ToolOutcomeSchema = z.object({ key: ToolOutcomeKeySchema, tone: z.enum(['neutral', 'error', 'attention']), count: z.number().int().optional(), value: z.string().optional() })
 export type ToolOutcome = z.infer<typeof ToolOutcomeSchema>
 
+/** TAL-2336: the longest `target`, app name or outcome value a Live Activity shows, in UTF-16 code units as Relay counts them. */
+export const ACTIVITY_TOOL_MAX = 64
+const ActivityText = z.string().max(ACTIVITY_TOOL_MAX)
+/**
+ * TAL-2336: the call a Live Activity, its Dynamic Island and a push alert name: the run's latest running call, else its last
+ * finished one, with the display fields its transcript row carries (redacted, each string capped at `ACTIVITY_TOOL_MAX`).
+ * `done` picks the label's tense and `failed` (the call's `is_error`, absent when it did not fail) its failure wording. A call an approval holds carries the `pending_approval` outcome (`attention`). Sent to
+ * Relay as `currentTool` on a live row; absent before the run's first call, on a finished row, and from an older server.
+ */
+export const ActivityToolSchema = z.object({
+  kind: ToolKindSchema, target: ActivityText, done: z.boolean(), failed: z.literal(true).optional(), verb: ToolVerbSchema.optional(),
+  app: z.object({ name: ActivityText }).optional(),
+  outcome: ToolOutcomeSchema.extend({ value: ActivityText.optional() }).optional(),
+})
+export type ActivityTool = z.infer<typeof ActivityToolSchema>
+
 /**
  * TAL-315: a tool result's display sections, decided by the server's one rule for live, replayed and persisted results
  * alike. Clients show `stdout`, `stderr`, a labelled `error` and a labelled `exit_code` (sent only when worth showing), or
@@ -1099,6 +1115,7 @@ export const SettingsSchema = z.looseObject({
   dictation_append: z.boolean().optional(), persisted_speech_keys: z.array(z.string()).optional(),
   /** TAL-279: ask before opening external chat links; `trusted_link_hosts` are exact, server-normalized hostnames that skip the ask. */
   confirm_external_links: z.boolean().optional(), trusted_link_hosts: z.array(z.string()).optional(),
+  activity_call_details: z.boolean().optional().describe('TAL-2336: Live Activities, Relay and push alerts name a call by its target, app and outcome text (default true); off, they carry only its kind, tense and outcome key. Changing it needs an owner session.'),
   trusted_link_hosts_count: z.number().int().optional().describe('TAL-2143: how many normalized `trusted_link_hosts` there are; load and save both answer it.'),
   provider_quota_thresholds: QuotaThresholdsSchema.optional(),
   agent_approvals: z.boolean().nullable().optional().describe('TAL-1169: the profile\'s `talaria.agent_approvals` (default false): whether an agent with the talaria toolset may approve once or deny another session\'s pending command. Null when the profile config cannot be read.'),

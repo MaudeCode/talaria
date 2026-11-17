@@ -156,6 +156,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     auth_disabled_acknowledged: false,
     provider_cost_budget: null,
     confirm_external_links: true,
+    activity_call_details: true,
     trusted_link_hosts: [],
   }
 }

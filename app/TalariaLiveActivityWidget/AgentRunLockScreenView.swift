@@ -61,12 +61,18 @@ struct AgentRunLockScreenView: View {
 
     private var activityRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(state.lockScreenLead)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(palette.primaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Group {
+                if let tool = state.shownTool {
+                    AgentRunToolLine(tool: tool, font: .subheadline.weight(.semibold), iconSize: 14)
+                } else {
+                    Text(state.lockScreenLead)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             if let counts = state.workCounts {
                 AgentRunWorkCountsLabel(counts: counts, font: .caption.weight(.semibold))
             }
@@ -113,6 +119,60 @@ struct AgentRunLockScreenView: View {
         let format = SystemFormatStyle.DateReference(to: activityAt, allowedFields: [.day, .hour, .minute], maxFieldCount: 1)
         let relative = frozenClock.map { Text($0, format: format) } ?? Text(.currentDate, format: format)
         return Text("\(tools) · \(Text("Updated \(relative)"))")
+    }
+}
+
+/// TAL-2336: the run's current call as its transcript row names it: the row's icon and label, then its outcome, coloured
+/// for a failure or a wait on the user. Shared by the Lock Screen, the expanded island and the aggregate rows.
+struct AgentRunToolLine: View {
+    @Environment(\.liveActivityPalette) private var palette
+    let tool: AgentRunActivityTool
+    let font: Font
+    let iconSize: CGFloat
+    var labelColor: Color? = nil
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            icon
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - iconSize * 0.12 }
+            Text(tool.label)
+                .foregroundStyle(labelColor ?? palette.primaryText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .layoutPriority(1)
+            if let outcome = tool.outcomeText {
+                Text(verbatim: "·")
+                    .foregroundStyle(palette.secondaryText)
+                Text(outcome)
+                    .foregroundStyle(outcomeColor)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .font(font)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([tool.label, tool.outcomeText].compactMap { $0 }.joined(separator: ", "))
+    }
+
+    @ViewBuilder private var icon: some View {
+        if tool.icon == AssistantActivitySummary.talariaMarkIcon {
+            SandalMark(height: iconSize, color: palette.secondaryText)
+        } else {
+            Image(systemName: tool.icon)
+                .font(.system(size: iconSize * 0.86, weight: .semibold))
+                .foregroundStyle(palette.secondaryText)
+                .frame(width: iconSize, height: iconSize)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// A wait on the user takes the approval hue and a failure the failed one; a routine outcome stays secondary.
+    private var outcomeColor: Color {
+        switch tool.toolOutcome?.tone {
+        case .attention: palette.color(for: .waitingForApproval, isStale: false)
+        case .error: palette.color(for: .failed, isStale: false)
+        case .neutral, nil: palette.secondaryText
+        }
     }
 }
 

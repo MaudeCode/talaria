@@ -72,6 +72,11 @@ struct ServerSettingsSections: View {
                     toggle(SettingsIndex.systemShowToolLookups.titleResource, "text.magnifyingglass", \.showToolLookups, value,
                            SettingsIndex.systemShowToolLookups.id, store.setShowToolLookups)
                 }
+                // TAL-2336: off, Live Activities and push alerts name a call only by its kind.
+                if let value = settings.activityCallDetails {
+                    toggle(SettingsIndex.systemActivityCallDetails.titleResource, "iphone", \.activityCallDetails, value,
+                           SettingsIndex.systemActivityCallDetails.id, store.setActivityCallDetails)
+                }
             case .updates:
                 if settings.checkForUpdates != nil || settings.autoApplyUpdates != nil || settings.summarizeUpdatesAutomatically != nil
                     || settings.continueInterruptedChats != nil || settings.updateChannel != nil || settings.agentUpdateChannel != nil || settings.ignoreAgentUpdates != nil {
@@ -138,6 +143,7 @@ struct ServerSettingsSections: View {
         case (.limits, .modelsPrepareCompressionAhead): available = settings?.compressionPrepareAhead != nil
         case (.titles, .systemRefreshTitlesEvery): available = settings?.autoTitleRefreshEvery != nil
         case (.titles, .systemShowToolLookups): available = settings?.showToolLookups != nil
+        case (.titles, .systemActivityCallDetails): available = settings?.activityCallDetails != nil
         case (.updates, .systemCheckForUpdates): available = settings?.checkForUpdates != nil
         case (.updates, .systemApplyWebUpdatesAutomatically): available = settings?.autoApplyUpdates != nil
         case (.updates, .systemContinueInterruptedChats): available = settings?.continueInterruptedChats != nil

@@ -387,8 +387,8 @@ final class LiveActivityTests: XCTestCase {
             AgentRunActivityStateReducer.settingPlanProgress(completed: 9, total: 9, sessionID: "session-b", state: state))
         XCTAssertEqual(otherChat, state)
         let local: [(AgentRunActivityAttributes.ContentState) -> AgentRunActivityAttributes.ContentState] = [
-            { AgentRunActivityStateReducer.toolStarted(kind: .shell, name: "shell", state: $0) },
-            { AgentRunActivityStateReducer.toolCompleted(state: $0) },
+            { AgentRunActivityStateReducer.toolStarted(AgentRunActivityTool(kind: "shell", target: "ls", done: false), state: $0) },
+            { AgentRunActivityStateReducer.toolCompleted(AgentRunActivityTool(kind: "shell", target: "ls", done: true), state: $0) },
             { AgentRunActivityStateReducer.reasoning("…", state: $0) },
             { AgentRunActivityStateReducer.appendingToken("Hi", to: $0) },
             { AgentRunActivityStateReducer.clearingResponseExcerpt(state: $0) },
@@ -1363,34 +1363,89 @@ final class LiveActivityTests: XCTestCase {
         )
     }
 
-    func testMapsServerToolKindsToSafeStatuses() {
-        let startedAt = Date(timeIntervalSince1970: 100)
-        let state = AgentRunActivityStateReducer.initialState(
-            sessionID: "session-abc",
-            sessionTitle: "Build fixes",
-            startedAt: startedAt
-        )
+    /// TAL-2336: the activity names a call with its transcript row's icon and label, for every kind, and never its raw name.
+    func testNamesEveryKindOfCallAsItsTranscriptRowDoes() {
+        for kind in ToolDisplayKind.allCases {
+            for done in [false, true] {
+                let tool = AgentRunActivityTool(kind: kind.rawValue, target: "session_send", done: done, app: AgentRunActivityTool.App(name: "Slack"))
+                let row = ToolCall(name: "raw_tool_name", preview: nil, args: nil, kind: kind, app: ToolApp(name: "Slack"), target: "session_send", isCompleted: done)
+                XCTAssertEqual(tool.label, AssistantActivitySummary.label(for: row), "\(kind) done: \(done)")
+                XCTAssertEqual(tool.icon, AssistantActivitySummary.icon(for: row), "\(kind)")
+                XCTAssertFalse(tool.label.contains("raw_tool_name"))
+            }
+        }
+        XCTAssertEqual(AgentRunActivityTool(kind: "shell", target: "npm test", done: false).label, "Running npm test")
+        XCTAssertEqual(AgentRunActivityTool(kind: "talaria", target: "session_send", done: true).label, "Used session_send")
+        XCTAssertEqual(AgentRunActivityTool(kind: "talaria", target: "session_send", done: true).icon, AssistantActivitySummary.talariaMarkIcon)
+        XCTAssertEqual(AgentRunActivityTool(kind: "shell", target: "npm test", done: true, failed: true).label, "Failed to run npm test")
+        // A newer server's kind reads as an unknown tool's, as in the transcript.
+        XCTAssertEqual(AgentRunActivityTool(kind: "teleport", target: "", done: false).label, "Calling a tool")
+    }
 
-        let command = AgentRunActivityStateReducer.toolStarted(kind: .shell, name: "shell_command", state: state)
+    func testToolEventsNameTheCallAndPickItsStatus() {
+        let state = AgentRunActivityStateReducer.initialState(sessionID: "session-abc", sessionTitle: "Build fixes", startedAt: Date(timeIntervalSince1970: 100))
+
+        let command = AgentRunActivityStateReducer.toolStarted(AgentRunActivityTool(kind: "shell", target: "npm test", done: false), state: state)
         XCTAssertEqual(command.status, .runningCommand)
-        XCTAssertEqual(command.currentActivity, "Running command")
+        XCTAssertEqual(command.currentActivity, "Running npm test")
+        XCTAssertEqual(command.shownTool?.label, "Running npm test")
+        XCTAssertEqual(AgentRunActivityStateReducer.toolStarted(AgentRunActivityTool(kind: "search", target: "TODO", done: false), state: state).status, .searchingFiles)
+        XCTAssertEqual(AgentRunActivityStateReducer.toolStarted(AgentRunActivityTool(kind: "list", target: "src", done: false), state: state).status, .readingFiles)
+        XCTAssertEqual(AgentRunActivityStateReducer.toolStarted(AgentRunActivityTool(kind: "kanban", target: "Ship it", done: false), state: state).status, .usingTool)
 
-        let search = AgentRunActivityStateReducer.toolStarted(kind: .search, name: "ripgrep_search", state: state)
-        XCTAssertEqual(search.status, .searchingFiles)
-        XCTAssertEqual(search.currentActivity, "Searching files")
+        // The finished call reads in the past tense with its outcome.
+        let exit = AgentRunActivityTool.Outcome(key: "exit", tone: "error", count: 1)
+        let completed = AgentRunActivityStateReducer.toolCompleted(AgentRunActivityTool(kind: "shell", target: "npm test", done: true, failed: true, outcome: exit), state: command)
+        XCTAssertEqual(completed.shownTool?.label, "Failed to run npm test")
+        XCTAssertEqual(completed.shownTool?.outcomeText, "Exit 1")
+        XCTAssertEqual(completed.shownTool?.toolOutcome?.tone, .error)
 
-        let files = AgentRunActivityStateReducer.toolStarted(kind: .list, name: "list_directory", state: state)
-        XCTAssertEqual(files.status, .readingFiles)
+        // A rename keeps the call; the run moving on to writing clears it; a finished run shows none.
+        XCTAssertEqual(AgentRunActivityStateReducer.updatingSessionTitle("Renamed", state: completed).shownTool, completed.shownTool)
+        XCTAssertNil(AgentRunActivityStateReducer.appendingToken("Done", to: completed).currentTool)
+        XCTAssertNil(AgentRunActivityStateReducer.final(status: .complete, activity: "Response complete", state: completed).shownTool)
+        // A stale run keeps the call but shows its stale wording.
+        let stale = AgentRunActivityStateReducer.stale(state: completed)
+        XCTAssertNotNil(stale.currentTool)
+        XCTAssertNil(stale.shownTool)
+        XCTAssertEqual(stale.lockScreenLead, "Latest status shown")
+    }
 
-        let generic = AgentRunActivityStateReducer.toolStarted(kind: .write, name: "apply_patch", state: state)
-        XCTAssertEqual(generic.status, .usingTool)
-        XCTAssertEqual(generic.currentActivity, "Using apply patch")
+    /// TAL-2336: a call waiting on the user reads "Waiting for approval" in the attention tone, from the App's stream and from
+    /// Relay alike.
+    func testAHeldCallWaitsForApproval() throws {
+        let state = AgentRunActivityStateReducer.initialState(sessionID: "session-abc", sessionTitle: "Release", startedAt: Date(timeIntervalSince1970: 100))
+        let held = ToolCall(name: "terminal", preview: nil, args: nil, kind: .shell, target: "npm publish")
+        let waiting = AgentRunActivityStateReducer.waitingForApproval(state: state, approvalHeadID: "head", tool: .held(held))
+        XCTAssertEqual(waiting.shownTool?.label, "Running npm publish")
+        XCTAssertEqual(waiting.shownTool?.outcomeText, "Waiting for approval")
+        XCTAssertEqual(waiting.shownTool?.toolOutcome?.tone, .attention)
+        // A stale activity still waiting on the user keeps naming its call.
+        XCTAssertEqual(AgentRunActivityStateReducer.stale(state: waiting).shownTool, waiting.shownTool)
 
-        // The server's kind decides: `merge` is not a search, and an older server's missing kind is a generic tool.
-        let merge = AgentRunActivityStateReducer.toolStarted(kind: .unknown, name: "merge_pull_request", state: state)
-        XCTAssertEqual(merge.status, .usingTool)
-        let legacy = AgentRunActivityStateReducer.toolStarted(kind: nil, name: "shell_command", state: state)
-        XCTAssertEqual(legacy.status, .usingTool)
+        // Relay's native content state carries the same call (relay/convex/lib/apnsPayload.ts).
+        let relayed = try JSONDecoder().decode(AgentRunActivityAttributes.ContentState.self, from: Data(#"""
+        {"sessionID":"s","sessionTitle":"Release","status":"waitingForApproval","currentActivity":"Approval","responseExcerpt":"",
+         "startedAt":0,"updatedAt":0,"isStale":false,"isFinal":false,
+         "currentTool":{"kind":"shell","target":"npm publish","done":false,"outcome":{"key":"pending_approval","tone":"attention"}}}
+        """#.utf8))
+        XCTAssertEqual(relayed.shownTool, waiting.shownTool)
+    }
+
+    /// TAL-2336: an older Relay or Web sends no call and the activity keeps its wording; an unknown outcome shows none.
+    func testRelayContentWithoutOrWithAnUnknownCallKeepsItsWording() throws {
+        let decode = { (tool: String) in
+            try JSONDecoder().decode(AgentRunActivityAttributes.ContentState.self, from: Data("""
+            {"sessionID":"s","sessionTitle":"Build","status":"thinking","currentActivity":"Working","responseExcerpt":"",
+             "startedAt":0,"updatedAt":0,"isStale":false,"isFinal":false\(tool)}
+            """.utf8))
+        }
+        let older = try decode("")
+        XCTAssertNil(older.shownTool)
+        XCTAssertEqual(older.lockScreenLead, "Working")
+        let future = try decode(#","currentTool":{"kind":"teleport","target":"moon","done":true,"verb":"warp","outcome":{"key":"landed","tone":"cosmic"}}"#)
+        XCTAssertEqual(future.shownTool?.label, "Ran moon")
+        XCTAssertNil(future.shownTool?.outcomeText)
     }
 
     func testElapsedTimeFormatterUsesStableClockLabels() {
@@ -1564,8 +1619,8 @@ final class LiveActivityTests: XCTestCase {
         let states = [
             initial,
             AgentRunActivityStateReducer.reasoning("Thinking through the plan", state: initial, now: later),
-            AgentRunActivityStateReducer.toolStarted(kind: .search, name: "ripgrep_search", state: initial, now: later),
-            AgentRunActivityStateReducer.toolCompleted(state: initial, now: later),
+            AgentRunActivityStateReducer.toolStarted(AgentRunActivityTool(kind: "search", target: "TODO", done: false), state: initial, now: later),
+            AgentRunActivityStateReducer.toolCompleted(AgentRunActivityTool(kind: "search", target: "TODO", done: true), state: initial, now: later),
             AgentRunActivityStateReducer.waitingForApproval(state: initial, now: later),
             AgentRunActivityStateReducer.waitingForClarification(state: initial, now: later),
             AgentRunActivityStateReducer.appendingToken("Hello", to: initial, now: later),
@@ -1646,6 +1701,42 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(TalariaDeepLink.publisherID(from: url), publisherID)
     }
 
+    /// TAL-2336: with calls in parallel, a finished call leaves the one still running named, as the server picks the current
+    /// call for Relay; the last call to finish is named with the target its start carried.
+    func testAFinishedParallelCallKeepsTheRunningCallNamed() async throws {
+        let baseURL = URL(string: "https://example.test")!
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveActivityURLProtocol.self]
+        let client = APIClient(baseURL: baseURL, session: URLSession(configuration: configuration))
+        let streamClient = LiveActivitySpySSEClient()
+        let manager = SpyAgentLiveActivityManager()
+        LiveActivityURLProtocol.handler = { request in
+            Self.jsonResponse(#"{"stream_id":"stream-123","session_id":"session-abc"}"#, for: request)
+        }
+        let viewModel = ChatViewModel(
+            session: try Self.sessionSummary(id: "session-abc", title: "Live work"), server: baseURL, client: client,
+            streamClient: streamClient, approvalStreamClient: LiveActivitySpySSEClient(), clarifyStreamClient: LiveActivitySpySSEClient(),
+            liveActivityManager: manager
+        )
+        let didStart = await viewModel.sendMessage("Run the tests")
+        XCTAssertTrue(didStart)
+        let frame = { (id: String, kind: ToolDisplayKind?, target: String?) in
+            ToolStreamEvent(eventType: nil, name: nil, preview: nil, args: nil, duration: nil, isError: nil, stableID: id, kind: kind, target: target)
+        }
+        streamClient.emit(.toolStarted(frame("call-test", .shell, "npm test")))
+        streamClient.emit(.toolStarted(frame("call-read", .read, "README.md")))
+        streamClient.emit(.toolCompleted(frame("call-read", .read, nil)))
+        streamClient.emit(.toolCompleted(frame("call-test", .shell, nil)))
+
+        let test = AgentRunActivityTool(kind: "shell", target: "npm test", done: false)
+        XCTAssertEqual(manager.updates, [
+            .toolStarted(test),
+            .toolStarted(AgentRunActivityTool(kind: "read", target: "README.md", done: false)),
+            .toolStarted(test),
+            .toolCompleted(AgentRunActivityTool(kind: "shell", target: "npm test", done: true)),
+        ])
+    }
+
     func testChatViewModelLiveActivityLifecycleUsesInjectedManager() async throws {
         let baseURL = URL(string: "https://example.test")!
         let configuration = URLSessionConfiguration.ephemeral
@@ -1679,6 +1770,13 @@ final class LiveActivityTests: XCTestCase {
         ])
 
         streamClient.emit(.reasoning("I should inspect failures."))
+        // TAL-2336: a tool lookup the transcript hides (TAL-2331) is not named on the activity either.
+        for event in [SSEEvent.toolStarted, SSEEvent.toolCompleted] {
+            streamClient.emit(event(ToolStreamEvent(
+                eventType: nil, name: "tool_search", preview: nil, args: nil, duration: nil, isError: nil,
+                stableID: "call-lookup", kind: .search, target: "calendar", isHidden: true
+            )))
+        }
         streamClient.emit(.toolStarted(ToolStreamEvent(
             eventType: nil,
             name: "shell_command",
@@ -1703,8 +1801,8 @@ final class LiveActivityTests: XCTestCase {
 
         XCTAssertEqual(manager.updates, [
             .reasoning("I should inspect failures."),
-            .toolStarted(kind: .shell, name: "shell_command"),
-            .toolCompleted
+            .toolStarted(AgentRunActivityTool(kind: "shell", target: "", done: false)),
+            .toolCompleted(AgentRunActivityTool(kind: "shell", target: "", done: true, failed: nil))
         ])
         XCTAssertEqual(manager.ends.last, SpyAgentLiveActivityManager.End(
             status: .complete,

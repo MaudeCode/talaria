@@ -58,6 +58,7 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
     case modelsPrepareCompressionAhead = "settings-chat-compression-ahead"
     case systemRefreshTitlesEvery = "settings-chat-title-refresh"
     case systemShowToolLookups = "settings-system-show-tool-lookups"
+    case systemActivityCallDetails = "settings-system-activity-call-details"
     case providersManageProviders = "settings-providers-providers"
     case toolsAgentApprovals = "settings-tools-agent-approvals"
     case profilesList = "settings-profile-row-"
@@ -271,6 +272,7 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
         case .modelsPrepareCompressionAhead: .init(category: .models, section: "Limits", title: "Prepare Compression Ahead", scope: .profile)
         case .systemRefreshTitlesEvery: .init(category: .system, section: "System", title: "Refresh Titles Every", scope: .server)
         case .systemShowToolLookups: .init(category: .system, section: "System", title: "Show Tool Lookups", scope: .server)
+        case .systemActivityCallDetails: .init(category: .system, section: "System", title: "Tool Call Details in Live Activities and Alerts", scope: .server)
         case .providersManageProviders: .init(category: .providers, section: "Providers", title: "Providers", scope: .profile)
         case .toolsAgentApprovals: .init(category: .tools, section: "Approvals", title: "Agents can approve other chats' commands", scope: .profile)
         case .profilesList: .init(category: .profiles, section: "Profiles", title: "Profiles", scope: .server)

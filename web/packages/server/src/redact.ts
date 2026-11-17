@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { type ApprovalTool, FileExcerptLineSchema, type RedactionPolicy, SearchMatchSchema, TurnUsageSchema } from '@maudecode/talaria-web-contracts'
+import { ACTIVITY_TOOL_MAX, type ActivityTool, type ApprovalTool, FileExcerptLineSchema, type RedactionPolicy, SearchMatchSchema, TurnUsageSchema } from '@maudecode/talaria-web-contracts'
 import { channel } from 'node:diagnostics_channel'
 import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
@@ -2683,6 +2683,51 @@ export function approvalTool(call: Record<string, unknown>, enabled: boolean, wo
     ...(frame.verb ? { verb: frame.verb as ApprovalTool['verb'] } : {}), ...(frame.app ? { app: frame.app as ApprovalTool['app'] } : {}),
     ...(kind !== 'shell' && Array.isArray(frame.args_fields) ? { args_fields: frame.args_fields as ApprovalTool['args_fields'] } : {}),
   }
+}
+
+/**
+ * TAL-2336: `text` on one line within a Live Activity's limit, an ellipsis marking a cut. The limit counts UTF-16 code units,
+ * as the contract's `max` and Relay's validator do, and a cut never splits a character.
+ */
+export const activityText = (text: string): string => {
+  const line = text.replace(/\s+/g, ' ').trim()
+  if (line.length <= ACTIVITY_TOOL_MAX) return line
+  let cut = ''
+  for (const char of line) {
+    if (cut.length + char.length > ACTIVITY_TOOL_MAX - 1) break
+    cut += char
+  }
+  return `${cut}…`
+}
+
+/**
+ * TAL-2336: a call's display fields as a Live Activity and a push alert name it, each string capped. Without `details` (the
+ * `activity_call_details` setting off) it carries no text the call named: no target, app or outcome value.
+ */
+function activityFields(fields: { kind?: unknown; target?: unknown; verb?: unknown; app?: unknown }, done: boolean, failed: boolean, outcome: ActivityTool['outcome'], details: boolean): ActivityTool {
+  const app = details && isDict(fields.app) ? str(fields.app.name) : ''
+  if (outcome && !details) { const { value: _value, ...rest } = outcome; outcome = rest }
+  return {
+    kind: (str(fields.kind) || 'unknown') as ActivityTool['kind'], target: details ? activityText(str(fields.target)) : '', done, ...(failed ? { failed: true as const } : {}),
+    ...(fields.verb ? { verb: fields.verb as ActivityTool['verb'] } : {}), ...(app ? { app: { name: activityText(app) } } : {}),
+    ...(outcome ? { outcome: { ...outcome, ...(outcome.value === undefined ? {} : { value: activityText(outcome.value) }) } } : {}),
+  }
+}
+
+/**
+ * TAL-2336: a run's call from its live record, as its transcript row shows it: redacted, with its outcome once it finished.
+ * A call the transcript leaves out (TAL-2331 `hidden`) is named nowhere else either.
+ */
+export function activityTool(call: Record<string, unknown>, enabled: boolean, workspace: string | null, details = true): ActivityTool | undefined {
+  const frame = publicToolFrame(call, enabled, workspace)
+  if (frame.hidden === true) return undefined
+  const outcome = isDict(frame.result_view) && isDict(frame.result_view.outcome) ? frame.result_view.outcome as ActivityTool['outcome'] : undefined
+  return activityFields(frame, call.done === true, call.is_error === true, outcome, details)
+}
+
+/** TAL-2336: the call an approval holds (its `tool`), still running and waiting on the user. */
+export function heldActivityTool(tool: ApprovalTool, details = true): ActivityTool {
+  return activityFields(tool, false, false, { key: 'pending_approval', tone: 'attention' }, details)
 }
 
 /** The open call a tool completion settles: the one with its Agent id, else the newest id-less call of the same name; -1 when none. */

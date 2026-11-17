@@ -229,6 +229,8 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   if (['confirm_external_links', 'trusted_link_hosts'].some((key) => key in body) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage link safety')
   // Redaction decides what every user of this server sees, so only an owner may change it.
   if ('api_redact_enabled' in body && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage secret redaction')
+  // TAL-2336: call details leave the server for every user's Live Activities and push alerts.
+  if ('activity_call_details' in body && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage call details outside the chat')
   // TAL-2160: the insights sync copies every Web chat into the Agent's database.
   if ('sync_to_insights' in body && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage the insights sync')
   // The Agent reads Group Chat limits from the root config, for every profile.

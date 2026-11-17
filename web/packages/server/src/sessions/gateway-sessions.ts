@@ -1285,13 +1285,14 @@ export class GatewaySessions {
         return show.value
       }
       const calls = registry.liveToolCalls.get(watch.stream)!
-      const put = async (event: string, data: Row) => {
+      const put = async (event: string, data: Row): Promise<Row> => {
         let safe = event === 'tool' || event === 'tool_complete' ? publicToolFrame(data, this.deps.redactEnabled()) : event === 'connect_card' ? data : redactNestedMessageContainers(data, this.deps.redactEnabled()) as Row
         if (data.session) safe = { ...safe, session: keepConnection(safe.session as Row, data.session as Row) }
         // Progress is ephemeral, just like direct turns; a reload gets the channel's latest value after journal replay.
-        if (event === 'tool_progress') { channel.put([event, safe, null, this.deps.redactEnabled()]); return }
+        if (event === 'tool_progress') { channel.put([event, safe, null, this.deps.redactEnabled()]); return safe }
         const record = await writer.appendSseEvent(event, safe)
         channel.put([event, safe, record.event_id])
+        return safe
       }
       const clearTools = async () => {
         for (const call of calls) if (call.progress) await put('tool_progress', { id: call.tid, progress: null })
@@ -1490,8 +1491,9 @@ export class GatewaySessions {
               const call = calls.findLast((call) => call.tid === id)
               if (kind === 'tool.start') {
                 if (id && call) return
-                calls.push({ tid: id, name: data.name || data.tool_name, args: data.args ?? {}, done: false })
-                registry.noteToolEvent(watch.stream, this.deps.now(), true)
+                const started = { tid: id, name: data.name || data.tool_name, args: data.args ?? {}, done: false }
+                calls.push(started)
+                registry.noteToolEvent(watch.stream, this.deps.now(), true, started)
                 await put('tool', { ...data, id, name: data.name || data.tool_name })
               } else if (kind === 'tool.progress') {
                 if (!id || !call || call.done || !watch.snapshot.running) return
@@ -1500,8 +1502,10 @@ export class GatewaySessions {
               } else {
                 if (call?.done) return
                 if (call) Object.assign(call, { done: true, progress: null })
-                registry.noteToolEvent(watch.stream, this.deps.now(), false)
-                await put('tool_complete', { ...data, id, name: data.name || data.tool_name, progress: null })
+                const frame = await put('tool_complete', { ...data, id, name: data.name || data.tool_name, progress: null })
+                // TAL-2336: the run's activity names the call as its transcript row shows it: failed, with its outcome.
+                if (call) Object.assign(call, { is_error: frame.is_error === true, ...(frame.result_view ? { result_view: frame.result_view } : {}) })
+                registry.noteToolEvent(watch.stream, this.deps.now(), false, call)
               }
             }
             else if (kind === 'approval.request' || kind === 'clarify.request') await prompts({ ...watch.snapshot, prompts: [...watch.snapshot.prompts.filter((p) => p.prompt_id !== data.prompt_id), { ...data, kind: kind.split('.')[0] }] })

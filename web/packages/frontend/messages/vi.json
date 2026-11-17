@@ -1529,6 +1529,7 @@
 	"settings_help_issue_link": "Mở trang GitHub Issues",
 	"settings_help_meta": "Tài nguyên và hỗ trợ cho Talaria Web.",
 	"settings_items_shown": "Hiện {shown} trên {total}",
+	"settings_label_activity_call_details": "Chi tiết lệnh gọi công cụ trong Hoạt động trực tiếp và cảnh báo",
 	"settings_label_api_redact": "Ẩn dữ liệu nhạy cảm trong phản hồi API",
 	"settings_label_auto_scroll_follow": "Theo dõi nội dung mới",
 	"settings_label_auto_title_refresh": "Làm mới tiêu đề trò chuyện",

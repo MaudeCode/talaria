@@ -133,6 +133,7 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
   "auth_disabled_acknowledged": false,
   "provider_cost_budget": null,
   "confirm_external_links": true,
+  "activity_call_details": true,
   "trusted_link_hosts": [],
   "chat_switches_migrated": true,
   "stream_fade_migrated": true

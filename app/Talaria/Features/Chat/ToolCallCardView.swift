@@ -224,44 +224,7 @@ struct ToolCallCardView: View {
     /// TAL-2335: a finished call's outcome in the reader's words; nil while it runs or when the server gave none.
     static func outcomeText(for toolCall: ToolCall) -> String? {
         guard toolCall.isCompleted, let outcome = toolCall.resultView?.outcome else { return nil }
-        return outcomeText(outcome)
-    }
-
-    static func outcomeText(_ outcome: ToolOutcome) -> String {
-        let count = outcome.count ?? 0
-        let value = outcome.value ?? ""
-        switch outcome.key {
-        case .sent: return String(localized: "Sent")
-        case .approved: return String(localized: "Approved")
-        case .denied: return String(localized: "Denied")
-        case .goalSet: return String(localized: "Goal set")
-        case .created: return String(localized: "Created")
-        case .memoryAdded: return String(localized: "Added \(count) memories")
-        case .memoryUpdated: return String(localized: "Updated \(count) memories")
-        case .memoryRemoved: return String(localized: "Removed \(count) memories")
-        case .skillCreated: return String(localized: "Skill created")
-        case .skillUpdated: return String(localized: "Skill updated")
-        case .pendingApproval: return String(localized: "Waiting for approval")
-        case .jobCreated:
-            guard let next = try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(value) else { return String(localized: "Scheduled") }
-            return String(localized: "Next run \(next.formatted(date: .abbreviated, time: .shortened))")
-        case .paused: return String(localized: "Paused")
-        case .resumed: return String(localized: "Resumed")
-        case .removed: return String(localized: "Removed")
-        case .ranNow: return String(localized: "Ran now")
-        case .movedTo: return String(localized: "Moved to \(value)")
-        case .blocked: return String(localized: "Blocked")
-        case .completed: return String(localized: "Completed")
-        case .commented: return String(localized: "Commented")
-        case .connected: return String(localized: "Connected \(value)")
-        case .needsSignIn: return String(localized: "Needs sign-in")
-        case .answered: return String(localized: "Answered: \(value)")
-        case .skipped: return String(localized: "Skipped")
-        case .noMatches: return String(localized: "No matches")
-        case .noResults: return String(localized: "No results")
-        case .exit: return String(localized: "Exit \(count)")
-        case .failed: return value.isEmpty ? String(localized: "Failed") : value
-        }
+        return outcome.text
     }
 
     /// TAL-2335: routine outcomes stay in the label's secondary tier; colour marks only a failure or a wait on the user.

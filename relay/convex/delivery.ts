@@ -96,6 +96,7 @@ function asSessionState(state: DataModel["sessionStates"]["document"]): SessionS
     updatedAt: state.updatedAt,
     toolCount: state.toolCount,
     activityAt: state.activityAt,
+    currentTool: state.currentTool,
     planCompleted: state.planCompleted,
     planTotal: state.planTotal,
     workerCount: state.workerCount,

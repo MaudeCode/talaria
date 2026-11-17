@@ -1596,6 +1596,7 @@
 	"settings_help_issue_link": "Open GitHub Issues",
 	"settings_help_meta": "Resources and support for Talaria Web.",
 	"settings_items_shown": "{total} öğeden {shown} tanesi gösteriliyor",
+	"settings_label_activity_call_details": "Canlı Etkinliklerde ve uyarılarda araç çağrısı ayrıntıları",
 	"settings_label_api_redact": "API yanıtlarında hassas verileri gizle",
 	"settings_label_auto_scroll_follow": "Yeni içeriği takip et",
 	"settings_label_auto_title_refresh": "Sohbet başlıklarını yenile",
