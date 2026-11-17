@@ -49,8 +49,7 @@ case "$component" in
     python3 app/scripts/test-validate-upstream-contract
     bash -n app/scripts/duo-pose app/scripts/test-duo-pose
     node --test app/scripts/duo-pose.test.mjs
-    ruby app/ci/select_testflight_build_number_test.rb
-    ruby app/ci/upload_testflight_test.rb
+    ruby app/ci/inspect_testflight_test.rb
     ruby app/ci/test_ios_runner_test.rb
     app/ci/require_successful_main_ci_test.sh
     app/ci/find_hosted_tests_run_test.sh

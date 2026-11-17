@@ -30,11 +30,16 @@ For the App:
 
 ## Credentials
 
-The `testflight` environment holds `APP_STORE_CONNECT_KEY_ID`,
-`APP_STORE_CONNECT_ISSUER_ID`, `APP_STORE_CONNECT_PRIVATE_KEY`,
-`IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64` and
-`IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`, and must allow the trusted `main`
-workflow. The Apple Distribution identity belongs to team `Q28NF3NH3D`.
+Signing and uploading go through the shared `ios-signing`, `ios-build-number`
+and `ios-publish` actions in `MaudeCode/.github`. They read the organisation
+secrets `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`,
+`APP_STORE_CONNECT_PRIVATE_KEY`, `IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64` and
+`IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`; a repository or environment secret of
+the same name overrides them, so keep none. The `testflight` environment stays
+the deployment gate and must allow the trusted `main` workflow. The Apple
+Distribution identity belongs to team `Q28NF3NH3D`, which the actions read from
+the certificate, and each of the three App IDs needs an App Store profile that
+includes it.
 
 The Apple Developer portal needs the App IDs `dev.kil.talaria`,
 `dev.kil.talaria.shareextension` and `dev.kil.talaria.liveactivitywidget`, the

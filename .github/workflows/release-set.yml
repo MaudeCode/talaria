@@ -832,7 +832,8 @@ jobs:
     - relay-publish
     if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.app_changed == 'true' && needs.build-gate.result == 'success' && (needs.relay-publish.result
       == 'success' || (needs.prepare.outputs.relay_changed == 'false' && needs.relay-publish.result == 'skipped')) }}
-    runs-on: ubuntu-latest
+    # macOS: ios-publish verifies the IPA's signature and profiles before it uploads.
+    runs-on: xcode-27
     environment: testflight
     concurrency:
       group: talaria-testflight-publication
@@ -844,21 +845,44 @@ jobs:
         ref: ${{ needs.prepare.outputs.source }}
         # TestFlight notes cover the App changes since the previous app-v tag.
         fetch-depth: 0
+    - uses: ./.github/actions/setup-xcode
     - uses: ./.github/actions/release-python
-    - uses: ./.github/actions/release-ruby
     - name: Restore release-plan, app-build and ios-ipa
       env:
         GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan app-build ios-ipa'
+    # The trusted main cutover, the receipt and the IPA's digest are checked before anything reaches Apple.
+    - name: Authorize the verified build and write its TestFlight notes
+      id: verified
+      run: |
+        set -euo pipefail
+        "$RELEASE_PYTHON" releases/publish.py verify-app --plan "$RUNNER_TEMP/release-plan/plan.json" \
+          --build "$RUNNER_TEMP/app-build/receipt.json" --directory "$RUNNER_TEMP/ios-ipa" \
+          --notes "$RUNNER_TEMP/testflight-notes.txt"
+        delimiter="notes-$(openssl rand -hex 16)"
+        { echo "notes<<${delimiter}"; cat "$RUNNER_TEMP/testflight-notes.txt"; echo "${delimiter}"; } >> "$GITHUB_OUTPUT"
+    # Uploading the same version and build number again is success, so a re-run resumes rather than uploads twice.
     - name: Upload or recover the verified TestFlight build
+      id: upload
+      uses: MaudeCode/.github/actions/ios-publish@dd8e12f8ad78a4e6828be2239117c617a8c6df3a
+      with:
+        ipa: ${{ steps.verified.outputs.ipa }}
+        bundle-id: dev.kil.talaria
+        version: ${{ steps.verified.outputs.version }}
+        build-number: ${{ steps.verified.outputs.build_number }}
+        commit: ${{ steps.verified.outputs.commit }}
+        upload: true
+        whats-new: ${{ steps.verified.outputs.notes }}
+        app-store-connect-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        app-store-connect-issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        app-store-connect-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+    - name: Record the uploaded build
       env:
-        APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-        APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-        APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        BUILD_ID: ${{ steps.upload.outputs.build-id }}
       run: |
         "$RELEASE_PYTHON" releases/publish.py app --plan "$RUNNER_TEMP/release-plan/plan.json" \
           --build "$RUNNER_TEMP/app-build/receipt.json" --directory "$RUNNER_TEMP/ios-ipa" \
-          --output "$RUNNER_TEMP/app-publish/receipt.json"
+          --output "$RUNNER_TEMP/app-publish/receipt.json" --build-id "$BUILD_ID"
     - name: Stage app-publish for other jobs
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put app-publish "$RUNNER_TEMP/app-publish"'

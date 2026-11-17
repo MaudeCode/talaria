@@ -78,9 +78,11 @@ dependency:
 | `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the hosted unit tests (TalariaTests) in four class shards (`app/ci/hosted-test-shard`) on main pushes, manual runs, at release and on pull requests labelled `hosted-tests` |
 | `app-tests.yml` | `package-test` | `swift test` for TalariaKit (every native contract class and the live Web contract test) in build and contracts modes |
 | `ci.yml` | `app-tooling` | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
-| `ios-release-build.yml` | `build` | `xcodebuild archive`, Keychain signing, IPA export |
+| `ios-release-build.yml` | `build` | `xcodebuild archive`, and signing, IPA export and verification through the shared `ios-signing` and `ios-publish` actions |
 | `release-set.yml` | `contracts` | both App contract gates at once: the selected App against every supported Web, plus its whole TalariaKit suite when it ships, and the previously released App against the selected Web; `swift test`, or the simulator for an App from before TAL-399 |
 | `release-set.yml` | `app-dry-build` | unsigned `xcodebuild archive` |
+| `release-set.yml` | `app-publish` | the shared `ios-publish` action, which verifies the IPA (`codesign`, `plutil`, `security cms`) before it uploads |
+| `recover-cutover.yml` | `app` | the same `ios-publish` verification and upload, resuming the original IPA |
 
 A release that ships the App needs the App's simulator-hosted unit tests to
 have passed on the exact release source, dry runs included (TAL-1550).
@@ -323,17 +325,26 @@ so Nightly reuses the Experimental artifact; it runs even when no new commit was
 its source was recorded still reaches Nightly. The App build rechecks for a cutover once it holds the
 `talaria-testflight-publication` queue, so the two never pick the same build number.
 When `scripts/changed-components.py` selects the App since the last Nightly, `ios-release-build.yml` with
-`channel: nightly` builds it as the next patch after the latest `app-v` tag, and `nightly.py upload` sends it to
-TestFlight internal testing through the same upload and `VALID` readback as production. Only after both succeed
-does `nightly.py record` move the `nightly` git tag, so a failed run is retried the next night.
+`channel: nightly` builds it as the next patch after the latest `app-v` tag, `nightly.py verify` checks its Nightly
+identity and writes its notes, and the shared `ios-publish` action sends it to TestFlight internal testing through the
+same upload and `VALID` readback as production. Only after both succeed does `nightly.py record` move the `nightly`
+git tag, so a failed run is retried the next night.
 
-Both channels upload through `publish.py upload_testflight`, which writes the App's release notes since the highest
-lower `app-v` tag (`app/ci/release_notes.py testflight`) and has `app/ci/upload_testflight.rb` set them as the build's
-en-US TestFlight "What to Test" text once the build is `VALID`. The uploader updates an existing en-US localization
-rather than adding another, so a retried run stays idempotent, and the upload fails unless App Store Connect's readback
-includes `whatsNewSet`. Notes need the source's tags, so every upload job checks out full history. A recovery runs
-the reviewed `publish.py`, notes generator and uploader that `recover-cutover.yml` archives, against the older source. See
-[TestFlight What to Test](../app/docs/release-notes.md#testflight-what-to-test) for the text's format.
+Signing, the build number, the IPA export and its verification, and the upload come from the shared `ios-signing`,
+`ios-build-number` and `ios-publish` actions in `MaudeCode/.github` (its `IOS.md`), pinned by commit and reading the
+organisation's signing secrets. The build number is App Store Connect's highest for the version plus one; a re-run for
+the same version and commit gets the number it already uploaded. Nightly numbers and uploads as its own `nightly`
+variant, because it stamps a different identity into the same commit's app than production does. A production
+upload runs in `app-publish` only after `publish.py verify-app` has authorized the trusted main cutover, matched the
+IPA to its build receipt and written its notes; `publish.py app` then records the build `ios-publish` read back
+`VALID`. Both channels write the App's release notes since the highest lower `app-v` tag
+(`app/ci/release_notes.py testflight`), which `ios-publish` sets as the build's en-US TestFlight "What to Test" text
+once the build is `VALID`, updating an existing en-US localization rather than adding another, so a retried run stays
+idempotent. Uploading the same version and build number again is success, so a re-run never uploads twice. Notes need
+the source's tags, so every upload job checks out full history. A recovery runs the reviewed `publish.py` and notes
+generator that `recover-cutover.yml` archives, against the older source. Dispatching `ios-release-build.yml` with a
+commit and a version is a signing check: it builds, signs and verifies the IPA without an environment, a release plan
+or an upload. See [TestFlight What to Test](../app/docs/release-notes.md#testflight-what-to-test) for the text's format.
 
 `cli.py gate` writes a success receipt only after its supplied validation command
 succeeds. `cli.py assemble` combines receipts and notes; failed/missing gates,
