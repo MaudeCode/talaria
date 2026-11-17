@@ -2,10 +2,12 @@
 """Route PR and push diffs to affected suites; uncertainty runs every suite."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
@@ -315,6 +317,39 @@ def check_diff(base, head, merge_base=False):
     subprocess.run(command, check=True)
 
 
+WEB_CHECKS = {"web_server", "web_frontend"}
+# Ignored files the Web lint and typecheck read: the workspace builds the hook runs first and generated assets. Their
+# pre-scripts regenerate these from tracked sources on every run, so they are outputs, not inputs.
+WEB_CHECK_OUTPUTS = ("web/packages/frontend/src/paraglide/", "web/packages/frontend/src/routeTree.gen.ts",
+                     "web/packages/frontend/.tanstack/")
+# npm ci records the installed dependency tree here; without it the dependencies cannot be identified.
+WEB_DEPENDENCIES = "web/node_modules/.package-lock.json"
+
+
+def web_check_fingerprint():
+    """Hash everything the pre-push hook's Web lint and typecheck read (TAL-2393): the working-tree contents of every
+    tracked or untracked path routed to a Web suite, the ignored build outputs and generated files beside them, the
+    installed dependencies, the Node toolchain, and the hook and this router. Raises when an input cannot be read."""
+    os.chdir(git("rev-parse", "--show-toplevel").decode().strip())
+    listed = git("ls-files", "-z", "--cached", "--others", "--exclude-standard")
+    ignored = git("ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--", "web/packages", "web/static",
+                  ":!:**/node_modules/**")
+    paths = {path for path in map(os.fsdecode, listed.split(b"\0")) if path and path_suites(path) & WEB_CHECKS}
+    paths |= {path for path in map(os.fsdecode, ignored.split(b"\0")) if path and not path.startswith(WEB_CHECK_OUTPUTS)}
+    digest = hashlib.sha256()
+    for tool in ("node", "npm"):
+        digest.update(f"{tool}\0{shutil.which(tool)}\0".encode() + subprocess.check_output([tool, "--version"], cwd="web"))
+    digest.update(f"NODE_OPTIONS\0{os.environ.get('NODE_OPTIONS', '')}\0".encode())
+    digest.update(Path(WEB_DEPENDENCIES).read_bytes())
+    for path in sorted(paths | {".githooks/pre-push", "scripts/changed-components.py"}):
+        file = Path(path)
+        # A deleted tracked file is a state of its own; a symlink is its target, not what it points to.
+        content = (b"link\0" + os.fsencode(os.readlink(file)) if file.is_symlink()
+                   else file.read_bytes() if file.exists() else b"missing")
+        digest.update(f"\0{path}\0{len(content)}\0".encode() + content)
+    return digest.hexdigest()
+
+
 def check_results(needs):
     if needs["changes"]["result"] != "success" or needs["tooling"]["result"] != "success":
         raise ValueError("Path detection and release metadata validation must succeed")
@@ -335,12 +370,17 @@ def main():
     parser.add_argument("--check-results", action="store_true")
     parser.add_argument("--check-diff", action="store_true")
     parser.add_argument("--web-artifact", action="store_true", help="Print whether the diff changes the packed Web artifact.")
+    parser.add_argument("--web-check-fingerprint", action="store_true",
+                        help="Print a hash of every input of the pre-push hook's Web lint and typecheck.")
     args = parser.parse_args()
     if args.self_test:
         subprocess.run([sys.executable, str(Path(__file__).with_name("test-changed-components.py"))], check=True)
         return
     if args.check_diff:
         check_diff(args.base, args.head, args.merge_base)
+        return
+    if args.web_check_fingerprint:
+        print(web_check_fingerprint())
         return
     if args.check_results:
         check_results(json.loads(os.environ["CI_NEEDS"]))
