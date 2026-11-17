@@ -50,6 +50,17 @@ export function parseEnabled(value: unknown, fallback = true): boolean {
   return fallback
 }
 
+/** Native `mcp_server_enabled` (Agent v0.23.2): `enabled` defaults on, and a truthy legacy `disabled` wins over it. */
+function mcpServerEnabled(cfg: unknown): boolean {
+  return isDict(cfg) && parseEnabled(cfg.enabled) && !parseEnabled(cfg.disabled, false)
+}
+
+/** Native `write_mcp_server_enabled`: the legacy `disabled` goes in the same write, or it would undo an enable. */
+function withEnabled(cfg: Dict, enabled: boolean): Dict {
+  const { disabled: _legacy, ...rest } = cfg
+  return { ...rest, enabled }
+}
+
 type McpEvents = z.infer<typeof McpEventsSchema>
 type McpEventsData = SidecarResult<'mcp.events'>
 const NO_SUBSCRIPTIONS = { active: 0, refresh_overdue: 0, lapsed: 0, pending: 0, paused: 0 }
@@ -92,7 +103,7 @@ export function serverSummary(name: string, cfg: unknown, runtime: Dict | null):
   if (!isDict(cfg)) {
     return { ...out, transport: 'invalid', timeout: 120, connect_timeout: 60, enabled: false, can_toggle: false, active: false, status: 'invalid_config', tool_count: null, health: 'not_checked', health_detail: '', health_checked_at: null, health_pending: false }
   }
-  let enabled = parseEnabled(cfg.enabled)
+  let enabled = mcpServerEnabled(cfg)
   let connected = enabled && Boolean(rt.connected)
   if ('url' in cfg) {
     out.transport = 'http'
@@ -184,12 +195,12 @@ export class McpService {
   }
 
   private async runtime(profileHome: string, servers: Dict, byName: Map<string, Dict>): Promise<Map<string, Dict>> {
-    const unknownServers = Object.fromEntries(Object.entries(servers).filter(([name, cfg]) => isDict(cfg) && parseEnabled(cfg.enabled) && !runtimeHealth(byName.get(name) ?? {})))
+    const unknownServers = Object.fromEntries(Object.entries(servers).filter(([name, cfg]) => mcpServerEnabled(cfg) && !runtimeHealth(byName.get(name) ?? {})))
     const health = this.deps.health
     const verdicts = health?.runningRound(profileHome, unknownServers) ?? health?.refreshAndRead(profileHome, await this.probeConfigs(profileHome, unknownServers), unknownServers) ?? {}
     for (const [name, cfg] of Object.entries(servers)) {
       const entry = { ...(byName.get(name) ?? { name }) }
-      const enabled = isDict(cfg) ? parseEnabled(cfg.enabled) : false
+      const enabled = mcpServerEnabled(cfg)
       const verdict = verdicts[name]
       Object.assign(entry, enabled ? { health: verdict?.health ?? 'unknown', health_detail: verdict?.detail ?? '', health_checked_at: verdict?.checked_at ?? null, health_pending: verdict?.pending ?? true } : { health: 'not_checked', health_detail: '', health_checked_at: null, health_pending: false })
       byName.set(name, entry)
@@ -319,7 +330,7 @@ export class McpService {
       const servers = dict(c.mcp_servers)
       if (!(name in servers)) throw new HttpFailure(404, `MCP server '${name}' not found`)
       if (!serverSummary(name, servers[name], null).can_toggle) throw new HttpFailure(400, `MCP server '${name}' has invalid config`)
-      servers[name] = { ...dict(servers[name]), enabled }
+      servers[name] = withEnabled(dict(servers[name]), enabled)
       c.mcp_servers = servers
     })
     return { ok: true, name, enabled }
@@ -414,7 +425,7 @@ export class McpService {
 export function notesSources(config: Config, enabled: boolean): Dict {
   if (!enabled) return { enabled: false, sources: [], source: 'disabled', inventory_scope: 'disabled_by_default', attach_supported: false, automatic_recall_unchanged: true, recent_ai_notes: [] }
   const hints = new Set(['joplin', 'obsidian', 'notion', 'llm-wiki', 'llmwiki', 'wiki', 'notes', 'note', 'knowledge', 'kb', 'readwise', 'logseq'])
-  const sources = Object.entries(dict(config.mcp_servers)).filter(([name]) => [...hints].some((h) => name.toLowerCase().includes(h))).map(([name, cfg]) => ({ id: name, name, kind: 'mcp', enabled: isDict(cfg) ? parseEnabled(cfg.enabled) : false, tools: [] }))
+  const sources = Object.entries(dict(config.mcp_servers)).filter(([name]) => [...hints].some((h) => name.toLowerCase().includes(h))).map(([name, cfg]) => ({ id: name, name, kind: 'mcp', enabled: mcpServerEnabled(cfg), tools: [] }))
   return { enabled: true, sources, source: sources.length ? 'config' : 'none', inventory_scope: 'already_known_runtime_only', attach_supported: false, automatic_recall_unchanged: true, recent_ai_notes: [] }
 }
 

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Turning an MCP server on in Talaria Web now keeps it on with Hermes Agent v0.23.2 when the server was switched off by an older profile editor, and the server list shows those servers as off.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
