@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ToolKind, ToolResultView } from '@maudecode/talaria-web-contracts'
-import { ToolCard, type ToolCardData } from './ToolCard'
+import { ToolCard, toolCardLabel, type ToolCardData } from './ToolCard'
 import { sceneItems } from '../turnActivity'
 import { requestOpenFile } from '../../workspace/openFileRequest'
 import { toolText } from '../../../i18n/toolText'
@@ -345,6 +345,42 @@ describe('browser and computer-use calls (TAL-2328)', () => {
       const unknown = text.actionLabel('unknown', 'done', '', 'x')
       for (const kind of ['browser', 'computer', ...verbs]) expect(text.actionLabel(kind, 'done', '', 'x'), `${locale} ${kind}`).not.toBe(unknown)
       for (const kind of ['browser', 'computer']) expect(text.worklogSummary(kind, 'running', 2), `${locale} ${kind}`).not.toBe(text.worklogSummary('unknown', 'running', 2))
+    }
+  })
+})
+
+describe('MCP and connector calls (TAL-2330)', () => {
+  it('reads an MCP call as its app and action under the MCP icon', () => {
+    const view = render(<ToolCard call={{ ...call, name: 'mcp__github__create_issue', kind: 'mcp', target: 'Create issue', app: { name: 'GitHub', logo_url: null } }} />)
+    expect(view.container.querySelector('[data-tool-kind="mcp"] svg.lucide-server')).not.toBeNull()
+    expect(view.container.querySelector('.tool-card-name')).toHaveTextContent('GitHub · Create issue')
+  })
+
+  it('draws a connector call\'s catalog logo, and the connector icon when there is none or it fails to load', () => {
+    const mail: ToolCardData = { ...call, name: 'connectors__gmail__GMAIL_SEND_EMAIL', kind: 'connector', target: 'Send email (work)', app: { name: 'Gmail', logo_url: 'https://logos.example/gmail.svg' } }
+    const view = render(<ToolCard call={mail} />)
+    expect(view.container.querySelector('.tool-card-name')).toHaveTextContent('Gmail · Send email (work)')
+    const logo = view.container.querySelector<HTMLImageElement>('.tool-card-icon img[data-tool-logo]')!
+    expect(logo.getAttribute('src')).toBe('https://logos.example/gmail.svg')
+    expect(view.container.querySelector('.tool-card-icon svg')).toBeNull()
+    fireEvent.error(logo)
+    expect(view.container.querySelector('.tool-card-icon img')).toBeNull()
+    expect(view.container.querySelector('.tool-card-icon svg.lucide-cable')).not.toBeNull()
+    view.rerender(<ToolCard call={{ ...mail, app: { name: 'Notion', logo_url: null }, target: 'Create page' }} />)
+    expect(view.container.querySelector('.tool-card-icon svg.lucide-cable')).not.toBeNull()
+    expect(view.container.querySelector('.tool-card-name')).toHaveTextContent('Notion · Create page')
+  })
+
+  it('names a failed app call with its kind\'s verb, in every locale', () => {
+    const failed: ToolCardData = { ...call, name: 'mcp__github__create_issue', kind: 'mcp', target: 'Create issue', app: { name: 'GitHub', logo_url: null }, isError: true }
+    expect(toolCardLabel(failed, 'en')).toBe('Failed to use GitHub · Create issue')
+    for (const locale of ['en', 'ru', 'zh', 'zh-Hant', 'vi', 'pl', 'cs']) {
+      const text = toolText(locale)
+      for (const kind of ['mcp', 'connector'] as const) {
+        expect(toolCardLabel({ ...failed, kind }, locale), `${locale} ${kind}`).toContain('GitHub · Create issue')
+        expect(text.actionLabel(kind, 'done', '', 'x'), `${locale} ${kind}`).not.toBe(text.actionLabel('unknown', 'done', '', 'x'))
+        expect(text.worklogSummary(kind, 'running', 2), `${locale} ${kind}`).not.toBe(text.worklogSummary('unknown', 'running', 2))
+      }
     }
   })
 })

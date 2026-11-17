@@ -47,6 +47,13 @@ describe('stream reducer: ordering and projection', () => {
     expect(turn.segments.map((x) => x.kind)).toEqual(['text', 'tool', 'text'])
     expect(turn.tools.c1).toMatchObject({ done: true, isError: false, duration: 0.3, preview: 'ok' })
   })
+  it('keeps a connector call\'s app from its start frame, and takes the logo its completion adds (TAL-2330)', () => {
+    let s = started()
+    s = ev(s, 'tool', { name: 'connectors__gmail__GMAIL_SEND_EMAIL', id: 'g', kind: 'connector', target: 'Send email', app: { name: 'Gmail', logo_url: null } })
+    expect(s.turns[SID]!.tools.g).toMatchObject({ kind: 'connector', app: { name: 'Gmail', logo_url: null } })
+    s = ev(s, 'tool_complete', { name: 'connectors__gmail__GMAIL_SEND_EMAIL', id: 'g', is_error: false, kind: 'connector', app: { name: 'Gmail', logo_url: 'https://logos.example/gmail.svg' } })
+    expect(s.turns[SID]!.tools.g).toMatchObject({ done: true, target: 'Send email', app: { name: 'Gmail', logo_url: 'https://logos.example/gmail.svg' } })
+  })
   it('settles each same-name call by its own id when they finish out of order, and a replay adds no card', () => {
     const run = (s: StreamState, from = 1) => [
       ['tool', { id: 'a', name: 'terminal', args: { command: 'a' } }],

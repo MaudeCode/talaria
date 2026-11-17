@@ -271,6 +271,10 @@ back to the session file.
   capture's screenshot as `media`. A refusal because the user took control is a
   `warn` row. Every run of base64 data in a tool result, its preview and its
   row's content ships as `[binary data]`.
+- `app` (TAL-2330): an `mcp` or `connector` call's app, `{ name, logo_url }`;
+  clients read the call as `<name> · <target>` and draw a connector's
+  `logo_url` (null for MCP, or an app the catalog gives no logo) in place of
+  its kind's icon. Absent for every other call.
 - `args_fields` (TAL-2318): the call's redacted arguments as the same rows, one
   per top-level key in call order, each value capped at 4000 characters. A
   scalar shows inline, a nested object as indented `key: value` lines, a list as

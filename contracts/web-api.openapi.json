@@ -8053,6 +8053,8 @@
                                         "kanban",
                                         "browser",
                                         "computer",
+                                        "mcp",
+                                        "connector",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -8185,6 +8187,29 @@
                                       ],
                                       "type": "string",
                                       "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                    },
+                                    "app": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "logo_url": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "logo_url"
+                                      ],
+                                      "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -9083,6 +9108,8 @@
                                                 "kanban",
                                                 "browser",
                                                 "computer",
+                                                "mcp",
+                                                "connector",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -9152,6 +9179,29 @@
                                               ],
                                               "type": "string",
                                               "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                            },
+                                            "app": {
+                                              "type": "object",
+                                              "properties": {
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "logo_url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "name",
+                                                "logo_url"
+                                              ],
+                                              "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -10290,6 +10340,8 @@
                                   "kanban",
                                   "browser",
                                   "computer",
+                                  "mcp",
+                                  "connector",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -10459,6 +10511,29 @@
                                 ],
                                 "type": "string",
                                 "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                              },
+                              "app": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "logo_url": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "logo_url"
+                                ],
+                                "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -15011,6 +15086,8 @@
                                         "kanban",
                                         "browser",
                                         "computer",
+                                        "mcp",
+                                        "connector",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -15143,6 +15220,29 @@
                                       ],
                                       "type": "string",
                                       "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                    },
+                                    "app": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "logo_url": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "logo_url"
+                                      ],
+                                      "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -16041,6 +16141,8 @@
                                                 "kanban",
                                                 "browser",
                                                 "computer",
+                                                "mcp",
+                                                "connector",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -16110,6 +16212,29 @@
                                               ],
                                               "type": "string",
                                               "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                            },
+                                            "app": {
+                                              "type": "object",
+                                              "properties": {
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "logo_url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "name",
+                                                "logo_url"
+                                              ],
+                                              "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -17248,6 +17373,8 @@
                                   "kanban",
                                   "browser",
                                   "computer",
+                                  "mcp",
+                                  "connector",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -17417,6 +17544,29 @@
                                 ],
                                 "type": "string",
                                 "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                              },
+                              "app": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "logo_url": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "logo_url"
+                                ],
+                                "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -20640,6 +20790,8 @@
                                         "kanban",
                                         "browser",
                                         "computer",
+                                        "mcp",
+                                        "connector",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -20772,6 +20924,29 @@
                                       ],
                                       "type": "string",
                                       "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                    },
+                                    "app": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "logo_url": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "logo_url"
+                                      ],
+                                      "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -21670,6 +21845,8 @@
                                                 "kanban",
                                                 "browser",
                                                 "computer",
+                                                "mcp",
+                                                "connector",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -21739,6 +21916,29 @@
                                               ],
                                               "type": "string",
                                               "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                            },
+                                            "app": {
+                                              "type": "object",
+                                              "properties": {
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "logo_url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "name",
+                                                "logo_url"
+                                              ],
+                                              "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -22877,6 +23077,8 @@
                                   "kanban",
                                   "browser",
                                   "computer",
+                                  "mcp",
+                                  "connector",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -23046,6 +23248,29 @@
                                 ],
                                 "type": "string",
                                 "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                              },
+                              "app": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "logo_url": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "logo_url"
+                                ],
+                                "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -29401,6 +29626,8 @@
                                         "kanban",
                                         "browser",
                                         "computer",
+                                        "mcp",
+                                        "connector",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -29533,6 +29760,29 @@
                                       ],
                                       "type": "string",
                                       "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                    },
+                                    "app": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "logo_url": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "logo_url"
+                                      ],
+                                      "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -30431,6 +30681,8 @@
                                                 "kanban",
                                                 "browser",
                                                 "computer",
+                                                "mcp",
+                                                "connector",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -30500,6 +30752,29 @@
                                               ],
                                               "type": "string",
                                               "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                            },
+                                            "app": {
+                                              "type": "object",
+                                              "properties": {
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "logo_url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "name",
+                                                "logo_url"
+                                              ],
+                                              "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -31638,6 +31913,8 @@
                                   "kanban",
                                   "browser",
                                   "computer",
+                                  "mcp",
+                                  "connector",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -31807,6 +32084,29 @@
                                 ],
                                 "type": "string",
                                 "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                              },
+                              "app": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "logo_url": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "logo_url"
+                                ],
+                                "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -37473,6 +37773,8 @@
                                         "kanban",
                                         "browser",
                                         "computer",
+                                        "mcp",
+                                        "connector",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -37605,6 +37907,29 @@
                                       ],
                                       "type": "string",
                                       "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                    },
+                                    "app": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "logo_url": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "logo_url"
+                                      ],
+                                      "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -38503,6 +38828,8 @@
                                                 "kanban",
                                                 "browser",
                                                 "computer",
+                                                "mcp",
+                                                "connector",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -38572,6 +38899,29 @@
                                               ],
                                               "type": "string",
                                               "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                            },
+                                            "app": {
+                                              "type": "object",
+                                              "properties": {
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "logo_url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "name",
+                                                "logo_url"
+                                              ],
+                                              "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -39710,6 +40060,8 @@
                                   "kanban",
                                   "browser",
                                   "computer",
+                                  "mcp",
+                                  "connector",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -39879,6 +40231,29 @@
                                 ],
                                 "type": "string",
                                 "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                              },
+                              "app": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "logo_url": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "logo_url"
+                                ],
+                                "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -46177,6 +46552,8 @@
                                         "kanban",
                                         "browser",
                                         "computer",
+                                        "mcp",
+                                        "connector",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -46309,6 +46686,29 @@
                                       ],
                                       "type": "string",
                                       "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                    },
+                                    "app": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "logo_url": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "logo_url"
+                                      ],
+                                      "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -47207,6 +47607,8 @@
                                                 "kanban",
                                                 "browser",
                                                 "computer",
+                                                "mcp",
+                                                "connector",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -47276,6 +47678,29 @@
                                               ],
                                               "type": "string",
                                               "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                            },
+                                            "app": {
+                                              "type": "object",
+                                              "properties": {
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "logo_url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "name",
+                                                "logo_url"
+                                              ],
+                                              "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -48414,6 +48839,8 @@
                                   "kanban",
                                   "browser",
                                   "computer",
+                                  "mcp",
+                                  "connector",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -48583,6 +49010,29 @@
                                 ],
                                 "type": "string",
                                 "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                              },
+                              "app": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "logo_url": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "logo_url"
+                                ],
+                                "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -51751,6 +52201,8 @@
                                         "kanban",
                                         "browser",
                                         "computer",
+                                        "mcp",
+                                        "connector",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -51883,6 +52335,29 @@
                                       ],
                                       "type": "string",
                                       "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                    },
+                                    "app": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "logo_url": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "logo_url"
+                                      ],
+                                      "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -52781,6 +53256,8 @@
                                                 "kanban",
                                                 "browser",
                                                 "computer",
+                                                "mcp",
+                                                "connector",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -52850,6 +53327,29 @@
                                               ],
                                               "type": "string",
                                               "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                            },
+                                            "app": {
+                                              "type": "object",
+                                              "properties": {
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "logo_url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "name",
+                                                "logo_url"
+                                              ],
+                                              "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -53988,6 +54488,8 @@
                                   "kanban",
                                   "browser",
                                   "computer",
+                                  "mcp",
+                                  "connector",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -54157,6 +54659,29 @@
                                 ],
                                 "type": "string",
                                 "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                              },
+                              "app": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "logo_url": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "logo_url"
+                                ],
+                                "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -57387,6 +57912,8 @@
                                         "kanban",
                                         "browser",
                                         "computer",
+                                        "mcp",
+                                        "connector",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -57519,6 +58046,29 @@
                                       ],
                                       "type": "string",
                                       "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                    },
+                                    "app": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "logo_url": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "logo_url"
+                                      ],
+                                      "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -58417,6 +58967,8 @@
                                                 "kanban",
                                                 "browser",
                                                 "computer",
+                                                "mcp",
+                                                "connector",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -58486,6 +59038,29 @@
                                               ],
                                               "type": "string",
                                               "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                            },
+                                            "app": {
+                                              "type": "object",
+                                              "properties": {
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "logo_url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "name",
+                                                "logo_url"
+                                              ],
+                                              "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -59624,6 +60199,8 @@
                                   "kanban",
                                   "browser",
                                   "computer",
+                                  "mcp",
+                                  "connector",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -59793,6 +60370,29 @@
                                 ],
                                 "type": "string",
                                 "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                              },
+                              "app": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "logo_url": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "logo_url"
+                                ],
+                                "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -63021,6 +63621,8 @@
                                         "kanban",
                                         "browser",
                                         "computer",
+                                        "mcp",
+                                        "connector",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -63153,6 +63755,29 @@
                                       ],
                                       "type": "string",
                                       "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                    },
+                                    "app": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "logo_url": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "logo_url"
+                                      ],
+                                      "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -64051,6 +64676,8 @@
                                                 "kanban",
                                                 "browser",
                                                 "computer",
+                                                "mcp",
+                                                "connector",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -64120,6 +64747,29 @@
                                               ],
                                               "type": "string",
                                               "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                            },
+                                            "app": {
+                                              "type": "object",
+                                              "properties": {
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "logo_url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "name",
+                                                "logo_url"
+                                              ],
+                                              "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -65258,6 +65908,8 @@
                                   "kanban",
                                   "browser",
                                   "computer",
+                                  "mcp",
+                                  "connector",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -65427,6 +66079,29 @@
                                 ],
                                 "type": "string",
                                 "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                              },
+                              "app": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "logo_url": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "logo_url"
+                                ],
+                                "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -68428,6 +69103,8 @@
                                   "kanban",
                                   "browser",
                                   "computer",
+                                  "mcp",
+                                  "connector",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -68597,6 +69274,29 @@
                                 ],
                                 "type": "string",
                                 "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                              },
+                              "app": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "logo_url": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "logo_url"
+                                ],
+                                "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -80911,6 +81611,8 @@
                                         "kanban",
                                         "browser",
                                         "computer",
+                                        "mcp",
+                                        "connector",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -81043,6 +81745,29 @@
                                       ],
                                       "type": "string",
                                       "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                    },
+                                    "app": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "logo_url": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "logo_url"
+                                      ],
+                                      "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -81941,6 +82666,8 @@
                                                 "kanban",
                                                 "browser",
                                                 "computer",
+                                                "mcp",
+                                                "connector",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -82010,6 +82737,29 @@
                                               ],
                                               "type": "string",
                                               "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                            },
+                                            "app": {
+                                              "type": "object",
+                                              "properties": {
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "logo_url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "name",
+                                                "logo_url"
+                                              ],
+                                              "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -83148,6 +83898,8 @@
                                   "kanban",
                                   "browser",
                                   "computer",
+                                  "mcp",
+                                  "connector",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -83317,6 +84069,29 @@
                                 ],
                                 "type": "string",
                                 "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                              },
+                              "app": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "logo_url": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "logo_url"
+                                ],
+                                "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -86537,6 +87312,8 @@
                                         "kanban",
                                         "browser",
                                         "computer",
+                                        "mcp",
+                                        "connector",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -86669,6 +87446,29 @@
                                       ],
                                       "type": "string",
                                       "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                    },
+                                    "app": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "logo_url": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "logo_url"
+                                      ],
+                                      "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -87567,6 +88367,8 @@
                                                 "kanban",
                                                 "browser",
                                                 "computer",
+                                                "mcp",
+                                                "connector",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -87636,6 +88438,29 @@
                                               ],
                                               "type": "string",
                                               "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                            },
+                                            "app": {
+                                              "type": "object",
+                                              "properties": {
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "logo_url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "name",
+                                                "logo_url"
+                                              ],
+                                              "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -88774,6 +89599,8 @@
                                   "kanban",
                                   "browser",
                                   "computer",
+                                  "mcp",
+                                  "connector",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -88943,6 +89770,29 @@
                                 ],
                                 "type": "string",
                                 "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                              },
+                              "app": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "logo_url": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "logo_url"
+                                ],
+                                "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -92849,6 +93699,8 @@
                                         "kanban",
                                         "browser",
                                         "computer",
+                                        "mcp",
+                                        "connector",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -92981,6 +93833,29 @@
                                       ],
                                       "type": "string",
                                       "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                    },
+                                    "app": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "logo_url": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "logo_url"
+                                      ],
+                                      "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -93879,6 +94754,8 @@
                                                 "kanban",
                                                 "browser",
                                                 "computer",
+                                                "mcp",
+                                                "connector",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -93948,6 +94825,29 @@
                                               ],
                                               "type": "string",
                                               "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                            },
+                                            "app": {
+                                              "type": "object",
+                                              "properties": {
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "logo_url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "name",
+                                                "logo_url"
+                                              ],
+                                              "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -95086,6 +95986,8 @@
                                   "kanban",
                                   "browser",
                                   "computer",
+                                  "mcp",
+                                  "connector",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -95255,6 +96157,29 @@
                                 ],
                                 "type": "string",
                                 "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                              },
+                              "app": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "logo_url": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "logo_url"
+                                ],
+                                "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -99032,6 +99957,8 @@
                                             "kanban",
                                             "browser",
                                             "computer",
+                                            "mcp",
+                                            "connector",
                                             "unknown"
                                           ],
                                           "type": "string"
@@ -99163,6 +100090,29 @@
                                           ],
                                           "type": "string",
                                           "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                        },
+                                        "app": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "logo_url": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "name",
+                                            "logo_url"
+                                          ],
+                                          "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                         },
                                         "focus_path": {
                                           "anyOf": [
@@ -99968,6 +100918,8 @@
                                                     "kanban",
                                                     "browser",
                                                     "computer",
+                                                    "mcp",
+                                                    "connector",
                                                     "unknown"
                                                   ],
                                                   "type": "string"
@@ -100033,6 +100985,29 @@
                                                   ],
                                                   "type": "string",
                                                   "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                                },
+                                                "app": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "name": {
+                                                      "type": "string"
+                                                    },
+                                                    "logo_url": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string"
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "name",
+                                                    "logo_url"
+                                                  ],
+                                                  "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                                 },
                                                 "focus_path": {
                                                   "anyOf": [
@@ -100959,6 +101934,8 @@
                                       "kanban",
                                       "browser",
                                       "computer",
+                                      "mcp",
+                                      "connector",
                                       "unknown"
                                     ],
                                     "type": "string"
@@ -101128,6 +102105,29 @@
                                     ],
                                     "type": "string",
                                     "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                  },
+                                  "app": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "logo_url": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "name",
+                                      "logo_url"
+                                    ],
+                                    "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                   },
                                   "focus_path": {
                                     "anyOf": [
@@ -149586,6 +150586,8 @@
                                         "kanban",
                                         "browser",
                                         "computer",
+                                        "mcp",
+                                        "connector",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -149718,6 +150720,29 @@
                                       ],
                                       "type": "string",
                                       "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                    },
+                                    "app": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "logo_url": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "logo_url"
+                                      ],
+                                      "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -150616,6 +151641,8 @@
                                                 "kanban",
                                                 "browser",
                                                 "computer",
+                                                "mcp",
+                                                "connector",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -150685,6 +151712,29 @@
                                               ],
                                               "type": "string",
                                               "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
+                                            },
+                                            "app": {
+                                              "type": "object",
+                                              "properties": {
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "logo_url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "name",
+                                                "logo_url"
+                                              ],
+                                              "description": "TAL-2330: an `mcp` or `connector` call's app; clients show \"<app.name> · <target>\" and a connector's `logo_url` in place of its kind's icon. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [

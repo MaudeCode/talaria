@@ -11,6 +11,8 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
     public var kind: ToolDisplayKind?
     /// TAL-2327: the verb a `kanban` call shows in place of its kind's own (server field).
     public var verb: ToolVerb?
+    /// TAL-2330: an `mcp` or `connector` call's app, which names it and gives a connector its logo (server field).
+    public var app: ToolApp?
     public var target: String?
     public var progress: ToolProgress?
     public var duration: Double?
@@ -34,6 +36,7 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
         argsFields: [ToolField]? = nil,
         kind: ToolDisplayKind? = nil,
         verb: ToolVerb? = nil,
+        app: ToolApp? = nil,
         target: String? = nil,
         progress: ToolProgress? = nil,
         resultView: ToolResultView? = nil,
@@ -44,6 +47,7 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
         startedAt: Double = Date().timeIntervalSince1970
     ) {
         self.verb = verb
+        self.app = app
         self.id = id
         self.name = name
         self.preview = preview
@@ -66,6 +70,33 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
             return String(localized: "Tool")
         }
         return trimmedName
+    }
+}
+
+/// TAL-2330: the app an `mcp` or `connector` call runs in: its title as the Agent names it and a connector's catalog logo.
+public struct ToolApp: Decodable, Equatable, Sendable {
+    public let name: String
+    public let logoURL: URL?
+
+    enum CodingKeys: String, CodingKey { case name, logoURL = "logo_url" }
+
+    public init(name: String, logoURL: URL? = nil) {
+        self.name = name
+        self.logoURL = logoURL
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        logoURL = container.decodeLossyStringIfPresent(forKey: .logoURL).flatMap(URL.init(string:))
+    }
+
+    init?(_ value: JSONValue?) {
+        guard case .object = value,
+              let data = try? JSONEncoder().encode(value),
+              let app = try? JSONDecoder().decode(Self.self, from: data)
+        else { return nil }
+        self = app
     }
 }
 
@@ -488,6 +519,7 @@ public struct ToolCallGroup: Identifiable, Equatable, Sendable {
             argsFields: ToolField.rows(object["args_fields"]),
             kind: ToolDisplayKind(serverValue: object["kind"]?.stringValue),
             verb: ToolVerb(serverValue: object["verb"]?.stringValue),
+            app: ToolApp(object["app"]),
             target: object["target"]?.stringValue,
             progress: ToolProgress(object["progress"]),
             resultView: ToolResultView(object["result_view"]),

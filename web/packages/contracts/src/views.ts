@@ -51,8 +51,10 @@ export type Attachment = z.infer<typeof AttachmentSchema>
  * TAL-2327: `kanban` reads or changes Kanban tasks (every `kanban_*` tool); its `ToolVerb` picks the verb.
  * TAL-2328: `browser` drives the agent's browser (`browser_exec`, `browser_cdp`, `browser_dialog`, `browser_vault`) and
  * `computer` the desktop (`computer_use`); a `ToolVerb` picks the verb of each.
+ * TAL-2330: `mcp` runs an MCP server's tool (`mcp__<server>__<tool>`) and `connector` a hosted connector's
+ * (`connectors__<app>__<tool>`); each names its app in `app` and its action in `target`.
  */
-export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'image', 'audio', 'video', 'image_analysis', 'video_analysis', 'session', 'schedule', 'connection', 'question', 'kanban', 'browser', 'computer', 'unknown'])
+export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'image', 'audio', 'video', 'image_analysis', 'video_analysis', 'session', 'schedule', 'connection', 'question', 'kanban', 'browser', 'computer', 'mcp', 'connector', 'unknown'])
 export type ToolKind = z.infer<typeof ToolKindSchema>
 /**
  * TAL-2327: what a call of a kind whose tools act differently (`kanban`) does, which picks the verb clients show for it in
@@ -209,10 +211,14 @@ export const ToolFieldSchema = z.object({ key: z.string(), value: z.string(), mu
 export type ToolField = z.infer<typeof ToolFieldSchema>
 
 /** Shared tool display fields. Progress is ephemeral, absent on older servers and null after completion. */
+/** TAL-2330: the app an `mcp` or `connector` call runs in: its title as the Agent names it and, for a connector, its catalog logo. */
+export const ToolAppSchema = z.object({ name: z.string(), logo_url: z.string().nullable() })
+export type ToolApp = z.infer<typeof ToolAppSchema>
 export const ToolDisplayFields = {
   args_fields: z.array(ToolFieldSchema).optional().describe('TAL-2318: the call\'s redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server.'),
   progress: ToolProgressSchema.nullable().optional(), kind: ToolKindSchema.optional(), target: z.string().optional(), edit_diff: ToolEditDiffSchema.optional(),
   verb: ToolVerbSchema.optional().describe('TAL-2327: what a `kanban` call does, the verb clients show in place of its kind\'s own. TAL-2328: likewise a `browser` or `computer` call\'s, from its tool or its `action`. Absent for every other call.'),
+  app: ToolAppSchema.optional().describe('TAL-2330: an `mcp` or `connector` call\'s app; clients show "<app.name> · <target>" and a connector\'s `logo_url` in place of its kind\'s icon. Absent for every other call.'),
   focus_path: NullableString.optional().describe('TAL-1458: a read or write call\'s file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace.'),
   shows_card: z.literal(true).optional().describe('TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call.'),
   approval_answered_by: ApprovalAnsweredBySchema.optional().describe('TAL-1169: another session\'s agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked.'),

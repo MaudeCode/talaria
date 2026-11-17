@@ -14,6 +14,7 @@ extension ToolCall {
             argsFields: payload.argsFields ?? argsFields,
             kind: payload.kind ?? kind,
             verb: payload.verb ?? verb,
+            app: payload.app ?? app,
             target: payload.target ?? target,
             resultView: payload.resultView ?? resultView,
             editDiff: payload.editDiff ?? editDiff,

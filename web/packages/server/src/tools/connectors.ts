@@ -10,6 +10,7 @@ import { updateDocument } from '../sessions/storage/document.js'
 import type { DocumentBackend } from '../sessions/storage/backend.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { redactString } from '../redact.js'
+import { appTitle, rememberConnectorLogos } from '../sessions/tool-display.js'
 
 const OfferRecord = z.object({ guest_id: z.string(), offer_id: z.string(), visible: z.boolean() })
 
@@ -77,9 +78,13 @@ const FACETS = new Set(['read', 'write', 'destructive', 'unclassified'] as const
 type Facet = typeof FACETS extends Set<infer T> ? T : never
 const facetOf = (facet: string): Facet => FACETS.has(facet as Facet) ? facet as Facet : 'unclassified'
 
-/** Catalog names by profile home, kept from the last catalog read so a connect card names `github` GitHub. */
+/**
+ * Catalog names by profile home, kept from the last catalog read so a connect card names `github` GitHub. TAL-2330: the read
+ * also keeps each app's logo for its tool calls.
+ */
 const catalogNameCache = new Map<string, Record<string, string>>()
 export function rememberCatalogNames(home: string, catalog: Catalog): Record<string, string> {
+  rememberConnectorLogos(catalog)
   const names = Object.fromEntries(catalog.map((row) => [row.slug, row.name]))
   catalogNameCache.set(home, names)
   return names
@@ -168,9 +173,6 @@ function authorizationLink(raw: string | null | undefined): string | null {
   }
 }
 
-/** `google_calendar` → `Google Calendar`: the title of a target the catalog does not name (an MCP server, or before a catalog read). */
-export const connectorTitle = (slug: string): string => slug.split(/[_\s-]+/).filter(Boolean).map((word) => word[0]!.toUpperCase() + word.slice(1)).join(' ') || slug
-
 /**
  * The moves the user may make on each target now (the Agent's transition table, `tools/connectors/contract.py`): skip any
  * unresolved target, retry a failed or expired one, approve an MCP install the card holds. A settled operation is frozen.
@@ -189,7 +191,7 @@ export function connectorOperation(snapshot: Snapshot, names: Record<string, str
       if (open && (target.state === 'failed' || target.state === 'expired')) actions.push('retry')
       if (open && UNRESOLVED.has(target.state)) actions.push('skip')
       return {
-        name: target.name, title: names[target.name] ?? connectorTitle(target.name), kind: target.kind, state: target.state, detail: target.detail,
+        name: target.name, title: names[target.name] ?? appTitle(target.name), kind: target.kind, state: target.state, detail: target.detail,
         connect_url: open && target.state === 'initiated' ? authorizationLink(target.connect_url) : null,
         // The Agent's consent line as written: redaction could mask part of the program the user is approving.
         launch: open && UNRESOLVED.has(target.state) ? target.launch ?? null : null,

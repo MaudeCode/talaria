@@ -1262,6 +1262,32 @@ final class SharedContractTests: XCTestCase {
         }
     }
 
+    func testSharedWebSessionNamesEachMCPAndConnectorCallByItsApp() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-2330 has no such example.
+        guard let example = object["tool_app_views"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
+        let messages = try XCTUnwrap(session.messages)
+        let answer = try XCTUnwrap(messages.first { $0.messageId == "app-answer" })
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: answer))
+        let groups = ToolCallGroup.groups(messages: messages, messageOffset: nil)
+        for calls in [timeline.toolCalls, groups.first { $0.anchorMessageID == "app-calls" }?.toolCalls ?? []] {
+            XCTAssertEqual(calls.map(\.kind), [.mcp, .connector, .connector])
+            XCTAssertEqual(calls.map { AssistantActivitySummary.label(for: $0) }, ["GitHub · Create issue", "Gmail · Send email (work)", "Notion · Create page"])
+            XCTAssertEqual(calls.map { AssistantActivitySummary.icon(for: $0) }, ["server.rack", "cable.connector", "cable.connector"])
+            XCTAssertEqual(calls.map { $0.app?.logoURL }, [nil, URL(string: "https://logos.example/gmail.svg"), nil])
+            var failed = try XCTUnwrap(calls.first)
+            failed.isError = true
+            XCTAssertEqual(AssistantActivitySummary.label(for: failed), "Failed to use GitHub · Create issue")
+        }
+        // Live, a tool frame carries the same app.
+        let event = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id": "g", "name": "connectors__gmail__GMAIL_SEND_EMAIL", "kind": "connector", "target": "Send email", "app": {"name": "Gmail", "logo_url": null}}"#.utf8))
+        XCTAssertEqual(event.app, ToolApp(name: "Gmail"))
+        XCTAssertEqual(event.kind, .connector)
+    }
+
     func testSharedWebSessionCarriesEachBrowserAndComputerCall() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-2328 has no such example.

@@ -17,7 +17,7 @@ import type { AgentRuntimeMetadata } from '@maudecode/talaria-web-contracts'
 import type { ChatEvent } from '../contracts/sse'
 import type { ApprovalPending, Attachment, ClarifyPending, Session } from '../contracts'
 import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
-import type { ApprovalAnsweredBy, PendingSteer, RunStatus, RateLimitWait, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView, ToolVerb } from '@maudecode/talaria-web-contracts'
+import type { ApprovalAnsweredBy, PendingSteer, RunStatus, RateLimitWait, ToolApprovalOutcome, ToolField, ToolKind, ToolApp, ToolProgress, ToolResultView, ToolVerb } from '@maudecode/talaria-web-contracts'
 
 export type TurnStatus = 'starting' | 'connecting' | 'streaming' | 'reconnecting' | 'done' | 'error' | 'cancelled'
 
@@ -29,6 +29,8 @@ export interface LiveToolCall {
   kind: ToolKind
   /** TAL-2327: the verb a `kanban` call shows in place of its kind's own (server field). */
   verb?: ToolVerb | undefined
+  /** TAL-2330: an `mcp` or `connector` call's app (server field). */
+  app?: ToolApp | undefined
   target: string
   args: unknown
   /** TAL-2318: the server's argument rows; absent from an older server, which shows `args`. */
@@ -238,8 +240,8 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       const id = event.data.id
       const existing = t.tools[id]
       const progress = event.data.progress === undefined ? existing?.progress ?? null : event.data.progress
-      const call: LiveToolCall = existing ?? { id, progress, name: event.data.name ?? 'tool', kind: event.data.kind ?? 'unknown', ...(event.data.verb ? { verb: event.data.verb } : {}), target: event.data.target ?? '', args: event.data.args ?? {}, ...(event.data.args_fields ? { argsFields: event.data.args_fields } : {}), preview: event.data.preview ?? null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: event.data.timestamp ?? now, ...(event.data.shows_card ? { showsCard: true as const } : {}) }
-      const tools = { ...t.tools, [id]: existing ? { ...existing, progress, kind: event.data.kind ?? existing.kind, verb: event.data.verb ?? existing.verb, target: event.data.target ?? existing.target, args: event.data.args ?? existing.args, argsFields: event.data.args_fields ?? existing.argsFields, preview: event.data.preview ?? existing.preview } : call }
+      const call: LiveToolCall = existing ?? { id, progress, name: event.data.name ?? 'tool', kind: event.data.kind ?? 'unknown', ...(event.data.verb ? { verb: event.data.verb } : {}), ...(event.data.app ? { app: event.data.app } : {}), target: event.data.target ?? '', args: event.data.args ?? {}, ...(event.data.args_fields ? { argsFields: event.data.args_fields } : {}), preview: event.data.preview ?? null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: event.data.timestamp ?? now, ...(event.data.shows_card ? { showsCard: true as const } : {}) }
+      const tools = { ...t.tools, [id]: existing ? { ...existing, progress, kind: event.data.kind ?? existing.kind, verb: event.data.verb ?? existing.verb, app: event.data.app ?? existing.app, target: event.data.target ?? existing.target, args: event.data.args ?? existing.args, argsFields: event.data.args_fields ?? existing.argsFields, preview: event.data.preview ?? existing.preview } : call }
       const toolOrder = existing ? t.toolOrder : [...t.toolOrder, id]
       const segments = existing ? t.segments : [...t.segments, { kind: 'tool' as const, toolId: id }]
       return { ...t, tools, toolOrder, segments }
@@ -256,7 +258,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       const t = live()
       const id = event.data.id
       const existing = t.tools[id] ?? { id, name: event.data.name ?? 'tool', kind: 'unknown', target: '', args: event.data.args ?? {}, preview: null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: now }
-      const call: LiveToolCall = { ...existing, progress: null, kind: event.data.kind ?? existing.kind, verb: event.data.verb ?? existing.verb, target: event.data.target ?? existing.target, done: true, isError: !!event.data.is_error, preview: event.data.preview ?? existing.preview, duration: event.data.duration ?? null, costUsd: event.data.cost_usd ?? null, resultView: event.data.result_view ?? existing.resultView, args: event.data.args ?? existing.args, argsFields: event.data.args_fields ?? existing.argsFields }
+      const call: LiveToolCall = { ...existing, progress: null, kind: event.data.kind ?? existing.kind, verb: event.data.verb ?? existing.verb, app: event.data.app ?? existing.app, target: event.data.target ?? existing.target, done: true, isError: !!event.data.is_error, preview: event.data.preview ?? existing.preview, duration: event.data.duration ?? null, costUsd: event.data.cost_usd ?? null, resultView: event.data.result_view ?? existing.resultView, args: event.data.args ?? existing.args, argsFields: event.data.args_fields ?? existing.argsFields }
       const known = id in t.tools
       return { ...t, tools: { ...t.tools, [id]: call }, toolOrder: known ? t.toolOrder : [...t.toolOrder, id], segments: known ? t.segments : [...t.segments, { kind: 'tool', toolId: id }] }
     }
