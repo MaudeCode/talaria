@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import plistlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -16,8 +17,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from cli import REPOSITORY, ROOT, load, receipt, require_latest_predecessor, run_url, unused_release, write
-from plan import git
+from cli import REPOSITORY, ROOT, load, published_manifest, receipt, require_latest_predecessor, run_url, unused_release, write
+from plan import VERSION, git
 from release_set import BRIDGE_IMAGE, validate
 
 # This publisher's own tree. Recovery runs a reviewed copy against an older source checkout (ROOT), so the upload
@@ -386,27 +387,75 @@ def finalize(plan, manifest, previous, artifacts):
                 raise ValueError("completed component identity differs from the plan")
     root_tag = "release-set-" + plan["releaseSet"]
     require_current_predecessor(plan, previous)
-    tarballs = sorted((artifacts / "web-build/npm").glob("*.tgz"))
-    if plan["changed"]["web"] and (len(tarballs) != 2 or any(path.stat().st_size == 0 for path in tarballs)):
-        raise ValueError("Web publication requires the built npm tarballs")
-    identity = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
-    # Component releases are prepared first. The updater consumes only the root
-    # completed manifest, which is published as the final operation.
-    for name, changed in plan["changed"].items():
-        if not changed:
-            continue
-        tag = plan["components"][name]["tag"]
-        _publish_release(tag, plan["releaseSet"], manifest["notes"][name], tarballs if name == "web" else [], identity)
+    web_tarballs(plan, artifacts)
+    # The updater consumes only this completed manifest. The component releases follow in the tag job (tags()),
+    # because their tags are created only once the set has published (TAL-2342).
     with tempfile.TemporaryDirectory(prefix="talaria-completed-set-") as temporary:
         directory = Path(temporary)
         write(directory / "release-set.json", manifest)
         _publish_release(root_tag, plan["releaseSet"], manifest["notes"]["combined"],
-                         [directory / "release-set.json"], identity, latest=True)
+                         [directory / "release-set.json"], publication_identity(manifest), latest=True)
+
+
+def web_tarballs(plan, artifacts):
+    tarballs = sorted((artifacts / "web-build/npm").glob("*.tgz"))
+    if plan["changed"]["web"] and (len(tarballs) != 2 or any(path.stat().st_size == 0 for path in tarballs)):
+        raise ValueError("Web publication requires the built npm tarballs")
+    return tarballs
+
+
+def publication_identity(manifest):
+    return hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
+
+
+def tagged_commit(tag):
+    """The commit the remote tag names, or None when the remote has no such tag."""
+    lines = git(ROOT, "ls-remote", "origin", f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}").splitlines()
+    refs = {ref: sha for sha, ref in (line.split("\t") for line in lines)}
+    return refs.get(f"refs/tags/{tag}^{{}}", refs.get(f"refs/tags/{tag}"))
+
+
+def ensure_tag(tag, source, message):
+    """Create the annotated tag at source; one already there from an earlier attempt is kept, one elsewhere refused."""
+    existing = tagged_commit(tag)
+    if existing == source:
+        return
+    if existing:
+        raise ValueError(f"{tag} already names {existing}, not {source}")
+    git(ROOT, "-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
+        "tag", "--force", "--annotate", "--message", message, tag, source)
+    git(ROOT, "push", "origin", f"refs/tags/{tag}")
+
+
+def published_set(source):
+    """The completed manifest publish-set published for this source."""
+    release = subprocess.check_output(["gh", "api", f"repos/{REPOSITORY}/releases/tags/release-set-{source}"], text=True)
+    return published_manifest(json.loads(release))
+
+
+def tags(plan, artifacts):
+    """Tags last (TAL-2342): after publish-set, tag and release each component that shipped, from the published
+    manifest. Returns the root vX.Y.Z tag, which the workflow creates next with release-tag."""
+    release_tag, source = plan.get("releaseTag"), plan["releaseSet"]
+    if not isinstance(release_tag, str) or not re.fullmatch("v" + VERSION, release_tag):
+        raise ValueError("the release plan names no root vX.Y.Z tag")
+    manifest = published_set(source)
+    for name, component in plan["components"].items():
+        if any(manifest["components"][name].get(key) != component[key] for key in ("tag", "version", "sourceRevision")):
+            raise ValueError("published release set differs from the plan")
+    tarballs, identity = web_tarballs(plan, artifacts), publication_identity(manifest)
+    for name, changed in plan["changed"].items():
+        if not changed:
+            continue
+        component = plan["components"][name]
+        ensure_tag(component["tag"], source, f"Talaria {name.title()} {component['version']}; release {release_tag}")
+        _publish_release(component["tag"], source, manifest["notes"][name], tarballs if name == "web" else [], identity)
+    return release_tag
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("relay", "bridge", "web-npm", "web", "build-app-receipt", "verify-app", "app", "finalize"))
+    parser.add_argument("operation", choices=("relay", "bridge", "web-npm", "web", "build-app-receipt", "verify-app", "app", "finalize", "tags"))
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--build", type=Path)
     parser.add_argument("--directory", type=Path)
@@ -418,7 +467,7 @@ def main():
     plan = load(args.plan)
     authorize(plan)
     component_name = {"relay": "relay", "bridge": "relay", "web-npm": "web", "web": "web"}.get(args.operation, "app")
-    if args.operation != "finalize" and not plan["changed"][component_name]:
+    if args.operation not in ("finalize", "tags") and not plan["changed"][component_name]:
         raise ValueError("unchanged components must not be republished")
     if args.operation == "relay":
         relay(plan, args.output)
@@ -449,6 +498,10 @@ def main():
             result = upload_testflight(files[0], component, build["ipaSha256"])
             write(args.output.with_name("apple-build.json"), result)
             write(args.output, receipt("uploadApp", plan["releaseSet"], tag=component["tag"], buildNumber=component["buildNumber"], ipaSha256=build["ipaSha256"]))
+    elif args.operation == "tags":
+        release_tag = tags(plan, args.directory)
+        with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
+            stream.write(f"release_tag={release_tag}\n")
     else:
         finalize(plan, load(args.manifest), load(args.previous) if args.previous else None, args.directory)
 

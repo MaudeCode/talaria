@@ -16,7 +16,7 @@ SCHEMA = json.loads(Path(__file__).with_name("release-set.schema.json").read_tex
 Draft202012Validator.check_schema(SCHEMA)
 VALIDATOR = Draft202012Validator(SCHEMA)
 COMPONENTS = ("app", "web", "relay")
-COMMON_GATES = {"signedTags", "mainCI", "currentContracts", "previousAppContracts", "agentCompatibility"}
+COMMON_GATES = {"mainCI", "currentContracts", "previousAppContracts", "agentCompatibility"}
 PUBLISH_GATES = {"app": "uploadApp", "web": "publishWeb", "relay": "deployRelay"}
 # The Relay release also builds and publishes the feedback bridge image, tagged with Relay's plain version.
 BRIDGE_IMAGE = "ghcr.io/maudecode/talaria-feedback-bridge"

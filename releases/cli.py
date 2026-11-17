@@ -6,7 +6,6 @@ import json
 import os
 import re
 import subprocess
-import tempfile
 from pathlib import Path
 
 from plan import VERSION, assemble, git, resolve, validate_request
@@ -119,6 +118,16 @@ def require_component_versions(tags, previous, published):
                 require_version_advance(tag, prior_tag)
 
 
+def release_tag(tag, plan):
+    """The root vX.Y.Z tag the release creates last; every changed component ships under its version."""
+    if not re.fullmatch("v" + VERSION, tag):
+        raise ValueError(f"release tag must be vX.Y.Z, got {tag}")
+    for name, component in plan["components"].items():
+        if plan["changed"][name] and component["version"] != tag[1:]:
+            raise ValueError(f"changed {name} version {component['version']} differs from release {tag}")
+    return tag
+
+
 def prepare(args):
     request = load(args.request)
     validate_request(request)
@@ -129,37 +138,13 @@ def prepare(args):
     require_component_versions(request["tags"], previous, published)
     env = {**os.environ, "GITHUB_REPOSITORY": REPOSITORY, "GITHUB_SHA": source}
     subprocess.run([str(ROOT / "app/ci/require_successful_main_ci")], cwd=ROOT, env=env, check=True)
-    with tempfile.TemporaryDirectory(prefix="talaria-release-refs-") as temporary:
-        directory = Path(temporary)
-        checkout = directory / "refs"
-        subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(checkout)], check=True)
-        subprocess.run(["git", "-C", str(checkout), "fetch", "--quiet", "--no-tags", str(ROOT),
-                        "+refs/remotes/origin/main:refs/remotes/origin/main"], check=True)
-        git(checkout, "merge-base", "--is-ancestor", source, "origin/main")
-        key = directory / "rehearsal-key"
-        local_tags = set()
-        for name in COMPONENTS:
-            tag = request["tags"][name]
-            changed = previous is None or tag != previous["components"][name]["tag"]
-            if changed:
-                unused_release(tag)
-            exists = subprocess.run(["git", "-C", str(checkout), "show-ref", "--verify", "--quiet", f"refs/tags/{tag}"], check=False).returncode == 0
-            if not exists and args.dry_run and changed:
-                if not key.exists():
-                    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True)
-                    (directory / "allowed-signers").write_text("rehearsal " + key.with_suffix(".pub").read_text())
-                configuration = ["-c", "gpg.format=ssh", "-c", f"user.signingkey={key}",
-                                 "-c", "user.name=Talaria rehearsal", "-c", "user.email=rehearsal@example.invalid"]
-                subprocess.run(["git", "-C", str(checkout), *configuration, "tag", "-s", "-m", "Local dry-run signature; not production authorization", "--", tag, source], check=True)
-                subprocess.run(["git", "-C", str(checkout), "-c", "gpg.format=ssh", "-c", f"gpg.ssh.allowedSignersFile={directory / 'allowed-signers'}", "verify-tag", tag], check=True)
-                local_tags.add(tag)
-        plan = resolve(checkout, request, previous)
-        for name, component in plan["components"].items():
-            if component["tag"] not in local_tags:
-                subprocess.run([str(ROOT / "app/ci/validate_release_tag")], cwd=checkout, check=True,
-                               env={**env, "RELEASE_COMPONENT": name, "RELEASE_TAG": component["tag"], "EXPECTED_SHA": component["sourceRevision"]})
-                # New sources passed main CI above; reused artifacts retain the
-                # authenticated predecessor's evidence after Actions log expiry.
+    git(ROOT, "merge-base", "--is-ancestor", source, "origin/main")
+    for name in COMPONENTS:
+        if previous is None or request["tags"][name] != previous["components"][name]["tag"]:
+            unused_release(request["tags"][name])
+    # Tags last (TAL-2342): the release is authorized by its dispatch on main, and no tag of this version exists yet.
+    plan = resolve(ROOT, request, previous)
+    plan["releaseTag"] = release_tag(args.release_tag, plan) if args.release_tag else None
     plan["supportedWebSources"] = supported_web_sources(plan, previous, published)
     plan["dryRun"] = args.dry_run
     if previous:
@@ -187,7 +172,6 @@ def prepare(args):
     if previous:
         write(args.output / "previous.json", previous)
     write(args.output / "receipts/mainCI.json", receipt("mainCI", source))
-    write(args.output / "receipts/signedTags.json", receipt("signedTags", source))
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
             stream.write(f"source={source}\n")
@@ -221,6 +205,7 @@ def main():
     resolve_parser.add_argument("--previous", type=Path)
     resolve_parser.add_argument("--output", type=Path, required=True)
     resolve_parser.add_argument("--dry-run", action="store_true")
+    resolve_parser.add_argument("--release-tag", help="The root vX.Y.Z tag a production release creates last.")
     gate_parser = commands.add_parser("gate")
     gate_parser.add_argument("--plan", type=Path, required=True)
     gate_parser.add_argument("--name", choices=("currentContracts", "previousAppContracts", "agentCompatibility"), required=True)

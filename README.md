@@ -24,5 +24,5 @@ Start app validation directly with `app/scripts/test-ios`. Open
 `app/Talaria.xcodeproj` in Xcode. Component commands run from their own directory.
 See [app development](app/DEVELOPMENT.md) and [contribution policy](CONTRIBUTING.md).
 
-Releases are one signed tag; see the [release procedure](releases/README.md#root-workflow)
+Releases are one dispatch of the Release workflow; see the [release procedure](releases/README.md#root-workflow)
 and the App's [TestFlight gates](app/TESTFLIGHT.md).

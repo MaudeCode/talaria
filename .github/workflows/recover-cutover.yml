@@ -139,3 +139,41 @@ jobs:
           path: ${{ runner.temp }}/completed
           retention-days: 30
           if-no-files-found: error
+  tag:
+    # Tags last (TAL-2342): the original run never reached its tag job, so the recovered set's components get their
+    # tags and GitHub releases here, and then the root vX.Y.Z tag the original release was dispatched for.
+    needs:
+      - app
+      - publish-set
+    runs-on: ubuntu-latest
+    environment: release-set-publication
+    permissions:
+      contents: write
+      actions: read
+    timeout-minutes: 20
+    env:
+      RELEASE_NEEDS: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.app.outputs.source }}
+      - uses: ./.github/actions/release-python
+      - name: Restore verified recovery handoffs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/recovered" --receipts'
+      - name: Tag and release the components that shipped
+        id: components
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git show "${GITHUB_WORKFLOW_SHA}:releases/publish.py" > "$RUNNER_TEMP/publish.py"
+          PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" tags \
+            --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" --directory "$RUNNER_TEMP/recovered"
+      - name: Tag the release
+        uses: MaudeCode/.github/actions/release-tag@3e8fc1995784e2d3004e4de05205a767472efb7c
+        with:
+          tag: ${{ steps.components.outputs.release_tag }}
+          sha: ${{ needs.app.outputs.source }}

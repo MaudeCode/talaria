@@ -7,8 +7,9 @@ Run commands in this document from `app/`. Workflows live in `../.github/`.
 
 ## Release
 
-A release is one signed `vX.Y.Z` tag on a green `main` commit; CI tags the
-changed components, including `app-vX.Y.Z`, and runs the production cutover.
+A release is one dispatch of the Release workflow (`production-cutover.yml`) with a
+`vX.Y.Z` version on a green `main` commit; once everything published, it tags the
+changed components, including `app-vX.Y.Z`, and then `vX.Y.Z`.
 The [release procedure](../releases/README.md#root-workflow) owns the steps,
 gates and partial-failure recovery, and `$talaria-release` is the agent runbook.
 

@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import cli
+from release_set import COMMON_GATES
 
 
 class WorkflowCommandTests(unittest.TestCase):
@@ -59,9 +60,12 @@ class WorkflowCommandTests(unittest.TestCase):
                 patch.object(cli, "run_url", return_value="https://github.com/MaudeCode/talaria/actions/runs/1"), patch.object(cli, "require_latest_predecessor", return_value=published), \
                 patch.object(cli, "unused_release"), patch.object(cli, "resolve", return_value=plan), \
                 patch.object(cli, "git"), patch.object(cli.subprocess, "run", side_effect=run) as calls:
-            cli.prepare(SimpleNamespace(request="request", previous="previous", dry_run=False, output=Path(temporary) / "out"))
+            cli.prepare(SimpleNamespace(request="request", previous="previous", dry_run=False, release_tag=None, output=Path(temporary) / "out"))
             checked = [call for call in calls.call_args_list if call.args[0][0].endswith("require_successful_main_ci")]
             self.assertEqual(len(checked), 1)
+            # Preparation's receipts and the gate jobs' together cover every gate a manifest requires.
+            written = {path.stem for path in (Path(temporary) / "out/receipts").glob("*.json")}
+            self.assertEqual(written | {"currentContracts", "previousAppContracts", "agentCompatibility"}, COMMON_GATES)
 
     def test_version_history_survives_channel_switches(self):
         from release_set import require_version_advance

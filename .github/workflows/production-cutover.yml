@@ -1,39 +1,101 @@
-name: Production cutover
+name: Release
+run-name: Release ${{ inputs.tag }}
+
+# Tags last (TAL-2342, MaudeCode/.github RELEASES.md): a release is one dispatch of this workflow on main. Preflight
+# refuses anything but a dispatch on main under an unused later version, waits for main CI on the commit and plans
+# the components that changed since the last published release set. The release job builds, gates and publishes
+# Relay, Web, the App and the release-set manifest; its last job creates the changed components' tags and then the
+# root vX.Y.Z tag. A release that fails before then leaves no version tag, so the same version is dispatched again.
+# The file keeps its name: npm's trusted publisher, release-set.yml, publish.py, ios-release-build.yml and recover.py
+# all authorize production-cutover.yml@refs/heads/main.
 
 on:
   workflow_dispatch:
     inputs:
-      request:
-        description: Reviewed release-plan JSON (sourceRevision, component tags, Relay deployment ID).
+      tag:
+        description: Version to release, such as v1.2.3
         required: true
         type: string
-      previous_release_set:
-        description: Previous completed release-set SHA; empty only for bootstrap.
+      sha:
+        description: Full SHA of the commit to release; empty for the head of main
         required: false
-        default: ""
         type: string
-      confirm_publication:
-        description: Authorize Relay deployment, Web publication and TestFlight upload after validated gates.
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   contents: read
 
+concurrency:
+  group: talaria-release
+  cancel-in-progress: false
+
 jobs:
-  authorization:
+  preflight:
     runs-on: ubuntu-latest
+    timeout-minutes: 100
+    permissions:
+      contents: write # the release-set-<sha> tag (not a version tag), while main still matches the source (TAL-421)
+      actions: read
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+      sha: ${{ steps.check.outputs.sha }}
+      request: ${{ steps.plan.outputs.request }}
+      previous: ${{ steps.plan.outputs.previous }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
     steps:
-      - name: Require explicit main-branch cutover authorization
+      - id: check
+        uses: MaudeCode/.github/actions/release-preflight@3e8fc1995784e2d3004e4de05205a767472efb7c
+        with:
+          tag: ${{ inputs.tag }}
+          sha: ${{ inputs.sha }}
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.check.outputs.sha }}
+          fetch-depth: 0
+
+      - uses: ./.github/actions/release-python
+
+      - name: Wait for main CI on the release commit
         env:
-          CONFIRMED: ${{ inputs.confirm_publication }}
+          GITHUB_SHA: ${{ steps.check.outputs.sha }}
+          WAIT_FOR_MAIN_CI_SECONDS: "5400"
+          MAIN_CI_POLL_SECONDS: "30"
+        run: app/ci/require_successful_main_ci
+
+      - name: Plan the components that changed
+        id: plan
+        env:
+          SOURCE: ${{ steps.check.outputs.sha }}
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF" == refs/heads/main ]]
-          [[ "$CONFIRMED" == true ]]
+          previous=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .published_at != null and (.tag_name | test("^release-set-[a-f0-9]{40}$"))) | "\(.published_at) \(.tag_name)"' \
+            | sort | tail -1 | cut -d' ' -f2)
+          previous="${previous#release-set-}"
+          [[ "$previous" =~ ^[a-f0-9]{40}$ ]] || { echo "No published release set to release after." >&2; exit 1; }
+          "$RELEASE_PYTHON" releases/cli.py previous "$previous" --output "$RUNNER_TEMP/previous.json"
+          result=$("$RELEASE_PYTHON" releases/autorelease.py --tag "$RELEASE_TAG" --sha "$SOURCE" \
+            --previous "$RUNNER_TEMP/previous.json" --output "$RUNNER_TEMP/request.json")
+          echo "$result"
+          # publish-set attaches the manifest to release-set-<sha>. GITHUB_TOKEN may not create a ref whose workflows
+          # differ from main's (TAL-421), so it is created now, while main is at the source; publish-set keeps it.
+          git ls-remote --exit-code origin "refs/tags/release-set-${SOURCE}" >/dev/null \
+            || git push origin "${SOURCE}:refs/tags/release-set-${SOURCE}"
+          {
+            echo "request=$(jq -c . "$RUNNER_TEMP/request.json")"
+            echo "previous=$previous"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Release ${RELEASE_TAG}"
+            echo "- Source: \`${SOURCE}\`, after release set \`${previous}\`"
+            echo "- Changed: $(printf '%s' "$result" | jq -r '.changed | join(", ")')"
+            echo "- Component tags, created after publication: $(printf '%s' "$result" | jq -r '.request.tags | to_entries | map(.value) | join(", ")')"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   release:
-    needs: authorization
+    needs: preflight
     permissions:
       contents: write
       actions: read
@@ -44,6 +106,7 @@ jobs:
     uses: ./.github/workflows/release-set.yml
     secrets: inherit
     with:
-      request: ${{ inputs.request }}
-      previous_release_set: ${{ inputs.previous_release_set }}
+      request: ${{ needs.preflight.outputs.request }}
+      previous_release_set: ${{ needs.preflight.outputs.previous }}
       dry_run: false
+      release_tag: ${{ needs.preflight.outputs.tag }}

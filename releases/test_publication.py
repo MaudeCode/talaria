@@ -73,7 +73,7 @@ class PublicationTests(unittest.TestCase):
                         publish_release.assert_not_called()
                     else:
                         finalize(plan, manifest, None, root)
-                        self.assertEqual(publish_release.call_count, 4)
+                        self.assertEqual(publish_release.call_count, 1)
 
     def test_app_receipt_requires_verified_apple_readback(self):
         plan = {"releaseSet": "a" * 40, "changed": {"app": True}, "contracts": {"appWeb": {"app": [1]}},
@@ -122,18 +122,21 @@ class PublicationTests(unittest.TestCase):
                     self.assertEqual(text, "Changes since app-v1.8.0\n")
 
     def test_partial_release_publication_resumes_without_recreating_releases(self):
+        # publish-set publishes the completed set (finalize); the tag job then tags and releases each component (tags).
+        # A failure anywhere resumes on re-run without recreating a release, and no component tag or release exists
+        # before the set has published (TAL-2342).
         for failure in ("web-create", "root-upload", "root-edit", "root-upload-after", "root-edit-after"):
             with self.subTest(failure=failure), TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 manifest = complete(candidate())
                 if failure == "root-edit":
                     manifest["components"]["web"]["tag"] = "web-exp-v2.0.0"
-                plan = {**deepcopy(manifest), "changed": dict.fromkeys(("app", "web", "relay"), True)}
+                plan = {**deepcopy(manifest), "changed": dict.fromkeys(("app", "web", "relay"), True), "releaseTag": "v1.0.0"}
                 wheel = root / "web-build/npm/maudecode-talaria-web-1.0.0.tgz"
                 wheel.parent.mkdir(parents=True)
                 wheel.write_bytes(b"synthetic tarball")
                 (root / "web-build/npm/maudecode-talaria-web-contracts-1.0.0.tgz").write_bytes(b"synthetic contracts tarball")
-                releases, assets, commands = {}, {}, []
+                releases, assets, commands, remote_tags = {}, {}, [], {}
                 failed = False
 
                 def unused(tag):
@@ -153,6 +156,8 @@ class PublicationTests(unittest.TestCase):
                         self.assertNotIn(tag, releases)
                         self.assertIn("--verify-tag", args)
                         self.assertNotIn("--target", args)
+                        if not tag.startswith("release-set-"):
+                            self.assertIn(tag, remote_tags, "a component release needs its tag")
                         releases[tag] = {"tag_name": tag, "name": tag, "draft": True, "prerelease": "--prerelease" in args,
                                          "body": Path(args[args.index("--notes-file") + 1]).read_text(), "assets": []}
                     elif operation == "upload":
@@ -168,21 +173,40 @@ class PublicationTests(unittest.TestCase):
                         failed = True
                         raise subprocess.CalledProcessError(1, args)
 
+                def git(_root, *args):
+                    if args[-2:-1] == ("push",) or args[-3:-1] == ("push", "origin"):
+                        tag = args[-1].removeprefix("refs/tags/")
+                        remote_tags[tag] = plan["releaseSet"]
+                    return ""
+
+                def publish_set_then_tags(first=False):
+                    finalize(plan, manifest, None, root)
+                    if first:
+                        self.assertFalse(remote_tags, "no component tag before the completed set publishes")
+                        self.assertEqual(set(releases), {"release-set-" + plan["releaseSet"]})
+                    self.assertEqual(publish.tags(plan, root), "v1.0.0")
+
                 with patch.object(publish, "_release_info", side_effect=lambda tag: deepcopy(releases.get(tag)), create=True), \
                         patch.object(publish, "unused_release", side_effect=unused), \
+                        patch.object(publish, "published_set", return_value=manifest), \
+                        patch.object(publish, "tagged_commit", side_effect=remote_tags.get), \
+                        patch.object(publish, "git", side_effect=git), \
                         patch.object(publish.subprocess, "run", side_effect=command), \
                         patch.object(publish.subprocess, "check_output", side_effect=lambda args: assets[int(args[2].rsplit("/", 1)[1])]):
                     with self.assertRaises(subprocess.CalledProcessError):
-                        finalize(plan, manifest, None, root)
-                    self.assertFalse(releases[plan["components"]["app"]["tag"]]["draft"])
-                    finalize(plan, manifest, None, root)
+                        publish_set_then_tags(first=True)
+                    if failure.startswith("root"):
+                        self.assertFalse(remote_tags)
+                        self.assertEqual(set(releases), {"release-set-" + plan["releaseSet"]})
+                    publish_set_then_tags()
                     self.assertEqual(len(releases), 4)
+                    self.assertEqual(set(remote_tags), {component["tag"] for component in plan["components"].values()})
                     self.assertTrue(all(not value["draft"] for value in releases.values()))
                     published = [args[3] for args in commands if args[2] == "edit"]
                     self.assertEqual(published.count(plan["components"]["app"]["tag"]), 1)
-                    self.assertEqual(published[-1], "release-set-" + plan["releaseSet"])
+                    self.assertEqual(published[0], "release-set-" + plan["releaseSet"])
                     before = len(commands)
-                    finalize(plan, manifest, None, root)
+                    publish_set_then_tags()
                     self.assertEqual(len(commands), before)
                     another_run = deepcopy(manifest)
                     for receipt in another_run["evidence"]:
@@ -192,15 +216,15 @@ class PublicationTests(unittest.TestCase):
                     wheel_id = releases[plan["components"]["web"]["tag"]]["assets"][0]["id"]
                     assets[wheel_id] = b"changed after publication"
                     with self.assertRaisesRegex(ValueError, "asset differs"):
-                        finalize(plan, manifest, None, root)
+                        publish.tags(plan, root)
                     assets[wheel_id] = wheel.read_bytes()
                     releases[plan["components"]["app"]["tag"]]["body"] = "unrelated release"
                     with self.assertRaises(ValueError):
-                        finalize(plan, manifest, None, root)
+                        publish.tags(plan, root)
 
-    def test_completed_manifest_is_published_last(self):
+    def test_completed_manifest_publishes_before_any_component_is_tagged(self):
         manifest = complete(candidate())
-        plan = {**deepcopy(manifest), "changed": dict.fromkeys(("app", "web", "relay"), True)}
+        plan = {**deepcopy(manifest), "changed": {"app": True, "web": True, "relay": False}, "releaseTag": "v1.0.0"}
         with TemporaryDirectory() as temporary, patch("publish._publish_release") as run:
             root = Path(temporary)
             with self.assertRaisesRegex(ValueError, "built npm tarballs"):
@@ -211,17 +235,73 @@ class PublicationTests(unittest.TestCase):
             wheel.write_bytes(b"synthetic archive; no publication")
             contracts = root / "web-build/npm/maudecode-talaria-web-contracts-1.0.0.tgz"
             contracts.write_bytes(b"synthetic contracts archive")
-            finalize(plan, manifest, None, root)
-            self.assertEqual(run.call_count, 4)
-            self.assertEqual(run.call_args.args[0], "release-set-" + plan["releaseSet"])
+            # publish-set publishes only the completed set; the component releases wait for their tags.
+            with patch("publish.git") as git:
+                finalize(plan, manifest, None, root)
+                git.assert_not_called()
+            self.assertEqual([call.args[0] for call in run.call_args_list], ["release-set-" + plan["releaseSet"]])
             self.assertTrue(run.call_args.kwargs["latest"])
-            self.assertEqual(run.call_args_list[1].args[3], [wheel, contracts])
             run.reset_mock()
             broken = deepcopy(manifest)
             broken["agent"]["sourceRevision"] = "f" * 40
             with self.assertRaisesRegex(ValueError, "compatibility metadata"):
                 finalize(plan, broken, None, root)
             run.assert_not_called()
+
+    def test_tag_job_tags_each_shipped_component_at_the_source_before_its_release(self):
+        manifest = complete(candidate())
+        source = manifest["releaseSet"]
+        plan = {**deepcopy(manifest), "changed": {"app": True, "web": True, "relay": False}, "releaseTag": "v1.0.0"}
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ("maudecode-talaria-web-1.0.0.tgz", "maudecode-talaria-web-contracts-1.0.0.tgz"):
+                (root / "web-build/npm").mkdir(parents=True, exist_ok=True)
+                (root / "web-build/npm" / name).write_bytes(b"synthetic")
+            remote, events = {}, []
+
+            def git(_root, *args):
+                if "push" in args:
+                    tag = args[-1].removeprefix("refs/tags/")
+                    remote[tag] = source
+                    events.append(("tag", tag))
+                elif "tag" in args:
+                    self.assertEqual(args[-1], source, "component tags name the release source")
+                return ""
+
+            def run(*scenario):
+                remote.clear()
+                remote.update(scenario[0] if scenario else {})
+                events.clear()
+                with patch.object(publish, "published_set", return_value=manifest), \
+                        patch.object(publish, "tagged_commit", side_effect=remote.get), patch.object(publish, "git", side_effect=git), \
+                        patch.object(publish, "_publish_release", side_effect=lambda tag, *args, **kwargs: events.append(("release", tag))) as release:
+                    return publish.tags(plan, root), release
+
+            tag, release = run()
+            self.assertEqual(tag, "v1.0.0")
+            # Each shipped component is tagged, then released; the unchanged Relay keeps its earlier tag and release.
+            self.assertEqual(events, [("tag", "app-v1.0.0"), ("release", "app-v1.0.0"), ("tag", "web-v2.0.0"), ("release", "web-v2.0.0")])
+            self.assertIs(release.call_args_list[0].kwargs.get("latest", False), False)
+            # A re-run keeps the tags an earlier attempt created.
+            self.assertEqual(run({"app-v1.0.0": source, "web-v2.0.0": source})[0], "v1.0.0")
+            self.assertEqual(events, [("release", "app-v1.0.0"), ("release", "web-v2.0.0")])
+            # A tag of this version on another commit is refused before anything else is tagged or released.
+            with self.assertRaisesRegex(ValueError, "already names"):
+                run({"app-v1.0.0": "f" * 40})
+            self.assertEqual(events, [])
+            for broken in ({"releaseTag": None}, {"releaseTag": "v1.0"}, {"releaseTag": "app-v1.0.0"}):
+                with self.subTest(plan=broken), self.assertRaisesRegex(ValueError, "root vX.Y.Z"):
+                    run_plan = {**plan, **broken}
+                    with patch.object(publish, "published_set", return_value=manifest):
+                        publish.tags(run_plan, root)
+            # Only the set publish-set published under this source is tagged.
+            different = deepcopy(manifest)
+            different["components"]["app"]["version"] = "9.9.9"
+            with patch.object(publish, "published_set", return_value=different), patch.object(publish, "git") as tagging, \
+                    patch.object(publish, "_publish_release") as releasing, self.assertRaisesRegex(ValueError, "differs from the plan"):
+                publish.tags(plan, root)
+            tagging.assert_not_called()
+            releasing.assert_not_called()
 
     def test_workflow_credentials_and_final_gate(self):
         root = Path(__file__).resolve().parents[1]
@@ -264,7 +344,7 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(document["permissions"], {"contents": "read", "actions": "read"})
         # One Web publication job: npm through its OIDC token first, then the GHCR push with the job token.
         environments = {"relay-publish": "relay-production", "web-publish": "web-release",
-                        "app-publish": "testflight", "publish-set": "release-set-publication"}
+                        "app-publish": "testflight", "publish-set": "release-set-publication", "tag": "release-set-publication"}
         secrets = {"relay-publish": {"CONVEX_DEPLOY_KEY"}, "app-publish": {
             "APP_STORE_CONNECT_ISSUER_ID", "APP_STORE_CONNECT_KEY_ID", "APP_STORE_CONNECT_PRIVATE_KEY"}}
         for name, job in document["jobs"].items():
@@ -272,7 +352,7 @@ class PublicationTests(unittest.TestCase):
             self.assertEqual(job.get("secrets"), "inherit" if name == "app-signed-build" else None)
             self.assertEqual(set(re.findall(r"secrets\.([A-Z0-9_]+)", json.dumps(job))), secrets.get(name, set()))
             permissions = job.get("permissions", document["permissions"])
-            self.assertEqual(permissions.get("contents"), "write" if name == "publish-set" else "read")
+            self.assertEqual(permissions.get("contents"), "write" if name in ("publish-set", "tag") else "read")
             self.assertEqual(permissions.get("packages"), "write" if name in ("web-publish", "bridge-publish") else None)
             self.assertEqual(permissions.get("id-token"), "write" if name == "web-publish" else None)
         jobs = document["jobs"]
@@ -313,7 +393,7 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(cutover["jobs"]["release"]["permissions"]["id-token"], "write")
         self.assertEqual(cutover["jobs"]["release"]["permissions"]["statuses"], "write")
         self.assertNotIn("environment", cutover["jobs"]["release"])
-        self.assertEqual(cutover["jobs"]["release"]["needs"], "authorization")
+        self.assertEqual(cutover["jobs"]["release"]["needs"], "preflight")
         self.assertIs(cutover["jobs"]["release"]["with"]["dry_run"], False)
         self.assertEqual(recovery["concurrency"]["group"], document["concurrency"]["group"])
         self.assertIn("inputs.confirm_publication", recovery["jobs"]["app"]["if"])
@@ -321,6 +401,25 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(recovery["jobs"]["app"]["environment"], "testflight")
         self.assertEqual(recovery["jobs"]["publish-set"]["environment"], "release-set-publication")
         self.assertEqual(recovery["jobs"]["publish-set"]["needs"], "app")
+        # Tags last (TAL-2342): the tag job follows the completed set in a release and in its recovery, in the same
+        # main-only environment, and is the only job that creates the root tag.
+        self.assertEqual(set(jobs["tag"]["needs"]), {"prepare", "build-gate", "publish-set"})
+        for clause in ("!cancelled()", "!inputs.dry_run", "needs.publish-set.result == 'success'"):
+            self.assertIn(clause, jobs["tag"]["if"])
+        self.assertEqual(set(recovery["jobs"]["tag"]["needs"]), {"app", "publish-set"})
+        self.assertEqual(recovery["jobs"]["tag"]["environment"], "release-set-publication")
+        self.assertEqual(recovery["jobs"]["tag"]["permissions"]["contents"], "write")
+        self.assertEqual(set(re.findall(r"secrets\.([A-Z0-9_]+)", json.dumps(recovery["jobs"]["tag"]))), set())
+        for release_workflow in (document, recovery, cutover):
+            for name, job in release_workflow["jobs"].items():
+                for index, step in enumerate(job.get("steps", [])):
+                    if "release-tag@" not in step.get("uses", ""):
+                        continue
+                    with self.subTest(job=name):
+                        self.assertEqual(name, "tag")
+                        components = job["steps"][index - 1]
+                        self.assertIn("publish.py\" tags" if release_workflow is recovery else "publish.py tags", components["run"])
+                        self.assertEqual(step["with"]["tag"], "${{ steps.%s.outputs.release_tag }}" % components["id"])
         self.assertEqual(set(re.findall(r"secrets\.([A-Z0-9_]+)", json.dumps(recovery["jobs"]["publish-set"]))), set())
         self.assertEqual(recovery["permissions"], {"contents": "read", "actions": "read"})
         app_steps = recovery["jobs"]["app"]["steps"]
@@ -430,7 +529,7 @@ class PublicationTests(unittest.TestCase):
         changes = checkout("ci.yml", "changes")
         self.assertEqual((changes.get("fetch-depth"), changes.get("filter"), changes.get("sparse-checkout")), (0, "blob:none", "scripts"))
         self.assertEqual(checkout("repository-tooling.yml", "tooling").get("filter"), "blob:none")
-        for name in ("release-set.yml", "recover-cutover.yml", "ios-release-build.yml", "release.yml"):
+        for name in ("release-set.yml", "recover-cutover.yml", "ios-release-build.yml", "production-cutover.yml"):
             self.assertNotIn("blob:none", (root / ".github/workflows" / name).read_text(), name)
 
     def test_first_party_actions_run_on_node_24(self):
@@ -549,7 +648,7 @@ class PublicationTests(unittest.TestCase):
         # Measurement only: the timeline job reads the run after everything else and holds no credentials.
         timeline = jobs["timeline"]
         self.assertEqual((set(timeline["needs"]), timeline["if"], timeline["permissions"]),
-                         ({"candidate", "publish-set"}, "always()", {"contents": "read", "actions": "read"}))
+                         ({"candidate", "tag"}, "always()", {"contents": "read", "actions": "read"}))
         self.assertTrue(all(step.get("continue-on-error") for step in timeline["steps"] if "run" in step))
 
     def test_timeline_orders_jobs_by_start_from_the_attempt_start(self):
@@ -577,10 +676,10 @@ class PublicationTests(unittest.TestCase):
                         self.assertNotIn("--name", line)
 
     def test_linux_jobs_running_ruby_tooling_set_up_ruby(self):
-        # Tag validation (cli.py prepare) and TestFlight upload (publish.py app) shell out to Ruby, so every Linux
-        # job that runs them pins it first instead of relying on whatever the runner image ships.
+        # TestFlight upload (publish.py app) shells out to Ruby, so every Linux job that runs it pins it first instead
+        # of relying on whatever the runner image ships.
         root = Path(__file__).resolve().parents[1]
-        needs_ruby = ("cli.py prepare", "publish.py app", "validate_release_tag", ".rb")
+        needs_ruby = ("publish.py app", ".rb")
         for path in sorted((root / ".github/workflows").glob("*.yml")):
             document = json.loads(subprocess.check_output([
                 "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(path),

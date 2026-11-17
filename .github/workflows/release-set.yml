@@ -14,6 +14,11 @@ name: Release set
         required: false
         default: true
         type: boolean
+      release_tag:
+        description: The root vX.Y.Z tag the tag job creates after publish-set; production only.
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
     inputs:
       request:
@@ -40,8 +45,8 @@ concurrency:
 # them, and `artifacts.py get` (job token, actions: read) downloads only forwarded producer outputs whose run,
 # attempt, source and SHA-256 match. Every gate and build starts as soon as prepare has the plan (TAL-414);
 # build-gate joins them all before anything publishes. Relay
-# deploys first, then Web, the App and the feedback bridge image publish at once, and the manifest publishes last
-# (releases/README.md).
+# deploys first, then Web, the App and the feedback bridge image publish at once, then the manifest; the tag job
+# creates the version tags last (releases/README.md).
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -70,8 +75,6 @@ jobs:
       with:
         fetch-depth: 0
     - uses: ./.github/actions/release-python
-    # app/ci/validate_release_tag parses GitHub tag metadata with Ruby.
-    - uses: ./.github/actions/release-ruby
     - name: Resolve and validate immutable release plan
       id: plan
       env:
@@ -79,6 +82,7 @@ jobs:
         REQUEST: ${{ inputs.request }}
         PREVIOUS: ${{ inputs.previous_release_set }}
         DRY_RUN: ${{ inputs.dry_run }}
+        RELEASE_TAG: ${{ inputs.release_tag }}
       run: |
         set -euo pipefail
         git fetch --no-tags origin main:refs/remotes/origin/main
@@ -89,6 +93,7 @@ jobs:
           options+=(--previous "$RUNNER_TEMP/previous.json")
         fi
         if [[ "$DRY_RUN" == true ]]; then options+=(--dry-run); fi
+        if [[ -n "$RELEASE_TAG" ]]; then options+=(--release-tag "$RELEASE_TAG"); fi
         "$RELEASE_PYTHON" releases/cli.py prepare --request "$RUNNER_TEMP/request.json" --output "$RUNNER_TEMP/release-plan" "${options[@]}"
     - name: List the selected Web source's supported Agent releases and their shards
       # One agent-release job per release and shard (TAL-1550, TAL-1599); agent requires exactly these jobs' receipts.
@@ -110,8 +115,8 @@ jobs:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   app-hosted-tests-lookup:
     # A release that ships the App reuses main CI's successful "App / App hosted tests" job on exactly the release
-    # source instead of running the hosted tests again (TAL-1550, after TAL-408): release.yml already waited for that
-    # run. Read-only; a lookup error fails this job, which skips the suite call and fails build-gate: it never counts
+    # source instead of running the hosted tests again (TAL-1550, after TAL-408): the release's preflight already waited
+    # for that run. Read-only; a lookup error fails this job, which skips the suite call and fails build-gate: it never counts
     # as "no run found".
     needs: prepare
     if: needs.prepare.outputs.app_changed == 'true'
@@ -931,6 +936,44 @@ jobs:
         if-no-files-found: error
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
+  tag:
+    # Tags last (TAL-2342): only after publish-set published the completed set do the changed components get their
+    # tags and GitHub releases, and then the root vX.Y.Z tag. Nothing else creates a version tag, so a release that
+    # fails earlier leaves its version unused. Every step accepts what an earlier attempt already created.
+    needs:
+    - prepare
+    - build-gate
+    - publish-set
+    if: ${{ !cancelled() && !inputs.dry_run && needs.publish-set.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment: release-set-publication
+    permissions:
+      contents: write
+      actions: read
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+    - uses: ./.github/actions/release-python
+    - name: Restore verified release handoffs
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/release-results" --receipts'
+    - name: Tag and release the components that shipped
+      id: components
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        "$RELEASE_PYTHON" releases/publish.py tags --plan "$RUNNER_TEMP/release-results/release-plan/plan.json" \
+          --directory "$RUNNER_TEMP/release-results"
+    - name: Tag the release
+      uses: MaudeCode/.github/actions/release-tag@3e8fc1995784e2d3004e4de05205a767472efb7c
+      with:
+        tag: ${{ steps.components.outputs.release_tag }}
+        sha: ${{ needs.prepare.outputs.source }}
+    env:
+      RELEASE_NEEDS: ${{ toJSON(needs) }}
   build-gate:
     needs:
     - prepare
@@ -970,10 +1013,10 @@ jobs:
       artifacts: ${{ steps.store.outputs.artifacts }}
   timeline:
     # Measurement only (TAL-414): every job's queue, run and finish time from the run's start, in the step summary,
-    # after the candidate or the completed manifest. It reads the run's jobs and never gates anything.
+    # after the candidate or the release's tags. It reads the run's jobs and never gates anything.
     needs:
     - candidate
-    - publish-set
+    - tag
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10

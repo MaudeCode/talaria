@@ -123,6 +123,20 @@ class PlanTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 assemble(plan, receipts, self.notes, complete=True)
 
+    def test_changed_components_are_planned_before_their_tags_exist(self):
+        # Tags last (TAL-2342): the plan comes from the release source; the tags follow publication.
+        self.git("tag", "-d", *self.tags.values())
+        plan = resolve(self.root, self.request)
+        self.assertEqual(plan["changed"], dict.fromkeys(COMPONENTS, True))
+        self.assertEqual({name: (component["tag"], component["sourceRevision"]) for name, component in plan["components"].items()},
+                         {name: (tag, self.source) for name, tag in self.tags.items()})
+        # A version an earlier release tagged on another commit is refused before anything builds.
+        (self.root / "seed").write_text("fixed source")
+        self.git("commit", "-am", "fix")
+        self.git("tag", "-a", self.tags["app"], self.source, "-m", "earlier attempt")
+        with self.assertRaisesRegex(ValueError, "already names"):
+            resolve(self.root, {**self.request, "sourceRevision": self.git("rev-parse", "HEAD")})
+
     def test_changed_components_cannot_regress_versions(self):
         first = resolve(self.root, self.request)
         previous = assemble(first, self.receipts(first, published=True), self.notes, complete=True)

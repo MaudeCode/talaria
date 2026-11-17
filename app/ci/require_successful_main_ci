@@ -31,7 +31,7 @@ require_successful_main_ci() {
     fi
 
     if [[ "$status" == completed ]]; then
-      echo "::error::Main CI run ${GITHUB_SERVER_URL:-https://github.com}/$repository/actions/runs/$run_id (attempt $attempt) on exact commit $sha concluded ${conclusion:-without a conclusion}. Rerun its failed jobs (gh run rerun $run_id --failed --repo $repository), then rerun this release run; the tag stays valid."
+      echo "::error::Main CI run ${GITHUB_SERVER_URL:-https://github.com}/$repository/actions/runs/$run_id (attempt $attempt) on exact commit $sha concluded ${conclusion:-without a conclusion}. Rerun its failed jobs (gh run rerun $run_id --failed --repo $repository), then rerun this release run; nothing has been tagged."
       return 1
     fi
 
