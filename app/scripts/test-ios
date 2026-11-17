@@ -4,8 +4,8 @@ if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
     echo 'Usage: scripts/test-ios [test-identifier ...]'
     echo 'Runs the identifiers once through the shared simulator pool; defaults to TalariaTests.'
     echo 'Set IOS_SIMULATOR_ID to lease a specific disposable simulator.'
-    echo 'A test runner that does not connect within TALARIA_RUNNER_CONNECT_TIMEOUT seconds (default 30) gets one'
-    echo 'relaunch on a rebooted simulator, then stops the run.'
+    echo 'A test runner that fails to launch, or does not connect within TALARIA_RUNNER_CONNECT_TIMEOUT seconds'
+    echo '(default 30), gets one relaunch on a rebooted simulator, then stops the run with status 70.'
     echo 'Explicit app installation has its own TALARIA_RUNNER_PREPARATION_TIMEOUT budget (default 30).'
     exit 0
 fi
@@ -107,86 +107,20 @@ if (( ${#test_runs[@]} != 1 )); then
     exit 65
 fi
 
-# On the iOS 27.1 Duo simulator, a test host launched while SpringBoard still settles the displays can wait forever
-# for testmanagerd's availability notice. xcodebuild relaunches it after about 30 s, sometimes into a scene that
-# never reaches the foreground, and reports a hang only after minutes. Stop a host that never connects and reboot
-# once (TAL-1547). A connected host can warm its bundle before the first suite, so use Xcode's acknowledgement too.
-connect_timeout=${TALARIA_RUNNER_CONNECT_TIMEOUT:-30}
-# Bash's SECONDS ticks on wall-clock second boundaries, so a 1 s budget could expire at once; time it in microseconds.
-now_us() { local now=$EPOCHREALTIME; echo $(( 10#${now//[.,]/} )); }
-preparation_timeout=${TALARIA_RUNNER_PREPARATION_TIMEOUT:-30}
-runner_session_matches() {
-    local -a session_logs=("$result_bundle"/Staging/1_Test/Diagnostics/**/Session-*.log)
-    (( ${#session_logs[@]} )) || return 1
-    grep -Eq -- "$1" "${session_logs[@]}"
-}
-runner_connected() {
-    grep -q testSuiteStarted "$result_stream" && return 0
-    runner_session_matches 'Test runner is ready with capabilities:|Test runner started executing tests[.]'
-}
-attempt=1
-while true; do
-    simulator_name=$(xcrun simctl list devices available --json |
-        /usr/bin/jq -r --arg id "$simulator_id" 'first(.devices[][] | select(.udid == $id) | .name) // "simulator"')
-    run_name="$(date +%Y%m%d-%H%M%S)-$$-$attempt"
-    result_bundle="$runtime_dir/results/$run_name.xcresult"
-    result_stream="$runtime_dir/results/$run_name.stream.json"
-    : > "$result_stream"
-    echo "Simulator: $simulator_name, $destination"
-    echo "Result bundle: $result_bundle"
-    xcodebuild test-without-building -quiet -xctestrun "${test_runs[0]}" \
-        -enableCodeCoverage NO \
-        -destination "$destination" \
-        -testLanguage en \
-        -testRegion US \
-        -parallel-testing-enabled NO \
-        -collect-test-diagnostics never \
-        -resultBundlePath "$result_bundle" \
-        -resultStreamPath "$result_stream" \
-        "${filters[@]}" &
-    xcodebuild_pid=$!
-    connect_started=$(now_us)
-    preparation_started=0
-    runner_phase=connecting
-    host_launched=0
-    while kill -0 "$xcodebuild_pid" 2>/dev/null && ! runner_connected; do
-        if (( ! host_launched )) && runner_session_matches 'Launched app with identifier: .*[(]pid = [0-9]+[)]'; then
-            host_launched=1
-            runner_phase=connecting
-            connect_started=$(now_us)
-        elif (( ! host_launched )) && [[ "$runner_phase" != preparing ]] && runner_session_matches 'Installing app at path:'; then
-            # Xcode can spend the connection budget installing an app whose host has not launched yet.
-            runner_phase=preparing
-            preparation_started=$(now_us)
-        fi
-        if [[ "$runner_phase" == preparing ]]; then
-            (( $(now_us) - preparation_started < preparation_timeout * 1000000 )) || break
-        else
-            (( $(now_us) - connect_started < connect_timeout * 1000000 )) || break
-        fi
-        sleep 1
-    done
-    if ! kill -0 "$xcodebuild_pid" 2>/dev/null || runner_connected; then
-        ! runner_connected || echo "The test runner connected after $(( ($(now_us) - connect_started) / 1000000 ))s."
-        wait "$xcodebuild_pid" || exit $?
-        xcodebuild_pid=""
-        exit 0
-    fi
-    kill -TERM "$xcodebuild_pid" 2>/dev/null || true
-    wait "$xcodebuild_pid" 2>/dev/null || true
-    xcodebuild_pid=""
-    if [[ "$runner_phase" == preparing ]]; then
-        timeout_reason="The test runner preparation on $simulator_name ($simulator_id) did not finish within ${preparation_timeout}s"
-    else
-        timeout_reason="The test runner on $simulator_name ($simulator_id) did not connect within ${connect_timeout}s"
-    fi
-    if (( attempt == 2 )); then
-        echo "$timeout_reason after a reboot; stopping the run." >&2
-        exit 70
-    fi
-    echo "$timeout_reason; rebooting it for one more launch." >&2
+# The guarded launch, shared with the hosted tests: a runner that faults before it connects gets one relaunch on a
+# freshly leased, rebooted simulator.
+source "$repo_root/scripts/xctest-launch"
+xctest_recover() {
     ios_pool_release
-    ios_pool_acquire || exit $?
+    ios_pool_acquire || return $?
     destination="platform=iOS Simulator,id=$simulator_id"
-    attempt=2
-done
+}
+run_name="$(date +%Y%m%d-%H%M%S)-$$"
+xctest_launch "$runtime_dir/results/$run_name.xcresult" "$runtime_dir/results/$run_name.log" \
+    -quiet -xctestrun "${test_runs[0]}" \
+    -enableCodeCoverage NO \
+    -testLanguage en \
+    -testRegion US \
+    -parallel-testing-enabled NO \
+    -collect-test-diagnostics never \
+    "${filters[@]}"

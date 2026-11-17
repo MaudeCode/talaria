@@ -1,0 +1,128 @@
+# shellcheck shell=bash disable=SC2154 # The caller sets destination and simulator_id.
+# Sourced, never run: the one guarded launch of `xcodebuild test-without-building`, shared by scripts/test-ios and the
+# hosted tests in .github/workflows/app-tests.yml. The caller sets `destination` and `simulator_id` and defines
+# `xctest_recover`, which hands the next attempt a working simulator and may change both.
+#
+#   xctest_launch RESULT_BUNDLE OUTPUT_LOG XCODEBUILD_ARGUMENT...
+#
+# Runs the tests once, appending xcodebuild's output to OUTPUT_LOG as well as stdout, and returns xcodebuild's status.
+# A fault before the test runner connects, when no test can have run, gets one relaunch after `xctest_recover`; if the
+# relaunch faults too, it returns 70, a runner fault rather than a test failure. The faulted attempt's bundle moves to
+# RESULT_BUNDLE's name with -launch-1. Once the runner connected, xcodebuild's status stands: nothing is retried.
+#
+# Faults before the runner connects:
+# - A host that never connects. On the iOS 27.1 Duo simulator, a test host launched while SpringBoard still settles the
+#   displays can wait forever for testmanagerd's availability notice. xcodebuild relaunches it after about 30 s,
+#   sometimes into a scene that never reaches the foreground, and reports a hang only after minutes. A host that does
+#   not connect within TALARIA_RUNNER_CONNECT_TIMEOUT seconds (default 30) is stopped (TAL-1547). A connected host can
+#   warm its bundle before the first suite, so Xcode's acknowledgement counts too. Installing the app has its own
+#   TALARIA_RUNNER_PREPARATION_TIMEOUT budget (default 30).
+# - A launch the simulator services break (TAL-2277). On hosted runners CoreSimulator's SimLaunchHost died while
+#   xcodebuild launched the runner ("Mach error -308 - (ipc/mig) server died"), and a runtime image detached
+#   ("simulator runtime is not available"); xcodebuild then exits before the runner connects.
+
+shopt -s nullglob globstar
+
+xcodebuild_pid=""
+xctest_launch_faults='Failed to (install or launch the test runner|prepare device)|simulator runtime is not available|Lost pending connection to the test runner|never finished bootstrapping'
+
+# Bash's SECONDS ticks on wall-clock second boundaries, so a 1 s budget could expire at once; time it in microseconds.
+now_us() { local now=$EPOCHREALTIME; echo $(( 10#${now//[.,]/} )); }
+runner_session_matches() {
+    local -a session_logs=("$result_bundle"/Staging/1_Test/Diagnostics/**/Session-*.log)
+    (( ${#session_logs[@]} )) || return 1
+    grep -Eq -- "$1" "${session_logs[@]}"
+}
+runner_connected() {
+    grep -q testSuiteStarted "$result_stream" && return 0
+    runner_session_matches 'Test runner is ready with capabilities:|Test runner started executing tests[.]'
+}
+# The output copy ends with xcodebuild, unless a child of xcodebuild still holds the pipe; it gets five seconds.
+xctest_stop_output() {
+    for _ in {1..50}; do
+        kill -0 "$tee_pid" 2>/dev/null || break
+        sleep 0.1
+    done
+    kill -TERM "$tee_pid" 2>/dev/null || true
+    wait "$tee_pid" 2>/dev/null || true
+    rm -f "$fifo"
+}
+
+xctest_launch() {
+    local result_bundle=$1 output_log=$2
+    shift 2
+    local result_stream="${result_bundle%.xcresult}.stream.json" fifo="${output_log}.fifo"
+    local connect_timeout=${TALARIA_RUNNER_CONNECT_TIMEOUT:-30} preparation_timeout=${TALARIA_RUNNER_PREPARATION_TIMEOUT:-30}
+    local attempt=1 status simulator_name output_start tee_pid connect_started preparation_started runner_phase
+    local host_launched reason
+    touch "$output_log"
+    while true; do
+        simulator_name=$(xcrun simctl list devices available --json |
+            /usr/bin/jq -r --arg id "$simulator_id" 'first(.devices[][] | select(.udid == $id) | .name) // "simulator"')
+        : > "$result_stream"
+        echo "Simulator: $simulator_name, $destination"
+        echo "Result bundle: $result_bundle"
+        output_start=$(( $(wc -c < "$output_log") + 1 ))
+        rm -f "$fifo"
+        mkfifo "$fifo"
+        tee -a "$output_log" < "$fifo" &
+        tee_pid=$!
+        xcodebuild test-without-building "$@" \
+            -destination "$destination" \
+            -resultBundlePath "$result_bundle" \
+            -resultStreamPath "$result_stream" > "$fifo" 2>&1 &
+        xcodebuild_pid=$!
+        connect_started=$(now_us)
+        preparation_started=0
+        runner_phase=connecting
+        host_launched=0
+        while kill -0 "$xcodebuild_pid" 2>/dev/null && ! runner_connected; do
+            if (( ! host_launched )) && runner_session_matches 'Launched app with identifier: .*[(]pid = [0-9]+[)]'; then
+                host_launched=1
+                runner_phase=connecting
+                connect_started=$(now_us)
+            elif (( ! host_launched )) && [[ "$runner_phase" != preparing ]] && runner_session_matches 'Installing app at path:'; then
+                # Xcode can spend the connection budget installing an app whose host has not launched yet.
+                runner_phase=preparing
+                preparation_started=$(now_us)
+            fi
+            if [[ "$runner_phase" == preparing ]]; then
+                (( $(now_us) - preparation_started < preparation_timeout * 1000000 )) || break
+            else
+                (( $(now_us) - connect_started < connect_timeout * 1000000 )) || break
+            fi
+            sleep 1
+        done
+        if ! kill -0 "$xcodebuild_pid" 2>/dev/null || runner_connected; then
+            ! runner_connected || echo "The test runner connected after $(( ($(now_us) - connect_started) / 1000000 ))s."
+            status=0
+            wait "$xcodebuild_pid" || status=$?
+            xcodebuild_pid=""
+            xctest_stop_output
+            # A connected runner may have run tests, and an unknown failure is not ours to retry.
+            if (( status == 0 )) || runner_connected ||
+                ! grep -Eq -- "$xctest_launch_faults" < <(tail -c "+$output_start" "$output_log"); then
+                return "$status"
+            fi
+            reason="The test runner on $simulator_name ($simulator_id) failed to launch before any test ran"
+        else
+            kill -TERM "$xcodebuild_pid" 2>/dev/null || true
+            wait "$xcodebuild_pid" 2>/dev/null || true
+            xcodebuild_pid=""
+            xctest_stop_output
+            if [[ "$runner_phase" == preparing ]]; then
+                reason="The test runner preparation on $simulator_name ($simulator_id) did not finish within ${preparation_timeout}s"
+            else
+                reason="The test runner on $simulator_name ($simulator_id) did not connect within ${connect_timeout}s"
+            fi
+        fi
+        if (( attempt == 2 )); then
+            echo "$reason after recovering the simulator; stopping the run as a runner fault." >&2
+            return 70
+        fi
+        echo "$reason; recovering the simulator for one more launch." >&2
+        [[ ! -e "$result_bundle" ]] || mv "$result_bundle" "${result_bundle%.xcresult}-launch-1.xcresult"
+        xctest_recover || { echo "Recovering the simulator failed; stopping the run as a runner fault." >&2; return 70; }
+        attempt=2
+    done
+}

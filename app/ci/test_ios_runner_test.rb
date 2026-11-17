@@ -203,7 +203,9 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal("true", shard["steps"][boot]["with"]["wait_for_boot"].to_s)
     refute(shard["steps"].any? { |step| step["name"] == "Build for testing" }, "test jobs never build")
     steps = shard["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
-    assert_equal(1, workflow_text("app-tests.yml").scan("xcodebuild test-without-building").length)
+    # The tests launch through the guard the local runner shares, never an xcodebuild of their own (TAL-2277).
+    assert_equal(0, workflow_text("app-tests.yml").scan("xcodebuild test-without-building").length)
+    assert_includes(steps.fetch("Test without building")["run"], "source scripts/xctest-launch")
     # The build poll starts in the background before the setup and the boot, whose aftermath starves this runner,
     # and the step after the boot collects its result (TAL-405).
     start = shard["steps"].index { |step| step["name"] == "Start waiting for the build" }
@@ -222,7 +224,8 @@ class TestIOSRunnerTest < Minitest::Test
     suite = steps.fetch("Test without building")["run"]
     assert_includes(suite, 'nohup ci/memory-sampler watch "${MEMORY_LOG}" "${XCODEBUILD_LOG}"')
     assert_includes(suite, "set -euo pipefail")
-    assert_includes(suite, '-parallel-testing-enabled NO 2>&1 | tee -a "${XCODEBUILD_LOG}" || status=$?')
+    assert_includes(suite, 'xctest_launch "${RESULT_BUNDLE_PATH}" "${XCODEBUILD_LOG}"')
+    assert_includes(suite, '-parallel-testing-enabled NO || status=$?')
     report, upload = steps.values_at("Report memory", "Upload memory samples")
     assert_equal(["always()"] * 2, [report, upload].map { |step| step["if"] })
     assert_includes(report["run"], 'ci/memory-sampler summary "${MEMORY_LOG}" | tee -a "${GITHUB_STEP_SUMMARY}"')
@@ -346,7 +349,7 @@ class TestIOSRunnerTest < Minitest::Test
     test = shard["steps"].find { |step| step["name"] == "Test without building" }["run"]
     assert_equal(false, shard["steps"].find { |step| step["name"] == "Boot the simulator" }["with"]["shutdown_after_job"])
     # A failing run still reports, and the step still fails.
-    assert_includes(test, '| tee -a "${XCODEBUILD_LOG}" || status=$?')
+    assert_includes(test, '-parallel-testing-enabled NO || status=$?')
     assert_match(/exit "\$\{status\}"\n\z/, test)
     # Main pushes, manual runs and labelled pull requests run the hosted tests; other pull requests only build and run
     # the package tests (TAL-1896).
