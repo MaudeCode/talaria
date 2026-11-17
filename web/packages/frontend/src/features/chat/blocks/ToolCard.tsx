@@ -75,7 +75,7 @@ function FieldRows({ fields }: { fields: ToolField[] }) {
       {fields.map((field, i) => (
         <div key={i} className={field.multiline ? 'col-span-2' : 'contents'}>
           <dt className={cn(LABEL, 'break-words', field.multiline && 'mb-1')}>{field.key}</dt>
-          <dd className="min-w-0">{field.multiline ? <pre className={RESULT_PRE}>{field.value}</pre> : <span className={cn('break-words', MONO)}>{field.value}</span>}</dd>
+          <dd className="min-w-0">{field.multiline ? <pre className={RESULT_PRE}>{field.value}</pre> : <span className={cn('whitespace-pre-wrap break-words', MONO)}>{field.value}</span>}</dd>
         </div>
       ))}
     </dl>
