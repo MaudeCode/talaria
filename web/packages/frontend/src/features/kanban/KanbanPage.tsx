@@ -161,7 +161,9 @@ export function KanbanPage({ openTaskId, board: requestedBoardSlug, onOpenTask }
   // TAL-2327: a task link names its board; switch to it once, when the server lists it.
   const followedBoard = useRef<string | undefined>(undefined)
   const followBoard = useEffectEvent(() => {
-    if (!requestedBoardSlug || requestedBoardSlug === followedBoard.current || !boards.isSuccess) return
+    // An address without a board ends the follow, so returning to a task link switches to its board again.
+    if (!requestedBoardSlug) { followedBoard.current = undefined; return }
+    if (requestedBoardSlug === followedBoard.current || !boards.isSuccess) return
     followedBoard.current = requestedBoardSlug
     if (requestedBoardSlug !== current && boardList.some((b) => b.slug === requestedBoardSlug)) switchBoard.mutate(requestedBoardSlug)
   })
@@ -237,8 +239,11 @@ export function KanbanPage({ openTaskId, board: requestedBoardSlug, onOpenTask }
   }
   // The dialog follows the board's current copy of the task, so its actions track every refetch; a pending move
   // shows in it even when the target column is off screen.
+  const boardTask = (board.data?.columns ?? []).flatMap((c) => c.tasks).find((t) => String(t.id) === openTaskId)
+  // TAL-2327: a linked task the board does not show (archived, or filtered out) is read on its own, as the dialog reads it.
+  const linkedTask = useQuery({ queryKey: [...keys.kanban.board(current), 'task', String(openTaskId)], queryFn: () => api.fetchKanbanTask(current, openTaskId ?? ''), staleTime: 10_000, enabled: !!openTaskId && !!board.data && !board.isPlaceholderData && !boardTask })
   const openTask = (() => {
-    const found = (board.data?.columns ?? []).flatMap((c) => c.tasks).find((t) => String(t.id) === openTaskId)
+    const found = boardTask ?? linkedTask.data?.task
     return found ? withEffect(found, effects[cardResource(current, String(found.id))]) : null
   })()
   // Selection is local UI state; a selected card a later filter hides drops out, so bulk acts only on cards on screen.

@@ -735,4 +735,26 @@ describe('a task has an address (TAL-2327)', () => {
     expect(api.switchKanbanBoard).toHaveBeenCalledTimes(1)
     expect(api.switchKanbanBoard).toHaveBeenCalledWith('other')
   })
+
+  it('opens a linked task the board does not show, such as an archived one, by reading it on its own', async () => {
+    vi.mocked(api.fetchKanbanTask).mockImplementation((_board, id) => Promise.resolve({ task: task(String(id), 'archived'), links: { parents: [], children: [] }, link_tasks: [], last_card_action: null }))
+    await renderRoute('/kanban?task=Z')
+    expect(await within(await screen.findByRole('dialog')).findByText('Task Z')).toBeInTheDocument()
+  })
+
+  it('switches back to a task link\'s board after the page left it for another board', async () => {
+    let current = 'default'
+    vi.mocked(api.fetchKanbanBoards).mockImplementation(() => Promise.resolve({ current, pinned: [], boards: [{ slug: 'default', name: 'Default', removable: false }, { slug: 'other', name: 'Other', removable: true }], read_only: false }))
+    vi.mocked(api.switchKanbanBoard).mockImplementation((slug) => { current = slug; return Promise.resolve({ current: slug, read_only: false }) })
+    vi.mocked(api.fetchKanbanBoard).mockImplementation((slug) => Promise.resolve(slug === 'other' ? snapshot([task('C')]) : snapshot()))
+    const router = await renderRoute('/kanban?board=other&task=C')
+    await within(await screen.findByRole('dialog')).findByText('Task C')
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await choose('Board', 'Default')
+    await screen.findByRole('button', { name: /^Task A\b/ })
+    await act(async () => { await router.navigate({ to: '/kanban', search: { board: 'other', task: 'C' } }) })
+    expect(await within(await screen.findByRole('dialog')).findByText('Task C')).toBeInTheDocument()
+    expect(vi.mocked(api.switchKanbanBoard).mock.calls.map(([slug]) => slug)).toEqual(['other', 'default', 'other'])
+  })
 })
