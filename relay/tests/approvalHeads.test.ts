@@ -17,8 +17,9 @@ const fixture = JSON.parse(readFileSync(new URL("../../contracts/fixtures/relay-
   notificationAlert: Record<string, string>;
 };
 
-beforeEach(() => { vi.spyOn(Date, "now").mockReturnValue(now); });
-afterEach(() => { vi.restoreAllMocks(); });
+// Fake timers hold convex-test's scheduler, so the APNs workpool never claims and fails a queued job behind a test's back.
+beforeEach(() => { vi.useFakeTimers({ now }); });
+afterEach(() => { vi.useRealTimers(); });
 
 // Two Relay users, each granted one profile of the same publisher, with one notification-enabled phone each.
 async function seed() {
@@ -128,11 +129,8 @@ describe("decision reviews (TAL-1966)", () => {
 });
 
 describe("agent notices (TAL-1970)", () => {
-  // The workpool may already have run a queued job in the background; claim it again from queued to check its state alone.
-  const claim = async (backend: Awaited<ReturnType<typeof seed>>["backend"], jobId: Id<"deliveryJobs">) => {
-    await backend.run(async (ctx) => { await ctx.db.patch(jobId, { status: "queued" }); });
-    return backend.mutation(internal.delivery.claimJob, { jobId, now });
-  };
+  const claim = (backend: Awaited<ReturnType<typeof seed>>["backend"], jobId: Id<"deliveryJobs">) =>
+    backend.mutation(internal.delivery.claimJob, { jobId, now });
   const info: AgentNotify = { id: "an_0000000000000001", title: "Report ready", body: "reports/week-45.md is done.", level: "info" };
   const attention: AgentNotify = { id: "an_0000000000000002", title: "Need your login", body: "The import stopped at the bank's sign-in.", level: "attention" };
 
