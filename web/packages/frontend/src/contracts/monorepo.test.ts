@@ -133,8 +133,8 @@ describe('shared monorepo contracts', () => {
     const turns = groupAssistantTurns(projectMessages(session.messages ?? [])).filter((row) => row.message.role === 'assistant')
     const tools = (key: string) => persistedActivity(turns.find((row) => row.turnKey === key)!).items.flatMap((item) => (item.kind === 'tool' ? [[item.call.id, item.call.done, item.call.isError, item.call.duration, item.call.resultView]] : []))
     // OpenAI calls (one exits non-zero), an Anthropic tool_use call that failed, and a call only the session-level list held.
-    expect(tools('tool-run-openai')).toEqual([['call-read', true, false, 1.25, { text: 'A contents' }], ['call-exit', true, true, 3.5, { stdout: '1 failed', exit_code: 2 }]])
-    expect(tools('tool-run-anthropic')).toEqual([['toolu-search', true, true, null, { error: 'permission denied' }]])
+    expect(tools('tool-run-openai')).toEqual([['call-read', true, false, 1.25, { text: 'A contents' }], ['call-exit', true, true, 3.5, { stdout: '1 failed', exit_code: 2, outcome: { key: 'exit', tone: 'error', count: 2 } }]])
+    expect(tools('tool-run-anthropic')).toEqual([['toolu-search', true, true, null, { error: 'permission denied', outcome: { key: 'failed', tone: 'error', value: 'permission denied' } }]])
     expect(tools('tool-run-session')).toEqual([['call-date', true, false, 0.42, { text: 'Sat Sep 27' }]])
     // The running turn's unanswered call is not done; the live stream renders that turn.
     const running = session.messages?.find((m) => m._turn_id === 'tool-run-live' && m.role === 'assistant')
