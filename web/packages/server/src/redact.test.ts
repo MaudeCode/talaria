@@ -2,6 +2,7 @@ import { crc32 } from 'node:zlib'
 import { subscribe, unsubscribe } from 'node:diagnostics_channel'
 import { describe, expect, it, vi } from 'vitest'
 import { isRasterDataUri } from './raster-image.js'
+import { toolOutcome } from './sessions/merge.js'
 import { mightContainSensitiveText, publicToolFrame, redactNestedMessageContainers, redactSensitive, redactSessionData, redactText } from './redact.js'
 import { MessageSchema } from '@maudecode/talaria-web-contracts'
 import { sanitizeShareMessage } from './sessions/shares.js'
@@ -1686,6 +1687,10 @@ describe('tool argument and result rows (TAL-2318)', () => {
     expect(call.args_fields).toEqual(rows)
     expect((call.result_view as { fields: unknown }).fields).toEqual([{ key: 'api_token', value: '***', multiline: false }, { key: 'count', value: '2', multiline: false }])
     expect(publicToolFrame({ name: 'session_search', args }, true).args_fields).toEqual(rows)
+    // A nested credential is masked in its row, with every value under it, as the result's text masks it (TAL-2318 P1).
+    const nested = toolOutcome(JSON.stringify({ config: { password: ['hunter2', 'secretTwo'], region: 'eu' }, entries: [{ token: { a: 'abc' }, name: 'n' }] })).result_view
+    const shown = (redactSessionData({ tool_calls: [{ id: 'c2', name: 'x', result_view: nested }] }, true).tool_calls as { result_view: { fields: unknown } }[])[0]!.result_view.fields
+    expect(shown).toEqual([{ key: 'config', value: 'password: ***\nregion: eu', multiline: true }, { key: 'entries', value: '- token: ***\n  name: n', multiline: true }])
     // A bare completion carries no rows of its own, so its start frame's stay.
     expect(publicToolFrame({ name: 'session_search', args: {} }, true)).not.toHaveProperty('args_fields')
   })

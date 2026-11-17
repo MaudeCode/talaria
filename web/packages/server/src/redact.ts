@@ -2270,14 +2270,39 @@ export function redactString(text: string, enabled = true): string {
 }
 
 const isToolField = (v: Record<string, unknown>): boolean => typeof v.key === 'string' && typeof v.value === 'string' && typeof v.multiline === 'boolean'
+/** A row line `key: value` or `- key:` in the server's row format (`toolFields`): its prefix, key, and inline value. */
+const FIELD_LINE_RE = /^(\s*(?:- )?)([^:\n]+):(?: (.*))?$/
+
+/**
+ * TAL-2318: a row value with each credential-named `key:` line masked, and the indented block under it dropped. A nested
+ * value (`password:` then `  - hunter2`) spans lines the text scan reads one at a time, so it never sees the key beside it.
+ */
+function maskFieldLines(text: string): string {
+  const out: string[] = []
+  let blockColumn = -1
+  for (const line of text.split('\n')) {
+    if (blockColumn >= 0 && (!line.trim() || line.length - line.trimStart().length > blockColumn)) continue
+    blockColumn = -1
+    const match = FIELD_LINE_RE.exec(line)
+    if (match && isCredentialKey(match[2]!.trim())) {
+      out.push(`${match[1]}${match[2]}: ***`)
+      blockColumn = match[1]!.length
+    } else out.push(line)
+  }
+  return out.join('\n')
+}
 
 export function redactValue(v: unknown, enabled: boolean): unknown {
   if (typeof v === 'string') return redactText(v, enabled)
   if (Array.isArray(v)) return v.map((item) => redactValue(item, enabled))
   if (!v || typeof v !== 'object') return v
   const out = Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, val]) => [k, redactValue(val, enabled)]))
-  // TAL-2318: a result row's value sits apart from its key, so the text scan cannot see a credential key in front of it.
-  if (enabled && isToolField(out) && out.value && isCredentialKey(out.key as string)) Object.assign(out, { value: '***', multiline: false })
+  // TAL-2318: a result row's value sits apart from its key, and a nested one apart from its own keys, so the text scan
+  // cannot see a credential key in front of either.
+  if (enabled && isToolField(out) && out.value) {
+    const value = isCredentialKey(out.key as string) ? '***' : maskFieldLines(out.value as string)
+    Object.assign(out, { value, multiline: value.includes('\n') })
+  }
   // TAL-604: a diff's `hunks` are re-parsed from its redacted text, which masks spans (a private key) that no single line shows.
   if (enabled && Array.isArray(out.hunks) && typeof out.diff === 'string') out.hunks = diffHunks(out.diff)
   return out
