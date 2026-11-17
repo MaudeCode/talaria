@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { McpServerSchema, McpServersSchema } from '@maudecode/talaria-web-contracts'
-import { JoplinError, joplinSearch, McpService, serverSummary } from './mcp.js'
+import { JoplinError, joplinSearch, McpService, notesSources, serverSummary } from './mcp.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { McpHealthProber } from './mcp-health.js'
 import type { AgentConfig, Dict } from '../config/agent-config.js'
@@ -55,6 +55,51 @@ describe('MCP config updates', () => {
     await new McpService({ sidecar: () => null, config }).update('/profiles/test', 'paid', body)
     expect(cfg.mcp_servers.paid).toEqual({ ...expected, enabled: false, spend_limit: 5 })
     expect(cfg.mcp_servers.paid).not.toHaveProperty(field)
+  })
+
+  it.each<{ legacy: Dict; to: boolean }>([
+    { legacy: { disabled: true, enabled: false }, to: true },
+    { legacy: { disabled: 'yes', enabled: true }, to: true },
+    { legacy: { disabled: 1 }, to: true },
+    { legacy: { disabled: ' On ', enabled: 'off' }, to: true },
+    { legacy: { disabled: 'no', enabled: true }, to: false },
+  ])('a switch to $to drops the legacy disabled in $legacy and keeps everything else', async ({ legacy, to }) => {
+    const retained = { command: 'paid-mcp', args: ['--x'], auth: 'oauth', oauth: { client_id: 'test-client' }, spend_limit: 5, tool_costs: { search: 1 }, trust: 'full' }
+    const cfg: Dict = { mcp_servers: { paid: { ...retained, ...legacy }, sibling: { command: 'sibling', disabled: true } } }
+    const config = { read: () => Promise.resolve(cfg), update: (_home: string, fn: (c: Dict) => void) => { fn(cfg); return Promise.resolve() } } as unknown as AgentConfig
+    const service = new McpService({ sidecar: () => null, config })
+    await expect(service.toggle('/profiles/test', 'paid', to)).resolves.toEqual({ ok: true, name: 'paid', enabled: to })
+    expect(cfg.mcp_servers).toEqual({ paid: { ...retained, enabled: to }, sibling: { command: 'sibling', disabled: true } })
+    const rows = (await service.servers('/profiles/test')).servers as { name: string; enabled: boolean }[]
+    expect(Object.fromEntries(rows.map((r) => [r.name, r.enabled]))).toEqual({ paid: to, sibling: false })
+  })
+})
+
+describe('MCP enable reader', () => {
+  // Agent v0.23.2 `mcp_server_enabled`, evaluated on each record: a truthy legacy `disabled` wins over `enabled`.
+  const NATIVE: [Dict, boolean][] = [
+    [{}, true], [{ enabled: false }, false], [{ disabled: true }, false], [{ disabled: 'yes', enabled: true }, false],
+    [{ disabled: 1, enabled: 'on' }, false], [{ disabled: 'off', enabled: true }, true], [{ disabled: 0 }, true],
+    [{ disabled: 'maybe' }, true], [{ disabled: null, enabled: 'no' }, false], [{ disabled: ' TRUE ', enabled: 'true' }, false],
+    [{ disabled: false, enabled: 0 }, false],
+  ]
+
+  it('every surface agrees with the native reader and reads never rewrite config', async () => {
+    const servers = Object.fromEntries(NATIVE.map(([flags], i) => [`notes-${String(i)}`, { command: `mcp-${String(i)}`, ...flags }]))
+    const cfg: Dict = { mcp_servers: servers }
+    const snapshot = structuredClone(cfg)
+    const expected = Object.fromEntries(NATIVE.map(([, on], i) => [`notes-${String(i)}`, on]))
+    const sidecar = new FakeSidecar()
+    sidecar.respond('mcp.status', () => ({ servers: [] }))
+    const config = { read: () => Promise.resolve(cfg) } as unknown as AgentConfig
+    const service = new McpService({ sidecar: () => sidecar, config })
+    const rows = (await service.servers('/profiles/a')).servers as { name: string; enabled: boolean; health: string }[]
+    expect(Object.fromEntries(rows.map((r) => [r.name, r.enabled]))).toEqual(expected)
+    expect(Object.fromEntries(rows.map((r) => [r.name, r.health !== 'not_checked']))).toEqual(expected)
+    expect((await service.tools('/profiles/a')).unavailable_servers).toEqual(Object.keys(expected).filter((name) => expected[name]))
+    const sources = notesSources(cfg, true).sources as { name: string; enabled: boolean }[]
+    expect(Object.fromEntries(sources.map((s) => [s.name, s.enabled]))).toEqual(expected)
+    expect(cfg).toEqual(snapshot)
   })
 })
 
