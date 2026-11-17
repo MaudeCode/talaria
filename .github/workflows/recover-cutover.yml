@@ -78,7 +78,7 @@ jobs:
       # The same version and build number already in TestFlight is success; an unfinished upload is resumed.
       - name: Resume the original verified IPA and require Apple VALID readback
         id: upload
-        uses: MaudeCode/.github/actions/ios-publish@dd8e12f8ad78a4e6828be2239117c617a8c6df3a
+        uses: MaudeCode/.github/actions/ios-publish@eb704dbfc3862ea1143d5c7737d9f02bf97f49fa
         with:
           ipa: ${{ steps.verified.outputs.ipa }}
           bundle-id: dev.kil.talaria

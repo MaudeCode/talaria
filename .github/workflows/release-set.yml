@@ -864,7 +864,7 @@ jobs:
     # Uploading the same version and build number again is success, so a re-run resumes rather than uploads twice.
     - name: Upload or recover the verified TestFlight build
       id: upload
-      uses: MaudeCode/.github/actions/ios-publish@dd8e12f8ad78a4e6828be2239117c617a8c6df3a
+      uses: MaudeCode/.github/actions/ios-publish@eb704dbfc3862ea1143d5c7737d9f02bf97f49fa
       with:
         ipa: ${{ steps.verified.outputs.ipa }}
         bundle-id: dev.kil.talaria

@@ -143,7 +143,7 @@ jobs:
       # different identities into one commit's app, so Nightly's uploads are a variant of their own.
       - name: Select App Store Connect build number
         id: number
-        uses: MaudeCode/.github/actions/ios-build-number@dd8e12f8ad78a4e6828be2239117c617a8c6df3a
+        uses: MaudeCode/.github/actions/ios-build-number@eb704dbfc3862ea1143d5c7737d9f02bf97f49fa
         with:
           bundle-id: dev.kil.talaria
           version: ${{ env.MARKETING_VERSION }}
@@ -171,7 +171,7 @@ jobs:
 
       - name: Set up signing
         id: signing
-        uses: MaudeCode/.github/actions/ios-signing@dd8e12f8ad78a4e6828be2239117c617a8c6df3a
+        uses: MaudeCode/.github/actions/ios-signing@eb704dbfc3862ea1143d5c7737d9f02bf97f49fa
         with:
           certificate-p12-base64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
           certificate-password: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
@@ -215,7 +215,7 @@ jobs:
       # uploads here: production uploads after the cutover's gates, Nightly after its identity check below.
       - name: Export and verify the signed IPA
         id: export
-        uses: MaudeCode/.github/actions/ios-publish@dd8e12f8ad78a4e6828be2239117c617a8c6df3a
+        uses: MaudeCode/.github/actions/ios-publish@eb704dbfc3862ea1143d5c7737d9f02bf97f49fa
         with:
           archive: ${{ env.ARCHIVE_PATH }}
           export-options: ${{ steps.signing.outputs.export-options }}
@@ -240,7 +240,7 @@ jobs:
 
       - name: Upload the Nightly build to TestFlight
         if: inputs.channel == 'nightly'
-        uses: MaudeCode/.github/actions/ios-publish@dd8e12f8ad78a4e6828be2239117c617a8c6df3a
+        uses: MaudeCode/.github/actions/ios-publish@eb704dbfc3862ea1143d5c7737d9f02bf97f49fa
         with:
           ipa: ${{ steps.export.outputs.ipa }}
           bundle-id: dev.kil.talaria
