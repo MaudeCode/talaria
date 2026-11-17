@@ -140,8 +140,9 @@ public final class AppLockModel {
         startAwayTimeIfNoWindowIsInTheForeground()
     }
 
+    /// No windows left counts as away too: the process can outlive its last window.
     private func startAwayTimeIfNoWindowIsInTheForeground() {
-        guard !scenePhases.isEmpty, scenePhases.values.allSatisfy({ $0 == .background }) else { return }
+        guard scenePhases.values.allSatisfy({ $0 == .background }) else { return }
         backgroundedAt = backgroundedAt ?? now()
     }
 

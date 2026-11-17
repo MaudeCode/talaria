@@ -230,11 +230,9 @@ struct SessionListView: View {
         #else
         _isPresentingUpdateNotifications = State(initialValue: false)
         #endif
-        let hasOtherWindows = UIApplication.shared.connectedScenes
-            .filter { $0.session.role == .windowApplication }.count > 1
         var navigation = SessionNavigationState(
             lastSelectedSessionID: windowSelections.wrappedValue.restoredSessionID(
-                for: server, hasOtherWindows: hasOtherWindows
+                for: server, hasOtherWindows: UIApplication.shared.hasSeveralWindows
             )
         )
         let hasExplicitRoute = pendingSharedImport.wrappedValue != nil

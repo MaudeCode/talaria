@@ -286,4 +286,13 @@ final class AppLockTests: XCTestCase {
         instant += .seconds(30)
         XCTAssertTrue(model.locksBackgroundWork())
     }
+
+    /// The process can outlive its last window; reopening a minute later must find the app locked.
+    func testClosingTheOnlyWindowStartsTheMinuteAway() async {
+        let model = await unlockedModel()
+        model.sceneDidChange(.inactive, scene: window)
+        model.sceneDidDisconnect(window)
+        instant += .seconds(61)
+        XCTAssertTrue(model.locksBackgroundWork())
+    }
 }

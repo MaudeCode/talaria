@@ -187,7 +187,8 @@ public enum ChatDraftSendReconciliation {
 public struct ChatDraftKey: Hashable, Sendable {
     enum Context: Hashable, Sendable {
         case session(String)
-        case newChat
+        /// A window opened beside another has its own New Chat draft; nil is the app's (TAL-2387).
+        case newChat(window: String?)
     }
 
     let serverID: String
@@ -205,8 +206,8 @@ public struct ChatDraftKey: Hashable, Sendable {
         return .session(server: server, sessionID: sessionID)
     }
 
-    public static func newChat(server: URL) -> Self {
-        Self(serverID: server.absoluteString, context: .newChat)
+    public static func newChat(server: URL, window: String? = nil) -> Self {
+        Self(serverID: server.absoluteString, context: .newChat(window: window))
     }
 }
 
@@ -368,6 +369,7 @@ public actor ChatDraftFilePersistence: ChatDraftPersisting {
         let serverID: String?
         let context: String?
         let sessionID: String?
+        let window: String?
         let text: String?
         let attachments: [FailableAttachment]?
         let settings: SettingsRecord?
@@ -377,6 +379,7 @@ public actor ChatDraftFilePersistence: ChatDraftPersisting {
             case serverID
             case context
             case sessionID
+            case window
             case text
             case attachments
             case settings
@@ -389,9 +392,11 @@ public actor ChatDraftFilePersistence: ChatDraftPersisting {
             case .session(let sessionID):
                 context = "session"
                 self.sessionID = sessionID
-            case .newChat:
+                window = nil
+            case .newChat(let window):
                 context = "newChat"
                 sessionID = nil
+                self.window = window
             }
             voiceNote = draft.voiceNote
             text = draft.text
@@ -406,6 +411,7 @@ public actor ChatDraftFilePersistence: ChatDraftPersisting {
             serverID = (try? container.decodeIfPresent(String.self, forKey: .serverID)) ?? nil
             context = (try? container.decodeIfPresent(String.self, forKey: .context)) ?? nil
             sessionID = (try? container.decodeIfPresent(String.self, forKey: .sessionID)) ?? nil
+            window = (try? container.decodeIfPresent(String.self, forKey: .window)) ?? nil
             text = (try? container.decodeIfPresent(String.self, forKey: .text)) ?? nil
             attachments = (try? container.decodeIfPresent([FailableAttachment].self, forKey: .attachments)) ?? nil
             voiceNote = (try? container.decodeIfPresent(ChatDraftVoiceNote.self, forKey: .voiceNote)).flatMap { $0.isValid ? $0 : nil }
@@ -432,7 +438,7 @@ public actor ChatDraftFilePersistence: ChatDraftPersisting {
                 }
                 key = ChatDraftKey(serverID: serverID, context: .session(sessionID))
             case "newChat":
-                key = ChatDraftKey(serverID: serverID, context: .newChat)
+                key = ChatDraftKey(serverID: serverID, context: .newChat(window: window))
             default:
                 return nil
             }
@@ -496,8 +502,8 @@ public actor ChatDraftFilePersistence: ChatDraftPersisting {
         let records = nonEmptyDrafts
             .map { Record(key: $0.key, draft: $0.value) }
             .sorted {
-                let lhs = ($0.serverID ?? "", $0.context ?? "", $0.sessionID ?? "")
-                let rhs = ($1.serverID ?? "", $1.context ?? "", $1.sessionID ?? "")
+                let lhs = ($0.serverID ?? "", $0.context ?? "", $0.sessionID ?? "", $0.window ?? "")
+                let rhs = ($1.serverID ?? "", $1.context ?? "", $1.sessionID ?? "", $1.window ?? "")
                 return lhs < rhs
             }
         let data = try JSONEncoder().encode(

@@ -701,6 +701,21 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertNil(left.restoredSessionID(for: otherServer, hasOtherWindows: true, defaults: defaults),
                      "A window's chat belongs to the server it was chosen on")
     }
+
+    /// TAL-2387: a window opened beside another drafts New Chat under its own identity, kept across relaunch; the
+    /// first window keeps sharing the app's New Chat draft.
+    func testANewWindowKeepsItsOwnNewChatDraftIdentity() throws {
+        var first = SessionNavigationPersistence.WindowSelections()
+        first.keepNewChatDraftWindow(first.newChatDraftWindow(proposed: nil))
+        first = try XCTUnwrap(.init(rawValue: first.rawValue))
+        XCTAssertNil(first.newChatDraftWindow(proposed: "later"), "Restored beside another window, it keeps the shared draft")
+
+        var second = SessionNavigationPersistence.WindowSelections()
+        second.keepNewChatDraftWindow(second.newChatDraftWindow(proposed: "window-b"))
+        second.keepNewChatDraftWindow("window-c")
+        second = try XCTUnwrap(.init(rawValue: second.rawValue))
+        XCTAssertEqual(second.newChatDraftWindow(proposed: nil), "window-b")
+    }
 }
 
 private enum ReturnRefreshEvent: Equatable {

@@ -9,7 +9,9 @@ public final class SharedImportRouter {
     public var pendingImport: SharedImportReservation?
     /// More shares remain in the inbox after the routed one.
     public private(set) var hasWaitingImport = false
-    @ObservationIgnored private var hasRoutedImport = false
+    /// Set the moment a window routes the reservation, so it is never handed to another window while its file is
+    /// still being consumed.
+    private var hasRoutedImport = false
     @ObservationIgnored private var inFlightImport: Task<Void, Never>?
     @ObservationIgnored private let directory: () -> URL?
 
@@ -31,7 +33,7 @@ public final class SharedImportRouter {
     }
 
     public func pendingImport(in window: UUID) -> SharedImportReservation? {
-        activeWindows.first == window ? pendingImport : nil
+        activeWindows.first == window && !hasRoutedImport ? pendingImport : nil
     }
 
     public func hasWaitingImport(in window: UUID) -> Bool {

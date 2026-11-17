@@ -9,6 +9,8 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     /// This window, for the app-wide What's New and share routing that each pick one window (TAL-2387).
     @State private var window = UUID()
+    /// Decided when the window opens: one opened beside another drafts New Chat under its own identity.
+    @State private var opensBesideAnotherWindow = UIApplication.shared.hasSeveralWindows
     /// This window's chat on each server, which the system restores with the window (TAL-2387).
     @SceneStorage("sessionNavigation.windowSelections")
     private var windowSelections = SessionNavigationPersistence.WindowSelections()
@@ -85,6 +87,12 @@ struct ContentView: View {
                 sharedImports.windowDidChange(window, isInForeground: scenePhase != .background)
             }
             .onDisappear { sharedImports.windowDidChange(window, isInForeground: false) }
+            .environment(\.newChatDraftWindow, newChatDraftWindow)
+            .onAppear { windowSelections.keepNewChatDraftWindow(newChatDraftWindow) }
+    }
+
+    private var newChatDraftWindow: String? {
+        windowSelections.newChatDraftWindow(proposed: opensBesideAnotherWindow ? window.uuidString : nil)
     }
 
     @ViewBuilder
@@ -237,6 +245,13 @@ struct ContentView: View {
         guard let url = intentRouter.pendingDeepLink else { return }
         intentRouter.pendingDeepLink = nil
         handleOpenURL(url)
+    }
+}
+
+extension UIApplication {
+    /// More than one Talaria window is connected (TAL-2387).
+    var hasSeveralWindows: Bool {
+        connectedScenes.filter { $0.session.role == .windowApplication }.count > 1
     }
 }
 

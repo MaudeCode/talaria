@@ -5,6 +5,7 @@ import TalariaKit
 struct PendingNewChatView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.newChatDraftWindow) private var newChatDraftWindow
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
 
     let server: URL
@@ -143,7 +144,7 @@ struct PendingNewChatView: View {
     }
 
     private var draftKey: ChatDraftKey {
-        .newChat(server: server)
+        .newChat(server: server, window: newChatDraftWindow)
     }
 
     private func draftKey(for session: SessionSummary) -> ChatDraftKey {
@@ -169,4 +170,9 @@ struct PendingNewChatView: View {
             didStartConversation: didStartConversation
         )?.text ?? draftMessage
     }
+}
+
+extension EnvironmentValues {
+    /// This window's New Chat draft identity, so two windows at New Chat never share one draft (TAL-2387).
+    @Entry var newChatDraftWindow: String?
 }

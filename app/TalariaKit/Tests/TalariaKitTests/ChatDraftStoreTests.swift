@@ -721,6 +721,23 @@ final class ChatDraftStoreTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(loaded[key]).referencedFiles.contains("saved-voice.m4a"))
     }
 
+    /// TAL-2387: two windows at New Chat on one server keep their own drafts, through relaunch.
+    func testEachWindowsNewChatDraftPersistsSeparately() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let persistence = ChatDraftFilePersistence(directoryURL: directory)
+        let server = try XCTUnwrap(URL(string: "https://example.com"))
+        let first = ChatDraftKey.newChat(server: server)
+        let second = ChatDraftKey.newChat(server: server, window: "window-b")
+        XCTAssertNotEqual(first, second)
+
+        try await persistence.write([first: ChatDraft(text: "Left"), second: ChatDraft(text: "Right")])
+
+        let loaded = await persistence.load()
+        XCTAssertEqual(loaded[first]?.text, "Left")
+        XCTAssertEqual(loaded[second]?.text, "Right")
+    }
+
     func testFilePersistenceRoundTripsAttachmentsAndSettings() async throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -885,7 +902,7 @@ final class ChatDraftStoreTests: XCTestCase {
         let persistence = ChatDraftFilePersistence(directoryURL: directory)
         let key = ChatDraftKey(
             serverID: "https://example.com",
-            context: .newChat
+            context: .newChat(window: nil)
         )
 
         try await persistence.write([key: ChatDraft(text: "Protected prompt")])

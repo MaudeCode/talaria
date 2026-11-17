@@ -461,6 +461,12 @@ final class SharedDraftStoreTests: XCTestCase {
         XCTAssertEqual(router.pendingImport(in: right)?.sharedImport.draft, "First share",
                        "A share left unrouted moves to the window still in use")
         XCTAssertNil(router.pendingImport(in: left))
+
+        let routing = router.didRoute(try XCTUnwrap(router.pendingImport(in: right)))
+        router.windowDidChange(right, isInForeground: false)
+        router.windowDidChange(left, isInForeground: true)
+        XCTAssertNil(router.pendingImport(in: left), "A share already routed never opens in another window")
+        await routing.value
     }
 
     func testPendingImportSaveRejectsAggregateOverflowWithoutReplacingExistingDraft() throws {
