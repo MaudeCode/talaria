@@ -531,7 +531,8 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
     /// A prose row's text as the server rewrote it for display, and its media (TAL-186); see `display`.
     let displayText: String?
     let media: [JSONValue]?
-    /// TAL-2332: the server's activity group of a reasoning or tool row, and that group's record from its scene or page.
+    /// TAL-2332: the server's activity group of a reasoning or tool row, and that group's record from its scene or page;
+    /// the record is encoded with the row, so a scene restored from the offline cache keeps it.
     public let groupID: String?
     public internal(set) var group: AssistantActivityGroup?
     /// TAL-2332: a tool row that heads a merged run of this many calls, or the row id of the merged row it folds into.
@@ -540,6 +541,7 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case groupID = "groupId"
+        case group
         case mergedCount
         case mergedInto
         case rowID = "rowId"
@@ -569,6 +571,7 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
         displayText = container.decodeLossyStringIfPresent(forKey: .displayText)
         media = try? container.decodeIfPresent([JSONValue].self, forKey: .media)
         groupID = container.decodeLossyStringIfPresent(forKey: .groupID)
+        group = AssistantActivityGroup(try? container.decodeIfPresent(JSONValue.self, forKey: .group))
         mergedCount = container.decodeLossyIntIfPresent(forKey: .mergedCount)
         mergedInto = container.decodeLossyStringIfPresent(forKey: .mergedInto)
     }
@@ -587,7 +590,7 @@ public struct AssistantActivitySceneRow: Codable, Equatable, Sendable {
                   let data = try? JSONEncoder().encode(value),
                   var row = try? rowDecoder.decode(AssistantActivitySceneRow.self, from: data)
             else { return nil }
-            row.group = row.groupID.flatMap { groups[$0] }
+            row.group = row.groupID.flatMap { groups[$0] } ?? row.group
             return row
         }
     }

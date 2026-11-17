@@ -110,13 +110,30 @@ export class LiveActivityGroups {
   private open: string | null = null
   private readonly groups = new Map<string, Map<string, GroupCall>>()
   private readonly callGroups = new Map<string, string>()
+  /**
+   * Hidden lookups that started with no group open, by call id: the group opened next takes them, in place, unless prose
+   * or a steer came first (`closed`), as the settled scene places a failed lookup by where it started.
+   */
+  private readonly ungrouped = new Map<string, GroupCall & { closed: boolean }>()
 
-  close(): void { this.open = null }
+  close(): void {
+    this.open = null
+    for (const call of this.ungrouped.values()) call.closed = true
+  }
 
   private openGroup(): string {
-    this.open ??= groupId(this.next++)
-    if (!this.groups.has(this.open)) this.groups.set(this.open, new Map())
-    return this.open
+    if (this.open) return this.open
+    const id = groupId(this.next++)
+    const calls = new Map<string, GroupCall>()
+    for (const [callId, call] of this.ungrouped) {
+      if (call.closed) continue
+      calls.set(callId, { kind: call.kind, hidden: call.hidden, failed: call.failed, running: call.running })
+      this.callGroups.set(callId, id)
+      this.ungrouped.delete(callId)
+    }
+    this.groups.set(id, calls)
+    this.open = id
+    return id
   }
 
   /** A reasoning frame's `group_id`. */
@@ -127,8 +144,8 @@ export class LiveActivityGroups {
   /** A `tool` frame's `group_id` and `group`. */
   start(id: string, name: unknown): { group_id?: string; group?: ActivityGroup } {
     const hidden = hiddenLookup(name, false)
-    if (hidden && !this.open) return {}
     const { kind, card } = toolGrouping(name)
+    if (hidden && !this.open) { this.ungrouped.set(id, { kind, hidden, failed: false, running: true, closed: false }); return {} }
     if (card && !hidden) this.close()
     const group = this.openGroup()
     this.groups.get(group)?.set(id, { kind, hidden, failed: false, running: true })
@@ -139,6 +156,16 @@ export class LiveActivityGroups {
 
   /** A `tool_complete` frame's `group_id` and `group`; a failed lookup is counted from here on, as it shows again. */
   complete(id: string, name: unknown, isError: boolean): { group_id?: string; group?: ActivityGroup } {
+    const waiting = this.ungrouped.get(id)
+    if (waiting) {
+      this.ungrouped.delete(id)
+      // A lookup that stays hidden needs no group; one that failed shows, in the group open now or a new one.
+      if (hiddenLookup(name, isError)) return {}
+      const group = this.openGroup()
+      this.groups.get(group)?.set(id, { kind: waiting.kind, hidden: false, failed: isError, running: false })
+      this.callGroups.set(id, group)
+      return this.frame(group)
+    }
     const group = this.callGroups.get(id)
     const call = group ? this.groups.get(group)?.get(id) : undefined
     if (!group || !call) return {}

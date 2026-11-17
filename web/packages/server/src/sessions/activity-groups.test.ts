@@ -1,5 +1,6 @@
 /** TAL-2332: the server groups a turn's reasoning and tool rows, counts each group and merges repeated calls. */
 import { afterEach, describe, expect, it } from 'vitest'
+import { LiveActivityGroups } from './activity-groups.js'
 import { anchorActivitySceneTransportPreview, buildTurnScene } from './anchor.js'
 import { readToolLookupsShown } from './tool-display.js'
 
@@ -91,6 +92,20 @@ describe('activity groups', () => {
     expect(scene.activity_rows.find((row) => row.role === 'steering')?.phase_activity).toEqual({ group_id: 'phase:0', parts: [{ kind: 'read', count: 1, failed: 0 }], failed: 0, running: false })
     expect(scene.final_phase_activity).toEqual({ group_id: 'phase:1', parts: [{ kind: 'web', count: 1, failed: 0 }, { kind: 'shell', count: 1, failed: 1 }], failed: 1, running: false })
     expect(scene.activity_rows.map((row) => row.group_id ?? null)).toEqual(['group:0', null, 'group:1', 'group:1'])
+  })
+
+  it('counts a lookup that started hidden and then failed in the group it shows in, live as settled', () => {
+    const settled = sceneOf([
+      { role: 'assistant', id: 'a1', content: '', tool_calls: [call('l1', 'tool_search', { queries: ['x'] }), call('r1', 'read_file', { path: 'a' })] },
+      reply('l1', 'no index', true), reply('r1', 'a'),
+      { role: 'assistant', id: 'a2', content: 'Done.' },
+    ])
+    const live = new LiveActivityGroups()
+    expect(live.start('l1', 'tool_search')).toEqual({})
+    live.start('r1', 'read_file')
+    expect(live.complete('l1', 'tool_search', true)).toEqual({ group_id: 'group:0', group: { ...settled.activity_groups[0], running: true } })
+    expect(live.complete('r1', 'read_file', false)).toEqual({ group_id: 'group:0', group: settled.activity_groups[0] })
+    expect(settled.activity_groups[0]).toEqual({ group_id: 'group:0', parts: [{ kind: 'search', count: 1, failed: 1 }, { kind: 'read', count: 1, failed: 0 }], failed: 1, running: false })
   })
 
   it('ships the whole group\'s record with a preview that pages part of it out', () => {

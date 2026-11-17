@@ -110,8 +110,8 @@ public struct ToolApp: Decodable, Equatable, Sendable {
 
 /// TAL-2332: a run of reasoning and tool rows the server folds under one header: its calls by kind in the server's order,
 /// its failed calls, and whether any still runs. The app words the header from these alone.
-public struct AssistantActivityGroup: Decodable, Equatable, Sendable {
-    public struct Part: Decodable, Equatable, Sendable {
+public struct AssistantActivityGroup: Codable, Equatable, Sendable {
+    public struct Part: Codable, Equatable, Sendable {
         public let kind: ToolDisplayKind
         public let count: Int
         public let failed: Int
@@ -129,6 +129,13 @@ public struct AssistantActivityGroup: Decodable, Equatable, Sendable {
             kind = ToolDisplayKind(serverValue: container.decodeLossyStringIfPresent(forKey: .kind)) ?? .unknown
             count = max(0, container.decodeLossyIntIfPresent(forKey: .count) ?? 0)
             failed = max(0, container.decodeLossyIntIfPresent(forKey: .failed) ?? 0)
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(kind.rawValue, forKey: .kind)
+            try container.encode(count, forKey: .count)
+            try container.encode(failed, forKey: .failed)
         }
     }
 
