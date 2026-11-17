@@ -60,7 +60,7 @@ export interface ToolCardData {
   /** TAL-1968: the call's card must stay in view, outside a folded run of calls (server field `shows_card`). */
   showsCard?: true
   /** TAL-2340: when a running call started (epoch ms, from the server's `started_at`); its row's timer counts from it. */
-  startedAt?: number
+  startedAt?: number | undefined
   /** TAL-2340: the background process the call started (server field `process_id`), whose latest output line shows under it. */
   processId?: string | undefined
 }

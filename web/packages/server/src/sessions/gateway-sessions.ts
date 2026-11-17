@@ -1494,7 +1494,8 @@ export class GatewaySessions {
                 const started = { tid: id, name: data.name || data.tool_name, args: data.args ?? {}, done: false }
                 calls.push(started)
                 registry.noteToolEvent(watch.stream, this.deps.now(), true, started)
-                await put('tool', { ...data, id, name: data.name || data.tool_name, started_at: this.deps.now() })
+                // TAL-2340: a live start is when it arrived; a replayed one has no time of its own, so its row shows no timer.
+                await put('tool', { ...data, id, name: data.name || data.tool_name, ...(replaying ? {} : { started_at: this.deps.now() }) })
               } else if (kind === 'tool.progress') {
                 if (!id || !call || call.done || !watch.snapshot.running) return
                 call.progress = toolProgress({ ...data, message: typeof data.message === 'string' ? redactString(data.message, this.deps.redactEnabled()) : null })
