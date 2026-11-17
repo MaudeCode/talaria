@@ -46,19 +46,46 @@ struct HostedVariant {
 /// is sized for instead, whatever the device's posture (TAL-1547).
 @MainActor
 enum HostedScene {
-    /// The host's scene once it is in the foreground; a test can start before the scene connects.
+    /// Set once the host's scene could not be brought back to the foreground: every later hosted test skips at once
+    /// instead of failing the same way after its own wait.
+    private static var lostForeground = false
+
+    /// The host's scene once it is in the foreground; a test can start before the scene connects. A simulator
+    /// SpringBoard that restarts mid-run leaves the host running in the background, where no hosted window draws, and
+    /// nothing else brings it back, so a backgrounded host is opened again (TAL-2347).
     static func current(file: StaticString = #filePath, line: UInt = #line) throws -> UIWindowScene {
         func scene() -> UIWindowScene? {
             UIApplication.shared.connectedScenes.lazy.compactMap { $0 as? UIWindowScene }
                 .first { $0.activationState == .foregroundActive }
         }
+        if let scene = scene() { return scene }
+        if lostForeground { throw XCTSkip("An earlier hosted test failed because the test host left the foreground") }
+        var reopened = false
         let deadline = Date().addingTimeInterval(10)
         while scene() == nil, Date() < deadline {
+            // A host leaving for another app passes through inactive first, so watch for the background throughout.
+            if !reopened, UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .background }) {
+                reopened = true
+                print("The test host's scene was in the background; reopened: \(reopenHost())")
+            }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
+        lostForeground = scene() == nil
         let states = UIApplication.shared.connectedScenes.map { "\($0.activationState.rawValue)" }
         return try XCTUnwrap(scene(), "The test host's scene never reached the foreground; scene states \(states)",
                              file: file, line: line)
+    }
+
+    /// Brings the host back to the foreground, as tapping its icon does. UIKit gives an iPhone app no public way to
+    /// foreground itself: `activateSceneSession` refuses on a device without multiple scenes.
+    private static func reopenHost() -> Bool {
+        let selector = NSSelectorFromString("openApplicationWithBundleID:")
+        guard let bundleID = Bundle.main.bundleIdentifier,
+              let workspace = (NSClassFromString("LSApplicationWorkspace") as AnyObject?)?
+                .perform(NSSelectorFromString("defaultWorkspace"))?.takeUnretainedValue(),
+              let method = class_getInstanceMethod(object_getClass(workspace), selector) else { return false }
+        typealias Open = @convention(c) (AnyObject, Selector, NSString) -> Bool
+        return unsafeBitCast(method_getImplementation(method), to: Open.self)(workspace, selector, bundleID as NSString)
     }
 
     /// A window in the host's scene, `size` points or the display's own size. A window sized for another display takes
@@ -616,6 +643,17 @@ final class HostedWindowTests: XCTestCase {
         let scene = try XCTUnwrap(probe.windowScene)
         let window = try hostWindow(Color.clear, size: scene.coordinateSpace.bounds.size)
         XCTAssertEqual(window.traitCollection.verticalBarEdge, scene.traitCollection.verticalBarEdge)
+    }
+
+    /// A simulator SpringBoard that restarts mid-run leaves the host running in the background, where no hosted window
+    /// draws; the next hosted test brings it back instead of failing like every test after it (TAL-2347).
+    func testAHostTheSystemSentToTheBackgroundIsBroughtBack() async throws {
+        let scene = try HostedScene.current()
+        // Goes to the Home Screen, as the Home button does. Opening another app instead slowed the rest of a CI shard.
+        UIApplication.shared.perform(NSSelectorFromString("suspend"))
+        let backgrounded = await awaitCondition { scene.activationState == .background }
+        XCTAssertTrue(backgrounded, "Suspending left the host's scene \(scene.activationState.rawValue)")
+        XCTAssertTrue(try HostedScene.current() === scene)
     }
 }
 

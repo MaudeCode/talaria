@@ -43,9 +43,9 @@ final class ChatStreamTickPerformanceTests: XCTestCase {
         super.tearDown()
     }
 
-    func testStreamTicksAndKeystrokesStayWithinTheWorkBudget() {
+    func testStreamTicksAndKeystrokesStayWithinTheWorkBudget() throws {
         var samples: [ChatStreamTickSample] = []
-        measureAsync(
+        try measureAsync(
             metrics: [XCTClockMetric(), XCTCPUMetric()],
             options: performanceOptions(manualWindow: true)
         ) { test in
