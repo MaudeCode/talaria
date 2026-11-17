@@ -99,6 +99,22 @@ def _user_plugin_profiles() -> dict[int, tuple[Any, Path]]:
     return out
 
 
+def _discoverable_plugin_dirs(roots: dict[Path, str]) -> set[Path]:
+    """Every provider plugin directory the Agent's per-home discovery may import, beside the enabled *roots*.
+
+    Discovery also loads disabled and manifest-less category plugins, so name and module collisions check them all.
+    """
+    import providers
+
+    directories = set(roots)
+    for parent, flat in ((providers._user_plugins_dir(), False), (providers._installed_plugins_dir(), True)):
+        if parent is not None:
+            directories.update(child.resolve() for child in parent.iterdir()
+                               if child.is_dir() and not child.name.startswith(("_", "."))
+                               and (not flat or (child.name != "model-providers" and providers._declares_model_provider_kind(child))))
+    return directories
+
+
 def _hosted_plugin_profiles(roots: dict[Path, str]) -> dict[Path, list] | None:
     """Resolve enabled directories through the Agent's host metadata and scoped provider registry."""
     import providers
@@ -117,15 +133,8 @@ def _hosted_plugin_profiles(roots: dict[Path, str]) -> dict[Path, list] | None:
 
     registered = {p.name: p for p in providers.list_providers() if providers.provider_source(p.name) == "user"}
     home_key = hermes_home_key(get_hermes_home())
-    # Discovery also loads disabled and manifest-less category plugins. Include them when checking name collisions.
-    directories = set(roots)
-    for parent, flat in ((providers._user_plugins_dir(), False), (providers._installed_plugins_dir(), True)):
-        if parent is not None:
-            directories.update(child.resolve() for child in parent.iterdir()
-                               if child.is_dir() and not child.name.startswith(("_", "."))
-                               and (not flat or (child.name != "model-providers" and providers._declares_model_provider_kind(child))))
     owners: dict[str, set[Path]] = {}
-    for root in directories:
+    for root in _discoverable_plugin_dirs(roots):
         try:
             # Reuse the Agent's cached extraction; provider ids need not match manifest or directory names.
             loaded = load_hosted_profiles(root, providers._user_module_name(root, home_key))
@@ -162,9 +171,11 @@ def _native_plugin_profiles(roots: dict[Path, str]) -> dict[Path, list] | None:
     home_key = hermes_home_key(get_hermes_home())
     with providers._HOME_LAYERS_LOCK:  # a plugin reload publishes owner, trees and registry together under it
         owner, trees, registry = dict(layer.owner), dict(layer.trees), dict(layer.registry)
+    # The Agent names a plugin's module after its directory alone: two discoverable directories sharing a name share
+    # one owner, so neither owns it, even when only one of them is an enabled manifest.
+    names = [providers._user_module_name(directory, home_key) for directory in _discoverable_plugin_dirs(roots)]
+    shared = {base for base in names if names.count(base) > 1}
     bases = {root: providers._user_module_name(root, home_key) for root in roots}
-    # The Agent names a plugin's module after its directory alone; two roots sharing a name share one owner, so neither owns it.
-    shared = {base for base in bases.values() if list(bases.values()).count(base) > 1}
     return {
         root: [registry[name] for name, owned_by in owner.items() if owned_by == base and base in trees and base not in shared and name in registry]
         for root, base in bases.items()

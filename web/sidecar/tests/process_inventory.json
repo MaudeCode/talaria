@@ -1906,7 +1906,8 @@
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: the real Agent keys native plugin ownership by directory name, so same-named flat and model-providers plugins must stay unattributed and refused at runtime. Synthetic plugin CLI is never spawned.",
       "cases": [
-        ""
+        "[both-manifests]",
+        "[manifestless]"
       ]
     },
     "tests/test_plugin_providers.py::test_a_provider_that_left_core_offers_its_catalog_plugin": {

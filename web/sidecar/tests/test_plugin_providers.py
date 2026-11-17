@@ -556,17 +556,23 @@ def test_an_updated_plugin_is_attributed_through_its_current_native_generation(t
 
 @requires_agent
 @pytest.mark.skipif(AGENT_DIR is None or not (AGENT_DIR / "providers/plugin_reload.py").is_file(), reason="Agent has no native plugin reload")
-def test_plugins_sharing_a_directory_name_are_not_attributed_through_native_ownership(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("manifestless", [False, True], ids=["both-manifests", "manifestless"])
+def test_plugins_sharing_a_directory_name_are_not_attributed_through_native_ownership(tmp_path: pathlib.Path, manifestless: bool) -> None:
     """The Agent names a plugin's module after its directory, so same-named flat and model-providers plugins share an owner."""
     home = tmp_path / "home" / ".hermes"
     home.mkdir(parents=True)
     (home / "config.yaml").write_text("plugins:\n  isolation: in_process\n")
-    for parent, manifest in ((home / "plugins", "dup-flat-provider"), (home / "plugins" / "model-providers", "dup-nested-provider")):
+    nested = home / "plugins" / "model-providers"
+    for parent, manifest in ((home / "plugins", "dup-flat-provider"), (nested, "dup-nested-provider")):
         _plugin(parent, "fake-dup", manifest, name="fake-dup", display=manifest, command="talaria-test-cli-that-does-not-exist", models=(manifest,))
+    if manifestless:
+        # A manifest-less category plugin is no enabled root, but the Agent still imports it under the shared module name.
+        (nested / "fake-dup" / "plugin.yaml").unlink()
     sidecar = SidecarProcess(home)
     try:
         rows = sidecar.result("plugins.providers", {"profile_home": str(home)})["providers"]
-        assert sorted((row["name"], row["setup"]) for row in rows) == [("dup-flat-provider", "not_loaded"), ("dup-nested-provider", "not_loaded")], rows
+        expected = [("dup-flat-provider", "not_loaded")] + ([] if manifestless else [("dup-nested-provider", "not_loaded")])
+        assert sorted((row["name"], row["setup"]) for row in rows) == expected, rows
         denied, _ = sidecar.call("providers.resolve_runtime", {"profile_home": str(home), "requested": "fake-dup"})
         assert denied.get("error", {}).get("data", {}).get("condition") == "credential_missing", denied
     finally:
