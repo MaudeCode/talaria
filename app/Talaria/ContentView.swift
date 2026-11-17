@@ -246,6 +246,12 @@ struct ContentView: View {
             return
         }
 
+        // TAL-2327: a transcript row's Kanban card, on its board.
+        if let card = TalariaDeepLink.kanbanCard(from: url) {
+            pendingDestination = .kanbanCard(id: card.id, board: card.board)
+            return
+        }
+
         if let sourceID = TalariaDeepLink.quotaSourceID(from: url) {
             if TalariaDeepLink.requestsQuotaRefresh(url) {
                 UserDefaults.standard.set(sourceID, forKey: ProviderQuotaWidgetLaunchAction.pendingRefreshSourceKey)

@@ -3,7 +3,7 @@
  * module computes for live frames and the public projection of persisted calls (`redact.ts` stamps them). Callers pass
  * redacted args, so the target never shows more than the arguments it came from.
  */
-import type { FileExcerpt, FileExcerptLine, ResultLink, ResultLinks, ResultPage, SearchMatches, SearchMatchFile, ToolEditDiff, ToolKind, ToolPresentation, ToolPresentationEntry, ToolProgress, ToolRow, ToolRows } from '@maudecode/talaria-web-contracts'
+import type { FileExcerpt, FileExcerptLine, ResultLink, ResultLinks, ResultPage, SearchMatches, SearchMatchFile, ToolEditDiff, ToolKind, ToolPresentation, ToolPresentationEntry, ToolProgress, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
 import { DecisionReviewRefSchema, DisplayMediaSchema, FileExcerptSchema, OutboundDraftRefSchema, SearchMatchesSchema, ProposalRefSchema, ShowBlockRefSchema, TALARIA_TOOL_NAMES, TerminalRefSchema, TOOL_PRESENTATIONS, type DecisionReviewRef, type DisplayMedia, type OutboundDraftRef, type ProposalRef, type ShowBlockRef, type TerminalRef } from '@maudecode/talaria-web-contracts'
 import { posix } from 'node:path'
 import { str } from '../util.js'
@@ -97,6 +97,8 @@ const TARGET_KEYS: Partial<Record<ToolKind, string[]>> = {
   image: [], audio: [], video: [], image_analysis: [], video_analysis: [],
   // TAL-2326: a session search names its query, a job its name; connections and questions read as their kind's phrase.
   session: ['query', 'session_id'], schedule: ['name', 'job_id'], connection: [], question: [],
+  // TAL-2327: a Kanban call names its task (a new one by its title, a link by its child); a list reads as its verb's phrase.
+  kanban: ['task_id', 'title', 'child_id'],
 }
 /** TAL-2317: the Talaria tools named by what they act on; every other one is named by the tool itself. */
 const TALARIA_TARGET_KEYS: Record<string, string[]> = { deliver: ['path'], terminal_open: ['command'] }
@@ -178,7 +180,7 @@ function delegateTarget(arg: (keys: string[]) => string): string {
  * A call's display class and label: the first line of its kind's argument, whitespace-collapsed and capped. TAL-1458:
  * `focus_path` is a read or write call's file inside the session's `workspace` root, the file a companion page shows.
  */
-export function toolDisplay(name: unknown, args: unknown, workspace: string | null = null): { kind: ToolKind; target: string; focus_path: string | null; shows_card?: true } {
+export function toolDisplay(name: unknown, args: unknown, workspace: string | null = null): { kind: ToolKind; target: string; focus_path: string | null; shows_card?: true; verb?: ToolVerb } {
   const bridge = BRIDGES.get(str(name))
   const kind = bridge?.kind ?? toolKind(name)
   const a = isDict(args) ? args : {}
@@ -186,10 +188,13 @@ export function toolDisplay(name: unknown, args: unknown, workspace: string | nu
   const special = name === 'delegate_task' ? delegateTarget(arg) : bridge ? bridge.target(snapshotItems(snapshotArg(a, bridge.key) ?? '')) : ''
   const own = kind === 'talaria' ? arg(TALARIA_TARGET_KEYS[str(name)] ?? []) || str(name) : ''
   const first = (special || own || arg(TARGET_KEYS[kind] ?? FALLBACK_KEYS)).trim().split('\n')[0] ?? ''
+  // TAL-2327: the verb a `kanban` call shows in place of its kind's own.
+  const verb = agentTool(name)?.verb
   // Capped by code point, so the cap never splits a surrogate pair into invalid JSON.
   return {
     kind, target: Array.from(first.replace(/\s+/g, ' ').trim()).slice(0, TOOL_TARGET_MAX).join(''), focus_path: kind === 'read' || kind === 'write' ? focusPath(arg(FOCUS_KEYS), workspace) : null,
     ...(typeof name === 'string' && CARD_TOOLS.has(name) ? { shows_card: true as const } : {}),
+    ...(verb ? { verb } : {}),
   }
 }
 
@@ -542,7 +547,7 @@ export function toolRowsView(name: unknown, data: Record<string, unknown>, args:
     case 'cronjob_manage': return cronRows(data, a)
     case 'manage_connections': return connectionRows(data)
     case 'clarify': return Array.isArray(data.responses) ? { rows: dicts(data.responses).map((r) => row(str(r.question), clarifyAnswer(r))) } : undefined
-    default: return undefined
+    default: return agentTool(name)?.kind === 'kanban' ? kanbanRows(str(name), data, a) : undefined
   }
 }
 
@@ -659,4 +664,33 @@ function clarifyAnswer(response: Record<string, unknown>): string {
   const answer = response.user_response
   if (response.status === 'answered' && answer !== null && answer !== undefined) return Array.isArray(answer) ? answer.map(str).join(', ') : str(answer)
   return response.status === 'skipped' ? 'Skipped' : 'No answer'
+}
+
+/** TAL-2327: a Kanban task's row: its title, else its id, and a muted detail, opening the task on the call's board. */
+function taskRow(id: unknown, title: unknown, detail: string, board: string): ToolRow {
+  const taskId = str(id).trim()
+  return row(str(title).trim() || taskId, detail, undefined, taskId ? { kind: 'kanban_task', id: taskId, ...(board ? { board } : {}) } : undefined)
+}
+
+/**
+ * TAL-2327: the task or tasks a `kanban_*` call touched, each opening that task: a shown task or each listed one with its
+ * status and assignee, a new task by the title the call gave, a linked parent and child, a task's files, or the task a state
+ * change, comment or attachment acted on, with where it landed. Undefined for a shape the tool does not return.
+ */
+function kanbanRows(name: string, data: Record<string, unknown>, a: Record<string, unknown>): ToolRows | undefined {
+  const board = str(a.board).trim()
+  const id = str(data.task_id) || str(a.task_id)
+  const summary = (task: Record<string, unknown>) => taskRow(task.id, task.title, joined(str(task.status), str(task.assignee)), board)
+  if (name === 'kanban_show') return isDict(data.task) ? { rows: [summary(data.task)] } : undefined
+  if (name === 'kanban_list') return Array.isArray(data.tasks) ? { rows: dicts(data.tasks).map(summary) } : undefined
+  if (name === 'kanban_link') {
+    if (!str(data.parent_id) || !str(data.child_id)) return undefined
+    return { rows: [taskRow(data.parent_id, '', 'Parent', board), taskRow(data.child_id, '', joined('Child', data.gated === true ? 'waiting on parent' : ''), board)] }
+  }
+  if (!id || data.ok !== true) return undefined
+  if (name === 'kanban_attachments') return { rows: [taskRow(id, '', '', board), ...dicts(data.attachments).map((file) => row(str(file.filename), str(file.content_type)))] }
+  const detail = name === 'kanban_comment' ? firstLine(a.body)
+    : name === 'kanban_attach' || name === 'kanban_attach_url' ? str(a.filename) || str(a.url)
+    : joined(str(data.status), str(data.block_kind).replace(/_/g, ' '), data.gated === true ? 'waiting on parent' : '')
+  return { rows: [taskRow(id, name === 'kanban_create' ? a.title : '', detail, board)] }
 }

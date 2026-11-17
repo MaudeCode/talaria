@@ -157,6 +157,7 @@ public struct SessionNavigationState: Equatable, Sendable {
         let pushed: SectionItem? = switch utility {
         case .providers(let sourceID): .quotaSource(id: sourceID)
         case .decisionReview(let reviewID): .decisionReview(id: reviewID)
+        case .kanbanCard(let id, let board): .kanbanCard(id: id, board: board)
         default: nil
         }
         if let pushed {

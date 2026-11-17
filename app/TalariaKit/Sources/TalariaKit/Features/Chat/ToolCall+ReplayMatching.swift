@@ -13,6 +13,7 @@ extension ToolCall {
             args: payload.args ?? args,
             argsFields: payload.argsFields ?? argsFields,
             kind: payload.kind ?? kind,
+            verb: payload.verb ?? verb,
             target: payload.target ?? target,
             resultView: payload.resultView ?? resultView,
             editDiff: payload.editDiff ?? editDiff,

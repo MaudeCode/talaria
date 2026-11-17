@@ -315,6 +315,15 @@ final class ScreenGalleryHostedTests: XCTestCase {
         try await page("kanban", title: "Triage") { KanbanStatusFocusView(model: model) }
     }
 
+    /// TAL-2327: a transcript row's Kanban card link selects the card's board first, then shows that card's detail.
+    func testKanbanCardLinkSelectsItsBoardAndShowsTheCard() async throws {
+        let model = KanbanFeatureState(server: server, defaults: defaults, onAPIError: { XCTFail("\($0)") })
+        let window = try hostWindow(NavigationStack { KanbanCardLinkView(model: model, cardID: "FIXTURE-2", board: "fixture") })
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains("Fixture Card FIXTURE-2") == true }
+        XCTAssertEqual(model.selectedBoardSlug, "fixture", "The link's board, not the server's current one, must be selected")
+        attachHostedScreenshot(window, name: "kanban-card-link")
+    }
+
     func testSkills() async throws {
         let model = SkillsViewModel(client: fixture.client)
         await model.load()

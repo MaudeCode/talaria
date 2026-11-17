@@ -18,6 +18,7 @@ public enum TalariaDeepLink {
     static let openAppHost = "open"
     static let newChatProviderHost = "new-chat-provider"
     static let sectionHost = "section"
+    static let kanbanCardHost = "kanban-card"
     static let providerQueryItem = "provider"
 
     public static func quotaSourceURL(sourceID: String, refresh: Bool = false) -> URL? {
@@ -200,6 +201,29 @@ public enum TalariaDeepLink {
         guard url.scheme?.lowercased() == scheme, url.host?.lowercased() == sectionHost else { return nil }
         return URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
             .first { $0.name == "name" }?.value.flatMap(Section.init(rawValue:))
+    }
+
+    /// TAL-2327: `talaria://kanban-card?id=<card>&board=<slug>`, one Kanban card a transcript row opens on its board (the
+    /// current board without one); nil for a blank card id.
+    public static func kanbanCardURL(cardID: String, board: String? = nil) -> URL? {
+        let id = cardID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return nil }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = kanbanCardHost
+        let board = board?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        components.queryItems = [URLQueryItem(name: "id", value: id)] + (board.isEmpty ? [] : [URLQueryItem(name: "board", value: board)])
+        return components.url
+    }
+
+    /// TAL-2327: the card and board a `kanbanCardURL` link names; nil for any other link or a blank card id.
+    public static func kanbanCard(from url: URL) -> (id: String, board: String?)? {
+        guard url.scheme?.lowercased() == scheme, url.host?.lowercased() == kanbanCardHost else { return nil }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let value = { (name: String) in items.first { $0.name == name }?.value?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard let id = value("id"), !id.isEmpty else { return nil }
+        let board = value("board")
+        return (id, board?.isEmpty == false ? board : nil)
     }
 
     /// Whether a link is one of this build's own app links, which the app routes itself rather than the system.

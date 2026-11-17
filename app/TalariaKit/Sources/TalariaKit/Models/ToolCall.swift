@@ -9,6 +9,8 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
     public var argsFields: [ToolField]?
     /// Server-derived display fields; nil from an older server (shown as an unknown tool with no target).
     public var kind: ToolDisplayKind?
+    /// TAL-2327: the verb a `kanban` call shows in place of its kind's own (server field).
+    public var verb: ToolVerb?
     public var target: String?
     public var progress: ToolProgress?
     public var duration: Double?
@@ -31,6 +33,7 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
         args: [String: JSONValue]?,
         argsFields: [ToolField]? = nil,
         kind: ToolDisplayKind? = nil,
+        verb: ToolVerb? = nil,
         target: String? = nil,
         progress: ToolProgress? = nil,
         resultView: ToolResultView? = nil,
@@ -40,6 +43,7 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
         isCompleted: Bool = false,
         startedAt: Double = Date().timeIntervalSince1970
     ) {
+        self.verb = verb
         self.id = id
         self.name = name
         self.preview = preview
@@ -173,10 +177,12 @@ public struct ResultPage: Decodable, Equatable, Sendable {
 }
 
 /// TAL-2326: where a result row opens: a Talaria chat (`session`), the scheduled jobs page (`crons`), connected apps
-/// (`connectors`) or a skill. An unknown kind opens nothing.
+/// (`connectors`), a skill or (TAL-2327) a Kanban task (`kanban_task`) on its board. An unknown kind opens nothing.
 public struct ToolRowLink: Decodable, Equatable, Sendable {
     public let kind: String
     public let id: String?
+    /// TAL-2327: a `kanban_task`'s board; nil for the current board.
+    public let board: String?
 
     /// The app link the row opens: the chat, the Tasks page with the scheduled jobs, Settings › Tools (where connected
     /// apps live) or the Skills page; nil for a kind this app does not know or a chat with no id.
@@ -186,6 +192,7 @@ public struct ToolRowLink: Decodable, Equatable, Sendable {
         case "crons": TalariaDeepLink.sectionURL(.tasks)
         case "connectors": TalariaDeepLink.sectionURL(.tools)
         case "skill": TalariaDeepLink.sectionURL(.skills)
+        case "kanban_task": id.flatMap { TalariaDeepLink.kanbanCardURL(cardID: $0, board: board) }
         default: nil
         }
     }
@@ -480,6 +487,7 @@ public struct ToolCallGroup: Identifiable, Equatable, Sendable {
             args: arguments(from: function?["arguments"] ?? object["args"]),
             argsFields: ToolField.rows(object["args_fields"]),
             kind: ToolDisplayKind(serverValue: object["kind"]?.stringValue),
+            verb: ToolVerb(serverValue: object["verb"]?.stringValue),
             target: object["target"]?.stringValue,
             progress: ToolProgress(object["progress"]),
             resultView: ToolResultView(object["result_view"]),

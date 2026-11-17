@@ -77,6 +77,8 @@ public enum AssistantActivitySummary: Sendable {
         case schedule
         case connection
         case question
+        // TAL-2327: Kanban tasks read or changed.
+        case kanban
         case generic
     }
 
@@ -106,6 +108,7 @@ public enum AssistantActivitySummary: Sendable {
     }
 
     public static func label(for toolCall: ToolCall) -> String {
+        if toolCall.kind == .kanban { return kanbanLabel(for: toolCall) }
         if let specificLabel = specificLabel(for: toolCall) {
             return specificLabel
         }
@@ -136,6 +139,7 @@ public enum AssistantActivitySummary: Sendable {
             // A media tool reads as its kind's phrase; the server sends it no target.
             case .session: return String(localized: "Failed to search past chats for \(target)")
             case .image, .audio, .video, .imageAnalysis, .videoAnalysis, .schedule, .connection, .question: return failedPhrase(for: category(for: toolCall))
+            case .kanban: return kanbanLabel(for: toolCall)
             }
         }
         switch (kind, toolCall.isCompleted) {
@@ -164,6 +168,40 @@ public enum AssistantActivitySummary: Sendable {
         // TAL-2326: a job, connection or question reads as its kind's phrase, as a media tool does.
         case (.image, _), (.audio, _), (.video, _), (.imageAnalysis, _), (.videoAnalysis, _), (.schedule, _), (.connection, _), (.question, _):
             return phrase(for: category(for: toolCall), count: 1, completed: toolCall.isCompleted)
+        case (.kanban, _): return kanbanLabel(for: toolCall)
+        }
+    }
+
+    /// TAL-2327: a Kanban call's verb and the task it names, the server's `verb` picking the verb; a list reads as its
+    /// tasks, and another call naming no task as the kind's phrase.
+    private static func kanbanLabel(for toolCall: ToolCall) -> String {
+        let failed = toolCall.isError == true
+        let done = toolCall.isCompleted
+        if toolCall.verb == .list {
+            return failed ? String(localized: "Failed to list tasks") : done ? String(localized: "Listed tasks") : String(localized: "Listing tasks")
+        }
+        guard let target = collapsedTarget(for: toolCall, kind: .kanban) else {
+            return failed ? failedPhrase(for: .kanban) : phrase(for: .kanban, count: 1, completed: done)
+        }
+        switch (toolCall.verb ?? .update, failed, done) {
+        case (.create, true, _): return String(localized: "Failed to create \(target)")
+        case (.create, false, true): return String(localized: "Created \(target)")
+        case (.create, false, false): return String(localized: "Creating \(target)")
+        case (.view, true, _): return String(localized: "Failed to view \(target)")
+        case (.view, false, true): return String(localized: "Viewed \(target)")
+        case (.view, false, false): return String(localized: "Viewing \(target)")
+        case (.complete, true, _): return String(localized: "Failed to complete \(target)")
+        case (.complete, false, true): return String(localized: "Completed \(target)")
+        case (.complete, false, false): return String(localized: "Completing \(target)")
+        case (.block, true, _): return String(localized: "Failed to block \(target)")
+        case (.block, false, true): return String(localized: "Blocked \(target)")
+        case (.block, false, false): return String(localized: "Blocking \(target)")
+        case (.comment, true, _): return String(localized: "Failed to comment on \(target)")
+        case (.comment, false, true): return String(localized: "Commented on \(target)")
+        case (.comment, false, false): return String(localized: "Commenting on \(target)")
+        case (.update, true, _), (.list, true, _): return String(localized: "Failed to update \(target)")
+        case (.update, false, true), (.list, false, true): return String(localized: "Updated \(target)")
+        case (.update, false, false), (.list, false, false): return String(localized: "Updating \(target)")
         }
     }
 
@@ -213,6 +251,7 @@ public enum AssistantActivitySummary: Sendable {
         case .schedule: .schedule
         case .connection: .connection
         case .question: .question
+        case .kanban: .kanban
         case .memory, .delegate, .unknown: .generic
         }
     }
@@ -273,6 +312,10 @@ public enum AssistantActivitySummary: Sendable {
         case (.question, false, true): String(localized: "Asked questions")
         case (.question, true, false): String(localized: "Asking a question")
         case (.question, false, false): String(localized: "Asking questions")
+        case (.kanban, true, true): String(localized: "Worked on a task")
+        case (.kanban, false, true): String(localized: "Worked on tasks")
+        case (.kanban, true, false): String(localized: "Working on a task")
+        case (.kanban, false, false): String(localized: "Working on tasks")
         case (.generic, true, true): String(localized: "Called a tool")
         case (.generic, false, true): String(localized: "Called tools")
         case (.generic, true, false): String(localized: "Calling a tool")
@@ -298,6 +341,7 @@ public enum AssistantActivitySummary: Sendable {
         case .schedule: String(localized: "Failed to manage a scheduled job")
         case .connection: String(localized: "Failed to manage connections")
         case .question: String(localized: "Failed to ask a question")
+        case .kanban: String(localized: "Failed to update a task")
         case .generic: String(localized: "Tool failed")
         }
     }
@@ -318,6 +362,7 @@ public enum AssistantActivitySummary: Sendable {
         case .schedule: "calendar.badge.clock"
         case .connection: "powerplug"
         case .question: "questionmark.bubble"
+        case .kanban: "rectangle.split.3x1"
         case .generic: "wrench"
         }
     }

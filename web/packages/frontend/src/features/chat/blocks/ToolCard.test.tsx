@@ -282,3 +282,29 @@ describe('memory, skill, session, scheduled job, connection and clarify rows (TA
     }
   })
 })
+
+describe('Kanban rows (TAL-2327)', () => {
+  it('shows the Kanban icon, its call\'s verb and the task it touched, opening that task on its board', async () => {
+    const view = await renderRouted(<ToolCard call={{ ...call, name: 'kanban_complete', kind: 'kanban', verb: 'complete', target: 't_1', resultView: { text: '{"ok": true}', rows: { rows: [
+      { label: 'Fix login', detail: 'done', link: { kind: 'kanban_task', id: 't_1', board: 'ops' } },
+      { label: 't_2', detail: 'todo', link: { kind: 'kanban_task', id: 't_2' } },
+    ] } } }} sessionId="s1" />)
+    expect(view.container.querySelector('[data-tool-kind="kanban"] svg.lucide-square-kanban')).not.toBeNull()
+    expect(view.container).toHaveTextContent('Completed t_1')
+    await userEvent.click(within(view.container).getAllByRole('button')[0]!)
+    const result = view.container.querySelector('.tool-card-result')!
+    expect(Array.from(result.querySelectorAll('a'), (a) => [a.textContent, a.getAttribute('href')])).toEqual([['Fix login', '/kanban?board=ops&task=t_1'], ['t_2', '/kanban?task=t_2']])
+    expect(result.textContent).not.toContain('"ok"')
+  })
+
+  it('reads each Kanban verb in every locale, a list without a task as its tasks', () => {
+    const verbs = ['create', 'view', 'list', 'update', 'complete', 'block', 'comment']
+    expect(verbs.map((verb) => toolText('en').actionLabel(`kanban_${verb}`, 'done', verb === 'list' ? '' : 't_1', 'kanban_x'))).toEqual(['Created t_1', 'Viewed t_1', 'Listed tasks', 'Updated t_1', 'Completed t_1', 'Blocked t_1', 'Commented on t_1'])
+    for (const locale of ['en', 'ru', 'zh', 'zh-Hant', 'vi', 'pl', 'cs']) {
+      const text = toolText(locale)
+      const labels = verbs.map((verb) => text.actionLabel(`kanban_${verb}`, 'done', '', 'kanban_x'))
+      expect(labels.every((label) => label !== text.actionLabel('unknown', 'done', '', 'kanban_x')), locale).toBe(true)
+      expect(text.worklogSummary('kanban', 'running', 2), locale).not.toBe(text.worklogSummary('unknown', 'running', 2))
+    }
+  })
+})

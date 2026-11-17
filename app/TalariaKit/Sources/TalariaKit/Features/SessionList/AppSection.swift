@@ -32,7 +32,7 @@ public enum AppSection: Hashable, Sendable {
 
     public init?(_ utility: SessionListUtilityDestination) {
         switch utility {
-        case .settings, .providerQuotaWidgetSettings, .providers, .decisionReview: return nil
+        case .settings, .providerQuotaWidgetSettings, .providers, .decisionReview, .kanbanCard: return nil
         case .decisions: self = .decisions
         case .insights: self = .insights
         case .tasks: self = .tasks
@@ -147,6 +147,8 @@ public enum SectionItem: Hashable, Sendable {
     case quotaSource(id: String)
     /// TAL-1966: a decision review opened from the Decisions list or its push alert.
     case decisionReview(id: String)
+    /// TAL-2327: a Kanban card a transcript row opened, on its board (the current one without).
+    case kanbanCard(id: String, board: String?)
 }
 
 /// A row of the Settings root list.

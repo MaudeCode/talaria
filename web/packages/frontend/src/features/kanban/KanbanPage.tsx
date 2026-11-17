@@ -1,6 +1,6 @@
-import { useEffect, useEffectEvent, useId, useState, type ReactNode } from 'react'
+import { useEffect, useEffectEvent, useId, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { MoreHorizontal, Plus, RefreshCw, X } from 'lucide-react'
 import { useDebounced } from '../../lib/useDebounced'
 import { m } from '../../paraglide/messages.js'
@@ -29,6 +29,7 @@ import { TAB_STRIP, tabClass } from '../../ui/TabStrip'
 import { newResource, useResourceEffects, useResourceMutation, withCreated, withEffect, withEffects, type ResourceEffect } from '../sessions/useResourceMutation'
 import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { isDefiniteRefusal } from '../../contracts/common'
+import { useLocale } from '../../i18n/useLocale'
 
 // Same owner for single-card and bulk writes; profile/server identity comes from the connection context.
 const cardResource = (board: string | undefined, id: string) => JSON.stringify(['kanban', board, id])
@@ -104,7 +105,19 @@ function useKanbanLiveRefresh(board: string | undefined, latestEventId: number |
   }, [board, ready, qc])
 }
 
-export function KanbanPage() {
+/**
+ * TAL-2327: the page with its open task in the address: `/kanban?board=&task=` opens that task on that board, and opening or
+ * closing a task writes it, so a task link is shareable.
+ */
+export function KanbanRoute() {
+  useLocale()
+  const { board, task } = useSearch({ from: '/_app/kanban' })
+  const navigate = useNavigate()
+  return <KanbanPage openTaskId={task ?? null} board={board} onOpenTask={(id, onBoard) => { void navigate({ to: '/kanban', search: id ? { ...(onBoard ? { board: onBoard } : {}), task: id } : {} }) }} />
+}
+
+/** The board with its open task owned by the caller (the address in the app, state in tests); `board` is the board it asks for. */
+export function KanbanPage({ openTaskId, board: requestedBoardSlug, onOpenTask }: { openTaskId: string | null; board?: string | undefined; onOpenTask: (task: string | null, board: string | undefined) => void }) {
   const qc = useQueryClient()
   const panelId = useId()
   const [mode, setMode] = useState('board')
@@ -117,7 +130,6 @@ export function KanbanPage() {
   const context = useStreamContext()
   const [selection, setSelection] = useState<{ context: object; board: string | undefined; ids: string[] }>({ context, board: undefined, ids: [] })
   const [bulkStatus, setBulkStatus] = useState('')
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [creatingBoard, setCreatingBoard] = useState(false)
   const [archivingBoard, setArchivingBoard] = useState(false)
@@ -145,6 +157,17 @@ export function KanbanPage() {
   const invalidate = (refetchType: 'active' | 'none' = 'active') => qc.invalidateQueries({ queryKey: ['kanban'], refetchType })
   const toastError = (e: unknown) => showErrorToast(e)
   const switchBoard = useKanbanMutation({ resource: () => boardSelection, effect: (slug: string) => ({ value: slug }), mutationFn: api.switchKanbanBoard, onError: toastError })
+  const setOpenTaskId = (id: string | null) => { if (id !== openTaskId) onOpenTask(id, current) }
+  // TAL-2327: a task link names its board; switch to it once, when the server lists it.
+  const followedBoard = useRef<string | undefined>(undefined)
+  const followBoard = useEffectEvent(() => {
+    // An address without a board ends the follow, so returning to a task link switches to its board again.
+    if (!requestedBoardSlug) { followedBoard.current = undefined; return }
+    if (requestedBoardSlug === followedBoard.current || !boards.isSuccess) return
+    followedBoard.current = requestedBoardSlug
+    if (requestedBoardSlug !== current && boardList.some((b) => b.slug === requestedBoardSlug)) switchBoard.mutate(requestedBoardSlug)
+  })
+  useEffect(() => { followBoard() }, [requestedBoardSlug, boards.isSuccess])
   const savePins = useKanbanMutation({ resource: () => pinPreference, readKeys: () => [keys.kanban.boards], effect: (pins: string[]) => ({ value: pins }), mutationFn: (pins) => api.saveSettings({ kanban_pinned_boards: pins }), onError: toastError })
   const saveView = useKanbanMutation({ resource: () => lanePreference, readKeys: () => kanbanReads(current), effect: (lanes: boolean) => ({ value: lanes }), mutationFn: api.updateKanbanConfig, onSuccess: () => { void invalidate('none') }, onError: (e) => { void invalidate('none'); showToast(m.kanban_view_update_failed() + (e instanceof Error ? e.message : String(e)), 4000, 'error') } })
   const bulk = useKanbanMutation({
@@ -216,8 +239,11 @@ export function KanbanPage() {
   }
   // The dialog follows the board's current copy of the task, so its actions track every refetch; a pending move
   // shows in it even when the target column is off screen.
+  const boardTask = (board.data?.columns ?? []).flatMap((c) => c.tasks).find((t) => String(t.id) === openTaskId)
+  // TAL-2327: a linked task the board does not show (archived, or filtered out) is read on its own, as the dialog reads it.
+  const linkedTask = useQuery({ queryKey: [...keys.kanban.board(current), 'task', String(openTaskId)], queryFn: () => api.fetchKanbanTask(current, openTaskId ?? ''), staleTime: 10_000, enabled: !!openTaskId && !!board.data && !board.isPlaceholderData && !boardTask })
   const openTask = (() => {
-    const found = (board.data?.columns ?? []).flatMap((c) => c.tasks).find((t) => String(t.id) === openTaskId)
+    const found = boardTask ?? linkedTask.data?.task
     return found ? withEffect(found, effects[cardResource(current, String(found.id))]) : null
   })()
   // Selection is local UI state; a selected card a later filter hides drops out, so bulk acts only on cards on screen.

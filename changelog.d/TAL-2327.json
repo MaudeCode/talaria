@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Kanban tool calls show the Kanban icon, what they did to a task, and the tasks they touched as rows that open that task, on the App and the Web; a Kanban task now has its own Web address.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

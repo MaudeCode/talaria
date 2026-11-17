@@ -261,6 +261,8 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
     public let isError: Bool?
     public let stableID: String?
     public let kind: ToolDisplayKind?
+    /// TAL-2327: the verb a `kanban` call shows.
+    public let verb: ToolVerb?
     public let target: String?
     public let progress: ToolProgress?
     /// TAL-315: the server's result sections, on a completion.
@@ -277,6 +279,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         case args
         case argsFields = "args_fields"
         case kind
+        case verb
         case target
         case progress
         case resultView = "result_view"
@@ -296,6 +299,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         isError: Bool?,
         stableID: String? = nil,
         kind: ToolDisplayKind? = nil,
+        verb: ToolVerb? = nil,
         target: String? = nil,
         resultView: ToolResultView? = nil,
         editDiff: ToolEditDiff? = nil,
@@ -303,6 +307,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         focusPath: String? = nil,
         argsFields: [ToolField]? = nil
     ) {
+        self.verb = verb
         self.eventType = eventType
         self.name = name
         self.preview = preview
@@ -329,6 +334,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         duration = container.decodeLossyDoubleIfPresent(forKey: .duration)
         isError = container.decodeLossyBoolIfPresent(forKey: .isError)
         kind = ToolDisplayKind(serverValue: container.decodeLossyStringIfPresent(forKey: .kind))
+        verb = ToolVerb(serverValue: container.decodeLossyStringIfPresent(forKey: .verb))
         target = container.decodeLossyStringIfPresent(forKey: .target)
         resultView = try? container.decodeIfPresent(ToolResultView.self, forKey: .resultView)
         editDiff = try? container.decodeIfPresent(ToolEditDiff.self, forKey: .editDiff)
@@ -626,6 +632,7 @@ private extension ToolStreamEvent {
         isError = nil
         stableID = nil
         kind = nil
+        verb = nil
         target = nil
         resultView = nil
         editDiff = nil

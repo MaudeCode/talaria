@@ -48,9 +48,16 @@ export type Attachment = z.infer<typeof AttachmentSchema>
  * or video icon with an "Analyzing" verb).
  * TAL-2326: `session` searches past chats (`session_search`), `schedule` manages scheduled jobs (`cronjob_manage`),
  * `connection` manages connected apps (`manage_connections`) and `question` asks the user (`clarify`).
+ * TAL-2327: `kanban` reads or changes Kanban tasks (every `kanban_*` tool); its `ToolVerb` picks the verb.
  */
-export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'image', 'audio', 'video', 'image_analysis', 'video_analysis', 'session', 'schedule', 'connection', 'question', 'unknown'])
+export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'image', 'audio', 'video', 'image_analysis', 'video_analysis', 'session', 'schedule', 'connection', 'question', 'kanban', 'unknown'])
 export type ToolKind = z.infer<typeof ToolKindSchema>
+/**
+ * TAL-2327: what a call of a kind whose tools act differently (`kanban`) does, which picks the verb clients show for it in
+ * place of the kind's own: `create`d, `view`ed, `list`ed, `update`d, `complete`d, `block`ed or `comment`ed on.
+ */
+export const ToolVerbSchema = z.enum(['create', 'view', 'list', 'update', 'complete', 'block', 'comment'])
+export type ToolVerb = z.infer<typeof ToolVerbSchema>
 /**
  * TAL-2317: the tools the sidecar's `talaria` and `harness` toolsets register, which the server shows as kind `talaria`.
  * `contracts/fixtures/talaria-tool-names.json` carries the same list for the sidecar test that pins it to the registry.
@@ -73,11 +80,11 @@ export const TALARIA_TOOL_NAMES = [
  * `media` and `analysis` (TAL-2325) and `rows` (TAL-2326) show the result's `ToolResultView` section of that name; `generic`
  * reads the result's text, else its key/value fields (TAL-2318). `npm run fixtures` writes it to
  * `contracts/fixtures/tool-presentations.json`, which a sidecar test checks against the Agent's tool registry: a tool an
- * Agent release adds joins here as `generic` until its own view ships.
+ * Agent release adds joins here as `generic` until its own view ships. TAL-2327: `verb`, where set, ships on each call.
  */
 export const ToolPresentationSchema = z.enum(['terminal', 'diff', 'todo', 'delegate', 'clarify', 'file_excerpt', 'matches', 'links', 'pages', 'media', 'analysis', 'rows', 'generic'])
 export type ToolPresentation = z.infer<typeof ToolPresentationSchema>
-export const ToolPresentationEntrySchema = z.object({ kind: ToolKindSchema, presentation: ToolPresentationSchema })
+export const ToolPresentationEntrySchema = z.object({ kind: ToolKindSchema, presentation: ToolPresentationSchema, verb: ToolVerbSchema.optional() })
 export type ToolPresentationEntry = z.infer<typeof ToolPresentationEntrySchema>
 export const TOOL_PRESENTATIONS: Readonly<Record<string, ToolPresentationEntry>> = {
   a2a_call: { kind: 'unknown', presentation: 'generic' },
@@ -109,21 +116,21 @@ export const TOOL_PRESENTATIONS: Readonly<Record<string, ToolPresentationEntry>>
   focus_pane: { kind: 'unknown', presentation: 'generic' },
   gui_tour: { kind: 'unknown', presentation: 'generic' },
   image_generate: { kind: 'image', presentation: 'media' },
-  kanban_attach: { kind: 'unknown', presentation: 'generic' },
-  kanban_attach_url: { kind: 'unknown', presentation: 'generic' },
-  kanban_attachments: { kind: 'unknown', presentation: 'generic' },
-  kanban_block: { kind: 'unknown', presentation: 'generic' },
-  kanban_comment: { kind: 'unknown', presentation: 'generic' },
-  kanban_complete: { kind: 'unknown', presentation: 'generic' },
-  kanban_create: { kind: 'unknown', presentation: 'generic' },
-  kanban_heartbeat: { kind: 'unknown', presentation: 'generic' },
-  kanban_link: { kind: 'unknown', presentation: 'generic' },
-  kanban_list: { kind: 'list', presentation: 'generic' },
-  kanban_request_changes: { kind: 'unknown', presentation: 'generic' },
-  kanban_request_review: { kind: 'unknown', presentation: 'generic' },
-  kanban_schedule: { kind: 'unknown', presentation: 'generic' },
-  kanban_show: { kind: 'unknown', presentation: 'generic' },
-  kanban_unblock: { kind: 'unknown', presentation: 'generic' },
+  kanban_attach: { kind: 'kanban', presentation: 'rows', verb: 'update' },
+  kanban_attach_url: { kind: 'kanban', presentation: 'rows', verb: 'update' },
+  kanban_attachments: { kind: 'kanban', presentation: 'rows', verb: 'view' },
+  kanban_block: { kind: 'kanban', presentation: 'rows', verb: 'block' },
+  kanban_comment: { kind: 'kanban', presentation: 'rows', verb: 'comment' },
+  kanban_complete: { kind: 'kanban', presentation: 'rows', verb: 'complete' },
+  kanban_create: { kind: 'kanban', presentation: 'rows', verb: 'create' },
+  kanban_heartbeat: { kind: 'kanban', presentation: 'rows', verb: 'update' },
+  kanban_link: { kind: 'kanban', presentation: 'rows', verb: 'update' },
+  kanban_list: { kind: 'kanban', presentation: 'rows', verb: 'list' },
+  kanban_request_changes: { kind: 'kanban', presentation: 'rows', verb: 'update' },
+  kanban_request_review: { kind: 'kanban', presentation: 'rows', verb: 'update' },
+  kanban_schedule: { kind: 'kanban', presentation: 'rows', verb: 'update' },
+  kanban_show: { kind: 'kanban', presentation: 'rows', verb: 'view' },
+  kanban_unblock: { kind: 'kanban', presentation: 'rows', verb: 'update' },
   manage_catalog: { kind: 'unknown', presentation: 'generic' },
   manage_connections: { kind: 'connection', presentation: 'rows' },
   memory: { kind: 'memory', presentation: 'rows' },
@@ -199,6 +206,7 @@ export type ToolField = z.infer<typeof ToolFieldSchema>
 export const ToolDisplayFields = {
   args_fields: z.array(ToolFieldSchema).optional().describe('TAL-2318: the call\'s redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server.'),
   progress: ToolProgressSchema.nullable().optional(), kind: ToolKindSchema.optional(), target: z.string().optional(), edit_diff: ToolEditDiffSchema.optional(),
+  verb: ToolVerbSchema.optional().describe('TAL-2327: what a `kanban` call does, the verb clients show in place of its kind\'s own. Absent for every other call.'),
   focus_path: NullableString.optional().describe('TAL-1458: a read or write call\'s file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace.'),
   shows_card: z.literal(true).optional().describe('TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call.'),
   approval_answered_by: ApprovalAnsweredBySchema.optional().describe('TAL-1169: another session\'s agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked.'),
@@ -236,9 +244,10 @@ export const ResultPageSchema = z.object({ url: z.string(), domain: z.string(), 
 export type ResultPage = z.infer<typeof ResultPageSchema>
 /**
  * TAL-2326: where a result row opens in the client: a Talaria `session` (`id` its session id), the scheduled jobs page
- * (`crons`, `id` the job), connected apps (`connectors`) or a `skill` (`id` its name).
+ * (`crons`, `id` the job), connected apps (`connectors`) or a `skill` (`id` its name). TAL-2327: a Kanban task
+ * (`kanban_task`, `id` the task, on `board`).
  */
-export const ToolRowLinkSchema = z.object({ kind: z.enum(['session', 'crons', 'connectors', 'skill']), id: z.string().optional() })
+export const ToolRowLinkSchema = z.object({ kind: z.enum(['session', 'crons', 'connectors', 'skill', 'kanban_task']), id: z.string().optional(), /** TAL-2327: a `kanban_task`'s board slug, absent for the current board. */ board: z.string().optional() })
 export type ToolRowLink = z.infer<typeof ToolRowLinkSchema>
 /** TAL-2326: one row of a result: its label, a muted `detail` line, a status dot (`pending` waits for approval) and where it opens. */
 export const ToolRowSchema = z.object({ label: z.string(), detail: z.string().optional(), status: z.enum(['ok', 'warn', 'error', 'pending']).optional(), link: ToolRowLinkSchema.optional() })

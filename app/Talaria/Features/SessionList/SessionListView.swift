@@ -1516,6 +1516,8 @@ struct SessionListView: View {
                 }
             case .decisionReview(let id):
                 DecisionReviewView(reviewID: id, server: server, onAPIError: handleAPIError)
+            case .kanbanCard(let id, let board):
+                KanbanCardLinkView(server: server, cardID: id, board: board, onAPIError: handleAPIError)
             case .quotaSource(let id):
                 if let source = quotaViewModel.quotaSources.first(where: { $0.id == id }) {
                     quotaSourcePage(source)

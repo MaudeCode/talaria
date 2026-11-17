@@ -4,7 +4,7 @@
 // they compose grammar from tables with count-free fallbacks.
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/restrict-plus-operands */
 export type ToolActionState = 'running' | 'done'
-export type ToolKind = 'shell' | 'read' | 'list' | 'search' | 'web' | 'write' | 'skill' | 'memory' | 'delegate' | 'talaria' | 'image' | 'audio' | 'video' | 'image_analysis' | 'video_analysis' | 'session' | 'schedule' | 'connection' | 'question' | 'unknown' | (string & {})
+export type ToolKind = 'shell' | 'read' | 'list' | 'search' | 'web' | 'write' | 'skill' | 'memory' | 'delegate' | 'talaria' | 'image' | 'audio' | 'video' | 'image_analysis' | 'video_analysis' | 'session' | 'schedule' | 'connection' | 'question' | 'kanban' | 'unknown' | (string & {})
 
 const _I18N_TOOL_ACTION_TEXT_EN: any = {
     shell: { running: 'Running', done: 'Ran', fail: 'run', fallback: 'a command' },
@@ -26,6 +26,14 @@ const _I18N_TOOL_ACTION_TEXT_EN: any = {
     schedule: { running: 'Managing', done: 'Managed', fail: 'manage', fallback: 'scheduled jobs' },
     connection: { running: 'Managing', done: 'Managed', fail: 'manage', fallback: 'connections' },
     question: { running: 'Asking', done: 'Asked', fail: 'ask', fallback: 'a question' },
+    kanban: { running: 'Updating', done: 'Updated', fail: 'update', fallback: 'a task' },
+    kanban_create: { running: 'Creating', done: 'Created', fail: 'create', fallback: 'a task' },
+    kanban_view: { running: 'Viewing', done: 'Viewed', fail: 'view', fallback: 'a task' },
+    kanban_list: { running: 'Listing', done: 'Listed', fail: 'list', fallback: 'tasks' },
+    kanban_update: { running: 'Updating', done: 'Updated', fail: 'update', fallback: 'a task' },
+    kanban_complete: { running: 'Completing', done: 'Completed', fail: 'complete', fallback: 'a task' },
+    kanban_block: { running: 'Blocking', done: 'Blocked', fail: 'block', fallback: 'a task' },
+    kanban_comment: { running: 'Commenting on', done: 'Commented on', fail: 'comment on', fallback: 'a task' },
     unknown: { running: 'Running', done: 'Ran', fail: 'run', fallback: 'a tool' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_EN: any = {
@@ -48,6 +56,7 @@ const _I18N_TOOL_SUMMARY_TEXT_EN: any = {
     schedule: { running: ['Managing a scheduled job', 'Managing scheduled jobs'], done: ['Managed a scheduled job', 'Managed scheduled jobs'] },
     connection: { running: ['Managing connections', 'Managing connections'], done: ['Managed connections', 'Managed connections'] },
     question: { running: ['Asking a question', 'Asking questions'], done: ['Asked a question', 'Asked questions'] },
+    kanban: { running: ['Working on a task', 'Working on tasks'], done: ['Worked on a task', 'Worked on tasks'] },
     unknown: { running: ['Calling a tool', 'Calling tools'], done: ['Called a tool', 'Called tools'] },
 };
 const _I18N_TOOL_ACTION_TEXT_RU: any = {
@@ -70,6 +79,14 @@ const _I18N_TOOL_ACTION_TEXT_RU: any = {
     schedule: { running: 'Управляю', done: 'Изменено', fail: 'изменить', fallback: 'задания по расписанию' },
     connection: { running: 'Управляю', done: 'Изменено', fail: 'изменить', fallback: 'подключения' },
     question: { running: 'Задаю', done: 'Задан', fail: 'задать', fallback: 'вопрос' },
+    kanban: { running: 'Обновляю', done: 'Обновлено', fail: 'обновить', fallback: 'задачу' },
+    kanban_create: { running: 'Создаю', done: 'Создано', fail: 'создать', fallback: 'задачу' },
+    kanban_view: { running: 'Просматриваю', done: 'Просмотрено', fail: 'просмотреть', fallback: 'задачу' },
+    kanban_list: { running: 'Получаю список', done: 'Получен список', fail: 'получить список', fallback: 'задач' },
+    kanban_update: { running: 'Обновляю', done: 'Обновлено', fail: 'обновить', fallback: 'задачу' },
+    kanban_complete: { running: 'Завершаю', done: 'Завершено', fail: 'завершить', fallback: 'задачу' },
+    kanban_block: { running: 'Блокирую', done: 'Заблокировано', fail: 'заблокировать', fallback: 'задачу' },
+    kanban_comment: { running: 'Комментирую', done: 'Прокомментировано', fail: 'прокомментировать', fallback: 'задачу' },
     unknown: { running: 'Выполняю', done: 'Выполнен', fail: 'выполнить', fallback: 'инструмент' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_RU: any = {
@@ -92,6 +109,7 @@ const _I18N_TOOL_SUMMARY_TEXT_RU: any = {
     schedule: { running: ['Изменяется задание по расписанию', 'Изменяются {n} задания по расписанию', 'Изменяется {n} заданий по расписанию'], done: ['Задание по расписанию изменено', 'Изменены {n} задания по расписанию', 'Изменено {n} заданий по расписанию'] },
     connection: { running: ['Изменяются подключения', 'Изменяются подключения ({n})', 'Изменяются подключения ({n})'], done: ['Подключения изменены', 'Подключения изменены ({n})', 'Подключения изменены ({n})'] },
     question: { running: ['Задаётся вопрос', 'Задаются {n} вопроса', 'Задаётся {n} вопросов'], done: ['Вопрос задан', 'Заданы {n} вопроса', 'Задано {n} вопросов'] },
+    kanban: { running: ['Идёт работа над задачей', 'Идёт работа над {n} задачами', 'Идёт работа над {n} задачами'], done: ['Работа над задачей выполнена', 'Выполнена работа над {n} задачами', 'Выполнена работа над {n} задачами'] },
     unknown: { running: ['Выполняется инструмент', 'Выполняются {n} инструмента', 'Выполняется {n} инструментов'], done: ['Инструмент выполнен', 'Выполнены {n} инструмента', 'Выполнено {n} инструментов'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_RU_COUNT_FREE: any = {
@@ -114,6 +132,7 @@ const _I18N_TOOL_SUMMARY_TEXT_RU_COUNT_FREE: any = {
     schedule: { running: 'Изменяются задания по расписанию', done: 'Задания по расписанию изменены' },
     connection: { running: 'Изменяются подключения', done: 'Подключения изменены' },
     question: { running: 'Задаются вопросы', done: 'Вопросы заданы' },
+    kanban: { running: 'Идёт работа над задачами', done: 'Работа над задачами выполнена' },
     unknown: { running: 'Выполняются инструменты', done: 'Инструменты выполнены' },
 };
 const _I18N_TOOL_ACTION_TEXT_ZH: any = {
@@ -136,6 +155,14 @@ const _I18N_TOOL_ACTION_TEXT_ZH: any = {
     schedule: { running: '正在管理', done: '已管理', fail: '管理', fallback: '定时任务' },
     connection: { running: '正在管理', done: '已管理', fail: '管理', fallback: '连接' },
     question: { running: '正在提问', done: '已提问', fail: '提问', fallback: '问题' },
+    kanban: { running: '正在更新', done: '已更新', fail: '更新', fallback: '任务' },
+    kanban_create: { running: '正在创建', done: '已创建', fail: '创建', fallback: '任务' },
+    kanban_view: { running: '正在查看', done: '已查看', fail: '查看', fallback: '任务' },
+    kanban_list: { running: '正在列出', done: '已列出', fail: '列出', fallback: '任务' },
+    kanban_update: { running: '正在更新', done: '已更新', fail: '更新', fallback: '任务' },
+    kanban_complete: { running: '正在完成', done: '已完成', fail: '完成', fallback: '任务' },
+    kanban_block: { running: '正在标记受阻', done: '已标记受阻', fail: '标记受阻', fallback: '任务' },
+    kanban_comment: { running: '正在评论', done: '已评论', fail: '评论', fallback: '任务' },
     unknown: { running: '正在运行', done: '已运行', fail: '运行', fallback: '工具' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_ZH: any = {
@@ -158,6 +185,7 @@ const _I18N_TOOL_SUMMARY_TEXT_ZH: any = {
     schedule: { running: ['正在管理定时任务', '正在管理 {n} 个定时任务'], done: ['已管理定时任务', '已管理 {n} 个定时任务'] },
     connection: { running: ['正在管理连接', '正在管理连接 {n} 次'], done: ['已管理连接', '已管理连接 {n} 次'] },
     question: { running: ['正在提问', '正在提出 {n} 个问题'], done: ['已提问', '已提出 {n} 个问题'] },
+    kanban: { running: ['正在处理任务', '正在处理 {n} 个任务'], done: ['已处理任务', '已处理 {n} 个任务'] },
     unknown: { running: ['正在运行工具', '正在运行 {n} 个工具'], done: ['已运行工具', '已运行 {n} 个工具'] },
 };
 const _I18N_TOOL_ACTION_TEXT_ZH_HANT: any = {
@@ -180,6 +208,14 @@ const _I18N_TOOL_ACTION_TEXT_ZH_HANT: any = {
     schedule: { running: '正在管理', done: '已管理', fail: '管理', fallback: '排程工作' },
     connection: { running: '正在管理', done: '已管理', fail: '管理', fallback: '連線' },
     question: { running: '正在提問', done: '已提問', fail: '提問', fallback: '問題' },
+    kanban: { running: '正在更新', done: '已更新', fail: '更新', fallback: '任務' },
+    kanban_create: { running: '正在建立', done: '已建立', fail: '建立', fallback: '任務' },
+    kanban_view: { running: '正在檢視', done: '已檢視', fail: '檢視', fallback: '任務' },
+    kanban_list: { running: '正在列出', done: '已列出', fail: '列出', fallback: '任務' },
+    kanban_update: { running: '正在更新', done: '已更新', fail: '更新', fallback: '任務' },
+    kanban_complete: { running: '正在完成', done: '已完成', fail: '完成', fallback: '任務' },
+    kanban_block: { running: '正在標記受阻', done: '已標記受阻', fail: '標記受阻', fallback: '任務' },
+    kanban_comment: { running: '正在評論', done: '已評論', fail: '評論', fallback: '任務' },
     unknown: { running: '正在執行', done: '已執行', fail: '執行', fallback: '工具' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_ZH_HANT: any = {
@@ -202,6 +238,7 @@ const _I18N_TOOL_SUMMARY_TEXT_ZH_HANT: any = {
     schedule: { running: ['正在管理排程工作', '正在管理 {n} 個排程工作'], done: ['已管理排程工作', '已管理 {n} 個排程工作'] },
     connection: { running: ['正在管理連線', '正在管理連線 {n} 次'], done: ['已管理連線', '已管理連線 {n} 次'] },
     question: { running: ['正在提問', '正在提出 {n} 個問題'], done: ['已提問', '已提出 {n} 個問題'] },
+    kanban: { running: ['正在處理任務', '正在處理 {n} 個任務'], done: ['已處理任務', '已處理 {n} 個任務'] },
     unknown: { running: ['正在執行工具', '正在執行 {n} 個工具'], done: ['已執行工具', '已執行 {n} 個工具'] },
 };
 function _i18nProcessedElapsed(prefix?: any, duration?: any) {
@@ -310,6 +347,14 @@ const _I18N_TOOL_ACTION_TEXT_VI: any = {
     schedule: { running: 'Đang quản lý', done: 'Đã quản lý', fail: 'quản lý', fallback: 'tác vụ theo lịch' },
     connection: { running: 'Đang quản lý', done: 'Đã quản lý', fail: 'quản lý', fallback: 'kết nối' },
     question: { running: 'Đang hỏi', done: 'Đã hỏi', fail: 'hỏi', fallback: 'một câu hỏi' },
+    kanban: { running: 'Đang cập nhật', done: 'Đã cập nhật', fail: 'cập nhật', fallback: 'một tác vụ' },
+    kanban_create: { running: 'Đang tạo', done: 'Đã tạo', fail: 'tạo', fallback: 'một tác vụ' },
+    kanban_view: { running: 'Đang xem', done: 'Đã xem', fail: 'xem', fallback: 'một tác vụ' },
+    kanban_list: { running: 'Đang liệt kê', done: 'Đã liệt kê', fail: 'liệt kê', fallback: 'các tác vụ' },
+    kanban_update: { running: 'Đang cập nhật', done: 'Đã cập nhật', fail: 'cập nhật', fallback: 'một tác vụ' },
+    kanban_complete: { running: 'Đang hoàn thành', done: 'Đã hoàn thành', fail: 'hoàn thành', fallback: 'một tác vụ' },
+    kanban_block: { running: 'Đang chặn', done: 'Đã chặn', fail: 'chặn', fallback: 'một tác vụ' },
+    kanban_comment: { running: 'Đang bình luận về', done: 'Đã bình luận về', fail: 'bình luận về', fallback: 'một tác vụ' },
     unknown: { running: 'Đang chạy', done: 'Đã chạy', fail: 'chạy', fallback: 'công cụ' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_VI: any = {
@@ -332,6 +377,7 @@ const _I18N_TOOL_SUMMARY_TEXT_VI: any = {
     schedule: { running: ['Đang quản lý tác vụ theo lịch', 'Đang quản lý {n} tác vụ theo lịch'], done: ['Đã quản lý tác vụ theo lịch', 'Đã quản lý {n} tác vụ theo lịch'] },
     connection: { running: ['Đang quản lý kết nối', 'Đang quản lý kết nối {n} lần'], done: ['Đã quản lý kết nối', 'Đã quản lý kết nối {n} lần'] },
     question: { running: ['Đang hỏi một câu hỏi', 'Đang hỏi {n} câu hỏi'], done: ['Đã hỏi một câu hỏi', 'Đã hỏi {n} câu hỏi'] },
+    kanban: { running: ['Đang xử lý một tác vụ', 'Đang xử lý {n} tác vụ'], done: ['Đã xử lý một tác vụ', 'Đã xử lý {n} tác vụ'] },
     unknown: { running: ['Đang chạy công cụ', 'Đang chạy {n} công cụ'], done: ['Đã chạy công cụ', 'Đã chạy {n} công cụ'] },
 };
 function _i18nProcessedElapsedVi(duration?: any) {
@@ -367,6 +413,14 @@ const _I18N_TOOL_ACTION_TEXT_PL: any = {
     schedule: { running: 'Zarządzanie', done: 'Zmieniono', fail: 'zmienić', fallback: 'zadania harmonogramu' },
     connection: { running: 'Zarządzanie', done: 'Zmieniono', fail: 'zmienić', fallback: 'połączenia' },
     question: { running: 'Zadawanie', done: 'Zadano', fail: 'zadać', fallback: 'pytanie' },
+    kanban: { running: 'Aktualizowanie', done: 'Zaktualizowano', fail: 'zaktualizować', fallback: 'zadanie' },
+    kanban_create: { running: 'Tworzenie', done: 'Utworzono', fail: 'utworzyć', fallback: 'zadanie' },
+    kanban_view: { running: 'Wyświetlanie', done: 'Wyświetlono', fail: 'wyświetlić', fallback: 'zadanie' },
+    kanban_list: { running: 'Wyświetlanie listy', done: 'Wyświetlono listę', fail: 'wyświetlić listę', fallback: 'zadań' },
+    kanban_update: { running: 'Aktualizowanie', done: 'Zaktualizowano', fail: 'zaktualizować', fallback: 'zadanie' },
+    kanban_complete: { running: 'Kończenie', done: 'Ukończono', fail: 'ukończyć', fallback: 'zadanie' },
+    kanban_block: { running: 'Blokowanie', done: 'Zablokowano', fail: 'zablokować', fallback: 'zadanie' },
+    kanban_comment: { running: 'Komentowanie', done: 'Skomentowano', fail: 'skomentować', fallback: 'zadanie' },
     unknown: { running: 'Uruchamianie', done: 'Uruchomiono', fail: 'uruchomić', fallback: 'narzędzie' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_PL: any = {
@@ -389,6 +443,7 @@ const _I18N_TOOL_SUMMARY_TEXT_PL: any = {
     schedule: { running: ['Zmienianie zadania harmonogramu', 'Zmienianie {n} zadań harmonogramu'], done: ['Zmieniono zadanie harmonogramu', 'Zmieniono {n} zadań harmonogramu'] },
     connection: { running: ['Zmienianie połączeń', 'Zmienianie połączeń ({n})'], done: ['Zmieniono połączenia', 'Zmieniono połączenia ({n})'] },
     question: { running: ['Zadawanie pytania', 'Zadawanie {n} pytań'], done: ['Zadano pytanie', 'Zadano {n} pytań'] },
+    kanban: { running: ['Praca nad zadaniem', 'Praca nad {n} zadaniami'], done: ['Zakończono pracę nad zadaniem', 'Zakończono pracę nad {n} zadaniami'] },
     unknown: { running: ['Uruchamianie narzędzia', 'Uruchamianie {n} narzędzi'], done: ['Uruchomiono narzędzie', 'Uruchomiono {n} narzędzi'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_PL_COUNT_FREE: any = {
@@ -411,6 +466,7 @@ const _I18N_TOOL_SUMMARY_TEXT_PL_COUNT_FREE: any = {
     schedule: { running: 'Zmienianie zadań harmonogramu', done: 'Zmieniono zadania harmonogramu' },
     connection: { running: 'Zmienianie połączeń', done: 'Zmieniono połączenia' },
     question: { running: 'Zadawanie pytań', done: 'Zadano pytania' },
+    kanban: { running: 'Praca nad zadaniami', done: 'Zakończono pracę nad zadaniami' },
     unknown: { running: 'Uruchamianie narzędzi', done: 'Uruchomiono narzędzia' },
 };
 function _i18nProcessedElapsedPl(duration?: any) {
@@ -459,6 +515,14 @@ const _I18N_TOOL_ACTION_TEXT_CS: any = {
     schedule: { running: 'Správa', done: 'Upraveno', fail: 'upravit', fallback: 'plánované úlohy' },
     connection: { running: 'Správa', done: 'Upraveno', fail: 'upravit', fallback: 'připojení' },
     question: { running: 'Dotaz', done: 'Položen dotaz', fail: 'položit', fallback: 'otázku' },
+    kanban: { running: 'Aktualizace', done: 'Aktualizováno', fail: 'aktualizovat', fallback: 'úkol' },
+    kanban_create: { running: 'Vytváření', done: 'Vytvořeno', fail: 'vytvořit', fallback: 'úkol' },
+    kanban_view: { running: 'Zobrazení', done: 'Zobrazeno', fail: 'zobrazit', fallback: 'úkol' },
+    kanban_list: { running: 'Výpis', done: 'Vypsán seznam', fail: 'vypsat seznam', fallback: 'úkolů' },
+    kanban_update: { running: 'Aktualizace', done: 'Aktualizováno', fail: 'aktualizovat', fallback: 'úkol' },
+    kanban_complete: { running: 'Dokončování', done: 'Dokončeno', fail: 'dokončit', fallback: 'úkol' },
+    kanban_block: { running: 'Blokování', done: 'Zablokováno', fail: 'zablokovat', fallback: 'úkol' },
+    kanban_comment: { running: 'Komentování', done: 'Okomentováno', fail: 'okomentovat', fallback: 'úkol' },
     unknown: { running: 'Spouštění', done: 'Spuštěno', fail: 'spustit', fallback: 'nástroj' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_CS: any = {
@@ -481,6 +545,7 @@ const _I18N_TOOL_SUMMARY_TEXT_CS: any = {
     schedule: { running: ['Úprava plánované úlohy', 'Úprava {n} plánovaných úloh'], done: ['Upravena plánovaná úloha', 'Upraveno {n} plánovaných úloh'] },
     connection: { running: ['Úprava připojení', 'Úprava připojení {n}×'], done: ['Upravena připojení', 'Upravena připojení {n}×'] },
     question: { running: ['Pokládání otázky', 'Pokládání {n} otázek'], done: ['Položena otázka', 'Položeno {n} otázek'] },
+    kanban: { running: ['Práce na úkolu', 'Práce na {n} úkolech'], done: ['Dokončena práce na úkolu', 'Dokončena práce na {n} úkolech'] },
     unknown: { running: ['Spouštění nástroje', 'Spouštění {n} nástrojů'], done: ['Spuštěn nástroj', 'Spuštěno {n} nástrojů'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_CS_COUNT_FREE: any = {
@@ -503,6 +568,7 @@ const _I18N_TOOL_SUMMARY_TEXT_CS_COUNT_FREE: any = {
     schedule: { running: 'Úprava plánovaných úloh', done: 'Upraveny plánované úlohy' },
     connection: { running: 'Úprava připojení', done: 'Upravena připojení' },
     question: { running: 'Pokládání otázek', done: 'Položeny otázky' },
+    kanban: { running: 'Práce na úkolech', done: 'Dokončena práce na úkolech' },
     unknown: { running: 'Spouštění nástrojů', done: 'Spuštěny nástroje' },
 };
 function _i18nProcessedElapsedCs(duration?: any) {

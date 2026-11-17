@@ -8734,5 +8734,515 @@
         }
       ]
     }
+  },
+  "tool_kanban_views": {
+    "expected": {
+      "call-list": {
+        "text": "{\n  \"tasks\": [\n    {\n      \"id\": \"t_1\",\n      \"title\": \"Fix login\",\n      \"assignee\": \"scout\",\n      \"status\": \"ready\",\n      \"priority\": 0\n    }\n  ],\n  \"count\": 1,\n  \"limit\": 50,\n  \"truncated\": false,\n  \"next_limit\": null,\n  \"promoted\": 0\n}",
+        "rows": {
+          "rows": [
+            {
+              "label": "Fix login",
+              "detail": "ready · scout",
+              "link": {
+                "kind": "kanban_task",
+                "id": "t_1"
+              }
+            }
+          ]
+        }
+      },
+      "call-create": {
+        "text": "{\n  \"ok\": true,\n  \"task_id\": \"t_9\",\n  \"status\": \"running\",\n  \"workspace_kind\": null,\n  \"workspace_path\": null,\n  \"project_id\": null,\n  \"gated\": false,\n  \"subscribed\": false\n}",
+        "rows": {
+          "rows": [
+            {
+              "label": "Write release notes",
+              "detail": "running",
+              "link": {
+                "kind": "kanban_task",
+                "id": "t_9",
+                "board": "ops"
+              }
+            }
+          ]
+        }
+      },
+      "call-complete": {
+        "text": "{\n  \"ok\": true,\n  \"task_id\": \"t_1\",\n  \"run_id\": 4,\n  \"attachments\": []\n}",
+        "rows": {
+          "rows": [
+            {
+              "label": "t_1",
+              "link": {
+                "kind": "kanban_task",
+                "id": "t_1"
+              }
+            }
+          ]
+        }
+      },
+      "call-comment": {
+        "text": "{\n  \"ok\": true,\n  \"task_id\": \"t_1\",\n  \"comment_id\": 7\n}",
+        "rows": {
+          "rows": [
+            {
+              "label": "t_1",
+              "detail": "Looks good",
+              "link": {
+                "kind": "kanban_task",
+                "id": "t_1"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Plan the release",
+          "message_id": "kanban-user",
+          "timestamp": 9100,
+          "_turn_id": "kanban-run",
+          "_display": "row"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "message_id": "kanban-calls",
+          "timestamp": 9101,
+          "tool_calls": [
+            {
+              "args_fields": [
+                {
+                  "key": "status",
+                  "value": "ready",
+                  "multiline": false
+                }
+              ],
+              "kind": "kanban",
+              "target": "",
+              "verb": "list",
+              "function": {
+                "name": "kanban_list",
+                "arguments": "{\"status\":\"ready\"}"
+              },
+              "id": "call-list",
+              "done": true,
+              "is_error": false,
+              "result": "{\"tasks\":[{\"id\":\"t_1\",\"title\":\"Fix login\",\"assignee\":\"scout\",\"status\":\"ready\",\"priority\":0}],\"count\":1,\"limit\":50,\"truncated\":false,\"next_limit\":null,\"promoted\":0}",
+              "result_view": {
+                "text": "{\n  \"tasks\": [\n    {\n      \"id\": \"t_1\",\n      \"title\": \"Fix login\",\n      \"assignee\": \"scout\",\n      \"status\": \"ready\",\n      \"priority\": 0\n    }\n  ],\n  \"count\": 1,\n  \"limit\": 50,\n  \"truncated\": false,\n  \"next_limit\": null,\n  \"promoted\": 0\n}",
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "Fix login",
+                      "detail": "ready · scout",
+                      "link": {
+                        "kind": "kanban_task",
+                        "id": "t_1"
+                      }
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "title",
+                  "value": "Write release notes",
+                  "multiline": false
+                },
+                {
+                  "key": "assignee",
+                  "value": "scout",
+                  "multiline": false
+                },
+                {
+                  "key": "board",
+                  "value": "ops",
+                  "multiline": false
+                }
+              ],
+              "kind": "kanban",
+              "target": "Write release notes",
+              "verb": "create",
+              "function": {
+                "name": "kanban_create",
+                "arguments": "{\"title\":\"Write release notes\",\"assignee\":\"scout\",\"board\":\"ops\"}"
+              },
+              "id": "call-create",
+              "done": true,
+              "is_error": false,
+              "result": "{\"ok\":true,\"task_id\":\"t_9\",\"status\":\"running\",\"workspace_kind\":null,\"workspace_path\":null,\"project_id\":null,\"gated\":false,\"subscribed\":false}",
+              "result_view": {
+                "text": "{\n  \"ok\": true,\n  \"task_id\": \"t_9\",\n  \"status\": \"running\",\n  \"workspace_kind\": null,\n  \"workspace_path\": null,\n  \"project_id\": null,\n  \"gated\": false,\n  \"subscribed\": false\n}",
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "Write release notes",
+                      "detail": "running",
+                      "link": {
+                        "kind": "kanban_task",
+                        "id": "t_9",
+                        "board": "ops"
+                      }
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "task_id",
+                  "value": "t_1",
+                  "multiline": false
+                },
+                {
+                  "key": "summary",
+                  "value": "Shipped",
+                  "multiline": false
+                }
+              ],
+              "kind": "kanban",
+              "target": "t_1",
+              "verb": "complete",
+              "function": {
+                "name": "kanban_complete",
+                "arguments": "{\"task_id\":\"t_1\",\"summary\":\"Shipped\"}"
+              },
+              "id": "call-complete",
+              "done": true,
+              "is_error": false,
+              "result": "{\"ok\":true,\"task_id\":\"t_1\",\"run_id\":4,\"attachments\":[]}",
+              "result_view": {
+                "text": "{\n  \"ok\": true,\n  \"task_id\": \"t_1\",\n  \"run_id\": 4,\n  \"attachments\": []\n}",
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "t_1",
+                      "link": {
+                        "kind": "kanban_task",
+                        "id": "t_1"
+                      }
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "task_id",
+                  "value": "t_1",
+                  "multiline": false
+                },
+                {
+                  "key": "body",
+                  "value": "Looks good",
+                  "multiline": false
+                }
+              ],
+              "kind": "kanban",
+              "target": "t_1",
+              "verb": "comment",
+              "function": {
+                "name": "kanban_comment",
+                "arguments": "{\"task_id\":\"t_1\",\"body\":\"Looks good\"}"
+              },
+              "id": "call-comment",
+              "done": true,
+              "is_error": false,
+              "result": "{\"ok\":true,\"task_id\":\"t_1\",\"comment_id\":7}",
+              "result_view": {
+                "text": "{\n  \"ok\": true,\n  \"task_id\": \"t_1\",\n  \"comment_id\": 7\n}",
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "t_1",
+                      "detail": "Looks good",
+                      "link": {
+                        "kind": "kanban_task",
+                        "id": "t_1"
+                      }
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            }
+          ],
+          "_turn_id": "kanban-run",
+          "_display": "row"
+        },
+        {
+          "role": "tool",
+          "content": "{\"tasks\":[{\"id\":\"t_1\",\"title\":\"Fix login\",\"assignee\":\"scout\",\"status\":\"ready\",\"priority\":0}],\"count\":1,\"limit\":50,\"truncated\":false,\"next_limit\":null,\"promoted\":0}",
+          "timestamp": 9102,
+          "tool_call_id": "call-list",
+          "_turn_id": "kanban-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"ok\":true,\"task_id\":\"t_9\",\"status\":\"running\",\"workspace_kind\":null,\"workspace_path\":null,\"project_id\":null,\"gated\":false,\"subscribed\":false}",
+          "timestamp": 9103,
+          "tool_call_id": "call-create",
+          "_turn_id": "kanban-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"ok\":true,\"task_id\":\"t_1\",\"run_id\":4,\"attachments\":[]}",
+          "timestamp": 9104,
+          "tool_call_id": "call-complete",
+          "_turn_id": "kanban-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"ok\":true,\"task_id\":\"t_1\",\"comment_id\":7}",
+          "timestamp": 9105,
+          "tool_call_id": "call-comment",
+          "_turn_id": "kanban-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "assistant",
+          "content": "Done.",
+          "message_id": "kanban-answer",
+          "timestamp": 9106,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {
+                "row_id": "tool:call-list",
+                "order_index": 0,
+                "role": "tool",
+                "created_at": 9101,
+                "tool": {
+                  "id": "call-list",
+                  "name": "kanban_list",
+                  "args_fields": [
+                    {
+                      "key": "status",
+                      "value": "ready",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "kanban",
+                  "target": "",
+                  "verb": "list",
+                  "args": {
+                    "status": "ready"
+                  },
+                  "preview": null,
+                  "result": "{\"tasks\":[{\"id\":\"t_1\",\"title\":\"Fix login\",\"assignee\":\"scout\",\"status\":\"ready\",\"priority\":0}],\"count\":1,\"limit\":50,\"truncated\":false,\"next_limit\":null,\"promoted\":0}",
+                  "result_view": {
+                    "text": "{\n  \"tasks\": [\n    {\n      \"id\": \"t_1\",\n      \"title\": \"Fix login\",\n      \"assignee\": \"scout\",\n      \"status\": \"ready\",\n      \"priority\": 0\n    }\n  ],\n  \"count\": 1,\n  \"limit\": 50,\n  \"truncated\": false,\n  \"next_limit\": null,\n  \"promoted\": 0\n}",
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "Fix login",
+                          "detail": "ready · scout",
+                          "link": {
+                            "kind": "kanban_task",
+                            "id": "t_1"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-create",
+                "order_index": 1,
+                "role": "tool",
+                "created_at": 9101,
+                "tool": {
+                  "id": "call-create",
+                  "name": "kanban_create",
+                  "args_fields": [
+                    {
+                      "key": "title",
+                      "value": "Write release notes",
+                      "multiline": false
+                    },
+                    {
+                      "key": "assignee",
+                      "value": "scout",
+                      "multiline": false
+                    },
+                    {
+                      "key": "board",
+                      "value": "ops",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "kanban",
+                  "target": "Write release notes",
+                  "verb": "create",
+                  "args": {
+                    "title": "Write release notes",
+                    "assignee": "scout",
+                    "board": "ops"
+                  },
+                  "preview": null,
+                  "result": "{\"ok\":true,\"task_id\":\"t_9\",\"status\":\"running\",\"workspace_kind\":null,\"workspace_path\":null,\"project_id\":null,\"gated\":false,\"subscribed\":false}",
+                  "result_view": {
+                    "text": "{\n  \"ok\": true,\n  \"task_id\": \"t_9\",\n  \"status\": \"running\",\n  \"workspace_kind\": null,\n  \"workspace_path\": null,\n  \"project_id\": null,\n  \"gated\": false,\n  \"subscribed\": false\n}",
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "Write release notes",
+                          "detail": "running",
+                          "link": {
+                            "kind": "kanban_task",
+                            "id": "t_9",
+                            "board": "ops"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-complete",
+                "order_index": 2,
+                "role": "tool",
+                "created_at": 9101,
+                "tool": {
+                  "id": "call-complete",
+                  "name": "kanban_complete",
+                  "args_fields": [
+                    {
+                      "key": "task_id",
+                      "value": "t_1",
+                      "multiline": false
+                    },
+                    {
+                      "key": "summary",
+                      "value": "Shipped",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "kanban",
+                  "target": "t_1",
+                  "verb": "complete",
+                  "args": {
+                    "task_id": "t_1",
+                    "summary": "Shipped"
+                  },
+                  "preview": null,
+                  "result": "{\"ok\":true,\"task_id\":\"t_1\",\"run_id\":4,\"attachments\":[]}",
+                  "result_view": {
+                    "text": "{\n  \"ok\": true,\n  \"task_id\": \"t_1\",\n  \"run_id\": 4,\n  \"attachments\": []\n}",
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "t_1",
+                          "link": {
+                            "kind": "kanban_task",
+                            "id": "t_1"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-comment",
+                "order_index": 3,
+                "role": "tool",
+                "created_at": 9101,
+                "tool": {
+                  "id": "call-comment",
+                  "name": "kanban_comment",
+                  "args_fields": [
+                    {
+                      "key": "task_id",
+                      "value": "t_1",
+                      "multiline": false
+                    },
+                    {
+                      "key": "body",
+                      "value": "Looks good",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "kanban",
+                  "target": "t_1",
+                  "verb": "comment",
+                  "args": {
+                    "task_id": "t_1",
+                    "body": "Looks good"
+                  },
+                  "preview": null,
+                  "result": "{\"ok\":true,\"task_id\":\"t_1\",\"comment_id\":7}",
+                  "result_view": {
+                    "text": "{\n  \"ok\": true,\n  \"task_id\": \"t_1\",\n  \"comment_id\": 7\n}",
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "t_1",
+                          "detail": "Looks good",
+                          "link": {
+                            "kind": "kanban_task",
+                            "id": "t_1"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              }
+            ],
+            "final_answer": "Done.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": false,
+            "has_consumed_steering": false,
+            "file_changes": [],
+            "activity_rows_total": 4,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "7dbb745ff9bd3c5657823e2f162c25ea5ca137ebdf2f891f9df0f4d2dcc66409"
+          },
+          "_turn_id": "kanban-run",
+          "_display": "row"
+        }
+      ]
+    }
   }
 }
