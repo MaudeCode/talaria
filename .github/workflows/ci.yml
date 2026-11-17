@@ -131,8 +131,8 @@ jobs:
     with:
       mode: ${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && ((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'hosted-tests')) && needs.changes.outputs.app_hosted != 'empty' && 'hosted' || 'build') || 'contracts' }}
       contracts: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
-      # The full package suite runs unless the plan narrowed the package lane or left it out.
-      package_tests: ${{ needs.changes.result != 'success' || (needs.changes.outputs.app_package != 'explicit' && needs.changes.outputs.app_package != 'empty') }}
+      # The package tests run unless the plan left them out; package_lane says whether all of them.
+      package_tests: ${{ needs.changes.result != 'success' || needs.changes.outputs.app_package != 'empty' }}
       package_lane: ${{ needs.changes.result == 'success' && needs.changes.outputs.app_package || 'full' }}
       hosted_lane: ${{ needs.changes.result == 'success' && needs.changes.outputs.app_hosted || 'full' }}
       plan: ${{ needs.changes.result == 'success' && needs.changes.outputs.app_plan || '' }}

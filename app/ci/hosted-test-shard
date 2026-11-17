@@ -112,10 +112,10 @@ def assign(grouped, width):
     return shards
 
 
-def finish(loads, slots, busy, timeline):
-    """Predicted seconds from the build's start to the last shard's result. `slots` runners start at once; `busy` more
-    free after the package tests' estimated runner time; any other shard waits for the earliest finished one."""
-    free = [0.0] * slots + [300.0] * busy
+def finish(loads, slots, timeline):
+    """Predicted seconds from the build's start to the last shard's result. `slots` runners start at once; any other
+    shard waits for the earliest finished one."""
+    free = [0.0] * slots
     heapq.heapify(free)
     ready = timeline["artifact"] + timeline["download"]
     last = 0.0
@@ -140,7 +140,7 @@ def policy(capacity):
                      "competing": observed.get("competing", []), "reason": observed.get("reason", "")}
 
 
-def plan(lane, capacity=None, package_job=False, repetitions=1, table=None, classes=None, at_once=MAX_SHARDS):
+def plan(lane, capacity=None, repetitions=1, table=None, classes=None, at_once=MAX_SHARDS):
     """The shard plan for a hosted lane. `table` defaults to hosted-test-weights.json and a full lane's `classes` to the
     checkout's; `at_once` is how many shards the workflow runs at a time (a release runs two)."""
     table = table or weights()
@@ -152,13 +152,12 @@ def plan(lane, capacity=None, package_job=False, repetitions=1, table=None, clas
     limit, decision = policy(capacity)
     if repetitions > 1:
         limit = 1  # A focused investigation repeats its selection on one runner.
-    slots = min(limit, at_once) - (1 if package_job else 0)
+    slots = min(limit, at_once)
     widths = range(1, min(limit, len(grouped)) + 1)
     candidates = []
     for width in widths:
         shards = assign(grouped, width)
-        candidates.append({"width": width, "finish": finish([shard["load"] for shard in shards], slots, width - slots
-                                                             if width > slots else 0, table["timeline"]),
+        candidates.append({"width": width, "finish": finish([shard["load"] for shard in shards], slots, table["timeline"]),
                            "slowest_load": round(max(shard["load"] for shard in shards), 1)})
     fastest = min(candidate["finish"] for candidate in candidates)
     width = next(candidate["width"] for candidate in candidates if candidate["finish"] <= fastest * WITHIN)
@@ -409,8 +408,7 @@ def main(argv):
     if command == "plan":
         lane = json.loads(Path(values[0]).read_text())
         observed = json.loads(Path(values[1]).read_text()) if len(values) > 1 else None
-        result = plan(lane, capacity=observed, package_job=os.environ.get("PACKAGE_JOB") == "true",
-                      repetitions=int(os.environ.get("REPETITIONS", "1")),
+        result = plan(lane, capacity=observed, repetitions=int(os.environ.get("REPETITIONS", "1")),
                       at_once=int(os.environ.get("SHARDS_AT_ONCE", str(MAX_SHARDS))))
         print(describe(result), file=sys.stderr)
         print(json.dumps(result, separators=(",", ":")))

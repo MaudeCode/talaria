@@ -22,10 +22,10 @@
 #       within its three macOS jobs (TAL-2396).
 #     package_lane, hosted_lane: full | explicit | empty (default full), and plan: the App test plan JSON of
 #       `scripts/changed-components.py --app-plan` (default: none, both lanes full). A pull request runs only the tests
-#       its diff reaches (TAL-2390): an explicit package lane runs in its own "App selected package tests" job with a
-#       filter, whatever package_tests says, and an explicit hosted lane runs only its identifiers. ci.yml passes
-#       package_tests false for an explicit or empty package lane. Main pushes,
-#       manual runs and releases pass no plan, so they always run both targets in full.
+#       its diff reaches (TAL-2390): an explicit package lane runs only its identifiers with a filter, in the package
+#       job, then named "App selected package tests", or in hosted mode's build job, then named "App build and selected
+#       package tests"; an explicit hosted lane runs only its identifiers. ci.yml passes package_tests false for an empty
+#       package lane. Main pushes, manual runs and releases pass no plan, so they always run both targets in full.
 #     diagnostic: true for a focused diagnostic (app-test-diagnostics.yml): its failing tests post commit statuses under
 #       its own run's name, never a CI shard's. repetitions: its attempts (default 1); more than one runs the hosted
 #       lane on one simulator with -test-iterations and -run-tests-until-failure.
@@ -87,12 +87,13 @@ defaults:
 
 env:
   # The build job the test job waits for.
-  BUILD_JOB: App build
+  # A subset of the package tests in the build job renames it, so it never reports under the full suite's name.
+  BUILD_JOB: ${{ inputs.mode == 'hosted' && inputs.package_lane == 'explicit' && 'App build and selected package tests' || 'App build' }}
   BUILD_ARTIFACT: app-test-build
 
 jobs:
   app-build:
-    name: App build
+    name: ${{ inputs.mode == 'hosted' && inputs.package_lane == 'explicit' && 'App build and selected package tests' || 'App build' }}
     # Hosted mode builds on its own runner while the test jobs boot their simulators, then runs the package tests after
     # its upload, whatever the build's result (TAL-1891). Build mode has nothing to upload, and its package tests run
     # beside it in their own job. A contract-only change leaves the App sources alone, so it needs no build.
@@ -155,12 +156,13 @@ jobs:
         uses: ./.github/actions/app-package-tests
         with:
           contracts: ${{ inputs.contracts }}
+          plan: ${{ inputs.package_lane == 'explicit' && inputs.plan || '' }}
 
   package-test:
-    # Build mode's and contracts mode's package tests, on their own runner from the start. Hosted mode runs a full lane in
-    # app-build. An explicit lane always runs here, under its own name, so a subset never reports as the full suite.
+    # Build mode's and contracts mode's package tests, on their own runner from the start. Hosted mode runs them in
+    # app-build. An explicit lane runs here under its own name, so a subset never reports as the full suite.
     name: ${{ inputs.package_lane == 'explicit' && 'App selected package tests' || 'App package tests' }}
-    if: inputs.package_lane == 'explicit' || (inputs.mode != 'hosted' && inputs.package_tests)
+    if: inputs.mode != 'hosted' && inputs.package_tests
     runs-on: xcode-27
     timeout-minutes: 30
     permissions:
@@ -224,7 +226,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PLAN: ${{ inputs.plan }}
           HOSTED_LANE: ${{ inputs.hosted_lane }}
-          PACKAGE_JOB: ${{ inputs.package_lane == 'explicit' }}
           REPETITIONS: ${{ inputs.repetitions }}
           SHARDS_AT_ONCE: ${{ inputs.shards_at_once }}
         run: |
@@ -585,10 +586,42 @@ jobs:
   app-test-gate:
     # The suite's one result: every shard passed and every planned identifier ran exactly once, in its own shard, with
     # nothing unplanned beside it. A release reuses main CI's "App / App hosted tests" job on the exact release source
-    # rather than testing again (TAL-1550); an explicit lane's gate is "App selected hosted tests", never that name.
-    name: ${{ inputs.hosted_lane == 'explicit' && 'App selected hosted tests' || 'App hosted tests' }}
+    # rather than testing again (TAL-1550). An explicit lane's gate is app-test-selected-gate, never this job.
+    name: App hosted tests
     needs: [build-started, app-test]
-    if: inputs.mode == 'hosted'
+    if: inputs.mode == 'hosted' && inputs.hosted_lane != 'explicit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          sparse-checkout: |
+            app/ci
+            scripts
+
+      - name: Download the test cases each shard ran
+        uses: actions/download-artifact@v8
+        with:
+          pattern: app-hosted-cases-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/hosted-cases
+
+      - name: Require every planned identifier to run exactly once
+        env:
+          PLAN: ${{ needs.build-started.outputs.plan }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${PLAN}" > "${RUNNER_TEMP}/shards.json"
+          ci/hosted-test-shard check "${RUNNER_TEMP}/shards.json" "${RUNNER_TEMP}/hosted-cases" | tee -a "${GITHUB_STEP_SUMMARY}"
+          ci/hosted-test-shard report "${RUNNER_TEMP}/shards.json" "${RUNNER_TEMP}/hosted-cases" | tee -a "${GITHUB_STEP_SUMMARY}"
+
+  app-test-selected-gate:
+    # An explicit hosted lane's one result, under a name no full suite carries: the same proof as app-test-gate for the
+    # identifiers its plan selected (TAL-2390).
+    name: App selected hosted tests
+    needs: [build-started, app-test]
+    if: inputs.mode == 'hosted' && inputs.hosted_lane == 'explicit'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

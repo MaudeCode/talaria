@@ -43,8 +43,8 @@ class PlanTests(unittest.TestCase):
             ("two heavy classes take two shards", lane("Heavy1", "Heavy2"), {}, 2),
             ("three take three", lane("Heavy1", "Heavy2", "Heavy3"), {}, 3),
             ("four take four", lane("Heavy1", "Heavy2", "Heavy3", "Heavy4"), {}, 4),
-            # A selected package job holds one slot until about 300 s; the fourth shard still finishes sooner.
-            ("a package job delays but keeps four", lane("Heavy1", "Heavy2", "Heavy3", "Heavy4"), {"package_job": True}, 4),
+            # A release runs two shards at a time: two waves of two finish later than two shards of two classes each.
+            ("two at a time", lane("Heavy1", "Heavy2", "Heavy3", "Heavy4"), {"at_once": 2}, 2),
             ("repetitions never spread", lane("Heavy1", "Heavy2", "Heavy3", "Heavy4"), {"repetitions": 2}, 1),
         ]
         for name, selection, options, width in cases:

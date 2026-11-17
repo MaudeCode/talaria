@@ -249,17 +249,21 @@ class TestIOSRunnerTest < Minitest::Test
     # shards are the five macOS jobs and the shards' download never waits on them (TAL-1891). Build and contracts modes
     # run them in their own job, from the start (TAL-1896).
     assert_nil(package["needs"], "The package tests start beside a build-mode build")
-    # An explicit lane always runs in its own job, under its own name, so a subset never reports as the suite (TAL-2390).
-    assert_equal("inputs.package_lane == 'explicit' || (inputs.mode != 'hosted' && inputs.package_tests)", package["if"])
+    assert_equal("inputs.mode != 'hosted' && inputs.package_tests", package["if"])
+    # An explicit lane runs only its identifiers, and the job that runs them takes a name no full suite carries, so a
+    # subset never reports as the suite (TAL-2390).
     assert_equal("${{ inputs.package_lane == 'explicit' && 'App selected package tests' || 'App package tests' }}", package["name"])
+    selected_build = "${{ inputs.mode == 'hosted' && inputs.package_lane == 'explicit' && 'App build and selected package tests' || 'App build' }}"
+    assert_equal([selected_build] * 2, [build["name"], YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)["env"]["BUILD_JOB"]])
     build_names = build["steps"].map { |step| step["name"] || step["uses"] }
     assert_equal("Upload the test build", build_names[-2], "The shards' download must never wait on the package tests")
     # Every caller runs them but a release's hosted-tests call, whose contracts job runs the same suite (TAL-414).
     assert_equal("${{ !cancelled() && inputs.mode == 'hosted' && inputs.package_tests }}", build["steps"].last["if"])
-    [build["steps"].last, package["steps"].last].each { |caller| assert_equal("./.github/actions/app-package-tests", caller["uses"]) }
-    assert_equal({ "contracts" => "${{ inputs.contracts }}" }, build["steps"].last["with"])
-    assert_equal({ "contracts" => "${{ inputs.contracts }}", "plan" => "${{ inputs.package_lane == 'explicit' && inputs.plan || '' }}" },
-                 package["steps"].last["with"])
+    [build["steps"].last, package["steps"].last].each do |caller|
+      assert_equal("./.github/actions/app-package-tests", caller["uses"])
+      assert_equal({ "contracts" => "${{ inputs.contracts }}", "plan" => "${{ inputs.package_lane == 'explicit' && inputs.plan || '' }}" },
+                   caller["with"])
+    end
     [build, package].each { |job| assert_equal("read", job["permissions"]["actions"], "The probe wait reads this run's job list") }
     assert_equal({"type" => "boolean", "default" => true},
                  YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)[true]["workflow_call"]["inputs"]["package_tests"])
@@ -330,11 +334,13 @@ class TestIOSRunnerTest < Minitest::Test
       assert_match(/-\$\{\{ matrix\.shard \}\}\z/, upload["with"]["name"], "shards overwrite each other's #{upload["name"]}")
     end
     # "App hosted tests" is the suite's one result, the job a release reuses: every shard passed and every planned
-    # identifier ran exactly once. A selected run's gate is "App selected hosted tests", never that name.
-    gate = jobs.fetch("app-test-gate")
-    assert_equal(["${{ inputs.hosted_lane == 'explicit' && 'App selected hosted tests' || 'App hosted tests' }}",
-                  %w[build-started app-test], "inputs.mode == 'hosted'", "ubuntu-latest"],
-                 gate.values_at("name", "needs", "if", "runs-on"))
+    # identifier ran exactly once. A selected run's gate is its own job, "App selected hosted tests", with the same proof.
+    gates = jobs.values_at("app-test-gate", "app-test-selected-gate")
+    assert_equal([["App hosted tests", %w[build-started app-test], "inputs.mode == 'hosted' && inputs.hosted_lane != 'explicit'", "ubuntu-latest"],
+                  ["App selected hosted tests", %w[build-started app-test], "inputs.mode == 'hosted' && inputs.hosted_lane == 'explicit'", "ubuntu-latest"]],
+                 gates.map { |gate| gate.values_at("name", "needs", "if", "runs-on") })
+    assert_equal(*gates.map { |gate| gate["steps"] })
+    gate = gates.first
     assert_equal("app-hosted-cases-*", gate["steps"].find { |step| step["uses"].to_s.start_with?("actions/download-artifact@") }["with"]["pattern"])
     assert_includes(gate["steps"].last["run"], "set -euo pipefail")
     assert_includes(gate["steps"].last["run"], 'ci/hosted-test-shard check "${RUNNER_TEMP}/shards.json" "${RUNNER_TEMP}/hosted-cases"')
@@ -375,7 +381,7 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal("./.github/workflows/app-tests.yml", app["uses"])
     assert_equal("${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && ((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'hosted-tests')) && needs.changes.outputs.app_hosted != 'empty' && 'hosted' || 'build') || 'contracts' }}",
                  app["with"]["mode"])
-    assert_equal(["${{ needs.changes.result != 'success' || (needs.changes.outputs.app_package != 'explicit' && needs.changes.outputs.app_package != 'empty') }}",
+    assert_equal(["${{ needs.changes.result != 'success' || needs.changes.outputs.app_package != 'empty' }}",
                   "${{ needs.changes.result == 'success' && needs.changes.outputs.app_package || 'full' }}",
                   "${{ needs.changes.result == 'success' && needs.changes.outputs.app_hosted || 'full' }}",
                   "${{ needs.changes.result == 'success' && needs.changes.outputs.app_plan || '' }}"],
