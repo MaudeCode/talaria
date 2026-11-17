@@ -40,6 +40,30 @@ run_check() {
   exit 1
 }
 
+# A Web lint or typecheck pass leaves a worktree-local receipt holding the fingerprint of everything it read, and a later
+# push with the same fingerprint reuses it (TAL-2393). An empty fingerprint means the inputs could not be identified:
+# the check runs and leaves no receipt. CI still runs every check on the pushed commit.
+receipts=$(git rev-parse --git-path pre-push-receipts) && mkdir -p "$receipts" || receipts=
+fingerprint=
+web_fingerprint() {
+  [ -n "$receipts" ] && python3 scripts/changed-components.py --web-check-fingerprint 2>/dev/null
+}
+run_web_check() {
+  receipt="$receipts/$(printf '%s' "$*" | tr -c 'A-Za-z0-9' -)"
+  [ -n "$fingerprint" ] || fingerprint=$(web_fingerprint)
+  if [ -n "$fingerprint" ] && [ "$(cat "$receipt" 2>/dev/null)" = "$fingerprint" ]; then
+    echo "pre-push: $* reused (it passed with the same Web inputs)"
+    return
+  fi
+  before=$fingerprint
+  run_check web "$@"
+  fingerprint=$(web_fingerprint)
+  # Only a pass whose inputs did not change while it ran earns a receipt; the rename publishes it whole.
+  if [ -n "$before" ] && [ "$fingerprint" = "$before" ] && echo "$fingerprint" >"$receipt.$$"; then
+    mv -f "$receipt.$$" "$receipt"
+  fi
+}
+
 # Anything other than an explicit false runs the check, so a router failure falls back to every check.
 selection=$(python3 scripts/changed-components.py --base=origin/main --head=HEAD --merge-base)
 selected() {
@@ -54,17 +78,20 @@ if selected web_server || selected web_frontend; then
   # Server and frontend resolve the contracts package from its build output.
   run_check web npm run build -w packages/contracts
 fi
+if selected web_frontend; then
+  # The frontend's e2e specs import the server's build output. Both builds precede every Web check, so each check's
+  # fingerprint already holds the build outputs it reads.
+  run_check web npm run build -w packages/server
+fi
 if selected web_server; then
   for package in contracts server; do
-    run_check web npm run lint -w "packages/$package"
-    run_check web npm run typecheck -w "packages/$package"
+    run_web_check npm run lint -w "packages/$package"
+    run_web_check npm run typecheck -w "packages/$package"
   done
 fi
 if selected web_frontend; then
-  # The frontend's e2e specs import the server's build output.
-  run_check web npm run build -w packages/server
-  run_check web npm run lint -w packages/frontend
-  run_check web npm run typecheck -w packages/frontend
+  run_web_check npm run lint -w packages/frontend
+  run_web_check npm run typecheck -w packages/frontend
 fi
 if selected relay; then
   run_check relay pnpm typecheck
