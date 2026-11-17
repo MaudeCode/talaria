@@ -1,11 +1,14 @@
 name: Release
 run-name: Release ${{ inputs.tag }}
 
-# Tags last (TAL-2342, MaudeCode/.github RELEASES.md): a release is one dispatch of this workflow on main. Preflight
-# refuses anything but a dispatch on main under an unused later version, waits for main CI on the commit and plans
-# the components that changed since the last published release set. The release job builds, gates and publishes
-# Relay, Web, the App and the release-set manifest; its last job creates the changed components' tags and then the
-# root vX.Y.Z tag. A release that fails before then leaves no version tag, so the same version is dispatched again.
+# Tags last (TAL-2342, MaudeCode/.github RELEASES.md): a release is one dispatch of this workflow on main, of a version
+# (tag) and a commit (sha): any commit on main after the last release, frozen at preflight whatever merges afterwards.
+# Preflight refuses anything but a dispatch on main under an unused later version, a commit not after the last release,
+# or one whose workflow files differ from main's, and plans the components that changed since the last published
+# release set. It does not wait for main CI (TAL-2396): preflight reports which named suites main CI already passed on
+# the exact commit, the release reuses those and runs every other one itself. The release job builds, gates and publishes Relay, Web, the App and the
+# release-set manifest; its last job creates the changed components' tags and then the root vX.Y.Z tag. A release that
+# fails before then leaves no version tag, so the same version is dispatched again.
 # npm's trusted publisher, release-set.yml, publish.py, ios-release-build.yml and recover.py all authorize this file
 # by name: production-cutover.yml@refs/heads/main.
 
@@ -31,37 +34,58 @@ concurrency:
 jobs:
   preflight:
     runs-on: ubuntu-latest
-    timeout-minutes: 100
+    timeout-minutes: 15
     permissions:
-      contents: write # the release-set-<sha> tag (not a version tag), while main still matches the source (TAL-421)
-      actions: read
+      contents: read
+      actions: read # preflight reads main CI's push run on the commit for the checks it already passed
     outputs:
       tag: ${{ steps.check.outputs.tag }}
       sha: ${{ steps.check.outputs.sha }}
+      checks: ${{ steps.check.outputs.checks }}
       request: ${{ steps.plan.outputs.request }}
       previous: ${{ steps.plan.outputs.previous }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - id: check
-        uses: MaudeCode/.github/actions/release-preflight@3e8fc1995784e2d3004e4de05205a767472efb7c
+        uses: MaudeCode/.github/actions/release-preflight@7142f8bc63e5e63cdc7d0c4605f3a283de59624c
         with:
           tag: ${{ inputs.tag }}
           sha: ${{ inputs.sha }}
+          # Each changed component's full suite in main CI (TAL-2396): the App's hosted tests, Web's server suite on
+          # every storage backend with its frontend checks and Playwright shards, Relay's. A suite whose every job
+          # already passed on the commit is reused; release-set.yml runs the others. Web's sidecar matrix is left out:
+          # the release's Agent gate runs it against every supported Agent release.
+          checks: |
+            ci.yml: App / App hosted tests
+            ci.yml: web / frontend / checks
+            ci.yml: web / frontend / e2e (1/6)
+            ci.yml: web / frontend / e2e (2/6)
+            ci.yml: web / frontend / e2e (3/6)
+            ci.yml: web / frontend / e2e (4/6)
+            ci.yml: web / frontend / e2e (5/6)
+            ci.yml: web / frontend / e2e (6/6)
+            ci.yml: web / server (json storage, 1/3)
+            ci.yml: web / server (json storage, 2/3)
+            ci.yml: web / server (json storage, 3/3)
+            ci.yml: web / server (json storage, latency)
+            ci.yml: web / server (json storage, checks)
+            ci.yml: web / server (sqlite storage, 1/3)
+            ci.yml: web / server (sqlite storage, 2/3)
+            ci.yml: web / server (sqlite storage, 3/3)
+            ci.yml: web / server (sqlite storage, latency)
+            ci.yml: web / server (postgres storage, 1/3)
+            ci.yml: web / server (postgres storage, 2/3)
+            ci.yml: web / server (postgres storage, 3/3)
+            ci.yml: web / server (postgres storage, latency)
+            ci.yml: relay / check
 
+      # The workflow revision's release tooling plans the frozen commit, which its full history contains (TAL-2396).
       - uses: actions/checkout@v7
         with:
-          ref: ${{ steps.check.outputs.sha }}
           fetch-depth: 0
 
       - uses: ./.github/actions/release-python
-
-      - name: Wait for main CI on the release commit
-        env:
-          GITHUB_SHA: ${{ steps.check.outputs.sha }}
-          WAIT_FOR_MAIN_CI_SECONDS: "5400"
-          MAIN_CI_POLL_SECONDS: "30"
-        run: app/ci/require_successful_main_ci
 
       - name: Plan the components that changed
         id: plan
@@ -79,10 +103,6 @@ jobs:
           result=$("$RELEASE_PYTHON" releases/autorelease.py --tag "$RELEASE_TAG" --sha "$SOURCE" \
             --previous "$RUNNER_TEMP/previous.json" --output "$RUNNER_TEMP/request.json")
           echo "$result"
-          # publish-set attaches the manifest to release-set-<sha>. GITHUB_TOKEN may not create a ref whose workflows
-          # differ from main's (TAL-421), so it is created now, while main is at the source; publish-set keeps it.
-          git ls-remote --exit-code origin "refs/tags/release-set-${SOURCE}" >/dev/null \
-            || git push origin "${SOURCE}:refs/tags/release-set-${SOURCE}"
           {
             echo "request=$(jq -c . "$RUNNER_TEMP/request.json")"
             echo "previous=$previous"
@@ -110,3 +130,4 @@ jobs:
       previous_release_set: ${{ needs.preflight.outputs.previous }}
       dry_run: false
       release_tag: ${{ needs.preflight.outputs.tag }}
+      checks: ${{ needs.preflight.outputs.checks }}

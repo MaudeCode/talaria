@@ -18,10 +18,12 @@
 #     ref: optional commit to check out (default: the triggering commit).
 #     package_tests: false leaves out the package tests (default true); a release runs the same suite in its
 #       contracts job instead (TAL-414).
+#     shards_at_once: how many hosted test shards run at a time (default 4, all of them). A release passes 2 to stay
+#       within its three macOS jobs (TAL-2396).
 #   No outputs: the calling job's result is the suite's result.
 # Hosted mode's jobs are named "App build"/"App build started"/"App hosted tests N"/"App hosted tests"; the build artifact
 # is app-test-build. "App hosted tests" passes only once every shard passed and each class ran exactly
-# once; a release reuses main CI's (ci/find-hosted-tests-run).
+# once; a release reuses main CI's when release-preflight reports it passed.
 # Each test job boots its simulator while the build runs on another runner (TAL-380): hosted macOS allows five
 # concurrent jobs, and a simulator's first boot beside a build on one three-core runner slowed both. It polls the
 # jobs API for the build's upload from before its boot (TAL-405), and queues only once the build holds a runner
@@ -46,6 +48,9 @@ on:
       package_tests:
         type: boolean
         default: true
+      shards_at_once:
+        type: number
+        default: 4
 
 permissions:
   contents: read
@@ -183,6 +188,7 @@ jobs:
     if: inputs.mode == 'hosted'
     strategy:
       fail-fast: false
+      max-parallel: ${{ inputs.shards_at_once }}
       matrix:
         shard: [1, 2, 3, 4]
     runs-on: xcode-27

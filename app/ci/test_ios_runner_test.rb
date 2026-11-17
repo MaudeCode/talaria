@@ -304,11 +304,14 @@ class TestIOSRunnerTest < Minitest::Test
     refute_match(/COMPILATION_CACHE|build-cache/, File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8"))
     # Hosted mode runs the package tests, the App build for testing and the simulator-hosted unit tests.
     app_tests = YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)
-    assert_equal(%w[mode contracts ref package_tests], app_tests[true]["workflow_call"]["inputs"].keys)
+    assert_equal(%w[mode contracts ref package_tests shards_at_once], app_tests[true]["workflow_call"]["inputs"].keys)
     jobs = app_tests["jobs"]
     shard = jobs.fetch("app-test")
-    # Four simulator jobs share the one build, each running a fixed set of classes; every shard runs to the end.
-    assert_equal({ "fail-fast" => false, "matrix" => { "shard" => [1, 2, 3, 4] } }, shard["strategy"])
+    # Four simulator jobs share the one build, each running a fixed set of classes; every shard runs to the end. CI
+    # runs all four at once; a release runs fewer at a time to stay within its macOS jobs (TAL-2396).
+    assert_equal({ "fail-fast" => false, "max-parallel" => "${{ inputs.shards_at_once }}", "matrix" => { "shard" => [1, 2, 3, 4] } },
+                 shard["strategy"])
+    assert_equal({ "type" => "number", "default" => 4 }, app_tests[true]["workflow_call"]["inputs"]["shards_at_once"])
     assert_equal("App hosted tests ${{ matrix.shard }}", shard["name"])
     shard["steps"].select { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }.each do |upload|
       assert_match(/-\$\{\{ matrix\.shard \}\}\z/, upload["with"]["name"], "shards overwrite each other's #{upload["name"]}")

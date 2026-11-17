@@ -13,8 +13,10 @@ must advance beyond every published version in their namespace. Web stable and
 experimental versions advance independently; switching channels does not reset
 that channel's published version history.
 
-New release sources require current main CI evidence. Reused components retain
-their authenticated release manifest's evidence when old Actions runs expire.
+A new release set's evidence is its own run's gate receipts. Sets published
+before TAL-2396 also carry a `mainCI` receipt, which still validates but is no
+longer required. Reused components retain their authenticated release
+manifest's evidence when old Actions runs expire.
 
 `release_set.py MANIFEST --previous PREVIOUS --output DESTINATION` validates the
 schema and cross-field rules before writing a new file. Omit `--previous` only
@@ -84,19 +86,28 @@ dependency:
 | `release-set.yml` | `app-publish` | the shared `ios-publish` action, which verifies the IPA (`codesign`, `plutil`, `security cms`) before it uploads |
 | `recover-cutover.yml` | `app` | the same `ios-publish` verification and upload, resuming the original IPA |
 
-A release that ships the App needs the App's simulator-hosted unit tests to
-have passed on the exact release source, dry runs included (TAL-1550).
-The release's preflight already waited for main CI on that commit, so
-`app-hosted-tests-lookup` (`app/ci/find-hosted-tests-run`) looks for a
-completed, successful main-push CI run of `ci.yml` on exactly that SHA whose
-`App / App hosted tests` job succeeded, and records that job's URL in the
-summary. Only then is `app-hosted-tests` (`app-tests.yml` in hosted mode:
-the App build and four TalariaTests shards) skipped; otherwise it runs. Main CI
-leaves out the App jobs when a push does not touch the App, so a release on such
-a commit tests again. Runs on other commits never count, and a lookup that
-fails or errors skips the suite and fails `build-gate` rather than counting as
-reuse. `build-gate` requires the lookup to succeed when the App ships and
-exactly one of reuse (the suite skipped) or a successful suite run.
+No release waits for main CI (TAL-2396). Each component a release ships needs
+its own suite to have passed on the exact release source, dry runs included: the
+App's simulator-hosted unit tests (TAL-1550), Web's server suite on every
+storage backend with its frontend checks and Playwright shards, and Relay's
+suite. `production-cutover.yml` names every job of those suites in main CI in
+the shared `release-preflight`'s `checks` input (`ci.yml: <job name>`), and
+preflight reports which of them already succeeded in the newest ci.yml push run
+on the commit. A job that passed counts even when a sibling failed; one that is
+running, skipped or absent does not, and nothing waits for it. Web has no single
+job for its suite, so every server and frontend job is named, and
+`test_publication.py` keeps that list equal to `web-verify.yml`'s matrices; its
+sidecar matrix is left out because the Agent gate runs it against every
+supported Agent release. `prepare` reuses a suite only when every one of its
+named jobs passed (`check_results.py reused`), which skips that suite's release
+job: `app-hosted-tests` (`app-tests.yml` in hosted mode: the App build and four
+TalariaTests shards), `web-tests` (`web-verify.yml` without the sidecar matrix)
+or `relay-tests` (`relay-verify.yml`), each at the selected commit. Otherwise
+the release runs it. A dry run of `release-set.yml` reuses nothing. `build-gate`
+requires, for each component that ships, exactly one of reuse (its suite
+skipped) or a successful suite run. Every other check runs in the release
+itself; a new dispatch repeats them, so compatibility is always verified against
+the peers that run's plan selected.
 
 `app-tests.yml` splits TalariaTests by class into four simulator jobs that
 share the one build (`app/ci/hosted-test-shard`): three fixed, measured sets of
@@ -142,8 +153,10 @@ log as it runs. Before the shards, one release took 17 to 19.5 minutes (cutover
 run 40795594849): 16 minutes in the suite, with one diagnostic probe alone
 waiting about 4 minutes on its never-answering MCP server.
 
-The organization runs at most five macOS jobs at once. A release that reuses
-main CI's hosted tests needs two:
+The organization runs at most five macOS jobs at once, shared with other work,
+so a release runs at most three (TAL-2396). Job dependencies and the shards'
+matrix width enforce it; nothing watches the queue, and pull-request CI keeps its
+own selection and width. `test_publication.py` checks every route:
 
 - `contracts` runs both App contract gates on one runner, at once, each with its
   own receipt. With `swift test` they took 9 minutes together in release run
@@ -152,15 +165,21 @@ main CI's hosted tests needs two:
 - The package tests run in `contracts` instead of on another runner:
   `contracts` already builds the release source's TalariaKit tests, so the whole
   package suite adds about 30 seconds there (`--package-suite`).
-- The App build (signed, or `app-dry-build` on a dry run) starts with the gates.
-- When the hosted tests run, their build and four shards need five more. The
-  shards queue once the build holds a runner (TAL-413) and boot while it
-  builds; whichever do not fit start as `contracts` and the App build free their
-  slots.
+- The App build (signed, or `app-dry-build` on a dry run) starts with the gates:
+  two macOS jobs.
+- When the hosted tests run, they start once `contracts` and the App build both
+  succeeded: their build and two shards at a time (`shards_at_once: 2`), three
+  macOS jobs. A failed gate or build skips them, since the release fails anyway.
+- `app-publish` follows `build-gate`, alone.
 - The signed build cannot reuse the hosted tests' compiled work: one is a
   Release archive for devices signed for distribution, the other a Debug build
   for the simulator, signed ad hoc with the `.xctest` identifier suffix, so no
   compiled file is valid for both.
+
+A pre-test runner fault is retried inside its shard (`scripts/xctest-launch`);
+a failing assertion fails the attempt. Nothing re-runs a release by itself: the
+operator may re-run its failed jobs on the same commit, and a source fix is a
+new commit and a new dispatch.
 
 The planned critical path of a release that reuses main CI's hosted tests, in
 minutes from the start of the release workflow's `prepare` job. The times come from the
@@ -170,7 +189,7 @@ the `timeline` job measures each run:
 | Time | Event |
 |---|---|
 | 0:00-2:10 | `prepare` (plan and the Agent jobs) |
-| 2:10 | every gate and build starts; `app-hosted-tests-lookup` finds main CI's hosted tests within a minute |
+| 2:10 | every gate and build starts; `prepare` already found main CI's hosted tests |
 | 8:50 | `contracts` done; the signed App build at 10:45 |
 | about 10:00 | the slowest `agent-release` shard done (setup, the selected server build, provisioning and the probe, then its third of the suite beside the image check); `agent` about 0:40 later |
 | 11:25 | `web-build` done, the last gate or build |
@@ -264,7 +283,7 @@ token.
 
 ## Workflow commands
 
-`cli.py prepare` checks exact-main CI, plans the component versions, generates notes,
+`cli.py prepare` checks that the source is on `main` after the last release set, plans the component versions, generates notes,
 and records the previous published App source. Its request contains only
 `sourceRevision`, `tags` (App/Web/Relay), and `relayDeploymentId`. A previous
 manifest is downloaded with `cli.py previous SHA`; drafts and inconsistent
@@ -376,27 +395,38 @@ following the shared tag-last contract in `MaudeCode/.github`'s `RELEASES.md`
 gh workflow run production-cutover.yml --repo MaudeCode/talaria --ref main -f tag=v1.10.1
 ```
 
-`sha` is optional: left empty, the release is of `main`'s head when the run
-started; given, the run is refused if `main` has moved past it. Every job reads
-the commit from preflight's `sha` output. The run, titled `Release v1.10.1`:
+A release is `(tag, sha)`. `sha` is optional: left empty, the release is of
+`main`'s head when the run started; given, it is any commit on `main` after the
+last release. The run stays on that commit whatever merges afterwards: every job
+reads it from preflight's `sha` output, never `github.sha`, which is the workflow
+revision. The workflow revision runs the orchestration and names the run; the
+selected commit is what is checked out, verified, built, recorded in the
+manifest and tagged. The run, titled `Release v1.10.1`:
 
 1. `preflight` runs `release-preflight` (pinned to a full commit SHA), which
-   refuses anything but a dispatch on `main`, a `sha` that is not the run's
-   commit, a malformed or existing `vX.Y.Z` tag, and a version that does not come
-   after every existing one;
-2. waits for that commit's `main` CI, failing as soon as that run fails; rerun
-   its failed jobs (`gh run rerun <id> --failed`), then rerun the release run;
-3. reads the latest published release set and plans `<component>-vX.Y.Z` for the
+   refuses anything but a dispatch on `main`, a malformed or existing `vX.Y.Z`
+   tag, a version that does not come after every existing one, a `sha` that is
+   not on `main` after the last release, and one whose `.github/workflows` tree
+   differs from `main`'s: `GITHUB_TOKEN` could not tag it, so release a newer
+   commit. It also reports which named main CI jobs already passed on the
+   commit (`checks`), without waiting for any;
+2. reads the latest published release set and plans `<component>-vX.Y.Z` for the
    components whose `app/`, `web/` or `relay/` sources changed since their
-   released source (`releases/autorelease.py`); unchanged ones keep their tags;
-4. pushes `release-set-<sha>`, which is not a version tag, while `main` still
-   matches the source: `GITHUB_TOKEN` may not create a ref whose workflows differ
-   from `main`'s (TAL-421), and `publish-set` attaches the manifest to it;
-5. runs `release-set.yml` with the plan: every gate and build, then publication;
-6. after `publish-set` published the completed set, the `tag` job creates the
-   changed components' annotated tags at the source with their GitHub releases,
-   and then the root `vX.Y.Z` tag with `release-tag`. Nothing else creates a
-   version tag, and each step accepts what an earlier attempt created.
+   released source (`releases/autorelease.py`); unchanged ones keep their tags.
+   It does not wait for main CI and writes no ref;
+3. runs `release-set.yml` with the plan: every gate and build, then publication;
+   `prepare` refuses a source that is not after the last release set;
+4. `publish-set` creates `release-set-<sha>`, which is not a version tag, and
+   attaches the completed manifest to it. It and the `tag` job hold a
+   `contents: write` token, so they check out the workflow revision with full
+   history and run its tooling, never an older selected commit's;
+5. the `tag` job then creates the changed components' annotated tags at the
+   source with their GitHub releases, and then the root `vX.Y.Z` tag with
+   `release-tag`. Nothing else creates a version tag, and each step accepts what
+   an earlier attempt created.
+
+The `timeline` job's summary records the attempt, and from the dispatch the
+manifest's publication with its readbacks and the final version tag.
 
 No version tag exists until everything published. A release that fails before
 `publish-set` leaves its version unused: fix the cause and dispatch the same
@@ -407,10 +437,13 @@ a `workflow_dispatch` on `refs/heads/main` whose caller is
 `production-cutover.yml@refs/heads/main`, which `release-set.yml`,
 `publish.py authorize`, `ios-release-build.yml` and `recover.py` require.
 
-If the `tag` job fails, everything has published: re-run that job. Creating a tag
-uses `GITHUB_TOKEN`, so if `main`'s workflow files changed after the source,
-GitHub may refuse it as it did for TAL-421; then an admin pushes the planned
-tags at the source by hand (the job log and the plan list them).
+If the `tag` job fails, everything has published: re-run that job. Every ref
+the release writes (`release-set-<sha>`, the component tags, the root tag) uses
+the workflow's `GITHUB_TOKEN`, so if a workflow file changed on `main` while the
+release ran, GitHub may refuse it as it did for TAL-421. The step then fails and
+prints the exact command that pushes that ref at the frozen commit; run it from a
+clone, then re-run the failed jobs. Nothing retries it or uses another
+credential, and an existing ref is reused only when it names the same commit.
 
 The plan's request has this shape; `release-set.yml` dry runs take the same:
 
@@ -426,9 +459,9 @@ The plan's request has this shape; `release-set.yml` dry runs take the same:
 published root releases and rejects a missing or stale predecessor once a
 release set exists.
 
-The cutover repeats every gate (selected-source and previous-App contracts,
+The cutover runs every gate (selected-source and previous-App contracts,
 the App's hosted unit tests on the release source when the App ships, reused
-from main CI when it already passed them there, pinned Agent compatibility, one
+from main CI when its job already passed them there, pinned Agent compatibility, one
 job per supported release, component builds), then deploys Relay, publishes Web,
 the feedback bridge image and uploads the App at once, and publishes the manifest last. Nothing publishes
 before `build-gate` has every gate and build. The ordering keeps only the

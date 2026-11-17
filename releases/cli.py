@@ -147,8 +147,7 @@ def prepare(args):
     run_url()  # Fail before doing work if provenance cannot be recorded.
     published = require_latest_predecessor(previous)
     require_component_versions(request["tags"], previous, published)
-    env = {**os.environ, "GITHUB_REPOSITORY": REPOSITORY, "GITHUB_SHA": source}
-    subprocess.run([str(ROOT / "app/ci/require_successful_main_ci")], cwd=ROOT, env=env, check=True)
+    # No wait for main CI (TAL-2396): the release reuses a check main CI passed on this commit or runs it itself.
     git(ROOT, "merge-base", "--is-ancestor", source, "origin/main")
     for name in COMPONENTS:
         if previous is None or request["tags"][name] != previous["components"][name]["tag"]:
@@ -182,7 +181,6 @@ def prepare(args):
     write(args.output / "plan.json", plan)
     if previous:
         write(args.output / "previous.json", previous)
-    write(args.output / "receipts/mainCI.json", receipt("mainCI", source))
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
             stream.write(f"source={source}\n")

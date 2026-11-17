@@ -2,7 +2,9 @@
 """Print this Actions run attempt's job timeline as a Markdown table (TAL-414).
 
 Each job's queue, start and finish times count from the run attempt's start, so a release run shows its critical
-path and every macOS queue wait. Measurement only: it reads the run with the job token (actions: read)."""
+path and every macOS queue wait. Above it, a release's two end points count from its dispatch (TAL-2396): the manifest's
+publication with its readbacks (publish-set) and the final version tag, with the attempt they took, so a rerun's wait
+counts too. Measurement only: it reads the run with the job token (actions: read)."""
 
 import json
 import os
@@ -29,7 +31,21 @@ def table(run, jobs):
                      clock(started if ran is not None else None), clock(ran), clock(finished if ran is not None else None),
                      job.get("conclusion") or job.get("status")))
     last = max((seconds(job.get("completed_at"), origin) or 0 for job in jobs), default=0)
+    dispatched = datetime.fromisoformat(run["created_at"].replace("Z", "+00:00"))
+
+    def done(name, step=None):
+        for job in jobs:
+            if (job["name"] == name or job["name"].endswith(" / " + name)) and job.get("conclusion") == "success":
+                finished = job.get("completed_at") if step is None else next(
+                    (item.get("completed_at") for item in job.get("steps", []) if item.get("name") == step
+                     and item.get("conclusion") == "success"), None)
+                return clock(seconds(finished, dispatched)) if finished else None
+        return None
+
+    published, tagged = done("publish-set"), done("tag", "Tag the release")
     lines = ["### Release timeline", "",
+             f"Attempt {run['run_attempt']}, dispatched {run['created_at']}: manifest published with its readbacks at "
+             f"{published or 'never'}, final version tag at {tagged or 'never'} from the dispatch.", "",
              f"Minutes:seconds from the run attempt's start ({run['run_started_at']}); the last job finished at {clock(last)}.", "",
              "| Job | Queued | Waited | Started | Ran | Finished | Result |", "|---|---|---|---|---|---|---|"]
     lines += ["| " + " | ".join(row[1:]) + " |" for row in sorted(rows, key=lambda row: (row[0], row[1]))]

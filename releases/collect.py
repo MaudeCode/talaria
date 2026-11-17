@@ -9,20 +9,20 @@ from cli import load, write
 
 RECEIPT_DIRECTORIES = ("contract-receipts", "previous-app-receipts", "agent-receipts")
 BUILD_RECEIPTS = ("app-build", "web-build", "relay-build", "bridge-build", "app-publish", "web-publish", "relay-publish", "bridge-publish")
-# The handoffs assembly reads: the plan (with its receipts and notes), receipts, and web-build's npm tarballs; never the
+# The handoffs assembly reads: the plan (with its notes), receipts, and web-build's npm tarballs; never the
 # web-image or bridge-image OCI archives.
 HANDOFFS = ("release-plan", *RECEIPT_DIRECTORIES, *BUILD_RECEIPTS)
 
 
 def collect(source, destination):
     paths = []
-    for bucket in ("release-plan/receipts", *RECEIPT_DIRECTORIES):
+    for bucket in RECEIPT_DIRECTORIES:
         paths.extend(sorted((source / bucket).glob("*.json")))
     for bucket in BUILD_RECEIPTS:
         path = source / bucket / "receipt.json"
         if path.is_file():
             paths.append(path)
-    gates = {"mainCI", "currentContracts", "previousAppContracts", "agentCompatibility",
+    gates = {"currentContracts", "previousAppContracts", "agentCompatibility",
              "buildApp", "buildWeb", "buildRelay", "buildBridge", "uploadApp", "publishWeb", "deployRelay", "publishBridge"}
     for path in paths:
         value = load(path)

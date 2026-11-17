@@ -173,22 +173,32 @@ class PlanTests(unittest.TestCase):
             else:
                 resolve(self.root, request, previous)
 
-    def test_changed_components_must_contain_previously_released_sources(self):
-        older = self.source
-        (self.root / "seed").write_text("newer published source")
-        self.git("commit", "-am", "newer release")
-        newer = self.git("rev-parse", "HEAD")
-        published_tags = {name: f"{name}-v{index}.1.0" for index, name in enumerate(COMPONENTS, 1)}
-        for tag in published_tags.values():
-            self.git("tag", "-a", tag, "-m", "published tag")
-        first = resolve(self.root, {**self.request, "sourceRevision": newer, "tags": published_tags})
-        previous = assemble(first, self.receipts(first, published=True), self.notes, complete=True)
-        for name, index in zip(COMPONENTS, (1, 2, 3), strict=True):
-            tag = f"{name}-v{index}.2.0"
-            self.git("tag", "-a", tag, older, "-m", "higher version on older source")
-            request = {**self.request, "sourceRevision": older, "tags": {**published_tags, name: tag}}
-            with self.subTest(component=name), self.assertRaisesRegex(ValueError, "descend"):
-                resolve(self.root, request, previous)
+    def test_a_release_comes_after_the_last_release_set(self):
+        # A release is any commit after the last one (TAL-2396). R itself, a commit before it, or one beside it is
+        # refused, even when every changed component descends from its own released source: here the App's is older
+        # than R.
+        first = resolve(self.root, self.request)
+        base = assemble(first, self.receipts(first, published=True), self.notes, complete=True)
+        web = self.root / "web/contract_versions.json"
+        web.write_text(web.read_text() + "\n")
+        self.git("commit", "-am", "Web-only release R")
+        r = self.git("rev-parse", "HEAD")
+        self.git("tag", "-a", "web-v2.1.0", "-m", "synthetic tag")
+        second = resolve(self.root, {**self.request, "sourceRevision": r, "tags": {**self.tags, "web": "web-v2.1.0"}}, base)
+        previous = assemble(second, self.receipts(second, published=True), self.notes, base, complete=True)
+        self.git("checkout", "-q", "-b", "beside", self.source)
+        (self.root / "seed").write_text("App change beside R")
+        self.git("commit", "-am", "beside R")
+        beside = self.git("rev-parse", "HEAD")
+        tags = {**self.tags, "app": "app-v1.1.0", "web": "web-v2.1.0"}
+        for source, message in ((r, "different completed release set"), (beside, "does not come after"),
+                                (self.source, "does not come after")):
+            with self.subTest(source=source), self.assertRaisesRegex(ValueError, message):
+                resolve(self.root, {**self.request, "sourceRevision": source, "tags": tags}, previous)
+        self.git("checkout", "-q", "main")
+        self.git("merge", "-q", "--no-edit", "beside")
+        after = resolve(self.root, {**self.request, "sourceRevision": self.git("rev-parse", "HEAD"), "tags": tags}, previous)
+        self.assertEqual(after["changed"], {"app": True, "web": False, "relay": False})
 
 
 if __name__ == "__main__":

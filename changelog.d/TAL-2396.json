@@ -1,0 +1,1 @@
+{"skip": "Release workflow only: a release no longer waits for main CI and runs at most three macOS jobs; no app behavior changes."}
