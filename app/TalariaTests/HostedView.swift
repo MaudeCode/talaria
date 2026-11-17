@@ -60,12 +60,15 @@ enum HostedScene {
         }
         if let scene = scene() { return scene }
         if lostForeground { throw XCTSkip("An earlier hosted test failed because the test host left the foreground") }
-        let backgrounded = UIApplication.shared.connectedScenes.contains { $0.activationState == .background }
-        if backgrounded, let bundleID = Bundle.main.bundleIdentifier {
-            print("The test host's scene was in the background; reopened: \(open(bundleID))")
-        }
+        var reopened = false
         let deadline = Date().addingTimeInterval(10)
         while scene() == nil, Date() < deadline {
+            // A host leaving for another app passes through inactive first, so watch for the background throughout.
+            if !reopened, UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .background }),
+               let bundleID = Bundle.main.bundleIdentifier {
+                reopened = true
+                print("The test host's scene was in the background; reopened: \(open(bundleID))")
+            }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         lostForeground = scene() == nil
@@ -648,7 +651,8 @@ final class HostedWindowTests: XCTestCase {
     func testAHostTheSystemSentToTheBackgroundIsBroughtBack() async throws {
         let scene = try HostedScene.current()
         XCTAssertTrue(HostedScene.open("com.apple.Preferences"), "Settings did not open")
-        let backgrounded = await awaitCondition { scene.activationState == .background }
+        // Settings' first launch on a hosted runner keeps the host inactive for over 10 s.
+        let backgrounded = await awaitCondition(timeout: 60) { scene.activationState == .background }
         XCTAssertTrue(backgrounded, "Opening Settings left the host's scene \(scene.activationState.rawValue)")
         XCTAssertTrue(try HostedScene.current() === scene)
     }

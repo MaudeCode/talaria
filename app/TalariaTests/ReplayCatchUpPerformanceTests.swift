@@ -84,8 +84,8 @@ final class ReplayCatchUpPerformanceTests: XCTestCase {
 
     // MARK: - Absolute budget
 
-    func testReplayCatchUpLargeBacklog() {
-        measureAsync(
+    func testReplayCatchUpLargeBacklog() throws {
+        try measureAsync(
             metrics: [XCTClockMetric(), XCTCPUMetric(), XCTMemoryMetric()],
             options: performanceOptions(manualWindow: true)
         ) { test in

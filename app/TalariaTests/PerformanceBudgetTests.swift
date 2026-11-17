@@ -8,26 +8,31 @@ extension XCTestCase {
     /// `measure` takes a synchronous body, but the paths worth budgeting here
     /// (`KanbanFeatureState.load`, a `ChatViewModel` replay) are main-actor and
     /// async. This runs one iteration to completion on the main actor and keeps
-    /// the metrics attached to the caller's test case.
+    /// the metrics attached to the caller's test case. A body that skips skips
+    /// the test once `measure` returns, since `measure`'s block cannot throw.
     @MainActor
     func measureAsync(
         metrics: [any XCTMetric],
         options: XCTMeasureOptions,
         timeout: TimeInterval = 120,
         _ body: @escaping @MainActor (XCTestCase) async throws -> Void
-    ) {
+    ) throws {
+        var skip: XCTSkip?
         measure(metrics: metrics, options: options) {
             let iteration = expectation(description: "Performance iteration")
             Task { @MainActor in
                 defer { iteration.fulfill() }
                 do {
                     try await body(self)
+                } catch let error as XCTSkip {
+                    skip = error
                 } catch {
                     XCTFail("Performance iteration failed: \(error)")
                 }
             }
             wait(for: [iteration], timeout: timeout)
         }
+        if let skip { throw skip }
     }
 
     /// Three iterations, matching the repo's existing performance budgets:
@@ -57,10 +62,10 @@ final class KanbanBoardPerformanceTests: KanbanDefaultsTestCase {
     private static let cardCount = 1_200
     private static let statuses = ["triage", "todo", "ready", "running", "blocked", "done"]
 
-    func testDenseBoardLoadAndFilter() {
+    func testDenseBoardLoadAndFilter() throws {
         let snapshot = Self.denseSnapshot()
 
-        measureAsync(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: performanceOptions()) { _ in
+        try measureAsync(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: performanceOptions()) { _ in
             let state = KanbanFeatureState(
                 server: URL(string: "https://example.test")!,
                 defaults: self.defaults,
@@ -168,6 +173,7 @@ final class MarkdownFilePreviewPerformanceTests: XCTestCase {
     private func measureFirstLayout(_ prepare: @escaping (String) -> [MarkdownPreviewChunk]) throws {
         let markdown = Self.fixture
         XCTAssertNil(MarkdownContentRenderingPolicy.fallbackReason(for: markdown))
+        _ = try HostedScene.current() // Fails or skips here, once, rather than in every measured iteration.
         measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: performanceOptions()) {
             let chunks = prepare(markdown)
             guard let window = try? HostedScene.window(size: HostedSize.phone) else { return XCTFail("No hosted window") }
@@ -251,12 +257,12 @@ final class DiffCodeBlockPerformanceTests: XCTestCase {
 /// neither probe.
 @MainActor
 final class UnknownMediaProbePerformanceTests: XCTestCase {
-    func testOneSecondWAVResolvesAndExportsWithoutImageOrPlayerProbes() {
+    func testOneSecondWAVResolvesAndExportsWithoutImageOrPlayerProbes() throws {
         let wav = TestAudio.wavData(seconds: 1)
         let reference = TranscriptMediaReference(url: "https://media.example.test/clip", name: "clip", mediaKind: .unsupported)
         var durations: [Duration] = []
 
-        measureAsync(metrics: [XCTClockMetric()], options: performanceOptions(manualWindow: true)) { test in
+        try measureAsync(metrics: [XCTClockMetric()], options: performanceOptions(manualWindow: true)) { test in
             TranscriptProbeRecorder.reset()
             let start = ContinuousClock.now
             test.startMeasuring()
