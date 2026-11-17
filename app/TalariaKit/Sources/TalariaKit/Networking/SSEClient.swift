@@ -273,6 +273,8 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
     public let editDiff: ToolEditDiff?
     /// TAL-1458: the workspace-relative file a read or write call names; nil for any other call.
     public let focusPath: String?
+    /// TAL-2331: the transcript leaves this call out (server `hidden`); a failed lookup's completion omits it.
+    public let isHidden: Bool
 
     enum CodingKeys: String, CodingKey {
         case eventType = "event_type"
@@ -291,6 +293,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         case duration
         case isError = "is_error"
         case stableID = "id"
+        case isHidden = "hidden"
     }
 
     init(
@@ -309,8 +312,10 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         editDiff: ToolEditDiff? = nil,
         progress: ToolProgress? = nil,
         focusPath: String? = nil,
-        argsFields: [ToolField]? = nil
+        argsFields: [ToolField]? = nil,
+        isHidden: Bool = false
     ) {
+        self.isHidden = isHidden
         self.verb = verb
         self.app = app
         self.eventType = eventType
@@ -347,6 +352,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         progress = try? container.decodeIfPresent(ToolProgress.self, forKey: .progress)
         focusPath = container.decodeLossyStringIfPresent(forKey: .focusPath)
         stableID = container.decodeLossyStringIfPresent(forKey: .stableID)?.nonEmptyToolStreamID
+        isHidden = container.decodeLossyBoolIfPresent(forKey: .isHidden) == true
     }
 }
 
@@ -645,6 +651,7 @@ private extension ToolStreamEvent {
         editDiff = nil
         progress = nil
         focusPath = nil
+        isHidden = false
     }
 }
 

@@ -1642,6 +1642,7 @@
 	"settings_label_send_key": "Enviar con",
 	"settings_label_session_endless_scroll": "Cargar mensajes anteriores al desplazarse",
 	"settings_label_session_jump_buttons": "Botones de salto",
+	"settings_label_show_tool_lookups": "Mostrar búsquedas de herramientas",
 	"settings_label_shutdown": "Detener el servidor Talaria Web",
 	"settings_label_skin": "Piel",
 	"settings_label_sound": "Sonido de notificación",

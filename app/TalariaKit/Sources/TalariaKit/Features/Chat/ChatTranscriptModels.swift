@@ -129,9 +129,18 @@ public struct AssistantTurnLayout: Equatable, Sendable {
             foldsWork = false
             isLive = false
         }
-        self.rows = showsReasoning ? rows : rows.filter { row in
-            if case .reasoning = row.content { return false }
-            return true
+        // TAL-2331: a call the server hides is left out of the turn and its tool group; a row of only hidden calls goes too.
+        self.rows = rows.compactMap { row in
+            switch row.content {
+            case .reasoning where !showsReasoning: return nil
+            case .tools(let calls) where calls.contains(where: \.isHidden):
+                let shown = calls.filter { !$0.isHidden }
+                guard !shown.isEmpty else { return nil }
+                var kept = row
+                kept.content = .tools(shown)
+                return kept
+            default: return row
+            }
         }
     }
 
@@ -145,6 +154,7 @@ public struct AssistantTurnLayout: Equatable, Sendable {
         merged.resultView = live.resultView ?? call.resultView
         merged.editDiff = live.editDiff ?? call.editDiff
         merged.progress = live.progress
+        merged.isHidden = live.isHidden
         return merged
     }
 }
@@ -562,7 +572,8 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
                     duration: resolved.duration ?? toolCall.duration,
                     isError: resolved.isError ?? toolCall.isError,
                     isCompleted: toolCall.isCompleted || resolved.isCompleted,
-                    startedAt: min(toolCall.startedAt, resolved.startedAt)
+                    startedAt: min(toolCall.startedAt, resolved.startedAt),
+                    isHidden: toolCall.isHidden
                 )
             }
             rows[rowIndex].content = .tools(toolCalls)
@@ -730,7 +741,8 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
             editDiff: ToolEditDiff(object["edit_diff"]),
             duration: Self.number(object["duration"]),
             isError: Self.bool(object["is_error"]),
-            isCompleted: Self.bool(object["done"]) == true
+            isCompleted: Self.bool(object["done"]) == true,
+            isHidden: Self.bool(object["hidden"]) == true
         )
         call.background = Self.backgroundLink(object["background"])
         call.resultTruncated = Self.bool(object["result_truncated"]) == true
@@ -783,7 +795,8 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
             editDiff: ToolEditDiff(object["edit_diff"]),
             duration: Self.number(object["duration"]),
             isError: isError,
-            isCompleted: status == "completed" || Self.bool(object["done"]) == true
+            isCompleted: status == "completed" || Self.bool(object["done"]) == true,
+            isHidden: Self.bool(object["hidden"]) == true
         )
     }
 

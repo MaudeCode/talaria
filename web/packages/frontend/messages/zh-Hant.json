@@ -1578,6 +1578,7 @@
 	"settings_label_send_key": "傳送方式",
 	"settings_label_session_endless_scroll": "捲動時載入較早的訊息",
 	"settings_label_session_jump_buttons": "跳轉按鈕",
+	"settings_label_show_tool_lookups": "顯示工具查詢",
 	"settings_label_shutdown": "停止 Talaria Web 伺服器",
 	"settings_label_skin": "佈景",
 	"settings_label_sound": "通知聲音",

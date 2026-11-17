@@ -85,6 +85,24 @@ describe('turn worklog presentation', () => {
     expect(settledView.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(2)
   })
 
+  it('leaves out the calls the server hides, live and settled, and shows a lookup whose completion failed (TAL-2331)', () => {
+    const lookup = (id: string) => ({ event: 'tool', data: { id, name: 'tool_describe', kind: 'read', target: 'session_list', args: {}, hidden: true } }) as const
+    const run = liveRun()
+    run.emit(lookup('h')); run.emit(tool('a')); run.emit(lookup('f'))
+    run.emit({ event: 'tool_complete', data: { id: 'f', name: 'tool_describe', kind: 'read', target: 'session_list', is_error: true } })
+    const view = render(<View activity={liveActivity(run.turn)} />)
+    expect(view.container.querySelector('[data-tool-id="h"]')).toBeNull()
+    expect(view.container.querySelector('[data-tool-id="f"]')).not.toBeNull()
+    cleanup()
+    const hiddenRow = { row_id: 'tool:h', role: 'tool', tool: { id: 'h', name: 'tool_search', kind: 'search', target: 'x', preview: null, done: true, is_error: false, duration: null, cost_usd: null, hidden: true } }
+    const settledView = render(<View activity={settled({ expanded_by_default: true, activity_rows: rows(hiddenRow, toolRow('a')) })} />)
+    expect(settledView.container.querySelector('[data-tool-id="h"]')).toBeNull()
+    expect(settledView.container.querySelector('[data-tool-id="a"]')).not.toBeNull()
+    cleanup()
+    const onlyHidden = render(<View activity={settled({ activity_rows: rows(hiddenRow) })} />)
+    expect(onlyHidden.container.querySelector('[data-tool-worklog-group]')).toBeNull()
+  })
+
   it('clears retained reasoning titles and content when the server display choice hides reasoning (TAL-996)', () => {
     const run = liveRun()
     run.emit(tool('a'))

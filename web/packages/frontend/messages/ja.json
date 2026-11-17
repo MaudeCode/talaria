@@ -1580,6 +1580,7 @@
 	"settings_label_send_key": "送信キー",
 	"settings_label_session_endless_scroll": "スクロール中に以前のメッセージを読み込む",
 	"settings_label_session_jump_buttons": "ジャンプボタン",
+	"settings_label_show_tool_lookups": "ツールの検索を表示",
 	"settings_label_shutdown": "Talaria Web サーバーを停止",
 	"settings_label_skin": "スキン",
 	"settings_label_sound": "通知音",

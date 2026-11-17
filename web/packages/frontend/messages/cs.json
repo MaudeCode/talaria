@@ -1677,6 +1677,7 @@
 	"settings_label_send_key": "Odeslat pomocí",
 	"settings_label_session_endless_scroll": "Načítat starší zprávy při posouvání",
 	"settings_label_session_jump_buttons": "Tlačítka pro skok",
+	"settings_label_show_tool_lookups": "Zobrazit vyhledávání nástrojů",
 	"settings_label_shutdown": "Zastavit Talaria Web server",
 	"settings_label_skin": "Vzhled",
 	"settings_label_sound": "Zvuk notifikace",

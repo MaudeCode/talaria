@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowUpDown, ChevronsUpDown, CornerDownLeft, FileText, Hash, List, ListTree, Loader, PanelRight, SlidersHorizontal, Type } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpDown, ChevronsUpDown, CornerDownLeft, FileText, Hash, List, ListTree, Loader, PanelRight, ScanSearch, SlidersHorizontal, Type } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { ChatPage } from '../../contracts/url'
 import { modifierKey } from '../../ui/Keys'
@@ -40,6 +40,7 @@ export function ChatSection() {
           { value: 'hide_all_activity', label: m.settings_option_hide_all_activity() },
         ]} />
         <Toggle icon={ChevronsUpDown} label={m.settings_label_worklog_details_expanded_default()} settingKey="worklog_details_expanded_default" />
+        <Toggle icon={ScanSearch} label={m.settings_label_show_tool_lookups()} settingKey="show_tool_lookups" />
         <Toggle icon={Type} label={m.settings_label_render_user_markdown()} hint={m.settings_desc_render_user_markdown()} settingKey="render_user_markdown" />
         <Toggle icon={Hash} label={m.settings_label_token_usage()} settingKey="show_token_usage" fallback />
         <Toggle icon={ArrowDownToLine} label={m.settings_label_auto_scroll_follow()} hint={m.settings_desc_auto_scroll_follow()} settingKey="auto_scroll_follow" fallback />

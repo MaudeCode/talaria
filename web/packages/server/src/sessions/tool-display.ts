@@ -290,6 +290,13 @@ const BRIDGES = new Map<string, { kind: ToolKind; key: string; target: (items: s
   ['tool_search', { kind: 'search', key: 'queries', target: (queries) => queries.find((q) => q.trim()) ?? '' }],
 ])
 
+/** TAL-2331: the `show_tool_lookups` setting, which the runtime wires to the settings store; off until it does. */
+let toolLookupsShown = (): boolean => false
+export function readToolLookupsShown(read: () => boolean): void { toolLookupsShown = read }
+
+/** TAL-2331: a `tool_search` or `tool_describe` call the transcript leaves out: one that did not fail, while the setting is off. */
+export const hiddenLookup = (name: unknown, isError: boolean): boolean => BRIDGES.has(str(name)) && !isError && !toolLookupsShown()
+
 /** A quoted string in a `pythonStr` list, whose closing quote the snapshot cap may have cut. */
 const QUOTED = /(['"])((?:(?!\1)[^\\]|\\.)*)\1?/gs
 

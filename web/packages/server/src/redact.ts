@@ -4,7 +4,7 @@ import { channel } from 'node:diagnostics_channel'
 import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
 import { isRasterDataUri } from './raster-image.js'
-import { gutterLines, gutterText, snapshotArgs, toolArgs, toolDisplay, toolName, withResultFocusPaths } from './sessions/tool-display.js'
+import { gutterLines, gutterText, hiddenLookup, snapshotArgs, toolArgs, toolDisplay, toolName, withResultFocusPaths } from './sessions/tool-display.js'
 import { cappedFields, codexCommentary, hasNativeImages, isDict, messageText, normalizeAssistantDisplay, normalizeUserDisplay, toolFields, TOOL_ARG_CONTENT_CAP, withoutImageData, withoutReasoningParts } from './sessions/merge.js'
 import { REASONING_FIELDS } from './sessions/reasoning-display.js'
 import { stripAttachedFilesMarker } from './sessions/session.js'
@@ -2536,7 +2536,9 @@ function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean, workspa
   const { focus_path: focusPath, ...display } = redactedToolDisplay(record, enabled, workspace)
   // TAL-2323: the files a read or search result names, located in the workspace from their redacted paths; TAL-2325: its local media served for this session.
   if (isDict(out.result_view)) out.result_view = withResultFocusPaths(out.result_view, workspace, sessionId)
-  return { ...out, ...display, ...(focusPath ? { focus_path: focusPath } : {}) } as T
+  // TAL-2331: a lookup the transcript leaves out; a failed one stays, so its completion clears the start frame's flag.
+  const hidden = hiddenLookup(toolName(record), record.is_error === true)
+  return { ...out, ...display, ...(focusPath ? { focus_path: focusPath } : {}), ...(hidden ? { hidden: true } : {}) } as T
 }
 
 /** TAL-2328: a result view showing the code its call ran: an excerpt without a path (`code` presentation). */

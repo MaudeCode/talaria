@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { decidedResultView, toolOutcome, toolResultSnippet, toolResultView, withToolCallOutcomes } from './merge.js'
 import { diffHunks } from '../text/diff.js'
-import { appTitle, decidedEditDiff, EDIT_DIFF_MAX_LINES, rememberConnectorLogos, tokenToolKind, toolArgs, toolDisplay, toolEditDiff, toolKind, toolName, toolProgress } from './tool-display.js'
+import { appTitle, decidedEditDiff, EDIT_DIFF_MAX_LINES, readToolLookupsShown, rememberConnectorLogos, tokenToolKind, toolArgs, toolDisplay, toolEditDiff, toolKind, toolName, toolProgress } from './tool-display.js'
 import { fullToolResult } from './anchor.js'
 import { publicToolFrame } from '../redact.js'
 import { TALARIA_TOOL_NAMES, TOOL_PRESENTATIONS, type ToolResultView } from '@maudecode/talaria-web-contracts'
@@ -182,6 +182,21 @@ describe('deferred tool bridges (TAL-2316)', () => {
     expect(toolDisplay('tool_describe', { names: 'profile_list' })).toMatchObject({ kind: 'read', target: 'profile_list' })
     expect(toolDisplay('tool_search', { queries: ['', 'session tools'] })).toMatchObject({ kind: 'search', target: 'session tools' })
     expect(publicToolFrame({ name: 'tool_describe', tid: 'd', args: { names: "['profile_list', 'session_list']" } }, true)).toMatchObject({ kind: 'read', target: 'profile_list, session_list' })
+  })
+})
+
+describe('hidden tool lookups (TAL-2331)', () => {
+  const lookup = { name: 'tool_describe', id: 'd', args: { names: ['profile_list'] } }
+
+  // Session detail (calls and scene rows) and the setting's round trip: sessions.test.ts, on the shared fixture.
+  it('hides a lookup live and persisted while the setting is off, never a failed lookup or another call', () => {
+    readToolLookupsShown(() => false)
+    expect(publicToolFrame(lookup, true).hidden).toBe(true)
+    expect(publicToolFrame({ ...lookup, is_error: true }, true)).not.toHaveProperty('hidden')
+    expect(publicToolFrame({ name: 'read_file', id: 'r', args: { path: 'a' } }, true)).not.toHaveProperty('hidden')
+    readToolLookupsShown(() => true)
+    expect(publicToolFrame(lookup, true)).not.toHaveProperty('hidden')
+    readToolLookupsShown(() => false)
   })
 })
 

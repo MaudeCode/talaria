@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The Agent's tool lookups (tool_search and tool_describe) no longer take rows in the transcript or count in a tool group on the App and the Web; a lookup that fails still shows. A \"Show tool lookups\" switch in Chat settings brings them back.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

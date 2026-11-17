@@ -221,6 +221,7 @@ export const ToolDisplayFields = {
   app: ToolAppSchema.optional().describe('TAL-2330: an `mcp` or `connector` call\'s app; clients show "<app.name> · <target>" and a connector\'s `logo_url` in place of its kind\'s icon. Absent for every other call.'),
   focus_path: NullableString.optional().describe('TAL-1458: a read or write call\'s file as a workspace-relative path, the file a companion page shows. TAL-1537: an absolute or `~/` path inside the session workspace counts, as its remainder under the workspace root. Absent for any other call, the workspace root itself, or a path outside the workspace.'),
   shows_card: z.literal(true).optional().describe('TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call.'),
+  hidden: z.literal(true).optional().describe('TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup\'s completion omits it, which shows the call again. Absent for any other call.'),
   approval_answered_by: ApprovalAnsweredBySchema.optional().describe('TAL-1169: another session\'s agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked.'),
 }
 
@@ -1011,6 +1012,7 @@ export const SettingsSchema = z.looseObject({
   bot_name: z.string().optional(), default_model: z.string().optional(), default_workspace: z.string().optional(), language: z.string().optional(), send_key: z.string().optional(), font_size: z.string().optional(),
   full_width_chat: z.boolean().optional(), chat_width: z.enum(['comfortable', 'wide', 'full']).optional(), auto_scroll_follow: z.boolean().optional(), render_user_markdown: z.boolean().optional(), chat_activity_display_mode: z.string().optional(), default_message_mode: z.string().optional(),
   fade_text_effect: z.boolean().optional().describe('TAL-2148: fade the streaming reply\'s new words in (default true); clients skip code and honour reduced motion.'),
+  show_tool_lookups: z.boolean().optional().describe('TAL-2331: show the Agent\'s `tool_search` and `tool_describe` calls in the transcript (default false); off, the server marks them `hidden`.'),
   show_busy_placeholder_hint: z.boolean().optional().describe('TAL-2148: while a chat is busy and the draft is empty, the composer placeholder names the busy action (default true).'),
   session_endless_scroll: z.boolean().optional().describe('TAL-2148: older messages load while scrolling up (default true); off, a Load earlier messages button loads them.'),
   composer_controls_shown: z.number().int().nonnegative().optional().describe('TAL-2172, every settings read and save: how many of the composer controls Settings › Chat draws are shown (each `hide_composer_*` key while false, `show_quota_chip` while true).'),

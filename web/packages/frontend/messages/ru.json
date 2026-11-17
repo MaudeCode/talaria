@@ -1745,6 +1745,7 @@
 	"settings_label_send_key": "Отправка",
 	"settings_label_session_endless_scroll": "Подгружать ранние сообщения при прокрутке",
 	"settings_label_session_jump_buttons": "Кнопки перехода",
+	"settings_label_show_tool_lookups": "Показывать поиск инструментов",
 	"settings_label_shutdown": "Остановить сервер Talaria Web",
 	"settings_label_skin": "Скин",
 	"settings_label_sound": "Звук уведомления",
