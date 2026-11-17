@@ -74,6 +74,12 @@ SCRIPTS = {
     "critical-markdown-check.py": {"tooling"},
     "test-critical-markdown-check.py": {"tooling"},
     "check-committed-images.py": {"tooling"},
+    # Test defect rules and the per-test run-time budget (TAL-2403).
+    "test-rules.json": {"tooling"},
+    "test-rules-baseline.json": {"tooling"},
+    "check-test-durations.py": {"tooling"},
+    "test-check-test-durations.py": {"tooling"},
+    "test-durations.json": {"tooling"},
     "test-check-committed-images.py": {"tooling"},
     "check-previous-app.py": {"contracts", "tooling"},
     "check-release-contracts.py": {"contracts", "tooling"},

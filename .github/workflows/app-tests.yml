@@ -484,6 +484,11 @@ jobs:
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
 
+      # test-results.json comes from the step above (TAL-2403).
+      - name: Hold each test inside the run-time budget
+        timeout-minutes: 3
+        run: python3 ../scripts/check-test-durations.py test-results.json
+
       # Performance budgets are only useful against previous runs, so every run
       # keeps its measurements as an artifact and prints them into the summary.
       - name: Record performance metrics

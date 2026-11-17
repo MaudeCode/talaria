@@ -105,7 +105,11 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           if [ "$SHARD" = latency ]; then set -- --project state-db-latency; else set -- --project server --shard="$SHARD"; fi
-          npm test -w packages/server -- --maxWorkers=2 "$@"
+          npm test -w packages/server -- --maxWorkers=2 --reporter=default --reporter=junit --outputFile.junit="$RUNNER_TEMP/test-report.xml" "$@"
+
+      - name: Hold each test inside the run-time budget (TAL-2403)
+        if: matrix.shard != 'checks'
+        run: python3 ../scripts/check-test-durations.py "$RUNNER_TEMP/test-report.xml"
 
       - name: Generated OpenAPI document and What's New schema are committed
         if: matrix.shard == 'checks'
@@ -200,6 +204,10 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/check-agent-compatibility.py --skip-docker --release "$RELEASE" --shard "$SHARD/$SHARDS" --receipt "$RUNNER_TEMP/agent-compatibility/$RELEASE.shard-$SHARD.json"
 
+      - name: Hold each test inside the run-time budget (TAL-2403)
+        working-directory: .
+        run: python3 scripts/check-test-durations.py "$RUNNER_TEMP"/agent-compatibility/*.junit.xml
+
       # The join reads this receipt: the shard's result and the cases it ran.
       - name: Retain the Agent compatibility receipt
         if: always()
@@ -280,7 +288,10 @@ jobs:
         run: npm run typecheck --ignore-scripts
 
       - name: Vitest
-        run: npm test -- --maxWorkers=2
+        run: npm test -- --maxWorkers=2 --reporter=default --reporter=junit --outputFile.junit="$RUNNER_TEMP/test-report.xml"
+
+      - name: Hold each test inside the run-time budget (TAL-2403)
+        run: python3 ../../../scripts/check-test-durations.py "$RUNNER_TEMP/test-report.xml"
 
       - name: Production build
         run: npm run build:fast
@@ -347,6 +358,10 @@ jobs:
         run: ../../../scripts/check-web-browser --shard=${{ matrix.shard }}/6
         env:
           PLAYWRIGHT_APT_CACHE: ${{ github.workspace }}/web/.codex-tmp/playwright-apt
+          TALARIA_TEST_REPORT: ${{ runner.temp }}/test-report.xml
+
+      - name: Hold each test inside the run-time budget (TAL-2403)
+        run: python3 ../../../scripts/check-test-durations.py "$RUNNER_TEMP/test-report.xml"
 
       # A failed test keeps its screenshot, error context and trace here (TAL-1883).
       - name: Retain the failed tests' results

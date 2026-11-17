@@ -23,7 +23,12 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['github'], ['list']] : 'list',
+  // CI's per-test run-time budget reads each test's time from TALARIA_TEST_REPORT (scripts/check-test-durations.py).
+  reporter: [
+    ...(process.env.CI ? [['github'] as const] : []),
+    ['list'],
+    ...(process.env.TALARIA_TEST_REPORT ? [['junit', { outputFile: process.env.TALARIA_TEST_REPORT }] as const] : []),
+  ],
   globalSetup: './e2e/global-setup.ts',
   globalTeardown: './e2e/global-teardown.ts',
   use: {
