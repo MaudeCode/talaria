@@ -1,0 +1,1 @@
+{"skip": "CI tooling only: hosted test shards wait for the simulator's notification server only where a test needs it, and the wait no longer cuts its own probe short; no app behavior changes."}

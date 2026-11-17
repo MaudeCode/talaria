@@ -46,6 +46,13 @@ class HostedTestShardTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertRegex(sources, rf"\bclass {name}\s*:")
 
+    def test_only_the_shard_running_notification_tests_waits_for_the_notification_server(self):
+        # Shard 1 died waiting for a server none of its tests call (TAL-2352).
+        runs = [subprocess.run([str(HERE / "hosted-test-shard"), "prepare-options", str(index)], capture_output=True, text=True)
+                for index in range(1, shard.COUNT + 1)]
+        self.assertEqual([(run.returncode, run.stdout.split()) for run in runs],
+                         [(0, ["--without-notifications"])] * 3 + [(0, [])])
+
     def test_the_workflow_runs_one_job_per_shard(self):
         workflow = (HERE.parents[1] / ".github/workflows/app-tests.yml").read_text()
         matrix = f"shard: [{', '.join(str(index) for index in range(1, shard.COUNT + 1))}]"

@@ -6,6 +6,8 @@
 # uninstalled bundle is the probe: it waits for the notification server, then fails as
 # unauthorized without showing anything. A push to a shut-down simulator fails at once, which the probe
 # would take for an answer, and parallel testing leaves its leased device shut down (TAL-682).
+# The probe is never cut short (TAL-2352): an answering push took 1 to 5 s on hosted runners and longer on a starved
+# one, so a probe killed after 5 s could never see a ready server. It stays pending while dasd restarts beside it.
 # Usage: scripts/ready-simulator-notifications [--already-booted] <simulator-udid>
 # --already-booted requires a successful command inside this simulator immediately before the call.
 
@@ -27,15 +29,19 @@ fi
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/talaria-notification-probe.XXXXXX")
 payload="$scratch/payload.json"
 client_log="$scratch/client.log"
+probe_log="$scratch/probe.log"
 command_pid=""
+probe_pid=""
 cleanup() {
     local exit_status=$?
     set +e
-    if [[ -n "$command_pid" ]]; then
-        kill -KILL "$command_pid" 2>/dev/null
-        wait "$command_pid" 2>/dev/null
-    fi
-    rm -f "$payload" "$client_log"
+    local pid
+    for pid in "$command_pid" "$probe_pid"; do
+        [[ -n "$pid" ]] || continue
+        kill -KILL "$pid" 2>/dev/null
+        wait "$pid" 2>/dev/null
+    done
+    rm -f "$payload" "$client_log" "$probe_log"
     rmdir "$scratch"
     return "$exit_status"
 }
@@ -85,21 +91,33 @@ client_finishes_within_budget() {
     return 0
 }
 
-# Any fast response, including unauthorized for this uninstalled bundle, proves the service answered.
-notification_service_answers() {
-    client_finishes_within_budget "Notification probe" \
-        xcrun simctl push "$simulator_id" dev.kil.talaria.notification-probe "$payload"
+# Any response, including unauthorized for this uninstalled bundle, proves the server answered.
+probe_started=$SECONDS
+echo "Notification probe start (elapsed ${SECONDS}s)." >&2
+xcrun simctl push "$simulator_id" dev.kil.talaria.notification-probe "$payload" >"$probe_log" 2>&1 &
+probe_pid=$!
+probe_answers_within() {
+    local deadline=$(( $(now_us) + $1 * 1000000 )) probe_status=0
+    while kill -0 "$probe_pid" 2>/dev/null && (( $(now_us) < deadline )); do
+        pause 0.1
+    done
+    kill -0 "$probe_pid" 2>/dev/null && return 1
+    wait "$probe_pid" 2>/dev/null || probe_status=$?
+    probe_pid=""
+    echo "Notification probe answered after $(( SECONDS - probe_started ))s (status $probe_status)." >&2
+    if (( probe_status != 0 )) && [[ -s "$probe_log" ]]; then printf '%s\n' "Notification probe output: $(<"$probe_log")" >&2; fi
+    return 0
 }
 
 # A relaunched dasd can hang the same way, but each kill fails the call SpringBoard is waiting on,
 # so its setup moves on by at least one call per restart.
 for attempt in {1..30}; do
-    notification_service_answers && exit 0
-    echo "The simulator's notification service did not answer; restarting its dasd (attempt $attempt)." >&2
+    probe_answers_within "$client_budget" && exit 0
+    echo "The simulator's notification server has not answered yet; restarting its dasd (attempt $attempt)." >&2
     client_finishes_within_budget "Dasd restart client" \
         xcrun simctl spawn "$simulator_id" launchctl kill SIGKILL user/foreground/com.apple.dasd ||
-        echo "The simulator's restart client did not finish within ${client_budget}s; probing again." >&2
+        echo "The simulator's restart client did not finish within ${client_budget}s; still waiting on the probe." >&2
 done
-notification_service_answers && exit 0
-echo "The notification service of simulator $simulator_id never answered." >&2
+probe_answers_within "$client_budget" && exit 0
+echo "SpringBoard's notification server on simulator $simulator_id never answered the probe push in $(( SECONDS - probe_started ))s." >&2
 exit 1
