@@ -613,4 +613,3 @@ export async function mediaAnchorRoot(target: string, session: Session | null | 
   if (root !== undefined) return root
   return sessionMediaGrant(typeof session === 'function' ? await session() : session)(target, real) ? dirname(target) : null
 }
-
