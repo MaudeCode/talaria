@@ -13770,14 +13770,14 @@
                   "multiline": false
                 }
               ],
-              "kind": "connector",
+              "kind": "mcp",
               "target": "Send email",
               "app": {
                 "name": "Gmail",
                 "logo_url": null
               },
               "function": {
-                "name": "connectors__gmail__GMAIL_SEND_EMAIL",
+                "name": "mcp__gmail__send_email",
                 "arguments": "{\"to\":\"owner@example.com\",\"subject\":\"Agent 0.23.2\"}"
               },
               "id": "call-mail",
@@ -14165,7 +14165,7 @@
                 "created_at": 9521,
                 "tool": {
                   "id": "call-mail",
-                  "name": "connectors__gmail__GMAIL_SEND_EMAIL",
+                  "name": "mcp__gmail__send_email",
                   "args_fields": [
                     {
                       "key": "to",
@@ -14178,7 +14178,7 @@
                       "multiline": false
                     }
                   ],
-                  "kind": "connector",
+                  "kind": "mcp",
                   "target": "Send email",
                   "app": {
                     "name": "Gmail",
@@ -14305,13 +14305,8 @@
                   },
                   {
                     "kind": "mcp",
-                    "count": 1,
+                    "count": 2,
                     "failed": 1
-                  },
-                  {
-                    "kind": "connector",
-                    "count": 1,
-                    "failed": 0
                   },
                   {
                     "kind": "skill",
@@ -14343,13 +14338,8 @@
                 },
                 {
                   "kind": "mcp",
-                  "count": 1,
+                  "count": 2,
                   "failed": 1
-                },
-                {
-                  "kind": "connector",
-                  "count": 1,
-                  "failed": 0
                 },
                 {
                   "kind": "skill",

@@ -1162,10 +1162,11 @@ export class TurnRunner {
               case 'tool_complete': {
                 // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server; TAL-315: so
                 // are its display sections, which keep the stderr and exit code the flat preview drops.
-                const { raw_result: rawResult, todo_result: todoResult, result_diff: resultDiff, display_metadata: displayMetadata, ...complete } = data
+                const { raw_result: rawResult, raw_args: rawArgs, todo_result: todoResult, result_diff: resultDiff, display_metadata: displayMetadata, ...complete } = data
                 const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
                 // TAL-2323: a `read_file` excerpt names the file its start frame's arguments read.
-                const outcome = toolOutcome(rawResult, data.name, false, data.args ?? tc?.args)
+                // TAL-2335: its outcome reads the whole arguments the sidecar forwards, not the display snapshot.
+                const outcome = toolOutcome(rawResult, data.name, false, data.args ?? tc?.args, rawArgs ?? data.args ?? tc?.args)
                 // TAL-2328: the sidecar's preview without the image or binary data a result carried.
                 if (typeof complete.preview === 'string') complete.preview = withoutBinaryText(complete.preview)
                 complete.progress = null

@@ -954,9 +954,10 @@ const toolIsError = (raw: unknown, toolName?: unknown, flagged = false): boolean
  * `success: false`, a failed shape (TAL-1261), or `flagged` by its provider. A `skill_manage` refusal is the Agent's own
  * retry loop and never an error unless its `error` reports `ROLLBACK FAILED` (Agent `agent/display.py`
  * `is_neutral_failure`). `result_text` is the result's display snippet; `result_view` its display sections (TAL-315);
- * `capped` whether any section was cut short (TAL-331).
+ * `capped` whether any section was cut short (TAL-331). TAL-2335: `result_view.outcome` reads `outcomeArgs`, the call's whole
+ * arguments where `args` is a live display snapshot.
  */
-export function toolOutcome(input: unknown, toolName?: unknown, flagged = false, args?: unknown): { is_error: boolean; result_text: string; result_view: ToolResultView; capped: boolean } {
+export function toolOutcome(input: unknown, toolName?: unknown, flagged = false, args?: unknown, outcomeArgs: unknown = args): { is_error: boolean; result_text: string; result_view: ToolResultView; capped: boolean } {
   const raw = withoutImageData(input)
   const { value, data, failed, is_error } = classifyTool(raw, toolName, flagged)
   const ref = !failed ? outboundDraftRef(toolName, raw) : undefined
@@ -971,8 +972,9 @@ export function toolOutcome(input: unknown, toolName?: unknown, flagged = false,
   // The whole view once: capped for display, and whether any section was cut (TAL-331's whole-result offer).
   const full = uncappedResultView(raw, toolName, args)
   const capped = Object.values(full).some((field) => typeof field === 'string' && field.length > TOOL_RESULT_SNIPPET_MAX) || [fieldChars(full.fields), excerptChars(full.file_excerpt), matchesChars(full.matches), linksChars(full.links), pagesChars(full.pages), toolRowsChars(full.rows)].some((chars) => chars > TOOL_RESULT_SNIPPET_MAX) || pagesCut(full.pages)
-  // TAL-2335: what the call did, which its collapsed row shows; nested JSON a live completion forwards as text read whole.
-  const outcome = toolCallOutcome(toolName, args, isDict(data) ? withNestedJson(data) : data, full, failed, is_error)
+  // TAL-2335: what the call did, which its collapsed row shows, from `outcomeArgs` (a live call's whole `raw_args`); nested JSON a
+  // live completion forwards as text read whole.
+  const outcome = toolCallOutcome(toolName, isDict(outcomeArgs) ? withNestedJson(outcomeArgs) : outcomeArgs, isDict(data) ? withNestedJson(data) : data, full, failed, is_error)
   return { is_error, capped, result_text: toolResultSnippet(value), result_view: { ...cappedView(full, TOOL_RESULT_SNIPPET_MAX), ...(ref ? { outbound_draft: ref } : {}), ...(review ? { decision_review: review } : {}), ...(proposal ? { proposal } : {}), ...(block ? { block } : {}), ...(terminal ? { terminal } : {}), ...(outcome ? { outcome } : {}) } }
 }
 

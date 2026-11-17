@@ -4074,7 +4074,7 @@ describe('session detail ships each call\'s outcome (TAL-2335)', () => {
   const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
   const reply = (id: string, result: Json, timestamp: number, turn: string): Json => ({ role: 'tool', tool_call_id: id, content: JSON.stringify(result), timestamp, _turn_id: turn })
   const diff = '--- a/src/auth/session.ts\n+++ b/src/auth/session.ts\n@@ -10,3 +10,4 @@\n-const expiry = Math.floor(ttl)\n+const expiry = Math.ceil(ttl)\n+// Round up so the cookie outlives the token.\n export { expiry }\n'
-  /** The owner-approved mock's three turns: Talaria tools and agent state, code and search, then web, a question, Kanban, apps and a skill. */
+  /** The owner-approved mock's three turns: Talaria tools and agent state, code and search, then web, a question, Kanban, apps and a skill. The apps are MCP tools, which carry no catalog logo another test may have cached. */
   const transcript: Json[] = [
     { role: 'user', content: 'Tell the release chat it\'s shipped, approve its deploy, remember I prefer Postgres, and pause the daily digest.', message_id: 'outcome-user-1', timestamp: 9500, _turn_id: 'outcome-run-1' },
     { role: 'assistant', content: '', message_id: 'outcome-calls-1', timestamp: 9501, _turn_id: 'outcome-run-1', tool_calls: [
@@ -4113,7 +4113,7 @@ describe('session detail ships each call\'s outcome (TAL-2335)', () => {
       call('call-ask', 'clarify', { questions: [{ question: 'Which repository to file in?', choices: ['MaudeCode/talaria', 'MaudeCode/hermes'] }] }),
       call('call-move', 'kanban_request_review', { task_id: 't_login', summary: 'Fixed the redirect' }),
       call('call-issue', 'mcp__github__create_issue', { title: 'Agent 0.23.2 is out' }),
-      call('call-mail', 'connectors__gmail__GMAIL_SEND_EMAIL', { to: 'owner@example.com', subject: 'Agent 0.23.2' }),
+      call('call-mail', 'mcp__gmail__send_email', { to: 'owner@example.com', subject: 'Agent 0.23.2' }),
       call('call-skill', 'skill_manage', { action: 'edit', name: 'deploy-checklist', content: '# Deploy checklist' }),
     ] },
     reply('call-web', { success: true, data: { web: [{ title: 'Hermes Agent 0.23.2', url: 'https://example.com/hermes/0.23.2', description: 'Release notes' }] } }, 9522, 'outcome-run-3'),

@@ -748,6 +748,25 @@ def test_raw_result_keeps_the_fields_the_shape_rule_reads(monkeypatch) -> None:
     assert frames[2]["raw_result"] == {"results": [{"error": "x"}] * 64 + [{"error": " "}]}
 
 
+def test_the_call_arguments_reach_the_server_bounded_like_its_result(monkeypatch) -> None:
+    """TAL-2335: ``raw_args`` keeps a batch's ``operations`` as JSON text, which the display ``args`` snapshot cuts."""
+    _patch(monkeypatch)
+    operations = [{"action": "add", "content": "Prefers Postgres"}, {"action": "remove", "old_text": "Lives in Oslo"}]
+
+    class MemoryAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            self.kwargs["tool_start_callback"]("t0", "memory", {"target": "user", "operations": operations})
+            self.kwargs["tool_complete_callback"]("t0", "memory", {"target": "user", "operations": operations}, json.dumps({"success": True}))
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: MemoryAgent)
+    ctx = Ctx()
+    assert chat.start(ctx, _params("st-args"))["status"] == "completed"
+    complete = dict(ctx.frames)["tool_complete"]
+    assert complete["raw_args"] == {"target": "user", "operations": json.dumps(operations)}
+    assert complete["args"]["operations"] != json.dumps(operations)
+
+
 def test_a_result_diff_reaches_the_server_whole(monkeypatch) -> None:
     """TAL-448: a result's string ``diff`` travels whole as ``result_diff``; other results carry none."""
     _patch(monkeypatch)
