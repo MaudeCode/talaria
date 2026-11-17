@@ -406,8 +406,9 @@ uses the server interval, following the native due value. No client schedules
 or signs in automatically. Older Agents report the offer unavailable.
 
 RPC v59 adds `tts.synthesize` alongside STT. The profile-scoped Agent owns provider
-registration, credentials, voice configuration and synthesis. Unknown names fail
-before the Agent's implicit Edge fallback. One request owns a temporary directory
+registration, credentials, voice configuration and synthesis; its `tts.provider`
+is the only engine selector, so a requested engine other than that one is refused.
+Unknown names fail before the Agent's implicit Edge fallback. One request owns a temporary directory
 and at most 8 MiB of MP3, WAV or FLAC audio; only MP3 parts may be concatenated.
 Every synthesis exit removes temporary files. `/api/tts` keeps the spoken-text
 normalizer, validation, per-client limiter and `tts_unconfigured` fallback, maps

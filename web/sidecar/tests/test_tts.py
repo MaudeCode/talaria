@@ -16,7 +16,9 @@ from talaria_sidecar.methods import build_methods
 def tts_call(monkeypatch, tmp_path):
     tool = types.ModuleType('tools.tts_tool')
     tool._BUILTIN_DISPATCH = {'piper': (), 'gemini': (), 'future-provider': ()}
-    tool._load_tts_config = lambda: {'providers': {'mycmd': {'type': 'command'}}}
+    config = {'providers': {'mycmd': {'type': 'command'}}}
+    tool._load_tts_config = lambda: config
+    tool._get_provider = lambda tts_config: (tts_config.get('provider') or 'edge').lower().strip()
     tool._resolve_command_provider_config = lambda provider, config: config['providers'].get(provider)
     monkeypatch.setitem(sys.modules, 'tools', types.ModuleType('tools'))
     monkeypatch.setitem(sys.modules, 'tools.tts_tool', tool)
@@ -32,10 +34,12 @@ def tts_call(monkeypatch, tmp_path):
 
     methods = build_methods(Runtime())
 
-    def call(generator, provider='piper', **params):
-        def generate(text, *, output_path, speed=None, provider=None):
+    def call(generator, provider='piper', configured=None, **params):
+        config['provider'] = provider if configured is None else configured
+
+        def generate(text, *, output_path, speed=None):
             outputs.append(Path(output_path).parent)
-            return generator(text, Path(output_path), speed, provider)
+            return generator(text, Path(output_path), speed, config['provider'])
 
         tool.text_to_speech_tool = generate
         assert 'tts.synthesize' in methods, 'registered TTS synthesis must be callable through the sidecar'
@@ -90,6 +94,13 @@ def test_unknown_provider_never_falls_back_to_edge(tts_call):
     call, _, outputs = tts_call
     with pytest.raises(InvalidParams, match='unknown TTS provider'):
         call(lambda *args: pytest.fail('unknown provider must never invoke Agent synthesis'), provider='bogus')
+    assert outputs == []
+
+
+def test_engine_other_than_the_configured_one_is_refused(tts_call):
+    call, _, outputs = tts_call
+    with pytest.raises(InvalidParams, match="TTS engine edge is not this profile's configured engine gemini"):
+        call(lambda *args: pytest.fail('a mismatched engine must never invoke Agent synthesis'), provider='edge', configured='gemini')
     assert outputs == []
 
 

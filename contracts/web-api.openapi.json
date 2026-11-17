@@ -145074,7 +145074,7 @@
     },
     "/api/tts": {
       "post": {
-        "summary": "Text-to-speech through any provider supported by the installed Agent.",
+        "summary": "Text-to-speech through the profile's configured Agent speech provider.",
         "tags": [
           "tools"
         ],
@@ -145115,7 +145115,7 @@
         },
         "requestBody": {
           "required": true,
-          "description": "`{text, engine?, voice?, rate?, pitch?}`; `engine` names an Agent speech provider and defaults to the profile `tts.provider`. `rate` is a percentage mapped to speed [0.5, 2]; `pitch` is validated but ignored. Voices come from Agent configuration.",
+          "description": "`{text, engine?, voice?, rate?, pitch?}`; `engine` defaults to the profile `tts.provider`; any other engine is refused with 400. `rate` is a percentage mapped to speed [0.5, 2]; `pitch` is validated but ignored. Voices come from Agent configuration.",
           "content": {
             "application/json": {}
           }
