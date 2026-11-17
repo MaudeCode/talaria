@@ -3310,6 +3310,87 @@ describe('session detail ships Kanban rows (TAL-2327)', () => {
   })
 })
 
+describe('session detail ships browser and computer-use views (TAL-2328)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
+  const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
+  const png = 'iVBORw0KGgoAAAANSUhEUgAA'.repeat(80)
+  const ran = { success: true, exit_code: 0, output: 'Pricing: $10/month', screenshot_path: '/srv/hermes/cache/browser-use/workspace/default/pricing.png' }
+  const summary = "capture mode=som 1440x900 app=Safari window='Pricing'\n2 interactable element(s):\n  (shareable screenshot saved to /srv/hermes/cache/computer_use/cap_1.png)\n  #1 AXButton 'Buy' @ [10, 10, 80, 30]\n  #2 AXLink 'Docs' @ [100, 10, 40, 20]"
+  /** Browser code with a native-vision screenshot, a CDP screenshot, a dialog, a vault list and fill, a desktop capture and a click, as Agent v0.23 returns them. */
+  const transcript: Json[] = [
+    { role: 'user', content: 'Check the pricing page', message_id: 'browser-user', timestamp: 9200, _turn_id: 'browser-run' },
+    { role: 'assistant', content: '', message_id: 'browser-calls', timestamp: 9201, _turn_id: 'browser-run', tool_calls: [
+      call('call-exec', 'browser_exec', { code: '# Open the pricing page\ngoto("https://example.com/pricing")\nprint(page_info())' }),
+      call('call-cdp', 'browser_cdp', { method: 'Page.captureScreenshot', params: {} }),
+      call('call-dialog', 'browser_dialog', { action: 'accept' }),
+      call('call-list', 'browser_vault', { action: 'list' }),
+      call('call-fill', 'browser_vault', { action: 'fill', handle: 'h1' }),
+      call('call-capture', 'computer_use', { action: 'capture', app: 'Safari' }),
+      call('call-click', 'computer_use', { action: 'click', element: 1, app: 'Safari' }),
+    ] },
+    { role: 'tool', tool_call_id: 'call-exec', content: [{ type: 'text', text: `${JSON.stringify(ran)}\n\nThe screenshot from this call is attached — inspect it with your native vision.` }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${png}` } }], timestamp: 9202, _turn_id: 'browser-run' },
+    { role: 'tool', tool_call_id: 'call-cdp', content: JSON.stringify({ success: true, method: 'Page.captureScreenshot', result: { data: png } }), timestamp: 9203, _turn_id: 'browser-run' },
+    { role: 'tool', tool_call_id: 'call-dialog', content: JSON.stringify({ success: true, action: 'accept', dialog: { type: 'alert', message: 'Saved', default_prompt: '' } }), timestamp: 9204, _turn_id: 'browser-run' },
+    { role: 'tool', tool_call_id: 'call-list', content: JSON.stringify({ success: true, items: [{ handle: 'h1', backend: 'local', label: 'Example', kind: 'login', origin: 'https://example.com', available: true, identifier: 'owner@example.com', identifier_type: 'email' }] }), timestamp: 9205, _turn_id: 'browser-run' },
+    { role: 'tool', tool_call_id: 'call-fill', content: JSON.stringify({ success: true, filled_fields: 2, backend: 'local', kind: 'login', origin: 'https://example.com', next: 'Submit.' }), timestamp: 9206, _turn_id: 'browser-run' },
+    { role: 'tool', tool_call_id: 'call-capture', content: [{ type: 'text', text: summary }, { type: 'image_url', image_url: { url: `data:image/png;base64,${png}` } }], timestamp: 9207, _turn_id: 'browser-run' },
+    { role: 'tool', tool_call_id: 'call-click', content: JSON.stringify({ ok: true, action: 'click', message: 'Clicked AXButton "Buy"', verdict: { decision: 'done' } }), timestamp: 9208, _turn_id: 'browser-run' },
+    { role: 'assistant', content: 'Done.', message_id: 'browser-answer', timestamp: 9209, _turn_id: 'browser-run' },
+  ]
+
+  it('matches the shared contract fixture in full detail and every window, on the calls and the scene alike, with no image data', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = structuredClone(transcript)
+    session.title = 'Browser and computer views'
+    await s.deps.sessionStore.save(session)
+    const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_browser_views as Json
+    const expected = fixture.expected as Json
+    expect((expected['call-exec'] as Json).file_excerpt).toMatchObject({ path: '', language: 'python', total_lines: 3 })
+    const named = <T>(value: T): T => JSON.parse(JSON.stringify(value).replaceAll(sid, 'browser-session')) as T
+    for (const query of ['', '&msg_limit=50']) {
+      const served = (await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json
+      const text = JSON.stringify(served)
+      expect(text).not.toContain(png.slice(0, 64))
+      expect(text).not.toContain('base64')
+      const messages = named(served.messages as Json[])
+      expect(messages, query).toEqual((fixture.session as Json).messages)
+      const calls = messages.find((m) => m.message_id === 'browser-calls')?.tool_calls as Json[]
+      expect(Object.fromEntries(calls.map((c) => [c.id, c.result_view])), query).toEqual(expected)
+      expect(calls[0]!.args_fields, query).toEqual([])
+      expect(calls.map((c) => [c.kind, c.verb ?? null]), query).toEqual([['browser', 'run'], ['browser', 'send'], ['browser', 'answer'], ['browser', 'list'], ['browser', 'fill'], ['computer', 'capture'], ['computer', 'click']])
+      const rows = ((messages.find((m) => m.message_id === 'browser-answer')?._anchor_activity_scene as Json).activity_rows as Json[]).filter((r) => r.role === 'tool')
+      expect(Object.fromEntries(rows.map((r) => [(r.tool as Json).id, (r.tool as Json).result_view])), query).toEqual(expected)
+    }
+  })
+
+  it('serves the screenshot a browser or computer-use call saved through the session\'s media URL', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const ws = realpathSync(join(s.state, 'workspace'))
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    writeFileSync(join(ws, 'page.png'), bytes)
+    writeFileSync(join(ws, 'desk.png'), bytes)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = [
+      { role: 'user', content: 'look', message_id: 'u', timestamp: 1, _turn_id: 't' },
+      { role: 'assistant', content: '', message_id: 'a', timestamp: 2, _turn_id: 't', tool_calls: [call('c1', 'browser_exec', { code: 'shot()' }), call('c2', 'computer_use', { action: 'capture' })] },
+      { role: 'tool', tool_call_id: 'c1', content: JSON.stringify({ success: true, exit_code: 0, output: join(ws, 'page.png'), screenshot_path: join(ws, 'page.png') }), timestamp: 3, _turn_id: 't' },
+      { role: 'tool', tool_call_id: 'c2', content: `capture mode=som 800x600 app=Finder\n0 interactable element(s):\n  (shareable screenshot saved to ${join(ws, 'desk.png')})`, timestamp: 4, _turn_id: 't' },
+      { role: 'assistant', content: 'Done.', message_id: 'b', timestamp: 5, _turn_id: 't' },
+    ]
+    await s.deps.sessionStore.save(session)
+    const served = (await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json
+    const calls = (served.messages as Json[]).find((m) => m.message_id === 'a')?.tool_calls as Json[]
+    const urls = calls.map((c) => ((c.result_view as Json).media as Json[])[0]?.url as string)
+    expect(urls).toEqual([join(ws, 'page.png'), join(ws, 'desk.png')].map((path) => `./api/media?${new URLSearchParams({ path, session_id: sid }).toString()}`))
+    for (const url of urls) expect((await s.get(`/${url.slice(2)}`)).status).toBe(200)
+  })
+})
+
 describe('session detail ships media and analysis sections (TAL-2325)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

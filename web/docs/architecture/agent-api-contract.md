@@ -736,7 +736,10 @@ with their real numbers, and `matches` (`search_files`) the matches grouped by f
 `skill_view`, `skill_manage`, `session_search`, `cronjob_manage`, `manage_connections`, TAL-2326) a titled list of
 rows, each opening the chat, scheduled job, connected apps or skill it names, and a viewed skill's Markdown; every `kanban_*` tool
 (TAL-2327) is kind `kanban` and `rows`, the task or tasks it touched each opening that task, with the entry's `verb`
-(`create`, `view`, `list`, `update`, `complete`, `block`, `comment`) shipped on each call; every other tool is `generic`, its result's text, else its key/value fields. The
+(`create`, `view`, `list`, `update`, `complete`, `block`, `comment`) shipped on each call; `browser_exec` (TAL-2328) is kind
+`browser` and `code`, the code it ran as a pathless `file_excerpt` above its terminal sections and the screenshot it saved
+as `media`; `browser_cdp`, `browser_dialog` and `browser_vault` are kind `browser` and `computer_use` kind `computer`, each
+`rows` (a capture's screenshot as `media` too), with a `verb` from the tool or its `action`; every other tool is `generic`, its result's text, else its key/value fields. The
 server reads a listed tool's kind and presentation from the table; MCP, connector and plugin tools
 keep the name-token rules and the generic result parser, and Talaria's own tools stay in
 `TALARIA_TOOL_NAMES`.

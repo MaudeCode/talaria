@@ -58,7 +58,10 @@ struct FileExcerptSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            ToolFilePath(path: excerpt.path, focusPath: excerpt.focusPath, line: excerpt.startLine)
+            // TAL-2328: code a call ran has no path.
+            if !excerpt.path.isEmpty {
+                ToolFilePath(path: excerpt.path, focusPath: excerpt.focusPath, line: excerpt.startLine)
+            }
             if !excerpt.lines.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(excerpt.lines.enumerated()), id: \.offset) { index, line in

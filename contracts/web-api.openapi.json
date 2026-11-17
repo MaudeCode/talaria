@@ -8051,6 +8051,8 @@
                                         "connection",
                                         "question",
                                         "kanban",
+                                        "browser",
+                                        "computer",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -8172,10 +8174,17 @@
                                         "update",
                                         "complete",
                                         "block",
-                                        "comment"
+                                        "comment",
+                                        "run",
+                                        "send",
+                                        "answer",
+                                        "fill",
+                                        "capture",
+                                        "click",
+                                        "type"
                                       ],
                                       "type": "string",
-                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -9072,6 +9081,8 @@
                                                 "connection",
                                                 "question",
                                                 "kanban",
+                                                "browser",
+                                                "computer",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -9130,10 +9141,17 @@
                                                 "update",
                                                 "complete",
                                                 "block",
-                                                "comment"
+                                                "comment",
+                                                "run",
+                                                "send",
+                                                "answer",
+                                                "fill",
+                                                "capture",
+                                                "click",
+                                                "type"
                                               ],
                                               "type": "string",
-                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -10270,6 +10288,8 @@
                                   "connection",
                                   "question",
                                   "kanban",
+                                  "browser",
+                                  "computer",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -10428,10 +10448,17 @@
                                   "update",
                                   "complete",
                                   "block",
-                                  "comment"
+                                  "comment",
+                                  "run",
+                                  "send",
+                                  "answer",
+                                  "fill",
+                                  "capture",
+                                  "click",
+                                  "type"
                                 ],
                                 "type": "string",
-                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -14982,6 +15009,8 @@
                                         "connection",
                                         "question",
                                         "kanban",
+                                        "browser",
+                                        "computer",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -15103,10 +15132,17 @@
                                         "update",
                                         "complete",
                                         "block",
-                                        "comment"
+                                        "comment",
+                                        "run",
+                                        "send",
+                                        "answer",
+                                        "fill",
+                                        "capture",
+                                        "click",
+                                        "type"
                                       ],
                                       "type": "string",
-                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -16003,6 +16039,8 @@
                                                 "connection",
                                                 "question",
                                                 "kanban",
+                                                "browser",
+                                                "computer",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -16061,10 +16099,17 @@
                                                 "update",
                                                 "complete",
                                                 "block",
-                                                "comment"
+                                                "comment",
+                                                "run",
+                                                "send",
+                                                "answer",
+                                                "fill",
+                                                "capture",
+                                                "click",
+                                                "type"
                                               ],
                                               "type": "string",
-                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -17201,6 +17246,8 @@
                                   "connection",
                                   "question",
                                   "kanban",
+                                  "browser",
+                                  "computer",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -17359,10 +17406,17 @@
                                   "update",
                                   "complete",
                                   "block",
-                                  "comment"
+                                  "comment",
+                                  "run",
+                                  "send",
+                                  "answer",
+                                  "fill",
+                                  "capture",
+                                  "click",
+                                  "type"
                                 ],
                                 "type": "string",
-                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -20584,6 +20638,8 @@
                                         "connection",
                                         "question",
                                         "kanban",
+                                        "browser",
+                                        "computer",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -20705,10 +20761,17 @@
                                         "update",
                                         "complete",
                                         "block",
-                                        "comment"
+                                        "comment",
+                                        "run",
+                                        "send",
+                                        "answer",
+                                        "fill",
+                                        "capture",
+                                        "click",
+                                        "type"
                                       ],
                                       "type": "string",
-                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -21605,6 +21668,8 @@
                                                 "connection",
                                                 "question",
                                                 "kanban",
+                                                "browser",
+                                                "computer",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -21663,10 +21728,17 @@
                                                 "update",
                                                 "complete",
                                                 "block",
-                                                "comment"
+                                                "comment",
+                                                "run",
+                                                "send",
+                                                "answer",
+                                                "fill",
+                                                "capture",
+                                                "click",
+                                                "type"
                                               ],
                                               "type": "string",
-                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -22803,6 +22875,8 @@
                                   "connection",
                                   "question",
                                   "kanban",
+                                  "browser",
+                                  "computer",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -22961,10 +23035,17 @@
                                   "update",
                                   "complete",
                                   "block",
-                                  "comment"
+                                  "comment",
+                                  "run",
+                                  "send",
+                                  "answer",
+                                  "fill",
+                                  "capture",
+                                  "click",
+                                  "type"
                                 ],
                                 "type": "string",
-                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -29318,6 +29399,8 @@
                                         "connection",
                                         "question",
                                         "kanban",
+                                        "browser",
+                                        "computer",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -29439,10 +29522,17 @@
                                         "update",
                                         "complete",
                                         "block",
-                                        "comment"
+                                        "comment",
+                                        "run",
+                                        "send",
+                                        "answer",
+                                        "fill",
+                                        "capture",
+                                        "click",
+                                        "type"
                                       ],
                                       "type": "string",
-                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -30339,6 +30429,8 @@
                                                 "connection",
                                                 "question",
                                                 "kanban",
+                                                "browser",
+                                                "computer",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -30397,10 +30489,17 @@
                                                 "update",
                                                 "complete",
                                                 "block",
-                                                "comment"
+                                                "comment",
+                                                "run",
+                                                "send",
+                                                "answer",
+                                                "fill",
+                                                "capture",
+                                                "click",
+                                                "type"
                                               ],
                                               "type": "string",
-                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -31537,6 +31636,8 @@
                                   "connection",
                                   "question",
                                   "kanban",
+                                  "browser",
+                                  "computer",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -31695,10 +31796,17 @@
                                   "update",
                                   "complete",
                                   "block",
-                                  "comment"
+                                  "comment",
+                                  "run",
+                                  "send",
+                                  "answer",
+                                  "fill",
+                                  "capture",
+                                  "click",
+                                  "type"
                                 ],
                                 "type": "string",
-                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -37363,6 +37471,8 @@
                                         "connection",
                                         "question",
                                         "kanban",
+                                        "browser",
+                                        "computer",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -37484,10 +37594,17 @@
                                         "update",
                                         "complete",
                                         "block",
-                                        "comment"
+                                        "comment",
+                                        "run",
+                                        "send",
+                                        "answer",
+                                        "fill",
+                                        "capture",
+                                        "click",
+                                        "type"
                                       ],
                                       "type": "string",
-                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -38384,6 +38501,8 @@
                                                 "connection",
                                                 "question",
                                                 "kanban",
+                                                "browser",
+                                                "computer",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -38442,10 +38561,17 @@
                                                 "update",
                                                 "complete",
                                                 "block",
-                                                "comment"
+                                                "comment",
+                                                "run",
+                                                "send",
+                                                "answer",
+                                                "fill",
+                                                "capture",
+                                                "click",
+                                                "type"
                                               ],
                                               "type": "string",
-                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -39582,6 +39708,8 @@
                                   "connection",
                                   "question",
                                   "kanban",
+                                  "browser",
+                                  "computer",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -39740,10 +39868,17 @@
                                   "update",
                                   "complete",
                                   "block",
-                                  "comment"
+                                  "comment",
+                                  "run",
+                                  "send",
+                                  "answer",
+                                  "fill",
+                                  "capture",
+                                  "click",
+                                  "type"
                                 ],
                                 "type": "string",
-                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -46040,6 +46175,8 @@
                                         "connection",
                                         "question",
                                         "kanban",
+                                        "browser",
+                                        "computer",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -46161,10 +46298,17 @@
                                         "update",
                                         "complete",
                                         "block",
-                                        "comment"
+                                        "comment",
+                                        "run",
+                                        "send",
+                                        "answer",
+                                        "fill",
+                                        "capture",
+                                        "click",
+                                        "type"
                                       ],
                                       "type": "string",
-                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -47061,6 +47205,8 @@
                                                 "connection",
                                                 "question",
                                                 "kanban",
+                                                "browser",
+                                                "computer",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -47119,10 +47265,17 @@
                                                 "update",
                                                 "complete",
                                                 "block",
-                                                "comment"
+                                                "comment",
+                                                "run",
+                                                "send",
+                                                "answer",
+                                                "fill",
+                                                "capture",
+                                                "click",
+                                                "type"
                                               ],
                                               "type": "string",
-                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -48259,6 +48412,8 @@
                                   "connection",
                                   "question",
                                   "kanban",
+                                  "browser",
+                                  "computer",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -48417,10 +48572,17 @@
                                   "update",
                                   "complete",
                                   "block",
-                                  "comment"
+                                  "comment",
+                                  "run",
+                                  "send",
+                                  "answer",
+                                  "fill",
+                                  "capture",
+                                  "click",
+                                  "type"
                                 ],
                                 "type": "string",
-                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -51587,6 +51749,8 @@
                                         "connection",
                                         "question",
                                         "kanban",
+                                        "browser",
+                                        "computer",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -51708,10 +51872,17 @@
                                         "update",
                                         "complete",
                                         "block",
-                                        "comment"
+                                        "comment",
+                                        "run",
+                                        "send",
+                                        "answer",
+                                        "fill",
+                                        "capture",
+                                        "click",
+                                        "type"
                                       ],
                                       "type": "string",
-                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -52608,6 +52779,8 @@
                                                 "connection",
                                                 "question",
                                                 "kanban",
+                                                "browser",
+                                                "computer",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -52666,10 +52839,17 @@
                                                 "update",
                                                 "complete",
                                                 "block",
-                                                "comment"
+                                                "comment",
+                                                "run",
+                                                "send",
+                                                "answer",
+                                                "fill",
+                                                "capture",
+                                                "click",
+                                                "type"
                                               ],
                                               "type": "string",
-                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -53806,6 +53986,8 @@
                                   "connection",
                                   "question",
                                   "kanban",
+                                  "browser",
+                                  "computer",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -53964,10 +54146,17 @@
                                   "update",
                                   "complete",
                                   "block",
-                                  "comment"
+                                  "comment",
+                                  "run",
+                                  "send",
+                                  "answer",
+                                  "fill",
+                                  "capture",
+                                  "click",
+                                  "type"
                                 ],
                                 "type": "string",
-                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -57196,6 +57385,8 @@
                                         "connection",
                                         "question",
                                         "kanban",
+                                        "browser",
+                                        "computer",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -57317,10 +57508,17 @@
                                         "update",
                                         "complete",
                                         "block",
-                                        "comment"
+                                        "comment",
+                                        "run",
+                                        "send",
+                                        "answer",
+                                        "fill",
+                                        "capture",
+                                        "click",
+                                        "type"
                                       ],
                                       "type": "string",
-                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -58217,6 +58415,8 @@
                                                 "connection",
                                                 "question",
                                                 "kanban",
+                                                "browser",
+                                                "computer",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -58275,10 +58475,17 @@
                                                 "update",
                                                 "complete",
                                                 "block",
-                                                "comment"
+                                                "comment",
+                                                "run",
+                                                "send",
+                                                "answer",
+                                                "fill",
+                                                "capture",
+                                                "click",
+                                                "type"
                                               ],
                                               "type": "string",
-                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -59415,6 +59622,8 @@
                                   "connection",
                                   "question",
                                   "kanban",
+                                  "browser",
+                                  "computer",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -59573,10 +59782,17 @@
                                   "update",
                                   "complete",
                                   "block",
-                                  "comment"
+                                  "comment",
+                                  "run",
+                                  "send",
+                                  "answer",
+                                  "fill",
+                                  "capture",
+                                  "click",
+                                  "type"
                                 ],
                                 "type": "string",
-                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -62803,6 +63019,8 @@
                                         "connection",
                                         "question",
                                         "kanban",
+                                        "browser",
+                                        "computer",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -62924,10 +63142,17 @@
                                         "update",
                                         "complete",
                                         "block",
-                                        "comment"
+                                        "comment",
+                                        "run",
+                                        "send",
+                                        "answer",
+                                        "fill",
+                                        "capture",
+                                        "click",
+                                        "type"
                                       ],
                                       "type": "string",
-                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -63824,6 +64049,8 @@
                                                 "connection",
                                                 "question",
                                                 "kanban",
+                                                "browser",
+                                                "computer",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -63882,10 +64109,17 @@
                                                 "update",
                                                 "complete",
                                                 "block",
-                                                "comment"
+                                                "comment",
+                                                "run",
+                                                "send",
+                                                "answer",
+                                                "fill",
+                                                "capture",
+                                                "click",
+                                                "type"
                                               ],
                                               "type": "string",
-                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -65022,6 +65256,8 @@
                                   "connection",
                                   "question",
                                   "kanban",
+                                  "browser",
+                                  "computer",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -65180,10 +65416,17 @@
                                   "update",
                                   "complete",
                                   "block",
-                                  "comment"
+                                  "comment",
+                                  "run",
+                                  "send",
+                                  "answer",
+                                  "fill",
+                                  "capture",
+                                  "click",
+                                  "type"
                                 ],
                                 "type": "string",
-                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -68183,6 +68426,8 @@
                                   "connection",
                                   "question",
                                   "kanban",
+                                  "browser",
+                                  "computer",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -68341,10 +68586,17 @@
                                   "update",
                                   "complete",
                                   "block",
-                                  "comment"
+                                  "comment",
+                                  "run",
+                                  "send",
+                                  "answer",
+                                  "fill",
+                                  "capture",
+                                  "click",
+                                  "type"
                                 ],
                                 "type": "string",
-                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -80657,6 +80909,8 @@
                                         "connection",
                                         "question",
                                         "kanban",
+                                        "browser",
+                                        "computer",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -80778,10 +81032,17 @@
                                         "update",
                                         "complete",
                                         "block",
-                                        "comment"
+                                        "comment",
+                                        "run",
+                                        "send",
+                                        "answer",
+                                        "fill",
+                                        "capture",
+                                        "click",
+                                        "type"
                                       ],
                                       "type": "string",
-                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -81678,6 +81939,8 @@
                                                 "connection",
                                                 "question",
                                                 "kanban",
+                                                "browser",
+                                                "computer",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -81736,10 +81999,17 @@
                                                 "update",
                                                 "complete",
                                                 "block",
-                                                "comment"
+                                                "comment",
+                                                "run",
+                                                "send",
+                                                "answer",
+                                                "fill",
+                                                "capture",
+                                                "click",
+                                                "type"
                                               ],
                                               "type": "string",
-                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -82876,6 +83146,8 @@
                                   "connection",
                                   "question",
                                   "kanban",
+                                  "browser",
+                                  "computer",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -83034,10 +83306,17 @@
                                   "update",
                                   "complete",
                                   "block",
-                                  "comment"
+                                  "comment",
+                                  "run",
+                                  "send",
+                                  "answer",
+                                  "fill",
+                                  "capture",
+                                  "click",
+                                  "type"
                                 ],
                                 "type": "string",
-                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -86256,6 +86535,8 @@
                                         "connection",
                                         "question",
                                         "kanban",
+                                        "browser",
+                                        "computer",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -86377,10 +86658,17 @@
                                         "update",
                                         "complete",
                                         "block",
-                                        "comment"
+                                        "comment",
+                                        "run",
+                                        "send",
+                                        "answer",
+                                        "fill",
+                                        "capture",
+                                        "click",
+                                        "type"
                                       ],
                                       "type": "string",
-                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -87277,6 +87565,8 @@
                                                 "connection",
                                                 "question",
                                                 "kanban",
+                                                "browser",
+                                                "computer",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -87335,10 +87625,17 @@
                                                 "update",
                                                 "complete",
                                                 "block",
-                                                "comment"
+                                                "comment",
+                                                "run",
+                                                "send",
+                                                "answer",
+                                                "fill",
+                                                "capture",
+                                                "click",
+                                                "type"
                                               ],
                                               "type": "string",
-                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -88475,6 +88772,8 @@
                                   "connection",
                                   "question",
                                   "kanban",
+                                  "browser",
+                                  "computer",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -88633,10 +88932,17 @@
                                   "update",
                                   "complete",
                                   "block",
-                                  "comment"
+                                  "comment",
+                                  "run",
+                                  "send",
+                                  "answer",
+                                  "fill",
+                                  "capture",
+                                  "click",
+                                  "type"
                                 ],
                                 "type": "string",
-                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -92541,6 +92847,8 @@
                                         "connection",
                                         "question",
                                         "kanban",
+                                        "browser",
+                                        "computer",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -92662,10 +92970,17 @@
                                         "update",
                                         "complete",
                                         "block",
-                                        "comment"
+                                        "comment",
+                                        "run",
+                                        "send",
+                                        "answer",
+                                        "fill",
+                                        "capture",
+                                        "click",
+                                        "type"
                                       ],
                                       "type": "string",
-                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -93562,6 +93877,8 @@
                                                 "connection",
                                                 "question",
                                                 "kanban",
+                                                "browser",
+                                                "computer",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -93620,10 +93937,17 @@
                                                 "update",
                                                 "complete",
                                                 "block",
-                                                "comment"
+                                                "comment",
+                                                "run",
+                                                "send",
+                                                "answer",
+                                                "fill",
+                                                "capture",
+                                                "click",
+                                                "type"
                                               ],
                                               "type": "string",
-                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [
@@ -94760,6 +95084,8 @@
                                   "connection",
                                   "question",
                                   "kanban",
+                                  "browser",
+                                  "computer",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -94918,10 +95244,17 @@
                                   "update",
                                   "complete",
                                   "block",
-                                  "comment"
+                                  "comment",
+                                  "run",
+                                  "send",
+                                  "answer",
+                                  "fill",
+                                  "capture",
+                                  "click",
+                                  "type"
                                 ],
                                 "type": "string",
-                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                               },
                               "focus_path": {
                                 "anyOf": [
@@ -98697,6 +99030,8 @@
                                             "connection",
                                             "question",
                                             "kanban",
+                                            "browser",
+                                            "computer",
                                             "unknown"
                                           ],
                                           "type": "string"
@@ -98817,10 +99152,17 @@
                                             "update",
                                             "complete",
                                             "block",
-                                            "comment"
+                                            "comment",
+                                            "run",
+                                            "send",
+                                            "answer",
+                                            "fill",
+                                            "capture",
+                                            "click",
+                                            "type"
                                           ],
                                           "type": "string",
-                                          "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                          "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                         },
                                         "focus_path": {
                                           "anyOf": [
@@ -99624,6 +99966,8 @@
                                                     "connection",
                                                     "question",
                                                     "kanban",
+                                                    "browser",
+                                                    "computer",
                                                     "unknown"
                                                   ],
                                                   "type": "string"
@@ -99678,10 +100022,17 @@
                                                     "update",
                                                     "complete",
                                                     "block",
-                                                    "comment"
+                                                    "comment",
+                                                    "run",
+                                                    "send",
+                                                    "answer",
+                                                    "fill",
+                                                    "capture",
+                                                    "click",
+                                                    "type"
                                                   ],
                                                   "type": "string",
-                                                  "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                                  "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                                 },
                                                 "focus_path": {
                                                   "anyOf": [
@@ -100606,6 +100957,8 @@
                                       "connection",
                                       "question",
                                       "kanban",
+                                      "browser",
+                                      "computer",
                                       "unknown"
                                     ],
                                     "type": "string"
@@ -100764,10 +101117,17 @@
                                       "update",
                                       "complete",
                                       "block",
-                                      "comment"
+                                      "comment",
+                                      "run",
+                                      "send",
+                                      "answer",
+                                      "fill",
+                                      "capture",
+                                      "click",
+                                      "type"
                                     ],
                                     "type": "string",
-                                    "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                    "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                   },
                                   "focus_path": {
                                     "anyOf": [
@@ -149224,6 +149584,8 @@
                                         "connection",
                                         "question",
                                         "kanban",
+                                        "browser",
+                                        "computer",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -149345,10 +149707,17 @@
                                         "update",
                                         "complete",
                                         "block",
-                                        "comment"
+                                        "comment",
+                                        "run",
+                                        "send",
+                                        "answer",
+                                        "fill",
+                                        "capture",
+                                        "click",
+                                        "type"
                                       ],
                                       "type": "string",
-                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                      "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                     },
                                     "focus_path": {
                                       "anyOf": [
@@ -150245,6 +150614,8 @@
                                                 "connection",
                                                 "question",
                                                 "kanban",
+                                                "browser",
+                                                "computer",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -150303,10 +150674,17 @@
                                                 "update",
                                                 "complete",
                                                 "block",
-                                                "comment"
+                                                "comment",
+                                                "run",
+                                                "send",
+                                                "answer",
+                                                "fill",
+                                                "capture",
+                                                "click",
+                                                "type"
                                               ],
                                               "type": "string",
-                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. Absent for every other call."
+                                              "description": "TAL-2327: what a `kanban` call does, the verb clients show in place of its kind's own. TAL-2328: likewise a `browser` or `computer` call's, from its tool or its `action`. Absent for every other call."
                                             },
                                             "focus_path": {
                                               "anyOf": [

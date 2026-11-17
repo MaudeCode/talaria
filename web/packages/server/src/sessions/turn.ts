@@ -40,7 +40,7 @@ import { SessionGoals } from './goals.js'
 import { turnTerminalState } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { agentBuildParams, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, finalAnswerOf, hasNativeImages, isConversationalAssistant, withFinalAssistantAnswer, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages, type IdentityCache } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, finalAnswerOf, hasNativeImages, isConversationalAssistant, withFinalAssistantAnswer, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withoutBinaryText, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages, type IdentityCache } from './merge.js'
 import { isAutomaticSource, mayBecomeSilentReply, turnOrigin, recordBackgroundReview, recordBackgroundUpdate, type BackgroundUpdate } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -1153,6 +1153,8 @@ export class TurnRunner {
                 const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
                 // TAL-2323: a `read_file` excerpt names the file its start frame's arguments read.
                 const outcome = toolOutcome(rawResult, data.name, false, data.args ?? tc?.args)
+                // TAL-2328: the sidecar's preview without the image or binary data a result carried.
+                if (typeof complete.preview === 'string') complete.preview = withoutBinaryText(complete.preview)
                 complete.progress = null
                 complete.is_error = outcome.is_error
                 if (rawResult !== undefined) complete.result_view = outcome.result_view
@@ -1165,7 +1167,7 @@ export class TurnRunner {
                   const startedAt = toolStartedAt.get(tc)
                   if (startedAt !== undefined) complete.duration = Math.round(Math.max(0, receivedAt - startedAt) * 1000) / 1000
                   // TAL-315: the decided view too, so a failed or cancelled turn's snapshot keeps the sections shown live.
-                  Object.assign(tc, { done: true, progress: null, snippet: data.preview, is_error: complete.is_error, duration: complete.duration ?? null, ...(complete.result_view ? { result_view: complete.result_view } : {}), ...(editDiff ? { edit_diff: editDiff } : {}) })
+                  Object.assign(tc, { done: true, progress: null, snippet: complete.preview, is_error: complete.is_error, duration: complete.duration ?? null, ...(complete.result_view ? { result_view: complete.result_view } : {}), ...(editDiff ? { edit_diff: editDiff } : {}) })
                 }
                 if (startsBackgroundWork(data.name, rawResult)) deps.onBackgroundWork?.(sessionId, s.profile ?? null)
                 const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()

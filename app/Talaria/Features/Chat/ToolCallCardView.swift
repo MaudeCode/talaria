@@ -100,6 +100,10 @@ struct ToolCallCardView: View {
                 // TAL-2323: a read's lines and a search's matches, in place of their text.
                 if let excerpt = shownCall.resultView?.fileExcerpt {
                     FileExcerptSection(excerpt: excerpt)
+                    // TAL-2328: code a call ran (an excerpt without a path) shows its output under it.
+                    if excerpt.path.isEmpty, let result = displayContent.result {
+                        resultSection(result)
+                    }
                 } else if let matches = shownCall.resultView?.matches {
                     SearchMatchesSection(matches: matches)
                 } else if let links = shownCall.resultView?.links {

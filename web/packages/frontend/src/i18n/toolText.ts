@@ -4,7 +4,7 @@
 // they compose grammar from tables with count-free fallbacks.
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/restrict-plus-operands */
 export type ToolActionState = 'running' | 'done'
-export type ToolKind = 'shell' | 'read' | 'list' | 'search' | 'web' | 'write' | 'skill' | 'memory' | 'delegate' | 'talaria' | 'image' | 'audio' | 'video' | 'image_analysis' | 'video_analysis' | 'session' | 'schedule' | 'connection' | 'question' | 'kanban' | 'unknown' | (string & {})
+export type ToolKind = 'shell' | 'read' | 'list' | 'search' | 'web' | 'write' | 'skill' | 'memory' | 'delegate' | 'talaria' | 'image' | 'audio' | 'video' | 'image_analysis' | 'video_analysis' | 'session' | 'schedule' | 'connection' | 'question' | 'kanban' | 'browser' | 'computer' | 'unknown' | (string & {})
 
 const _I18N_TOOL_ACTION_TEXT_EN: any = {
     shell: { running: 'Running', done: 'Ran', fail: 'run', fallback: 'a command' },
@@ -34,6 +34,16 @@ const _I18N_TOOL_ACTION_TEXT_EN: any = {
     kanban_complete: { running: 'Completing', done: 'Completed', fail: 'complete', fallback: 'a task' },
     kanban_block: { running: 'Blocking', done: 'Blocked', fail: 'block', fallback: 'a task' },
     kanban_comment: { running: 'Commenting on', done: 'Commented on', fail: 'comment on', fallback: 'a task' },
+    browser: { running: 'Using', done: 'Used', fail: 'use', fallback: 'the browser' },
+    browser_run: { running: 'Running', done: 'Ran', fail: 'run', fallback: 'browser code' },
+    browser_send: { running: 'Sending', done: 'Sent', fail: 'send', fallback: 'a browser command' },
+    browser_answer: { running: 'Answering', done: 'Answered', fail: 'answer', fallback: 'a dialog' },
+    browser_fill: { running: 'Filling', done: 'Filled', fail: 'fill', fallback: 'a login' },
+    browser_list: { running: 'Listing', done: 'Listed', fail: 'list', fallback: 'saved logins' },
+    computer: { running: 'Using', done: 'Used', fail: 'use', fallback: 'the computer' },
+    computer_capture: { running: 'Capturing', done: 'Captured', fail: 'capture', fallback: 'the screen' },
+    computer_click: { running: 'Clicking', done: 'Clicked', fail: 'click', fallback: 'on the screen' },
+    computer_type: { running: 'Typing', done: 'Typed', fail: 'type', fallback: 'text' },
     unknown: { running: 'Running', done: 'Ran', fail: 'run', fallback: 'a tool' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_EN: any = {
@@ -57,6 +67,8 @@ const _I18N_TOOL_SUMMARY_TEXT_EN: any = {
     connection: { running: ['Managing connections', 'Managing connections'], done: ['Managed connections', 'Managed connections'] },
     question: { running: ['Asking a question', 'Asking questions'], done: ['Asked a question', 'Asked questions'] },
     kanban: { running: ['Working on a task', 'Working on tasks'], done: ['Worked on a task', 'Worked on tasks'] },
+    browser: { running: ['Using the browser', 'Using the browser'], done: ['Used the browser', 'Used the browser'] },
+    computer: { running: ['Using the computer', 'Using the computer'], done: ['Used the computer', 'Used the computer'] },
     unknown: { running: ['Calling a tool', 'Calling tools'], done: ['Called a tool', 'Called tools'] },
 };
 const _I18N_TOOL_ACTION_TEXT_RU: any = {
@@ -87,6 +99,16 @@ const _I18N_TOOL_ACTION_TEXT_RU: any = {
     kanban_complete: { running: 'Завершаю', done: 'Завершено', fail: 'завершить', fallback: 'задачу' },
     kanban_block: { running: 'Блокирую', done: 'Заблокировано', fail: 'заблокировать', fallback: 'задачу' },
     kanban_comment: { running: 'Комментирую', done: 'Прокомментировано', fail: 'прокомментировать', fallback: 'задачу' },
+    browser: { running: 'Использую', done: 'Использован', fail: 'использовать', fallback: 'браузер' },
+    browser_run: { running: 'Выполняю', done: 'Выполнен', fail: 'выполнить', fallback: 'код в браузере' },
+    browser_send: { running: 'Отправляю', done: 'Отправлена', fail: 'отправить', fallback: 'команду браузеру' },
+    browser_answer: { running: 'Отвечаю на', done: 'Отвечено на', fail: 'ответить на', fallback: 'диалог' },
+    browser_fill: { running: 'Заполняю', done: 'Заполнен', fail: 'заполнить', fallback: 'вход' },
+    browser_list: { running: 'Получаю список', done: 'Получен список', fail: 'получить список', fallback: 'сохранённых входов' },
+    computer: { running: 'Использую', done: 'Использован', fail: 'использовать', fallback: 'компьютер' },
+    computer_capture: { running: 'Снимаю', done: 'Снят', fail: 'снять', fallback: 'экран' },
+    computer_click: { running: 'Нажимаю', done: 'Нажато', fail: 'нажать', fallback: 'на экране' },
+    computer_type: { running: 'Ввожу', done: 'Введён', fail: 'ввести', fallback: 'текст' },
     unknown: { running: 'Выполняю', done: 'Выполнен', fail: 'выполнить', fallback: 'инструмент' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_RU: any = {
@@ -110,6 +132,8 @@ const _I18N_TOOL_SUMMARY_TEXT_RU: any = {
     connection: { running: ['Изменяются подключения', 'Изменяются подключения ({n})', 'Изменяются подключения ({n})'], done: ['Подключения изменены', 'Подключения изменены ({n})', 'Подключения изменены ({n})'] },
     question: { running: ['Задаётся вопрос', 'Задаются {n} вопроса', 'Задаётся {n} вопросов'], done: ['Вопрос задан', 'Заданы {n} вопроса', 'Задано {n} вопросов'] },
     kanban: { running: ['Идёт работа над задачей', 'Идёт работа над {n} задачами', 'Идёт работа над {n} задачами'], done: ['Работа над задачей выполнена', 'Выполнена работа над {n} задачами', 'Выполнена работа над {n} задачами'] },
+    browser: { running: ['Используется браузер', 'Используется браузер ({n})', 'Используется браузер ({n})'], done: ['Браузер использован', 'Браузер использован ({n})', 'Браузер использован ({n})'] },
+    computer: { running: ['Используется компьютер', 'Используется компьютер ({n})', 'Используется компьютер ({n})'], done: ['Компьютер использован', 'Компьютер использован ({n})', 'Компьютер использован ({n})'] },
     unknown: { running: ['Выполняется инструмент', 'Выполняются {n} инструмента', 'Выполняется {n} инструментов'], done: ['Инструмент выполнен', 'Выполнены {n} инструмента', 'Выполнено {n} инструментов'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_RU_COUNT_FREE: any = {
@@ -133,6 +157,8 @@ const _I18N_TOOL_SUMMARY_TEXT_RU_COUNT_FREE: any = {
     connection: { running: 'Изменяются подключения', done: 'Подключения изменены' },
     question: { running: 'Задаются вопросы', done: 'Вопросы заданы' },
     kanban: { running: 'Идёт работа над задачами', done: 'Работа над задачами выполнена' },
+    browser: { running: 'Используется браузер', done: 'Браузер использован' },
+    computer: { running: 'Используется компьютер', done: 'Компьютер использован' },
     unknown: { running: 'Выполняются инструменты', done: 'Инструменты выполнены' },
 };
 const _I18N_TOOL_ACTION_TEXT_ZH: any = {
@@ -163,6 +189,16 @@ const _I18N_TOOL_ACTION_TEXT_ZH: any = {
     kanban_complete: { running: '正在完成', done: '已完成', fail: '完成', fallback: '任务' },
     kanban_block: { running: '正在标记受阻', done: '已标记受阻', fail: '标记受阻', fallback: '任务' },
     kanban_comment: { running: '正在评论', done: '已评论', fail: '评论', fallback: '任务' },
+    browser: { running: '正在使用', done: '已使用', fail: '使用', fallback: '浏览器' },
+    browser_run: { running: '正在运行', done: '已运行', fail: '运行', fallback: '浏览器代码' },
+    browser_send: { running: '正在发送', done: '已发送', fail: '发送', fallback: '浏览器命令' },
+    browser_answer: { running: '正在回应', done: '已回应', fail: '回应', fallback: '对话框' },
+    browser_fill: { running: '正在填写', done: '已填写', fail: '填写', fallback: '登录信息' },
+    browser_list: { running: '正在列出', done: '已列出', fail: '列出', fallback: '已保存的登录' },
+    computer: { running: '正在使用', done: '已使用', fail: '使用', fallback: '电脑' },
+    computer_capture: { running: '正在截取', done: '已截取', fail: '截取', fallback: '屏幕' },
+    computer_click: { running: '正在点击', done: '已点击', fail: '点击', fallback: '屏幕' },
+    computer_type: { running: '正在输入', done: '已输入', fail: '输入', fallback: '文本' },
     unknown: { running: '正在运行', done: '已运行', fail: '运行', fallback: '工具' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_ZH: any = {
@@ -186,6 +222,8 @@ const _I18N_TOOL_SUMMARY_TEXT_ZH: any = {
     connection: { running: ['正在管理连接', '正在管理连接 {n} 次'], done: ['已管理连接', '已管理连接 {n} 次'] },
     question: { running: ['正在提问', '正在提出 {n} 个问题'], done: ['已提问', '已提出 {n} 个问题'] },
     kanban: { running: ['正在处理任务', '正在处理 {n} 个任务'], done: ['已处理任务', '已处理 {n} 个任务'] },
+    browser: { running: ['正在使用浏览器', '正在使用浏览器 {n} 次'], done: ['已使用浏览器', '已使用浏览器 {n} 次'] },
+    computer: { running: ['正在使用电脑', '正在使用电脑 {n} 次'], done: ['已使用电脑', '已使用电脑 {n} 次'] },
     unknown: { running: ['正在运行工具', '正在运行 {n} 个工具'], done: ['已运行工具', '已运行 {n} 个工具'] },
 };
 const _I18N_TOOL_ACTION_TEXT_ZH_HANT: any = {
@@ -216,6 +254,16 @@ const _I18N_TOOL_ACTION_TEXT_ZH_HANT: any = {
     kanban_complete: { running: '正在完成', done: '已完成', fail: '完成', fallback: '任務' },
     kanban_block: { running: '正在標記受阻', done: '已標記受阻', fail: '標記受阻', fallback: '任務' },
     kanban_comment: { running: '正在評論', done: '已評論', fail: '評論', fallback: '任務' },
+    browser: { running: '正在使用', done: '已使用', fail: '使用', fallback: '瀏覽器' },
+    browser_run: { running: '正在執行', done: '已執行', fail: '執行', fallback: '瀏覽器程式碼' },
+    browser_send: { running: '正在傳送', done: '已傳送', fail: '傳送', fallback: '瀏覽器指令' },
+    browser_answer: { running: '正在回應', done: '已回應', fail: '回應', fallback: '對話框' },
+    browser_fill: { running: '正在填寫', done: '已填寫', fail: '填寫', fallback: '登入資訊' },
+    browser_list: { running: '正在列出', done: '已列出', fail: '列出', fallback: '已儲存的登入' },
+    computer: { running: '正在使用', done: '已使用', fail: '使用', fallback: '電腦' },
+    computer_capture: { running: '正在擷取', done: '已擷取', fail: '擷取', fallback: '螢幕' },
+    computer_click: { running: '正在點按', done: '已點按', fail: '點按', fallback: '螢幕' },
+    computer_type: { running: '正在輸入', done: '已輸入', fail: '輸入', fallback: '文字' },
     unknown: { running: '正在執行', done: '已執行', fail: '執行', fallback: '工具' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_ZH_HANT: any = {
@@ -239,6 +287,8 @@ const _I18N_TOOL_SUMMARY_TEXT_ZH_HANT: any = {
     connection: { running: ['正在管理連線', '正在管理連線 {n} 次'], done: ['已管理連線', '已管理連線 {n} 次'] },
     question: { running: ['正在提問', '正在提出 {n} 個問題'], done: ['已提問', '已提出 {n} 個問題'] },
     kanban: { running: ['正在處理任務', '正在處理 {n} 個任務'], done: ['已處理任務', '已處理 {n} 個任務'] },
+    browser: { running: ['正在使用瀏覽器', '正在使用瀏覽器 {n} 次'], done: ['已使用瀏覽器', '已使用瀏覽器 {n} 次'] },
+    computer: { running: ['正在使用電腦', '正在使用電腦 {n} 次'], done: ['已使用電腦', '已使用電腦 {n} 次'] },
     unknown: { running: ['正在執行工具', '正在執行 {n} 個工具'], done: ['已執行工具', '已執行 {n} 個工具'] },
 };
 function _i18nProcessedElapsed(prefix?: any, duration?: any) {
@@ -355,6 +405,16 @@ const _I18N_TOOL_ACTION_TEXT_VI: any = {
     kanban_complete: { running: 'Đang hoàn thành', done: 'Đã hoàn thành', fail: 'hoàn thành', fallback: 'một tác vụ' },
     kanban_block: { running: 'Đang chặn', done: 'Đã chặn', fail: 'chặn', fallback: 'một tác vụ' },
     kanban_comment: { running: 'Đang bình luận về', done: 'Đã bình luận về', fail: 'bình luận về', fallback: 'một tác vụ' },
+    browser: { running: 'Đang dùng', done: 'Đã dùng', fail: 'dùng', fallback: 'trình duyệt' },
+    browser_run: { running: 'Đang chạy', done: 'Đã chạy', fail: 'chạy', fallback: 'mã trình duyệt' },
+    browser_send: { running: 'Đang gửi', done: 'Đã gửi', fail: 'gửi', fallback: 'lệnh trình duyệt' },
+    browser_answer: { running: 'Đang trả lời', done: 'Đã trả lời', fail: 'trả lời', fallback: 'hộp thoại' },
+    browser_fill: { running: 'Đang điền', done: 'Đã điền', fail: 'điền', fallback: 'thông tin đăng nhập' },
+    browser_list: { running: 'Đang liệt kê', done: 'Đã liệt kê', fail: 'liệt kê', fallback: 'thông tin đăng nhập đã lưu' },
+    computer: { running: 'Đang dùng', done: 'Đã dùng', fail: 'dùng', fallback: 'máy tính' },
+    computer_capture: { running: 'Đang chụp', done: 'Đã chụp', fail: 'chụp', fallback: 'màn hình' },
+    computer_click: { running: 'Đang nhấp', done: 'Đã nhấp', fail: 'nhấp', fallback: 'trên màn hình' },
+    computer_type: { running: 'Đang nhập', done: 'Đã nhập', fail: 'nhập', fallback: 'văn bản' },
     unknown: { running: 'Đang chạy', done: 'Đã chạy', fail: 'chạy', fallback: 'công cụ' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_VI: any = {
@@ -378,6 +438,8 @@ const _I18N_TOOL_SUMMARY_TEXT_VI: any = {
     connection: { running: ['Đang quản lý kết nối', 'Đang quản lý kết nối {n} lần'], done: ['Đã quản lý kết nối', 'Đã quản lý kết nối {n} lần'] },
     question: { running: ['Đang hỏi một câu hỏi', 'Đang hỏi {n} câu hỏi'], done: ['Đã hỏi một câu hỏi', 'Đã hỏi {n} câu hỏi'] },
     kanban: { running: ['Đang xử lý một tác vụ', 'Đang xử lý {n} tác vụ'], done: ['Đã xử lý một tác vụ', 'Đã xử lý {n} tác vụ'] },
+    browser: { running: ['Đang dùng trình duyệt', 'Đang dùng trình duyệt {n} lần'], done: ['Đã dùng trình duyệt', 'Đã dùng trình duyệt {n} lần'] },
+    computer: { running: ['Đang dùng máy tính', 'Đang dùng máy tính {n} lần'], done: ['Đã dùng máy tính', 'Đã dùng máy tính {n} lần'] },
     unknown: { running: ['Đang chạy công cụ', 'Đang chạy {n} công cụ'], done: ['Đã chạy công cụ', 'Đã chạy {n} công cụ'] },
 };
 function _i18nProcessedElapsedVi(duration?: any) {
@@ -421,6 +483,16 @@ const _I18N_TOOL_ACTION_TEXT_PL: any = {
     kanban_complete: { running: 'Kończenie', done: 'Ukończono', fail: 'ukończyć', fallback: 'zadanie' },
     kanban_block: { running: 'Blokowanie', done: 'Zablokowano', fail: 'zablokować', fallback: 'zadanie' },
     kanban_comment: { running: 'Komentowanie', done: 'Skomentowano', fail: 'skomentować', fallback: 'zadanie' },
+    browser: { running: 'Używanie', done: 'Użyto', fail: 'użyć', fallback: 'przeglądarki' },
+    browser_run: { running: 'Uruchamianie', done: 'Uruchomiono', fail: 'uruchomić', fallback: 'kod w przeglądarce' },
+    browser_send: { running: 'Wysyłanie', done: 'Wysłano', fail: 'wysłać', fallback: 'polecenie przeglądarki' },
+    browser_answer: { running: 'Odpowiadanie na', done: 'Odpowiedziano na', fail: 'odpowiedzieć na', fallback: 'okno dialogowe' },
+    browser_fill: { running: 'Wypełnianie', done: 'Wypełniono', fail: 'wypełnić', fallback: 'dane logowania' },
+    browser_list: { running: 'Wyświetlanie listy', done: 'Wyświetlono listę', fail: 'wyświetlić listę', fallback: 'zapisanych logowań' },
+    computer: { running: 'Używanie', done: 'Użyto', fail: 'użyć', fallback: 'komputera' },
+    computer_capture: { running: 'Przechwytywanie', done: 'Przechwycono', fail: 'przechwycić', fallback: 'ekran' },
+    computer_click: { running: 'Klikanie', done: 'Kliknięto', fail: 'kliknąć', fallback: 'na ekranie' },
+    computer_type: { running: 'Wpisywanie', done: 'Wpisano', fail: 'wpisać', fallback: 'tekst' },
     unknown: { running: 'Uruchamianie', done: 'Uruchomiono', fail: 'uruchomić', fallback: 'narzędzie' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_PL: any = {
@@ -444,6 +516,8 @@ const _I18N_TOOL_SUMMARY_TEXT_PL: any = {
     connection: { running: ['Zmienianie połączeń', 'Zmienianie połączeń ({n})'], done: ['Zmieniono połączenia', 'Zmieniono połączenia ({n})'] },
     question: { running: ['Zadawanie pytania', 'Zadawanie {n} pytań'], done: ['Zadano pytanie', 'Zadano {n} pytań'] },
     kanban: { running: ['Praca nad zadaniem', 'Praca nad {n} zadaniami'], done: ['Zakończono pracę nad zadaniem', 'Zakończono pracę nad {n} zadaniami'] },
+    browser: { running: ['Używanie przeglądarki', 'Używanie przeglądarki ({n})'], done: ['Użyto przeglądarki', 'Użyto przeglądarki ({n})'] },
+    computer: { running: ['Używanie komputera', 'Używanie komputera ({n})'], done: ['Użyto komputera', 'Użyto komputera ({n})'] },
     unknown: { running: ['Uruchamianie narzędzia', 'Uruchamianie {n} narzędzi'], done: ['Uruchomiono narzędzie', 'Uruchomiono {n} narzędzi'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_PL_COUNT_FREE: any = {
@@ -467,6 +541,8 @@ const _I18N_TOOL_SUMMARY_TEXT_PL_COUNT_FREE: any = {
     connection: { running: 'Zmienianie połączeń', done: 'Zmieniono połączenia' },
     question: { running: 'Zadawanie pytań', done: 'Zadano pytania' },
     kanban: { running: 'Praca nad zadaniami', done: 'Zakończono pracę nad zadaniami' },
+    browser: { running: 'Używanie przeglądarki', done: 'Użyto przeglądarki' },
+    computer: { running: 'Używanie komputera', done: 'Użyto komputera' },
     unknown: { running: 'Uruchamianie narzędzi', done: 'Uruchomiono narzędzia' },
 };
 function _i18nProcessedElapsedPl(duration?: any) {
@@ -523,6 +599,16 @@ const _I18N_TOOL_ACTION_TEXT_CS: any = {
     kanban_complete: { running: 'Dokončování', done: 'Dokončeno', fail: 'dokončit', fallback: 'úkol' },
     kanban_block: { running: 'Blokování', done: 'Zablokováno', fail: 'zablokovat', fallback: 'úkol' },
     kanban_comment: { running: 'Komentování', done: 'Okomentováno', fail: 'okomentovat', fallback: 'úkol' },
+    browser: { running: 'Používání', done: 'Použit', fail: 'použít', fallback: 'prohlížeč' },
+    browser_run: { running: 'Spouštění', done: 'Spuštěn', fail: 'spustit', fallback: 'kód v prohlížeči' },
+    browser_send: { running: 'Odesílání', done: 'Odeslán', fail: 'odeslat', fallback: 'příkaz prohlížeči' },
+    browser_answer: { running: 'Odpovídání na', done: 'Odpovězeno na', fail: 'odpovědět na', fallback: 'dialog' },
+    browser_fill: { running: 'Vyplňování', done: 'Vyplněno', fail: 'vyplnit', fallback: 'přihlášení' },
+    browser_list: { running: 'Výpis', done: 'Vypsán seznam', fail: 'vypsat seznam', fallback: 'uložených přihlášení' },
+    computer: { running: 'Používání', done: 'Použit', fail: 'použít', fallback: 'počítač' },
+    computer_capture: { running: 'Pořizování', done: 'Pořízen', fail: 'pořídit', fallback: 'snímek obrazovky' },
+    computer_click: { running: 'Klikání', done: 'Kliknuto', fail: 'kliknout', fallback: 'na obrazovku' },
+    computer_type: { running: 'Psaní', done: 'Napsán', fail: 'napsat', fallback: 'text' },
     unknown: { running: 'Spouštění', done: 'Spuštěno', fail: 'spustit', fallback: 'nástroj' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_CS: any = {
@@ -546,6 +632,8 @@ const _I18N_TOOL_SUMMARY_TEXT_CS: any = {
     connection: { running: ['Úprava připojení', 'Úprava připojení {n}×'], done: ['Upravena připojení', 'Upravena připojení {n}×'] },
     question: { running: ['Pokládání otázky', 'Pokládání {n} otázek'], done: ['Položena otázka', 'Položeno {n} otázek'] },
     kanban: { running: ['Práce na úkolu', 'Práce na {n} úkolech'], done: ['Dokončena práce na úkolu', 'Dokončena práce na {n} úkolech'] },
+    browser: { running: ['Používání prohlížeče', 'Používání prohlížeče {n}×'], done: ['Použit prohlížeč', 'Použit prohlížeč {n}×'] },
+    computer: { running: ['Používání počítače', 'Používání počítače {n}×'], done: ['Použit počítač', 'Použit počítač {n}×'] },
     unknown: { running: ['Spouštění nástroje', 'Spouštění {n} nástrojů'], done: ['Spuštěn nástroj', 'Spuštěno {n} nástrojů'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_CS_COUNT_FREE: any = {
@@ -569,6 +657,8 @@ const _I18N_TOOL_SUMMARY_TEXT_CS_COUNT_FREE: any = {
     connection: { running: 'Úprava připojení', done: 'Upravena připojení' },
     question: { running: 'Pokládání otázek', done: 'Položeny otázky' },
     kanban: { running: 'Práce na úkolech', done: 'Dokončena práce na úkolech' },
+    browser: { running: 'Používání prohlížeče', done: 'Použit prohlížeč' },
+    computer: { running: 'Používání počítače', done: 'Použit počítač' },
     unknown: { running: 'Spouštění nástrojů', done: 'Spuštěny nástroje' },
 };
 function _i18nProcessedElapsedCs(duration?: any) {

@@ -9244,5 +9244,854 @@
         }
       ]
     }
+  },
+  "tool_browser_views": {
+    "expected": {
+      "call-exec": {
+        "file_excerpt": {
+          "path": "",
+          "language": "python",
+          "start_line": 1,
+          "lines": [
+            {
+              "n": 1,
+              "text": "# Open the pricing page"
+            },
+            {
+              "n": 2,
+              "text": "goto(\"https://example.com/pricing\")"
+            },
+            {
+              "n": 3,
+              "text": "print(page_info())"
+            }
+          ],
+          "total_lines": 3,
+          "truncated": false
+        },
+        "media": [
+          {
+            "url": "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Fbrowser-use%2Fworkspace%2Fdefault%2Fpricing.png&session_id=browser-session",
+            "name": "pricing.png",
+            "mime": "image/png",
+            "kind": "image"
+          }
+        ],
+        "stdout": "Pricing: $10/month"
+      },
+      "call-cdp": {
+        "text": "[binary data]",
+        "rows": {
+          "rows": [
+            {
+              "label": "Page.captureScreenshot",
+              "status": "ok"
+            }
+          ]
+        }
+      },
+      "call-dialog": {
+        "text": "{\n  \"success\": true,\n  \"action\": \"accept\",\n  \"dialog\": {\n    \"type\": \"alert\",\n    \"message\": \"Saved\",\n    \"default_prompt\": \"\"\n  }\n}",
+        "rows": {
+          "rows": [
+            {
+              "label": "Saved",
+              "detail": "alert · Accepted",
+              "status": "ok"
+            }
+          ]
+        }
+      },
+      "call-list": {
+        "text": "[\n  {\n    \"handle\": \"h1\",\n    \"backend\": \"local\",\n    \"label\": \"Example\",\n    \"kind\": \"login\",\n    \"origin\": \"https://example.com\",\n    \"available\": true,\n    \"identifier\": \"owner@example.com\",\n    \"identifier_type\": \"email\"\n  }\n]",
+        "rows": {
+          "title": "Saved logins",
+          "rows": [
+            {
+              "label": "Example",
+              "detail": "https://example.com",
+              "status": "ok"
+            }
+          ]
+        }
+      },
+      "call-fill": {
+        "text": "{\n  \"success\": true,\n  \"filled_fields\": 2,\n  \"backend\": \"local\",\n  \"kind\": \"login\",\n  \"origin\": \"https://example.com\",\n  \"next\": \"Submit.\"\n}",
+        "rows": {
+          "rows": [
+            {
+              "label": "Filled 2 fields on https://example.com",
+              "status": "ok"
+            }
+          ]
+        }
+      },
+      "call-capture": {
+        "text": "capture mode=som 1440x900 app=Safari window='Pricing'\n2 interactable element(s):\n  (shareable screenshot saved to /srv/hermes/cache/computer_use/cap_1.png)\n  #1 AXButton 'Buy' @ [10, 10, 80, 30]\n  #2 AXLink 'Docs' @ [100, 10, 40, 20]",
+        "media": [
+          {
+            "url": "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Fcomputer_use%2Fcap_1.png&session_id=browser-session",
+            "name": "cap_1.png",
+            "mime": "image/png",
+            "kind": "image"
+          }
+        ],
+        "rows": {
+          "rows": [
+            {
+              "label": "Safari",
+              "detail": "Pricing · 2 elements"
+            }
+          ]
+        }
+      },
+      "call-click": {
+        "text": "Clicked AXButton \"Buy\"",
+        "rows": {
+          "title": "Safari",
+          "rows": [
+            {
+              "label": "Clicked",
+              "detail": "Clicked AXButton \"Buy\"",
+              "status": "ok"
+            }
+          ]
+        }
+      }
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Check the pricing page",
+          "message_id": "browser-user",
+          "timestamp": 9200,
+          "_turn_id": "browser-run",
+          "_display": "row"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "message_id": "browser-calls",
+          "timestamp": 9201,
+          "tool_calls": [
+            {
+              "args_fields": [],
+              "kind": "browser",
+              "target": "Open the pricing page",
+              "verb": "run",
+              "function": {
+                "name": "browser_exec",
+                "arguments": "{\"code\":\"# Open the pricing page\\ngoto(\\\"https://example.com/pricing\\\")\\nprint(page_info())\"}"
+              },
+              "id": "call-exec",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"exit_code\":0,\"output\":\"Pricing: $10/month\",\"screenshot_path\":\"/srv/hermes/cache/browser-use/workspace/default/pricing.png\"}\n\nThe screenshot from this call is attached — inspect it with your native vision.",
+              "result_view": {
+                "file_excerpt": {
+                  "path": "",
+                  "language": "python",
+                  "start_line": 1,
+                  "lines": [
+                    {
+                      "n": 1,
+                      "text": "# Open the pricing page"
+                    },
+                    {
+                      "n": 2,
+                      "text": "goto(\"https://example.com/pricing\")"
+                    },
+                    {
+                      "n": 3,
+                      "text": "print(page_info())"
+                    }
+                  ],
+                  "total_lines": 3,
+                  "truncated": false
+                },
+                "media": [
+                  {
+                    "url": "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Fbrowser-use%2Fworkspace%2Fdefault%2Fpricing.png&session_id=browser-session",
+                    "name": "pricing.png",
+                    "mime": "image/png",
+                    "kind": "image"
+                  }
+                ],
+                "stdout": "Pricing: $10/month"
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "method",
+                  "value": "Page.captureScreenshot",
+                  "multiline": false
+                },
+                {
+                  "key": "params",
+                  "value": "{}",
+                  "multiline": false
+                }
+              ],
+              "kind": "browser",
+              "target": "Page.captureScreenshot",
+              "verb": "send",
+              "function": {
+                "name": "browser_cdp",
+                "arguments": "{\"method\":\"Page.captureScreenshot\",\"params\":{}}"
+              },
+              "id": "call-cdp",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"method\":\"Page.captureScreenshot\",\"result\":{\"data\":\"[binary data]\"}}",
+              "result_view": {
+                "text": "[binary data]",
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "Page.captureScreenshot",
+                      "status": "ok"
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "action",
+                  "value": "accept",
+                  "multiline": false
+                }
+              ],
+              "kind": "browser",
+              "target": "",
+              "verb": "answer",
+              "function": {
+                "name": "browser_dialog",
+                "arguments": "{\"action\":\"accept\"}"
+              },
+              "id": "call-dialog",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"action\":\"accept\",\"dialog\":{\"type\":\"alert\",\"message\":\"Saved\",\"default_prompt\":\"\"}}",
+              "result_view": {
+                "text": "{\n  \"success\": true,\n  \"action\": \"accept\",\n  \"dialog\": {\n    \"type\": \"alert\",\n    \"message\": \"Saved\",\n    \"default_prompt\": \"\"\n  }\n}",
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "Saved",
+                      "detail": "alert · Accepted",
+                      "status": "ok"
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "action",
+                  "value": "list",
+                  "multiline": false
+                }
+              ],
+              "kind": "browser",
+              "target": "",
+              "verb": "list",
+              "function": {
+                "name": "browser_vault",
+                "arguments": "{\"action\":\"list\"}"
+              },
+              "id": "call-list",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"items\":[{\"handle\":\"h1\",\"backend\":\"local\",\"label\":\"Example\",\"kind\":\"login\",\"origin\":\"https://example.com\",\"available\":true,\"identifier\":\"owner@example.com\",\"identifier_type\":\"email\"}]}",
+              "result_view": {
+                "text": "[\n  {\n    \"handle\": \"h1\",\n    \"backend\": \"local\",\n    \"label\": \"Example\",\n    \"kind\": \"login\",\n    \"origin\": \"https://example.com\",\n    \"available\": true,\n    \"identifier\": \"owner@example.com\",\n    \"identifier_type\": \"email\"\n  }\n]",
+                "rows": {
+                  "title": "Saved logins",
+                  "rows": [
+                    {
+                      "label": "Example",
+                      "detail": "https://example.com",
+                      "status": "ok"
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "action",
+                  "value": "fill",
+                  "multiline": false
+                },
+                {
+                  "key": "handle",
+                  "value": "h1",
+                  "multiline": false
+                }
+              ],
+              "kind": "browser",
+              "target": "",
+              "verb": "fill",
+              "function": {
+                "name": "browser_vault",
+                "arguments": "{\"action\":\"fill\",\"handle\":\"h1\"}"
+              },
+              "id": "call-fill",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"filled_fields\":2,\"backend\":\"local\",\"kind\":\"login\",\"origin\":\"https://example.com\",\"next\":\"Submit.\"}",
+              "result_view": {
+                "text": "{\n  \"success\": true,\n  \"filled_fields\": 2,\n  \"backend\": \"local\",\n  \"kind\": \"login\",\n  \"origin\": \"https://example.com\",\n  \"next\": \"Submit.\"\n}",
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "Filled 2 fields on https://example.com",
+                      "status": "ok"
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "action",
+                  "value": "capture",
+                  "multiline": false
+                },
+                {
+                  "key": "app",
+                  "value": "Safari",
+                  "multiline": false
+                }
+              ],
+              "kind": "computer",
+              "target": "",
+              "verb": "capture",
+              "function": {
+                "name": "computer_use",
+                "arguments": "{\"action\":\"capture\",\"app\":\"Safari\"}"
+              },
+              "id": "call-capture",
+              "done": true,
+              "is_error": false,
+              "result": "capture mode=som 1440x900 app=Safari window='Pricing'\n2 interactable element(s):\n  (shareable screenshot saved to /srv/hermes/cache/computer_use/cap_1.png)\n  #1 AXButton 'Buy' @ [10, 10, 80, 30]\n  #2 AXLink 'Docs' @ [100, 10, 40, 20]",
+              "result_view": {
+                "text": "capture mode=som 1440x900 app=Safari window='Pricing'\n2 interactable element(s):\n  (shareable screenshot saved to /srv/hermes/cache/computer_use/cap_1.png)\n  #1 AXButton 'Buy' @ [10, 10, 80, 30]\n  #2 AXLink 'Docs' @ [100, 10, 40, 20]",
+                "media": [
+                  {
+                    "url": "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Fcomputer_use%2Fcap_1.png&session_id=browser-session",
+                    "name": "cap_1.png",
+                    "mime": "image/png",
+                    "kind": "image"
+                  }
+                ],
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "Safari",
+                      "detail": "Pricing · 2 elements"
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "action",
+                  "value": "click",
+                  "multiline": false
+                },
+                {
+                  "key": "element",
+                  "value": "1",
+                  "multiline": false
+                },
+                {
+                  "key": "app",
+                  "value": "Safari",
+                  "multiline": false
+                }
+              ],
+              "kind": "computer",
+              "target": "",
+              "verb": "click",
+              "function": {
+                "name": "computer_use",
+                "arguments": "{\"action\":\"click\",\"element\":1,\"app\":\"Safari\"}"
+              },
+              "id": "call-click",
+              "done": true,
+              "is_error": false,
+              "result": "{\"ok\":true,\"action\":\"click\",\"message\":\"Clicked AXButton \\\"Buy\\\"\",\"verdict\":{\"decision\":\"done\"}}",
+              "result_view": {
+                "text": "Clicked AXButton \"Buy\"",
+                "rows": {
+                  "title": "Safari",
+                  "rows": [
+                    {
+                      "label": "Clicked",
+                      "detail": "Clicked AXButton \"Buy\"",
+                      "status": "ok"
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            }
+          ],
+          "_turn_id": "browser-run",
+          "_display": "row"
+        },
+        {
+          "role": "tool",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"success\":true,\"exit_code\":0,\"output\":\"Pricing: $10/month\",\"screenshot_path\":\"/srv/hermes/cache/browser-use/workspace/default/pricing.png\"}\n\nThe screenshot from this call is attached — inspect it with your native vision."
+            }
+          ],
+          "timestamp": 9202,
+          "tool_call_id": "call-exec",
+          "_turn_id": "browser-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"method\":\"Page.captureScreenshot\",\"result\":{\"data\":\"[binary data]\"}}",
+          "timestamp": 9203,
+          "tool_call_id": "call-cdp",
+          "_turn_id": "browser-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"action\":\"accept\",\"dialog\":{\"type\":\"alert\",\"message\":\"Saved\",\"default_prompt\":\"\"}}",
+          "timestamp": 9204,
+          "tool_call_id": "call-dialog",
+          "_turn_id": "browser-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"items\":[{\"handle\":\"h1\",\"backend\":\"local\",\"label\":\"Example\",\"kind\":\"login\",\"origin\":\"https://example.com\",\"available\":true,\"identifier\":\"owner@example.com\",\"identifier_type\":\"email\"}]}",
+          "timestamp": 9205,
+          "tool_call_id": "call-list",
+          "_turn_id": "browser-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"filled_fields\":2,\"backend\":\"local\",\"kind\":\"login\",\"origin\":\"https://example.com\",\"next\":\"Submit.\"}",
+          "timestamp": 9206,
+          "tool_call_id": "call-fill",
+          "_turn_id": "browser-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": [
+            {
+              "type": "text",
+              "text": "capture mode=som 1440x900 app=Safari window='Pricing'\n2 interactable element(s):\n  (shareable screenshot saved to /srv/hermes/cache/computer_use/cap_1.png)\n  #1 AXButton 'Buy' @ [10, 10, 80, 30]\n  #2 AXLink 'Docs' @ [100, 10, 40, 20]"
+            }
+          ],
+          "timestamp": 9207,
+          "tool_call_id": "call-capture",
+          "_turn_id": "browser-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"ok\":true,\"action\":\"click\",\"message\":\"Clicked AXButton \\\"Buy\\\"\",\"verdict\":{\"decision\":\"done\"}}",
+          "timestamp": 9208,
+          "tool_call_id": "call-click",
+          "_turn_id": "browser-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "assistant",
+          "content": "Done.",
+          "message_id": "browser-answer",
+          "timestamp": 9209,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {
+                "row_id": "tool:call-exec",
+                "order_index": 0,
+                "role": "tool",
+                "created_at": 9201,
+                "tool": {
+                  "id": "call-exec",
+                  "name": "browser_exec",
+                  "args_fields": [],
+                  "kind": "browser",
+                  "target": "Open the pricing page",
+                  "verb": "run",
+                  "args": {
+                    "code": "# Open the pricing page\ngoto(\"https://example.com/pricing\")\nprint(page_info())"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"exit_code\":0,\"output\":\"Pricing: $10/month\",\"screenshot_path\":\"/srv/hermes/cache/browser-use/workspace/default/pricing.png\"}\n\nThe screenshot from this call is attached — inspect it with your native vision.",
+                  "result_view": {
+                    "file_excerpt": {
+                      "path": "",
+                      "language": "python",
+                      "start_line": 1,
+                      "lines": [
+                        {
+                          "n": 1,
+                          "text": "# Open the pricing page"
+                        },
+                        {
+                          "n": 2,
+                          "text": "goto(\"https://example.com/pricing\")"
+                        },
+                        {
+                          "n": 3,
+                          "text": "print(page_info())"
+                        }
+                      ],
+                      "total_lines": 3,
+                      "truncated": false
+                    },
+                    "media": [
+                      {
+                        "url": "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Fbrowser-use%2Fworkspace%2Fdefault%2Fpricing.png&session_id=browser-session",
+                        "name": "pricing.png",
+                        "mime": "image/png",
+                        "kind": "image"
+                      }
+                    ],
+                    "stdout": "Pricing: $10/month"
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-cdp",
+                "order_index": 1,
+                "role": "tool",
+                "created_at": 9201,
+                "tool": {
+                  "id": "call-cdp",
+                  "name": "browser_cdp",
+                  "args_fields": [
+                    {
+                      "key": "method",
+                      "value": "Page.captureScreenshot",
+                      "multiline": false
+                    },
+                    {
+                      "key": "params",
+                      "value": "{}",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "browser",
+                  "target": "Page.captureScreenshot",
+                  "verb": "send",
+                  "args": {
+                    "method": "Page.captureScreenshot",
+                    "params": {}
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"method\":\"Page.captureScreenshot\",\"result\":{\"data\":\"[binary data]\"}}",
+                  "result_view": {
+                    "text": "[binary data]",
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "Page.captureScreenshot",
+                          "status": "ok"
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-dialog",
+                "order_index": 2,
+                "role": "tool",
+                "created_at": 9201,
+                "tool": {
+                  "id": "call-dialog",
+                  "name": "browser_dialog",
+                  "args_fields": [
+                    {
+                      "key": "action",
+                      "value": "accept",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "browser",
+                  "target": "",
+                  "verb": "answer",
+                  "args": {
+                    "action": "accept"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"action\":\"accept\",\"dialog\":{\"type\":\"alert\",\"message\":\"Saved\",\"default_prompt\":\"\"}}",
+                  "result_view": {
+                    "text": "{\n  \"success\": true,\n  \"action\": \"accept\",\n  \"dialog\": {\n    \"type\": \"alert\",\n    \"message\": \"Saved\",\n    \"default_prompt\": \"\"\n  }\n}",
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "Saved",
+                          "detail": "alert · Accepted",
+                          "status": "ok"
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-list",
+                "order_index": 3,
+                "role": "tool",
+                "created_at": 9201,
+                "tool": {
+                  "id": "call-list",
+                  "name": "browser_vault",
+                  "args_fields": [
+                    {
+                      "key": "action",
+                      "value": "list",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "browser",
+                  "target": "",
+                  "verb": "list",
+                  "args": {
+                    "action": "list"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"items\":[{\"handle\":\"h1\",\"backend\":\"local\",\"label\":\"Example\",\"kind\":\"login\",\"origin\":\"https://example.com\",\"available\":true,\"identifier\":\"owner@example.com\",\"identifier_type\":\"email\"}]}",
+                  "result_view": {
+                    "text": "[\n  {\n    \"handle\": \"h1\",\n    \"backend\": \"local\",\n    \"label\": \"Example\",\n    \"kind\": \"login\",\n    \"origin\": \"https://example.com\",\n    \"available\": true,\n    \"identifier\": \"owner@example.com\",\n    \"identifier_type\": \"email\"\n  }\n]",
+                    "rows": {
+                      "title": "Saved logins",
+                      "rows": [
+                        {
+                          "label": "Example",
+                          "detail": "https://example.com",
+                          "status": "ok"
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-fill",
+                "order_index": 4,
+                "role": "tool",
+                "created_at": 9201,
+                "tool": {
+                  "id": "call-fill",
+                  "name": "browser_vault",
+                  "args_fields": [
+                    {
+                      "key": "action",
+                      "value": "fill",
+                      "multiline": false
+                    },
+                    {
+                      "key": "handle",
+                      "value": "h1",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "browser",
+                  "target": "",
+                  "verb": "fill",
+                  "args": {
+                    "action": "fill",
+                    "handle": "h1"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"filled_fields\":2,\"backend\":\"local\",\"kind\":\"login\",\"origin\":\"https://example.com\",\"next\":\"Submit.\"}",
+                  "result_view": {
+                    "text": "{\n  \"success\": true,\n  \"filled_fields\": 2,\n  \"backend\": \"local\",\n  \"kind\": \"login\",\n  \"origin\": \"https://example.com\",\n  \"next\": \"Submit.\"\n}",
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "Filled 2 fields on https://example.com",
+                          "status": "ok"
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-capture",
+                "order_index": 5,
+                "role": "tool",
+                "created_at": 9201,
+                "tool": {
+                  "id": "call-capture",
+                  "name": "computer_use",
+                  "args_fields": [
+                    {
+                      "key": "action",
+                      "value": "capture",
+                      "multiline": false
+                    },
+                    {
+                      "key": "app",
+                      "value": "Safari",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "computer",
+                  "target": "",
+                  "verb": "capture",
+                  "args": {
+                    "action": "capture",
+                    "app": "Safari"
+                  },
+                  "preview": null,
+                  "result": "capture mode=som 1440x900 app=Safari window='Pricing'\n2 interactable element(s):\n  (shareable screenshot saved to /srv/hermes/cache/computer_use/cap_1.png)\n  #1 AXButton 'Buy' @ [10, 10, 80, 30]\n  #2 AXLink 'Docs' @ [100, 10, 40, 20]",
+                  "result_view": {
+                    "text": "capture mode=som 1440x900 app=Safari window='Pricing'\n2 interactable element(s):\n  (shareable screenshot saved to /srv/hermes/cache/computer_use/cap_1.png)\n  #1 AXButton 'Buy' @ [10, 10, 80, 30]\n  #2 AXLink 'Docs' @ [100, 10, 40, 20]",
+                    "media": [
+                      {
+                        "url": "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Fcomputer_use%2Fcap_1.png&session_id=browser-session",
+                        "name": "cap_1.png",
+                        "mime": "image/png",
+                        "kind": "image"
+                      }
+                    ],
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "Safari",
+                          "detail": "Pricing · 2 elements"
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-click",
+                "order_index": 6,
+                "role": "tool",
+                "created_at": 9201,
+                "tool": {
+                  "id": "call-click",
+                  "name": "computer_use",
+                  "args_fields": [
+                    {
+                      "key": "action",
+                      "value": "click",
+                      "multiline": false
+                    },
+                    {
+                      "key": "element",
+                      "value": "1",
+                      "multiline": false
+                    },
+                    {
+                      "key": "app",
+                      "value": "Safari",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "computer",
+                  "target": "",
+                  "verb": "click",
+                  "args": {
+                    "action": "click",
+                    "element": 1,
+                    "app": "Safari"
+                  },
+                  "preview": null,
+                  "result": "{\"ok\":true,\"action\":\"click\",\"message\":\"Clicked AXButton \\\"Buy\\\"\",\"verdict\":{\"decision\":\"done\"}}",
+                  "result_view": {
+                    "text": "Clicked AXButton \"Buy\"",
+                    "rows": {
+                      "title": "Safari",
+                      "rows": [
+                        {
+                          "label": "Clicked",
+                          "detail": "Clicked AXButton \"Buy\"",
+                          "status": "ok"
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              }
+            ],
+            "final_answer": "Done.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": true,
+            "has_consumed_steering": false,
+            "file_changes": [],
+            "activity_rows_total": 7,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "bca37b152cd9cbe419ec1ff1b1dff9bb90715a068d63e7694afe0a197d56c0e8"
+          },
+          "_turn_id": "browser-run",
+          "_display": "row"
+        }
+      ]
+    }
   }
 }

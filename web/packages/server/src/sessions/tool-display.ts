@@ -99,6 +99,10 @@ const TARGET_KEYS: Partial<Record<ToolKind, string[]>> = {
   session: ['query', 'session_id'], schedule: ['name', 'job_id'], connection: [], question: [],
   // TAL-2327: a Kanban call names its task (a new one by its title, a link by its child); a list reads as its verb's phrase.
   kanban: ['task_id', 'title', 'child_id'],
+  // TAL-2328: browser code names its session, else its first line (TAL-1805), the comment the Agent asks it to start with; a
+  // CDP command its method. Every other browser or computer call reads as its verb's phrase: its arguments are a handle,
+  // typed text or coordinates.
+  browser: ['session', 'code', 'method'], computer: [],
 }
 /** TAL-2317: the Talaria tools named by what they act on; every other one is named by the tool itself. */
 const TALARIA_TARGET_KEYS: Record<string, string[]> = { deliver: ['path'], terminal_open: ['command'] }
@@ -187,15 +191,25 @@ export function toolDisplay(name: unknown, args: unknown, workspace: string | nu
   const arg = (keys: string[]) => keys.map((k) => snapshotArg(a, k)).find((v): v is string => typeof v === 'string' && Boolean(v.trim())) ?? ''
   const special = name === 'delegate_task' ? delegateTarget(arg) : bridge ? bridge.target(snapshotItems(snapshotArg(a, bridge.key) ?? '')) : ''
   const own = kind === 'talaria' ? arg(TALARIA_TARGET_KEYS[str(name)] ?? []) || str(name) : ''
-  const first = (special || own || arg(TARGET_KEYS[kind] ?? FALLBACK_KEYS)).trim().split('\n')[0] ?? ''
-  // TAL-2327: the verb a `kanban` call shows in place of its kind's own.
-  const verb = agentTool(name)?.verb
+  const line = (special || own || arg(TARGET_KEYS[kind] ?? FALLBACK_KEYS)).trim().split('\n')[0] ?? ''
+  // TAL-2328: browser code's comment line reads as its text.
+  const first = kind === 'browser' ? line.replace(/^#+\s*/, '') : line
+  // TAL-2327: the verb a `kanban` call shows in place of its kind's own. TAL-2328: a vault or computer call's, by its action.
+  const actions = typeof name === 'string' && Object.hasOwn(ACTION_VERBS, name) ? ACTION_VERBS[name]! : undefined
+  const action = arg(['action']).trim().toLowerCase()
+  const verb = actions ? (Object.hasOwn(actions, action) ? actions[action] : undefined) : agentTool(name)?.verb
   // Capped by code point, so the cap never splits a surrogate pair into invalid JSON.
   return {
     kind, target: Array.from(first.replace(/\s+/g, ' ').trim()).slice(0, TOOL_TARGET_MAX).join(''), focus_path: kind === 'read' || kind === 'write' ? focusPath(arg(FOCUS_KEYS), workspace) : null,
     ...(typeof name === 'string' && CARD_TOOLS.has(name) ? { shows_card: true as const } : {}),
     ...(verb ? { verb } : {}),
   }
+}
+
+/** TAL-2328: the verb of a tool whose `action` decides what it does; an action not listed reads as its kind's own phrase. */
+const ACTION_VERBS: Record<string, Record<string, ToolVerb>> = {
+  browser_vault: { list: 'list', fill: 'fill', enter_code: 'fill' },
+  computer_use: { capture: 'capture', click: 'click', double_click: 'click', right_click: 'click', middle_click: 'click', type: 'type', set_value: 'type' },
 }
 
 /**
@@ -412,7 +426,7 @@ export function searchFilesView(data: Record<string, unknown>): SearchMatches | 
 }
 
 /** TAL-2325: image data a model was given, which never ships to a client. */
-const DATA_URL_RE = /data:[\w.+-]+\/[\w.+-]+;base64,[A-Za-z0-9+/=]+/g
+export const DATA_URL_RE = /data:[\w.+-]+\/[\w.+-]+;base64,[A-Za-z0-9+/=]+/g
 
 /**
  * TAL-2325: what `vision_analyze` or `video_analyze` said, as Markdown: its `analysis` (on failure the Agent's explanation),
@@ -547,6 +561,10 @@ export function toolRowsView(name: unknown, data: Record<string, unknown>, args:
     case 'cronjob_manage': return cronRows(data, a)
     case 'manage_connections': return connectionRows(data)
     case 'clarify': return Array.isArray(data.responses) ? { rows: dicts(data.responses).map((r) => row(str(r.question), clarifyAnswer(r))) } : undefined
+    case 'browser_cdp': return str(data.method) || str(a.method) ? { rows: [row(str(data.method) || str(a.method), '', 'ok')] } : undefined
+    case 'browser_dialog': return dialogRows(data, a)
+    case 'browser_vault': return vaultRows(data, a)
+    case 'computer_use': return computerRows(data, a)
     default: return agentTool(name)?.kind === 'kanban' ? kanbanRows(str(name), data, a) : undefined
   }
 }
@@ -693,4 +711,107 @@ function kanbanRows(name: string, data: Record<string, unknown>, a: Record<strin
     : name === 'kanban_attach' || name === 'kanban_attach_url' ? str(a.filename) || str(a.url)
     : joined(str(data.status), str(data.block_kind).replace(/_/g, ' '), data.gated === true ? 'waiting on parent' : '')
   return { rows: [taskRow(id, name === 'kanban_create' ? a.title : '', detail, board)] }
+}
+
+/**
+ * TAL-2328: the code a `browser_exec` call ran (its `code` argument, which the caller passes redacted like the rest of the
+ * call) as a pathless excerpt numbered from 1. The Agent runs it as Python. Undefined for a call without code.
+ */
+export function codeExcerpt(args: unknown): FileExcerpt | undefined {
+  const code = isDict(args) ? str(args.code).replace(/\n+$/, '') : ''
+  if (!code.trim()) return undefined
+  const lines = code.split('\n').map((text, i) => ({ n: i + 1, text }))
+  return { path: '', language: 'python', start_line: 1, lines, total_lines: lines.length, truncated: false }
+}
+
+const HUMAN_CONTROL: Record<string, string> = { browser_vault: 'You have control of the browser', computer_use: 'You have control of the computer' }
+/** TAL-2328: a vault or computer call the Agent refused because the user has taken control, as one warning row. */
+export function humanControlRows(name: unknown, data: Record<string, unknown>): ToolRows | undefined {
+  const label = typeof name === 'string' && Object.hasOwn(HUMAN_CONTROL, name) ? HUMAN_CONTROL[name]! : ''
+  return label && (data.code === 'human_has_control' || data.error_type === 'human_has_control') ? { rows: [row(label, '', 'warn')] } : undefined
+}
+
+/** TAL-2328: an answered dialog: its message (else its type), its type and what the agent did. */
+function dialogRows(data: Record<string, unknown>, a: Record<string, unknown>): ToolRows | undefined {
+  if (!isDict(data.dialog)) return undefined
+  const action = str(data.action) || str(a.action)
+  const answer = action === 'accept' ? 'Accepted' : action === 'dismiss' ? 'Dismissed' : action
+  return { rows: [row(firstLine(data.dialog.message) || str(data.dialog.type) || 'Dialog', joined(str(data.dialog.type), answer), 'ok')] }
+}
+
+/** TAL-2328: a fill's row: how many fields it filled on which site. */
+function filledRow(fill: Record<string, unknown>): ToolRow {
+  const n = typeof fill.filled_fields === 'number' ? fill.filled_fields : 0
+  const origin = str(fill.origin).trim()
+  return row(`Filled ${String(n)} ${n === 1 ? 'field' : 'fields'}${origin ? ` on ${origin}` : ''}`, '', n > 0 ? 'ok' : 'warn')
+}
+
+/**
+ * TAL-2328: a `browser_vault` action: the saved logins a list found (label, site and whether one can fill) and the managers
+ * still locked, the fields a fill or code entry filled, a saved login with its fill, or an unlocked manager. The Agent never
+ * returns a secret; a login's identifier stays out of its rows too.
+ */
+function vaultRows(data: Record<string, unknown>, a: Record<string, unknown>): ToolRows | undefined {
+  if (Array.isArray(data.items)) {
+    return { title: 'Saved logins', rows: [
+      ...dicts(data.items).map((item) => row(str(item.label) || str(item.origin) || 'Login', joined(str(item.origin), str(item.kind) === 'login' ? '' : str(item.kind), item.available === false ? 'Unavailable' : ''), item.available === false ? 'warn' : 'ok')),
+      ...dicts(data.locked).map((locked) => row(str(locked.display_name) || str(locked.backend), 'Locked', 'warn')),
+    ] }
+  }
+  if (str(a.action) === 'save_login' && str(data.origin)) return { rows: [row(`Saved a login for ${str(data.origin)}`, '', 'ok'), ...(isDict(data.fill) && typeof data.fill.filled_fields === 'number' ? [filledRow(data.fill)] : [])] }
+  if (typeof data.filled_fields === 'number') return { rows: [filledRow(data)] }
+  if (str(a.action) === 'unlock' && str(data.backend)) return { rows: [row(`Unlocked ${str(data.backend)}`, data.already_unlocked === true ? 'Already unlocked' : '', 'ok')] }
+  return undefined
+}
+
+const COMPUTER_ACTIONS: Record<string, string> = {
+  click: 'Clicked', double_click: 'Double-clicked', right_click: 'Right-clicked', middle_click: 'Middle-clicked', drag: 'Dragged', scroll: 'Scrolled',
+  type: 'Typed', key: 'Pressed keys', set_value: 'Set a value', wait: 'Waited', focus_app: 'Focused',
+}
+const VERDICTS: Record<string, string> = { verify_fresh_state: 'Not confirmed yet', escalate: 'Needs another approach' }
+/** TAL-2328: an input action's row: what it did, its message and the driver's verdict; never the text it typed. */
+function computerActionRow(data: Record<string, unknown>): ToolRow {
+  const action = str(data.action)
+  const decision = isDict(data.verdict) ? str(data.verdict.decision) : ''
+  const verdict = Object.hasOwn(VERDICTS, decision) ? VERDICTS[decision]! : ''
+  return row((Object.hasOwn(COMPUTER_ACTIONS, action) ? COMPUTER_ACTIONS[action] : undefined) ?? action, joined(firstLine(data.message), verdict), data.ok === false ? 'error' : verdict ? 'warn' : 'ok')
+}
+
+/** TAL-2328: a capture's row: the app (else the screen) and its window and element count. */
+const captureRow = (app: string, window: string, elements: number | undefined): ToolRow => row(app || 'Screen', joined(window, elements === undefined ? '' : `${String(elements)} ${elements === 1 ? 'element' : 'elements'}`))
+
+/**
+ * TAL-2328: a `computer_use` action: an input action's outcome under the app it targeted, a capture's app, window and element
+ * count (an action that captured after shows both), or each listed app or window.
+ */
+function computerRows(data: Record<string, unknown>, a: Record<string, unknown>): ToolRows | undefined {
+  const title = str(a.app).trim()
+  const titled = (rows: ToolRow[]): ToolRows => ({ ...(title ? { title } : {}), rows })
+  if (Array.isArray(data.apps)) return { title: 'Apps', rows: dicts(data.apps).map((app) => row(str(app.name) || str(app.bundle_id), str(app.bundle_id))) }
+  if (Array.isArray(data.windows)) return { title: 'Windows', rows: dicts(data.windows).map((w) => row(str(w.title) || str(w.app_name) || str(w.app), str(w.app_name) || str(w.app))) }
+  const action = typeof data.ok === 'boolean' && str(data.action) ? [computerActionRow(data)] : []
+  // A capture's row names its app, so it needs no title.
+  if (typeof data.mode === 'string' && 'total_elements' in data) return { rows: [...action, captureRow(str(data.app), str(data.window_title), safeInt(data.total_elements))] }
+  return action.length ? titled(action) : undefined
+}
+
+/** A capture summary's first line (`capture mode=som 1440x900 app=Safari window='Inbox'`) and its element count line. */
+const CAPTURE_LINE_RE = /^capture mode=\S+ \d+x\d+(?: app=(.*?))?(?: window=(['"])(.*)\2)?$/m
+const ELEMENTS_LINE_RE = /^(\d+) interactable element\(s\):$/m
+
+/**
+ * TAL-2328: a `computer_use` result the Agent kept as text (a capture handed to the model as an image, its JSON action
+ * outcome first when it captured after acting) as rows; undefined for any other tool or text.
+ */
+export function toolTextRows(name: unknown, text: string): ToolRows | undefined {
+  if (name !== 'computer_use') return undefined
+  const capture = CAPTURE_LINE_RE.exec(text)
+  if (!capture) return undefined
+  const end = text.indexOf('\n')
+  const head = text.startsWith('{') && end > 0 ? text.slice(0, end) : ''
+  let payload: unknown
+  try { payload = head ? JSON.parse(head) : undefined } catch { payload = undefined }
+  const action = isDict(payload) && typeof payload.ok === 'boolean' && str(payload.action) ? [computerActionRow(payload)] : []
+  const elements = ELEMENTS_LINE_RE.exec(text)
+  return { rows: [...action, captureRow(capture[1] ?? '', capture[3] ?? '', elements ? Number(elements[1]) : undefined)] }
 }

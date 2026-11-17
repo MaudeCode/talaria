@@ -24,20 +24,23 @@
     "presentation": "generic"
   },
   "browser_cdp": {
-    "kind": "web",
-    "presentation": "generic"
+    "kind": "browser",
+    "presentation": "rows",
+    "verb": "send"
   },
   "browser_dialog": {
-    "kind": "web",
-    "presentation": "generic"
+    "kind": "browser",
+    "presentation": "rows",
+    "verb": "answer"
   },
   "browser_exec": {
-    "kind": "web",
-    "presentation": "generic"
+    "kind": "browser",
+    "presentation": "code",
+    "verb": "run"
   },
   "browser_vault": {
-    "kind": "web",
-    "presentation": "generic"
+    "kind": "browser",
+    "presentation": "rows"
   },
   "clarify": {
     "kind": "question",
@@ -48,8 +51,8 @@
     "presentation": "generic"
   },
   "computer_use": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "computer",
+    "presentation": "rows"
   },
   "cronjob_manage": {
     "kind": "schedule",

@@ -9,7 +9,7 @@ import { basename, extname, isAbsolute, resolve } from 'node:path'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import type { Nodes } from 'mdast'
 import { MESHY_TASK_ID_RE, type DisplayMedia } from '@maudecode/talaria-web-contracts'
-import { INLINE_IMAGE_TYPES, mediaRefTarget, mediaResultRefs, mimeFor } from './media.js'
+import { INLINE_IMAGE_TYPES, mediaRefTarget, mediaResultRefs, mimeFor, screenshotRefs } from './media.js'
 
 export interface MediaRefResolver {
   /** The session workspace `./` and `../` image destinations resolve against; null leaves them as text. */
@@ -203,8 +203,17 @@ function toolMediaUrl(path: string): string | null {
  * as written, a local absolute or `~/` path as its `/api/media` URL, which the session's media grant serves.
  */
 export function toolResultMedia(data: Record<string, unknown>): DisplayMedia[] {
+  return refsMedia(mediaResultRefs(data))
+}
+
+/** TAL-2328: the screenshot a browser or computer-use result saved (`screenshotRefs`), as its media item. */
+export function toolScreenshotMedia(result: unknown): DisplayMedia[] {
+  return refsMedia(screenshotRefs(result))
+}
+
+function refsMedia(refs: string[]): DisplayMedia[] {
   const resolver: MediaRefResolver = { workspace: null, localUrl: toolMediaUrl }
-  return mediaResultRefs(data).flatMap((ref) => {
+  return refs.flatMap((ref) => {
     if (!/^https?:\/\//i.test(ref) && !ref.startsWith('/') && !ref.startsWith('~/')) return []
     const media = mediaFor(ref, resolver)
     return media ? [media] : []

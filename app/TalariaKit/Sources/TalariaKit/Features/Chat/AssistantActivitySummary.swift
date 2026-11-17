@@ -79,6 +79,9 @@ public enum AssistantActivitySummary: Sendable {
         case question
         // TAL-2327: Kanban tasks read or changed.
         case kanban
+        // TAL-2328: the agent's browser and the desktop.
+        case browser
+        case computer
         case generic
     }
 
@@ -109,6 +112,7 @@ public enum AssistantActivitySummary: Sendable {
 
     public static func label(for toolCall: ToolCall) -> String {
         if toolCall.kind == .kanban { return kanbanLabel(for: toolCall) }
+        if toolCall.kind == .browser || toolCall.kind == .computer { return browserLabel(for: toolCall) }
         if let specificLabel = specificLabel(for: toolCall) {
             return specificLabel
         }
@@ -140,6 +144,7 @@ public enum AssistantActivitySummary: Sendable {
             case .session: return String(localized: "Failed to search past chats for \(target)")
             case .image, .audio, .video, .imageAnalysis, .videoAnalysis, .schedule, .connection, .question: return failedPhrase(for: category(for: toolCall))
             case .kanban: return kanbanLabel(for: toolCall)
+            case .browser, .computer: return browserLabel(for: toolCall)
             }
         }
         switch (kind, toolCall.isCompleted) {
@@ -169,6 +174,7 @@ public enum AssistantActivitySummary: Sendable {
         case (.image, _), (.audio, _), (.video, _), (.imageAnalysis, _), (.videoAnalysis, _), (.schedule, _), (.connection, _), (.question, _):
             return phrase(for: category(for: toolCall), count: 1, completed: toolCall.isCompleted)
         case (.kanban, _): return kanbanLabel(for: toolCall)
+        case (.browser, _), (.computer, _): return browserLabel(for: toolCall)
         }
     }
 
@@ -199,9 +205,43 @@ public enum AssistantActivitySummary: Sendable {
         case (.comment, true, _): return String(localized: "Failed to comment on \(target)")
         case (.comment, false, true): return String(localized: "Commented on \(target)")
         case (.comment, false, false): return String(localized: "Commenting on \(target)")
-        case (.update, true, _), (.list, true, _): return String(localized: "Failed to update \(target)")
-        case (.update, false, true), (.list, false, true): return String(localized: "Updated \(target)")
-        case (.update, false, false), (.list, false, false): return String(localized: "Updating \(target)")
+        case (_, true, _): return String(localized: "Failed to update \(target)")
+        case (_, false, true): return String(localized: "Updated \(target)")
+        case (_, false, false): return String(localized: "Updating \(target)")
+        }
+    }
+
+    /// TAL-2328: a browser or computer call's phrase, the server's `verb` picking it: browser code names its session or
+    /// comment line and a CDP command its method when the server sent one; any other call reads as its verb's phrase, and
+    /// a call without a verb as its kind's.
+    private static func browserLabel(for toolCall: ToolCall) -> String {
+        let failed = toolCall.isError == true
+        let done = toolCall.isCompleted
+        let target = collapsedTarget(for: toolCall, kind: .browser)
+        switch (toolCall.kind, toolCall.verb, target) {
+        case (.browser, .run, let target?):
+            return failed ? String(localized: "Failed to run \(target)") : done ? String(localized: "Ran \(target)") : String(localized: "Running \(target)")
+        case (.browser, .run, nil):
+            return failed ? String(localized: "Failed to run browser code") : done ? String(localized: "Ran browser code") : String(localized: "Running browser code")
+        case (.browser, .send, let target?):
+            return failed ? String(localized: "Failed to send \(target)") : done ? String(localized: "Sent \(target)") : String(localized: "Sending \(target)")
+        case (.browser, .send, nil):
+            return failed ? String(localized: "Failed to send a browser command") : done ? String(localized: "Sent a browser command") : String(localized: "Sending a browser command")
+        case (.browser, .answer, _):
+            return failed ? String(localized: "Failed to answer a dialog") : done ? String(localized: "Answered a dialog") : String(localized: "Answering a dialog")
+        case (.browser, .fill, _):
+            return failed ? String(localized: "Failed to fill a login") : done ? String(localized: "Filled a login") : String(localized: "Filling a login")
+        case (.browser, .list, _):
+            return failed ? String(localized: "Failed to list saved logins") : done ? String(localized: "Listed saved logins") : String(localized: "Listing saved logins")
+        case (.computer, .capture, _):
+            return failed ? String(localized: "Failed to capture the screen") : done ? String(localized: "Captured the screen") : String(localized: "Capturing the screen")
+        case (.computer, .click, _):
+            return failed ? String(localized: "Failed to click on the screen") : done ? String(localized: "Clicked on the screen") : String(localized: "Clicking on the screen")
+        case (.computer, .type, _):
+            return failed ? String(localized: "Failed to type text") : done ? String(localized: "Typed text") : String(localized: "Typing text")
+        default:
+            let category = category(for: toolCall)
+            return failed ? failedPhrase(for: category) : phrase(for: category, count: 1, completed: done)
         }
     }
 
@@ -252,6 +292,8 @@ public enum AssistantActivitySummary: Sendable {
         case .connection: .connection
         case .question: .question
         case .kanban: .kanban
+        case .browser: .browser
+        case .computer: .computer
         case .memory, .delegate, .unknown: .generic
         }
     }
@@ -316,6 +358,10 @@ public enum AssistantActivitySummary: Sendable {
         case (.kanban, false, true): String(localized: "Worked on tasks")
         case (.kanban, true, false): String(localized: "Working on a task")
         case (.kanban, false, false): String(localized: "Working on tasks")
+        case (.browser, _, true): String(localized: "Used the browser")
+        case (.browser, _, false): String(localized: "Using the browser")
+        case (.computer, _, true): String(localized: "Used the computer")
+        case (.computer, _, false): String(localized: "Using the computer")
         case (.generic, true, true): String(localized: "Called a tool")
         case (.generic, false, true): String(localized: "Called tools")
         case (.generic, true, false): String(localized: "Calling a tool")
@@ -342,6 +388,8 @@ public enum AssistantActivitySummary: Sendable {
         case .connection: String(localized: "Failed to manage connections")
         case .question: String(localized: "Failed to ask a question")
         case .kanban: String(localized: "Failed to update a task")
+        case .browser: String(localized: "Failed to use the browser")
+        case .computer: String(localized: "Failed to use the computer")
         case .generic: String(localized: "Tool failed")
         }
     }
@@ -363,6 +411,8 @@ public enum AssistantActivitySummary: Sendable {
         case .connection: "powerplug"
         case .question: "questionmark.bubble"
         case .kanban: "rectangle.split.3x1"
+        case .browser: "macwindow"
+        case .computer: "desktopcomputer"
         case .generic: "wrench"
         }
     }
