@@ -3,7 +3,7 @@ import { TalariaActivitySchema } from '@maudecode/talaria-web-contracts'
 import type { LiveTurn, Segment } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import type { ToolCardData } from './blocks/ToolCard'
-import { ApprovalAnsweredBySchema, BackgroundLinkSchema, DisplayMediaSchema, ToolKindSchema, ToolProgressSchema, ToolResultViewSchema, type DisplayMedia, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
+import { ApprovalAnsweredBySchema, BackgroundLinkSchema, DisplayMediaSchema, ToolFieldSchema, ToolKindSchema, ToolProgressSchema, ToolResultViewSchema, type DisplayMedia, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
 import { extractInlineThinking, messageText, stripToolCallXml } from './render/text'
 import type { VisibleMessage } from './useTranscript'
 
@@ -48,6 +48,8 @@ function displayBody(display: unknown, media: unknown): DisplayBody {
 }
 /** TAL-315: the server's result sections, when it sent valid ones. */
 const resultViewOf = (v: unknown): ToolResultView | null => ToolResultViewSchema.safeParse(v).data ?? null
+/** TAL-2318: the server's argument rows, when it sent valid ones. */
+const argsFieldsOf = (v: unknown): Pick<ToolCardData, 'argsFields'> => { const fields = ToolFieldSchema.array().safeParse(v).data; return fields ? { argsFields: fields } : {} }
 /** TAL-372: a delegation row's link to the work it started, when the server sent a valid one. */
 const backgroundOf = (v: unknown): Pick<ToolCardData, 'background'> => { const link = BackgroundLinkSchema.safeParse(v).data; return link ? { background: link } : {} }
 /** TAL-1169: the other session whose agent answered this call's approval, when the server sent a valid one. */
@@ -111,7 +113,7 @@ export function sceneItems(value: unknown): ActivityItem[] {
     if (row.role !== 'tool') return []
     const tool = record(row.tool)
     return [{ key, kind: 'tool', ...at, call: {
-      progress: ToolProgressSchema.safeParse(tool.progress).data ?? null, id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), target: text(tool.target), args: tool.args, preview: typeof tool.preview === 'string' ? tool.preview : null, resultView: resultViewOf(tool.result_view), ...(tool.shows_card === true ? { showsCard: true as const } : {}),
+      progress: ToolProgressSchema.safeParse(tool.progress).data ?? null, id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), target: text(tool.target), args: tool.args, ...argsFieldsOf(tool.args_fields), preview: typeof tool.preview === 'string' ? tool.preview : null, resultView: resultViewOf(tool.result_view), ...(tool.shows_card === true ? { showsCard: true as const } : {}),
       done: tool.done === true, isError: tool.is_error === true, duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
       ...backgroundOf(tool.background), ...answeredByOf(tool.approval_answered_by), ...(tool.result_truncated === true ? { resultTruncated: true } : {}),
     } }]

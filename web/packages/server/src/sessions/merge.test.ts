@@ -65,6 +65,19 @@ describe('settlement tool outcomes (TAL-1718)', () => {
 })
 
 describe('toolOutcome (TAL-313)', () => {
+  it('renders a JSON-object result as key/value rows in its key order, capped like its text (TAL-2318)', () => {
+    const fields = toolOutcome(JSON.stringify({ sessions: [{ id: 'a', title: 'T' }], total: 2, note: 'x\\ny', empty: [] })).result_view.fields
+    expect(fields).toEqual([
+      { key: 'sessions', value: '- id: a\n  title: T', multiline: true },
+      { key: 'total', value: '2', multiline: false },
+      { key: 'note', value: 'x\ny', multiline: true },
+      { key: 'empty', value: '[]', multiline: false },
+    ])
+    // A large object keeps its rows within the snippet budget and offers the whole result.
+    const big = toolOutcome(JSON.stringify(Object.fromEntries(Array.from({ length: 500 }, (_, i) => [`k${i}`, 'v'.repeat(20)]))))
+    expect(big.capped).toBe(true)
+    expect(big.result_view.fields!.length).toBeLessThan(500)
+  })
   it('projects a locator only from a successful draft producer tool reply, across persisted calls', () => {
     const content = JSON.stringify({ draft_id: 'd_1234abcd', version: 1, card: '::draft-card{id="d_1234abcd" v="1"}' })
     expect(toolOutcome(content, 'draft_card').result_view.outbound_draft).toEqual({ draft_id: 'd_1234abcd', card: 1 })
@@ -168,7 +181,8 @@ describe('toolOutcome (TAL-313)', () => {
       [{ content: [{ type: 'text', text: 'one' }, { type: 'text', text: 'two' }] }, { text: 'one\ntwo' }],
       [[{ type: 'text', text: 'part' }], { text: 'part' }],
       [[{ title: 'match' }], { text: '[\n  {\n    "title": "match"\n  }\n]' }],
-      [{ a: 1 }, { text: '{\n  "a": 1\n}' }],
+      // TAL-2318: an object's rows ship beside its text.
+      [{ a: 1 }, { text: '{\n  "a": 1\n}', fields: [{ key: 'a', value: '1', multiline: false }] }],
       // Scalars and plain text; text that is not JSON stays as written.
       [42, { text: '42' }], [true, { text: 'true' }], ['true', { text: 'true' }],
       ['plain \\n text', { text: 'plain \\n text' }], ['{"output": "unterminated"', { text: '{"output": "unterminated"' }],
@@ -179,7 +193,7 @@ describe('toolOutcome (TAL-313)', () => {
 
   it('caps every result view field at the result cap (TAL-315)', () => {
     const long = 'x'.repeat(5000)
-    const lengths = (raw: unknown) => Object.entries(toolOutcome(raw).result_view ?? {}).map(([key, value]) => [key, String(value).length, String(value).endsWith('x...')])
+    const lengths = (raw: unknown) => Object.entries(toolOutcome(raw).result_view ?? {}).flatMap(([key, value]) => (typeof value === 'string' ? [[key, value.length, value.endsWith('x...')]] : []))
     expect(lengths({ output: long, stderr: long, error: long })).toEqual([['stdout', 4003, true], ['stderr', 4003, true], ['error', 4003, true]])
     expect(lengths(long)).toEqual([['text', 4003, true]])
   })

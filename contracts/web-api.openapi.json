@@ -7968,6 +7968,29 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "args_fields": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          },
+                                          "multiline": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "value",
+                                          "multiline"
+                                        ]
+                                      },
+                                      "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                    },
                                     "progress": {
                                       "anyOf": [
                                         {
@@ -8364,6 +8387,28 @@
                                             "text": {
                                               "type": "string"
                                             },
+                                            "fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              }
+                                            },
                                             "stdout": {
                                               "type": "string"
                                             },
@@ -8629,6 +8674,29 @@
                                             },
                                             "name": {
                                               "type": "string"
+                                            },
+                                            "args_fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              },
+                                              "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
                                             },
                                             "progress": {
                                               "anyOf": [
@@ -8912,6 +8980,17 @@
                                                     },
                                                     "text": {
                                                       "type": "string"
+                                                    },
+                                                    "fields": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "key": {},
+                                                          "value": {},
+                                                          "multiline": {}
+                                                        }
+                                                      }
                                                     },
                                                     "stdout": {
                                                       "type": "string"
@@ -9600,6 +9679,29 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "args_fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "multiline": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "value",
+                                    "multiline"
+                                  ]
+                                },
+                                "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                              },
                               "progress": {
                                 "anyOf": [
                                   {
@@ -10032,6 +10134,28 @@
                                       },
                                       "text": {
                                         "type": "string"
+                                      },
+                                      "fields": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "multiline": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "value",
+                                            "multiline"
+                                          ]
+                                        }
                                       },
                                       "stdout": {
                                         "type": "string"
@@ -13928,6 +14052,29 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "args_fields": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          },
+                                          "multiline": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "value",
+                                          "multiline"
+                                        ]
+                                      },
+                                      "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                    },
                                     "progress": {
                                       "anyOf": [
                                         {
@@ -14324,6 +14471,28 @@
                                             "text": {
                                               "type": "string"
                                             },
+                                            "fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              }
+                                            },
                                             "stdout": {
                                               "type": "string"
                                             },
@@ -14589,6 +14758,29 @@
                                             },
                                             "name": {
                                               "type": "string"
+                                            },
+                                            "args_fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              },
+                                              "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
                                             },
                                             "progress": {
                                               "anyOf": [
@@ -14872,6 +15064,17 @@
                                                     },
                                                     "text": {
                                                       "type": "string"
+                                                    },
+                                                    "fields": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "key": {},
+                                                          "value": {},
+                                                          "multiline": {}
+                                                        }
+                                                      }
                                                     },
                                                     "stdout": {
                                                       "type": "string"
@@ -15560,6 +15763,29 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "args_fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "multiline": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "value",
+                                    "multiline"
+                                  ]
+                                },
+                                "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                              },
                               "progress": {
                                 "anyOf": [
                                   {
@@ -15992,6 +16218,28 @@
                                       },
                                       "text": {
                                         "type": "string"
+                                      },
+                                      "fields": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "multiline": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "value",
+                                            "multiline"
+                                          ]
+                                        }
                                       },
                                       "stdout": {
                                         "type": "string"
@@ -18559,6 +18807,29 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "args_fields": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          },
+                                          "multiline": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "value",
+                                          "multiline"
+                                        ]
+                                      },
+                                      "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                    },
                                     "progress": {
                                       "anyOf": [
                                         {
@@ -18955,6 +19226,28 @@
                                             "text": {
                                               "type": "string"
                                             },
+                                            "fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              }
+                                            },
                                             "stdout": {
                                               "type": "string"
                                             },
@@ -19220,6 +19513,29 @@
                                             },
                                             "name": {
                                               "type": "string"
+                                            },
+                                            "args_fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              },
+                                              "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
                                             },
                                             "progress": {
                                               "anyOf": [
@@ -19503,6 +19819,17 @@
                                                     },
                                                     "text": {
                                                       "type": "string"
+                                                    },
+                                                    "fields": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "key": {},
+                                                          "value": {},
+                                                          "multiline": {}
+                                                        }
+                                                      }
                                                     },
                                                     "stdout": {
                                                       "type": "string"
@@ -20191,6 +20518,29 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "args_fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "multiline": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "value",
+                                    "multiline"
+                                  ]
+                                },
+                                "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                              },
                               "progress": {
                                 "anyOf": [
                                   {
@@ -20623,6 +20973,28 @@
                                       },
                                       "text": {
                                         "type": "string"
+                                      },
+                                      "fields": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "multiline": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "value",
+                                            "multiline"
+                                          ]
+                                        }
                                       },
                                       "stdout": {
                                         "type": "string"
@@ -26322,6 +26694,29 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "args_fields": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          },
+                                          "multiline": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "value",
+                                          "multiline"
+                                        ]
+                                      },
+                                      "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                    },
                                     "progress": {
                                       "anyOf": [
                                         {
@@ -26718,6 +27113,28 @@
                                             "text": {
                                               "type": "string"
                                             },
+                                            "fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              }
+                                            },
                                             "stdout": {
                                               "type": "string"
                                             },
@@ -26983,6 +27400,29 @@
                                             },
                                             "name": {
                                               "type": "string"
+                                            },
+                                            "args_fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              },
+                                              "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
                                             },
                                             "progress": {
                                               "anyOf": [
@@ -27266,6 +27706,17 @@
                                                     },
                                                     "text": {
                                                       "type": "string"
+                                                    },
+                                                    "fields": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "key": {},
+                                                          "value": {},
+                                                          "multiline": {}
+                                                        }
+                                                      }
                                                     },
                                                     "stdout": {
                                                       "type": "string"
@@ -27954,6 +28405,29 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "args_fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "multiline": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "value",
+                                    "multiline"
+                                  ]
+                                },
+                                "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                              },
                               "progress": {
                                 "anyOf": [
                                   {
@@ -28386,6 +28860,28 @@
                                       },
                                       "text": {
                                         "type": "string"
+                                      },
+                                      "fields": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "multiline": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "value",
+                                            "multiline"
+                                          ]
+                                        }
                                       },
                                       "stdout": {
                                         "type": "string"
@@ -33396,6 +33892,29 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "args_fields": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          },
+                                          "multiline": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "value",
+                                          "multiline"
+                                        ]
+                                      },
+                                      "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                    },
                                     "progress": {
                                       "anyOf": [
                                         {
@@ -33792,6 +34311,28 @@
                                             "text": {
                                               "type": "string"
                                             },
+                                            "fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              }
+                                            },
                                             "stdout": {
                                               "type": "string"
                                             },
@@ -34057,6 +34598,29 @@
                                             },
                                             "name": {
                                               "type": "string"
+                                            },
+                                            "args_fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              },
+                                              "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
                                             },
                                             "progress": {
                                               "anyOf": [
@@ -34340,6 +34904,17 @@
                                                     },
                                                     "text": {
                                                       "type": "string"
+                                                    },
+                                                    "fields": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "key": {},
+                                                          "value": {},
+                                                          "multiline": {}
+                                                        }
+                                                      }
                                                     },
                                                     "stdout": {
                                                       "type": "string"
@@ -35028,6 +35603,29 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "args_fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "multiline": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "value",
+                                    "multiline"
+                                  ]
+                                },
+                                "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                              },
                               "progress": {
                                 "anyOf": [
                                   {
@@ -35460,6 +36058,28 @@
                                       },
                                       "text": {
                                         "type": "string"
+                                      },
+                                      "fields": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "multiline": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "value",
+                                            "multiline"
+                                          ]
+                                        }
                                       },
                                       "stdout": {
                                         "type": "string"
@@ -41102,6 +41722,29 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "args_fields": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          },
+                                          "multiline": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "value",
+                                          "multiline"
+                                        ]
+                                      },
+                                      "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                    },
                                     "progress": {
                                       "anyOf": [
                                         {
@@ -41498,6 +42141,28 @@
                                             "text": {
                                               "type": "string"
                                             },
+                                            "fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              }
+                                            },
                                             "stdout": {
                                               "type": "string"
                                             },
@@ -41763,6 +42428,29 @@
                                             },
                                             "name": {
                                               "type": "string"
+                                            },
+                                            "args_fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              },
+                                              "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
                                             },
                                             "progress": {
                                               "anyOf": [
@@ -42046,6 +42734,17 @@
                                                     },
                                                     "text": {
                                                       "type": "string"
+                                                    },
+                                                    "fields": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "key": {},
+                                                          "value": {},
+                                                          "multiline": {}
+                                                        }
+                                                      }
                                                     },
                                                     "stdout": {
                                                       "type": "string"
@@ -42734,6 +43433,29 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "args_fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "multiline": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "value",
+                                    "multiline"
+                                  ]
+                                },
+                                "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                              },
                               "progress": {
                                 "anyOf": [
                                   {
@@ -43166,6 +43888,28 @@
                                       },
                                       "text": {
                                         "type": "string"
+                                      },
+                                      "fields": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "multiline": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "value",
+                                            "multiline"
+                                          ]
+                                        }
                                       },
                                       "stdout": {
                                         "type": "string"
@@ -45678,6 +46422,29 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "args_fields": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          },
+                                          "multiline": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "value",
+                                          "multiline"
+                                        ]
+                                      },
+                                      "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                    },
                                     "progress": {
                                       "anyOf": [
                                         {
@@ -46074,6 +46841,28 @@
                                             "text": {
                                               "type": "string"
                                             },
+                                            "fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              }
+                                            },
                                             "stdout": {
                                               "type": "string"
                                             },
@@ -46339,6 +47128,29 @@
                                             },
                                             "name": {
                                               "type": "string"
+                                            },
+                                            "args_fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              },
+                                              "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
                                             },
                                             "progress": {
                                               "anyOf": [
@@ -46622,6 +47434,17 @@
                                                     },
                                                     "text": {
                                                       "type": "string"
+                                                    },
+                                                    "fields": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "key": {},
+                                                          "value": {},
+                                                          "multiline": {}
+                                                        }
+                                                      }
                                                     },
                                                     "stdout": {
                                                       "type": "string"
@@ -47310,6 +48133,29 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "args_fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "multiline": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "value",
+                                    "multiline"
+                                  ]
+                                },
+                                "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                              },
                               "progress": {
                                 "anyOf": [
                                   {
@@ -47742,6 +48588,28 @@
                                       },
                                       "text": {
                                         "type": "string"
+                                      },
+                                      "fields": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "multiline": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "value",
+                                            "multiline"
+                                          ]
+                                        }
                                       },
                                       "stdout": {
                                         "type": "string"
@@ -50316,6 +51184,29 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "args_fields": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          },
+                                          "multiline": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "value",
+                                          "multiline"
+                                        ]
+                                      },
+                                      "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                    },
                                     "progress": {
                                       "anyOf": [
                                         {
@@ -50712,6 +51603,28 @@
                                             "text": {
                                               "type": "string"
                                             },
+                                            "fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              }
+                                            },
                                             "stdout": {
                                               "type": "string"
                                             },
@@ -50977,6 +51890,29 @@
                                             },
                                             "name": {
                                               "type": "string"
+                                            },
+                                            "args_fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              },
+                                              "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
                                             },
                                             "progress": {
                                               "anyOf": [
@@ -51260,6 +52196,17 @@
                                                     },
                                                     "text": {
                                                       "type": "string"
+                                                    },
+                                                    "fields": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "key": {},
+                                                          "value": {},
+                                                          "multiline": {}
+                                                        }
+                                                      }
                                                     },
                                                     "stdout": {
                                                       "type": "string"
@@ -51948,6 +52895,29 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "args_fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "multiline": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "value",
+                                    "multiline"
+                                  ]
+                                },
+                                "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                              },
                               "progress": {
                                 "anyOf": [
                                   {
@@ -52380,6 +53350,28 @@
                                       },
                                       "text": {
                                         "type": "string"
+                                      },
+                                      "fields": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "multiline": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "value",
+                                            "multiline"
+                                          ]
+                                        }
                                       },
                                       "stdout": {
                                         "type": "string"
@@ -54952,6 +55944,29 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "args_fields": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          },
+                                          "multiline": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "value",
+                                          "multiline"
+                                        ]
+                                      },
+                                      "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                    },
                                     "progress": {
                                       "anyOf": [
                                         {
@@ -55348,6 +56363,28 @@
                                             "text": {
                                               "type": "string"
                                             },
+                                            "fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              }
+                                            },
                                             "stdout": {
                                               "type": "string"
                                             },
@@ -55613,6 +56650,29 @@
                                             },
                                             "name": {
                                               "type": "string"
+                                            },
+                                            "args_fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              },
+                                              "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
                                             },
                                             "progress": {
                                               "anyOf": [
@@ -55896,6 +56956,17 @@
                                                     },
                                                     "text": {
                                                       "type": "string"
+                                                    },
+                                                    "fields": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "key": {},
+                                                          "value": {},
+                                                          "multiline": {}
+                                                        }
+                                                      }
                                                     },
                                                     "stdout": {
                                                       "type": "string"
@@ -56584,6 +57655,29 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "args_fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "multiline": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "value",
+                                    "multiline"
+                                  ]
+                                },
+                                "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                              },
                               "progress": {
                                 "anyOf": [
                                   {
@@ -57016,6 +58110,28 @@
                                       },
                                       "text": {
                                         "type": "string"
+                                      },
+                                      "fields": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "multiline": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "value",
+                                            "multiline"
+                                          ]
+                                        }
                                       },
                                       "stdout": {
                                         "type": "string"
@@ -59361,6 +60477,29 @@
                               "name": {
                                 "type": "string"
                               },
+                              "args_fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "multiline": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "value",
+                                    "multiline"
+                                  ]
+                                },
+                                "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                              },
                               "progress": {
                                 "anyOf": [
                                   {
@@ -59765,6 +60904,28 @@
                                       },
                                       "text": {
                                         "type": "string"
+                                      },
+                                      "fields": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "multiline": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "value",
+                                            "multiline"
+                                          ]
+                                        }
                                       },
                                       "stdout": {
                                         "type": "string"
@@ -60719,6 +61880,28 @@
                         },
                         "text": {
                           "type": "string"
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "multiline": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "value",
+                              "multiline"
+                            ]
+                          }
                         },
                         "stdout": {
                           "type": "string"
@@ -71113,6 +72296,29 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "args_fields": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          },
+                                          "multiline": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "value",
+                                          "multiline"
+                                        ]
+                                      },
+                                      "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                    },
                                     "progress": {
                                       "anyOf": [
                                         {
@@ -71509,6 +72715,28 @@
                                             "text": {
                                               "type": "string"
                                             },
+                                            "fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              }
+                                            },
                                             "stdout": {
                                               "type": "string"
                                             },
@@ -71774,6 +73002,29 @@
                                             },
                                             "name": {
                                               "type": "string"
+                                            },
+                                            "args_fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              },
+                                              "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
                                             },
                                             "progress": {
                                               "anyOf": [
@@ -72057,6 +73308,17 @@
                                                     },
                                                     "text": {
                                                       "type": "string"
+                                                    },
+                                                    "fields": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "key": {},
+                                                          "value": {},
+                                                          "multiline": {}
+                                                        }
+                                                      }
                                                     },
                                                     "stdout": {
                                                       "type": "string"
@@ -72745,6 +74007,29 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "args_fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "multiline": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "value",
+                                    "multiline"
+                                  ]
+                                },
+                                "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                              },
                               "progress": {
                                 "anyOf": [
                                   {
@@ -73177,6 +74462,28 @@
                                       },
                                       "text": {
                                         "type": "string"
+                                      },
+                                      "fields": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "multiline": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "value",
+                                            "multiline"
+                                          ]
+                                        }
                                       },
                                       "stdout": {
                                         "type": "string"
@@ -75741,6 +77048,29 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "args_fields": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          },
+                                          "multiline": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "value",
+                                          "multiline"
+                                        ]
+                                      },
+                                      "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                    },
                                     "progress": {
                                       "anyOf": [
                                         {
@@ -76137,6 +77467,28 @@
                                             "text": {
                                               "type": "string"
                                             },
+                                            "fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              }
+                                            },
                                             "stdout": {
                                               "type": "string"
                                             },
@@ -76402,6 +77754,29 @@
                                             },
                                             "name": {
                                               "type": "string"
+                                            },
+                                            "args_fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              },
+                                              "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
                                             },
                                             "progress": {
                                               "anyOf": [
@@ -76685,6 +78060,17 @@
                                                     },
                                                     "text": {
                                                       "type": "string"
+                                                    },
+                                                    "fields": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "key": {},
+                                                          "value": {},
+                                                          "multiline": {}
+                                                        }
+                                                      }
                                                     },
                                                     "stdout": {
                                                       "type": "string"
@@ -77373,6 +78759,29 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "args_fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "multiline": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "value",
+                                    "multiline"
+                                  ]
+                                },
+                                "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                              },
                               "progress": {
                                 "anyOf": [
                                   {
@@ -77805,6 +79214,28 @@
                                       },
                                       "text": {
                                         "type": "string"
+                                      },
+                                      "fields": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "multiline": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "value",
+                                            "multiline"
+                                          ]
+                                        }
                                       },
                                       "stdout": {
                                         "type": "string"
@@ -81055,6 +82486,29 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "args_fields": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          },
+                                          "multiline": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "value",
+                                          "multiline"
+                                        ]
+                                      },
+                                      "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                    },
                                     "progress": {
                                       "anyOf": [
                                         {
@@ -81451,6 +82905,28 @@
                                             "text": {
                                               "type": "string"
                                             },
+                                            "fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              }
+                                            },
                                             "stdout": {
                                               "type": "string"
                                             },
@@ -81716,6 +83192,29 @@
                                             },
                                             "name": {
                                               "type": "string"
+                                            },
+                                            "args_fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              },
+                                              "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
                                             },
                                             "progress": {
                                               "anyOf": [
@@ -81999,6 +83498,17 @@
                                                     },
                                                     "text": {
                                                       "type": "string"
+                                                    },
+                                                    "fields": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "key": {},
+                                                          "value": {},
+                                                          "multiline": {}
+                                                        }
+                                                      }
                                                     },
                                                     "stdout": {
                                                       "type": "string"
@@ -82687,6 +84197,29 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "args_fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "multiline": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "value",
+                                    "multiline"
+                                  ]
+                                },
+                                "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                              },
                               "progress": {
                                 "anyOf": [
                                   {
@@ -83119,6 +84652,28 @@
                                       },
                                       "text": {
                                         "type": "string"
+                                      },
+                                      "fields": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "multiline": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "value",
+                                            "multiline"
+                                          ]
+                                        }
                                       },
                                       "stdout": {
                                         "type": "string"
@@ -86240,6 +87795,29 @@
                                     "items": {
                                       "type": "object",
                                       "properties": {
+                                        "args_fields": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "key": {
+                                                "type": "string"
+                                              },
+                                              "value": {
+                                                "type": "string"
+                                              },
+                                              "multiline": {
+                                                "type": "boolean"
+                                              }
+                                            },
+                                            "required": [
+                                              "key",
+                                              "value",
+                                              "multiline"
+                                            ]
+                                          },
+                                          "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                        },
                                         "progress": {
                                           "anyOf": [
                                             {
@@ -86635,6 +88213,28 @@
                                                 "text": {
                                                   "type": "string"
                                                 },
+                                                "fields": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "key": {
+                                                        "type": "string"
+                                                      },
+                                                      "value": {
+                                                        "type": "string"
+                                                      },
+                                                      "multiline": {
+                                                        "type": "boolean"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "key",
+                                                      "value",
+                                                      "multiline"
+                                                    ]
+                                                  }
+                                                },
                                                 "stdout": {
                                                   "type": "string"
                                                 },
@@ -86894,6 +88494,18 @@
                                                 "name": {
                                                   "type": "string"
                                                 },
+                                                "args_fields": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "key": {},
+                                                      "value": {},
+                                                      "multiline": {}
+                                                    }
+                                                  },
+                                                  "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                                },
                                                 "progress": {
                                                   "anyOf": [
                                                     {
@@ -87087,6 +88699,17 @@
                                                         },
                                                         "text": {
                                                           "type": "string"
+                                                        },
+                                                        "fields": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
                                                         },
                                                         "stdout": {
                                                           "type": "string"
@@ -87758,6 +89381,29 @@
                               "items": {
                                 "type": "object",
                                 "properties": {
+                                  "args_fields": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "type": "string"
+                                        },
+                                        "multiline": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "value",
+                                        "multiline"
+                                      ]
+                                    },
+                                    "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                  },
                                   "progress": {
                                     "anyOf": [
                                       {
@@ -88190,6 +89836,28 @@
                                           },
                                           "text": {
                                             "type": "string"
+                                          },
+                                          "fields": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "type": "string"
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                },
+                                                "multiline": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "value",
+                                                "multiline"
+                                              ]
+                                            }
                                           },
                                           "stdout": {
                                             "type": "string"
@@ -136002,6 +137670,29 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "args_fields": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          },
+                                          "multiline": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "value",
+                                          "multiline"
+                                        ]
+                                      },
+                                      "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                    },
                                     "progress": {
                                       "anyOf": [
                                         {
@@ -136398,6 +138089,28 @@
                                             "text": {
                                               "type": "string"
                                             },
+                                            "fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              }
+                                            },
                                             "stdout": {
                                               "type": "string"
                                             },
@@ -136663,6 +138376,29 @@
                                             },
                                             "name": {
                                               "type": "string"
+                                            },
+                                            "args_fields": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "key": {
+                                                    "type": "string"
+                                                  },
+                                                  "value": {
+                                                    "type": "string"
+                                                  },
+                                                  "multiline": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "key",
+                                                  "value",
+                                                  "multiline"
+                                                ]
+                                              },
+                                              "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
                                             },
                                             "progress": {
                                               "anyOf": [
@@ -136946,6 +138682,17 @@
                                                     },
                                                     "text": {
                                                       "type": "string"
+                                                    },
+                                                    "fields": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "key": {},
+                                                          "value": {},
+                                                          "multiline": {}
+                                                        }
+                                                      }
                                                     },
                                                     "stdout": {
                                                       "type": "string"

@@ -255,6 +255,8 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
     public let name: String?
     public let preview: String?
     public let args: [String: JSONValue]?
+    /// TAL-2318: the server's argument rows.
+    public let argsFields: [ToolField]?
     public let duration: Double?
     public let isError: Bool?
     public let stableID: String?
@@ -273,6 +275,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         case name
         case preview
         case args
+        case argsFields = "args_fields"
         case kind
         case target
         case progress
@@ -297,12 +300,14 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         resultView: ToolResultView? = nil,
         editDiff: ToolEditDiff? = nil,
         progress: ToolProgress? = nil,
-        focusPath: String? = nil
+        focusPath: String? = nil,
+        argsFields: [ToolField]? = nil
     ) {
         self.eventType = eventType
         self.name = name
         self.preview = preview
         self.args = args
+        self.argsFields = argsFields
         self.duration = duration
         self.isError = isError
         self.stableID = stableID?.nonEmptyToolStreamID
@@ -320,6 +325,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         name = container.decodeLossyStringIfPresent(forKey: .name)
         preview = container.decodeLossyStringIfPresent(forKey: .preview)
         args = try? container.decodeIfPresent([String: JSONValue].self, forKey: .args)
+        argsFields = try? container.decodeIfPresent([ToolField].self, forKey: .argsFields)
         duration = container.decodeLossyDoubleIfPresent(forKey: .duration)
         isError = container.decodeLossyBoolIfPresent(forKey: .isError)
         kind = ToolDisplayKind(serverValue: container.decodeLossyStringIfPresent(forKey: .kind))
@@ -615,6 +621,7 @@ private extension ToolStreamEvent {
         name = nil
         preview = nil
         args = nil
+        argsFields = nil
         duration = nil
         isError = nil
         stableID = nil

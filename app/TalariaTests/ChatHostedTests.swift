@@ -2153,6 +2153,30 @@ final class ChatHostedTests: XCTestCase {
         }
     }
 
+    /// TAL-2318: an expanded call draws the server's argument and result rows, not its raw JSON.
+    func testExpandedToolCardDrawsTheServerRows() async throws {
+        let call = ToolCall(
+            id: "rows-list", name: "session_list", preview: #"{"total": 2}"#,
+            args: ["limit": .number(5)],
+            argsFields: [ToolField(key: "limit", value: "5", multiline: false), ToolField(key: "sources", value: "- cli\n- web", multiline: true)],
+            kind: .talaria, target: "session_list",
+            resultView: ToolResultView(text: #"{"total": 2}"#, fields: [ToolField(key: "total", value: "2", multiline: false), ToolField(key: "has_more", value: "false", multiline: false)]),
+            isCompleted: true
+        )
+        let suite = "TalariaTests.tool-rows.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: ChatTranscriptDisplaySettings.toolCardsStartExpandedKey)
+        let window = try hostWindow(ScrollView { ToolCallCardView(toolCall: call).padding() }.defaultAppStorage(defaults))
+        let labels = { HostedAccessibility.elements(in: window).compactMap { $0.accessibilityLabel } }
+        let drawn = await awaitCondition(timeout: 5) { ["limit", "sources", "total", "has_more"].allSatisfy(labels().contains) }
+        XCTAssertTrue(drawn, "\(labels())")
+        XCTAssertFalse(labels().contains { $0.contains("{") }, "\(labels())")
+        attachHostedScreenshot(window, name: "tool-rows-session-list")
+        window.isHidden = true
+        window.rootViewController = nil
+    }
+
     /// TAL-1241: a running tool's glow keeps sweeping while its content is evaluated once, not every display frame.
     func testRunningToolGlowSweepsWithoutPerFrameEvaluation() throws {
         let evaluations = ChatBodyEvaluationRecorder()

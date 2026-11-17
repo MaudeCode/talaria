@@ -16,16 +16,24 @@ public struct ToolCallResultDisplay: Equatable, Sendable {
     public let title: String
     public let text: String
     public let isMonospaced: Bool
+    /// TAL-2318: a JSON-object result's server rows, shown in place of `text`; empty for any other result.
+    public var rows: [ToolCallArgumentDisplay] = []
 }
 
 public enum ToolCallDisplayFormatter {
     public static func content(for toolCall: ToolCall) -> ToolCallDisplayContent {
         ToolCallDisplayContent(
-            argumentRows: argumentRows(from: toolCall.args),
+            argumentRows: toolCall.argsFields.map(rows) ?? argumentRows(from: toolCall.args),
             result: resultDisplay(for: toolCall)
         )
     }
 
+    /// TAL-2318: the server's rows, in its order.
+    static func rows(_ fields: [ToolField]) -> [ToolCallArgumentDisplay] {
+        fields.map { ToolCallArgumentDisplay(key: $0.key, value: $0.value) }
+    }
+
+    // ponytail: older-server fallback; delete with `JSONValue.toolDisplayText` once every supported server sends `args_fields`.
     static func argumentRows(from args: [String: JSONValue]?) -> [ToolCallArgumentDisplay] {
         (args ?? [:])
             .sorted { $0.key < $1.key }
@@ -38,6 +46,9 @@ public enum ToolCallDisplayFormatter {
     static func resultDisplay(for toolCall: ToolCall) -> ToolCallResultDisplay? {
         let text: String
         var isMonospaced = toolCall.kind == .shell
+        if let view = toolCall.resultView, let fields = view.fields, !fields.isEmpty {
+            return ToolCallResultDisplay(title: String(localized: "Result"), text: view.text ?? "", isMonospaced: true, rows: rows(fields))
+        }
         if let view = toolCall.resultView {
             let sections: [String?] = [
                 view.text,

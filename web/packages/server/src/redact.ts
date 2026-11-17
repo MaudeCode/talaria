@@ -5,7 +5,7 @@ import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
 import { isRasterDataUri } from './raster-image.js'
 import { snapshotArgs, toolArgs, toolDisplay, toolName } from './sessions/tool-display.js'
-import { codexCommentary, hasNativeImages, isDict, messageText, normalizeAssistantDisplay, normalizeUserDisplay, withoutReasoningParts } from './sessions/merge.js'
+import { cappedFields, codexCommentary, hasNativeImages, isDict, messageText, normalizeAssistantDisplay, normalizeUserDisplay, toolFields, TOOL_ARG_CONTENT_CAP, withoutReasoningParts } from './sessions/merge.js'
 import { REASONING_FIELDS } from './sessions/reasoning-display.js'
 import { stripAttachedFilesMarker } from './sessions/session.js'
 
@@ -2269,11 +2269,40 @@ export function redactString(text: string, enabled = true): string {
   return redactText(text, enabled) as string
 }
 
+const isToolField = (v: Record<string, unknown>): boolean => typeof v.key === 'string' && typeof v.value === 'string' && typeof v.multiline === 'boolean'
+/** A row line `key: value` or `- key:` in the server's row format (`toolFields`): its prefix, key, and inline value. */
+const FIELD_LINE_RE = /^(\s*(?:- )?)([^:\n]+):(?: (.*))?$/
+
+/**
+ * TAL-2318: a row value with each credential-named `key:` line masked, and the indented block under it dropped. A nested
+ * value (`password:` then `  - hunter2`) spans lines the text scan reads one at a time, so it never sees the key beside it.
+ */
+function maskFieldLines(text: string): string {
+  const out: string[] = []
+  let blockColumn = -1
+  for (const line of text.split('\n')) {
+    if (blockColumn >= 0 && (!line.trim() || line.length - line.trimStart().length > blockColumn)) continue
+    blockColumn = -1
+    const match = FIELD_LINE_RE.exec(line)
+    if (match && isCredentialKey(match[2]!.trim())) {
+      out.push(`${match[1]}${match[2]}: ***`)
+      blockColumn = match[1]!.length
+    } else out.push(line)
+  }
+  return out.join('\n')
+}
+
 export function redactValue(v: unknown, enabled: boolean): unknown {
   if (typeof v === 'string') return redactText(v, enabled)
   if (Array.isArray(v)) return v.map((item) => redactValue(item, enabled))
   if (!v || typeof v !== 'object') return v
   const out = Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, val]) => [k, redactValue(val, enabled)]))
+  // TAL-2318: a result row's value sits apart from its key, and a nested one apart from its own keys, so the text scan
+  // cannot see a credential key in front of either.
+  if (enabled && isToolField(out) && out.value) {
+    const value = isCredentialKey(out.key as string) ? '***' : maskFieldLines(out.value as string)
+    Object.assign(out, { value, multiline: value.includes('\n') })
+  }
   // TAL-604: a diff's `hunks` are re-parsed from its redacted text, which masks spans (a private key) that no single line shows.
   if (enabled && Array.isArray(out.hunks) && typeof out.diff === 'string') out.hunks = diffHunks(out.diff)
   return out
@@ -2489,6 +2518,9 @@ function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean, workspa
     if (typeof fnArgs !== 'string') out.function = { ...out.function, arguments: redactArgs(fnArgs, enabled) }
     else try { out.function = { ...out.function, arguments: JSON.stringify(redactArgs(JSON.parse(fnArgs), enabled)) } } catch { /* unparseable: the text redaction stands */ }
   }
+  // TAL-2318: the argument rows, from the arguments redacted by key like `args` (a bridged call's own), each value capped.
+  const args = redactArgs(toolArgs(record), enabled)
+  if (isDict(args)) out.args_fields = cappedFields(toolFields(args), TOOL_ARG_CONTENT_CAP)
   // TAL-1458: only a call naming a file carries `focus_path`, so a bare completion never clears its start frame's.
   const { focus_path: focusPath, ...display } = redactedToolDisplay(record, enabled, workspace)
   return { ...out, ...display, ...(focusPath ? { focus_path: focusPath } : {}) } as T
@@ -2606,9 +2638,10 @@ function redactToolCalls(toolCalls: unknown, enabled: boolean, workspace: string
  */
 export function publicToolFrame(data: Record<string, unknown>, enabled: boolean, workspace: string | null = null): Record<string, unknown> {
   const frame = withToolDisplay(data, redactValue(data, enabled) as Record<string, unknown>, enabled, workspace)
-  // A frame without a displayable argument (a bare completion, or `args: {}`) has no target of its own: omitting it keeps
-  // the one its start frame set.
+  // A frame without a displayable argument (a bare completion, or `args: {}`) has no target or argument rows of its own:
+  // omitting them keeps the ones its start frame set.
   if (!frame.target) delete frame.target
+  if (Array.isArray(frame.args_fields) && !frame.args_fields.length) delete frame.args_fields
   return frame
 }
 

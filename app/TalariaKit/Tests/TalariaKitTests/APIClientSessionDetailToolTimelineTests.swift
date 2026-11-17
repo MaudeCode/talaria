@@ -237,6 +237,24 @@ func testToolStreamEventDecodesTheServerResultView() throws {
     XCTAssertEqual(ToolCallDisplayFormatter.content(for: completed).result?.text, "built\nwarn\nExit code: 2")
 }
 
+/// TAL-2318: the server's argument and result rows, from a tool frame and a session detail's call, win over local formatting.
+func testTheCardShowsTheServerArgumentAndResultRows() throws {
+    let rows = #"[{"key":"names","value":"- a\n- b","multiline":true},{"key":"limit","value":"3","multiline":false}]"#
+    let result = #"{"text":"{}","fields":[{"key":"total","value":"2","multiline":false}]}"#
+    let event = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"call-list","name":"session_list","args":{"limit":3,"names":["a","b"]},"args_fields":\#(rows),"result_view":\#(result)}"#.utf8))
+    let completed = ToolCall(id: "call-list", name: "session_list", preview: nil, args: nil).applyingCompletionPayload(event)
+    let message = ChatMessage(role: "assistant", content: "", timestamp: nil, messageId: "calls", toolCalls: [
+        .object(["id": .string("call-list"), "name": .string("session_list"), "args": .object(["limit": .number(3)]), "args_fields": try JSONDecoder().decode(JSONValue.self, from: Data(rows.utf8)), "result_view": try JSONDecoder().decode(JSONValue.self, from: Data(result.utf8))])
+    ])
+    let persisted = try XCTUnwrap(ToolCallGroup.groups(messages: [message], messageOffset: nil).first?.toolCalls.first)
+    for call in [completed, persisted] {
+        let content = ToolCallDisplayFormatter.content(for: call)
+        XCTAssertEqual(content.argumentRows.map(\.key), ["names", "limit"])
+        XCTAssertEqual(content.argumentRows.first?.value, "- a\n- b")
+        XCTAssertEqual(content.result?.rows, [ToolCallArgumentDisplay(key: "total", value: "2")])
+    }
+}
+
 /// TAL-1965: a `decision_review_put` result's review, from a tool frame and from a session detail.
 func testTheReviewReferenceDecodesFromAToolResultAndASessionDetail() throws {
     let ref = try DecisionReviewModelTests.fixture("ref")
