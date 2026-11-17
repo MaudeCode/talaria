@@ -19,5 +19,44 @@ enum PlatformBridges {
             try await OIDCWebAuthenticationPresenter.shared.authenticate(url: url, callbackScheme: scheme)
         }
         _ = AppLockCoverPresenter.shared
+        _ = WindowActivity.shared
+    }
+}
+
+/// TAL-2388: tells the event router which window was active last, and brings a window forward when it asks.
+@MainActor
+private final class WindowActivity {
+    static let shared = WindowActivity(router: .shared)
+    private var observers: [NSObjectProtocol] = []
+
+    init(router: AppIntentRouter) {
+        router.bringForward = { window in
+            guard let session = UIApplication.shared.openSessions.first(where: { $0.persistentIdentifier == window })
+            else { return }
+            UIApplication.shared.activateSceneSession(for: UISceneSessionActivationRequest(session: session))
+        }
+        let center = NotificationCenter.default
+        // A window becoming key is the user moving to it, though both windows stay active side by side.
+        observers = [
+            center.addObserver(forName: UIScene.didActivateNotification, object: nil, queue: nil) { notification in
+                let scene = notification.object as? UIWindowScene
+                MainActor.assumeIsolated { scene?.windowSceneID.map(router.windowDidBecomeActive) }
+            },
+            center.addObserver(forName: UIWindow.didBecomeKeyNotification, object: nil, queue: nil) { notification in
+                let window = notification.object as? UIWindow
+                MainActor.assumeIsolated { window?.windowScene?.windowSceneID.map(router.windowDidBecomeActive) }
+            },
+            center.addObserver(forName: UIScene.didDisconnectNotification, object: nil, queue: nil) { notification in
+                let scene = notification.object as? UIWindowScene
+                MainActor.assumeIsolated { scene?.windowSceneID.map(router.windowDidClose) }
+            }
+        ]
+    }
+}
+
+extension UIWindowScene {
+    /// The identity a Talaria window goes by in the event router and the visible-chat registry (TAL-2388).
+    var windowSceneID: String? {
+        session.role == .windowApplication ? session.persistentIdentifier : nil
     }
 }

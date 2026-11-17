@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "With two Talaria windows open, a notification, link or shortcut opens in the window already showing that chat, and choosing a chat another window shows brings that window forward.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

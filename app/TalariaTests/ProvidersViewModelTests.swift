@@ -755,8 +755,9 @@ final class ProvidersViewModelTests: APIClientTestCase {
     @MainActor
     func testNotificationForTheVisibleChatIsSilentButStillRefreshesTheList() async throws {
         let chat = try XCTUnwrap(SessionNotificationRefresh.VisibleChat(server: Self.serverURL, sessionID: "session-1"))
-        SessionNotificationRefresh.updateVisibleChat(from: nil, to: chat)
-        defer { SessionNotificationRefresh.updateVisibleChat(from: chat, to: nil) }
+        let shown = SessionNotificationRefresh.ShownChat(chat, window: nil, isActive: true)
+        SessionNotificationRefresh.updateVisibleChat(from: nil, to: shown)
+        defer { SessionNotificationRefresh.updateVisibleChat(from: shown, to: nil) }
         let content = UNMutableNotificationContent()
         content.userInfo = [SessionNotificationRefresh.sessionIDKey: "session-1"]
         let request = UNNotificationRequest(identifier: "visible-chat", content: content, trigger: nil)

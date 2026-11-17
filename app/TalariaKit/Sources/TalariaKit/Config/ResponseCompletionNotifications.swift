@@ -222,7 +222,7 @@ public enum SessionNotificationRefresh {
         return !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// TAL-872: a chat on screen in an active scene, keyed by its server origin and session.
+    /// TAL-872: a chat on screen, keyed by its server origin and session.
     public struct VisibleChat: Hashable, Sendable {
         let origin: String
         let sessionID: String
@@ -237,23 +237,51 @@ public enum SessionNotificationRefresh {
 
         /// A local notification names no publisher: it comes from the active server, the only one a chat shows.
         public func isNamed(by userInfo: [AnyHashable: Any]) -> Bool {
-            guard (userInfo[sessionIDKey] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) == sessionID
-            else { return false }
-            guard let publisherID = userInfo[publisherIDKey] as? String else { return true }
+            guard let sessionID = userInfo[sessionIDKey] as? String else { return false }
+            return isNamed(sessionID: sessionID, publisherID: userInfo[publisherIDKey] as? String)
+        }
+
+        /// TAL-2388: the same rule for a deep link's session and publisher.
+        public func isNamed(sessionID: String, publisherID: String?) -> Bool {
+            guard sessionID.trimmingCharacters(in: .whitespacesAndNewlines) == self.sessionID else { return false }
+            guard let publisherID else { return true }
             return TalariaRelayClient.originIdentifier(publisherID) == origin
         }
     }
 
+    /// TAL-2388: one chat view's place: the window that shows it (its scene session's persistent identifier) and whether
+    /// that window is active. A chat in a window in the background still counts as shown there, so an event for it
+    /// brings that window back rather than opening a second copy.
+    public struct ShownChat: Hashable, Sendable {
+        public let chat: VisibleChat
+        public let window: String?
+        public let isActive: Bool
+
+        public init(_ chat: VisibleChat, window: String?, isActive: Bool) {
+            self.chat = chat
+            self.window = window
+            self.isActive = isActive
+        }
+    }
+
     /// Counted, so a view the navigation rebuilds for the same chat can appear before the old one disappears.
-    @MainActor private static var visibleChatCounts: [VisibleChat: Int] = [:]
+    @MainActor private static var shownChatCounts: [ShownChat: Int] = [:]
 
-    @MainActor public static var visibleChats: Set<VisibleChat> { Set(visibleChatCounts.keys) }
+    /// The chats on screen in an active window, which keep their notifications silent (TAL-872).
+    @MainActor public static var visibleChats: Set<VisibleChat> {
+        Set(shownChatCounts.keys.filter(\.isActive).map(\.chat))
+    }
 
-    /// Moves one chat view's visibility from `old` to `new`; either may be nil.
-    @MainActor public static func updateVisibleChat(from old: VisibleChat?, to new: VisibleChat?) {
-        if let new { visibleChatCounts[new, default: 0] += 1 }
-        if let old, let count = visibleChatCounts[old] {
-            visibleChatCounts[old] = count > 1 ? count - 1 : nil
+    /// TAL-2388: the windows showing the session a deep link or notification names, in either in-app split pane.
+    @MainActor public static func windows(showing sessionID: String, publisherID: String?) -> Set<String> {
+        Set(shownChatCounts.keys.filter { $0.chat.isNamed(sessionID: sessionID, publisherID: publisherID) }.compactMap(\.window))
+    }
+
+    /// Moves one chat view's registration from `old` to `new`; either may be nil.
+    @MainActor public static func updateVisibleChat(from old: ShownChat?, to new: ShownChat?) {
+        if let new { shownChatCounts[new, default: 0] += 1 }
+        if let old, let count = shownChatCounts[old] {
+            shownChatCounts[old] = count > 1 ? count - 1 : nil
         }
     }
 

@@ -4182,12 +4182,14 @@ private struct ChatDraftSyncModifier: ViewModifier {
     }
 }
 
-/// TAL-872: marks this chat as on screen while it is shown in an active scene, so its notifications stay silent.
+/// TAL-872: marks this chat as on screen in its window, so its notifications stay silent while that window is active and
+/// an event or a sidebar selection for it goes to that window (TAL-2388).
 private struct VisibleChatTracking: ViewModifier {
     let chat: SessionNotificationRefresh.VisibleChat?
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.windowSceneID) private var window
     @State private var isShown = false
-    @State private var registered: SessionNotificationRefresh.VisibleChat?
+    @State private var registered: SessionNotificationRefresh.ShownChat?
 
     func body(content: Content) -> some View {
         content
@@ -4196,11 +4198,12 @@ private struct VisibleChatTracking: ViewModifier {
             .onDisappear { register(shown: false) }
             .onChange(of: scenePhase) { register(shown: isShown) }
             .onChange(of: chat) { register(shown: isShown) }
+            .onChange(of: window) { register(shown: isShown) }
     }
 
     private func register(shown: Bool) {
         isShown = shown
-        let next = shown && scenePhase == .active ? chat : nil
+        let next = shown ? chat.map { SessionNotificationRefresh.ShownChat($0, window: window, isActive: scenePhase == .active) } : nil
         guard next != registered else { return }
         SessionNotificationRefresh.updateVisibleChat(from: registered, to: next)
         registered = next
