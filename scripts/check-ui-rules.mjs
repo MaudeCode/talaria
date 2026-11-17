@@ -1,4 +1,4 @@
-// Shared UI-rule scanner and lowering-only baseline ratchet. Client patterns live in --config JSON files.
+// Shared pattern scanner and lowering-only baseline ratchet for UI rules and test rules. Patterns live in --config JSON files.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 
@@ -85,7 +85,7 @@ const keys = (hits, baseline) => {
 }
 
 /** Compare the tree's hits with the baseline. Returns error lines; empty means pass. */
-function check(hits, baseline, text, rules, update) {
+function check(hits, baseline, text, rules, update, name) {
   const errors = exceptionErrors(baseline, rules)
   const counts = tally(hits)
   for (const [rule, file] of keys(hits, baseline)) {
@@ -101,7 +101,7 @@ function check(hits, baseline, text, rules, update) {
         : `${file}: ${actual} ${rule}, below the baseline's ${allowed}; run ${update}`)
     }
   }
-  if (!errors.length && text !== serialize(baseline)) errors.push(`ui-rules-baseline.json is not sorted and formatted; run ${update}`)
+  if (!errors.length && text !== serialize(baseline)) errors.push(`${name} is not sorted and formatted; run ${update}`)
   return errors
 }
 
@@ -147,7 +147,7 @@ export function main(cwd = process.cwd(), args = process.argv.slice(2)) {
     console.log('check-ui-rules --update: baseline lowered to the tree')
     return 0
   }
-  const errors = check(hits, baseline, text, config.rules, update)
+  const errors = check(hits, baseline, text, config.rules, update, config.baseline.split('/').pop())
   if (errors.length) {
     console.error(`check-ui-rules: ${errors.length} problem(s) (${args[index + 1]})`)
     for (const e of errors) console.error(e.startsWith('  ') ? e : ' - ' + e)

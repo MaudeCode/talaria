@@ -78,6 +78,10 @@ jobs:
       - name: Reject committed images outside the asset locations
         run: python3 ../scripts/check-committed-images.py
 
+      # Always runs: a test added under any path must keep the test defect rules (TAL-2403, docs/testing.md).
+      - name: Reject test defects a diff can show
+        run: node ../scripts/check-ui-rules.mjs --config ../scripts/test-rules.json
+
       - name: Validate release fragments
         env:
           CHANGE_BASE: ${{ github.event.before }}
