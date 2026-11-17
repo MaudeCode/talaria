@@ -12,6 +12,8 @@ extension ToolCall {
             preview: payload.preview ?? preview,
             args: payload.args ?? args,
             argsFields: payload.argsFields ?? argsFields,
+            rawArgs: payload.rawArgs ?? rawArgs,
+            rawResult: payload.rawResult ?? rawResult,
             kind: payload.kind ?? kind,
             verb: payload.verb ?? verb,
             app: payload.app ?? app,

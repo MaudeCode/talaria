@@ -726,7 +726,9 @@ describe('anchor scenes over HTTP', () => {
     const res = await s.get(`/api/session/tool-result?session_id=${sid}&tool_call_id=big`)
     expect(res.status).toBe(200)
     const body = await json(res)
-    expect(body).toEqual({ tool_call_id: 'big', result: whole.result, result_view: { text: whole.result } })
+    // TAL-2338: and its raw view, the whole redacted text, which the limited row's raw view clipped.
+    expect(body).toEqual({ tool_call_id: 'big', result: whole.result, result_view: { text: whole.result }, raw_result: whole.result })
+    expect(String(limited.raw_result).length).toBeLessThan(6000)
     expect(JSON.stringify(body)).not.toContain(secret)
     expect((await s.get(`/api/session/tool-result?session_id=${sid}&tool_call_id=missing`)).status).toBe(404)
   })
@@ -778,7 +780,8 @@ describe('anchor scenes over HTTP', () => {
     return sid
   }
 
-  it('parses each tool result at most twice in an unwindowed detail read, and still flags a capped section', async () => {
+  // TAL-2338: a third parse indents a JSON result for its row's raw view.
+  it('parses each tool result at most three times in an unwindowed detail read, and still flags a capped section', async () => {
     const result = (n: number) => JSON.stringify({ output: n === 0 ? 'x'.repeat(5000) : `out ${String(n)}`, exit_code: 0 })
     const messages = toolTurns(20, result)
     const sid = await sessionWith(messages)
@@ -790,7 +793,7 @@ describe('anchor scenes over HTTP', () => {
       for (const [text] of parse.mock.calls) if (typeof text === 'string' && text.startsWith('{"output"')) parses.set(text, (parses.get(text) ?? 0) + 1)
     } finally { parse.mockRestore() }
     expect(parses.size).toBe(20)
-    expect(Math.max(...parses.values()), 'parses of the most-parsed result').toBeLessThanOrEqual(2)
+    expect(Math.max(...parses.values()), 'parses of the most-parsed result').toBeLessThanOrEqual(3)
     const tool = (((detail.messages as Json[])[3]?._anchor_activity_scene as Json).activity_rows as Json[]).find((row) => row.role === 'tool')?.tool as Json
     expect(tool).toMatchObject({ result_truncated: true, result_chars: result(0).length, is_error: false })
     expect(((tool.result_view as Json).stdout as string).length).toBeLessThan(5000)

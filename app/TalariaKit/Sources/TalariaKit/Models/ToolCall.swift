@@ -7,6 +7,10 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
     public var args: [String: JSONValue]?
     /// TAL-2318: the server's argument rows; nil from an older server, which formats `args` locally.
     public var argsFields: [ToolField]?
+    /// TAL-2338: the server's raw view of the arguments and result (`raw_args`, `raw_result`), which the open row's
+    /// `{}` shows and Copy copies; nil from an older server, and `rawResult` until the call completes.
+    public var rawArgs: String?
+    public var rawResult: String?
     /// Server-derived display fields; nil from an older server (shown as an unknown tool with no target).
     public var kind: ToolDisplayKind?
     /// TAL-2327: the verb a `kanban` call shows in place of its kind's own (server field).
@@ -40,6 +44,8 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
         preview: String?,
         args: [String: JSONValue]?,
         argsFields: [ToolField]? = nil,
+        rawArgs: String? = nil,
+        rawResult: String? = nil,
         kind: ToolDisplayKind? = nil,
         verb: ToolVerb? = nil,
         app: ToolApp? = nil,
@@ -61,6 +67,8 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
         self.preview = preview
         self.args = args
         self.argsFields = argsFields
+        self.rawArgs = rawArgs
+        self.rawResult = rawResult
         self.kind = kind
         self.target = target
         self.progress = progress

@@ -9,9 +9,12 @@ struct ToolCallCardView: View {
     @AppStorage(ChatTranscriptDisplaySettings.toolCardsStartExpandedKey) private var startsExpanded = false
     @ChatRetainedState("tool-expansion") private var userToggledExpansion: Bool? = nil
     /// TAL-331: the whole result of a call the server clipped or capped, once the reader asked for it.
-    @ChatRetainedState("tool-result") private var fullResult: ToolResultView? = nil
+    @ChatRetainedState("tool-result") private var fullResult: ToolResultResponse? = nil
     @ChatRetainedState("tool-result-loading") private var isLoadingFullResult = false
     @ChatRetainedState("tool-result-failure") private var fullResultFailed = false
+    /// TAL-2338: the open row shows the server's raw view; formatted until the reader asks.
+    @ChatRetainedState("tool-raw") private var showsRaw = false
+    @State private var copyConfirmation = ChatCodeBlock.CopyConfirmation()
 
     init(toolCall: ToolCall) {
         self.toolCall = toolCall
@@ -19,6 +22,7 @@ struct ToolCallCardView: View {
         _fullResult = ChatRetainedState(wrappedValue: nil, "tool:\(toolCall.id):result")
         _isLoadingFullResult = ChatRetainedState(wrappedValue: false, "tool:\(toolCall.id):loading")
         _fullResultFailed = ChatRetainedState(wrappedValue: false, "tool:\(toolCall.id):failure")
+        _showsRaw = ChatRetainedState(wrappedValue: false, "tool:\(toolCall.id):raw")
     }
 
     private var isExpanded: Bool {
@@ -85,20 +89,48 @@ struct ToolCallCardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private enum ToolsHost { case arguments, result, alone }
+
+    /// TAL-2338: the server sent a raw view to switch to; an older server sends none.
+    private var hasRaw: Bool { toolCall.rawArgs != nil || toolCall.rawResult != nil }
+    private var isRaw: Bool { showsRaw && hasRaw }
+    /// A clipped result's raw view is the whole one, once fetched; the clipped text never shows as raw.
+    private var rawResult: String? { toolCall.resultTruncated ? fullResult?.rawResult : toolCall.rawResult }
+
     private func expandedContent(statusDisplay: ToolCallStatusDisplay) -> some View {
         var shownCall = toolCall
         if let fullResult {
-            shownCall.resultView = fullResult
+            shownCall.resultView = fullResult.view
         }
         let displayContent = ToolCallDisplayFormatter.content(for: shownCall)
+        let copyText = isRaw
+            ? [toolCall.rawArgs, rawResult].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n")
+            : displayContent.copyText
+        let tools = AnyView(rowTools(copyText: copyText, copyBlocked: isRaw && toolCall.resultTruncated && rawResult == nil))
+        // The tools ride on the first section's label, or stand alone above a first section without one.
+        let host: ToolsHost = isRaw
+            ? (toolCall.rawArgs != nil ? .arguments : rawResult != nil ? .result : .alone)
+            : (toolCall.editDiff == nil && !displayContent.argumentRows.isEmpty ? .arguments : .alone)
 
         return VStack(alignment: .leading, spacing: 7) {
-            // TAL-448: a file edit shows its change; its arguments and result restate the same diff.
-            if let editDiff = toolCall.editDiff {
+            if host == .alone {
+                HStack { Spacer(minLength: 0); tools }
+            }
+            if isRaw {
+                if let rawArgs = toolCall.rawArgs {
+                    rawSection(String(localized: "Arguments"), text: rawArgs, tools: tools)
+                }
+                if let rawResult {
+                    rawSection(String(localized: "Result"), text: rawResult, tools: host == .result ? tools : nil)
+                } else if toolCall.rawResult != nil, toolCall.resultTruncated, loadFullToolResult != nil {
+                    fullResultButton
+                }
+            } else if let editDiff = toolCall.editDiff {
+                // TAL-448: a file edit shows its change; its arguments and result restate the same diff.
                 editDiffSection(editDiff)
             } else {
                 if !displayContent.argumentRows.isEmpty {
-                    argumentsSection(displayContent.argumentRows)
+                    argumentsSection(displayContent.argumentRows, tools: tools)
                 }
 
                 // TAL-2323: a read's lines and a search's matches, in place of their text.
@@ -126,7 +158,7 @@ struct ToolCallCardView: View {
                 }
             }
 
-            if toolCall.resultTruncated, fullResult == nil, loadFullToolResult != nil {
+            if !isRaw, toolCall.resultTruncated, fullResult == nil, loadFullToolResult != nil {
                 fullResultButton
             }
 
@@ -285,11 +317,81 @@ struct ToolCallCardView: View {
         }
     }
 
-    private func argumentsSection(_ rows: [ToolCallArgumentDisplay]) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("Arguments")
+    /// TAL-2338: `{}` switches the open row between its formatted and raw views; Copy copies whichever shows.
+    private func rowTools(copyText: String, copyBlocked: Bool) -> some View {
+        HStack(spacing: 0) {
+            if hasRaw {
+                Button {
+                    chatDisclosureToggled()
+                    showsRaw.toggle()
+                    // The checkmark confirmed the other view's copy.
+                    copyConfirmation.reset()
+                    if showsRaw, toolCall.resultTruncated, fullResult == nil {
+                        Task { await showFullResult() }
+                    }
+                } label: {
+                    Image(systemName: "curlybraces")
+                        .frame(width: 32, height: 32)
+                        .background(isRaw ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear), in: RoundedRectangle(cornerRadius: 6))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel(isRaw ? String(localized: "Show formatted") : String(localized: "Show raw"))
+                .accessibilityAddTraits(isRaw ? .isSelected : [])
+                .help(isRaw ? String(localized: "Show formatted") : String(localized: "Show raw"))
+            }
+            Button {
+                UIPasteboard.general.string = copyText
+                copyConfirmation.copied(at: .now)
+            } label: {
+                Image(systemName: copyConfirmation.isShowing ? "checkmark" : "doc.on.doc")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .disabled(copyText.isEmpty || copyBlocked)
+            .accessibilityLabel(copyConfirmation.isShowing ? String(localized: "Copied") : isRaw ? String(localized: "Copy raw") : String(localized: "Copy"))
+            .help(isRaw ? String(localized: "Copy raw") : String(localized: "Copy"))
+        }
+        .buttonStyle(.borderless)
+        .font(AppFont.caption(weight: .semibold))
+        .foregroundStyle(.secondary)
+        .task(id: copyConfirmation.expiresAt) {
+            guard let expiresAt = copyConfirmation.expiresAt else { return }
+            try? await Task.sleep(until: expiresAt, clock: .continuous)
+            guard !Task.isCancelled else { return }
+            copyConfirmation.expire(at: .now)
+        }
+    }
+
+    /// A section's label, carrying the row's tools at its end when it is the first section.
+    private func sectionLabel(_ title: String, tools: AnyView?) -> some View {
+        HStack(alignment: .center, spacing: 6) {
+            Text(title)
                 .font(AppFont.caption2(weight: .semibold))
                 .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            if let tools { tools }
+        }
+    }
+
+    /// TAL-2338: the server's raw arguments or result, monospaced and selectable.
+    private func rawSection(_ title: String, text: String, tools: AnyView?) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            sectionLabel(title, tools: tools)
+            Text(text)
+                .font(AppFont.mono(style: .caption))
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(7)
+                .chatTimelineAccessoryInsetSurface()
+        }
+    }
+
+    private func argumentsSection(_ rows: [ToolCallArgumentDisplay], tools: AnyView) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            sectionLabel(String(localized: "Arguments"), tools: tools)
 
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(rows) { row in
@@ -484,7 +586,7 @@ extension EnvironmentValues {
 }
 
 /// TAL-331: fetches the whole result of a tool call the server clipped; the chat screen supplies it for its session.
-typealias ChatFullToolResultLoader = ChatEnvironmentAction<String, @MainActor () async throws -> ToolResultView>
+typealias ChatFullToolResultLoader = ChatEnvironmentAction<String, @MainActor () async throws -> ToolResultResponse>
 
 struct ChatFullToolResultLoaderKey: EnvironmentKey {
     static var defaultValue: ChatFullToolResultLoader? { nil }

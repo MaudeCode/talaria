@@ -8238,6 +8238,14 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "raw_args": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                    },
+                                    "raw_result": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -9291,6 +9299,14 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "raw_args": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                            },
+                                            "raw_result": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -10942,6 +10958,14 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "raw_args": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                              },
+                              "raw_result": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -15854,6 +15878,14 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "raw_args": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                    },
+                                    "raw_result": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -16907,6 +16939,14 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "raw_args": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                            },
+                                            "raw_result": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -18558,6 +18598,14 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "raw_args": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                              },
+                              "raw_result": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -22141,6 +22189,14 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "raw_args": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                    },
+                                    "raw_result": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -23194,6 +23250,14 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "raw_args": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                            },
+                                            "raw_result": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -24845,6 +24909,14 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "raw_args": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                              },
+                              "raw_result": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -31560,6 +31632,14 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "raw_args": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                    },
+                                    "raw_result": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -32613,6 +32693,14 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "raw_args": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                            },
+                                            "raw_result": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -34264,6 +34352,14 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "raw_args": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                              },
+                              "raw_result": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -40290,6 +40386,14 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "raw_args": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                    },
+                                    "raw_result": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -41343,6 +41447,14 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "raw_args": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                            },
+                                            "raw_result": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -42994,6 +43106,14 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "raw_args": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                              },
+                              "raw_result": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -49652,6 +49772,14 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "raw_args": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                    },
+                                    "raw_result": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -50705,6 +50833,14 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "raw_args": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                            },
+                                            "raw_result": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -52356,6 +52492,14 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "raw_args": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                              },
+                              "raw_result": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -55884,6 +56028,14 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "raw_args": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                    },
+                                    "raw_result": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -56937,6 +57089,14 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "raw_args": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                            },
+                                            "raw_result": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -58588,6 +58748,14 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "raw_args": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                              },
+                              "raw_result": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -62178,6 +62346,14 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "raw_args": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                    },
+                                    "raw_result": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -63231,6 +63407,14 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "raw_args": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                            },
+                                            "raw_result": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -64882,6 +65066,14 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "raw_args": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                              },
+                              "raw_result": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -68470,6 +68662,14 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "raw_args": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                    },
+                                    "raw_result": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -69523,6 +69723,14 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "raw_args": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                            },
+                                            "raw_result": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -71174,6 +71382,14 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "raw_args": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                              },
+                              "raw_result": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -74572,6 +74788,14 @@
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                               },
+                              "raw_args": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                              },
+                              "raw_result": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                              },
                               "approval_answered_by": {
                                 "type": "object",
                                 "properties": {
@@ -76731,6 +76955,10 @@
                           ]
                         }
                       }
+                    },
+                    "raw_result": {
+                      "type": "string",
+                      "description": "TAL-2338: the whole result as the row's raw view shows and copies it (`ToolCall.raw_result`); absent when empty and on an older server."
                     }
                   },
                   "required": [
@@ -87368,6 +87596,14 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "raw_args": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                    },
+                                    "raw_result": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -88421,6 +88657,14 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "raw_args": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                            },
+                                            "raw_result": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -90072,6 +90316,14 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "raw_args": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                              },
+                              "raw_result": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -93652,6 +93904,14 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "raw_args": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                    },
+                                    "raw_result": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -94705,6 +94965,14 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "raw_args": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                            },
+                                            "raw_result": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -96356,6 +96624,14 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "raw_args": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                              },
+                              "raw_result": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -100622,6 +100898,14 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "raw_args": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                    },
+                                    "raw_result": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -101675,6 +101959,14 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "raw_args": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                            },
+                                            "raw_result": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -103326,6 +103618,14 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "raw_args": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                              },
+                              "raw_result": {
+                                "type": "string",
+                                "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -107462,6 +107762,14 @@
                                           "const": true,
                                           "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                         },
+                                        "raw_args": {
+                                          "type": "string",
+                                          "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                        },
+                                        "raw_result": {
+                                          "type": "string",
+                                          "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                                        },
                                         "approval_answered_by": {
                                           "type": "object",
                                           "properties": {
@@ -108418,6 +108726,14 @@
                                                 "hidden": {
                                                   "const": true,
                                                   "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                                },
+                                                "raw_args": {
+                                                  "type": "string",
+                                                  "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                                },
+                                                "raw_result": {
+                                                  "type": "string",
+                                                  "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                                 },
                                                 "approval_answered_by": {
                                                   "type": "object",
@@ -109764,6 +110080,14 @@
                                   "hidden": {
                                     "const": true,
                                     "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                  },
+                                  "raw_args": {
+                                    "type": "string",
+                                    "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                  },
+                                  "raw_result": {
+                                    "type": "string",
+                                    "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                   },
                                   "approval_answered_by": {
                                     "type": "object",
@@ -158723,6 +159047,14 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "raw_args": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                    },
+                                    "raw_result": {
+                                      "type": "string",
+                                      "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -159776,6 +160108,14 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "raw_args": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
+                                            },
+                                            "raw_result": {
+                                              "type": "string",
+                                              "description": "TAL-2338: the call's result as its row's raw view shows and copies it, built like `raw_args`: a scene row's from its `result` text (clipped with it, `result_truncated`, when `GET /api/session/tool-result` has it whole), a live completion's from the sidecar's bounded result. Absent before the call completes, when empty, and on an older server."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",

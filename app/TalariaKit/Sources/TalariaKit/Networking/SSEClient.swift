@@ -262,6 +262,9 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
     public let args: [String: JSONValue]?
     /// TAL-2318: the server's argument rows.
     public let argsFields: [ToolField]?
+    /// TAL-2338: the server's raw view of the arguments and, on a completion, the result.
+    public let rawArgs: String?
+    public let rawResult: String?
     public let duration: Double?
     public let isError: Bool?
     public let stableID: String?
@@ -292,6 +295,8 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         case preview
         case args
         case argsFields = "args_fields"
+        case rawArgs = "raw_args"
+        case rawResult = "raw_result"
         case kind
         case verb
         case app
@@ -323,8 +328,12 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         progress: ToolProgress? = nil,
         focusPath: String? = nil,
         argsFields: [ToolField]? = nil,
+        rawArgs: String? = nil,
+        rawResult: String? = nil,
         isHidden: Bool = false
     ) {
+        self.rawArgs = rawArgs
+        self.rawResult = rawResult
         self.isHidden = isHidden
         self.verb = verb
         self.app = app
@@ -351,6 +360,8 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         preview = container.decodeLossyStringIfPresent(forKey: .preview)
         args = try? container.decodeIfPresent([String: JSONValue].self, forKey: .args)
         argsFields = try? container.decodeIfPresent([ToolField].self, forKey: .argsFields)
+        rawArgs = container.decodeLossyStringIfPresent(forKey: .rawArgs)
+        rawResult = container.decodeLossyStringIfPresent(forKey: .rawResult)
         duration = container.decodeLossyDoubleIfPresent(forKey: .duration)
         isError = container.decodeLossyBoolIfPresent(forKey: .isError)
         kind = ToolDisplayKind(serverValue: container.decodeLossyStringIfPresent(forKey: .kind))
@@ -652,6 +663,8 @@ private extension ToolStreamEvent {
         preview = nil
         args = nil
         argsFields = nil
+        rawArgs = nil
+        rawResult = nil
         duration = nil
         isError = nil
         stableID = nil

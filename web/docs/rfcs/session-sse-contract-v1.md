@@ -280,6 +280,14 @@ back to the session file.
   scalar shows inline, a nested object as indented `key: value` lines, a list as
   `- item` lines. Live frames carry rows of the sidecar's argument snapshot; a
   bare completion omits them so the start frame's stay.
+- `raw_args`, `raw_result` (TAL-2338): the call's arguments and result as the
+  row's raw view shows and copies them: redacted by key, indented JSON when
+  they are or parse to an object or list, else their text. A start frame's
+  `raw_args` is the display snapshot; a completion's are the sidecar's bounded
+  arguments and result, nested JSON text read whole. A scene row's are its
+  whole arguments and its `result` text, clipped with it (`result_truncated`);
+  `GET /api/session/tool-result` returns the whole `raw_result`. A frame
+  without one keeps its start frame's.
 
 The session-level `tool_calls` list stays for older clients; its entries also
 carry `is_error` and `duration`.

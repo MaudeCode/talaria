@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "An open tool call can switch to the raw arguments and result it ran with, and its Copy button copies whichever view is showing.",
+      "highlight": false,
+      "components": [
+        "web",
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}

@@ -8,7 +8,8 @@
       "args_fields": [{ "key": "path", "value": "Sources/Demo/Alpha.swift", "multiline": false }, { "key": "content", "value": "struct Alpha {}", "multiline": false }],
       "kind": "write",
       "target": "Sources/Demo/Alpha.swift",
-      "focus_path": "Sources/Demo/Alpha.swift"
+      "focus_path": "Sources/Demo/Alpha.swift",
+      "raw_args": "{\n  \"path\": \"Sources/Demo/Alpha.swift\",\n  \"content\": \"struct Alpha {}\"\n}"
     }
   },
   "tool_b": {
@@ -20,7 +21,8 @@
       "args_fields": [{ "key": "path", "value": "./Sources/Demo/Beta.swift", "multiline": false }, { "key": "old_string", "value": "a", "multiline": false }, { "key": "new_string", "value": "b", "multiline": false }],
       "kind": "write",
       "target": "./Sources/Demo/Beta.swift",
-      "focus_path": "Sources/Demo/Beta.swift"
+      "focus_path": "Sources/Demo/Beta.swift",
+      "raw_args": "{\n  \"path\": \"./Sources/Demo/Beta.swift\",\n  \"old_string\": \"a\",\n  \"new_string\": \"b\"\n}"
     }
   },
   "shell": {
@@ -31,7 +33,8 @@
       "args": { "command": "swift build" },
       "args_fields": [{ "key": "command", "value": "swift build", "multiline": false }],
       "kind": "shell",
-      "target": "swift build"
+      "target": "swift build",
+      "raw_args": "{\n  \"command\": \"swift build\"\n}"
     }
   },
   "stored_tool_calls": [

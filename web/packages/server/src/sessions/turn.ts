@@ -41,7 +41,7 @@ import { SessionGoals } from './goals.js'
 import { turnTerminalState } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { agentBuildParams, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, finalAnswerOf, hasNativeImages, isConversationalAssistant, withFinalAssistantAnswer, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withoutBinaryText, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages, type IdentityCache } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, finalAnswerOf, hasNativeImages, isConversationalAssistant, withFinalAssistantAnswer, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withoutBinaryText, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withNestedJson, withoutNativeImages, withoutToolImages, type IdentityCache } from './merge.js'
 import { isAutomaticSource, mayBecomeSilentReply, turnOrigin, recordBackgroundReview, recordBackgroundUpdate, type BackgroundUpdate } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -1192,7 +1192,9 @@ export class TurnRunner {
                 // TAL-2325: its media files load the moment this frame shows their URLs, before its rows reach the transcript.
                 if (!outcome.is_error) grantLiveMedia(sessionId, data.name, rawResult)
                 const redacted = deps.redactEnabled()
-                await emitFrame('tool_complete', { ...publicToolFrame(withToolId(complete, id), redacted, s.workspace, sessionId), ...groups.complete(id, data.name, complete.is_error === true) }, { redacted })
+                // TAL-2338: the row's raw view from the sidecar's bounded arguments and result, nested JSON it forwarded as text read whole.
+                const raw = { ...(isDict(rawArgs) ? { raw_args: withNestedJson(rawArgs) } : {}), ...(rawResult === undefined ? {} : { raw_result: isDict(rawResult) ? withNestedJson(rawResult) : rawResult }) }
+                await emitFrame('tool_complete', { ...publicToolFrame(withToolId({ ...complete, ...raw }, id), redacted, s.workspace, sessionId), ...groups.complete(id, data.name, complete.is_error === true) }, { redacted })
                 // TAL-1649: a successful skill_view is one load in this conversation (never an ephemeral clone's), counted while
                 // this run still owns the session under the clear generation it started with.
                 const skillName = opts.ephemeral ? null : successfulSkillViewName(data.name, rawResult)

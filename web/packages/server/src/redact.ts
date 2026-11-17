@@ -2641,8 +2641,39 @@ export function withSceneToolDisplay(rawRows: unknown, rows: unknown[], enabled:
   return rows.map((row, i) => {
     const rawTool = (raws[i] as Record<string, unknown> | undefined)?.tool
     if (!row || typeof row !== 'object' || Array.isArray(row) || !rawTool) return row
-    return { ...row, tool: withToolDisplay(rawTool, (row as Record<string, unknown>).tool, enabled, workspace, sessionId) }
+    return { ...row, tool: withRawTool(rawTool as Record<string, unknown>, withToolDisplay(rawTool, (row as Record<string, unknown>).tool as Record<string, unknown>, enabled, workspace, sessionId), enabled) }
   })
+}
+
+/**
+ * TAL-2338: a call's arguments or result as its row's raw view shows and copies it: without image data, redacted by key like
+ * `args` (a JSON text parsed first, so a credential key inside it masks its value), as indented JSON when it is or parses to
+ * an object or list, else its text redacted. Absent when empty.
+ */
+export function rawToolText(value: unknown, enabled: boolean): string | undefined {
+  const clean = withoutImageData(value)
+  if (typeof clean === 'string') {
+    if (!clean.trim()) return undefined
+    const parsed = /^\s*[[{]/.test(clean) ? jsonOrNull(clean) : null
+    return parsed === null ? redactValue(clean, enabled) as string : rawToolText(parsed, enabled)
+  }
+  if (clean === null || clean === undefined) return undefined
+  if (typeof clean === 'object' && !Object.keys(clean).length) return undefined
+  return JSON.stringify(redactArgs(clean, enabled), null, 2)
+}
+
+const jsonOrNull = (text: string): object | null => { try { const value = JSON.parse(text) as unknown; return value !== null && typeof value === 'object' ? value : null } catch { return null } }
+
+/**
+ * TAL-2338: a scene row's or live frame's call with `raw_args` and `raw_result` (`rawToolText`). A live completion's come
+ * from the sidecar's bounded `raw_args` and `raw_result`, a journaled frame's from its own (already raw) fields, a scene row's
+ * from its whole arguments and result text. A frame without one keeps its start frame's.
+ */
+function withRawTool(raw: Record<string, unknown>, out: Record<string, unknown>, enabled: boolean): Record<string, unknown> {
+  const { raw_args: _args, raw_result: _result, ...rest } = out
+  const rawArgs = rawToolText(raw.raw_args ?? toolArgs(raw), enabled)
+  const rawResult = rawToolText(raw.raw_result ?? raw.result ?? raw.output, enabled)
+  return { ...rest, ...(rawArgs === undefined ? {} : { raw_args: rawArgs }), ...(rawResult === undefined ? {} : { raw_result: rawResult }) }
 }
 
 function redactMessages(messages: unknown, enabled: boolean, activeTurnToken: string | null, workspace: string | null, sessionId: string | null): unknown {
@@ -2662,7 +2693,7 @@ function redactToolCalls(toolCalls: unknown, enabled: boolean, workspace: string
  * `focus_path`; a replayed frame keeps the one it was stamped with live. TAL-2325: `sessionId` joins its local media URLs.
  */
 export function publicToolFrame(data: Record<string, unknown>, enabled: boolean, workspace: string | null = null, sessionId: string | null = null): Record<string, unknown> {
-  const frame = withToolDisplay(data, redactValue(data, enabled) as Record<string, unknown>, enabled, workspace, sessionId)
+  const frame = withRawTool(data, withToolDisplay(data, redactValue(data, enabled) as Record<string, unknown>, enabled, workspace, sessionId), enabled)
   // A frame without a displayable argument (a bare completion, or `args: {}`) has no target or argument rows of its own:
   // omitting them keeps the ones its start frame set.
   if (!frame.target) delete frame.target

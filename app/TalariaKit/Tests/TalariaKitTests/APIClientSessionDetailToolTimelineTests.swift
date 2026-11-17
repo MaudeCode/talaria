@@ -266,6 +266,17 @@ func testTheCardShowsTheServerArgumentAndResultRows() throws {
     }
 }
 
+/// TAL-2338: the server's raw view rides a call from its start and completion frames; formatted Copy copies the rows shown.
+func testTheRowCarriesTheServerRawViewAndCopiesWhatShows() throws {
+    let start = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"call-list","name":"session_list","args_fields":[{"key":"limit","value":"3","multiline":false}],"raw_args":"{\n  \"limit\": 3\n}"}"#.utf8))
+    let complete = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"call-list","name":"session_list","raw_result":"{\n  \"token\": \"***\"\n}","result_view":{"text":"{}","fields":[{"key":"names","value":"- a\n- b","multiline":true}]}}"#.utf8))
+    let running = ToolCall(id: "call-list", name: start.name, preview: nil, args: nil, argsFields: start.argsFields, rawArgs: start.rawArgs)
+    let completed = running.applyingCompletionPayload(complete)
+    XCTAssertEqual(completed.rawArgs, "{\n  \"limit\": 3\n}")
+    XCTAssertEqual(completed.rawResult, "{\n  \"token\": \"***\"\n}")
+    XCTAssertEqual(ToolCallDisplayFormatter.content(for: completed).copyText, "limit: 3\n\nnames:\n- a\n- b")
+}
+
 /// TAL-1965: a `decision_review_put` result's review, from a tool frame and from a session detail.
 func testTheReviewReferenceDecodesFromAToolResultAndASessionDetail() throws {
     let ref = try DecisionReviewModelTests.fixture("ref")

@@ -2270,7 +2270,7 @@ extension ChatViewModelSendTests {
             XCTAssertEqual(components.path, "/api/session/tool-result")
             let id = components.queryItems?.first { $0.name == "tool_call_id" }?.value
             return id == "big"
-                ? apiTestJSONResponse(#"{"tool_call_id":"big","result":"{}","result_view":{"stdout":"\#(full)","exit_code":0}}"#, for: request)
+                ? apiTestJSONResponse(#"{"tool_call_id":"big","result":"{}","result_view":{"stdout":"\#(full)","exit_code":0},"raw_result":"\#(full)"}"#, for: request)
                 : apiTestJSONResponse(#"{"error":"Tool result not found"}"#, statusCode: 404, for: request)
         }
         let decoder = JSONDecoder()
@@ -2278,16 +2278,20 @@ extension ChatViewModelSendTests {
         let message = try decoder.decode(ChatMessage.self, from: Data(#"""
         {"role":"assistant","content":"Done.","message_id":"assistant-1","_turn_id":"run-1","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"Done.","activity_rows":[
           {"row_id":"tool:big","order_index":0,"role":"tool","tool":{"id":"big","name":"read_file","preview":null,"result":"clipped","done":true,"is_error":false,"duration":null,"cost_usd":null,"result_truncated":true,"result_chars":6000}},
-          {"row_id":"tool:small","order_index":1,"role":"tool","tool":{"id":"small","name":"read_file","preview":null,"result":"short","done":true,"is_error":false,"duration":null,"cost_usd":null}}
+          {"row_id":"tool:small","order_index":1,"role":"tool","tool":{"id":"small","name":"read_file","preview":null,"result":"short","raw_args":"{}","raw_result":"short","done":true,"is_error":false,"duration":null,"cost_usd":null}}
         ]}}
         """#.utf8))
         let timeline = AssistantActivityTimeline.persisted(message: message, reasoningGroups: [], toolCallGroups: [])
         XCTAssertEqual(timeline.toolCalls.map(\.id), ["big", "small"])
         XCTAssertEqual(timeline.toolCalls.map(\.resultTruncated), [true, false])
+        // TAL-2338: a scene row's raw view, as the server sent it.
+        XCTAssertEqual(timeline.toolCalls.map(\.rawResult), [nil, "short"])
 
         // The server's uncapped sections (TAL-315), which the card shows in place of its capped ones.
         let result = try await viewModel.fullToolResult(toolCallID: "big")
-        XCTAssertEqual(result, ToolResultView(stdout: full, exitCode: 0))
+        XCTAssertEqual(result.view, ToolResultView(stdout: full, exitCode: 0))
+        // TAL-2338: and its whole raw view, which the clipped row's raw view waits for.
+        XCTAssertEqual(result.rawResult, full)
         XCTAssertEqual(requests.first?.queryItems?.first { $0.name == "session_id" }?.value, "session-abc")
 
         do {

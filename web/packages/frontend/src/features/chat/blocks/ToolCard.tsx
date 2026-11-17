@@ -1,7 +1,7 @@
 import { DecisionReviewResult, OutboundDraftResult, ProposalResult, TerminalResult } from './OutboundDraftResult'
 import { ShowBlockResult } from './ShowBlockResult'
 import { useApprovalFlash, useDisclosure } from './Worklog'
-import { ChevronRight } from 'lucide-react'
+import { Braces, ChevronRight, Copy } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon } from '../toolKind'
 import type { ApprovalAnsweredBy, BackgroundAgent, BackgroundLink, FileExcerpt, ResultLinks, ResultPage, SearchMatches, ToolApp, ToolApprovalOutcome, ToolField, ToolKind, ToolOutcome, ToolProgress, ToolResultView, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
@@ -13,10 +13,10 @@ import { useLocale } from '../../../i18n/useLocale'
 import { m } from '../../../paraglide/messages.js'
 import { useQuery } from '@tanstack/react-query'
 import { fetchToolResult } from '../../../api/endpoints'
-import { Button } from '../../../ui/Button'
+import { Button, IconButton } from '../../../ui/Button'
 import { SwapText } from '../../../ui/SwapText'
 import { useArrival } from '../arrival'
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useState, type ReactNode } from 'react'
 import { requestOpenFile } from '../../workspace/openFileRequest'
 import { RowContextMenu, type RowAction } from '../../../ui/Menu'
 import { copyWithToast } from '../../../lib/clipboard'
@@ -38,6 +38,9 @@ export interface ToolCardData {
   args: unknown
   /** TAL-2318: the server's argument rows; absent from an older server, which shows `args` as JSON. */
   argsFields?: ToolField[] | undefined
+  /** TAL-2338: the server's raw view of the arguments and result, which the row's `{}` toggle shows and Copy copies. */
+  rawArgs?: string | undefined
+  rawResult?: string | undefined
   preview: string | null
   done: boolean
   isError: boolean
@@ -298,6 +301,78 @@ function ClippedResult({ sessionId, callId, view, clipped }: { sessionId: string
   )
 }
 
+/** TAL-2338: argument or result rows as copied text, one `key: value` line each, a multi-line value under its key. */
+const fieldsText = (fields: ToolField[]): string => fields.map((field) => (field.multiline ? `${field.key}:\n${field.value}` : `${field.key}: ${field.value}`)).join('\n')
+
+/** A detail section's label; the first section's carries the row's tools at its end (TAL-2338). */
+function SectionLabel({ label, tools }: { label: string; tools: ReactNode }) {
+  return (
+    <div className="mb-1 flex min-h-7 items-center gap-2">
+      <span className="text-[11px] uppercase tracking-wider text-muted">{label}</span>
+      {tools && <span className="tool-card-tools ml-auto flex shrink-0 gap-0.5">{tools}</span>}
+    </div>
+  )
+}
+
+/**
+ * An open row's arguments and result. TAL-2338: `{}` switches between them as the row formats them and the server's raw
+ * view (`raw_args`, `raw_result`); Copy copies whichever shows. A clipped result's raw view waits for the whole one.
+ */
+interface DetailProps { call: ToolCardData; sessionId?: string | undefined; args: string; result: string; raw: boolean; onToggleRaw: () => void }
+interface FullResult { data?: Awaited<ReturnType<typeof fetchToolResult>> | undefined; isFetching: boolean; isError: boolean; refetch: () => Promise<unknown> }
+
+function ToolCardDetail(props: DetailProps) {
+  return props.call.resultTruncated && props.sessionId ? <ClippedToolCardDetail {...props} sessionId={props.sessionId} /> : <ToolCardDetailBody {...props} full={{ isFetching: false, isError: false, refetch: () => Promise.resolve() }} />
+}
+
+/** A clipped row's detail: the whole result, shared with its Show full output (`ClippedResult`), which raw view fetches. */
+function ClippedToolCardDetail(props: DetailProps & { sessionId: string }) {
+  const full = useQuery({ queryKey: ['tool-result', props.sessionId, props.call.id], queryFn: ({ signal }) => fetchToolResult(props.sessionId, props.call.id, signal), enabled: props.raw, staleTime: Infinity })
+  return <ToolCardDetailBody {...props} full={full} />
+}
+
+function ToolCardDetailBody({ call, sessionId, args, result, raw, onToggleRaw, full }: DetailProps & { full: FullResult }) {
+  const clipped = Boolean(call.resultTruncated && sessionId)
+  const rawResult = clipped ? full.data?.raw_result : call.rawResult
+  const hasRaw = call.rawArgs !== undefined || call.rawResult !== undefined
+  const showRaw = raw && hasRaw
+  const showArgs = showRaw ? Boolean(call.rawArgs) : call.argsFields ? call.argsFields.length > 0 : Boolean(args && args !== '{}')
+  const showResult = showRaw ? Boolean(call.rawResult) : Boolean(result || hasSection(call.resultView))
+  // A JSON-object result copies as the rows it shows, any other as its sections' text.
+  const shownView = full.data?.result_view ?? call.resultView
+  const shownResult = shownView?.fields?.length ? fieldsText(shownView.fields) : full.data ? resultText(full.data.result_view) : result
+  const copyText = showRaw
+    ? [showArgs ? call.rawArgs : '', rawResult ?? ''].filter(Boolean).join('\n\n')
+    : [showArgs ? call.argsFields ? fieldsText(call.argsFields) : args : '', showResult ? shownResult : ''].filter(Boolean).join('\n\n')
+  const copyLabel = showRaw ? m.tool_copy_raw() : m.copy()
+  const tools = (
+    <>
+      {hasRaw && <IconButton variant="ghost" className="size-7" label={showRaw ? m.tool_show_formatted() : m.tool_show_raw()} active={showRaw} aria-pressed={showRaw} onClick={onToggleRaw}><Braces aria-hidden="true" /></IconButton>}
+      <IconButton variant="ghost" className="size-7" label={copyLabel} disabled={!copyText || (showRaw && clipped && rawResult === undefined)} onClick={() => { copyWithToast(copyText) }}><Copy aria-hidden="true" /></IconButton>
+    </>
+  )
+  const rawPre = (text: string) => <pre className={RESULT_PRE}>{text}</pre>
+  return (
+    <div className="tool-card-detail border-t border-border-subtle px-2.5 py-2" data-tool-view={showRaw ? 'raw' : 'formatted'}>
+      {showArgs && (
+        <div className="tool-card-args mb-2">
+          <SectionLabel label={m.tool_args_label()} tools={tools} />
+          {showRaw ? rawPre(call.rawArgs ?? '') : call.argsFields ? <FieldRows fields={call.argsFields} /> : <pre className={`max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 ${MONO}`}>{args}</pre>}
+        </div>
+      )}
+      {showResult && (
+        <div className="tool-card-result">
+          <SectionLabel label={call.isError ? m.tool_error_label() : m.tool_result_label()} tools={showArgs ? null : tools} />
+          {showRaw
+            ? rawResult !== undefined ? rawPre(rawResult) : <Button variant="ghost" disabled={full.isFetching} onClick={() => { void full.refetch() }}>{full.isError ? m.retry() : m.loading()}</Button>
+            : clipped && sessionId ? <ClippedResult sessionId={sessionId} callId={call.id} view={call.resultView} clipped={result} /> : <ResultBody view={call.resultView} text={result} sessionId={sessionId} />}
+        </div>
+      )}
+      {call.costUsd !== null && <div className="mt-1 text-[11px] text-muted">${call.costUsd.toFixed(4)}</div>}
+    </div>
+  )
+}
+
 /** TAL-2335: a call's outcome in the reader's words; the server decided the outcome, its tone and its value. */
 export function toolOutcomeText(outcome: ToolOutcome, locale: string): string {
   const count = outcome.count ?? 0
@@ -339,6 +414,8 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
   const locale = useLocale()
   const arrival = useArrival(arrivalKey)
   const [open, toggle] = useDisclosure(`tool:${call.id}`, false)
+  // TAL-2338: whether the open row shows the server's raw view; formatted until the reader asks.
+  const [raw, setRaw] = useState(false)
   const kind = call.kind
   const label = toolCardLabel(call, locale)
   const args = pretty(call.args)
@@ -369,23 +446,7 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
       {call.resultView?.media?.length ? <div className="tool-card-media px-2.5 pb-2"><MediaTiles media={call.resultView.media} sessionId={sessionId} images /></div> : null}
       {sessionId && call.resultView?.terminal && <TerminalResult key={call.resultView.terminal.terminal_id} sessionId={sessionId} reference={call.resultView.terminal} />}
       {sessionId && call.resultView?.outbound_draft && <OutboundDraftResult key={JSON.stringify([sessionId, call.id, call.resultView.outbound_draft])} sessionId={sessionId} callId={call.id} reference={call.resultView.outbound_draft} />}
-      {open && (
-        <div className="tool-card-detail border-t border-border-subtle px-2.5 py-2">
-          {(call.argsFields ? call.argsFields.length > 0 : args && args !== '{}') && (
-            <div className="tool-card-args mb-2">
-              <div className="mb-1 text-[11px] uppercase tracking-wider text-muted">{m.tool_args_label()}</div>
-              {call.argsFields ? <FieldRows fields={call.argsFields} /> : <pre className={`max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 ${MONO}`}>{args}</pre>}
-            </div>
-          )}
-          {(result || hasSection(call.resultView)) && (
-            <div className="tool-card-result">
-              <div className="mb-1 text-[11px] uppercase tracking-wider text-muted">{call.isError ? m.tool_error_label() : m.tool_result_label()}</div>
-              {call.resultTruncated && sessionId ? <ClippedResult sessionId={sessionId} callId={call.id} view={call.resultView} clipped={result} /> : <ResultBody view={call.resultView} text={result} sessionId={sessionId} />}
-            </div>
-          )}
-          {call.costUsd !== null && <div className="mt-1 text-[11px] text-muted">${call.costUsd.toFixed(4)}</div>}
-        </div>
-      )}
+      {open && <ToolCardDetail call={call} sessionId={sessionId} args={args} result={result} raw={raw} onToggleRaw={() => { setRaw(!raw) }} />}
     </div>
   )
 }

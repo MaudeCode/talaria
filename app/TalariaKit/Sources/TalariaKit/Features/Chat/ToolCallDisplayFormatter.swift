@@ -5,6 +5,18 @@ public struct ToolCallDisplayContent: Equatable, Sendable {
     public let result: ToolCallResultDisplay?
 }
 
+extension ToolCallDisplayContent {
+    /// TAL-2338: what Copy copies in the formatted view: the argument rows, then the result's rows or text, as the row
+    /// shows them; a row's multi-line value goes under its key.
+    public var copyText: String {
+        func lines(_ rows: [ToolCallArgumentDisplay]) -> String {
+            rows.map { $0.value.contains("\n") ? "\($0.key):\n\($0.value)" : "\($0.key): \($0.value)" }.joined(separator: "\n")
+        }
+        let shownResult = result.map { $0.rows.isEmpty ? $0.text : lines($0.rows) }
+        return [lines(argumentRows), shownResult ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+}
+
 public struct ToolCallArgumentDisplay: Identifiable, Equatable, Sendable {
     public let key: String
     public let value: String

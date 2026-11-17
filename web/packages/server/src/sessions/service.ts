@@ -13,7 +13,7 @@ import type { AgentStorage, ChatReadiness, PendingSteer, RecoveryAudit, RunStatu
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { createHmac, randomUUID } from 'node:crypto'
-import { buildActiveTurnToken, copyJson, redactedRunStatus, redactSessionData, redactValue, sessionFocusPath, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
+import { buildActiveTurnToken, copyJson, rawToolText, redactedRunStatus, redactSessionData, redactValue, sessionFocusPath, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
 import type { ContextWindowSource, DecisionReviewRef, OutboundDraft, OutboundDraftAction, OutboundDraftRef, SessionOutline, SessionSkills } from '@maudecode/talaria-web-contracts'
 import { addSkillUses, inheritedSkillUses, orderedSkillCounts, resetSkillUses, skillGeneration } from './skill-provenance.js'
 import type { DraftStore } from './drafts.js'
@@ -3529,16 +3529,19 @@ export class SessionService {
   }
 
   /** TAL-331: one tool call's whole result, which a limited response clipped (`result_truncated`), redacted like the detail. */
-  async readToolResult(query: { session_id: string; tool_call_id: string }): Promise<{ tool_call_id: string; result: string; result_view: ToolResultView }> {
+  async readToolResult(query: { session_id: string; tool_call_id: string }): Promise<{ tool_call_id: string; result: string; result_view: ToolResultView; raw_result?: string }> {
     const sid = query.session_id.trim()
     const id = query.tool_call_id.trim()
     if (!sid || !id) throw new HttpFailure(400, 'session_id and tool_call_id are required')
     const { session, transcript } = await this.fullTranscript(sid)
     const full = fullToolResult(transcript, id)
     if (full === null) throw new HttpFailure(404, 'Tool result not found')
-    const redacted = redactValue(full, this.deps.redactEnabled()) as typeof full
+    const enabled = this.deps.redactEnabled()
+    const redacted = redactValue(full, enabled) as typeof full
+    // TAL-2338: and the raw view of the whole result, built like a scene row's `raw_result`.
+    const raw = rawToolText(full.result, enabled)
     // TAL-2323: located like the capped view the call's row shows (`withToolDisplay`).
-    return { tool_call_id: id, result: redacted.result, result_view: withResultFocusPaths(redacted.result_view, session.workspace, session.session_id) }
+    return { tool_call_id: id, result: redacted.result, result_view: withResultFocusPaths(redacted.result_view, session.workspace, session.session_id), ...(raw === undefined ? {} : { raw_result: raw }) }
   }
 
   /**
