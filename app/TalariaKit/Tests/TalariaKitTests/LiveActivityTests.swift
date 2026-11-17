@@ -1393,9 +1393,9 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(AgentRunActivityStateReducer.toolStarted(AgentRunActivityTool(kind: "list", target: "src", done: false), state: state).status, .readingFiles)
         XCTAssertEqual(AgentRunActivityStateReducer.toolStarted(AgentRunActivityTool(kind: "kanban", target: "Ship it", done: false), state: state).status, .usingTool)
 
-        // A completion frame without its target keeps the one its start showed, now past tense with its outcome.
+        // The finished call reads in the past tense with its outcome.
         let exit = AgentRunActivityTool.Outcome(key: "exit", tone: "error", count: 1)
-        let completed = AgentRunActivityStateReducer.toolCompleted(AgentRunActivityTool(kind: "shell", target: "", done: true, failed: true, outcome: exit), state: command)
+        let completed = AgentRunActivityStateReducer.toolCompleted(AgentRunActivityTool(kind: "shell", target: "npm test", done: true, failed: true, outcome: exit), state: command)
         XCTAssertEqual(completed.shownTool?.label, "Failed to run npm test")
         XCTAssertEqual(completed.shownTool?.outcomeText, "Exit 1")
         XCTAssertEqual(completed.shownTool?.toolOutcome?.tone, .error)
@@ -1701,6 +1701,42 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(TalariaDeepLink.publisherID(from: url), publisherID)
     }
 
+    /// TAL-2336: with calls in parallel, a finished call leaves the one still running named, as the server picks the current
+    /// call for Relay; the last call to finish is named with the target its start carried.
+    func testAFinishedParallelCallKeepsTheRunningCallNamed() async throws {
+        let baseURL = URL(string: "https://example.test")!
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveActivityURLProtocol.self]
+        let client = APIClient(baseURL: baseURL, session: URLSession(configuration: configuration))
+        let streamClient = LiveActivitySpySSEClient()
+        let manager = SpyAgentLiveActivityManager()
+        LiveActivityURLProtocol.handler = { request in
+            Self.jsonResponse(#"{"stream_id":"stream-123","session_id":"session-abc"}"#, for: request)
+        }
+        let viewModel = ChatViewModel(
+            session: try Self.sessionSummary(id: "session-abc", title: "Live work"), server: baseURL, client: client,
+            streamClient: streamClient, approvalStreamClient: LiveActivitySpySSEClient(), clarifyStreamClient: LiveActivitySpySSEClient(),
+            liveActivityManager: manager
+        )
+        let didStart = await viewModel.sendMessage("Run the tests")
+        XCTAssertTrue(didStart)
+        let frame = { (id: String, kind: ToolDisplayKind?, target: String?) in
+            ToolStreamEvent(eventType: nil, name: nil, preview: nil, args: nil, duration: nil, isError: nil, stableID: id, kind: kind, target: target)
+        }
+        streamClient.emit(.toolStarted(frame("call-test", .shell, "npm test")))
+        streamClient.emit(.toolStarted(frame("call-read", .read, "README.md")))
+        streamClient.emit(.toolCompleted(frame("call-read", .read, nil)))
+        streamClient.emit(.toolCompleted(frame("call-test", .shell, nil)))
+
+        let test = AgentRunActivityTool(kind: "shell", target: "npm test", done: false)
+        XCTAssertEqual(manager.updates, [
+            .toolStarted(test),
+            .toolStarted(AgentRunActivityTool(kind: "read", target: "README.md", done: false)),
+            .toolStarted(test),
+            .toolCompleted(AgentRunActivityTool(kind: "shell", target: "npm test", done: true)),
+        ])
+    }
+
     func testChatViewModelLiveActivityLifecycleUsesInjectedManager() async throws {
         let baseURL = URL(string: "https://example.test")!
         let configuration = URLSessionConfiguration.ephemeral
@@ -1766,7 +1802,7 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(manager.updates, [
             .reasoning("I should inspect failures."),
             .toolStarted(AgentRunActivityTool(kind: "shell", target: "", done: false)),
-            .toolCompleted(AgentRunActivityTool(kind: "unknown", target: "", done: true, failed: nil))
+            .toolCompleted(AgentRunActivityTool(kind: "shell", target: "", done: true, failed: nil))
         ])
         XCTAssertEqual(manager.ends.last, SpyAgentLiveActivityManager.End(
             status: .complete,

@@ -945,24 +945,14 @@ public enum AgentRunActivityStateReducer {
         return result
     }
 
-    /// TAL-2336: the call finished; it stays named, in the past tense with its outcome, until the run moves on. A completion
-    /// frame without its target or kind (the start frame carried them) keeps the ones shown.
+    /// TAL-2336: the call finished; it stays named, in the past tense with its outcome, until the run moves on.
     public static func toolCompleted(
         _ tool: AgentRunActivityTool,
         state: AgentRunActivityAttributes.ContentState,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
-        var completed = tool
-        completed.done = true
-        if completed.target.isEmpty, let shown = state.currentTool,
-           shown.kind == completed.kind || completed.kind == ToolDisplayKind.unknown.rawValue {
-            completed.kind = shown.kind
-            completed.target = shown.target
-            completed.app = completed.app ?? shown.app
-            completed.verb = completed.verb ?? shown.verb
-        }
         var result = statusState(.responding, activity: String(localized: "Processing result"), state: state, now: now)
-        result.currentTool = completed
+        result.currentTool = tool
         return result
     }
 
