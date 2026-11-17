@@ -395,7 +395,7 @@ async def _work_action(client, params: dict, described: dict) -> dict:
 
 
 async def _run(ctx, params: dict, home: Path, discovery) -> dict:
-    from hermes_cli.gateway_client import GatewayRPCError
+    from hermes_cli.gateway_client import GatewayClientError, GatewayRPCError
 
     endpoint = discovery.endpoint
     if _served(home, endpoint, allow_verified=True):
@@ -601,7 +601,15 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                     # The owner emits no event for another viewer's reaction. Read through this viewer's existing
                     # subscription, including while tokens keep the event queue busy.
                     polled, stale = now, False
-                    current = await snapshot()
+                    try:
+                        current = await snapshot()
+                    except GatewayRPCError:
+                        raise
+                    except GatewayClientError:
+                        # The socket closed under this read (an owner restarting when idle exits as its turn ends).
+                        # The frames received before the close are still queued, the reader's disconnect behind them:
+                        # deliver them and end on that, never drop a turn's completion (TAL-2344).
+                        continue
                     if [(r.get("row_id"), r.get("reactions")) for r in current["messages"] if r.get("reactions")] != [(r.get("row_id"), r.get("reactions")) for r in snap["messages"] if r.get("reactions")]:
                         ctx.emit("snapshot", {**result, "snapshot": current, "reaction_only": True})
                     snap = current

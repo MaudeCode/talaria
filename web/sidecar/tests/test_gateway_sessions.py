@@ -229,7 +229,7 @@ def native_owner_stub(tmp_path, monkeypatch):
         for frame in owner.frames:
             queue.put_nowait(frame)
         yield SimpleNamespace(rpc=rpc), queue
-    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError))
+    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError, GatewayClientError=ConnectionError))
     monkeypatch.setattr(adapter, "_connect", connect)
     owner.control_refusal = adapter._control_refusal
     monkeypatch.setattr(adapter, "_control_refusal", lambda *args: None)
@@ -960,6 +960,33 @@ def test_an_event_triggered_read_waits_for_the_restart_probe(native_owner_stub, 
     frames, resumes = _simulated_watch(owner, monkeypatch, 12, restart_wait=lambda home: True)
     assert resumes == 1
     assert [kind for _, kind, _ in frames].count("restarting") == 1
+
+
+def test_a_watch_delivers_every_received_frame_when_its_own_read_loses_the_owner(native_owner_stub, monkeypatch):
+    """TAL-2344: an owner restarting when idle exits right after a turn ends. A reaction read that loses the socket must
+    not drop the turn's frames already received: the watch ends on the reader's disconnect, queued behind them."""
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from talaria_sidecar.methods import gateway_sessions as adapter
+    monkeypatch.setattr(adapter, "_restart_wait", lambda home: False)
+    owner, connect, frames = native_owner_stub, adapter._connect, []
+    owner.events = [{"session_id": "native", "type": kind, "replay_epoch": "epoch", "seq": seq, "execution_generation": 1}
+                    for seq, kind in ((5, "message.start"), (6, "message.complete"))]
+    owner.frames = [ConnectionError("disconnected")]
+
+    @asynccontextmanager
+    async def closing(home, endpoint):
+        async with connect(home, endpoint) as (client, events):
+            async def rpc(method, **params):
+                if method == "session.resume" and any(call[0] == "session.resume" for call in owner.calls):
+                    raise ConnectionError("disconnected")  # the owner exited while this read was in flight
+                return await client.rpc(method, **params)
+            yield SimpleNamespace(rpc=rpc), events
+    monkeypatch.setattr(adapter, "_connect", closing)
+    result = owner.run(SimpleNamespace(cancelled=False, emit=lambda kind, data: frames.append((kind, data))),
+                       {"session_id": "native", "action": "watch"})
+    assert [data["type"] for kind, data in frames if kind == "event"] == ["message.start", "message.complete"]
+    assert (result["state"], result["reason"]) == ("unavailable", "owner_connection_lost")
 
 
 def test_a_streaming_token_does_not_read_the_transcript(native_owner_stub, monkeypatch):
