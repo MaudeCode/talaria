@@ -143,7 +143,7 @@ struct ToolCallCardView: View {
                 .frame(width: 16, height: 16)
 
             VStack(alignment: .leading, spacing: 2) {
-                titleText
+                titleLine
                 if let progress = ToolCallStatusDisplay(toolCall: toolCall).progressText {
                     Text(progress)
                         .font(AppFont.caption())
@@ -151,6 +151,8 @@ struct ToolCallCardView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            // TAL-2335: the title line measures against the whole row, so an outcome's 55% is of the row, not a split share.
+            .layoutPriority(1)
 
             // TAL-448: a file edit's added and removed line counts, beside its label.
             if let editDiff = toolCall.editDiff {
@@ -183,6 +185,7 @@ struct ToolCallCardView: View {
     static func accessibilityText(for toolCall: ToolCall, detail: String) -> String {
         var label = String(localized: "\(AssistantActivitySummary.label(for: toolCall)), \(detail)")
         if let progress = ToolCallStatusDisplay(toolCall: toolCall).progressText { label += ", \(progress)" }
+        if let outcome = Self.outcomeText(for: toolCall) { label += ", \(outcome)" }
         if let editDiff = toolCall.editDiff {
             label += ", \(String(localized: "\(editDiff.added) added")), \(String(localized: "\(editDiff.removed) removed"))"
         }
@@ -195,6 +198,78 @@ struct ToolCallCardView: View {
         switch link.status {
         case .running, .completed: return counts
         default: return "\(BackgroundWorkSheet.statusLabel(link.status)) · \(counts)"
+        }
+    }
+
+    /// TAL-2335: the label, then what the finished call did past a middle dot, in the tone the server gave it.
+    @ViewBuilder private var titleLine: some View {
+        if let outcome = Self.outcomeText(for: toolCall) {
+            ToolOutcomeLineLayout {
+                titleText
+                HStack(spacing: 6) {
+                    Text(verbatim: "·").foregroundStyle(.secondary)
+                    Text(outcome).foregroundStyle(Self.outcomeStyle(toolCall.resultView?.outcome?.tone))
+                }
+                .padding(.leading, 6)
+                .font(AppFont.callout())
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .accessibilityHidden(true)
+            }
+        } else {
+            titleText
+        }
+    }
+
+    /// TAL-2335: a finished call's outcome in the reader's words; nil while it runs or when the server gave none.
+    static func outcomeText(for toolCall: ToolCall) -> String? {
+        guard toolCall.isCompleted, let outcome = toolCall.resultView?.outcome else { return nil }
+        return outcomeText(outcome)
+    }
+
+    static func outcomeText(_ outcome: ToolOutcome) -> String {
+        let count = outcome.count ?? 0
+        let value = outcome.value ?? ""
+        switch outcome.key {
+        case .sent: return String(localized: "Sent")
+        case .approved: return String(localized: "Approved")
+        case .denied: return String(localized: "Denied")
+        case .goalSet: return String(localized: "Goal set")
+        case .created: return String(localized: "Created")
+        case .memoryAdded: return String(localized: "Added \(count) memories")
+        case .memoryUpdated: return String(localized: "Updated \(count) memories")
+        case .memoryRemoved: return String(localized: "Removed \(count) memories")
+        case .skillCreated: return String(localized: "Skill created")
+        case .skillUpdated: return String(localized: "Skill updated")
+        case .pendingApproval: return String(localized: "Waiting for approval")
+        case .jobCreated:
+            guard let next = try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(value) else { return String(localized: "Scheduled") }
+            return String(localized: "Next run \(next.formatted(date: .abbreviated, time: .shortened))")
+        case .paused: return String(localized: "Paused")
+        case .resumed: return String(localized: "Resumed")
+        case .removed: return String(localized: "Removed")
+        case .ranNow: return String(localized: "Ran now")
+        case .movedTo: return String(localized: "Moved to \(value)")
+        case .blocked: return String(localized: "Blocked")
+        case .completed: return String(localized: "Completed")
+        case .commented: return String(localized: "Commented")
+        case .connected: return String(localized: "Connected \(value)")
+        case .needsSignIn: return String(localized: "Needs sign-in")
+        case .answered: return String(localized: "Answered: \(value)")
+        case .skipped: return String(localized: "Skipped")
+        case .noMatches: return String(localized: "No matches")
+        case .noResults: return String(localized: "No results")
+        case .exit: return String(localized: "Exit \(count)")
+        case .failed: return value.isEmpty ? String(localized: "Failed") : value
+        }
+    }
+
+    /// TAL-2335: routine outcomes stay in the label's secondary tier; colour marks only a failure or a wait on the user.
+    static func outcomeStyle(_ tone: ToolOutcome.Tone?) -> AnyShapeStyle {
+        switch tone {
+        case .error: AnyShapeStyle(Color.red)
+        case .attention: AnyShapeStyle(Color.orange)
+        case .neutral, nil: AnyShapeStyle(.secondary)
         }
     }
 
@@ -619,5 +694,42 @@ struct ToolActivityIcon: View {
             Image(systemName: name)
                 .font(.system(size: 14))
         }
+    }
+}
+
+/// TAL-2335: a tool row's label and its outcome on one line. The outcome keeps its width up to 55% of the line and the
+/// label takes the rest, so the label truncates first.
+struct ToolOutcomeLineLayout: Layout {
+    static let outcomeShare: CGFloat = 0.55
+
+    /// The whole offered line, so placement splits the same width the measurement did; its ideal width when none is offered.
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let (label, outcome) = widths(proposal: proposal, subviews: subviews)
+        let height = subviews.map { $0.sizeThatFits(ProposedViewSize(width: nil, height: proposal.height)).height }.max() ?? 0
+        guard let line = proposal.width, line.isFinite else { return CGSize(width: label + outcome, height: height) }
+        return CGSize(width: line, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let (label, outcome) = widths(proposal: ProposedViewSize(width: bounds.width, height: bounds.height), subviews: subviews)
+        var x = bounds.minX
+        for (subview, width) in zip(subviews, [label, outcome]) {
+            subview.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(width: width, height: bounds.height))
+            x += width
+        }
+    }
+
+    private func widths(proposal: ProposedViewSize, subviews: Subviews) -> (CGFloat, CGFloat) {
+        guard subviews.count == 2 else { return (0, 0) }
+        let ideal = subviews.map { $0.sizeThatFits(.unspecified).width }
+        return Self.widths(line: proposal.width, label: ideal[0], outcome: ideal[1])
+    }
+
+    /// The label's and the outcome's widths in a `line` this wide, from their ideal widths: each its ideal while both fit,
+    /// else the outcome up to 55% of the line and the label what is left.
+    static func widths(line: CGFloat?, label: CGFloat, outcome: CGFloat) -> (label: CGFloat, outcome: CGFloat) {
+        guard let line, line.isFinite else { return (label, outcome) }
+        let shown = min(outcome, line * outcomeShare)
+        return (min(label, max(line - shown, 0)), shown)
     }
 }

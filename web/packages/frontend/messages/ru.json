@@ -1999,6 +1999,81 @@
 	"todos_open_chat": "Откройте чат, чтобы увидеть его список задач.",
 	"token_usage_off": "Отображение токенов выключено",
 	"token_usage_on": "Отображение токенов включено",
+	"tool_outcome_answered": "Ответ: {answer}",
+	"tool_outcome_approved": "Одобрено",
+	"tool_outcome_blocked": "Заблокировано",
+	"tool_outcome_commented": "Прокомментировано",
+	"tool_outcome_completed": "Завершено",
+	"tool_outcome_connected": "Подключено: {apps}",
+	"tool_outcome_created": "Создано",
+	"tool_outcome_denied": "Отклонено",
+	"tool_outcome_exit": "Код выхода {code}",
+	"tool_outcome_failed": "Ошибка",
+	"tool_outcome_goal_set": "Цель задана",
+	"tool_outcome_job_created": "Запланировано",
+	"tool_outcome_job_next_run": "Следующий запуск {when}",
+	"tool_outcome_memory_added": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Добавлена {count} запись памяти",
+				"countPlural=few": "Добавлены {count} записи памяти",
+				"countPlural=many": "Добавлено {count} записей памяти",
+				"countPlural=other": "Добавлено {count} записи памяти"
+			}
+		}
+	],
+	"tool_outcome_memory_removed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Удалена {count} запись памяти",
+				"countPlural=few": "Удалены {count} записи памяти",
+				"countPlural=many": "Удалено {count} записей памяти",
+				"countPlural=other": "Удалено {count} записи памяти"
+			}
+		}
+	],
+	"tool_outcome_memory_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Обновлена {count} запись памяти",
+				"countPlural=few": "Обновлены {count} записи памяти",
+				"countPlural=many": "Обновлено {count} записей памяти",
+				"countPlural=other": "Обновлено {count} записи памяти"
+			}
+		}
+	],
+	"tool_outcome_moved_to": "Перемещено в «{status}»",
+	"tool_outcome_needs_sign_in": "Нужен вход",
+	"tool_outcome_paused": "Приостановлено",
+	"tool_outcome_pending_approval": "Ожидает одобрения",
+	"tool_outcome_ran_now": "Запущено сейчас",
+	"tool_outcome_removed": "Удалено",
+	"tool_outcome_resumed": "Возобновлено",
+	"tool_outcome_sent": "Отправлено",
+	"tool_outcome_skill_created": "Навык создан",
+	"tool_outcome_skill_updated": "Навык обновлён",
+	"tool_outcome_skipped": "Пропущено",
 	"tool_target_skill_suffix": "навык",
 	"transcript": "Транскрипт",
 	"transcript_load_earlier": "Загрузить более ранние сообщения",

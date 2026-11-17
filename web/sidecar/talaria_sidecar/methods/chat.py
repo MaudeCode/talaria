@@ -2145,6 +2145,9 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     call["snippet"] = snippet
                     break
             payload = {"event_type": "tool.completed", "name": name, "preview": snippet, "args": _args_snapshot(args), "tid": tid, "raw_result": _raw_result(function_result, parsed=parsed)}
+            # TAL-2335: the call's arguments bounded like its result, so the server reads a batch's ``operations`` whole.
+            if isinstance(args, dict):
+                payload["raw_args"] = _raw_result(args)
             # TAL-909: the metadata the Agent persisted on the result row, or, from an Agent without the callback, live only.
             metadata = prepared_metadata.pop(tid) if tid in prepared_metadata else _edit_metadata(name, args, function_result, edit_snapshots.pop(tid, None), parsed)
             if metadata:

@@ -133,7 +133,12 @@
                 "preview": "exit 1",
                 "result": "exit 1",
                 "result_view": {
-                  "text": "exit 1"
+                  "text": "exit 1",
+                  "outcome": {
+                    "key": "failed",
+                    "tone": "error",
+                    "value": "exit 1"
+                  }
                 },
                 "done": true,
                 "is_error": true,
@@ -1337,7 +1342,12 @@
             "result": "{\"exit_code\": 2, \"output\": \"1 failed\"}",
             "result_view": {
               "stdout": "1 failed",
-              "exit_code": 2
+              "exit_code": 2,
+              "outcome": {
+                "key": "exit",
+                "tone": "error",
+                "count": 2
+              }
             },
             "duration": 3.5,
             "type": "function",
@@ -1427,7 +1437,12 @@
                 "result": "{\"exit_code\": 2, \"output\": \"1 failed\"}",
                 "result_view": {
                   "stdout": "1 failed",
-                  "exit_code": 2
+                  "exit_code": 2,
+                  "outcome": {
+                    "key": "exit",
+                    "tone": "error",
+                    "count": 2
+                  }
                 },
                 "done": true,
                 "is_error": true,
@@ -1543,7 +1558,12 @@
             "is_error": true,
             "result": "{\"error\": \"permission denied\"}",
             "result_view": {
-              "error": "permission denied"
+              "error": "permission denied",
+              "outcome": {
+                "key": "failed",
+                "tone": "error",
+                "value": "permission denied"
+              }
             },
             "duration": null,
             "type": "function",
@@ -1598,7 +1618,12 @@
                 "preview": null,
                 "result": "{\"error\": \"permission denied\"}",
                 "result_view": {
-                  "error": "permission denied"
+                  "error": "permission denied",
+                  "outcome": {
+                    "key": "failed",
+                    "tone": "error",
+                    "value": "permission denied"
+                  }
                 },
                 "done": true,
                 "is_error": true,
@@ -4126,7 +4151,12 @@
         "stdout": "built\nok",
         "stderr": "warning: deprecated",
         "exit_code": 2,
-        "approval_note": "Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session."
+        "approval_note": "Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session.",
+        "outcome": {
+          "key": "exit",
+          "tone": "error",
+          "count": 2
+        }
       },
       "call-nested": {
         "text": "line one\nline two"
@@ -4169,7 +4199,12 @@
                 "stdout": "built\nok",
                 "stderr": "warning: deprecated",
                 "exit_code": 2,
-                "approval_note": "Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session."
+                "approval_note": "Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session.",
+                "outcome": {
+                  "key": "exit",
+                  "tone": "error",
+                  "count": 2
+                }
               },
               "duration": null,
               "type": "function",
@@ -4317,7 +4352,12 @@
                     "stdout": "built\nok",
                     "stderr": "warning: deprecated",
                     "exit_code": 2,
-                    "approval_note": "Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session."
+                    "approval_note": "Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session.",
+                    "outcome": {
+                      "key": "exit",
+                      "tone": "error",
+                      "count": 2
+                    }
                   },
                   "done": true,
                   "is_error": true,
@@ -6376,6 +6416,10 @@
                       }
                     }
                   ]
+                },
+                "outcome": {
+                  "key": "skill_updated",
+                  "tone": "neutral"
                 }
               },
               "duration": null,
@@ -6560,6 +6604,10 @@
                           }
                         }
                       ]
+                    },
+                    "outcome": {
+                      "key": "skill_updated",
+                      "tone": "neutral"
                     }
                   },
                   "done": true,
@@ -8109,7 +8157,12 @@
         ]
       },
       "call-failed": {
-        "error": "FAL_KEY is not set"
+        "error": "FAL_KEY is not set",
+        "outcome": {
+          "key": "failed",
+          "tone": "error",
+          "value": "FAL_KEY is not set"
+        }
       },
       "call-vision": {
         "text": "{\n  \"success\": true,\n  \"analysis\": \"A **cat** on a sofa.\"\n}",
@@ -8382,7 +8435,12 @@
               "is_error": true,
               "result": "{\"success\":false,\"image\":null,\"error\":\"FAL_KEY is not set\",\"error_type\":\"auth_required\"}",
               "result_view": {
-                "error": "FAL_KEY is not set"
+                "error": "FAL_KEY is not set",
+                "outcome": {
+                  "key": "failed",
+                  "tone": "error",
+                  "value": "FAL_KEY is not set"
+                }
               },
               "duration": null,
               "type": "function"
@@ -8787,7 +8845,12 @@
                   "preview": null,
                   "result": "{\"success\":false,\"image\":null,\"error\":\"FAL_KEY is not set\",\"error_type\":\"auth_required\"}",
                   "result_view": {
-                    "error": "FAL_KEY is not set"
+                    "error": "FAL_KEY is not set",
+                    "outcome": {
+                      "key": "failed",
+                      "tone": "error",
+                      "value": "FAL_KEY is not set"
+                    }
                   },
                   "done": true,
                   "is_error": true,
@@ -8995,6 +9058,11 @@
               "label": "Added: Prefers short replies"
             }
           ]
+        },
+        "outcome": {
+          "key": "memory_added",
+          "tone": "neutral",
+          "count": 1
         }
       },
       "call-skill": {
@@ -9015,6 +9083,10 @@
               }
             }
           ]
+        },
+        "outcome": {
+          "key": "pending_approval",
+          "tone": "attention"
         }
       },
       "call-view": {
@@ -9069,6 +9141,10 @@
               }
             }
           ]
+        },
+        "outcome": {
+          "key": "paused",
+          "tone": "neutral"
         }
       },
       "call-connect": {
@@ -9084,6 +9160,10 @@
               }
             }
           ]
+        },
+        "outcome": {
+          "key": "needs_sign_in",
+          "tone": "attention"
         }
       },
       "call-clarify": {
@@ -9095,6 +9175,11 @@
               "detail": "dev"
             }
           ]
+        },
+        "outcome": {
+          "key": "answered",
+          "tone": "neutral",
+          "value": "dev"
         }
       }
     },
@@ -9146,6 +9231,11 @@
                       "label": "Added: Prefers short replies"
                     }
                   ]
+                },
+                "outcome": {
+                  "key": "memory_added",
+                  "tone": "neutral",
+                  "count": 1
                 }
               },
               "duration": null,
@@ -9197,6 +9287,10 @@
                       }
                     }
                   ]
+                },
+                "outcome": {
+                  "key": "pending_approval",
+                  "tone": "attention"
                 }
               },
               "duration": null,
@@ -9319,6 +9413,10 @@
                       }
                     }
                   ]
+                },
+                "outcome": {
+                  "key": "paused",
+                  "tone": "neutral"
                 }
               },
               "duration": null,
@@ -9360,6 +9458,10 @@
                       }
                     }
                   ]
+                },
+                "outcome": {
+                  "key": "needs_sign_in",
+                  "tone": "attention"
                 }
               },
               "duration": null,
@@ -9392,6 +9494,11 @@
                       "detail": "dev"
                     }
                   ]
+                },
+                "outcome": {
+                  "key": "answered",
+                  "tone": "neutral",
+                  "value": "dev"
                 }
               },
               "duration": null,
@@ -9507,6 +9614,11 @@
                           "label": "Added: Prefers short replies"
                         }
                       ]
+                    },
+                    "outcome": {
+                      "key": "memory_added",
+                      "tone": "neutral",
+                      "count": 1
                     }
                   },
                   "done": true,
@@ -9568,6 +9680,10 @@
                           }
                         }
                       ]
+                    },
+                    "outcome": {
+                      "key": "pending_approval",
+                      "tone": "attention"
                     }
                   },
                   "done": true,
@@ -9717,6 +9833,10 @@
                           }
                         }
                       ]
+                    },
+                    "outcome": {
+                      "key": "paused",
+                      "tone": "neutral"
                     }
                   },
                   "done": true,
@@ -9769,6 +9889,10 @@
                           }
                         }
                       ]
+                    },
+                    "outcome": {
+                      "key": "needs_sign_in",
+                      "tone": "attention"
                     }
                   },
                   "done": true,
@@ -9817,6 +9941,11 @@
                           "detail": "dev"
                         }
                       ]
+                    },
+                    "outcome": {
+                      "key": "answered",
+                      "tone": "neutral",
+                      "value": "dev"
                     }
                   },
                   "done": true,
@@ -9966,6 +10095,10 @@
               }
             }
           ]
+        },
+        "outcome": {
+          "key": "completed",
+          "tone": "neutral"
         }
       },
       "call-comment": {
@@ -9981,6 +10114,10 @@
               }
             }
           ]
+        },
+        "outcome": {
+          "key": "commented",
+          "tone": "neutral"
         }
       }
     },
@@ -10121,6 +10258,10 @@
                       }
                     }
                   ]
+                },
+                "outcome": {
+                  "key": "completed",
+                  "tone": "neutral"
                 }
               },
               "duration": null,
@@ -10163,6 +10304,10 @@
                       }
                     }
                   ]
+                },
+                "outcome": {
+                  "key": "commented",
+                  "tone": "neutral"
                 }
               },
               "duration": null,
@@ -10356,6 +10501,10 @@
                           }
                         }
                       ]
+                    },
+                    "outcome": {
+                      "key": "completed",
+                      "tone": "neutral"
                     }
                   },
                   "done": true,
@@ -10407,6 +10556,10 @@
                           }
                         }
                       ]
+                    },
+                    "outcome": {
+                      "key": "commented",
+                      "tone": "neutral"
                     }
                   },
                   "done": true,
@@ -11806,7 +11959,12 @@
               "is_error": true,
               "result": "{\"error\":\"Tool search is unavailable\"}",
               "result_view": {
-                "error": "Tool search is unavailable"
+                "error": "Tool search is unavailable",
+                "outcome": {
+                  "key": "failed",
+                  "tone": "error",
+                  "value": "Tool search is unavailable"
+                }
               },
               "duration": null,
               "type": "function"
@@ -11944,7 +12102,12 @@
                   "preview": null,
                   "result": "{\"error\":\"Tool search is unavailable\"}",
                   "result_view": {
-                    "error": "Tool search is unavailable"
+                    "error": "Tool search is unavailable",
+                    "outcome": {
+                      "key": "failed",
+                      "tone": "error",
+                      "value": "Tool search is unavailable"
+                    }
                   },
                   "done": true,
                   "is_error": true,
@@ -12042,6 +12205,2158 @@
             }
           },
           "_turn_id": "lookup-run",
+          "_display": "row"
+        }
+      ]
+    }
+  },
+  "tool_outcome_views": {
+    "session": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tell the release chat it's shipped, approve its deploy, remember I prefer Postgres, and pause the daily digest.",
+          "message_id": "outcome-user-1",
+          "timestamp": 9500,
+          "_turn_id": "outcome-run-1",
+          "_display": "row"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "message_id": "outcome-calls-1",
+          "timestamp": 9501,
+          "tool_calls": [
+            {
+              "args_fields": [
+                {
+                  "key": "query",
+                  "value": "release",
+                  "multiline": false
+                }
+              ],
+              "kind": "talaria",
+              "target": "session_list",
+              "function": {
+                "name": "session_list",
+                "arguments": "{\"query\":\"release\"}"
+              },
+              "id": "call-list",
+              "done": true,
+              "is_error": false,
+              "result": "{\"sessions\":[{\"session_id\":\"release-chat\",\"title\":\"Release\"}]}",
+              "result_view": {
+                "text": "{\n  \"sessions\": [\n    {\n      \"session_id\": \"release-chat\",\n      \"title\": \"Release\"\n    }\n  ]\n}",
+                "fields": [
+                  {
+                    "key": "sessions",
+                    "value": "- session_id: release-chat\n  title: Release",
+                    "multiline": true
+                  }
+                ]
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "session_id",
+                  "value": "release-chat",
+                  "multiline": false
+                },
+                {
+                  "key": "message",
+                  "value": "Shipped.",
+                  "multiline": false
+                }
+              ],
+              "kind": "talaria",
+              "target": "session_send",
+              "function": {
+                "name": "session_send",
+                "arguments": "{\"session_id\":\"release-chat\",\"message\":\"Shipped.\"}"
+              },
+              "id": "call-send",
+              "done": true,
+              "is_error": false,
+              "result": "{\"outcome\":\"queued\",\"stream_id\":null,\"steer_id\":\"steer-1\"}",
+              "result_view": {
+                "text": "{\n  \"outcome\": \"queued\",\n  \"stream_id\": null,\n  \"steer_id\": \"steer-1\"\n}",
+                "fields": [
+                  {
+                    "key": "outcome",
+                    "value": "queued",
+                    "multiline": false
+                  },
+                  {
+                    "key": "stream_id",
+                    "value": "null",
+                    "multiline": false
+                  },
+                  {
+                    "key": "steer_id",
+                    "value": "steer-1",
+                    "multiline": false
+                  }
+                ],
+                "outcome": {
+                  "key": "sent",
+                  "tone": "neutral"
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "session_id",
+                  "value": "release-chat",
+                  "multiline": false
+                },
+                {
+                  "key": "approval_id",
+                  "value": "approval-1",
+                  "multiline": false
+                },
+                {
+                  "key": "choice",
+                  "value": "once",
+                  "multiline": false
+                }
+              ],
+              "kind": "talaria",
+              "target": "approval_respond",
+              "function": {
+                "name": "approval_respond",
+                "arguments": "{\"session_id\":\"release-chat\",\"approval_id\":\"approval-1\",\"choice\":\"once\"}"
+              },
+              "id": "call-approve",
+              "done": true,
+              "is_error": false,
+              "result": "{\"ok\":true,\"choice\":\"once\"}",
+              "result_view": {
+                "text": "{\n  \"ok\": true,\n  \"choice\": \"once\"\n}",
+                "fields": [
+                  {
+                    "key": "ok",
+                    "value": "true",
+                    "multiline": false
+                  },
+                  {
+                    "key": "choice",
+                    "value": "once",
+                    "multiline": false
+                  }
+                ],
+                "outcome": {
+                  "key": "approved",
+                  "tone": "neutral"
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "session_id",
+                  "value": "release-chat",
+                  "multiline": false
+                },
+                {
+                  "key": "goal",
+                  "value": "Watch the deploy",
+                  "multiline": false
+                }
+              ],
+              "kind": "talaria",
+              "target": "goal_set",
+              "function": {
+                "name": "goal_set",
+                "arguments": "{\"session_id\":\"release-chat\",\"goal\":\"Watch the deploy\"}"
+              },
+              "id": "call-goal",
+              "done": true,
+              "is_error": false,
+              "result": "{\"ok\":true,\"action\":\"set\"}",
+              "result_view": {
+                "text": "{\n  \"ok\": true,\n  \"action\": \"set\"\n}",
+                "fields": [
+                  {
+                    "key": "ok",
+                    "value": "true",
+                    "multiline": false
+                  },
+                  {
+                    "key": "action",
+                    "value": "set",
+                    "multiline": false
+                  }
+                ],
+                "outcome": {
+                  "key": "goal_set",
+                  "tone": "neutral"
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "action",
+                  "value": "add",
+                  "multiline": false
+                },
+                {
+                  "key": "target",
+                  "value": "user",
+                  "multiline": false
+                },
+                {
+                  "key": "content",
+                  "value": "Prefers Postgres",
+                  "multiline": false
+                }
+              ],
+              "kind": "memory",
+              "target": "user",
+              "function": {
+                "name": "memory",
+                "arguments": "{\"action\":\"add\",\"target\":\"user\",\"content\":\"Prefers Postgres\"}"
+              },
+              "id": "call-memory",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"done\":true,\"target\":\"user\",\"usage\":\"5% — 110/2,200 chars\",\"entry_count\":3,\"message\":\"Applied 1 operation(s).\"}",
+              "result_view": {
+                "text": "Applied 1 operation(s).",
+                "rows": {
+                  "title": "User profile · 5% — 110/2,200 chars",
+                  "rows": [
+                    {
+                      "label": "Added: Prefers Postgres"
+                    }
+                  ]
+                },
+                "outcome": {
+                  "key": "memory_added",
+                  "tone": "neutral",
+                  "count": 1
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "action",
+                  "value": "pause",
+                  "multiline": false
+                },
+                {
+                  "key": "job_id",
+                  "value": "digest",
+                  "multiline": false
+                }
+              ],
+              "kind": "schedule",
+              "target": "digest",
+              "function": {
+                "name": "cronjob_manage",
+                "arguments": "{\"action\":\"pause\",\"job_id\":\"digest\"}"
+              },
+              "id": "call-pause",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"job\":{\"job_id\":\"digest\",\"name\":\"Daily digest\",\"schedule\":\"every day at 08:00\",\"next_run_at\":null,\"enabled\":false,\"state\":\"paused\"}}",
+              "result_view": {
+                "text": "{\n  \"success\": true,\n  \"job\": {\n    \"job_id\": \"digest\",\n    \"name\": \"Daily digest\",\n    \"schedule\": \"every day at 08:00\",\n    \"next_run_at\": null,\n    \"enabled\": false,\n    \"state\": \"paused\"\n  }\n}",
+                "rows": {
+                  "title": "Paused",
+                  "rows": [
+                    {
+                      "label": "Daily digest",
+                      "detail": "every day at 08:00 · paused",
+                      "link": {
+                        "kind": "crons",
+                        "id": "digest"
+                      }
+                    }
+                  ]
+                },
+                "outcome": {
+                  "key": "paused",
+                  "tone": "neutral"
+                }
+              },
+              "duration": null,
+              "type": "function"
+            }
+          ],
+          "_turn_id": "outcome-run-1",
+          "_display": "row"
+        },
+        {
+          "role": "tool",
+          "content": "{\"sessions\":[{\"session_id\":\"release-chat\",\"title\":\"Release\"}]}",
+          "timestamp": 9502,
+          "tool_call_id": "call-list",
+          "_turn_id": "outcome-run-1",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"outcome\":\"queued\",\"stream_id\":null,\"steer_id\":\"steer-1\"}",
+          "timestamp": 9503,
+          "tool_call_id": "call-send",
+          "_turn_id": "outcome-run-1",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"ok\":true,\"choice\":\"once\"}",
+          "timestamp": 9504,
+          "tool_call_id": "call-approve",
+          "_turn_id": "outcome-run-1",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"ok\":true,\"action\":\"set\"}",
+          "timestamp": 9505,
+          "tool_call_id": "call-goal",
+          "_turn_id": "outcome-run-1",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"done\":true,\"target\":\"user\",\"usage\":\"5% — 110/2,200 chars\",\"entry_count\":3,\"message\":\"Applied 1 operation(s).\"}",
+          "timestamp": 9506,
+          "tool_call_id": "call-memory",
+          "_turn_id": "outcome-run-1",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"job\":{\"job_id\":\"digest\",\"name\":\"Daily digest\",\"schedule\":\"every day at 08:00\",\"next_run_at\":null,\"enabled\":false,\"state\":\"paused\"}}",
+          "timestamp": 9507,
+          "tool_call_id": "call-pause",
+          "_turn_id": "outcome-run-1",
+          "_display": "in_scene"
+        },
+        {
+          "role": "assistant",
+          "content": "Done. The release chat has the message, its deploy is approved, Postgres is saved as your preference, and the daily digest is paused.",
+          "message_id": "outcome-answer-1",
+          "timestamp": 9508,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {
+                "row_id": "tool:call-list",
+                "order_index": 0,
+                "role": "tool",
+                "created_at": 9501,
+                "tool": {
+                  "id": "call-list",
+                  "name": "session_list",
+                  "args_fields": [
+                    {
+                      "key": "query",
+                      "value": "release",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "talaria",
+                  "target": "session_list",
+                  "args": {
+                    "query": "release"
+                  },
+                  "preview": null,
+                  "result": "{\"sessions\":[{\"session_id\":\"release-chat\",\"title\":\"Release\"}]}",
+                  "result_view": {
+                    "text": "{\n  \"sessions\": [\n    {\n      \"session_id\": \"release-chat\",\n      \"title\": \"Release\"\n    }\n  ]\n}",
+                    "fields": [
+                      {
+                        "key": "sessions",
+                        "value": "- session_id: release-chat\n  title: Release",
+                        "multiline": true
+                      }
+                    ]
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0",
+                "merged_count": 4
+              },
+              {
+                "row_id": "tool:call-send",
+                "order_index": 1,
+                "role": "tool",
+                "created_at": 9501,
+                "tool": {
+                  "id": "call-send",
+                  "name": "session_send",
+                  "args_fields": [
+                    {
+                      "key": "session_id",
+                      "value": "release-chat",
+                      "multiline": false
+                    },
+                    {
+                      "key": "message",
+                      "value": "Shipped.",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "talaria",
+                  "target": "session_send",
+                  "args": {
+                    "session_id": "release-chat",
+                    "message": "Shipped."
+                  },
+                  "preview": null,
+                  "result": "{\"outcome\":\"queued\",\"stream_id\":null,\"steer_id\":\"steer-1\"}",
+                  "result_view": {
+                    "text": "{\n  \"outcome\": \"queued\",\n  \"stream_id\": null,\n  \"steer_id\": \"steer-1\"\n}",
+                    "fields": [
+                      {
+                        "key": "outcome",
+                        "value": "queued",
+                        "multiline": false
+                      },
+                      {
+                        "key": "stream_id",
+                        "value": "null",
+                        "multiline": false
+                      },
+                      {
+                        "key": "steer_id",
+                        "value": "steer-1",
+                        "multiline": false
+                      }
+                    ],
+                    "outcome": {
+                      "key": "sent",
+                      "tone": "neutral"
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-list"
+              },
+              {
+                "row_id": "tool:call-approve",
+                "order_index": 2,
+                "role": "tool",
+                "created_at": 9501,
+                "tool": {
+                  "id": "call-approve",
+                  "name": "approval_respond",
+                  "args_fields": [
+                    {
+                      "key": "session_id",
+                      "value": "release-chat",
+                      "multiline": false
+                    },
+                    {
+                      "key": "approval_id",
+                      "value": "approval-1",
+                      "multiline": false
+                    },
+                    {
+                      "key": "choice",
+                      "value": "once",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "talaria",
+                  "target": "approval_respond",
+                  "args": {
+                    "session_id": "release-chat",
+                    "approval_id": "approval-1",
+                    "choice": "once"
+                  },
+                  "preview": null,
+                  "result": "{\"ok\":true,\"choice\":\"once\"}",
+                  "result_view": {
+                    "text": "{\n  \"ok\": true,\n  \"choice\": \"once\"\n}",
+                    "fields": [
+                      {
+                        "key": "ok",
+                        "value": "true",
+                        "multiline": false
+                      },
+                      {
+                        "key": "choice",
+                        "value": "once",
+                        "multiline": false
+                      }
+                    ],
+                    "outcome": {
+                      "key": "approved",
+                      "tone": "neutral"
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-list"
+              },
+              {
+                "row_id": "tool:call-goal",
+                "order_index": 3,
+                "role": "tool",
+                "created_at": 9501,
+                "tool": {
+                  "id": "call-goal",
+                  "name": "goal_set",
+                  "args_fields": [
+                    {
+                      "key": "session_id",
+                      "value": "release-chat",
+                      "multiline": false
+                    },
+                    {
+                      "key": "goal",
+                      "value": "Watch the deploy",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "talaria",
+                  "target": "goal_set",
+                  "args": {
+                    "session_id": "release-chat",
+                    "goal": "Watch the deploy"
+                  },
+                  "preview": null,
+                  "result": "{\"ok\":true,\"action\":\"set\"}",
+                  "result_view": {
+                    "text": "{\n  \"ok\": true,\n  \"action\": \"set\"\n}",
+                    "fields": [
+                      {
+                        "key": "ok",
+                        "value": "true",
+                        "multiline": false
+                      },
+                      {
+                        "key": "action",
+                        "value": "set",
+                        "multiline": false
+                      }
+                    ],
+                    "outcome": {
+                      "key": "goal_set",
+                      "tone": "neutral"
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-list"
+              },
+              {
+                "row_id": "tool:call-memory",
+                "order_index": 4,
+                "role": "tool",
+                "created_at": 9501,
+                "tool": {
+                  "id": "call-memory",
+                  "name": "memory",
+                  "args_fields": [
+                    {
+                      "key": "action",
+                      "value": "add",
+                      "multiline": false
+                    },
+                    {
+                      "key": "target",
+                      "value": "user",
+                      "multiline": false
+                    },
+                    {
+                      "key": "content",
+                      "value": "Prefers Postgres",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "memory",
+                  "target": "user",
+                  "args": {
+                    "action": "add",
+                    "target": "user",
+                    "content": "Prefers Postgres"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"done\":true,\"target\":\"user\",\"usage\":\"5% — 110/2,200 chars\",\"entry_count\":3,\"message\":\"Applied 1 operation(s).\"}",
+                  "result_view": {
+                    "text": "Applied 1 operation(s).",
+                    "rows": {
+                      "title": "User profile · 5% — 110/2,200 chars",
+                      "rows": [
+                        {
+                          "label": "Added: Prefers Postgres"
+                        }
+                      ]
+                    },
+                    "outcome": {
+                      "key": "memory_added",
+                      "tone": "neutral",
+                      "count": 1
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0"
+              },
+              {
+                "row_id": "tool:call-pause",
+                "order_index": 5,
+                "role": "tool",
+                "created_at": 9501,
+                "tool": {
+                  "id": "call-pause",
+                  "name": "cronjob_manage",
+                  "args_fields": [
+                    {
+                      "key": "action",
+                      "value": "pause",
+                      "multiline": false
+                    },
+                    {
+                      "key": "job_id",
+                      "value": "digest",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "schedule",
+                  "target": "digest",
+                  "args": {
+                    "action": "pause",
+                    "job_id": "digest"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"job\":{\"job_id\":\"digest\",\"name\":\"Daily digest\",\"schedule\":\"every day at 08:00\",\"next_run_at\":null,\"enabled\":false,\"state\":\"paused\"}}",
+                  "result_view": {
+                    "text": "{\n  \"success\": true,\n  \"job\": {\n    \"job_id\": \"digest\",\n    \"name\": \"Daily digest\",\n    \"schedule\": \"every day at 08:00\",\n    \"next_run_at\": null,\n    \"enabled\": false,\n    \"state\": \"paused\"\n  }\n}",
+                    "rows": {
+                      "title": "Paused",
+                      "rows": [
+                        {
+                          "label": "Daily digest",
+                          "detail": "every day at 08:00 · paused",
+                          "link": {
+                            "kind": "crons",
+                            "id": "digest"
+                          }
+                        }
+                      ]
+                    },
+                    "outcome": {
+                      "key": "paused",
+                      "tone": "neutral"
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0"
+              }
+            ],
+            "final_answer": "Done. The release chat has the message, its deploy is approved, Postgres is saved as your preference, and the daily digest is paused.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": false,
+            "has_consumed_steering": false,
+            "file_changes": [],
+            "activity_groups": [
+              {
+                "group_id": "group:0",
+                "parts": [
+                  {
+                    "kind": "talaria",
+                    "count": 4,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "memory",
+                    "count": 1,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "schedule",
+                    "count": 1,
+                    "failed": 0
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              }
+            ],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [
+                {
+                  "kind": "talaria",
+                  "count": 4,
+                  "failed": 0
+                },
+                {
+                  "kind": "memory",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "schedule",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            },
+            "activity_rows_total": 6,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "fe87ff14b39acdb560e39c84cfd2e43aee320445a9b044b0c5166c24a8a1a285"
+          },
+          "_turn_id": "outcome-run-1",
+          "_display": "row"
+        },
+        {
+          "role": "user",
+          "content": "Why is the login test failing?",
+          "message_id": "outcome-user-2",
+          "timestamp": 9510,
+          "_turn_id": "outcome-run-2",
+          "_display": "row"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "message_id": "outcome-calls-2",
+          "timestamp": 9511,
+          "tool_calls": [
+            {
+              "args_fields": [
+                {
+                  "key": "command",
+                  "value": "npm test -- auth.spec.ts",
+                  "multiline": false
+                }
+              ],
+              "kind": "shell",
+              "target": "npm test -- auth.spec.ts",
+              "function": {
+                "name": "terminal",
+                "arguments": "{\"command\":\"npm test -- auth.spec.ts\"}"
+              },
+              "id": "call-test",
+              "done": true,
+              "is_error": true,
+              "result": "{\"output\":\"FAIL auth.spec.ts\\n  expected cookie to outlive token\",\"exit_code\":1,\"error\":null}",
+              "result_view": {
+                "stdout": "FAIL auth.spec.ts\n  expected cookie to outlive token",
+                "exit_code": 1,
+                "outcome": {
+                  "key": "exit",
+                  "tone": "error",
+                  "count": 1
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "command",
+                  "value": "git status",
+                  "multiline": false
+                }
+              ],
+              "kind": "shell",
+              "target": "git status",
+              "function": {
+                "name": "terminal",
+                "arguments": "{\"command\":\"git status\"}"
+              },
+              "id": "call-status",
+              "done": true,
+              "is_error": false,
+              "result": "{\"output\":\"On branch main\\nnothing to commit\",\"exit_code\":0,\"error\":null}",
+              "result_view": {
+                "stdout": "On branch main\nnothing to commit"
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "pattern",
+                  "value": "TODO(auth)",
+                  "multiline": false
+                }
+              ],
+              "kind": "search",
+              "target": "TODO(auth)",
+              "function": {
+                "name": "search_files",
+                "arguments": "{\"pattern\":\"TODO(auth)\"}"
+              },
+              "id": "call-grep",
+              "done": true,
+              "is_error": false,
+              "result": "{\"total_count\":0,\"matches\":[]}",
+              "result_view": {
+                "text": "{\n  \"total_count\": 0,\n  \"matches\": []\n}",
+                "matches": {
+                  "total": 0,
+                  "truncated": false,
+                  "files": []
+                },
+                "outcome": {
+                  "key": "no_matches",
+                  "tone": "neutral"
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "path",
+                  "value": "src/auth/session.ts",
+                  "multiline": false
+                }
+              ],
+              "kind": "read",
+              "target": "src/auth/session.ts",
+              "focus_path": "src/auth/session.ts",
+              "function": {
+                "name": "read_file",
+                "arguments": "{\"path\":\"src/auth/session.ts\"}"
+              },
+              "id": "call-read",
+              "done": true,
+              "is_error": false,
+              "result": "{\"content\":\"10|const expiry = Math.floor(ttl)\",\"total_lines\":40}",
+              "result_view": {
+                "text": "10|const expiry = Math.floor(ttl)",
+                "file_excerpt": {
+                  "path": "src/auth/session.ts",
+                  "focus_path": "src/auth/session.ts",
+                  "language": "ts",
+                  "start_line": 10,
+                  "lines": [
+                    {
+                      "n": 10,
+                      "text": "const expiry = Math.floor(ttl)"
+                    }
+                  ],
+                  "total_lines": 40,
+                  "truncated": false
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "path",
+                  "value": "src/auth/session.ts",
+                  "multiline": false
+                },
+                {
+                  "key": "old_string",
+                  "value": "Math.floor(ttl)",
+                  "multiline": false
+                },
+                {
+                  "key": "new_string",
+                  "value": "Math.ceil(ttl)",
+                  "multiline": false
+                }
+              ],
+              "kind": "write",
+              "target": "src/auth/session.ts",
+              "edit_diff": {
+                "added": 2,
+                "removed": 1,
+                "diff": "--- a/src/auth/session.ts\n+++ b/src/auth/session.ts\n@@ -10,3 +10,4 @@\n-const expiry = Math.floor(ttl)\n+const expiry = Math.ceil(ttl)\n+// Round up so the cookie outlives the token.\n export { expiry }",
+                "truncated": false,
+                "hunks": [
+                  {
+                    "header": "@@ -10,3 +10,4 @@",
+                    "old_start": 10,
+                    "new_start": 10,
+                    "new_end": 13,
+                    "additions": 2,
+                    "deletions": 1,
+                    "lines": [
+                      {
+                        "kind": "deletion",
+                        "old_line": 10,
+                        "new_line": null,
+                        "text": "-const expiry = Math.floor(ttl)"
+                      },
+                      {
+                        "kind": "addition",
+                        "old_line": null,
+                        "new_line": 10,
+                        "text": "+const expiry = Math.ceil(ttl)"
+                      },
+                      {
+                        "kind": "addition",
+                        "old_line": null,
+                        "new_line": 11,
+                        "text": "+// Round up so the cookie outlives the token."
+                      },
+                      {
+                        "kind": "context",
+                        "old_line": 11,
+                        "new_line": 12,
+                        "text": " export { expiry }"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "focus_path": "src/auth/session.ts",
+              "function": {
+                "name": "patch",
+                "arguments": "{\"path\":\"src/auth/session.ts\",\"old_string\":\"Math.floor(ttl)\",\"new_string\":\"Math.ceil(ttl)\"}"
+              },
+              "id": "call-patch",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"diff\":\"--- a/src/auth/session.ts\\n+++ b/src/auth/session.ts\\n@@ -10,3 +10,4 @@\\n-const expiry = Math.floor(ttl)\\n+const expiry = Math.ceil(ttl)\\n+// Round up so the cookie outlives the token.\\n export { expiry }\\n\"}",
+              "result_view": {
+                "text": "{\n  \"success\": true,\n  \"diff\": \"--- a/src/auth/session.ts\\n+++ b/src/auth/session.ts\\n@@ -10,3 +10,4 @@\\n-const expiry = Math.floor(ttl)\\n+const expiry = Math.ceil(ttl)\\n+// Round up so the cookie outlives the token.\\n export { expiry }\\n\"\n}",
+                "fields": [
+                  {
+                    "key": "success",
+                    "value": "true",
+                    "multiline": false
+                  },
+                  {
+                    "key": "diff",
+                    "value": "--- a/src/auth/session.ts\n+++ b/src/auth/session.ts\n@@ -10,3 +10,4 @@\n-const expiry = Math.floor(ttl)\n+const expiry = Math.ceil(ttl)\n+// Round up so the cookie outlives the token.\n export { expiry }\n",
+                    "multiline": true
+                  }
+                ]
+              },
+              "duration": null,
+              "type": "function"
+            }
+          ],
+          "_turn_id": "outcome-run-2",
+          "_display": "row"
+        },
+        {
+          "role": "tool",
+          "content": "{\"output\":\"FAIL auth.spec.ts\\n  expected cookie to outlive token\",\"exit_code\":1,\"error\":null}",
+          "timestamp": 9512,
+          "tool_call_id": "call-test",
+          "_turn_id": "outcome-run-2",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"output\":\"On branch main\\nnothing to commit\",\"exit_code\":0,\"error\":null}",
+          "timestamp": 9513,
+          "tool_call_id": "call-status",
+          "_turn_id": "outcome-run-2",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"total_count\":0,\"matches\":[]}",
+          "timestamp": 9514,
+          "tool_call_id": "call-grep",
+          "_turn_id": "outcome-run-2",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"content\":\"10|const expiry = Math.floor(ttl)\",\"total_lines\":40}",
+          "timestamp": 9515,
+          "tool_call_id": "call-read",
+          "_turn_id": "outcome-run-2",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"diff\":\"--- a/src/auth/session.ts\\n+++ b/src/auth/session.ts\\n@@ -10,3 +10,4 @@\\n-const expiry = Math.floor(ttl)\\n+const expiry = Math.ceil(ttl)\\n+// Round up so the cookie outlives the token.\\n export { expiry }\\n\"}",
+          "timestamp": 9516,
+          "tool_call_id": "call-patch",
+          "_turn_id": "outcome-run-2",
+          "_display": "in_scene"
+        },
+        {
+          "role": "assistant",
+          "content": "The session cookie expired one second early because the expiry was rounded down. I changed it to round up; the test passes now.",
+          "message_id": "outcome-answer-2",
+          "timestamp": 9517,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {
+                "row_id": "tool:call-test",
+                "order_index": 0,
+                "role": "tool",
+                "created_at": 9511,
+                "tool": {
+                  "id": "call-test",
+                  "name": "terminal",
+                  "args_fields": [
+                    {
+                      "key": "command",
+                      "value": "npm test -- auth.spec.ts",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "shell",
+                  "target": "npm test -- auth.spec.ts",
+                  "args": {
+                    "command": "npm test -- auth.spec.ts"
+                  },
+                  "preview": null,
+                  "result": "{\"output\":\"FAIL auth.spec.ts\\n  expected cookie to outlive token\",\"exit_code\":1,\"error\":null}",
+                  "result_view": {
+                    "stdout": "FAIL auth.spec.ts\n  expected cookie to outlive token",
+                    "exit_code": 1,
+                    "outcome": {
+                      "key": "exit",
+                      "tone": "error",
+                      "count": 1
+                    }
+                  },
+                  "done": true,
+                  "is_error": true,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0"
+              },
+              {
+                "row_id": "tool:call-status",
+                "order_index": 1,
+                "role": "tool",
+                "created_at": 9511,
+                "tool": {
+                  "id": "call-status",
+                  "name": "terminal",
+                  "args_fields": [
+                    {
+                      "key": "command",
+                      "value": "git status",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "shell",
+                  "target": "git status",
+                  "args": {
+                    "command": "git status"
+                  },
+                  "preview": null,
+                  "result": "{\"output\":\"On branch main\\nnothing to commit\",\"exit_code\":0,\"error\":null}",
+                  "result_view": {
+                    "stdout": "On branch main\nnothing to commit"
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0"
+              },
+              {
+                "row_id": "tool:call-grep",
+                "order_index": 2,
+                "role": "tool",
+                "created_at": 9511,
+                "tool": {
+                  "id": "call-grep",
+                  "name": "search_files",
+                  "args_fields": [
+                    {
+                      "key": "pattern",
+                      "value": "TODO(auth)",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "search",
+                  "target": "TODO(auth)",
+                  "args": {
+                    "pattern": "TODO(auth)"
+                  },
+                  "preview": null,
+                  "result": "{\"total_count\":0,\"matches\":[]}",
+                  "result_view": {
+                    "text": "{\n  \"total_count\": 0,\n  \"matches\": []\n}",
+                    "matches": {
+                      "total": 0,
+                      "truncated": false,
+                      "files": []
+                    },
+                    "outcome": {
+                      "key": "no_matches",
+                      "tone": "neutral"
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0"
+              },
+              {
+                "row_id": "tool:call-read",
+                "order_index": 3,
+                "role": "tool",
+                "created_at": 9511,
+                "tool": {
+                  "id": "call-read",
+                  "name": "read_file",
+                  "args_fields": [
+                    {
+                      "key": "path",
+                      "value": "src/auth/session.ts",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "read",
+                  "target": "src/auth/session.ts",
+                  "focus_path": "src/auth/session.ts",
+                  "args": {
+                    "path": "src/auth/session.ts"
+                  },
+                  "preview": null,
+                  "result": "{\"content\":\"10|const expiry = Math.floor(ttl)\",\"total_lines\":40}",
+                  "result_view": {
+                    "text": "10|const expiry = Math.floor(ttl)",
+                    "file_excerpt": {
+                      "path": "src/auth/session.ts",
+                      "focus_path": "src/auth/session.ts",
+                      "language": "ts",
+                      "start_line": 10,
+                      "lines": [
+                        {
+                          "n": 10,
+                          "text": "const expiry = Math.floor(ttl)"
+                        }
+                      ],
+                      "total_lines": 40,
+                      "truncated": false
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0"
+              },
+              {
+                "row_id": "tool:call-patch",
+                "order_index": 4,
+                "role": "tool",
+                "created_at": 9511,
+                "tool": {
+                  "id": "call-patch",
+                  "name": "patch",
+                  "args_fields": [
+                    {
+                      "key": "path",
+                      "value": "src/auth/session.ts",
+                      "multiline": false
+                    },
+                    {
+                      "key": "old_string",
+                      "value": "Math.floor(ttl)",
+                      "multiline": false
+                    },
+                    {
+                      "key": "new_string",
+                      "value": "Math.ceil(ttl)",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "write",
+                  "target": "src/auth/session.ts",
+                  "edit_diff": {
+                    "added": 2,
+                    "removed": 1,
+                    "diff": "--- a/src/auth/session.ts\n+++ b/src/auth/session.ts\n@@ -10,3 +10,4 @@\n-const expiry = Math.floor(ttl)\n+const expiry = Math.ceil(ttl)\n+// Round up so the cookie outlives the token.\n export { expiry }",
+                    "truncated": false,
+                    "hunks": [
+                      {
+                        "header": "@@ -10,3 +10,4 @@",
+                        "old_start": 10,
+                        "new_start": 10,
+                        "new_end": 13,
+                        "additions": 2,
+                        "deletions": 1,
+                        "lines": [
+                          {
+                            "kind": "deletion",
+                            "old_line": 10,
+                            "new_line": null,
+                            "text": "-const expiry = Math.floor(ttl)"
+                          },
+                          {
+                            "kind": "addition",
+                            "old_line": null,
+                            "new_line": 10,
+                            "text": "+const expiry = Math.ceil(ttl)"
+                          },
+                          {
+                            "kind": "addition",
+                            "old_line": null,
+                            "new_line": 11,
+                            "text": "+// Round up so the cookie outlives the token."
+                          },
+                          {
+                            "kind": "context",
+                            "old_line": 11,
+                            "new_line": 12,
+                            "text": " export { expiry }"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "focus_path": "src/auth/session.ts",
+                  "args": {
+                    "path": "src/auth/session.ts",
+                    "old_string": "Math.floor(ttl)",
+                    "new_string": "Math.ceil(ttl)"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"diff\":\"--- a/src/auth/session.ts\\n+++ b/src/auth/session.ts\\n@@ -10,3 +10,4 @@\\n-const expiry = Math.floor(ttl)\\n+const expiry = Math.ceil(ttl)\\n+// Round up so the cookie outlives the token.\\n export { expiry }\\n\"}",
+                  "result_view": {
+                    "text": "{\n  \"success\": true,\n  \"diff\": \"--- a/src/auth/session.ts\\n+++ b/src/auth/session.ts\\n@@ -10,3 +10,4 @@\\n-const expiry = Math.floor(ttl)\\n+const expiry = Math.ceil(ttl)\\n+// Round up so the cookie outlives the token.\\n export { expiry }\\n\"\n}",
+                    "fields": [
+                      {
+                        "key": "success",
+                        "value": "true",
+                        "multiline": false
+                      },
+                      {
+                        "key": "diff",
+                        "value": "--- a/src/auth/session.ts\n+++ b/src/auth/session.ts\n@@ -10,3 +10,4 @@\n-const expiry = Math.floor(ttl)\n+const expiry = Math.ceil(ttl)\n+// Round up so the cookie outlives the token.\n export { expiry }\n",
+                        "multiline": true
+                      }
+                    ]
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0"
+              }
+            ],
+            "final_answer": "The session cookie expired one second early because the expiry was rounded down. I changed it to round up; the test passes now.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": false,
+            "has_consumed_steering": false,
+            "file_changes": [
+              {
+                "path": "src/auth/session.ts",
+                "action": "edited"
+              }
+            ],
+            "activity_groups": [
+              {
+                "group_id": "group:0",
+                "parts": [
+                  {
+                    "kind": "shell",
+                    "count": 2,
+                    "failed": 1
+                  },
+                  {
+                    "kind": "search",
+                    "count": 1,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "read",
+                    "count": 1,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "write",
+                    "count": 1,
+                    "failed": 0
+                  }
+                ],
+                "failed": 1,
+                "running": false
+              }
+            ],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [
+                {
+                  "kind": "shell",
+                  "count": 2,
+                  "failed": 1
+                },
+                {
+                  "kind": "search",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "read",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "write",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 1,
+              "running": false
+            },
+            "activity_rows_total": 5,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "bfe4e97c7626393e94953ce07bcfe60839e6e39fe343036646dc52673f09046b"
+          },
+          "_turn_id": "outcome-run-2",
+          "_display": "row"
+        },
+        {
+          "role": "user",
+          "content": "Check for a newer Agent release, then file it and move the login ticket along.",
+          "message_id": "outcome-user-3",
+          "timestamp": 9520,
+          "_turn_id": "outcome-run-3",
+          "_display": "row"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "message_id": "outcome-calls-3",
+          "timestamp": 9521,
+          "tool_calls": [
+            {
+              "args_fields": [
+                {
+                  "key": "query",
+                  "value": "hermes agent 0.23.2 release",
+                  "multiline": false
+                }
+              ],
+              "kind": "web",
+              "target": "hermes agent 0.23.2 release",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\":\"hermes agent 0.23.2 release\"}"
+              },
+              "id": "call-web",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"data\":{\"web\":[{\"title\":\"Hermes Agent 0.23.2\",\"url\":\"https://example.com/hermes/0.23.2\",\"description\":\"Release notes\"}]}}",
+              "result_view": {
+                "text": "{\n  \"web\": [\n    {\n      \"title\": \"Hermes Agent 0.23.2\",\n      \"url\": \"https://example.com/hermes/0.23.2\",\n      \"description\": \"Release notes\"\n    }\n  ]\n}",
+                "links": {
+                  "items": [
+                    {
+                      "title": "Hermes Agent 0.23.2",
+                      "url": "https://example.com/hermes/0.23.2",
+                      "domain": "example.com",
+                      "snippet": "Release notes"
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "query",
+                  "value": "hermes agent 0.24 changelog",
+                  "multiline": false
+                }
+              ],
+              "kind": "web",
+              "target": "hermes agent 0.24 changelog",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\":\"hermes agent 0.24 changelog\"}"
+              },
+              "id": "call-web-none",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"data\":{\"web\":[]}}",
+              "result_view": {
+                "text": "{\n  \"web\": []\n}",
+                "links": {
+                  "items": []
+                },
+                "outcome": {
+                  "key": "no_results",
+                  "tone": "neutral"
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "questions",
+                  "value": "- question: Which repository to file in?\n  choices:\n    - MaudeCode/talaria\n    - MaudeCode/hermes",
+                  "multiline": true
+                }
+              ],
+              "kind": "question",
+              "target": "",
+              "function": {
+                "name": "clarify",
+                "arguments": "{\"questions\":[{\"question\":\"Which repository to file in?\",\"choices\":[\"MaudeCode/talaria\",\"MaudeCode/hermes\"]}]}"
+              },
+              "id": "call-ask",
+              "done": true,
+              "is_error": false,
+              "result": "{\"responses\":[{\"question\":\"Which repository to file in?\",\"choices_offered\":[\"MaudeCode/talaria\",\"MaudeCode/hermes\"],\"status\":\"answered\",\"user_response\":\"MaudeCode/talaria\"}],\"outcome\":\"answered\"}",
+              "result_view": {
+                "text": "{\n  \"responses\": [\n    {\n      \"question\": \"Which repository to file in?\",\n      \"choices_offered\": [\n        \"MaudeCode/talaria\",\n        \"MaudeCode/hermes\"\n      ],\n      \"status\": \"answered\",\n      \"user_response\": \"MaudeCode/talaria\"\n    }\n  ],\n  \"outcome\": \"answered\"\n}",
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "Which repository to file in?",
+                      "detail": "MaudeCode/talaria"
+                    }
+                  ]
+                },
+                "outcome": {
+                  "key": "answered",
+                  "tone": "neutral",
+                  "value": "MaudeCode/talaria"
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "task_id",
+                  "value": "t_login",
+                  "multiline": false
+                },
+                {
+                  "key": "summary",
+                  "value": "Fixed the redirect",
+                  "multiline": false
+                }
+              ],
+              "kind": "kanban",
+              "target": "t_login",
+              "verb": "update",
+              "function": {
+                "name": "kanban_request_review",
+                "arguments": "{\"task_id\":\"t_login\",\"summary\":\"Fixed the redirect\"}"
+              },
+              "id": "call-move",
+              "done": true,
+              "is_error": false,
+              "result": "{\"ok\":true,\"task_id\":\"t_login\",\"status\":\"review\"}",
+              "result_view": {
+                "text": "{\n  \"ok\": true,\n  \"task_id\": \"t_login\",\n  \"status\": \"review\"\n}",
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "t_login",
+                      "detail": "review",
+                      "link": {
+                        "kind": "kanban_task",
+                        "id": "t_login"
+                      }
+                    }
+                  ]
+                },
+                "outcome": {
+                  "key": "moved_to",
+                  "tone": "neutral",
+                  "value": "Review"
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "title",
+                  "value": "Agent 0.23.2 is out",
+                  "multiline": false
+                }
+              ],
+              "kind": "mcp",
+              "target": "Create issue",
+              "app": {
+                "name": "GitHub",
+                "logo_url": null
+              },
+              "function": {
+                "name": "mcp__github__create_issue",
+                "arguments": "{\"title\":\"Agent 0.23.2 is out\"}"
+              },
+              "id": "call-issue",
+              "done": true,
+              "is_error": true,
+              "result": "{\"error\":\"Resource not accessible by integration\"}",
+              "result_view": {
+                "error": "Resource not accessible by integration",
+                "outcome": {
+                  "key": "failed",
+                  "tone": "error",
+                  "value": "Resource not accessible by integration"
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "to",
+                  "value": "owner@example.com",
+                  "multiline": false
+                },
+                {
+                  "key": "subject",
+                  "value": "Agent 0.23.2",
+                  "multiline": false
+                }
+              ],
+              "kind": "mcp",
+              "target": "Send email",
+              "app": {
+                "name": "Gmail",
+                "logo_url": null
+              },
+              "function": {
+                "name": "mcp__gmail__send_email",
+                "arguments": "{\"to\":\"owner@example.com\",\"subject\":\"Agent 0.23.2\"}"
+              },
+              "id": "call-mail",
+              "done": true,
+              "is_error": false,
+              "result": "{\"id\":\"message-1\",\"threadId\":\"thread-1\"}",
+              "result_view": {
+                "text": "{\n  \"id\": \"message-1\",\n  \"threadId\": \"thread-1\"\n}",
+                "fields": [
+                  {
+                    "key": "id",
+                    "value": "message-1",
+                    "multiline": false
+                  },
+                  {
+                    "key": "threadId",
+                    "value": "thread-1",
+                    "multiline": false
+                  }
+                ]
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "action",
+                  "value": "edit",
+                  "multiline": false
+                },
+                {
+                  "key": "name",
+                  "value": "deploy-checklist",
+                  "multiline": false
+                },
+                {
+                  "key": "content",
+                  "value": "# Deploy checklist",
+                  "multiline": false
+                }
+              ],
+              "kind": "skill",
+              "target": "deploy-checklist",
+              "function": {
+                "name": "skill_manage",
+                "arguments": "{\"action\":\"edit\",\"name\":\"deploy-checklist\",\"content\":\"# Deploy checklist\"}"
+              },
+              "id": "call-skill",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"staged\":true,\"pending_id\":\"pending-1\",\"gist\":\"Add a rollback step\",\"message\":\"Waiting for the user to approve.\"}",
+              "result_view": {
+                "text": "Waiting for the user to approve.",
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "Waiting for approval",
+                      "detail": "Add a rollback step",
+                      "status": "pending"
+                    },
+                    {
+                      "label": "Edited deploy-checklist",
+                      "status": "pending",
+                      "link": {
+                        "kind": "skill",
+                        "id": "deploy-checklist"
+                      }
+                    }
+                  ]
+                },
+                "outcome": {
+                  "key": "pending_approval",
+                  "tone": "attention"
+                }
+              },
+              "duration": null,
+              "type": "function"
+            }
+          ],
+          "_turn_id": "outcome-run-3",
+          "_display": "row"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"data\":{\"web\":[{\"title\":\"Hermes Agent 0.23.2\",\"url\":\"https://example.com/hermes/0.23.2\",\"description\":\"Release notes\"}]}}",
+          "timestamp": 9522,
+          "tool_call_id": "call-web",
+          "_turn_id": "outcome-run-3",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"data\":{\"web\":[]}}",
+          "timestamp": 9523,
+          "tool_call_id": "call-web-none",
+          "_turn_id": "outcome-run-3",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"responses\":[{\"question\":\"Which repository to file in?\",\"choices_offered\":[\"MaudeCode/talaria\",\"MaudeCode/hermes\"],\"status\":\"answered\",\"user_response\":\"MaudeCode/talaria\"}],\"outcome\":\"answered\"}",
+          "timestamp": 9524,
+          "tool_call_id": "call-ask",
+          "_turn_id": "outcome-run-3",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"ok\":true,\"task_id\":\"t_login\",\"status\":\"review\"}",
+          "timestamp": 9525,
+          "tool_call_id": "call-move",
+          "_turn_id": "outcome-run-3",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"error\":\"Resource not accessible by integration\"}",
+          "timestamp": 9526,
+          "tool_call_id": "call-issue",
+          "_turn_id": "outcome-run-3",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"id\":\"message-1\",\"threadId\":\"thread-1\"}",
+          "timestamp": 9527,
+          "tool_call_id": "call-mail",
+          "_turn_id": "outcome-run-3",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"staged\":true,\"pending_id\":\"pending-1\",\"gist\":\"Add a rollback step\",\"message\":\"Waiting for the user to approve.\"}",
+          "timestamp": 9528,
+          "tool_call_id": "call-skill",
+          "_turn_id": "outcome-run-3",
+          "_display": "in_scene"
+        },
+        {
+          "role": "assistant",
+          "content": "0.23.2 is out. GitHub refused the issue because the integration can't write to that repository, so I emailed you the details instead. The login ticket is in Review.",
+          "message_id": "outcome-answer-3",
+          "timestamp": 9529,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {
+                "row_id": "tool:call-web",
+                "order_index": 0,
+                "role": "tool",
+                "created_at": 9521,
+                "tool": {
+                  "id": "call-web",
+                  "name": "web_search",
+                  "args_fields": [
+                    {
+                      "key": "query",
+                      "value": "hermes agent 0.23.2 release",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "web",
+                  "target": "hermes agent 0.23.2 release",
+                  "args": {
+                    "query": "hermes agent 0.23.2 release"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"data\":{\"web\":[{\"title\":\"Hermes Agent 0.23.2\",\"url\":\"https://example.com/hermes/0.23.2\",\"description\":\"Release notes\"}]}}",
+                  "result_view": {
+                    "text": "{\n  \"web\": [\n    {\n      \"title\": \"Hermes Agent 0.23.2\",\n      \"url\": \"https://example.com/hermes/0.23.2\",\n      \"description\": \"Release notes\"\n    }\n  ]\n}",
+                    "links": {
+                      "items": [
+                        {
+                          "title": "Hermes Agent 0.23.2",
+                          "url": "https://example.com/hermes/0.23.2",
+                          "domain": "example.com",
+                          "snippet": "Release notes"
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0",
+                "merged_count": 2
+              },
+              {
+                "row_id": "tool:call-web-none",
+                "order_index": 1,
+                "role": "tool",
+                "created_at": 9521,
+                "tool": {
+                  "id": "call-web-none",
+                  "name": "web_search",
+                  "args_fields": [
+                    {
+                      "key": "query",
+                      "value": "hermes agent 0.24 changelog",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "web",
+                  "target": "hermes agent 0.24 changelog",
+                  "args": {
+                    "query": "hermes agent 0.24 changelog"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"data\":{\"web\":[]}}",
+                  "result_view": {
+                    "text": "{\n  \"web\": []\n}",
+                    "links": {
+                      "items": []
+                    },
+                    "outcome": {
+                      "key": "no_results",
+                      "tone": "neutral"
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0",
+                "merged_into": "tool:call-web"
+              },
+              {
+                "row_id": "tool:call-ask",
+                "order_index": 2,
+                "role": "tool",
+                "created_at": 9521,
+                "tool": {
+                  "id": "call-ask",
+                  "name": "clarify",
+                  "args_fields": [
+                    {
+                      "key": "questions",
+                      "value": "- question: Which repository to file in?\n  choices:\n    - MaudeCode/talaria\n    - MaudeCode/hermes",
+                      "multiline": true
+                    }
+                  ],
+                  "kind": "question",
+                  "target": "",
+                  "args": {
+                    "questions": [
+                      {
+                        "question": "Which repository to file in?",
+                        "choices": [
+                          "MaudeCode/talaria",
+                          "MaudeCode/hermes"
+                        ]
+                      }
+                    ]
+                  },
+                  "preview": null,
+                  "result": "{\"responses\":[{\"question\":\"Which repository to file in?\",\"choices_offered\":[\"MaudeCode/talaria\",\"MaudeCode/hermes\"],\"status\":\"answered\",\"user_response\":\"MaudeCode/talaria\"}],\"outcome\":\"answered\"}",
+                  "result_view": {
+                    "text": "{\n  \"responses\": [\n    {\n      \"question\": \"Which repository to file in?\",\n      \"choices_offered\": [\n        \"MaudeCode/talaria\",\n        \"MaudeCode/hermes\"\n      ],\n      \"status\": \"answered\",\n      \"user_response\": \"MaudeCode/talaria\"\n    }\n  ],\n  \"outcome\": \"answered\"\n}",
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "Which repository to file in?",
+                          "detail": "MaudeCode/talaria"
+                        }
+                      ]
+                    },
+                    "outcome": {
+                      "key": "answered",
+                      "tone": "neutral",
+                      "value": "MaudeCode/talaria"
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0"
+              },
+              {
+                "row_id": "tool:call-move",
+                "order_index": 3,
+                "role": "tool",
+                "created_at": 9521,
+                "tool": {
+                  "id": "call-move",
+                  "name": "kanban_request_review",
+                  "args_fields": [
+                    {
+                      "key": "task_id",
+                      "value": "t_login",
+                      "multiline": false
+                    },
+                    {
+                      "key": "summary",
+                      "value": "Fixed the redirect",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "kanban",
+                  "target": "t_login",
+                  "verb": "update",
+                  "args": {
+                    "task_id": "t_login",
+                    "summary": "Fixed the redirect"
+                  },
+                  "preview": null,
+                  "result": "{\"ok\":true,\"task_id\":\"t_login\",\"status\":\"review\"}",
+                  "result_view": {
+                    "text": "{\n  \"ok\": true,\n  \"task_id\": \"t_login\",\n  \"status\": \"review\"\n}",
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "t_login",
+                          "detail": "review",
+                          "link": {
+                            "kind": "kanban_task",
+                            "id": "t_login"
+                          }
+                        }
+                      ]
+                    },
+                    "outcome": {
+                      "key": "moved_to",
+                      "tone": "neutral",
+                      "value": "Review"
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0"
+              },
+              {
+                "row_id": "tool:call-issue",
+                "order_index": 4,
+                "role": "tool",
+                "created_at": 9521,
+                "tool": {
+                  "id": "call-issue",
+                  "name": "mcp__github__create_issue",
+                  "args_fields": [
+                    {
+                      "key": "title",
+                      "value": "Agent 0.23.2 is out",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "mcp",
+                  "target": "Create issue",
+                  "app": {
+                    "name": "GitHub",
+                    "logo_url": null
+                  },
+                  "args": {
+                    "title": "Agent 0.23.2 is out"
+                  },
+                  "preview": null,
+                  "result": "{\"error\":\"Resource not accessible by integration\"}",
+                  "result_view": {
+                    "error": "Resource not accessible by integration",
+                    "outcome": {
+                      "key": "failed",
+                      "tone": "error",
+                      "value": "Resource not accessible by integration"
+                    }
+                  },
+                  "done": true,
+                  "is_error": true,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0"
+              },
+              {
+                "row_id": "tool:call-mail",
+                "order_index": 5,
+                "role": "tool",
+                "created_at": 9521,
+                "tool": {
+                  "id": "call-mail",
+                  "name": "mcp__gmail__send_email",
+                  "args_fields": [
+                    {
+                      "key": "to",
+                      "value": "owner@example.com",
+                      "multiline": false
+                    },
+                    {
+                      "key": "subject",
+                      "value": "Agent 0.23.2",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "mcp",
+                  "target": "Send email",
+                  "app": {
+                    "name": "Gmail",
+                    "logo_url": null
+                  },
+                  "args": {
+                    "to": "owner@example.com",
+                    "subject": "Agent 0.23.2"
+                  },
+                  "preview": null,
+                  "result": "{\"id\":\"message-1\",\"threadId\":\"thread-1\"}",
+                  "result_view": {
+                    "text": "{\n  \"id\": \"message-1\",\n  \"threadId\": \"thread-1\"\n}",
+                    "fields": [
+                      {
+                        "key": "id",
+                        "value": "message-1",
+                        "multiline": false
+                      },
+                      {
+                        "key": "threadId",
+                        "value": "thread-1",
+                        "multiline": false
+                      }
+                    ]
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0"
+              },
+              {
+                "row_id": "tool:call-skill",
+                "order_index": 6,
+                "role": "tool",
+                "created_at": 9521,
+                "tool": {
+                  "id": "call-skill",
+                  "name": "skill_manage",
+                  "args_fields": [
+                    {
+                      "key": "action",
+                      "value": "edit",
+                      "multiline": false
+                    },
+                    {
+                      "key": "name",
+                      "value": "deploy-checklist",
+                      "multiline": false
+                    },
+                    {
+                      "key": "content",
+                      "value": "# Deploy checklist",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "skill",
+                  "target": "deploy-checklist",
+                  "args": {
+                    "action": "edit",
+                    "name": "deploy-checklist",
+                    "content": "# Deploy checklist"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"staged\":true,\"pending_id\":\"pending-1\",\"gist\":\"Add a rollback step\",\"message\":\"Waiting for the user to approve.\"}",
+                  "result_view": {
+                    "text": "Waiting for the user to approve.",
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "Waiting for approval",
+                          "detail": "Add a rollback step",
+                          "status": "pending"
+                        },
+                        {
+                          "label": "Edited deploy-checklist",
+                          "status": "pending",
+                          "link": {
+                            "kind": "skill",
+                            "id": "deploy-checklist"
+                          }
+                        }
+                      ]
+                    },
+                    "outcome": {
+                      "key": "pending_approval",
+                      "tone": "attention"
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                },
+                "group_id": "group:0"
+              }
+            ],
+            "final_answer": "0.23.2 is out. GitHub refused the issue because the integration can't write to that repository, so I emailed you the details instead. The login ticket is in Review.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": false,
+            "has_consumed_steering": false,
+            "file_changes": [],
+            "activity_groups": [
+              {
+                "group_id": "group:0",
+                "parts": [
+                  {
+                    "kind": "web",
+                    "count": 2,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "question",
+                    "count": 1,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "kanban",
+                    "count": 1,
+                    "failed": 0
+                  },
+                  {
+                    "kind": "mcp",
+                    "count": 2,
+                    "failed": 1
+                  },
+                  {
+                    "kind": "skill",
+                    "count": 1,
+                    "failed": 0
+                  }
+                ],
+                "failed": 1,
+                "running": false
+              }
+            ],
+            "final_phase_activity": {
+              "group_id": "phase:0",
+              "parts": [
+                {
+                  "kind": "web",
+                  "count": 2,
+                  "failed": 0
+                },
+                {
+                  "kind": "question",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "kanban",
+                  "count": 1,
+                  "failed": 0
+                },
+                {
+                  "kind": "mcp",
+                  "count": 2,
+                  "failed": 1
+                },
+                {
+                  "kind": "skill",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 1,
+              "running": false
+            },
+            "activity_rows_total": 7,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "f9580b5fdfb53345f802fd5b831522ca9aa9b35654e41586e308921c98da892b"
+          },
+          "_turn_id": "outcome-run-3",
           "_display": "row"
         }
       ]

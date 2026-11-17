@@ -1727,6 +1727,75 @@
 	"todos_open_chat": "Abra um chat para ver a lista de tarefas dele.",
 	"token_usage_off": "Uso de tokens desligado",
 	"token_usage_on": "Uso de tokens ligado",
+	"tool_outcome_answered": "Resposta: {answer}",
+	"tool_outcome_approved": "Aprovado",
+	"tool_outcome_blocked": "Bloqueado",
+	"tool_outcome_commented": "Comentado",
+	"tool_outcome_completed": "Concluído",
+	"tool_outcome_connected": "Conectado: {apps}",
+	"tool_outcome_created": "Criado",
+	"tool_outcome_denied": "Negado",
+	"tool_outcome_exit": "Saída {code}",
+	"tool_outcome_failed": "Falhou",
+	"tool_outcome_goal_set": "Objetivo definido",
+	"tool_outcome_job_created": "Agendado",
+	"tool_outcome_job_next_run": "Próxima execução {when}",
+	"tool_outcome_memory_added": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} entrada de memória adicionada",
+				"countPlural=other": "{count} entradas de memória adicionadas"
+			}
+		}
+	],
+	"tool_outcome_memory_removed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} entrada de memória removida",
+				"countPlural=other": "{count} entradas de memória removidas"
+			}
+		}
+	],
+	"tool_outcome_memory_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} entrada de memória atualizada",
+				"countPlural=other": "{count} entradas de memória atualizadas"
+			}
+		}
+	],
+	"tool_outcome_moved_to": "Movido para {status}",
+	"tool_outcome_needs_sign_in": "Requer login",
+	"tool_outcome_paused": "Pausado",
+	"tool_outcome_pending_approval": "Aguardando aprovação",
+	"tool_outcome_ran_now": "Executado agora",
+	"tool_outcome_removed": "Removido",
+	"tool_outcome_resumed": "Retomado",
+	"tool_outcome_sent": "Enviado",
+	"tool_outcome_skill_created": "Habilidade criada",
+	"tool_outcome_skill_updated": "Habilidade atualizada",
+	"tool_outcome_skipped": "Ignorado",
 	"tool_target_skill_suffix": "skill",
 	"transcript": "Transcrição",
 	"transcript_load_earlier": "Carregar mensagens anteriores",

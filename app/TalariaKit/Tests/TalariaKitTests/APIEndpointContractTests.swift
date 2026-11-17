@@ -1236,6 +1236,32 @@ final class SharedContractTests: XCTestCase {
         }
     }
 
+    /// TAL-2335: each call's outcome in the shared tool-rows session, on the scene and the calls alike.
+    func testSharedWebSessionCarriesEachToolOutcome() throws {
+        let data = try fixture("web-session")
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-2335 ships no outcome.
+        guard let example = object["tool_rows_views"] as? [String: Any], String(decoding: data, as: UTF8.self).contains(#""memory_added""#) else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
+        let messages = try XCTUnwrap(session.messages)
+        let answer = try XCTUnwrap(messages.first { $0.messageId == "rows-answer" })
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: answer))
+        let groups = ToolCallGroup.groups(messages: messages, messageOffset: nil)
+        for calls in [timeline.toolCalls, groups.first { $0.anchorMessageID == "rows-calls" }?.toolCalls ?? []] {
+            let outcomes = Dictionary(uniqueKeysWithValues: calls.map { ($0.id, $0.resultView?.outcome) })
+            XCTAssertEqual(outcomes, [
+                "call-memory": ToolOutcome(key: .memoryAdded, tone: .neutral, count: 1),
+                "call-skill": ToolOutcome(key: .pendingApproval, tone: .attention),
+                "call-view": nil, "call-search": nil,
+                "call-cron": ToolOutcome(key: .paused, tone: .neutral),
+                "call-connect": ToolOutcome(key: .needsSignIn, tone: .attention),
+                "call-clarify": ToolOutcome(key: .answered, tone: .neutral, value: "dev"),
+            ])
+        }
+    }
+
     func testSharedWebSessionCarriesEachKanbanRow() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-2327 has no such example.

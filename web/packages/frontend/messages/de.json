@@ -1856,6 +1856,75 @@
 	"todos_open_chat": "Öffne einen Chat, um seine Aufgabenliste zu sehen.",
 	"token_usage_off": "Token-Verbrauch aus",
 	"token_usage_on": "Token-Verbrauch an",
+	"tool_outcome_answered": "Antwort: {answer}",
+	"tool_outcome_approved": "Genehmigt",
+	"tool_outcome_blocked": "Blockiert",
+	"tool_outcome_commented": "Kommentiert",
+	"tool_outcome_completed": "Abgeschlossen",
+	"tool_outcome_connected": "Verbunden: {apps}",
+	"tool_outcome_created": "Erstellt",
+	"tool_outcome_denied": "Abgelehnt",
+	"tool_outcome_exit": "Exit {code}",
+	"tool_outcome_failed": "Fehlgeschlagen",
+	"tool_outcome_goal_set": "Ziel gesetzt",
+	"tool_outcome_job_created": "Geplant",
+	"tool_outcome_job_next_run": "Nächste Ausführung {when}",
+	"tool_outcome_memory_added": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} Erinnerung hinzugefügt",
+				"countPlural=other": "{count} Erinnerungen hinzugefügt"
+			}
+		}
+	],
+	"tool_outcome_memory_removed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} Erinnerung entfernt",
+				"countPlural=other": "{count} Erinnerungen entfernt"
+			}
+		}
+	],
+	"tool_outcome_memory_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} Erinnerung aktualisiert",
+				"countPlural=other": "{count} Erinnerungen aktualisiert"
+			}
+		}
+	],
+	"tool_outcome_moved_to": "Verschoben nach {status}",
+	"tool_outcome_needs_sign_in": "Anmeldung erforderlich",
+	"tool_outcome_paused": "Pausiert",
+	"tool_outcome_pending_approval": "Wartet auf Freigabe",
+	"tool_outcome_ran_now": "Jetzt ausgeführt",
+	"tool_outcome_removed": "Entfernt",
+	"tool_outcome_resumed": "Fortgesetzt",
+	"tool_outcome_sent": "Gesendet",
+	"tool_outcome_skill_created": "Skill erstellt",
+	"tool_outcome_skill_updated": "Skill aktualisiert",
+	"tool_outcome_skipped": "Übersprungen",
 	"tool_target_skill_suffix": "skill",
 	"transcript": "Protokoll",
 	"transcript_load_earlier": "Frühere Nachrichten laden",

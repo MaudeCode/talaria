@@ -4,10 +4,10 @@ import { useApprovalFlash, useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon } from '../toolKind'
-import type { ApprovalAnsweredBy, BackgroundAgent, BackgroundLink, FileExcerpt, ResultLinks, ResultPage, SearchMatches, ToolApp, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
+import type { ApprovalAnsweredBy, BackgroundAgent, BackgroundLink, FileExcerpt, ResultLinks, ResultPage, SearchMatches, ToolApp, ToolApprovalOutcome, ToolField, ToolKind, ToolOutcome, ToolProgress, ToolResultView, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
 import { agentsSummary, statusLabel, StatusIcon } from '../../background/BackgroundWork'
 import { requestOpenAgent } from '../../background/openAgentRequest'
-import { formatElapsed } from '../../../i18n/units'
+import { formatElapsed, resetTime } from '../../../i18n/units'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
 import { m } from '../../../paraglide/messages.js'
@@ -298,6 +298,42 @@ function ClippedResult({ sessionId, callId, view, clipped }: { sessionId: string
   )
 }
 
+/** TAL-2335: a call's outcome in the reader's words; the server decided the outcome, its tone and its value. */
+export function toolOutcomeText(outcome: ToolOutcome, locale: string): string {
+  const count = outcome.count ?? 0
+  const value = outcome.value ?? ''
+  switch (outcome.key) {
+    case 'sent': return m.tool_outcome_sent()
+    case 'approved': return m.tool_outcome_approved()
+    case 'denied': return m.tool_outcome_denied()
+    case 'goal_set': return m.tool_outcome_goal_set()
+    case 'created': return m.tool_outcome_created()
+    case 'memory_added': return m.tool_outcome_memory_added({ count })
+    case 'memory_updated': return m.tool_outcome_memory_updated({ count })
+    case 'memory_removed': return m.tool_outcome_memory_removed({ count })
+    case 'skill_created': return m.tool_outcome_skill_created()
+    case 'skill_updated': return m.tool_outcome_skill_updated()
+    case 'pending_approval': return m.tool_outcome_pending_approval()
+    case 'job_created': return value ? m.tool_outcome_job_next_run({ when: resetTime(locale, value) }) : m.tool_outcome_job_created()
+    case 'paused': return m.tool_outcome_paused()
+    case 'resumed': return m.tool_outcome_resumed()
+    case 'removed': return m.tool_outcome_removed()
+    case 'ran_now': return m.tool_outcome_ran_now()
+    case 'moved_to': return m.tool_outcome_moved_to({ status: value })
+    case 'blocked': return m.tool_outcome_blocked()
+    case 'completed': return m.tool_outcome_completed()
+    case 'commented': return m.tool_outcome_commented()
+    case 'connected': return m.tool_outcome_connected({ apps: value })
+    case 'needs_sign_in': return m.tool_outcome_needs_sign_in()
+    case 'answered': return m.tool_outcome_answered({ answer: value })
+    case 'skipped': return m.tool_outcome_skipped()
+    case 'no_matches': return m.tool_matches_none()
+    case 'no_results': return m.tool_links_none()
+    case 'exit': return m.tool_outcome_exit({ code: String(count) })
+    case 'failed': return value || m.tool_outcome_failed()
+  }
+}
+
 /** One tool invocation. Collapsed by default: verb + target; details show arguments and result preview as text. */
 export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: ToolCardData; timestamp?: string | undefined; sessionId?: string | undefined; /** Its row in a running turn, which opens as it arrives. */ arrivalKey?: string | undefined }) {
   const locale = useLocale()
@@ -308,6 +344,7 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
   const args = pretty(call.args)
   const result = call.resultView ? resultText(call.resultView) : call.preview ?? ''
   const flash = useApprovalFlash([call])
+  const outcome = call.done && call.resultView?.outcome ? toolOutcomeText(call.resultView.outcome, locale) : ''
   const answeredBy = call.approvalAnsweredBy && (call.approvalAnsweredBy.outcome === 'denied' ? m.tool_approval_denied_by : m.tool_approval_allowed_by)({ title: call.approvalAnsweredBy.title })
   return (
     <div ref={arrival} className={cn('tool-card-row tool-card my-1 rounded-lg border border-border-subtle bg-surface-subtle text-[13px]', call.isError && 'border-error/40', !call.done && 'tool-card-running')} data-tool-id={call.id} data-tool-kind={kind} data-tool-done={call.done ? '1' : '0'} data-tool-error={call.isError ? '1' : undefined}>
@@ -315,6 +352,8 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
         <ChevronRight size={14} className={cn('tool-card-toggle shrink-0 text-muted transition-transform', open && 'rotate-90')} aria-hidden="true" />
         <span className="tool-card-icon"><ToolKindIcon kind={kind} logoUrl={call.app?.logo_url} /></span>
         <span className="tool-card-name min-w-0 flex-1 truncate"><SwapText className="tool-card-name-label" text={label} /></span>
+        {/* TAL-2335: what the call did, after its label: muted, or the error or warning colour the server's tone asks for. */}
+        {outcome && <span className="tool-card-outcome" data-outcome-tone={call.resultView?.outcome?.tone} title={outcome}>{outcome}</span>}
         {!call.done && call.progress && <span className="tool-card-progress min-w-0 max-w-[60%] truncate text-[11px] tabular-nums text-muted" title={call.progress.message ?? undefined}>{[call.progress.percent === null ? null : new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(call.progress.percent / 100), call.progress.message].filter(Boolean).join(' · ')}</span>}
         {call.background && <span className="tool-card-background shrink-0 text-[11px] text-muted" data-background-status={call.background.status}>{call.background.status === 'running' || call.background.status === 'completed' ? agentsSummary(call.background.agents) : `${statusLabel(call.background.status)} · ${agentsSummary(call.background.agents)}`}</span>}
         {answeredBy && <span className="tool-card-answered-by min-w-0 max-w-[40%] shrink truncate text-[11px] text-muted" data-approval-outcome={call.approvalAnsweredBy?.outcome} title={answeredBy}>{answeredBy}</span>}

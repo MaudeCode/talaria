@@ -4772,7 +4772,7 @@ describe('live tool outcomes (TAL-313)', () => {
     expect(start.stream_id).toBeTypeOf('string')
     const streamId = String(start.stream_id)
     // Redacted like every string that leaves the server.
-    const view = { stdout: 'built\nok', stderr: 'warning: deprecated\nAuthorization: Bearer synthe...cdef', exit_code: 2, approval_note: `${approval} Authorization: Bearer synthe...cdef` }
+    const view = { stdout: 'built\nok', stderr: 'warning: deprecated\nAuthorization: Bearer synthe...cdef', exit_code: 2, approval_note: `${approval} Authorization: Bearer synthe...cdef`, outcome: { key: 'exit', tone: 'error', count: 2 } }
     const completes = (frames: SseFrame[]) => frames.filter((f) => f.event === 'tool_complete').map((f) => (f.data as Json).result_view)
     const live = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
     expect(completes(live)).toEqual([view])
@@ -4806,10 +4806,27 @@ describe('live tool outcomes (TAL-313)', () => {
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     const partial = (detail.messages as Json[]).find((m) => m._partial === true)
     // TAL-315: the sections shown live (stderr, the exit code) survive the failed turn's reload.
-    const view = { stderr: 'boom', exit_code: 2 }
+    const view = { stderr: 'boom', exit_code: 2, outcome: { key: 'exit', tone: 'error', count: 2 } }
     expect((partial?.tool_calls as Json[]).map((c) => [c.id, c.done, c.is_error, c.duration, c.result, c.result_view])).toEqual([['call-make', true, true, 4, 'failed', view]])
     const scene = (detail.messages as Json[]).at(-1)?._anchor_activity_scene as Json
     expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => { const t = r.tool as Json; return [t.id, t.is_error, t.duration, t.result_view] })).toEqual([['call-make', true, 4, view]])
+  })
+
+  it('decides a live batch memory write\'s outcome from the whole arguments the sidecar forwards, never forwarding them (TAL-2335)', async () => {
+    const sid = await newSession(s)
+    // The display snapshot holds `operations` as capped text; `raw_args` keeps it as the JSON text the server reads whole.
+    const operations = [{ action: 'add', content: 'Prefers Postgres' }, { action: 'add', content: 'Works in UTC' }]
+    const snapshot = { target: 'user', operations: JSON.stringify(operations).slice(0, 40) + '...' }
+    sidecar.respond('chat.start', (_params, emit) => {
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'memory', args: snapshot, tid: 'call-memory' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'memory', preview: 'Applied 2 operation(s).', args: snapshot, tid: 'call-memory', raw_args: { target: 'user', operations: JSON.stringify(operations) }, raw_result: { success: true, target: 'user', message: 'Applied 2 operation(s).' } } })
+      return completed([{ role: 'assistant', content: 'Saved.' }])
+    })
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'remember these' }))).stream_id)
+    const live = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+    const complete = live.find((f) => f.event === 'tool_complete')?.data as Json
+    expect((complete.result_view as Json).outcome).toEqual({ key: 'memory_added', tone: 'neutral', count: 2 })
+    expect(complete).not.toHaveProperty('raw_args')
   })
 
   it('judges live tool results by the Agent v0.22.3 shape and neutral rules, through a failed turn\'s reload (TAL-1261)', async () => {

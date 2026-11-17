@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Collapsed tool rows say what a call did when it matters: a message sent, a memory added, a job paused, a search that found nothing, a non-zero exit or error, or a write waiting for your approval.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

@@ -2199,6 +2199,42 @@ final class ChatHostedTests: XCTestCase {
         }
     }
 
+    /// TAL-2335: a finished row reads its outcome after its label, past a middle dot: routine outcomes in the secondary tier,
+    /// a failure in red and a wait on the user in orange, in light and dark; a running row shows none.
+    func testToolRowsShowTheServerOutcomeAfterTheLabel() throws {
+        func call(_ id: String, _ name: String, _ kind: ToolDisplayKind, _ target: String, _ outcome: ToolOutcome?, done: Bool = true) -> ToolCall {
+            ToolCall(id: id, name: name, preview: nil, args: nil, kind: kind, target: target, resultView: ToolResultView(text: "ok", outcome: outcome), isCompleted: done)
+        }
+        let calls = [
+            call("send", "session_send", .talaria, "session_send", ToolOutcome(key: .sent, tone: .neutral)),
+            call("memory", "memory", .memory, "", ToolOutcome(key: .memoryAdded, tone: .neutral, count: 1)),
+            call("make", "terminal", .shell, "npm test -- auth.spec.ts", ToolOutcome(key: .exit, tone: .error, count: 1)),
+            call("search", "search_files", .search, "TODO(auth)", ToolOutcome(key: .noMatches, tone: .neutral)),
+            call("issue", "mcp_github_create_issue", .mcp, "Create issue", ToolOutcome(key: .failed, tone: .error, value: "Resource not accessible by integration")),
+            call("skill", "skill_manage", .skill, "deploy-checklist", ToolOutcome(key: .pendingApproval, tone: .attention)),
+            call("running", "session_send", .talaria, "session_send", ToolOutcome(key: .sent, tone: .neutral), done: false),
+        ]
+        for (name, style) in [("light", UIUserInterfaceStyle.light), ("dark", .dark)] {
+            let window = try hostWindow(VStack(spacing: 0) { ForEach(calls) { ToolCallCardView(toolCall: $0) } }.padding(), size: CGSize(width: 390, height: 520)) { $0.userInterfaceStyle = style }
+            for label in ["Sent", "Added 1 memory", "Exit 1", "No matches", "Resource not accessible by integration", "Waiting for approval"] {
+                XCTAssertFalse(HostedAccessibility.elements(in: window, labelContaining: ", \(label)").isEmpty, "\(name): \(label)")
+            }
+            XCTAssertEqual(HostedAccessibility.elements(in: window, labelContaining: ", Sent").count, 1, "\(name): a running row shows no outcome")
+            attachHostedScreenshot(window, name: "tool-row-outcomes-\(name)")
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
+    /// TAL-2335: on a narrow line the label gives way first; the outcome keeps its width up to 55% of the line.
+    func testToolOutcomeLineTruncatesTheLabelFirst() {
+        XCTAssertEqual(ToolOutcomeLineLayout.widths(line: 300, label: 120, outcome: 80).label, 120)
+        XCTAssertEqual(ToolOutcomeLineLayout.widths(line: 300, label: 250, outcome: 80).label, 220)
+        XCTAssertEqual(ToolOutcomeLineLayout.widths(line: 300, label: 250, outcome: 80).outcome, 80)
+        XCTAssertEqual(ToolOutcomeLineLayout.widths(line: 300, label: 250, outcome: 260).outcome, 165)
+        XCTAssertEqual(ToolOutcomeLineLayout.widths(line: 300, label: 250, outcome: 260).label, 135)
+    }
+
     /// TAL-2323: an expanded read draws its path and numbered lines; a search its matches by file, each opening the file at its line.
     func testExpandedReadAndSearchCardsDrawTheirLinesAndOpenTheFile() async throws {
         func view(_ json: String) throws -> ToolResultView { try JSONDecoder().decode(ToolResultView.self, from: Data(json.utf8)) }

@@ -1941,6 +1941,81 @@
 	"todos_open_chat": "Otwórz czat, aby zobaczyć jego listę zadań.",
 	"token_usage_off": "Zużycie tokenów wyłączone",
 	"token_usage_on": "Zużycie tokenów włączone",
+	"tool_outcome_answered": "Odpowiedź: {answer}",
+	"tool_outcome_approved": "Zatwierdzono",
+	"tool_outcome_blocked": "Zablokowano",
+	"tool_outcome_commented": "Skomentowano",
+	"tool_outcome_completed": "Ukończono",
+	"tool_outcome_connected": "Połączono: {apps}",
+	"tool_outcome_created": "Utworzono",
+	"tool_outcome_denied": "Odrzucono",
+	"tool_outcome_exit": "Kod wyjścia {code}",
+	"tool_outcome_failed": "Niepowodzenie",
+	"tool_outcome_goal_set": "Ustawiono cel",
+	"tool_outcome_job_created": "Zaplanowano",
+	"tool_outcome_job_next_run": "Następne uruchomienie {when}",
+	"tool_outcome_memory_added": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Dodano {count} wpis pamięci",
+				"countPlural=few": "Dodano {count} wpisy pamięci",
+				"countPlural=many": "Dodano {count} wpisów pamięci",
+				"countPlural=other": "Dodano {count} wpisu pamięci"
+			}
+		}
+	],
+	"tool_outcome_memory_removed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Usunięto {count} wpis pamięci",
+				"countPlural=few": "Usunięto {count} wpisy pamięci",
+				"countPlural=many": "Usunięto {count} wpisów pamięci",
+				"countPlural=other": "Usunięto {count} wpisu pamięci"
+			}
+		}
+	],
+	"tool_outcome_memory_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Zaktualizowano {count} wpis pamięci",
+				"countPlural=few": "Zaktualizowano {count} wpisy pamięci",
+				"countPlural=many": "Zaktualizowano {count} wpisów pamięci",
+				"countPlural=other": "Zaktualizowano {count} wpisu pamięci"
+			}
+		}
+	],
+	"tool_outcome_moved_to": "Przeniesiono do {status}",
+	"tool_outcome_needs_sign_in": "Wymaga logowania",
+	"tool_outcome_paused": "Wstrzymano",
+	"tool_outcome_pending_approval": "Oczekuje na zatwierdzenie",
+	"tool_outcome_ran_now": "Uruchomiono teraz",
+	"tool_outcome_removed": "Usunięto",
+	"tool_outcome_resumed": "Wznowiono",
+	"tool_outcome_sent": "Wysłano",
+	"tool_outcome_skill_created": "Utworzono umiejętność",
+	"tool_outcome_skill_updated": "Zaktualizowano umiejętność",
+	"tool_outcome_skipped": "Pominięto",
 	"tool_target_skill_suffix": "umiejętność",
 	"transcript": "Transkrypcja",
 	"transcript_load_earlier": "Wczytaj wcześniejsze wiadomości",

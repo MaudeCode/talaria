@@ -324,6 +324,32 @@ public struct ToolRows: Decodable, Equatable, Sendable {
     public let markdown: String?
 }
 
+/// TAL-2335: what a finished call did, which its collapsed row shows after its label. The server decides the outcome, its
+/// tone and its value (`ToolOutcomeSchema`); the App only words `key` with `count` or `value`.
+public struct ToolOutcome: Decodable, Equatable, Sendable {
+    public enum Key: String, Decodable, Sendable {
+        case sent, approved, denied, created, paused, resumed, removed, blocked, completed, commented, connected, answered, skipped, exit, failed
+        case goalSet = "goal_set", memoryAdded = "memory_added", memoryUpdated = "memory_updated", memoryRemoved = "memory_removed"
+        case skillCreated = "skill_created", skillUpdated = "skill_updated", pendingApproval = "pending_approval", jobCreated = "job_created"
+        case ranNow = "ran_now", movedTo = "moved_to", needsSignIn = "needs_sign_in", noMatches = "no_matches", noResults = "no_results"
+    }
+
+    /// `error` for a failure, `attention` while it waits on the user, else `neutral`.
+    public enum Tone: String, Decodable, Sendable { case neutral, error, attention }
+
+    public let key: Key
+    public let tone: Tone
+    public let count: Int?
+    public let value: String?
+
+    public init(key: Key, tone: Tone, count: Int? = nil, value: String? = nil) {
+        self.key = key
+        self.tone = tone
+        self.count = count
+        self.value = value
+    }
+}
+
 /// TAL-315: a tool result's display sections, decided on the server for every client. Shown in this order: `text`, or
 /// `stdout`, `stderr`, a labelled `error` and a labelled `exitCode` (sent only when worth showing).
 public struct ToolResultView: Decodable, Equatable, Sendable {
@@ -356,14 +382,17 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
     public let analysis: String?
     /// TAL-2326: a memory, skill, past-chat, scheduled job, connection or clarify result's rows, shown in place of `text`.
     public let rows: ToolRows?
+    /// TAL-2335: the outcome the collapsed row shows after its label; nil when it has none.
+    public let outcome: ToolOutcome?
 
     public init(
         text: String? = nil, stdout: String? = nil, stderr: String? = nil, error: String? = nil, exitCode: Int? = nil,
         decisionReview: DecisionReviewRef? = nil, proposal: ProposalRef? = nil, block: ShowBlockRef? = nil,
         terminal: TerminalRef? = nil, fields: [ToolField]? = nil, fileExcerpt: FileExcerpt? = nil, matches: SearchMatches? = nil,
         links: ResultLinks? = nil, pages: [ResultPage]? = nil, media: [TranscriptMediaReference]? = nil, analysis: String? = nil,
-        rows: ToolRows? = nil
+        rows: ToolRows? = nil, outcome: ToolOutcome? = nil
     ) {
+        self.outcome = outcome
         self.rows = rows
         self.media = media
         self.analysis = analysis
@@ -398,6 +427,7 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         case media
         case analysis
         case rows
+        case outcome
     }
 
     public init(from decoder: Decoder) throws {
@@ -420,6 +450,8 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         media = (try? container.decodeIfPresent([JSONValue].self, forKey: .media))?.map { TranscriptMediaReference.decodeLossily($0) }
         analysis = container.decodeLossyStringIfPresent(forKey: .analysis)
         rows = DecisionReview.decode(ToolRows.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .rows))
+        // An outcome a newer server adds drops alone, never the sections around it.
+        outcome = DecisionReview.decode(ToolOutcome.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .outcome))
     }
 
     /// The view a decoded JSON field holds; nil when the server sent none.
