@@ -471,6 +471,9 @@ class PublicationTests(unittest.TestCase):
         text = json.dumps(build)
         for gone in ("security ", "login.keychain", "apple-actions/", "-exportArchive", "ExportOptions", "AuthKey", ".rb"):
             self.assertNotIn(gone, text)
+        # A signing check is dispatched with its own inputs, so none is interpolated into a script.
+        for step in build["steps"]:
+            self.assertNotIn("${{ inputs.", step.get("run", ""), step.get("name"))
         shared = [step["uses"] for step in build["steps"] if step.get("uses", "").startswith("MaudeCode/.github/actions/")]
         self.assertEqual({uses.split("@")[0].rsplit("/", 1)[1] for uses in shared}, {"ios-build-number", "ios-signing", "ios-publish"})
         self.assertTrue(all(re.fullmatch(r"[^@]+@[0-9a-f]{40}", uses) for uses in shared), shared)

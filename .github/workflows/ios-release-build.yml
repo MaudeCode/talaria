@@ -120,16 +120,24 @@ jobs:
             echo "DERIVED_DATA_PATH=${RUNNER_TEMP}/TalariaDerivedData"
           } >> "${GITHUB_ENV}"
 
+      # Inputs reach the script through the environment, never interpolated into it: a dispatch supplies them.
       - name: Resolve release metadata
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+          REF_INPUT: ${{ inputs.ref }}
         run: |
           set -euo pipefail
-          marketing_version="${{ inputs.version }}"
+          marketing_version="${VERSION_INPUT}"
           if [[ ! "${marketing_version}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "Release version must use X.Y.Z numeric semantic versioning: ${marketing_version}" >&2
             exit 1
           fi
+          if [[ ! "${REF_INPUT}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "The commit to build must be a full SHA: ${REF_INPUT}" >&2
+            exit 1
+          fi
           echo "MARKETING_VERSION=${marketing_version}" >> "${GITHUB_ENV}"
-          echo "Building version ${marketing_version} from ${{ inputs.ref }}."
+          echo "Building version ${marketing_version} from ${REF_INPUT}."
 
       # Nightly checked for a cutover before it started; one dispatched since may hold a selected, unuploaded number.
       - name: Defer Nightly to a running cutover
