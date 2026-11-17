@@ -25,6 +25,7 @@ struct SessionListView: View {
     @Environment(\.layoutDirection) private var observedLayoutDirection
     @Environment(\.accessibilityReduceMotion) private var observedReduceMotion
     @Environment(\.scenePhase) private var observedScenePhase
+    @Environment(\.windowSceneID) private var windowSceneID
     @State private var viewModel: SessionListViewModel
     // Installed once after State bindings are mounted; its immutable handlers share this list's lifetime.
     @State private var sessionActionContext: SessionActionContext?
@@ -2508,6 +2509,9 @@ struct SessionListView: View {
     }
 
     private func openSession(_ session: SessionSummary, in list: AppSection = .chats, beside: Bool = false) async {
+        // TAL-2388: one chat in one window. Another window already showing it comes forward instead.
+        if let id = session.sessionId,
+           AppIntentRouter.shared.bringsForwardOtherWindow(showing: id, on: server, from: windowSceneID) { return }
         await openSession(in: list, beside: beside) { session }
     }
 

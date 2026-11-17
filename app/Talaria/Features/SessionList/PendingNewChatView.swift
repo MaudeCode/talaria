@@ -175,4 +175,6 @@ struct PendingNewChatView: View {
 extension EnvironmentValues {
     /// This window's New Chat draft identity, so two windows at New Chat never share one draft (TAL-2387).
     @Entry var newChatDraftWindow: String?
+    /// This window's scene session identifier, which the visible-chat registry and event routing key by (TAL-2388).
+    @Entry var windowSceneID: String?
 }

@@ -452,11 +452,12 @@ final class SessionListAutoRefreshTests: XCTestCase {
     /// TAL-872: a view the navigation rebuilds for the same chat appears before the old one leaves.
     func testARebuiltChatViewKeepsItsChatVisible() throws {
         let chat = try XCTUnwrap(SessionNotificationRefresh.VisibleChat(server: URL(string: "https://hermes.example.test")!, sessionID: "s1"))
-        SessionNotificationRefresh.updateVisibleChat(from: nil, to: chat)
-        SessionNotificationRefresh.updateVisibleChat(from: nil, to: chat)
-        SessionNotificationRefresh.updateVisibleChat(from: chat, to: nil)
+        let shown = SessionNotificationRefresh.ShownChat(chat, window: "A", isActive: true)
+        SessionNotificationRefresh.updateVisibleChat(from: nil, to: shown)
+        SessionNotificationRefresh.updateVisibleChat(from: nil, to: shown)
+        SessionNotificationRefresh.updateVisibleChat(from: shown, to: nil)
         XCTAssertEqual(SessionNotificationRefresh.visibleChats, [chat])
-        SessionNotificationRefresh.updateVisibleChat(from: chat, to: nil)
+        SessionNotificationRefresh.updateVisibleChat(from: shown, to: nil)
         XCTAssertEqual(SessionNotificationRefresh.visibleChats, [])
     }
 

@@ -9,6 +9,8 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     /// This window, for the app-wide What's New and share routing that each pick one window (TAL-2387).
     @State private var window = UUID()
+    /// This window's scene session, which events route by and its chats register under (TAL-2388).
+    @State private var sceneID: String?
     /// Decided when the window opens: one opened beside another drafts New Chat under its own identity.
     @State private var opensBesideAnotherWindow = UIApplication.shared.hasSeveralWindows
     /// This window's chat on each server, which the system restores with the window (TAL-2387).
@@ -67,7 +69,13 @@ struct ContentView: View {
             }
             // A URL goes to a window already open rather than opening another (TAL-2387).
             .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
-            .onOpenURL(perform: handleOpenURL)
+            // TAL-2388: the router names the one window that handles the URL, which may be another one.
+            .onOpenURL { url in
+                intentRouter.requestDeepLink(url)
+                drainPendingIntentDeepLink()
+            }
+            .background(WindowSceneReader { sceneID = $0 })
+            .onChange(of: sceneID) { drainPendingIntentDeepLink() }
             .task {
                 // Cold launch: an App Intent may have queued a deep link before this
                 // view appeared (e.g. Action button "New Chat"). Drain it now (#337).
@@ -79,15 +87,23 @@ struct ContentView: View {
             }
             .onChange(of: appLock.isLocked) {
                 guard !appLock.isLocked else { return }
-                appLock.takeQueuedDeepLinks().forEach(route)
+                // ponytail: one pending slot, so of several links queued behind the lock for other windows only the
+                // last reaches its window; a queue in the router if that ever matters.
+                for url in appLock.takeQueuedDeepLinks() {
+                    intentRouter.requestDeepLink(url)
+                    drainPendingIntentDeepLink()
+                }
                 Task { await importSharedDraftsUnlessLocked() }
             }
             // Inactive still counts: Control Center must not hand a share in flight to this window twice.
             .onChange(of: scenePhase, initial: true) {
                 sharedImports.windowDidChange(window, isInForeground: scenePhase != .background)
+                // A window brought forward for its event takes it once it is back (TAL-2388).
+                drainPendingIntentDeepLink()
             }
             .onDisappear { sharedImports.windowDidChange(window, isInForeground: false) }
             .environment(\.newChatDraftWindow, newChatDraftWindow)
+            .environment(\.windowSceneID, sceneID)
             .onAppear { windowSelections.keepNewChatDraftWindow(newChatDraftWindow) }
     }
 
@@ -240,11 +256,39 @@ struct ContentView: View {
     }
 
     /// Routes a deep link queued by an App Intent through the same `handleOpenURL` parser
-    /// used for external URLs, then clears it so it routes exactly once (#337).
+    /// used for external URLs, then clears it so it routes exactly once (#337), in the one window it belongs to (TAL-2388).
     private func drainPendingIntentDeepLink() {
-        guard let url = intentRouter.pendingDeepLink else { return }
-        intentRouter.pendingDeepLink = nil
+        guard let url = intentRouter.takeDeepLink(in: sceneID) else { return }
         handleOpenURL(url)
+    }
+}
+
+/// Reports the window scene a view sits in, which SwiftUI does not expose (TAL-2388).
+private struct WindowSceneReader: UIViewRepresentable {
+    let report: (String?) -> Void
+
+    func makeUIView(context: Context) -> ReaderView { ReaderView(report: report) }
+    func updateUIView(_ view: ReaderView, context: Context) {}
+
+    final class ReaderView: UIView {
+        let report: (String?) -> Void
+
+        init(report: @escaping (String?) -> Void) {
+            self.report = report
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+            isAccessibilityElement = false
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            let id = window?.windowScene?.windowSceneID
+            // Outside the view update that moved it.
+            Task { @MainActor in report(id) }
+        }
     }
 }
 
