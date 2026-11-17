@@ -1377,7 +1377,7 @@ def test_native_gated_dashboard_accepts_owner_local_retirement_session(tmp_path,
     from conftest import AGENT_PYTHON, isolated_env, SIDECAR_ROOT
     home = tmp_path / 'home'
     home.mkdir()
-    script = '''import os
+    script = '''import inspect, os
 from pathlib import Path
 from unittest.mock import Mock, patch
 from plugins.dashboard_auth import basic
@@ -1393,22 +1393,22 @@ secret='synthetic-native-signing-key-for-this-test-only'
 launch=Path(os.environ['HERMES_HOME'])
 home=launch/'profiles'/'named' if os.environ['NAMED']=='1' else launch
 home.mkdir(parents=True,exist_ok=True)
-keys={'HERMES_DASHBOARD_BASIC_AUTH_USERNAME':'synthetic-owner','HERMES_DASHBOARD_BASIC_AUTH_SECRET':secret}
+keys={'HERMES_DASHBOARD_BASIC_AUTH_USERNAME':'synthetic-owner','HERMES_DASHBOARD_BASIC_AUTH_SECRET':secret,
+      'HERMES_DASHBOARD_BASIC_AUTH_PASSWORD':'disposable-password'}
 source=os.environ['SOURCE']
 if source=='config':
- (home/'config.yaml').write_text('dashboard:\\n  basic_auth:\\n    username: synthetic-owner\\n    secret: '+secret+'\\n')
+ (home/'config.yaml').write_text('dashboard:\\n  basic_auth:\\n    username: synthetic-owner\\n    password: disposable-password\\n    secret: '+secret+'\\n')
 else:
  (home/'.env').write_text('\\n'.join(k+'="'+v+'" # owner credential' for k,v in keys.items())+'\\n')
 from hermes_constants import set_hermes_home_override,reset_hermes_home_override
 override=set_hermes_home_override(home)
 try:
  load_hermes_dotenv(hermes_home=home)
- os.environ['HERMES_DASHBOARD_BASIC_AUTH_PASSWORD']='disposable-password'
  provider=basic.BasicAuthProvider(**basic._settings())
 finally:
  reset_hermes_home_override(override)
 if source=='exec': (home/'.env').unlink()
-for key in (*keys,'HERMES_DASHBOARD_BASIC_AUTH_PASSWORD'): os.environ.pop(key,None)
+for key in keys: os.environ.pop(key,None)
 registry._providers.clear(); registry._scoped_providers.clear()
 registry.register_global_provider(provider)
 web_server.app.state.auth_required=True
@@ -1453,7 +1453,11 @@ if source=='dotenv':
   recovery.identity._pid_alive_matches.return_value=True
   assert recovery._ready(owed,ledger), 'recovery must authenticate with the same owner credentials'
   original=(home/'.env').read_text()
-  for invalid in ('HERMES_DASHBOARD_BASIC_AUTH_USERNAME=synthetic-owner\\nHERMES_DASHBOARD_BASIC_AUTH_SECRET=wrong synthetic signing key!\\n',''):
+  invalids=[original.replace(secret,'wrong synthetic signing key!'),'']
+  # Credential-bound Agents end every session when the owner password rotates.
+  if 'credential_id' in inspect.signature(basic.BasicAuthProvider).parameters:
+   invalids+=[original.replace('disposable-password','rotated-password'),original.replace('disposable-password','')]
+  for invalid in invalids:
    (home/'.env').write_text(invalid)
    try: recovery._wait_ready(owed,ledger)
    except RuntimeError as error:
@@ -1485,7 +1489,7 @@ def test_native_lifecycle_credentials_are_scoped_and_preserve_decoding(tmp_path)
     from conftest import isolated_env, SIDECAR_ROOT
     home = tmp_path / 'home'
     home.mkdir()
-    script = r'''import base64, os, threading
+    script = r'''import base64, inspect, os, threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -1503,39 +1507,56 @@ def files(home, values, config=''):
  (home/'.env').write_text('\n'.join(prefix+k+'='+v for k,v in values.items())+'\n')
  (home/'config.yaml').write_text(config)
 def session(home): return services._local_session(dict(pid=os.getpid(),home=str(home)))
-def check(home, raw, username='owner'):
- # Use the native resolver only to establish the reference key, outside concurrent calls.
- with patch.dict(os.environ,{prefix+'SECRET':raw}): key=basic._resolve_secret({})
+def native(**values):
+ # The installed Agent's own settings and provider establish the reference verifier, outside concurrent calls.
+ with patch.dict(os.environ,{prefix+k.upper():v for k,v in values.items()}): return basic.BasicAuthProvider(**basic._settings())
+def check(home, raw, username='owner', **credential):
+ provider=native(secret=raw,username=username,**(credential or {'password':'owner password'}))
  token=session(home)
- payload=basic._unsign(token,key,'access') if token else None
- assert payload and payload['sub']==username, 'owner credential resolution disagrees with native auth'
- return key
-raws=['short!', 'synthetic signing key with spaces!',base64.b64encode(b'base64 synthetic key only').decode(),b'hex synthetic key only'.hex()]
+ verified=provider.verify_session(access_token=token) if token else None
+ assert verified and verified.user_id==username, 'owner credential resolution disagrees with native auth'
+ return provider
+bound='credential_id' in inspect.signature(basic.BasicAuthProvider).parameters
+password={'PASSWORD':'"owner password"'}
+files(root,{'USERNAME':'owner','SECRET':'short!',**password})
+assert session(root) is None, 'a key the native provider refuses must not mint a session'
+# Its base64 and hex decodings are under 16 bytes, so the raw text is the key.
+raws=['abcdef0123456789', 'synthetic signing key with spaces!',base64.b64encode(b'base64 synthetic key only').decode(),b'hex synthetic key only'.hex()]
 for raw in raws:
- files(root,{'USERNAME':'"owner"','SECRET':'"'+raw+'"'})
+ files(root,{'USERNAME':'"owner"','SECRET':'"'+raw+'"',**password})
  check(root,raw)
 # Empty dotenv values fall through to the native config; nonempty exec values take precedence.
-config='dashboard:\n  basic_auth:\n    username: config-owner\n    secret: config synthetic signing key!\n'
-files(root,{'USERNAME':'""','SECRET':"''"},config)
-check(root,'config synthetic signing key!','config-owner')
-env.update({prefix+'USERNAME':' exec-owner ',prefix+'SECRET':' exec synthetic signing key! '})
-check(root,'exec synthetic signing key!','exec-owner')
+config='dashboard:\n  basic_auth:\n    username: config-owner\n    password: config password\n    secret: config synthetic signing key!\n'
+files(root,{'USERNAME':'""','SECRET':"''",'PASSWORD':'""'},config)
+check(root,'config synthetic signing key!','config-owner',password='config password')
+env.update({prefix+'USERNAME':' exec-owner ',prefix+'SECRET':' exec synthetic signing key! ',prefix+'PASSWORD':' exec password '})
+check(root,'exec synthetic signing key!','exec-owner',password='exec password')
 env.clear()
-files(root,{'USERNAME':'owner','SECRET':'synthetic scope-only signing key!'})
+# A password_hash outranks a config-only plaintext password.
+digest=basic.hash_password('hashed password')
+files(root,{'USERNAME':'owner','SECRET':'synthetic hashed signing key!','PASSWORD_HASH':digest},
+      'dashboard:\n  basic_auth:\n    password: config plaintext password\n')
+check(root,'synthetic hashed signing key!',password_hash=digest)
+if bound:
+ # Credential-bound Agents need the owner's credential; a session minted without it could never verify.
+ files(root,{'USERNAME':'owner','SECRET':'synthetic hashed signing key!'})
+ assert session(root) is None, 'credential-bound session minted without owner credential'
+files(root,{'USERNAME':'owner','SECRET':'synthetic scope-only signing key!',**password})
 env_loader._SECRET_SOURCE_VALUES_BY_HOME[str(root.resolve())]={prefix+'SECRET':'file-backed external signing key!'}
 env_loader._APPLIED_HOMES.add(str(root.resolve()))
 check(root,'file-backed external signing key!')
 env_loader.reset_secret_source_cache(root)
 # Updater launch credentials must never fill a missing owner field, even for the launch home.
-os.environ.update({prefix+'USERNAME':'updater',prefix+'SECRET':'updater synthetic signing key!'})
-files(root,{},'dashboard:\n  basic_auth:\n    username: owner\n    secret: ${HERMES_DASHBOARD_BASIC_AUTH_SECRET}\n')
-with patch.dict(os.environ,{prefix+'SECRET':'updater synthetic signing key!'}): updater_key=basic._resolve_secret({})
+os.environ.update({prefix+'USERNAME':'updater',prefix+'SECRET':'updater synthetic signing key!',prefix+'PASSWORD':'updater password'})
+files(root,{},'dashboard:\n  basic_auth:\n    username: owner\n    password: owner password\n    secret: ${HERMES_DASHBOARD_BASIC_AUTH_SECRET}\n')
 token=session(root)
-assert token is None or basic._unsign(token,updater_key,'access') is None, 'config interpolation leaked the updater signing key'
+assert token is None or native(secret='updater synthetic signing key!',username='owner',password='owner password').verify_session(
+ access_token=token) is None, 'config interpolation leaked the updater signing key'
 files(root,{'ALIAS':'"profile alias synthetic signing key!"'},
-      'dashboard:\n  basic_auth:\n    username: owner\n    secret: ${HERMES_DASHBOARD_BASIC_AUTH_ALIAS}\n')
+      'dashboard:\n  basic_auth:\n    username: owner\n    password: owner password\n    secret: ${HERMES_DASHBOARD_BASIC_AUTH_ALIAS}\n')
 check(root,'profile alias synthetic signing key!')
-for values in ({},{'USERNAME':'owner'},{'SECRET':'synthetic scope-only signing key!'}):
+for values in ({},{'USERNAME':'owner'},{'SECRET':'synthetic scope-only signing key!'},
+               *([{'USERNAME':'owner','SECRET':'synthetic scope-only signing key!'}] if bound else [])):
  files(root,values)
  assert session(root) is None, 'updater credentials leaked into an owner session'
 (root/'.env').unlink()
@@ -1544,15 +1565,15 @@ assert session(root) is None
 assert session(root) is None, 'unreadable dotenv must not use updater credentials'
 (root/'.env').rmdir()
 dashboard_procs._pid_environ=lambda pid: None
-files(root,{'USERNAME':'owner','SECRET':'synthetic scope-only signing key!'})
+files(root,{'USERNAME':'owner','SECRET':'synthetic scope-only signing key!',**password})
 assert session(root) is None, 'unreadable process identity must refuse file credentials'
 dashboard_procs._pid_environ=lambda pid: {}
 homes=[root/'profiles'/name for name in ('first','second')]
-keys=[]
+providers=[]
 for i,home in enumerate(homes):
  raw='profile '+str(i)+' synthetic signing key!'
- files(home,{'USERNAME':'owner'+str(i),'SECRET':'"'+raw+'"'})
- keys.append(check(home,raw,'owner'+str(i)))
+ files(home,{'USERNAME':'owner'+str(i),'SECRET':'"'+raw+'"',**password})
+ providers.append(check(home,raw,'owner'+str(i)))
 before=dict(os.environ)
 outer=current_secret_scope()
 barrier=threading.Barrier(2)
@@ -1564,8 +1585,8 @@ with ThreadPoolExecutor(2) as pool:
    barrier.wait(timeout=10)
    for _ in range(10):
     token=session(homes[i])
-    assert basic._unsign(token,keys[i],'access')['sub']=='owner'+str(i)
-    assert basic._unsign(token,keys[1-i],'access') is None
+    assert providers[i].verify_session(access_token=token).user_id=='owner'+str(i)
+    assert providers[1-i].verify_session(access_token=token) is None
     assert current_secret_scope() is scope
  list(pool.map(resolve,range(2)))
 for failure in (RuntimeError,KeyboardInterrupt):

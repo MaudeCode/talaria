@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Updating Hermes Agent no longer stalls on a password-protected dashboard running Agent v0.23.2.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

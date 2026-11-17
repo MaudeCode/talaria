@@ -9,6 +9,7 @@ import base64
 import contextlib
 import hashlib
 import http.client
+import inspect
 import ipaddress
 import json
 import math
@@ -541,7 +542,7 @@ def _auth(entry):
 
 
 def _local_session(entry):
-    """Use the owning user's existing native basic-auth key for a short-lived local lifecycle call."""
+    """Mint a short-lived local lifecycle session from the owner's native basic-auth settings."""
     from hermes_cli.dashboard_procs import _pid_environ
     try:
         from plugins.dashboard_auth import basic
@@ -554,12 +555,13 @@ def _local_session(entry):
     if env is None:
         return None
     home = Path(entry['home'])
+    prefix = 'HERMES_DASHBOARD_BASIC_AUTH_'
     with scoped_home(home):
         hydrate_profile_secret_sources(home)
         # The launch scope also contains updater credentials; use only the owner's file-backed scope.
         scope = secret_scope.build_profile_secret_scope(home)
-        scope.update({name: env[name] for name in ('HERMES_DASHBOARD_BASIC_AUTH_SECRET', 'HERMES_DASHBOARD_BASIC_AUTH_USERNAME')
-                      if env.get(name, '').strip()})
+        scope.update({prefix + name: env[prefix + name] for name in ('SECRET', 'USERNAME', 'PASSWORD', 'PASSWORD_HASH')
+                      if env.get(prefix + name, '').strip()})
         token = secret_scope.set_secret_scope(scope)
         # Config ${...} references must also refuse launch-environment fallback, including on the main profile.
         multiplex = secret_scope.set_multiplex_context(True)
@@ -569,11 +571,13 @@ def _local_session(entry):
             secret_scope.reset_multiplex_context(multiplex)
             secret_scope.reset_secret_scope(token)
 
-        def setting(name, key):
-            return str(scope.get(name) or '').strip() or str(section.get(key) or '').strip()
+        def setting(name, key=None):
+            # Native env-wins-over-config precedence; without a config key, only the env value counts.
+            value = str(scope.get(prefix + name) or '').strip()
+            return value or (str(section.get(key) or '').strip() if key else '')
 
-        secret = setting('HERMES_DASHBOARD_BASIC_AUTH_SECRET', 'secret')
-        username = setting('HERMES_DASHBOARD_BASIC_AUTH_USERNAME', 'username')
+        secret = setting('SECRET', 'secret')
+        username = setting('USERNAME', 'username')
         if not secret or not username:
             return None  # A process-random key is not reproducible; never manufacture a replacement key.
         # Native _resolve_secret reads os.environ directly. Match its base64/hex/raw order without mutating it.
@@ -586,7 +590,21 @@ def _local_session(entry):
                     break
             except (ValueError, TypeError):
                 pass
-        return basic._sign({'sub': username, 'kind': 'access', 'exp': int(time.time()) + 60}, key)
+        if len(key) < 16:
+            return None  # The native provider refuses such a key, so no session can verify.
+        if 'credential_id' not in inspect.signature(basic.BasicAuthProvider).parameters:
+            # Older Agents sign sessions with the resolved secret alone.
+            return basic._sign({'sub': username, 'kind': 'access', 'exp': int(time.time()) + 60}, key)
+        # Credential-bound Agents derive the key from the configured credential; native _settings precedence:
+        # an env password wins, then a password_hash, then a config-only plaintext password.
+        password_hash = setting('PASSWORD_HASH', 'password_hash')
+        credential = setting('PASSWORD') or ('' if password_hash else setting('PASSWORD', 'password'))
+        if not credential and not password_hash:
+            return None  # Without the owner's credential no session can verify; refuse rather than guess.
+        # Only the native provider mints; it never logs in here, so the hash is used only when it binds the key.
+        provider = basic.BasicAuthProvider(username=username, password_hash=password_hash or credential, secret=key,
+                                           ttl_seconds=60, credential_id=credential)
+        return provider._mint_session(username).access_token
 
 
 class BackendLifecycleUnsupported(RuntimeError):
