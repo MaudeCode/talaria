@@ -103,7 +103,7 @@ struct ShowBlockResultSection: View {
                 Action(id: "save", label: String(localized: "Save to Files")) { fetchDelivered(model) { exportPayload = $0 } },
             ]
             guard let path = block.file?.path, let openFile else { return save }
-            return save + [Action(id: "open", label: String(localized: "Open")) { openFile(path) }]
+            return save + [Action(id: "open", label: String(localized: "Open")) { openFile(WorkspaceFileLink(path: path)) }]
         case .table:
             return [Action(id: "copy", label: String(localized: "Copy table")) { UIPasteboard.general.string = block.tsv }]
         case .chart:
@@ -289,7 +289,7 @@ private struct ShowFrameView: UIViewRepresentable {
 /// TAL-1968: the card model for a block id; the chat screen supplies it with its session's client.
 typealias ChatShowBlockModel = ChatEnvironmentAction<String, ShowBlockCardModel>
 /// TAL-1968: shows a workspace file on the companion page beside the chat, else in the file preview.
-typealias ChatOpenWorkspaceFile = ChatEnvironmentAction<String, Void>
+typealias ChatOpenWorkspaceFile = ChatEnvironmentAction<WorkspaceFileLink, Void>
 
 private struct ChatShowBlockModelKey: EnvironmentKey {
     static var defaultValue: ChatShowBlockModel? { nil }

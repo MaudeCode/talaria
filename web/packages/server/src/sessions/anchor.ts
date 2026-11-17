@@ -248,7 +248,7 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
         id: toolId || rowId, name: str(tool.name) || 'tool', args: tool.args ?? null, preview: str(tool.snippet) || str(tool.preview) || null,
         // A built row keeps the view its full result decided (deciding twice would unescape text kept as written); a row
         // stored without one gets it from its own result.
-        result, result_view: isDict(tool.result_view) ? decidedResultView(tool.result_view) : result === null ? null : toolResultView(result, undefined, tool.name),
+        result, result_view: isDict(tool.result_view) ? decidedResultView(tool.result_view) : result === null ? null : toolResultView(result, undefined, tool.name, tool.args),
         ...(tool.progress !== undefined ? { progress: done ? null : ToolProgressSchema.safeParse(tool.progress).data ?? null } : {}),
         ...(editDiff ? { edit_diff: editDiff } : {}),
         done,
@@ -353,18 +353,19 @@ export function toolReplies(messages: unknown[]): Map<string, Record<string, unk
 /** One tool call's whole result: its text as a full scene row shows it and its uncapped view; null when no reply carries that id. */
 export function fullToolResult(messages: unknown[], toolCallId: string): { result: string; result_view: ToolResultView } | null {
   const reply = toolCallId ? toolReplies(messages).get(toolCallId) : undefined
-  return reply ? { result: messageText(reply.content), result_view: toolResultView(reply.content, Infinity, calledToolName(messages, toolCallId)) } : null
+  const call = calledTool(messages, toolCallId)
+  return reply ? { result: messageText(reply.content), result_view: toolResultView(reply.content, Infinity, call && toolName(call), call && toolArgs(call)) } : null
 }
 
-/** TAL-2322: the name of the call with this id, from an assistant row's `tool_calls` or `tool_use` blocks, so its whole result shows as its capped one did. */
-function calledToolName(messages: unknown[], toolCallId: string): string {
+/** TAL-2322: the call with this id, from an assistant row's `tool_calls` or `tool_use` blocks, so its whole result shows as its capped one did (TAL-2323: with its arguments). */
+function calledTool(messages: unknown[], toolCallId: string): Record<string, unknown> | undefined {
   for (const m of messages) {
     if (!isDict(m) || m.role !== 'assistant') continue
     const calls: unknown[] = [...(Array.isArray(m.tool_calls) ? m.tool_calls as unknown[] : []), ...(Array.isArray(m.content) ? m.content as unknown[] : [])]
     const call = calls.find((c) => isDict(c) && str(c.id) === toolCallId)
-    if (isDict(call)) return toolName(call)
+    if (isDict(call)) return call
   }
-  return ''
+  return undefined
 }
 
 /**
@@ -422,7 +423,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
       // TAL-1718: the projection (withToolCallOutcomes) already decided this exact reply unflagged; its outcome is this one.
       const reuse = reply !== undefined && decided !== undefined && !decided.flagged && decided.name === outcomeName && decided.content === reply.content && decided.display_metadata === reply.display_metadata
       // The view always comes from the full result (TAL-315), with each section capped.
-      const outcome = reuse ? decided.outcome : reply ? toolOutcome(reply.content, outcomeName) : null
+      const outcome = reuse ? decided.outcome : reply ? toolOutcome(reply.content, outcomeName, false, toolArgs(call)) : null
       const resultView = outcome ? { ...outcome.result_view } : isDict(call.result_view) ? call.result_view as ToolResultView : null
       // TAL-331: a clipped result or a capped section is flagged, so a client can fetch the whole from `/api/session/tool-result`.
       const clipped = shown?._content_truncated === true || outcome?.capped === true

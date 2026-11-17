@@ -190,6 +190,13 @@ describe('chat side panel (TAL-373)', () => {
     expect(vi.mocked(api.listDir).mock.calls.at(-1)?.[1]).toBe('docs')
     expect(vi.mocked(api.readFile).mock.calls.map(([sid]) => sid)).toEqual(['s1'])
   })
+  it('selects the line a read or search result opens the file at (TAL-2323)', async () => {
+    vi.mocked(api.readFile).mockReset().mockResolvedValue({ content: 'one\ntwo\nthree', binary: false, size: 13, preview: 'text' })
+    render(<Panel />)
+    act(() => { requestOpenFile({ sessionId: 's1', path: 'src/app.ts', line: 2 }) })
+    const preview = await screen.findByRole('textbox', { name: 'Preview' })
+    await waitFor(() => { expect([(preview as HTMLTextAreaElement).selectionStart, (preview as HTMLTextAreaElement).selectionEnd]).toEqual([4, 7]) })
+  })
 })
 
 describe('chat side panel Checkpoints (TAL-571)', () => {

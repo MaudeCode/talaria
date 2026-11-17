@@ -1,4 +1,4 @@
-import { ApprovalAnsweredBySchema, DecisionReviewRefSchema, OutboundDraftRefSchema, ProposalRefSchema, ShowBlockRefSchema, TerminalRefSchema, ToolFieldSchema, type ApprovalAnsweredBy, type ToolField, type ToolResultView } from '@maudecode/talaria-web-contracts'
+import { ApprovalAnsweredBySchema, DecisionReviewRefSchema, FileExcerptSchema, OutboundDraftRefSchema, ProposalRefSchema, SearchMatchesSchema, ShowBlockRefSchema, TerminalRefSchema, ToolFieldSchema, type ApprovalAnsweredBy, type FileExcerpt, type SearchMatches, type ToolField, type ToolResultView } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 /**
  * Transcript settlement after an Agent turn (the core of Python
@@ -13,7 +13,7 @@ import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
 import type { MediaProjection } from '../workspace/media-refs.js'
-import { decidedEditDiff, decisionReviewRef, outboundDraftRef, proposalRef, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName, toolPresentation } from './tool-display.js'
+import { decidedEditDiff, decisionReviewRef, outboundDraftRef, proposalRef, readFileView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName, toolPresentation } from './tool-display.js'
 import { sourceKind } from './source-kind.js'
 
 const TOOL_RESULT_SNIPPET_MAX = 4000
@@ -693,12 +693,16 @@ function resultView(value: unknown, depth: number): ToolResultView {
  * by line; a scalar shows as text, and a result that is not JSON exactly as written. Each field is capped like the snippet
  * (`limit`; TAL-331's whole-result read passes `Infinity`).
  */
-export function toolResultView(raw: unknown, limit = TOOL_RESULT_SNIPPET_MAX, name?: unknown): ToolResultView {
-  return cappedView(uncappedResultView(raw, name), limit)
+export function toolResultView(raw: unknown, limit = TOOL_RESULT_SNIPPET_MAX, name?: unknown, args?: unknown): ToolResultView {
+  return cappedView(uncappedResultView(raw, name, args), limit)
 }
 
-/** TAL-2322: a `terminal`-presented Agent tool's object result shows its terminal sections when it has any; every other result the rule above. */
-function uncappedResultView(raw: unknown, name?: unknown): ToolResultView {
+/**
+ * TAL-2322: a `terminal`-presented Agent tool's object result shows its terminal sections when it has any; every other result the rule above.
+ * TAL-2323: a `file_excerpt` or `matches` presented one adds that section (a `read_file` excerpt names the file its call's
+ * `args` read) in place of the generic key/value rows; `text` stays for older clients.
+ */
+function uncappedResultView(raw: unknown, name?: unknown, args?: unknown): ToolResultView {
   // Content parts read as their text; a list with no text (`[{ title }]`) is the result itself.
   const flat = Array.isArray(raw) ? messageText(raw) : raw
   const value = Array.isArray(raw) && !str(flat).trim() ? raw : flat
@@ -707,10 +711,56 @@ function uncappedResultView(raw: unknown, name?: unknown): ToolResultView {
     const terminal = isDict(data) ? terminalView(data) : {}
     if (!isEmptyView(terminal)) return terminal
   }
+  const presentation = toolPresentation(name)
+  if (presentation === 'file_excerpt' || presentation === 'matches') {
+    const data = typeof value === 'string' ? resultJson(value) : value
+    const matches = presentation === 'matches' && isDict(data) ? searchFilesView(data) : undefined
+    const typed: ToolResultView | undefined = matches ? { matches } : presentation === 'file_excerpt' && isDict(data) ? readFileView(data, args) : undefined
+    // A section joins the generic text, never its key/value rows; a one-line outcome (a repeat read, not found) replaces it.
+    if (typed?.file_excerpt || typed?.matches) {
+      const generic = resultView(value, 0)
+      delete generic.fields
+      return { ...generic, ...typed }
+    }
+    if (typed) return typed
+  }
   return resultView(value, 0)
 }
 
-const cappedView = (view: ToolResultView, limit: number): ToolResultView => Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field, limit) : key === 'fields' ? cappedFields(field as ToolField[], limit, limit) : field]))
+/** TAL-2323: an excerpt's whole lines while their text fits `limit` characters, the last one cut to fit. */
+function cappedExcerpt(excerpt: FileExcerpt, limit: number): FileExcerpt {
+  const lines: FileExcerpt['lines'] = []
+  let left = limit
+  for (const line of excerpt.lines) {
+    if (left <= 0) break
+    lines.push(left < line.text.length ? { n: line.n, text: toolResultSnippet(line.text, left) } : line)
+    left -= line.text.length + 1
+  }
+  return { ...excerpt, lines }
+}
+
+/** TAL-2323: the files and matches whose paths and text fit `limit` characters; a count or file search's paths count alike. */
+function cappedMatches(matches: SearchMatches, limit: number): SearchMatches {
+  const files: SearchMatches['files'] = []
+  let left = limit
+  for (const file of matches.files) {
+    if (left <= 0) break
+    left -= file.path.length + 1
+    const kept: SearchMatches['files'][number]['matches'] = []
+    for (const match of file.matches) {
+      if (left <= 0) break
+      kept.push(left < match.text.length ? { line: match.line, text: toolResultSnippet(match.text, left) } : match)
+      left -= match.text.length + 1
+    }
+    files.push({ ...file, matches: kept })
+  }
+  return { ...matches, files }
+}
+
+const excerptChars = (excerpt: FileExcerpt | undefined): number => (excerpt?.lines ?? []).reduce((sum, line) => sum + line.text.length + 1, 0)
+const matchesChars = (matches: SearchMatches | undefined): number => (matches?.files ?? []).reduce((sum, file) => file.matches.reduce((chars, match) => chars + match.text.length + 1, sum + file.path.length + 1), 0)
+
+const cappedView = (view: ToolResultView, limit: number): ToolResultView => Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field, limit) : key === 'fields' ? cappedFields(field as ToolField[], limit, limit) : key === 'file_excerpt' ? cappedExcerpt(field as FileExcerpt, limit) : key === 'matches' ? cappedMatches(field as SearchMatches, limit) : field]))
 
 /** A view the server already decided (a built scene row, or one stored with its scene): its known fields, capped. */
 export function decidedResultView(value: Record<string, unknown>): ToolResultView {
@@ -732,6 +782,10 @@ export function decidedResultView(value: Record<string, unknown>): ToolResultVie
   if (typeof value.exit_code === 'number' && Number.isSafeInteger(value.exit_code)) view.exit_code = value.exit_code
   const fields = ToolFieldSchema.array().safeParse(value.fields).data
   if (fields) view.fields = cappedFields(fields, TOOL_RESULT_SNIPPET_MAX, TOOL_RESULT_SNIPPET_MAX)
+  const excerpt = FileExcerptSchema.safeParse(value.file_excerpt).data
+  if (excerpt) view.file_excerpt = cappedExcerpt(excerpt, TOOL_RESULT_SNIPPET_MAX)
+  const matches = SearchMatchesSchema.safeParse(value.matches).data
+  if (matches) view.matches = cappedMatches(matches, TOOL_RESULT_SNIPPET_MAX)
   return view
 }
 
@@ -765,7 +819,7 @@ const toolIsError = (raw: unknown, toolName?: unknown, flagged = false): boolean
  * `is_neutral_failure`). `result_text` is the result's display snippet; `result_view` its display sections (TAL-315);
  * `capped` whether any section was cut short (TAL-331).
  */
-export function toolOutcome(raw: unknown, toolName?: unknown, flagged = false): { is_error: boolean; result_text: string; result_view: ToolResultView; capped: boolean } {
+export function toolOutcome(raw: unknown, toolName?: unknown, flagged = false, args?: unknown): { is_error: boolean; result_text: string; result_view: ToolResultView; capped: boolean } {
   const { value, data, failed, is_error } = classifyTool(raw, toolName, flagged)
   const ref = !failed ? outboundDraftRef(toolName, raw) : undefined
   // TAL-1963: a review the agent made or revised links its transcript card.
@@ -777,8 +831,8 @@ export function toolOutcome(raw: unknown, toolName?: unknown, flagged = false): 
   // TAL-1974: a terminal the agent opened links the session's terminal pane.
   const terminal = !failed ? terminalRef(toolName, data) : undefined
   // The whole view once: capped for display, and whether any section was cut (TAL-331's whole-result offer).
-  const full = uncappedResultView(raw, toolName)
-  const capped = Object.values(full).some((field) => typeof field === 'string' && field.length > TOOL_RESULT_SNIPPET_MAX) || fieldChars(full.fields) > TOOL_RESULT_SNIPPET_MAX
+  const full = uncappedResultView(raw, toolName, args)
+  const capped = Object.values(full).some((field) => typeof field === 'string' && field.length > TOOL_RESULT_SNIPPET_MAX) || [fieldChars(full.fields), excerptChars(full.file_excerpt), matchesChars(full.matches)].some((chars) => chars > TOOL_RESULT_SNIPPET_MAX)
   return { is_error, capped, result_text: toolResultSnippet(value), result_view: { ...cappedView(full, TOOL_RESULT_SNIPPET_MAX), ...(ref ? { outbound_draft: ref } : {}), ...(review ? { decision_review: review } : {}), ...(proposal ? { proposal } : {}), ...(block ? { block } : {}), ...(terminal ? { terminal } : {}) } }
 }
 
@@ -954,7 +1008,8 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
     const running = Boolean(activeTurnId) && m._turn_id === activeTurnId
     const resolve = (base: Record<string, unknown>, id: string, name: unknown, rec: Record<string, unknown> | undefined, answered: boolean) => {
       const reply = id ? replies.get(key(index, id)) : undefined
-      const outcome = reply ? toolOutcome(reply.content, name, reply.is_error) : null
+      const args = toolArgs(base)
+      const outcome = reply ? toolOutcome(reply.content, name, reply.is_error, args) : null
       // TAL-448: a file edit's change, from its full reply, else the one its live record decided.
       const editDiff = reply ? toolEditDiff(name, reply.content, reply.display_metadata) : decidedEditDiff(rec?.edit_diff)
       const out = {
@@ -963,7 +1018,7 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
         done: Boolean(reply) || answered || !running, is_error: outcome ? outcome.is_error : rec?.is_error === true,
         ...approvalAnsweredBy(rec?.approval_answered_by),
         duration: finiteOrNull(rec?.duration), result: outcome ? outcome.result_text : typeof rec?.snippet === 'string' ? rec.snippet : null,
-        result_view: outcome ? outcome.result_view : isDict(rec?.result_view) ? decidedResultView(rec.result_view) : typeof rec?.snippet === 'string' ? toolResultView(rec.snippet, undefined, name) : null,
+        result_view: outcome ? outcome.result_view : isDict(rec?.result_view) ? decidedResultView(rec.result_view) : typeof rec?.snippet === 'string' ? toolResultView(rec.snippet, undefined, name, args) : null,
       }
       if (reply && outcome) projectedOutcomes.set(out, { content: reply.content, name: str(name), flagged: reply.is_error, display_metadata: reply.display_metadata, outcome, edit_diff: editDiff })
       return out

@@ -201,7 +201,7 @@
   },
   "read_file": {
     "kind": "read",
-    "presentation": "generic"
+    "presentation": "file_excerpt"
   },
   "read_terminal": {
     "kind": "shell",
@@ -213,7 +213,7 @@
   },
   "search_files": {
     "kind": "search",
-    "presentation": "generic"
+    "presentation": "matches"
   },
   "session_search": {
     "kind": "search",

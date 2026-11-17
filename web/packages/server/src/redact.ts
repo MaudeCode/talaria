@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
-import { type RedactionPolicy, TurnUsageSchema } from '@maudecode/talaria-web-contracts'
+import { FileExcerptLineSchema, type RedactionPolicy, TurnUsageSchema } from '@maudecode/talaria-web-contracts'
 import { channel } from 'node:diagnostics_channel'
 import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
 import { isRasterDataUri } from './raster-image.js'
-import { snapshotArgs, toolArgs, toolDisplay, toolName } from './sessions/tool-display.js'
+import { gutterLines, gutterText, snapshotArgs, toolArgs, toolDisplay, toolName, withResultFocusPaths } from './sessions/tool-display.js'
 import { cappedFields, codexCommentary, hasNativeImages, isDict, messageText, normalizeAssistantDisplay, normalizeUserDisplay, toolFields, TOOL_ARG_CONTENT_CAP, withoutReasoningParts } from './sessions/merge.js'
 import { REASONING_FIELDS } from './sessions/reasoning-display.js'
 import { stripAttachedFilesMarker } from './sessions/session.js'
@@ -2305,6 +2305,9 @@ export function redactValue(v: unknown, enabled: boolean): unknown {
   }
   // TAL-604: a diff's `hunks` are re-parsed from its redacted text, which masks spans (a private key) that no single line shows.
   if (enabled && Array.isArray(out.hunks) && typeof out.diff === 'string') out.hunks = diffHunks(out.diff)
+  // TAL-2323: a file excerpt's lines likewise, from the file text they came from redacted whole, each keeping its number.
+  const lines = enabled && typeof out.start_line === 'number' ? FileExcerptLineSchema.array().safeParse((v as Record<string, unknown>).lines).data : undefined
+  if (lines) out.lines = gutterLines(redactText(gutterText(lines), enabled) as string)
   return out
 }
 
@@ -2523,6 +2526,8 @@ function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean, workspa
   if (isDict(args)) out.args_fields = cappedFields(toolFields(args), TOOL_ARG_CONTENT_CAP)
   // TAL-1458: only a call naming a file carries `focus_path`, so a bare completion never clears its start frame's.
   const { focus_path: focusPath, ...display } = redactedToolDisplay(record, enabled, workspace)
+  // TAL-2323: the files a read or search result names, located in the workspace from their redacted paths.
+  if (isDict(out.result_view)) out.result_view = withResultFocusPaths(out.result_view, workspace)
   return { ...out, ...display, ...(focusPath ? { focus_path: focusPath } : {}) } as T
 }
 

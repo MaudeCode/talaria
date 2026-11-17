@@ -4,6 +4,9 @@ import userEvent from '@testing-library/user-event'
 import type { ToolResultView } from '@maudecode/talaria-web-contracts'
 import { ToolCard, type ToolCardData } from './ToolCard'
 import { sceneItems } from '../turnActivity'
+import { requestOpenFile } from '../../workspace/openFileRequest'
+
+vi.mock('../../workspace/openFileRequest', () => ({ requestOpenFile: vi.fn() }))
 
 const call: ToolCardData = { id: 'c1', name: 'terminal', kind: 'shell', target: 'make', args: {}, preview: 'flat preview', done: true, isError: false, duration: null, costUsd: null, resultView: null }
 
@@ -98,4 +101,42 @@ it('shows the server argument and result rows as key/value rows, and JSON only f
   await userEvent.click(screen.getByRole('button'))
   expect(fallback.container.querySelector('dl')).toBeNull()
   expect(Array.from(fallback.container.querySelectorAll('pre'), (pre) => pre.textContent)).toEqual([JSON.stringify(args, null, 2), '{\n  "total": 2\n}'])
+})
+
+describe('read_file and search_files results (TAL-2323)', () => {
+  afterEach(() => { vi.mocked(requestOpenFile).mockClear() })
+  const open = async (resultView: ToolResultView) => {
+    const view = render(<ToolCard call={{ ...call, name: 'read_file', kind: 'read', resultView }} sessionId="s1" />)
+    await userEvent.click(screen.getAllByRole('button')[0]!)
+    return view.container.querySelector('.tool-card-result')!
+  }
+
+  it('shows a read as its path and numbered lines, says where a cut-short read stopped, and opens the file at its first line', async () => {
+    const result = await open({ text: '12|const a = 1\n13|return a', file_excerpt: { path: '/repo/src/app.ts', focus_path: 'src/app.ts', language: 'ts', start_line: 12, lines: [{ n: 12, text: 'const a = 1' }, { n: 13, text: 'return a' }], total_lines: 40, truncated: true, next_offset: 14 } })
+    await vi.waitFor(() => { expect(Array.from(result.querySelectorAll('.code-line-number'), (n) => n.textContent)).toEqual(['12', '13']) })
+    expect(result.querySelector('code')?.textContent).toBe('12const a = 113return a')
+    expect(result).toHaveTextContent('Stopped at line 13 of 40')
+    expect(result.textContent).not.toContain('|')
+    await userEvent.click(screen.getByRole('button', { name: 'Open /repo/src/app.ts at line 12' }))
+    expect(requestOpenFile).toHaveBeenCalledWith({ sessionId: 's1', path: 'src/app.ts', line: 12 })
+  })
+
+  it('shows a path outside the workspace as text', async () => {
+    const result = await open({ file_excerpt: { path: '/etc/hosts', language: null, start_line: 1, lines: [{ n: 1, text: 'localhost' }], total_lines: 1, truncated: false } })
+    expect(result.querySelector('button')).toBeNull()
+    expect(result).toHaveTextContent('/etc/hosts')
+  })
+
+  it('groups matches under each file, opens a match at its line, and shows count and empty searches', async () => {
+    const result = await open({ text: '{}', matches: { total: 3, truncated: true, files: [{ path: 'src/a.ts', focus_path: 'src/a.ts', matches: [{ line: 3, text: 'foo()' }, { line: 9, text: 'foo(1)' }] }, { path: '/elsewhere/b.ts', count: 4, matches: [] }] } })
+    expect(Array.from(result.querySelectorAll('.tool-matches button'), (b) => b.textContent)).toEqual(['src/a.ts', '3foo()', '9foo(1)'])
+    expect(result).toHaveTextContent('/elsewhere/b.tsMatches: 4')
+    expect(result).toHaveTextContent('More results not shown')
+    await userEvent.click(screen.getByRole('button', { name: 'Open src/a.ts at line 9' }))
+    expect(requestOpenFile).toHaveBeenCalledWith({ sessionId: 's1', path: 'src/a.ts', line: 9 })
+  })
+
+  it('says a search found nothing', async () => {
+    expect(await open({ text: '{"total_count": 0}', matches: { total: 0, truncated: false, files: [] } })).toHaveTextContent('No matches')
+  })
 })

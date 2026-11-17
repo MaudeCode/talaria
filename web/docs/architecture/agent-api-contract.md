@@ -727,7 +727,9 @@ registers, with two columns: `kind`, the icon and verb clients map, and `present
 server shows the call's result. `terminal` (`terminal`, `process_manage`, `execute_code`) shows the
 output streams, error and exit code; `diff` (`patch`, `write_file`) the file edit; `clarify` shows
 as the question dialog, never a tool row; `todo` and `delegate` show in the session's todo list and
-subagent rows; every other tool is `generic`, its result's text, else its key/value fields. The
+subagent rows; `file_excerpt` (`read_file`, TAL-2323) shows the lines read under the file's path
+with their real numbers, and `matches` (`search_files`) the matches grouped by file; every other
+tool is `generic`, its result's text, else its key/value fields. The
 server reads a listed tool's kind and presentation from the table; MCP, connector and plugin tools
 keep the name-token rules and the generic result parser, and Talaria's own tools stay in
 `TALARIA_TOOL_NAMES`.

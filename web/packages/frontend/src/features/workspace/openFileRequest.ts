@@ -6,7 +6,7 @@ import { setSidePanelOpen } from '../../shell/useShellState'
  * App's companion page. The request waits until that session's Files page takes it, so a panel that mounts or opens
  * after the request still shows the file.
  */
-export interface OpenFileRequest { sessionId: string; path: string }
+export interface OpenFileRequest { sessionId: string; path: string; /** TAL-2323: the one-based line to show, from a read or search result. */ line?: number | undefined }
 const channel = pendingRequest<OpenFileRequest>()
 
 export function requestOpenFile(request: OpenFileRequest): void {

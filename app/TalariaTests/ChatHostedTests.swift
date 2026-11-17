@@ -2153,6 +2153,41 @@ final class ChatHostedTests: XCTestCase {
         }
     }
 
+    /// TAL-2323: an expanded read draws its path and numbered lines; a search its matches by file, each opening the file at its line.
+    func testExpandedReadAndSearchCardsDrawTheirLinesAndOpenTheFile() async throws {
+        func view(_ json: String) throws -> ToolResultView { try JSONDecoder().decode(ToolResultView.self, from: Data(json.utf8)) }
+        let read = ToolCall(
+            id: "read-app", name: "read_file", preview: nil, args: nil, kind: .read, target: "src/app.ts",
+            resultView: try view(#"{"text": "12|let a = 1", "file_excerpt": {"path": "src/app.ts", "focus_path": "src/app.ts", "language": "swift", "start_line": 12, "lines": [{"n": 12, "text": "let a = 1"}, {"n": 13, "text": "print(a)"}], "total_lines": 40, "truncated": true, "next_offset": 14}}"#),
+            isCompleted: true
+        )
+        let search = ToolCall(
+            id: "search-run", name: "search_files", preview: nil, args: nil, kind: .search, target: "run",
+            resultView: try view(#"{"text": "{}", "matches": {"total": 6, "truncated": true, "files": [{"path": "src/a.ts", "focus_path": "src/a.ts", "matches": [{"line": 3, "text": "run()"}, {"line": 9, "text": "run(1)"}]}, {"path": "/elsewhere/b.ts", "count": 4, "matches": []}]}}"#),
+            isCompleted: true
+        )
+        let suite = "TalariaTests.tool-files.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: ChatTranscriptDisplaySettings.toolCardsStartExpandedKey)
+        var opened: [WorkspaceFileLink] = []
+        let window = try hostWindow(
+            ScrollView { VStack { ToolCallCardView(toolCall: read); ToolCallCardView(toolCall: search) }.padding() }
+                .defaultAppStorage(defaults)
+                .chatEnvironmentAction(\.chatOpenWorkspaceFile) { opened.append($0) }
+        )
+        let labels = { HostedAccessibility.elements(in: window).compactMap { $0.accessibilityLabel } }
+        let expected = ["Open src/app.ts at line 12", "Line 12", "Line 13", "Stopped at line 13 of 40", "Open src/a.ts at line 9", "Matches: 4", "More results not shown"]
+        let drawn = await awaitCondition(timeout: 5) { expected.allSatisfy { label in labels().contains { $0.contains(label) } } }
+        XCTAssertTrue(drawn, "\(labels())")
+        XCTAssertFalse(labels().contains { $0.contains("12|") }, "\(labels())")
+        XCTAssertFalse(labels().contains { $0.contains("Open /elsewhere/b.ts") }, "\(labels())")
+        let match = try XCTUnwrap(HostedAccessibility.elements(in: window, labelContaining: "Open src/a.ts at line 9").first)
+        XCTAssertTrue(match.accessibilityActivate())
+        XCTAssertEqual(opened, [WorkspaceFileLink(path: "src/a.ts", line: 9)])
+        attachHostedScreenshot(window, name: "tool-read-and-search")
+    }
+
     /// TAL-2318: an expanded call draws the server's argument and result rows, not its raw JSON.
     func testExpandedToolCardDrawsTheServerRows() async throws {
         let call = ToolCall(

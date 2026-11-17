@@ -5,7 +5,7 @@ import { diffHunks } from '../text/diff.js'
 import { decidedEditDiff, EDIT_DIFF_MAX_LINES, tokenToolKind, toolArgs, toolDisplay, toolEditDiff, toolKind, toolName, toolProgress } from './tool-display.js'
 import { fullToolResult } from './anchor.js'
 import { publicToolFrame } from '../redact.js'
-import { TALARIA_TOOL_NAMES, TOOL_PRESENTATIONS } from '@maudecode/talaria-web-contracts'
+import { TALARIA_TOOL_NAMES, TOOL_PRESENTATIONS, type ToolResultView } from '@maudecode/talaria-web-contracts'
 
 // TAL-1537: a `~/` path expands against a stubbed home.
 vi.mock('node:os', async (importOriginal) => {
@@ -317,5 +317,64 @@ describe('Agent tool presentation table (TAL-2322)', () => {
     expect(toolEditDiff('write_file', edit)).toMatchObject({ added: 1, removed: 1 })
     expect(toolEditDiff('xai_video_edit', edit)).toBeUndefined()
     expect(toolEditDiff('mcp_fs_edit_file', edit)).toMatchObject({ added: 1, removed: 1 })
+  })
+})
+
+describe('read_file and search_files sections (TAL-2323)', () => {
+  const read = (result: Record<string, unknown>, args: unknown = { path: 'src/app.ts' }) => toolOutcome(JSON.stringify(result), 'read_file', false, args).result_view
+  const search = (result: Record<string, unknown>) => toolOutcome(JSON.stringify(result), 'search_files').result_view
+
+  it('shows a read as the numbered lines of the file its call named, and where a cut-short read stopped', () => {
+    const view = read({ content: '12|const a = 1\n13|\n14|  return a', total_lines: 40, file_size: 300, truncated: true, hint: 'Use offset=15 to continue' })
+    expect(view.file_excerpt).toEqual({ path: 'src/app.ts', language: 'ts', start_line: 12, lines: [{ n: 12, text: 'const a = 1' }, { n: 13, text: '' }, { n: 14, text: '  return a' }], total_lines: 40, truncated: true, next_offset: 15 })
+    // Older clients keep the Agent's text; the key/value rows give way to the section.
+    expect(view.text).toBe('12|const a = 1\n13|\n14|  return a')
+    expect(view.fields).toBeUndefined()
+    // A byte-budget stop names its own continuation; an extracted document reads like any file.
+    expect(read({ content: '1|a', total_lines: 9, truncated: true, truncated_by: 'bytes', next_offset: 2 }).file_excerpt?.next_offset).toBe(2)
+    expect(read({ content: '1|Title\n2|Body', total_lines: 2, truncated: false, extracted_document: true }, { path: 'doc.docx' }).file_excerpt).toEqual({ path: 'doc.docx', language: null, start_line: 1, lines: [{ n: 1, text: 'Title' }, { n: 2, text: 'Body' }], total_lines: 2, truncated: false })
+  })
+
+  it('shows a repeat read, a missing file and a blocked read as one line, never JSON', () => {
+    expect(read({ status: 'unchanged', message: 'File unchanged since last read…', path: 'src/app.ts', dedup: true, content_returned: false })).toEqual({ text: 'Unchanged since the last read' })
+    expect(read({ error: 'File not found: src/ap.ts', not_found: true, similar_files: ['src/app.ts', 'src/api.ts'] })).toEqual({ error: 'File not found: src/ap.ts\nSimilar files: src/app.ts, src/api.ts' })
+    expect(read({ error: 'BLOCKED: You have read this exact file region 4 times in a row.', path: 'src/app.ts', already_read: 4, guardrail_refusal: true })).toEqual({ error: 'BLOCKED: You have read this exact file region 4 times in a row.' })
+  })
+
+  it('groups matches by file from both match encodings, a files-only list and a count search', () => {
+    const grouped = { total: 6, truncated: true, files: [{ path: 'src/a.ts', matches: [{ line: 3, text: 'foo()' }, { line: 9, text: '  foo(1)' }] }, { path: 'src/b.ts', matches: [{ line: 1, text: 'foo' }] }] }
+    expect(search({ total_count: 6, matches: [{ path: 'src/a.ts', line: 3, content: 'foo()' }, { path: 'src/a.ts', line: 9, content: '  foo(1)' }, { path: 'src/b.ts', line: 1, content: 'foo' }], truncated: true }).matches).toEqual(grouped)
+    expect(search({ total_count: 6, matches_format: 'path-grouped', matches_text: 'src/a.ts\n  3: foo()\n  9:   foo(1)\nsrc/b.ts\n  1: foo', truncated: true, total_count_is_lower_bound: true }).matches).toEqual(grouped)
+    expect(search({ total_count: 2, files: ['src/a.ts', 'src/b.ts'] }).matches).toEqual({ total: 2, truncated: false, files: [{ path: 'src/a.ts', matches: [] }, { path: 'src/b.ts', matches: [] }] })
+    expect(search({ total_count: 5, counts: { 'src/a.ts': 3, 'src/b.ts': 2 } }).matches).toEqual({ total: 5, truncated: false, files: [{ path: 'src/a.ts', count: 3, matches: [] }, { path: 'src/b.ts', count: 2, matches: [] }] })
+    expect(search({ total_count: 0, error: 'Path not found: nope' })).toEqual({ error: 'Path not found: nope' })
+    expect(search({ error: 'BLOCKED: You have run this exact search 4 times in a row.', guardrail_refusal: true })).toEqual({ error: 'BLOCKED: You have run this exact search 4 times in a row.' })
+  })
+
+  it('caps a long excerpt to whole lines and offers the whole result, which the whole-result read returns', () => {
+    const content = Array.from({ length: 200 }, (_, i) => `${String(i + 1)}|${'x'.repeat(40)}`).join('\n')
+    const outcome = toolOutcome(JSON.stringify({ content, total_lines: 200, truncated: false }), 'read_file', false, { path: 'big.txt' })
+    expect(outcome.capped).toBe(true)
+    expect(outcome.result_view.file_excerpt?.lines.length).toBeLessThan(200)
+    const messages = [{ role: 'assistant', tool_calls: [{ id: 'r1', type: 'function', function: { name: 'read_file', arguments: JSON.stringify({ path: 'big.txt' }) } }] }, { role: 'tool', tool_call_id: 'r1', content: JSON.stringify({ content, total_lines: 200, truncated: false }) }]
+    expect(fullToolResult(messages, 'r1')?.result_view.file_excerpt).toMatchObject({ path: 'big.txt', lines: expect.arrayContaining([{ n: 200, text: 'x'.repeat(40) }]) as unknown })
+    // A persisted call's excerpt names the file from its own arguments.
+    const [assistant] = withToolCallOutcomes(messages, [], null) as { tool_calls: { result_view: ToolResultView }[] }[]
+    expect(assistant!.tool_calls[0]!.result_view.file_excerpt?.path).toBe('big.txt')
+  })
+
+  it('ships paths redacted, each file inside the workspace with its focus path, and an excerpt redacted as the text it came from', () => {
+    const pem = '-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAabc\nqwertyuiopasdf\n-----END RSA PRIVATE KEY-----'
+    const content = ['4|key:', ...pem.split('\n').map((line, i) => `${String(i + 5)}|${line}`), '9|done'].join('\n')
+    const excerpt = toolOutcome(JSON.stringify({ content, total_lines: 9, truncated: false }), 'read_file', false, { path: '/repo/src/key.ts' }).result_view
+    const frame = publicToolFrame({ name: 'read_file', args: { path: '/repo/src/key.ts' }, result_view: excerpt }, true, '/repo')
+    const shown = (frame.result_view as { file_excerpt: { focus_path?: string; lines: { n: number; text: string }[] } }).file_excerpt
+    expect(shown.focus_path).toBe('src/key.ts')
+    expect(JSON.stringify(shown.lines)).not.toMatch(/MIIEow|qwertyuiop/)
+    expect(shown.lines.at(0)).toEqual({ n: 4, text: 'key:' })
+    expect(shown.lines.at(-1)).toEqual({ n: 9, text: 'done' })
+    const matches = search({ total_count: 2, matches: [{ path: '/repo/src/a.ts', line: 3, content: 'foo' }, { path: '/elsewhere/b.ts', line: 1, content: 'foo' }] })
+    const located = publicToolFrame({ name: 'search_files', args: { pattern: 'foo' }, result_view: matches }, true, '/repo').result_view as { matches: { files: { path: string; focus_path?: string }[] } }
+    expect(located.matches.files).toEqual([expect.objectContaining({ path: '/repo/src/a.ts', focus_path: 'src/a.ts' }), expect.not.objectContaining({ focus_path: expect.anything() as unknown })])
   })
 })

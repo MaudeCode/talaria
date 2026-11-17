@@ -9,6 +9,9 @@ import { Streamdown, parseMarkdownIntoBlocks, type AnimateOptions, type LinkSafe
 import { cjk } from '@streamdown/cjk'
 import { appUrl } from '../../../lib/appRoot'
 import { CodeBlock, LineEndedContext } from './CodeBlock'
+
+/** TAL-2323: a tool card's file excerpt loads the code block body with this renderer chunk. */
+export { CodeBlockBody } from './CodeBlock'
 import { code, HIGHLIGHTED_LANGUAGES } from './codeHighlight'
 import { JsonCodeBlock } from './JsonCodeBlock'
 import { LinkCheckContext, type LinkCheck } from './LinkCheckContext'
