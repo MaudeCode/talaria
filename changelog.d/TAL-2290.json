@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web shows context compaction and compression warnings from Hermes Agent v0.23.2 and context engines that reword their progress lines.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

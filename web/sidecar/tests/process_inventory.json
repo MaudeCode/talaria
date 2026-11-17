@@ -2472,6 +2472,14 @@
         "[tool-call]"
       ]
     },
+    "tests/test_status_events.py::test_pinned_compaction_progress_opens_the_span": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the pinned release's own compaction status producer opens the compression span. Its progress text and v0.23.2's mark exist only on the real release; a separate interpreter isolates native imports.",
+      "cases": [
+        "[default]",
+        "[custom-engine]"
+      ]
+    },
     "tests/test_steer_withdraw.py::test_withdraw_and_send_now_against_the_pinned_agent": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: withdraw and send now against the pinned agent. Uses the real installed release, not a fabricated API response.",

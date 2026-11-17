@@ -5,12 +5,15 @@ warnings, and the captured terminal error. The table holds the pinned Agent's re
 from __future__ import annotations
 
 import importlib
+import json
+import subprocess
 import sys
+import types
 from types import SimpleNamespace
 
 import pytest
 
-from conftest import AGENT_DIR
+from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 from test_chat_turn import Ctx, FakeAgent, _params, _patch
 from talaria_sidecar.methods import chat
 from talaria_sidecar.methods.chat import _status_events
@@ -48,6 +51,8 @@ CASES = [
         "(cooldown: 60s). The model may stop responding. Run /new to start a fresh session or /compress to retry immediately.",
         ["warning"],
     ),
+    # Agent v0.23.2 sends actionable compression notices at warn severity; no retry or fallback word needed.
+    ("warn", "⚠️  Session compressed 2 times — accuracy may degrade. Consider /new to start fresh.", ["warning"]),
     # A non-retryable provider error is the turn's terminal cause; announcing a fallback also warns.
     ("lifecycle", "⚠️ Non-retryable error (HTTP 400) — trying fallback...", ["terminal_error", "warning"]),
     ("lifecycle", "❌ Non-retryable error (HTTP 400): invalid model format or no credentials", ["terminal_error"]),
@@ -120,3 +125,67 @@ def test_pinned_stream_diagnostics_reach_warning_frames(pinned_stream_diag, monk
     assert [data for event, data in ctx.frames if event == "warning"] == [
         {"type": "fallback", "message": line} for line in lines
     ]
+
+
+def test_marked_compaction_progress_and_compression_warnings_reach_their_frames(monkeypatch, tmp_path):
+    """TAL-2290: the callback classifies the Agent's own object, so a context engine's reworded progress still opens
+    the span, and a warn-severity notice about compression warns without opening one. The stand-in mirrors Agent
+    v0.23.2's ``CompactionProgressText`` and ``compaction_status_kind``."""
+    class CompactionProgressText(str):
+        pass
+
+    package = types.ModuleType("agent")
+    package.__path__ = []
+    compression = types.ModuleType("agent.conversation_compression")
+    compression.compaction_status_kind = lambda kind, text: (
+        "compacting" if kind == "lifecycle" and isinstance(text, CompactionProgressText) and text.strip() else str(kind))
+    monkeypatch.setitem(sys.modules, "agent", package)
+    monkeypatch.setitem(sys.modules, "agent.conversation_compression", compression)
+    warning = "⚠️  Session compressed 2 times — accuracy may degrade. Consider /new to start fresh."
+    _patch(monkeypatch)
+
+    def run_conversation(self, **kwargs):
+        status = self.kwargs["status_callback"]
+        status("warn", warning)
+        status("lifecycle", CompactionProgressText("Rebuilding older context"))
+        status("compacted", "✓ Context compaction complete — continuing turn...")
+        return {"final_response": "", "messages": []}
+
+    monkeypatch.setattr(FakeAgent, "run_conversation", run_conversation)
+    ctx = Ctx()
+    result = chat.start(ctx, {**_params("marked-progress", "marked-session"), "profile_home": str(tmp_path)})
+    assert result["status"] == "completed", result
+    assert [(event, data) for event, data in ctx.frames if event in ("warning", "compressing", "compression_finished")] == [
+        ("warning", {"type": "fallback", "message": warning}),
+        ("compressing", {"session_id": "marked-session", "message": "Compressing context"}),
+        ("compression_finished", {"session_id": "marked-session"}),
+    ]
+
+
+#: The pinned release's own compaction status producer, classified on the Agent's interpreter as production runs it.
+PINNED_COMPACTION_PROBE = r'''
+import json, sys
+from types import SimpleNamespace
+sys.path.append(sys.argv[1])
+from agent import conversation_compression
+from agent.context_engine import automatic_compaction_status_message
+from talaria_sidecar.methods.chat import _status_events
+
+engine = SimpleNamespace(get_automatic_compaction_status_message=lambda **context: sys.argv[2] or context["default_message"])
+status = automatic_compaction_status_message(engine, phase="compress", default_message=conversation_compression.COMPACTION_STATUS)
+print(json.dumps({"events": _status_events("lifecycle", status), "marks": hasattr(conversation_compression, "compaction_status_kind")}))
+'''
+
+
+@requires_agent
+@pytest.mark.parametrize("engine_text", ["", "Rebuilding older context"], ids=["default", "custom-engine"])
+def test_pinned_compaction_progress_opens_the_span(tmp_path, engine_text):
+    """The default compaction line opens the span on every supported release (by its mark from v0.23.2, by its wording
+    before), and a context engine's reworded line opens it wherever the release marks progress."""
+    home = tmp_path / "hermes"
+    home.mkdir()
+    run = subprocess.run([AGENT_PYTHON, "-c", PINNED_COMPACTION_PROBE, str(AGENT_DIR), engine_text],
+                         env=isolated_env(home), capture_output=True, text=True, timeout=90)
+    assert run.returncode == 0, run.stderr[-4000:]
+    probe = json.loads(run.stdout.strip().splitlines()[-1])
+    assert probe["events"] == (["compressing"] if not engine_text or probe["marks"] else [])
