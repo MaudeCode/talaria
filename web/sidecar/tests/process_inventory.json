@@ -1895,6 +1895,20 @@
         "[oauth_device_code]"
       ]
     },
+    "tests/test_plugin_providers.py::test_an_updated_plugin_is_attributed_through_its_current_native_generation": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the real Agent's native plugin reload imports each generation from a frozen copy; only its own registration ownership attributes the current generation, keeps a failed update's prior generation, and rejects stale profile objects. Synthetic plugin CLI is never spawned.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_plugin_providers.py::test_plugins_sharing_a_directory_name_are_not_attributed_through_native_ownership": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the real Agent keys native plugin ownership by directory name, so same-named flat and model-providers plugins must stay unattributed and refused at runtime. Synthetic plugin CLI is never spawned.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_plugin_providers.py::test_a_provider_that_left_core_offers_its_catalog_plugin": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: a provider the profile names that left the Agent's core reports its catalog plugin. Uses the real installed release's left-core table; the synthetic plugin CLI is never spawned.",

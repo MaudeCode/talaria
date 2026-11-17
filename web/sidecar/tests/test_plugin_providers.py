@@ -7,6 +7,7 @@ whose CLI is missing, and one the profile disabled. Nothing touches ``~/.hermes`
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import textwrap
 import time
@@ -399,8 +400,8 @@ USAGE_PROFILES = textwrap.dedent(
     from providers import register_provider
     from providers.base import ProviderProfile
 
-    # The plugin's own sign-in, beside its code: each installed copy reads only its own account.
-    ACCOUNT = Path(__file__).resolve().parent / "synthetic-account"
+    # The plugin's sign-in lives in its profile's home, not beside its code: Agent 0.23.2 runs a frozen copy of the code.
+    ACCOUNT = Path({account!r})
 
 
     class UsageProfile(ProviderProfile):
@@ -410,7 +411,7 @@ USAGE_PROFILES = textwrap.dedent(
                 return AccountUsageSnapshot(provider=self.name, source="synthetic", fetched_at=at, unavailable_reason="no synthetic subscription login found")
             used = float(ACCOUNT.read_text())
             return AccountUsageSnapshot(provider=self.name, source="synthetic", fetched_at=at, title="Synthetic plan", plan="max",
-                                        windows=(AccountUsageWindow(label="Current session", used_percent=used),), details=(f"account {used:g}",))
+                                        windows=(AccountUsageWindow(label="Current session", used_percent=used),), details=(f"account {{used:g}}",))
 
 
     fake_usage = UsageProfile(name="fake-usage", display_name="Fake Usage", auth_type="api_key", base_url="https://usage.invalid/v1")
@@ -435,8 +436,8 @@ def test_a_plugin_usage_hook_is_declared_and_read_only_in_its_own_profile(tmp_pa
         root = profile / "plugins" / "fake-usage"
         root.mkdir(parents=True)
         (root / "plugin.yaml").write_text("name: fake-usage-provider\nkind: model-provider\nversion: 0.0.1\n")
-        (root / "__init__.py").write_text(USAGE_PROFILES)
-        (root / "synthetic-account").write_text(used)
+        (root / "__init__.py").write_text(USAGE_PROFILES.format(account=str(profile / "synthetic-account")))
+        (profile / "synthetic-account").write_text(used)
     sidecar = SidecarProcess(home)
     try:
         listing = sidecar.result("plugins.providers", {"profile_home": str(home)})
@@ -462,8 +463,111 @@ def test_a_plugin_usage_hook_is_declared_and_read_only_in_its_own_profile(tmp_pa
         # A profile without the plugin never borrows another profile's hook.
         assert read(bare) == {"provider": "fake-usage", "available": False, "unavailable_reason": "fake-usage is not an enabled provider plugin in this profile.", "windows": [], "details": []}
         # A lost sign-in keeps the plugin's own reason.
-        (home / "plugins" / "fake-usage" / "synthetic-account").unlink()
+        (home / "synthetic-account").unlink()
         signed_out = read(home)
         assert (signed_out["available"], signed_out["unavailable_reason"]) == (False, "no synthetic subscription login found"), signed_out
+    finally:
+        sidecar.close()
+
+
+GENERATION_PROFILE = textwrap.dedent(
+    """
+    from providers import register_provider
+    from providers.base import ProviderProfile
+
+    register_provider(ProviderProfile(
+        name="fake-gen", display_name="Fake Generation", auth_type="external_process", base_url="acp://fake-gen",
+        process_command={command!r}, fallback_models={models!r},
+    ))
+    """
+)
+
+
+@requires_agent
+@pytest.mark.skipif(AGENT_DIR is None or not (AGENT_DIR / "providers/plugin_reload.py").is_file(), reason="Agent has no native plugin reload")
+def test_an_updated_plugin_is_attributed_through_its_current_native_generation(tmp_path: pathlib.Path) -> None:
+    """TAL-2289: a plugin the Agent runs from a frozen copy stays its manifest's provider across updates."""
+    home = tmp_path / "home" / ".hermes"
+    root = home / "plugins" / "fake-gen"
+    root.mkdir(parents=True)
+    (home / "config.yaml").write_text("plugins:\n  isolation: in_process\n")
+    cli = tmp_path / "fake-gen-cli"
+    cli.write_text("#!/bin/sh\nexit 97\n")  # Listing and resolution must never run it.
+    cli.chmod(0o755)
+    (root / "plugin.yaml").write_text("name: fake-gen-provider\nkind: model-provider\nversion: 0.0.1\n")
+
+    def install(source: str) -> None:
+        (root / "__init__.py").write_text(source)
+        stamp = time.time_ns() + 10_000_000_000  # move the plugin dir stamp the Agent's rescan watches
+        os.utime(home / "plugins", ns=(stamp, stamp))
+        time.sleep(1.2)  # past the Agent's plugin-dir stamp check interval
+
+    install(GENERATION_PROFILE.format(command=str(cli), models=("gen-1",)))
+    # Capture a live profile object, then ask whether that same object still owns the provider after an update.
+    script = textwrap.dedent("""
+        from pathlib import Path
+        from talaria_sidecar import __main__ as main
+        from talaria_sidecar.home import scoped_home
+        from talaria_sidecar.methods.providers import installed_plugin_profiles
+        build = main.build_methods
+        captured = {}
+        def methods(runtime):
+            handlers = build(runtime)
+            def capture(ctx, params):
+                import providers
+                runtime.load()
+                with scoped_home(Path(params["profile_home"])):
+                    captured["profile"] = providers.get_provider_profile("fake-gen")
+                    return {"captured": captured["profile"] is not None}
+            def captured_owns(ctx, params):
+                runtime.load()
+                with scoped_home(Path(params["profile_home"])):
+                    return {"owns": any(p is captured["profile"] for _name, p in installed_plugin_profiles())}
+            handlers["test.capture"] = capture
+            handlers["test.captured_owns"] = captured_owns
+            return handlers
+        main.build_methods = methods
+        raise SystemExit(main.main())
+    """)
+    sidecar = SidecarProcess(home, command=[AGENT_PYTHON, "-c", script])
+    scope = {"profile_home": str(home)}
+
+    def state() -> tuple:
+        rows = [(row["name"], row["setup"]) for row in sidecar.result("plugins.providers", scope)["providers"]]
+        runtime, _ = sidecar.call("providers.resolve_runtime", {**scope, "requested": "fake-gen"})
+        return rows, sidecar.result("providers.model_ids", {**scope, "provider": "fake-gen"})["model_ids"], "result" in runtime
+
+    try:
+        assert state() == ([("fake-gen", "ready")], ["gen-1"], True)
+        assert sidecar.result("test.capture", scope) == {"captured": True}
+        assert sidecar.result("test.captured_owns", scope) == {"owns": True}
+        # An update publishes the new generation; the cached object from the previous one no longer owns the provider.
+        install(GENERATION_PROFILE.format(command=str(cli), models=("gen-two",)))
+        assert state() == ([("fake-gen", "ready")], ["gen-two"], True)
+        assert sidecar.result("test.captured_owns", scope) == {"owns": False}
+        # A failed update leaves the previous generation serving, still attributed to its manifest.
+        sidecar.result("test.capture", scope)
+        install("raise RuntimeError('broken update')\n")
+        assert state() == ([("fake-gen", "ready")], ["gen-two"], True)
+        assert sidecar.result("test.captured_owns", scope) == {"owns": True}
+    finally:
+        sidecar.close()
+
+
+@requires_agent
+@pytest.mark.skipif(AGENT_DIR is None or not (AGENT_DIR / "providers/plugin_reload.py").is_file(), reason="Agent has no native plugin reload")
+def test_plugins_sharing_a_directory_name_are_not_attributed_through_native_ownership(tmp_path: pathlib.Path) -> None:
+    """The Agent names a plugin's module after its directory, so same-named flat and model-providers plugins share an owner."""
+    home = tmp_path / "home" / ".hermes"
+    home.mkdir(parents=True)
+    (home / "config.yaml").write_text("plugins:\n  isolation: in_process\n")
+    for parent, manifest in ((home / "plugins", "dup-flat-provider"), (home / "plugins" / "model-providers", "dup-nested-provider")):
+        _plugin(parent, "fake-dup", manifest, name="fake-dup", display=manifest, command="talaria-test-cli-that-does-not-exist", models=(manifest,))
+    sidecar = SidecarProcess(home)
+    try:
+        rows = sidecar.result("plugins.providers", {"profile_home": str(home)})["providers"]
+        assert sorted((row["name"], row["setup"]) for row in rows) == [("dup-flat-provider", "not_loaded"), ("dup-nested-provider", "not_loaded")], rows
+        denied, _ = sidecar.call("providers.resolve_runtime", {"profile_home": str(home), "requested": "fake-dup"})
+        assert denied.get("error", {}).get("data", {}).get("condition") == "credential_missing", denied
     finally:
         sidecar.close()
