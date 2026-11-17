@@ -3947,7 +3947,7 @@ describe('the file a companion page shows (TAL-1458)', () => {
   it('stamps each live frame with the shared fixture\'s focus path', () => {
     for (const key of ['tool_a', 'tool_b', 'shell'] as const) {
       // The frame as the sidecar sends it, before the server stamps its display fields.
-      const raw = Object.fromEntries(Object.entries(fixture[key].data).filter(([field]) => !['kind', 'target', 'focus_path', 'args_fields'].includes(field)))
+      const raw = Object.fromEntries(Object.entries(fixture[key].data).filter(([field]) => !['kind', 'target', 'focus_path', 'args_fields', 'raw_args'].includes(field)))
       expect(publicToolFrame(raw, true), key).toEqual(fixture[key].data)
     }
   })

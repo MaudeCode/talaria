@@ -44,7 +44,9 @@
                     "value": "fixture.txt",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"path\": \"fixture.txt\"\n}",
+                "raw_result": "Synthetic contents"
               },
               "order_index": 1,
               "group_id": "group:0"
@@ -150,7 +152,9 @@
                     "value": "false",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"command\": \"false\"\n}",
+                "raw_result": "exit 1"
               },
               "order_index": 1,
               "group_id": "group:0"
@@ -182,7 +186,9 @@
                     "value": "a.txt",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"path\": \"a.txt\"\n}",
+                "raw_result": "A"
               },
               "order_index": 2,
               "group_id": "group:0"
@@ -461,7 +467,9 @@
                     "value": "a.toml",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"path\": \"a.toml\"\n}",
+                "raw_result": "port = 8080"
               },
               "order_index": 2,
               "group_id": "group:1"
@@ -597,7 +605,9 @@
                     "value": "b.txt",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"path\": \"b.txt\"\n}",
+                "raw_result": "B"
               },
               "order_index": 1,
               "group_id": "group:0"
@@ -708,7 +718,9 @@
                     "value": "ls",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"command\": \"ls\"\n}",
+                "raw_result": "a.txt"
               },
               "order_index": 1,
               "group_id": "group:0"
@@ -909,7 +921,9 @@
                     "value": "a.txt",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"path\": \"a.txt\"\n}",
+                "raw_result": "A"
               },
               "order_index": 1,
               "group_id": "group:0"
@@ -973,7 +987,9 @@
                     "value": "b.txt",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"path\": \"b.txt\"\n}",
+                "raw_result": "B"
               },
               "order_index": 4,
               "group_id": "group:1"
@@ -1416,7 +1432,9 @@
                     "value": "a.txt",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"path\": \"a.txt\"\n}",
+                "raw_result": "A contents"
               },
               "group_id": "group:0"
             },
@@ -1454,7 +1472,9 @@
                     "value": "make test",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"command\": \"make test\"\n}",
+                "raw_result": "{\n  \"exit_code\": 2,\n  \"output\": \"1 failed\"\n}"
               },
               "group_id": "group:0"
             }
@@ -1635,7 +1655,9 @@
                     "value": "TODO",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"pattern\": \"TODO\"\n}",
+                "raw_result": "{\n  \"error\": \"permission denied\"\n}"
               },
               "group_id": "group:0"
             }
@@ -1773,7 +1795,9 @@
                     "value": "date",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"command\": \"date\"\n}",
+                "raw_result": "Sat Sep 27"
               },
               "group_id": "group:0"
             }
@@ -1892,7 +1916,8 @@
                     "value": "make",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"command\": \"make\"\n}"
               },
               "group_id": "group:0"
             }
@@ -4369,7 +4394,9 @@
                       "value": "make",
                       "multiline": false
                     }
-                  ]
+                  ],
+                  "raw_args": "{\n  \"command\": \"make\"\n}",
+                  "raw_result": "{\n  \"output\": \"built\\nok\",\n  \"stderr\": \"warning: deprecated\",\n  \"exit_code\": 2,\n  \"error\": null,\n  \"approval\": \"Command was flagged (synthetic pattern) and auto-approved by an approval the user gave earlier in this session.\"\n}"
                 },
                 "group_id": "group:0"
               },
@@ -4402,7 +4429,9 @@
                       "value": "notes.txt",
                       "multiline": false
                     }
-                  ]
+                  ],
+                  "raw_args": "{\n  \"path\": \"notes.txt\"\n}",
+                  "raw_result": "\"{\\\"content\\\":\\\"line one\\\\nline two\\\"}\""
                 },
                 "group_id": "group:0"
               },
@@ -4434,7 +4463,9 @@
                       "value": "hermes",
                       "multiline": false
                     }
-                  ]
+                  ],
+                  "raw_args": "{\n  \"query\": \"hermes\"\n}",
+                  "raw_result": "[\n  {\n    \"type\": \"text\",\n    \"text\": \"first\"\n  },\n  {\n    \"type\": \"text\",\n    \"text\": \"second\"\n  }\n]"
                 },
                 "group_id": "group:0"
               },
@@ -4466,7 +4497,9 @@
                       "value": "date",
                       "multiline": false
                     }
-                  ]
+                  ],
+                  "raw_args": "{\n  \"command\": \"date\"\n}",
+                  "raw_result": "Sat Sep 27"
                 },
                 "group_id": "group:0"
               }
@@ -5015,7 +5048,9 @@
                     "value": "a.txt",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"path\": \"a.txt\"\n}",
+                "raw_result": "A"
               },
               "group_id": "group:1"
             },
@@ -5392,7 +5427,9 @@
                       "value": "src/app.ts",
                       "multiline": false
                     }
-                  ]
+                  ],
+                  "raw_args": "{\n  \"path\": \"src/app.ts\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"diff\": \"--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,3 +1,4 @@\\n import { run } from './run'\\n-run(1)\\n+run(2)\\n+run(3)\\n export {}\\n\",\n  \"files_modified\": [\n    \"src/app.ts\"\n  ]\n}"
                 },
                 "group_id": "group:0",
                 "merged_count": 2
@@ -5438,7 +5475,9 @@
                       "value": "notes.txt",
                       "multiline": false
                     }
-                  ]
+                  ],
+                  "raw_args": "{\n  \"path\": \"notes.txt\"\n}",
+                  "raw_result": "{\n  \"bytes_written\": 5,\n  \"dirs_created\": false\n}"
                 },
                 "group_id": "group:0",
                 "merged_into": "tool:call-patch"
@@ -5864,7 +5903,9 @@
                     "value": "make migrate",
                     "multiline": false
                   }
-                ]
+                ],
+                "raw_args": "{\n  \"command\": \"make migrate\"\n}",
+                "raw_result": "migrated"
               },
               "group_id": "group:0"
             }
@@ -6542,7 +6583,9 @@
                       "value": "notes.txt",
                       "multiline": false
                     }
-                  ]
+                  ],
+                  "raw_args": "{\n  \"path\": \"notes.txt\"\n}",
+                  "raw_result": "{\n  \"bytes_written\": 10,\n  \"dirs_created\": false\n}"
                 },
                 "group_id": "group:0"
               },
@@ -6625,7 +6668,9 @@
                       "value": "demo",
                       "multiline": false
                     }
-                  ]
+                  ],
+                  "raw_args": "{\n  \"action\": \"edit\",\n  \"name\": \"demo\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"message\": \"Skill demo updated.\"\n}"
                 },
                 "group_id": "group:0"
               }
@@ -7339,7 +7384,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"path\": \"src/app.ts\",\n  \"offset\": 12,\n  \"limit\": 2\n}",
+                  "raw_result": "{\n  \"content\": \"12|import { run } from './run'\\n13|run(2)\",\n  \"total_lines\": 40,\n  \"file_size\": 600,\n  \"truncated\": true,\n  \"hint\": \"Use offset=14 to continue reading (showing 12-13 of 40 lines)\"\n}"
                 },
                 "group_id": "group:0"
               },
@@ -7409,7 +7456,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"pattern\": \"run\"\n}",
+                  "raw_result": "{\n  \"total_count\": 5,\n  \"matches_format\": \"path-grouped\",\n  \"matches_text\": \"src/app.ts\\n  1: import { run } from './run'\\n  13: run(2)\\nsrc/run.ts\\n  1: export function run(n: number) {}\\n  4: run(0)\\n  9: run(1)\"\n}"
                 },
                 "group_id": "group:0",
                 "merged_count": 2
@@ -7466,7 +7515,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"pattern\": \"run\",\n  \"output_mode\": \"count\"\n}",
+                  "raw_result": "{\n  \"total_count\": 5,\n  \"counts\": {\n    \"src/app.ts\": 2,\n    \"src/run.ts\": 3\n  }\n}"
                 },
                 "group_id": "group:0",
                 "merged_into": "tool:call-search"
@@ -7512,7 +7563,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"path\": \"src/app.ts\",\n  \"offset\": 12,\n  \"limit\": 2\n}",
+                  "raw_result": "{\n  \"status\": \"unchanged\",\n  \"message\": \"File unchanged since last read.\",\n  \"path\": \"src/app.ts\",\n  \"dedup\": true,\n  \"content_returned\": false\n}"
                 },
                 "group_id": "group:0"
               }
@@ -7843,7 +7896,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"query\": \"hermes agent\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"data\": {\n    \"web\": [\n      {\n        \"title\": \"Hermes Agent\",\n        \"url\": \"https://www.example.com/hermes\",\n        \"description\": \"An open agent.\",\n        \"position\": 1\n      },\n      {\n        \"title\": \"Docs\",\n        \"url\": \"https://docs.example.org/start\",\n        \"description\": \"Getting started.\",\n        \"position\": 2\n      }\n    ]\n  }\n}"
                 },
                 "group_id": "group:0"
               },
@@ -7890,7 +7945,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"query\": \"hermes agent\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"provider\": \"xai\",\n  \"tool\": \"x_search\",\n  \"query\": \"hermes agent\",\n  \"answer\": \"People **like** it.\",\n  \"citations\": [\n    \"https://x.com/a/status/1\",\n    \"https://x.com/b/status/2\"\n  ],\n  \"inline_citations\": [\n    {\n      \"url\": \"https://x.com/b/status/2\",\n      \"title\": \"Post by b\",\n      \"start_index\": 0,\n      \"end_index\": 6\n    }\n  ],\n  \"degraded\": false,\n  \"degraded_reason\": null\n}"
                 },
                 "group_id": "group:0"
               },
@@ -7940,7 +7997,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"urls\": [\n    \"https://example.com/hermes\",\n    \"https://blocked.example/\"\n  ]\n}",
+                  "raw_result": "{\n  \"results\": [\n    {\n      \"url\": \"https://example.com/hermes\",\n      \"title\": \"Hermes\",\n      \"content\": \"# Hermes\\n\\nAn open agent.\",\n      \"error\": null\n    },\n    {\n      \"url\": \"https://blocked.example/\",\n      \"title\": \"\",\n      \"content\": \"\",\n      \"error\": \"Blocked by website policy\",\n      \"blocked_by_policy\": {\n        \"host\": \"blocked.example\",\n        \"rule\": \"blocked.example\",\n        \"source\": \"config\"\n      }\n    }\n  ]\n}"
                 },
                 "group_id": "group:0"
               }
@@ -8661,7 +8720,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"prompt\": \"a cat\",\n  \"aspect_ratio\": \"square\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"image\": \"/srv/hermes/cache/generated/images/cat.png\",\n  \"additional_images\": [\n    \"https://cdn.example/cat-2.png\"\n  ],\n  \"model\": \"flux\",\n  \"prompt\": \"a cat\",\n  \"aspect_ratio\": \"square\",\n  \"modality\": \"text\",\n  \"provider\": \"fal\"\n}"
                 },
                 "group_id": "group:0"
               },
@@ -8734,7 +8795,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"text\": \"Hello\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"file_path\": \"/srv/hermes/cache/audio/tts_1.mp3\",\n  \"file_paths\": [\n    \"/srv/hermes/cache/audio/tts_1.mp3\"\n  ],\n  \"media_tag\": \"MEDIA:/srv/hermes/cache/audio/tts_1.mp3\",\n  \"provider\": \"edge\",\n  \"voice_compatible\": false\n}"
                 },
                 "group_id": "group:1"
               },
@@ -8817,7 +8880,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"prompt\": \"a wave\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"video\": \"https://cdn.example/wave.mp4\",\n  \"model\": \"grok\",\n  \"prompt\": \"a wave\",\n  \"modality\": \"text\",\n  \"aspect_ratio\": \"16:9\",\n  \"duration\": 5,\n  \"provider\": \"xai\"\n}"
                 },
                 "group_id": "group:2"
               },
@@ -8855,7 +8920,9 @@
                   "done": true,
                   "is_error": true,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"prompt\": \"a dog\"\n}",
+                  "raw_result": "{\n  \"success\": false,\n  \"image\": null,\n  \"error\": \"FAL_KEY is not set\",\n  \"error_type\": \"auth_required\"\n}"
                 },
                 "group_id": "group:3"
               },
@@ -8894,7 +8961,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"image_url\": \"/srv/hermes/in.png\",\n  \"question\": \"What is it?\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"analysis\": \"A **cat** on a sofa.\"\n}"
                 },
                 "group_id": "group:4",
                 "merged_count": 2
@@ -8934,7 +9003,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"image_url\": \"/srv/hermes/in.png\",\n  \"question\": \"And now?\"\n}",
+                  "raw_result": "Image loaded into your context."
                 },
                 "group_id": "group:4",
                 "merged_into": "tool:call-vision"
@@ -9624,7 +9695,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"target\": \"user\",\n  \"operations\": [\n    {\n      \"action\": \"add\",\n      \"content\": \"Prefers short replies\"\n    }\n  ]\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"done\": true,\n  \"target\": \"user\",\n  \"usage\": \"4% — 88/2,200 chars\",\n  \"entry_count\": 2,\n  \"message\": \"Applied 1 operation(s).\",\n  \"note\": \"Write saved.\"\n}"
                 },
                 "group_id": "group:0"
               },
@@ -9689,7 +9762,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"action\": \"create\",\n  \"name\": \"digest\",\n  \"content\": \"# Digest\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"staged\": true,\n  \"pending_id\": \"pend-1\",\n  \"gist\": \"New digest skill\",\n  \"message\": \"Waiting for the user to approve.\"\n}"
                 },
                 "group_id": "group:0",
                 "merged_count": 2
@@ -9740,7 +9815,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"name\": \"pdf\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"name\": \"pdf\",\n  \"description\": \"Read PDFs\",\n  \"tags\": [],\n  \"content\": \"# PDF\\n\\nUse **pdftotext**.\",\n  \"path\": \"pdf/SKILL.md\",\n  \"linked_files\": null,\n  \"readiness_status\": \"setup_needed\",\n  \"setup_needed\": true,\n  \"setup_note\": \"Set $PDF_KEY.\"\n}"
                 },
                 "group_id": "group:0",
                 "merged_into": "tool:call-skill"
@@ -9786,7 +9863,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"query\": \"deploy\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"mode\": \"discover\",\n  \"query\": \"deploy\",\n  \"detail\": \"summary\",\n  \"results\": [\n    {\n      \"session_id\": \"past-1\",\n      \"when\": \"November 16, 2026 at 09:00 AM\",\n      \"source\": \"web\",\n      \"model\": \"m\",\n      \"title\": \"Deploy fix\",\n      \"matched_role\": \"user\",\n      \"snippet\": \"the deploy failed\"\n    }\n  ],\n  \"count\": 1\n}"
                 },
                 "group_id": "group:0"
               },
@@ -9842,7 +9921,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"action\": \"pause\",\n  \"job_id\": \"job-1\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"job\": {\n    \"job_id\": \"job-1\",\n    \"name\": \"Morning digest\",\n    \"schedule\": \"every day at 09:00\",\n    \"next_run_at\": null,\n    \"last_status\": \"ok\",\n    \"enabled\": false,\n    \"state\": \"paused\"\n  }\n}"
                 },
                 "group_id": "group:0"
               },
@@ -9898,7 +9979,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"action\": \"connect\",\n  \"connectors\": [\n    \"github\"\n  ]\n}",
+                  "raw_result": "{\n  \"targets\": [\n    {\n      \"name\": \"github\",\n      \"kind\": \"connector\",\n      \"action\": \"connect\",\n      \"state\": \"initiated\",\n      \"connect_url\": \"https://portal.example/authorize?code=abc\"\n    }\n  ],\n  \"status\": \"initiated\",\n  \"note\": \"Show each connect_url to the user.\"\n}"
                 },
                 "group_id": "group:0"
               },
@@ -9951,7 +10034,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"questions\": [\n    {\n      \"question\": \"Which branch?\",\n      \"choices\": [\n        \"main\",\n        \"dev\"\n      ]\n    }\n  ]\n}",
+                  "raw_result": "{\n  \"responses\": [\n    {\n      \"question\": \"Which branch?\",\n      \"choices_offered\": [\n        \"main\",\n        \"dev\"\n      ],\n      \"status\": \"answered\",\n      \"user_response\": \"dev\"\n    }\n  ],\n  \"outcome\": \"answered\"\n}"
                 },
                 "group_id": "group:0"
               }
@@ -10398,7 +10483,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"status\": \"ready\"\n}",
+                  "raw_result": "{\n  \"tasks\": [\n    {\n      \"id\": \"t_1\",\n      \"title\": \"Fix login\",\n      \"assignee\": \"scout\",\n      \"status\": \"ready\",\n      \"priority\": 0\n    }\n  ],\n  \"count\": 1,\n  \"limit\": 50,\n  \"truncated\": false,\n  \"next_limit\": null,\n  \"promoted\": 0\n}"
                 },
                 "group_id": "group:0"
               },
@@ -10456,7 +10543,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"title\": \"Write release notes\",\n  \"assignee\": \"scout\",\n  \"board\": \"ops\"\n}",
+                  "raw_result": "{\n  \"ok\": true,\n  \"task_id\": \"t_9\",\n  \"status\": \"running\",\n  \"workspace_kind\": null,\n  \"workspace_path\": null,\n  \"project_id\": null,\n  \"gated\": false,\n  \"subscribed\": false\n}"
                 },
                 "group_id": "group:0"
               },
@@ -10510,7 +10599,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"task_id\": \"t_1\",\n  \"summary\": \"Shipped\"\n}",
+                  "raw_result": "{\n  \"ok\": true,\n  \"task_id\": \"t_1\",\n  \"run_id\": 4,\n  \"attachments\": []\n}"
                 },
                 "group_id": "group:0"
               },
@@ -10565,7 +10656,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"task_id\": \"t_1\",\n  \"body\": \"Looks good\"\n}",
+                  "raw_result": "{\n  \"ok\": true,\n  \"task_id\": \"t_1\",\n  \"comment_id\": 7\n}"
                 },
                 "group_id": "group:0"
               }
@@ -11158,7 +11251,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"code\": \"# Open the pricing page\\ngoto(\\\"https://example.com/pricing\\\")\\nprint(page_info())\"\n}",
+                  "raw_result": "{\"success\":true,\"exit_code\":0,\"output\":\"Pricing: $10/month\",\"screenshot_path\":\"/srv/hermes/cache/browser-use/workspace/default/pricing.png\"}\n\nThe screenshot from this call is attached — inspect it with your native vision."
                 },
                 "group_id": "group:0"
               },
@@ -11205,7 +11300,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"method\": \"Page.captureScreenshot\",\n  \"params\": {}\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"method\": \"Page.captureScreenshot\",\n  \"result\": {\n    \"data\": \"[binary data]\"\n  }\n}"
                 },
                 "group_id": "group:0"
               },
@@ -11247,7 +11344,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"action\": \"accept\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"action\": \"accept\",\n  \"dialog\": {\n    \"type\": \"alert\",\n    \"message\": \"Saved\",\n    \"default_prompt\": \"\"\n  }\n}"
                 },
                 "group_id": "group:0"
               },
@@ -11290,7 +11389,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"action\": \"list\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"items\": [\n    {\n      \"handle\": \"h1\",\n      \"backend\": \"local\",\n      \"label\": \"Example\",\n      \"kind\": \"login\",\n      \"origin\": \"https://example.com\",\n      \"available\": true,\n      \"identifier\": \"owner@example.com\",\n      \"identifier_type\": \"email\"\n    }\n  ]\n}"
                 },
                 "group_id": "group:0"
               },
@@ -11337,7 +11438,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"action\": \"fill\",\n  \"handle\": \"h1\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"filled_fields\": 2,\n  \"backend\": \"local\",\n  \"kind\": \"login\",\n  \"origin\": \"https://example.com\",\n  \"next\": \"Submit.\"\n}"
                 },
                 "group_id": "group:0"
               },
@@ -11392,7 +11495,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"action\": \"capture\",\n  \"app\": \"Safari\"\n}",
+                  "raw_result": "capture mode=som 1440x900 app=Safari window='Pricing'\n2 interactable element(s):\n  (shareable screenshot saved to /srv/hermes/cache/computer_use/cap_1.png)\n  #1 AXButton 'Buy' @ [10, 10, 80, 30]\n  #2 AXLink 'Docs' @ [100, 10, 40, 20]"
                 },
                 "group_id": "group:0"
               },
@@ -11447,7 +11552,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"action\": \"click\",\n  \"element\": 1,\n  \"app\": \"Safari\"\n}",
+                  "raw_result": "{\n  \"ok\": true,\n  \"action\": \"click\",\n  \"message\": \"Clicked AXButton \\\"Buy\\\"\",\n  \"verdict\": {\n    \"decision\": \"done\"\n  }\n}"
                 },
                 "group_id": "group:0"
               }
@@ -11734,7 +11841,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"repo\": \"acme/web\",\n  \"title\": \"Login fails\"\n}",
+                  "raw_result": "{\n  \"number\": 42,\n  \"url\": \"https://github.com/acme/web/issues/42\"\n}"
                 },
                 "group_id": "group:0"
               },
@@ -11789,7 +11898,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"to\": \"team@example.com\",\n  \"subject\": \"Bug filed\",\n  \"connector_alias\": \"work\"\n}",
+                  "raw_result": "{\n  \"successful\": true,\n  \"data\": {\n    \"id\": \"m1\"\n  }\n}"
                 },
                 "group_id": "group:0"
               },
@@ -11832,7 +11943,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"title\": \"Bug notes\"\n}",
+                  "raw_result": "{\n  \"successful\": true,\n  \"data\": {\n    \"id\": \"p1\"\n  }\n}"
                 },
                 "group_id": "group:0"
               }
@@ -12074,7 +12187,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"names\": [\n    \"session_list\"\n  ]\n}",
+                  "raw_result": "{\n  \"tools\": [\n    {\n      \"name\": \"session_list\",\n      \"description\": \"List chats\"\n    }\n  ]\n}"
                 }
               },
               {
@@ -12112,7 +12227,9 @@
                   "done": true,
                   "is_error": true,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"queries\": [\n    \"deploy history\"\n  ]\n}",
+                  "raw_result": "{\n  \"error\": \"Tool search is unavailable\"\n}"
                 },
                 "group_id": "group:0"
               },
@@ -12151,7 +12268,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"query\": \"deploy\"\n}",
+                  "raw_result": "{\n  \"sessions\": [\n    {\n      \"title\": \"Deploy notes\"\n    }\n  ]\n}"
                 },
                 "group_id": "group:0"
               }
@@ -12591,7 +12710,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"query\": \"release\"\n}",
+                  "raw_result": "{\n  \"sessions\": [\n    {\n      \"session_id\": \"release-chat\",\n      \"title\": \"Release\"\n    }\n  ]\n}"
                 },
                 "group_id": "group:0",
                 "merged_count": 4
@@ -12651,7 +12772,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"session_id\": \"release-chat\",\n  \"message\": \"Shipped.\"\n}",
+                  "raw_result": "{\n  \"outcome\": \"queued\",\n  \"stream_id\": null,\n  \"steer_id\": \"steer-1\"\n}"
                 },
                 "group_id": "group:0",
                 "merged_into": "tool:call-list"
@@ -12712,7 +12835,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"session_id\": \"release-chat\",\n  \"approval_id\": \"approval-1\",\n  \"choice\": \"once\"\n}",
+                  "raw_result": "{\n  \"ok\": true,\n  \"choice\": \"once\"\n}"
                 },
                 "group_id": "group:0",
                 "merged_into": "tool:call-list"
@@ -12767,7 +12892,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"session_id\": \"release-chat\",\n  \"goal\": \"Watch the deploy\"\n}",
+                  "raw_result": "{\n  \"ok\": true,\n  \"action\": \"set\"\n}"
                 },
                 "group_id": "group:0",
                 "merged_into": "tool:call-list"
@@ -12825,7 +12952,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"action\": \"add\",\n  \"target\": \"user\",\n  \"content\": \"Prefers Postgres\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"done\": true,\n  \"target\": \"user\",\n  \"usage\": \"5% — 110/2,200 chars\",\n  \"entry_count\": 3,\n  \"message\": \"Applied 1 operation(s).\"\n}"
                 },
                 "group_id": "group:0"
               },
@@ -12880,7 +13009,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"action\": \"pause\",\n  \"job_id\": \"digest\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"job\": {\n    \"job_id\": \"digest\",\n    \"name\": \"Daily digest\",\n    \"schedule\": \"every day at 08:00\",\n    \"next_run_at\": null,\n    \"enabled\": false,\n    \"state\": \"paused\"\n  }\n}"
                 },
                 "group_id": "group:0"
               }
@@ -13261,7 +13392,9 @@
                   "done": true,
                   "is_error": true,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"command\": \"npm test -- auth.spec.ts\"\n}",
+                  "raw_result": "{\n  \"output\": \"FAIL auth.spec.ts\\n  expected cookie to outlive token\",\n  \"exit_code\": 1,\n  \"error\": null\n}"
                 },
                 "group_id": "group:0"
               },
@@ -13293,7 +13426,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"command\": \"git status\"\n}",
+                  "raw_result": "{\n  \"output\": \"On branch main\\nnothing to commit\",\n  \"exit_code\": 0,\n  \"error\": null\n}"
                 },
                 "group_id": "group:0"
               },
@@ -13334,7 +13469,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"pattern\": \"TODO(auth)\"\n}",
+                  "raw_result": "{\n  \"total_count\": 0,\n  \"matches\": []\n}"
                 },
                 "group_id": "group:0"
               },
@@ -13381,7 +13518,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"path\": \"src/auth/session.ts\"\n}",
+                  "raw_result": "{\n  \"content\": \"10|const expiry = Math.floor(ttl)\",\n  \"total_lines\": 40\n}"
                 },
                 "group_id": "group:0"
               },
@@ -13480,7 +13619,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"path\": \"src/auth/session.ts\",\n  \"old_string\": \"Math.floor(ttl)\",\n  \"new_string\": \"Math.ceil(ttl)\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"diff\": \"--- a/src/auth/session.ts\\n+++ b/src/auth/session.ts\\n@@ -10,3 +10,4 @@\\n-const expiry = Math.floor(ttl)\\n+const expiry = Math.ceil(ttl)\\n+// Round up so the cookie outlives the token.\\n export { expiry }\\n\"\n}"
                 },
                 "group_id": "group:0"
               }
@@ -13963,7 +14104,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"query\": \"hermes agent 0.23.2 release\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"data\": {\n    \"web\": [\n      {\n        \"title\": \"Hermes Agent 0.23.2\",\n        \"url\": \"https://example.com/hermes/0.23.2\",\n        \"description\": \"Release notes\"\n      }\n    ]\n  }\n}"
                 },
                 "group_id": "group:0",
                 "merged_count": 2
@@ -14003,7 +14146,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"query\": \"hermes agent 0.24 changelog\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"data\": {\n    \"web\": []\n  }\n}"
                 },
                 "group_id": "group:0",
                 "merged_into": "tool:call-web"
@@ -14057,7 +14202,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"questions\": [\n    {\n      \"question\": \"Which repository to file in?\",\n      \"choices\": [\n        \"MaudeCode/talaria\",\n        \"MaudeCode/hermes\"\n      ]\n    }\n  ]\n}",
+                  "raw_result": "{\n  \"responses\": [\n    {\n      \"question\": \"Which repository to file in?\",\n      \"choices_offered\": [\n        \"MaudeCode/talaria\",\n        \"MaudeCode/hermes\"\n      ],\n      \"status\": \"answered\",\n      \"user_response\": \"MaudeCode/talaria\"\n    }\n  ],\n  \"outcome\": \"answered\"\n}"
                 },
                 "group_id": "group:0"
               },
@@ -14113,7 +14260,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"task_id\": \"t_login\",\n  \"summary\": \"Fixed the redirect\"\n}",
+                  "raw_result": "{\n  \"ok\": true,\n  \"task_id\": \"t_login\",\n  \"status\": \"review\"\n}"
                 },
                 "group_id": "group:0"
               },
@@ -14154,7 +14303,9 @@
                   "done": true,
                   "is_error": true,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"title\": \"Agent 0.23.2 is out\"\n}",
+                  "raw_result": "{\n  \"error\": \"Resource not accessible by integration\"\n}"
                 },
                 "group_id": "group:0"
               },
@@ -14208,7 +14359,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"to\": \"owner@example.com\",\n  \"subject\": \"Agent 0.23.2\"\n}",
+                  "raw_result": "{\n  \"id\": \"message-1\",\n  \"threadId\": \"thread-1\"\n}"
                 },
                 "group_id": "group:0"
               },
@@ -14273,7 +14426,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null
+                  "cost_usd": null,
+                  "raw_args": "{\n  \"action\": \"edit\",\n  \"name\": \"deploy-checklist\",\n  \"content\": \"# Deploy checklist\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"staged\": true,\n  \"pending_id\": \"pending-1\",\n  \"gist\": \"Add a rollback step\",\n  \"message\": \"Waiting for the user to approve.\"\n}"
                 },
                 "group_id": "group:0"
               }

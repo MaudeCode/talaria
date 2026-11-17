@@ -335,6 +335,7 @@ action not in it gets a row here in the same change:
 | Show more | `chevron-down` | Show less | `chevron-up` |
 | Stop playing | `square` | Close a docked panel | `x` |
 | Collapse a docked panel to its header | `chevron-down` | Expand a collapsed panel | `chevron-up` |
+| Show raw, show formatted (a tool row's raw view) | `braces` | | |
 
 ## 13. Menus
 

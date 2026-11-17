@@ -127,7 +127,7 @@ describe('read_file and search_files results (TAL-2323)', () => {
 
   it('shows a path outside the workspace as text', async () => {
     const result = await open({ file_excerpt: { path: '/etc/hosts', language: null, start_line: 1, lines: [{ n: 1, text: 'localhost' }], total_lines: 1, truncated: false } })
-    expect(result.querySelector('button')).toBeNull()
+    expect(result.querySelector('.tool-file-excerpt button')).toBeNull()
     expect(result).toHaveTextContent('/etc/hosts')
   })
 

@@ -266,6 +266,26 @@ func testTheCardShowsTheServerArgumentAndResultRows() throws {
     }
 }
 
+/// TAL-2338: the server's raw view rides a call from its start and completion frames; formatted Copy copies the rows shown.
+func testTheRowCarriesTheServerRawViewAndCopiesWhatShows() throws {
+    let start = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"call-list","name":"session_list","args_fields":[{"key":"limit","value":"3","multiline":false}],"raw_args":"{\n  \"limit\": 3\n}"}"#.utf8))
+    let complete = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"call-list","name":"session_list","raw_result":"{\n  \"token\": \"***\"\n}","result_view":{"text":"{}","fields":[{"key":"names","value":"- a\n- b","multiline":true}]}}"#.utf8))
+    let running = ToolCall(id: "call-list", name: start.name, preview: nil, args: nil, argsFields: start.argsFields, rawArgs: start.rawArgs)
+    let completed = running.applyingCompletionPayload(complete)
+    XCTAssertEqual(completed.rawArgs, "{\n  \"limit\": 3\n}")
+    XCTAssertEqual(completed.rawResult, "{\n  \"token\": \"***\"\n}")
+    XCTAssertEqual(ToolCallDisplayFormatter.copyText(for: completed), "limit: 3\n\nnames:\n- a\n- b")
+    // A typed result copies as it shows, not the text it stands in for.
+    let memory = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"call-memory","name":"memory","result_view":{"text":"Applied 1 operation(s).","rows":{"title":"User memory","rows":[{"label":"Added","detail":"Prefers short replies"}]}}}"#.utf8))
+    let saved = ToolCall(id: "call-memory", name: "memory", preview: nil, args: nil).applyingCompletionPayload(memory)
+    XCTAssertEqual(ToolCallDisplayFormatter.copyText(for: saved), "User memory\nAdded: Prefers short replies")
+    // A file edit shows only its change, so Copy copies that diff, not the arguments and result it hides.
+    let write = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"call-write","name":"write_file","args_fields":[{"key":"path","value":"a.txt","multiline":false}],"result_view":{"text":"{}","fields":[{"key":"bytes_written","value":"3","multiline":false}]},"edit_diff":{"added":1,"removed":0,"diff":"--- a/a.txt\n+++ b/a.txt\n@@ -0,0 +1 @@\n+abc","truncated":false,"hunks":[]}}"#.utf8))
+    let written = ToolCall(id: "call-write", name: "write_file", preview: nil, args: nil).applyingCompletionPayload(write)
+    XCTAssertNotNil(written.editDiff)
+    XCTAssertEqual(ToolCallDisplayFormatter.copyText(for: written), "--- a/a.txt\n+++ b/a.txt\n@@ -0,0 +1 @@\n+abc")
+}
+
 /// TAL-1965: a `decision_review_put` result's review, from a tool frame and from a session detail.
 func testTheReviewReferenceDecodesFromAToolResultAndASessionDetail() throws {
     let ref = try DecisionReviewModelTests.fixture("ref")

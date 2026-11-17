@@ -3,7 +3,7 @@ import { subscribe, unsubscribe } from 'node:diagnostics_channel'
 import { describe, expect, it, vi } from 'vitest'
 import { isRasterDataUri } from './raster-image.js'
 import { toolOutcome } from './sessions/merge.js'
-import { activityText, activityTool, mightContainSensitiveText, publicToolFrame, redactNestedMessageContainers, redactSensitive, redactSessionData, redactText } from './redact.js'
+import { activityText, activityTool, mightContainSensitiveText, publicToolFrame, rawToolText, redactNestedMessageContainers, redactSensitive, redactSessionData, redactText } from './redact.js'
 import { MessageSchema } from '@maudecode/talaria-web-contracts'
 import { sanitizeShareMessage } from './sessions/shares.js'
 import { hydrateAnchorActivityScenes, withTurnIds } from './sessions/anchor.js'
@@ -1717,4 +1717,13 @@ it('leaves a call\'s target, app and outcome value off a Live Activity without c
   const named = activityTool(call, true, null)
   expect(named).toMatchObject({ kind: 'connector', app: { name: 'Slack' }, outcome: { value: 'channel #ops not found' } })
   expect(activityTool(call, true, null, false)).toEqual({ kind: 'connector', target: '', done: true, failed: true, outcome: { key: 'failed', tone: 'error' } })
+})
+
+// TAL-2338: a row's raw view never shows a credential, whether the value is an object, JSON text or plain text.
+it('shows a call\'s raw arguments and result redacted, JSON indented and text as written', () => {
+  expect(rawToolText('{"api_key":"sk-live-0123456789abcdef","rows":[1,2]}', true)).toBe('{\n  "api_key": "***",\n  "rows": [\n    1,\n    2\n  ]\n}')
+  expect(rawToolText({ headers: { Authorization: 'Bearer synthetic-0123456789abcdef' }, path: 'a.txt' }, true)).toBe('{\n  "headers": {\n    "Authorization": "***"\n  },\n  "path": "a.txt"\n}')
+  expect(rawToolText('password=hunter2 and done', true)).toBe('password=*** and done')
+  expect(rawToolText('{"api_key":"sk-live-0123456789abcdef"}', false)).toBe('{\n  "api_key": "sk-live-0123456789abcdef"\n}')
+  for (const empty of [undefined, null, '', '  ', {}, []]) expect(rawToolText(empty, true)).toBeUndefined()
 })

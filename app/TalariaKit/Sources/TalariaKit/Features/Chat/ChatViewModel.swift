@@ -290,11 +290,10 @@ public final class ChatViewModel {
     }
 
     /// TAL-331: the whole result of a scene tool row the server clipped (`ToolCall.resultTruncated`).
-    public func fullToolResult(toolCallID: String) async throws -> ToolResultView {
+    public func fullToolResult(toolCallID: String) async throws -> ToolResultResponse {
         // A clipped row only comes from a loaded session; without one there is no result to fetch.
         guard let sessionID else { throw APIError.http(statusCode: 404, body: nil) }
-        let response = try await client.toolResult(sessionID: sessionID, toolCallID: toolCallID)
-        return response.resultView ?? ToolResultView(text: response.result)
+        return try await client.toolResult(sessionID: sessionID, toolCallID: toolCallID)
     }
 
     /// The message array and its absolute offset describe one layout window.
@@ -6724,6 +6723,7 @@ public final class ChatViewModel {
                 preview: payload.preview,
                 args: payload.args,
                 argsFields: payload.argsFields,
+                rawArgs: payload.rawArgs,
                 kind: payload.kind,
                 verb: payload.verb,
                 app: payload.app,
@@ -6798,6 +6798,8 @@ public final class ChatViewModel {
                     preview: payload.preview,
                     args: payload.args,
                     argsFields: payload.argsFields,
+                    rawArgs: payload.rawArgs,
+                    rawResult: payload.rawResult,
                     kind: payload.kind,
                     verb: payload.verb,
                     app: payload.app,

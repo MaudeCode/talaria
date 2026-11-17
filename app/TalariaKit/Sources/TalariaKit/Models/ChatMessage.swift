@@ -490,10 +490,22 @@ public struct AnchorScenePageResponse: Decodable, Equatable, Sendable {
 public struct ToolResultResponse: Decodable, Equatable, Sendable {
     public let result: String
     public let resultView: ToolResultView?
+    /// TAL-2338: the whole result's raw view (`raw_result`), which an open row's raw view shows and copies.
+    public let rawResult: String?
+
+    /// The sections the card shows; an older server's bare result as text.
+    public var view: ToolResultView { resultView ?? ToolResultView(text: result) }
 
     enum CodingKeys: String, CodingKey {
         case result
         case resultView
+        case rawResult
+    }
+
+    public init(result: String, resultView: ToolResultView?, rawResult: String? = nil) {
+        self.result = result
+        self.resultView = resultView
+        self.rawResult = rawResult
     }
 
     public init(from decoder: Decoder) throws {
@@ -501,6 +513,7 @@ public struct ToolResultResponse: Decodable, Equatable, Sendable {
         result = container.decodeLossyStringIfPresent(forKey: .result) ?? ""
         // Through `JSONValue`, as scene rows read it: a keyed decode would miss `exit_code` under snake-case conversion.
         resultView = ToolResultView(try? container.decodeIfPresent(JSONValue.self, forKey: .resultView))
+        rawResult = container.decodeLossyStringIfPresent(forKey: .rawResult)
     }
 }
 

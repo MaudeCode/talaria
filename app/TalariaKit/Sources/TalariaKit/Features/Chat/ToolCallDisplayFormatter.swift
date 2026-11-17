@@ -28,6 +28,41 @@ public enum ToolCallDisplayFormatter {
         )
     }
 
+    /// TAL-2338: what Copy copies in the formatted view: a file edit's diff, which the card shows alone (TAL-448); else the
+    /// argument rows, then the result as the card shows it (a read's lines under its path, a search's `line: text` matches
+    /// under each file, links, pages, an analysis, rows), else the result's rows or text. A row's multi-line value goes
+    /// under its key.
+    public static func copyText(for toolCall: ToolCall) -> String {
+        if let editDiff = toolCall.editDiff { return editDiff.diff }
+        func joined(_ parts: [String?], _ separator: String = "\n") -> String {
+            parts.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: separator)
+        }
+        func lines(_ rows: [ToolCallArgumentDisplay]) -> String {
+            rows.map { $0.value.contains("\n") ? "\($0.key):\n\($0.value)" : "\($0.key): \($0.value)" }.joined(separator: "\n")
+        }
+        let content = content(for: toolCall)
+        let text = content.result.map { $0.rows.isEmpty ? $0.text : lines($0.rows) }
+        let view = toolCall.resultView
+        let result: String?
+        if let excerpt = view?.fileExcerpt {
+            let code = excerpt.lines.map(\.text).joined(separator: "\n")
+            result = excerpt.path.isEmpty ? joined([code, text], "\n\n") : joined([excerpt.path, code])
+        } else if let matches = view?.matches {
+            result = matches.files.map { file in joined([file.path] + file.matches.map { "\($0.line): \($0.text)" }) }.joined(separator: "\n\n")
+        } else if let links = view?.links {
+            result = joined([links.answer] + links.items.map { joined([$0.title, $0.url, $0.snippet]) }, "\n\n")
+        } else if let pages = view?.pages {
+            result = pages.map { joined([$0.title, $0.url, $0.error ?? $0.excerpt]) }.joined(separator: "\n\n")
+        } else if let analysis = view?.analysis {
+            result = analysis
+        } else if let rows = view?.rows {
+            result = joined([rows.title] + rows.rows.map { joined([$0.label, $0.detail], ": ") } + [rows.markdown])
+        } else {
+            result = text
+        }
+        return joined([lines(content.argumentRows), result], "\n\n")
+    }
+
     /// TAL-2318: the server's rows, in its order.
     static func rows(_ fields: [ToolField]) -> [ToolCallArgumentDisplay] {
         fields.map { ToolCallArgumentDisplay(key: $0.key, value: $0.value) }

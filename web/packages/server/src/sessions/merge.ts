@@ -798,7 +798,7 @@ function typedResultView(presentation: 'file_excerpt' | 'matches' | 'links' | 'p
  * TAL-2328: a result whose top-level values the sidecar's `_raw_result` forwarded as JSON text (every non-empty nested object
  * or list) with each one parsed back; text that is not a whole JSON object or list (or that the sidecar cut) stays text.
  */
-function withNestedJson(data: Record<string, unknown>): Record<string, unknown> {
+export function withNestedJson(data: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(data).map(([key, item]) => {
     if (typeof item !== 'string' || !/^\s*[[{]/.test(item)) return [key, item]
     const nested = tryJson(item)

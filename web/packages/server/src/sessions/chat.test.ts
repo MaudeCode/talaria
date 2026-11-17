@@ -4741,7 +4741,7 @@ describe('live tool outcomes (TAL-313)', () => {
   })
   afterAll(() => s.close())
 
-  it('decides failure from the raw result, measures each duration, never forwards the raw result, and reloads the same values', async () => {
+  it('decides failure from the raw result, measures each duration, ships it only as the redacted raw view, and reloads the same values', async () => {
     const sid = await newSession(s)
     const marker = 'raw-result-marker'
     const bearer = 'synthetic-bearer-0123456789abcdef'
@@ -4769,11 +4769,11 @@ describe('live tool outcomes (TAL-313)', () => {
     const expected = [['call-ok', false, 1.25], ['call-exit', true, 0.5], ['call-error', true, 2]]
     const live = completes(await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end'))
     expect(live.map((d) => [d.id, d.is_error, d.duration])).toEqual(expected)
-    expect(JSON.stringify(live)).not.toContain('raw_result')
-    const journal = readFileSync(join(realpathSync(s.state), 'sessions', '_run_journal', sid, `${streamId}.jsonl`), 'utf8')
-    expect(journal).not.toContain('raw_result')
+    // TAL-2338: the raw result reaches a client only as the row's raw view: indented JSON, nested JSON text read whole.
+    const rawViews = [JSON.stringify({ exit_code: 0, output: `fine ${marker}` }, null, 2), JSON.stringify({ exit_code: 2, output: `1 failed ${marker}` }, null, 2), JSON.stringify({ error: `boom ${marker}` }, null, 2)]
+    expect(live.map((d) => d.raw_result)).toEqual(rawViews)
     const replayed = completes(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end'))
-    expect(replayed.map((d) => [d.id, d.is_error, d.duration])).toEqual(expected)
+    expect(replayed.map((d) => [d.id, d.is_error, d.duration, d.raw_result])).toEqual(expected.map((row, i) => [...row, rawViews[i]]))
 
     // A later turn keeps the durations the first one recorded.
     sidecar.respond('chat.start', async (params) => completed([...(await s.deps.sessionStore.get(sid)).context_messages, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Again.' }]))
@@ -4822,8 +4822,10 @@ describe('live tool outcomes (TAL-313)', () => {
     expect(completes(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end'))).toEqual([view])
     const journal = readFileSync(join(realpathSync(s.state), 'sessions', '_run_journal', sid, `${streamId}.jsonl`), 'utf8')
     expect(journal).toContain('"result_view"')
-    expect(journal).not.toContain('raw_result')
     expect(journal).not.toContain(bearer)
+    // TAL-2338: the raw view of the result, redacted by key like its sections, the same live and after reload.
+    const rawView = JSON.stringify({ ...raw, stderr: 'warning: deprecated\nAuthorization: Bearer synthe...cdef', approval: `${approval} Authorization: Bearer synthe...cdef` }, null, 2)
+    expect(live.filter((f) => f.event === 'tool_complete').map((f) => (f.data as Json).raw_result)).toEqual([rawView])
 
     for (const query of ['', '&messages=1&msg_limit=50']) {
       const detail = (await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json
@@ -4832,6 +4834,7 @@ describe('live tool outcomes (TAL-313)', () => {
       expect(JSON.stringify(detail), query).not.toContain(bearer)
       const scene = (detail.messages as Json[]).find((m) => m.content === 'Built with a warning.')?._anchor_activity_scene as Json
       expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => (r.tool as Json).result_view), query).toEqual([view])
+      expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => [(r.tool as Json).raw_args, (r.tool as Json).raw_result]), query).toEqual([[JSON.stringify({ command: 'make' }, null, 2), rawView]])
     }
   })
 
@@ -4854,7 +4857,7 @@ describe('live tool outcomes (TAL-313)', () => {
     expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => { const t = r.tool as Json; return [t.id, t.is_error, t.duration, t.result_view] })).toEqual([['call-make', true, 4, view]])
   })
 
-  it('decides a live batch memory write\'s outcome from the whole arguments the sidecar forwards, never forwarding them (TAL-2335)', async () => {
+  it('decides a live batch memory write\'s outcome from the whole arguments the sidecar forwards, shipping them only as the raw view (TAL-2335, TAL-2338)', async () => {
     const sid = await newSession(s)
     // The display snapshot holds `operations` as capped text; `raw_args` keeps it as the JSON text the server reads whole.
     const operations = [{ action: 'add', content: 'Prefers Postgres' }, { action: 'add', content: 'Works in UTC' }]
@@ -4868,7 +4871,9 @@ describe('live tool outcomes (TAL-313)', () => {
     const live = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
     const complete = live.find((f) => f.event === 'tool_complete')?.data as Json
     expect((complete.result_view as Json).outcome).toEqual({ key: 'memory_added', tone: 'neutral', count: 2 })
-    expect(complete).not.toHaveProperty('raw_args')
+    // TAL-2338: the whole arguments, nested JSON text read whole, as the row's raw view; the display snapshot stays the start frame's.
+    expect(complete.raw_args).toBe(JSON.stringify({ target: 'user', operations }, null, 2))
+    expect(complete.args).toEqual(snapshot)
   })
 
   it('judges live tool results by the Agent v0.22.3 shape and neutral rules, through a failed turn\'s reload (TAL-1261)', async () => {

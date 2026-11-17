@@ -136,7 +136,7 @@ export function sceneItems(value: unknown): ActivityItem[] {
     if (row.role !== 'tool' || tool.hidden === true) return []
     const merged = { ...(typeof row.merged_count === 'number' ? { mergedCount: row.merged_count } : {}), ...(text(row.merged_into) ? { mergedInto: text(row.merged_into) } : {}) }
     return [{ key, kind: 'tool', ...at, ...merged, call: {
-      progress: ToolProgressSchema.safeParse(tool.progress).data ?? null, id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), ...verbOf(tool.verb), ...appOf(tool.app), target: text(tool.target), args: tool.args, ...argsFieldsOf(tool.args_fields), preview: typeof tool.preview === 'string' ? tool.preview : null, resultView: resultViewOf(tool.result_view), ...(tool.shows_card === true ? { showsCard: true as const } : {}),
+      progress: ToolProgressSchema.safeParse(tool.progress).data ?? null, id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), ...verbOf(tool.verb), ...appOf(tool.app), target: text(tool.target), args: tool.args, ...argsFieldsOf(tool.args_fields), ...(typeof tool.raw_args === 'string' ? { rawArgs: tool.raw_args } : {}), ...(typeof tool.raw_result === 'string' ? { rawResult: tool.raw_result } : {}), preview: typeof tool.preview === 'string' ? tool.preview : null, resultView: resultViewOf(tool.result_view), ...(tool.shows_card === true ? { showsCard: true as const } : {}),
       done: tool.done === true, isError: tool.is_error === true, duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
       ...backgroundOf(tool.background), ...answeredByOf(tool.approval_answered_by), ...(tool.result_truncated === true ? { resultTruncated: true } : {}),
     } }]

@@ -1023,6 +1023,37 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertNil(HostedAccessibility.element(in: window, label: "Show full output"))
     }
 
+    /// TAL-2338: a row's whole-result fetch is the chat screen's read; leaving the screen cancels it, and the cancelled
+    /// fetch shows neither its result nor a failure.
+    func testLeavingTheChatCancelsAToolRowsFullResultFetch() async throws {
+        var tool = ToolCall(id: "cancelled-tool", name: "fixture_tool", preview: "Clipped output", args: nil,
+                            rawResult: "Clipped output", isCompleted: true, startedAt: 0)
+        tool.resultTruncated = true
+        let state = RecycledBodyFixture(tool: tool)
+        defer { state.releaseToolResult() }
+        let reads = ScreenReads()
+        let window = try hostWindow(ToolCallCardView(toolCall: tool)
+            .chatEnvironmentAction(\.chatFullToolResultLoader) { _ in { await state.toolResult() } }
+            .environment(\.chatScreenReads, reads)
+            .environment(\.chatTranscriptRowState, state.rowState))
+        if let header = HostedAccessibility.elements(in: window).first(where: { $0.accessibilityHint == "Double tap to expand details." }) {
+            HostedAccessibility.activate(header)
+        }
+        // Raw view fetches the whole result, as Show full output does.
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Show raw"))
+        let requested = await awaitCondition { state.isToolResultPending }
+        XCTAssertTrue(requested)
+        reads.cancelAll()
+        state.releaseToolResult()
+        let leaked = await awaitCondition(timeout: 2) {
+            HostedAccessibility.element(in: window, label: "Full retained tool output") != nil
+                || HostedAccessibility.element(in: window, label: "Retry") != nil
+        }
+        XCTAssertFalse(leaked, "A fetch the screen cancelled must not land in the row")
+        _ = try await requireElement(in: window, label: "Show full output")
+        XCTAssertEqual(state.toolResultCalls, 1)
+    }
+
     /// Driven by scripts/test-history-drag; ordinary hosted runs have no external gesture driver.
     func testHistoryInsertionPreservesReaderDuringNativeDrag() async throws {
         try await assertFullChatHistoryInsertion(expandDisclosure: true, boundaryTurn: true, nativeDrag: true)
@@ -2226,6 +2257,46 @@ final class ChatHostedTests: XCTestCase {
         }
     }
 
+    /// TAL-2338: an open row's `{}` switches between its formatted rows and the server's raw arguments and result; Copy
+    /// copies whichever shows and confirms, in light and dark.
+    func testOpenToolRowTogglesTheRawViewAndCopiesWhatShows() async throws {
+        let rawArgs = "{\n  \"limit\": 2\n}"
+        let rawResult = "{\n  \"sessions\": [\n    \"Release chat\"\n  ],\n  \"token\": \"***\"\n}"
+        let call = ToolCall(id: "raw-list", name: "session_list", preview: nil, args: nil,
+                            argsFields: [ToolField(key: "limit", value: "2", multiline: false)], rawArgs: rawArgs, rawResult: rawResult,
+                            kind: .talaria, target: "session_list",
+                            resultView: ToolResultView(text: "{}", fields: [ToolField(key: "sessions", value: "- Release chat", multiline: false)]),
+                            isCompleted: true)
+        for (name, style) in [("light", UIUserInterfaceStyle.light), ("dark", .dark)] {
+            let window = try hostWindow(VStack { ToolCallCardView(toolCall: call); Spacer() }.padding()
+                .environment(\.chatTranscriptRowState, ChatTranscriptRowState()), size: CGSize(width: 390, height: 520)) { $0.userInterfaceStyle = style }
+            if let header = HostedAccessibility.elements(in: window).first(where: { $0.accessibilityHint == "Double tap to expand details." }) {
+                HostedAccessibility.activate(header)
+            }
+            HostedAccessibility.activate(try await requireElement(in: window, label: "Copy"))
+            XCTAssertEqual(UIPasteboard.general.string, "limit: 2\n\nsessions: - Release chat", name)
+            _ = try await requireElement(in: window, label: "Copied")
+            attachHostedScreenshot(window, name: "tool-row-formatted-\(name)")
+
+            let toggle = try await requireElement(in: window, label: "Show raw")
+            XCTAssertFalse(toggle.accessibilityTraits.contains(.selected), name)
+            HostedAccessibility.activate(toggle)
+            let pressed = try await requireElement(in: window, label: "Show formatted")
+            XCTAssertTrue(pressed.accessibilityTraits.contains(.selected), name)
+            _ = try await requireElement(in: window, label: rawArgs)
+            _ = try await requireElement(in: window, label: rawResult)
+            HostedAccessibility.activate(try await requireElement(in: window, label: "Copy raw"))
+            XCTAssertEqual(UIPasteboard.general.string, "\(rawArgs)\n\n\(rawResult)", name)
+            attachHostedScreenshot(window, name: "tool-row-raw-\(name)")
+
+            HostedAccessibility.activate(pressed)
+            _ = try await requireElement(in: window, label: "Show raw")
+            XCTAssertNil(HostedAccessibility.element(in: window, label: rawResult), name)
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
     /// TAL-2335: on a narrow line the label gives way first; the outcome keeps its width up to 55% of the line.
     func testToolOutcomeLineTruncatesTheLabelFirst() {
         XCTAssertEqual(ToolOutcomeLineLayout.widths(line: 300, label: 120, outcome: 80).label, 120)
@@ -2639,10 +2710,11 @@ private final class RecycledBodyFixture {
     var isToolResultPending: Bool { toolResultContinuation != nil }
     init(tool: ToolCall? = nil) { self.tool = tool }
 
-    func toolResult() async -> ToolResultView {
+    func toolResult() async -> ToolResultResponse {
         toolResultCalls += 1
         await withCheckedContinuation { toolResultContinuation = $0 }
-        return ToolResultView(text: "Full retained tool output")
+        return ToolResultResponse(result: "Full retained tool output", resultView: ToolResultView(text: "Full retained tool output"),
+                                  rawResult: "Full retained tool output")
     }
 
     func releaseToolResult() {
