@@ -2725,6 +2725,18 @@ export function activityTool(call: Record<string, unknown>, enabled: boolean, wo
   return activityFields(frame, call.done === true, call.is_error === true, outcome, details)
 }
 
+/**
+ * TAL-2337: a run status under the redaction policy in force now. Its `current_tool` was redacted (or not) when the status
+ * was built; with redaction on, its texts are redacted again on delivery, so a status built while it was off never ships a
+ * credential once it is back on. Redacting a redacted text changes nothing.
+ */
+export function redactedRunStatus<T>(status: T, enabled: boolean): T {
+  if (!enabled || !isDict(status) || !isDict(status.current_tool)) return status
+  const tool = status.current_tool as ActivityTool
+  const text = (value: string): string => activityText(redactString(value, true))
+  return { ...status, current_tool: { ...tool, target: text(tool.target), ...(tool.app ? { app: { name: text(tool.app.name) } } : {}), ...(tool.outcome?.value === undefined ? {} : { outcome: { ...tool.outcome, value: text(tool.outcome.value) } }) } }
+}
+
 /** TAL-2336: an approval's `tool` as TAL-2333 sets it; an Agent's own `tool` field (a name) is not one. */
 export const isApprovalTool = (tool: unknown): tool is ApprovalTool => typeof tool === 'object' && tool !== null && typeof (tool as ApprovalTool).kind === 'string'
 
