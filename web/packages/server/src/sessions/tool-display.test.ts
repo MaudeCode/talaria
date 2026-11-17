@@ -863,9 +863,12 @@ describe('MCP and connector calls (TAL-2330)', () => {
     expect(toolDisplay('mcp__github__GITHUB_LIST_REPOS', {})).toMatchObject({ target: 'Github list repos' })
   })
 
-  it('keeps the edit diff of an MCP tool whose name reads write', () => {
+  it('keeps the file focus and edit diff of an MCP file tool, as its name tokens gave them', () => {
     const diff = '--- a/x.txt\n+++ b/x.txt\n@@ -1 +1 @@\n-a\n+b'
     expect(toolEditDiff('mcp__fs__write_file', JSON.stringify({ diff }))).toMatchObject({ added: 1, removed: 1 })
+    expect(toolDisplay('mcp__filesystem__read_file', { path: '/ws/src/main.ts' }, '/ws')).toMatchObject({ kind: 'mcp', focus_path: 'src/main.ts' })
+    expect(toolDisplay('mcp__filesystem__write_file', { path: 'src/main.ts' })).toMatchObject({ kind: 'mcp', focus_path: 'src/main.ts' })
+    expect(toolDisplay('mcp__github__create_issue', { path: 'src/main.ts' }).focus_path).toBeNull()
   })
 
   it('classifies a name in neither form exactly as before', () => {

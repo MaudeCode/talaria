@@ -76,6 +76,12 @@ export function toolKind(name: unknown): ToolKind {
   return appTool(name)?.kind ?? agentTool(name)?.kind ?? tokenToolKind(name)
 }
 
+/**
+ * TAL-2330: the kind a file decision (focus path, edit diff) reads: an MCP or connector tool's from its name tokens, as it
+ * was before its app kind, so `mcp__filesystem__read_file` still focuses its file and a `write_file` keeps its diff.
+ */
+const fileKind = (name: unknown): ToolKind => (appTool(name) ? tokenToolKind(name) : toolKind(name))
+
 /** TAL-2330: the Agent's titles for apps a slug does not spell (`tools/tool_labels.py` `_APP_TITLES`), by lowercase slug. */
 const APP_TITLES: Record<string, string> = {
   discord: 'Discord', figma: 'Figma', github: 'GitHub', gmail: 'Gmail', googlecalendar: 'Google Calendar', googledocs: 'Google Docs',
@@ -245,12 +251,13 @@ export function toolDisplay(name: unknown, args: unknown, workspace: string | nu
   const a = isDict(args) ? args : {}
   const arg = (keys: string[]) => keys.map((k) => snapshotArg(a, k)).find((v): v is string => typeof v === 'string' && Boolean(v.trim())) ?? ''
   // TAL-2330: an MCP or connector call reads as its app and action; a connector's names the account alias the call picked.
+  const focus = (fileKind: ToolKind) => (fileKind === 'read' || fileKind === 'write' ? focusPath(arg(FOCUS_KEYS), workspace) : null)
   const app = appTool(name)
   if (app) {
     const connector = app.kind === 'connector'
     const action = actionPhrase(app.tool, connector ? app.slug : '')
     const alias = connector ? arg(['connector_alias']).trim() : ''
-    return { kind, target: capped(alias ? `${action} (${alias})` : action), focus_path: null, app: { name: appTitle(app.slug), logo_url: connector ? connectorLogos.get(app.slug) ?? null : null } }
+    return { kind, target: capped(alias ? `${action} (${alias})` : action), focus_path: focus(fileKind(name)), app: { name: appTitle(app.slug), logo_url: connector ? connectorLogos.get(app.slug) ?? null : null } }
   }
   const special = name === 'delegate_task' ? delegateTarget(arg) : bridge ? bridge.target(snapshotItems(snapshotArg(a, bridge.key) ?? '')) : ''
   const own = kind === 'talaria' ? arg(TALARIA_TARGET_KEYS[str(name)] ?? []) || str(name) : ''
@@ -262,7 +269,7 @@ export function toolDisplay(name: unknown, args: unknown, workspace: string | nu
   const action = arg(['action']).trim().toLowerCase()
   const verb = actions ? (Object.hasOwn(actions, action) ? actions[action] : undefined) : agentTool(name)?.verb
   return {
-    kind, target: capped(first), focus_path: kind === 'read' || kind === 'write' ? focusPath(arg(FOCUS_KEYS), workspace) : null,
+    kind, target: capped(first), focus_path: focus(kind),
     ...(typeof name === 'string' && CARD_TOOLS.has(name) ? { shows_card: true as const } : {}),
     ...(verb ? { verb } : {}),
   }
@@ -391,8 +398,7 @@ export function toolEditDiff(name: unknown, result: unknown, displayMetadata?: u
 /** A file-edit result's own unified `diff`: a listed tool's when it presents a diff, an unlisted one's when its name reads `write`. */
 function resultDiff(name: unknown, result: unknown): unknown {
   const presentation = toolPresentation(name)
-  // TAL-2330: an MCP or connector tool whose name reads `write` keeps its diff under its app's kind.
-  if (presentation ? presentation !== 'diff' : (appTool(name) ? tokenToolKind(name) : toolKind(name)) !== 'write') return undefined
+  if (presentation ? presentation !== 'diff' : fileKind(name) !== 'write') return undefined
   let data: unknown = Array.isArray(result) ? messageText(result) : result
   if (typeof data === 'string') { try { data = JSON.parse(data) } catch { return undefined } }
   const diff = isDict(data) ? data.diff : undefined
