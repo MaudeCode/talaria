@@ -62,12 +62,13 @@ export const TALARIA_TOOL_NAMES = [
  * and its result `presentation`. A listed tool takes both from here; any other name (MCP, connector, plugin) keeps the
  * name-token rules and the generic result parser, and Talaria's own tools stay in `TALARIA_TOOL_NAMES`.
  * `terminal` shows a result's output streams, error and exit code; `diff` its file edit; `clarify` shows as the question
- * dialog, never a tool row; `todo` and `delegate` show in the session's todo list and subagent rows; `generic` reads the
- * result's text, else its key/value fields (TAL-2318). `npm run fixtures` writes it to
+ * dialog, never a tool row; `todo` and `delegate` show in the session's todo list and subagent rows; `file_excerpt` and
+ * `matches` show the result's `ToolResultView` section of that name (TAL-2323); `generic` reads the result's text, else its
+ * key/value fields (TAL-2318). `npm run fixtures` writes it to
  * `contracts/fixtures/tool-presentations.json`, which a sidecar test checks against the Agent's tool registry: a tool an
  * Agent release adds joins here as `generic` until its own view ships.
  */
-export const ToolPresentationSchema = z.enum(['terminal', 'diff', 'todo', 'delegate', 'clarify', 'generic'])
+export const ToolPresentationSchema = z.enum(['terminal', 'diff', 'todo', 'delegate', 'clarify', 'file_excerpt', 'matches', 'generic'])
 export type ToolPresentation = z.infer<typeof ToolPresentationSchema>
 export const ToolPresentationEntrySchema = z.object({ kind: ToolKindSchema, presentation: ToolPresentationSchema })
 export type ToolPresentationEntry = z.infer<typeof ToolPresentationEntrySchema>
@@ -122,10 +123,10 @@ export const TOOL_PRESENTATIONS: Readonly<Record<string, ToolPresentationEntry>>
   patch: { kind: 'write', presentation: 'diff' },
   process_manage: { kind: 'shell', presentation: 'terminal' },
   react_to_message: { kind: 'unknown', presentation: 'generic' },
-  read_file: { kind: 'read', presentation: 'generic' },
+  read_file: { kind: 'read', presentation: 'file_excerpt' },
   read_terminal: { kind: 'shell', presentation: 'generic' },
   read_window_below: { kind: 'read', presentation: 'generic' },
-  search_files: { kind: 'search', presentation: 'generic' },
+  search_files: { kind: 'search', presentation: 'matches' },
   session_search: { kind: 'search', presentation: 'generic' },
   set_theme: { kind: 'unknown', presentation: 'generic' },
   setup_beat: { kind: 'unknown', presentation: 'generic' },
@@ -196,13 +197,35 @@ export const ToolDisplayFields = {
   approval_answered_by: ApprovalAnsweredBySchema.optional().describe('TAL-1169: another session\'s agent answered the approval that held this call (`talaria.agent_approvals`): that session, its title, and whether the command was allowed or denied. Absent when the user answered or nothing asked.'),
 }
 
+const FocusPathField = z.string().optional().describe('TAL-2323: `path` as a workspace-relative file inside the session workspace (the TAL-1458 rule), which a client opens in the workspace browser. Absent for a path outside the workspace.')
+/** TAL-2323: one line a `read_file` result returned: its line number in the file and its text, without the Agent's `N|` gutter. */
+export const FileExcerptLineSchema = z.object({ n: z.number().int(), text: z.string() })
+export type FileExcerptLine = z.infer<typeof FileExcerptLineSchema>
+/**
+ * TAL-2323: a `read_file` result: the file the call named (`path`, as the call wrote it), the lines it returned with their
+ * real numbers from `start_line`, the file's `total_lines`, and whether the Agent stopped early (`truncated`), with the line
+ * a further read continues from (`next_offset`). `language` is the highlight grammar a client's highlighter resolves: the
+ * path's extension, null for an extracted document or a path without one.
+ */
+export const FileExcerptSchema = z.object({ path: z.string(), focus_path: FocusPathField, language: z.string().nullable(), start_line: z.number().int(), lines: z.array(FileExcerptLineSchema), total_lines: z.number().int().nullable(), truncated: z.boolean(), next_offset: z.number().int().optional() })
+export type FileExcerpt = z.infer<typeof FileExcerptSchema>
+/** TAL-2323: one matching line of a `search_files` result. */
+export const SearchMatchSchema = z.object({ line: z.number().int(), text: z.string() })
+export type SearchMatch = z.infer<typeof SearchMatchSchema>
+/** TAL-2323: one file of a `search_files` result, as the Agent printed its path: its matching lines, or its match `count` for a count search; a file search lists the file with neither. */
+export const SearchMatchFileSchema = z.object({ path: z.string(), focus_path: FocusPathField, count: z.number().int().optional(), matches: z.array(SearchMatchSchema) })
+export type SearchMatchFile = z.infer<typeof SearchMatchFileSchema>
+/** TAL-2323: a `search_files` result grouped by file, in the Agent's order: `total` as it counted, and whether it stopped at its limit (`truncated`). */
+export const SearchMatchesSchema = z.object({ total: z.number().int(), truncated: z.boolean(), files: z.array(SearchMatchFileSchema) })
+export type SearchMatches = z.infer<typeof SearchMatchesSchema>
+
 /**
  * TAL-315: a tool result's display sections, decided by the server's one rule for live, replayed and persisted results
  * alike. Clients show `stdout`, `stderr`, a labelled `error` and a labelled `exit_code` (sent only when worth showing), or
  * `text`, in that order, then `approval_note` (TAL-1910: the Agent's note on why a flagged command ran), and never parse
  * result text. Each string is capped server-side; a client without the field shows `preview`.
  */
-export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), /** TAL-1967: the proposal a `propose` result made; the card follows `proposal` events. */ proposal: ProposalRefSchema.optional(), /** TAL-1968: the block a `show` result stored; the card loads it from `/api/show/{block_id}`. */ block: ShowBlockRefSchema.optional(), /** TAL-1974: the terminal a `terminal_open` result started; the card opens the session's terminal pane. */ terminal: TerminalRefSchema.optional(), text: z.string().optional(), /** TAL-2318: a JSON-object result's top-level keys, in order, rendered like `ToolCall.args_fields`; `text` keeps the whole result for copy. Absent for any other result. */ fields: z.array(ToolFieldSchema).optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
+export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), /** TAL-1967: the proposal a `propose` result made; the card follows `proposal` events. */ proposal: ProposalRefSchema.optional(), /** TAL-1968: the block a `show` result stored; the card loads it from `/api/show/{block_id}`. */ block: ShowBlockRefSchema.optional(), /** TAL-1974: the terminal a `terminal_open` result started; the card opens the session's terminal pane. */ terminal: TerminalRefSchema.optional(), text: z.string().optional(), /** TAL-2323: a `read_file` result's lines; clients show it in place of `text`, which keeps the Agent's text for older clients. */ file_excerpt: FileExcerptSchema.optional(), /** TAL-2323: a `search_files` result's matches by file; clients show it in place of `text`, which keeps the result for older clients. */ matches: SearchMatchesSchema.optional(), /** TAL-2318: a JSON-object result's top-level keys, in order, rendered like `ToolCall.args_fields`; `text` keeps the whole result for copy. Absent for any other result. */ fields: z.array(ToolFieldSchema).optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
 export type ToolResultView = z.infer<typeof ToolResultViewSchema>
 
 /**

@@ -91,7 +91,12 @@ struct ToolCallCardView: View {
                     argumentsSection(displayContent.argumentRows)
                 }
 
-                if let result = displayContent.result {
+                // TAL-2323: a read's lines and a search's matches, in place of their text.
+                if let excerpt = shownCall.resultView?.fileExcerpt {
+                    FileExcerptSection(excerpt: excerpt)
+                } else if let matches = shownCall.resultView?.matches {
+                    SearchMatchesSection(matches: matches)
+                } else if let result = displayContent.result {
                     resultSection(result)
                 }
             }

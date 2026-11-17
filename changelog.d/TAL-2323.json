@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "An expanded file read shows its path and highlighted lines with their line numbers, and a file search its matches grouped by file; a tap opens the file at that line, on the App and the Web.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

@@ -216,6 +216,15 @@ back to the session file.
   to pretty JSON of an object, `fields` (TAL-2318) also lists its top-level keys
   in order as `{ key, value, multiline }` rows, and clients show those rows in
   place of `text`; the 4000-character budget covers all rows together.
+  TAL-2323: a `read_file` result adds `file_excerpt` (`path` from the call's
+  arguments, `language` from its extension, numbered `lines` without the Agent's
+  `N|` gutter, `total_lines`, `truncated`, `next_offset`) and a `search_files`
+  result adds `matches` (`total`, `truncated`, `files` of `{ path, count?,
+  matches: [{ line, text }] }` from every Agent encoding), in place of `fields`;
+  `text` stays for older clients. A path inside the session workspace carries
+  its `focus_path`. An excerpt's lines are redacted as the one text they came
+  from, and both sections share the 4000-character budget. A repeat read shows
+  as `text`, a missing file or blocked call as `error`.
 - `args_fields` (TAL-2318): the call's redacted arguments as the same rows, one
   per top-level key in call order, each value capped at 4000 characters. A
   scalar shows inline, a nested object as indented `key: value` lines, a list as

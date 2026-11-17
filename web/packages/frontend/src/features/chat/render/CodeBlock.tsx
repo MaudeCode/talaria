@@ -33,11 +33,15 @@ function tokenStyle(token: ThemedToken): CSSProperties {
   return style
 }
 
-/** One line; completed lines keep their token array, so a streaming block re-renders only its changed rows. */
-const CodeLine = memo(function CodeLine({ tokens }: { tokens: ThemedToken[] }) {
+/** One line; completed lines keep their token array, so a streaming block re-renders only its changed rows. TAL-2323: `n` is its file line number, in a gutter. */
+const CodeLine = memo(function CodeLine({ tokens, n, gutter }: { tokens: ThemedToken[]; n?: number | undefined; gutter?: number | undefined }) {
+  const text = isEmptyRow(tokens) ? '\n' : tokens.map((token, index) => <span key={index} style={tokenStyle(token)} {...token.htmlAttrs}>{token.content}</span>)
+  // A numbered line wraps beside its number, never under it.
+  if (n === undefined) return <span className="block">{text}</span>
   return (
-    <span className="block">
-      {isEmptyRow(tokens) ? '\n' : tokens.map((token, index) => <span key={index} style={tokenStyle(token)} {...token.htmlAttrs}>{token.content}</span>)}
+    <span className="flex">
+      <span className="code-line-number mr-4 shrink-0 select-none text-right tabular-nums text-muted" style={{ minWidth: `${String(gutter ?? 1)}ch` }}>{n}</span>
+      <span className="code-line-text min-w-0 flex-1">{text}</span>
     </span>
   )
 })
@@ -68,16 +72,18 @@ function useTokens(code: string, language: string, incomplete: boolean): TokensR
   return highlighted ?? plain(code)
 }
 
-/** A fence body whose rows stay mounted while new lines stream in. */
-function CodeBlockBody({ code, language, incomplete }: { code: string; language: string; incomplete: boolean }) {
+/** A fence body whose rows stay mounted while new lines stream in. TAL-2323: `numbers` gives each line its number in a gutter. */
+export function CodeBlockBody({ code, language, incomplete, numbers }: { code: string; language: string; incomplete: boolean; numbers?: readonly number[] | undefined }) {
   const result = useTokens(code, language, incomplete)
-  // Streamdown shows no trailing blank lines.
+  // Streamdown shows no trailing blank lines; a numbered file excerpt keeps every line it has a number for.
   let rows = result.tokens.length
-  while (rows > 1 && isEmptyRow(result.tokens[rows - 1] ?? [])) rows--
+  if (numbers) rows = Math.min(rows, numbers.length)
+  else while (rows > 1 && isEmptyRow(result.tokens[rows - 1] ?? [])) rows--
+  const gutter = numbers ? String(Math.max(0, ...numbers)).length : undefined
   return (
     <div className={BODY} data-language={language} data-streamdown="code-block-body">
       <pre style={rootStyle(result)}>
-        <code>{result.tokens.slice(0, rows).map((tokens, index) => <CodeLine key={index} tokens={tokens} />)}</code>
+        <code>{result.tokens.slice(0, rows).map((tokens, index) => <CodeLine key={index} tokens={tokens} n={numbers?.[index]} gutter={gutter} />)}</code>
       </pre>
     </div>
   )

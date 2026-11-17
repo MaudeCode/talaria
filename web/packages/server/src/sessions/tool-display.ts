@@ -3,8 +3,8 @@
  * module computes for live frames and the public projection of persisted calls (`redact.ts` stamps them). Callers pass
  * redacted args, so the target never shows more than the arguments it came from.
  */
-import type { ToolEditDiff, ToolKind, ToolPresentation, ToolPresentationEntry, ToolProgress } from '@maudecode/talaria-web-contracts'
-import { DecisionReviewRefSchema, OutboundDraftRefSchema, ProposalRefSchema, ShowBlockRefSchema, TALARIA_TOOL_NAMES, TerminalRefSchema, TOOL_PRESENTATIONS, type DecisionReviewRef, type OutboundDraftRef, type ProposalRef, type ShowBlockRef, type TerminalRef } from '@maudecode/talaria-web-contracts'
+import type { FileExcerpt, FileExcerptLine, SearchMatches, SearchMatchFile, ToolEditDiff, ToolKind, ToolPresentation, ToolPresentationEntry, ToolProgress } from '@maudecode/talaria-web-contracts'
+import { DecisionReviewRefSchema, FileExcerptSchema, OutboundDraftRefSchema, SearchMatchesSchema, ProposalRefSchema, ShowBlockRefSchema, TALARIA_TOOL_NAMES, TerminalRefSchema, TOOL_PRESENTATIONS, type DecisionReviewRef, type OutboundDraftRef, type ProposalRef, type ShowBlockRef, type TerminalRef } from '@maudecode/talaria-web-contracts'
 import { posix } from 'node:path'
 import { str } from '../util.js'
 import { expandHome } from '../workspace/paths.js'
@@ -323,6 +323,99 @@ export function decidedEditDiff(value: unknown): ToolEditDiff | undefined {
 /** TAL-604: an `edit_diff` with its shown `diff` parsed, so clients never parse it. */
 function withHunks(edit: Omit<ToolEditDiff, 'hunks'>): ToolEditDiff {
   return { ...edit, hunks: diffHunks(edit.diff) }
+}
+
+const safeInt = (v: unknown): number | undefined => (typeof v === 'number' && Number.isSafeInteger(v) ? v : undefined)
+
+/** TAL-2323: a `read_file` line's gutter (`12|`), as the Agent's `_add_line_numbers` writes it. */
+const GUTTER_RE = /^(\d{1,9})\|/
+
+/** TAL-2323: `read_file` content as numbered lines, gutters dropped; a line without one continues the line before it. */
+export function gutterLines(content: string): FileExcerptLine[] {
+  const lines: FileExcerptLine[] = []
+  for (const line of content.split('\n')) {
+    const gutter = GUTTER_RE.exec(line)
+    if (gutter) lines.push({ n: Number(gutter[1]), text: line.slice(gutter[0].length) })
+    else if (lines.length) lines[lines.length - 1]!.text += `\n${line}`
+  }
+  return lines
+}
+
+/** TAL-2323: numbered lines back in the Agent's gutter format, so redaction reads them as the one text they came from. */
+export const gutterText = (lines: readonly FileExcerptLine[]): string => lines.map((line) => `${String(line.n)}|${line.text}`).join('\n')
+
+/**
+ * TAL-2323: a `read_file` result (Agent `ReadResult.to_dict`): its content as a `file_excerpt` of the file the call's `path`
+ * names; a repeat read's stub, a special file's note and a not-found error (with the similar files it names) as one line.
+ * Undefined for any other result (another error, a binary file), which the generic rule shows.
+ */
+export function readFileView(data: Record<string, unknown>, args: unknown): { file_excerpt?: FileExcerpt; text?: string; error?: string } | undefined {
+  if (data.status === 'unchanged' && data.dedup === true) return { text: 'Unchanged since the last read' }
+  if (data.success === false && typeof data.note === 'string' && data.note.trim()) return { text: data.note.trim() }
+  if (data.not_found === true && typeof data.error === 'string') {
+    const similar = Array.isArray(data.similar_files) ? data.similar_files.filter((path): path is string => typeof path === 'string').slice(0, 5) : []
+    return { error: similar.length ? `${data.error}\nSimilar files: ${similar.join(', ')}` : data.error }
+  }
+  // Content without the Agent's gutter (another tool's shape) keeps the generic text.
+  if (typeof data.content !== 'string' || data.error || (data.content && !GUTTER_RE.test(data.content))) return undefined
+  const lines = gutterLines(data.content)
+  const truncated = data.truncated === true
+  const next = safeInt(data.next_offset) ?? (truncated && lines.length ? lines[lines.length - 1]!.n + 1 : undefined)
+  const path = isDict(args) ? str(args.path) : ''
+  return { file_excerpt: {
+    path, language: data.extracted_document === true ? null : posix.extname(path).slice(1).toLowerCase() || null, start_line: lines[0]?.n ?? 1, lines, total_lines: safeInt(data.total_lines) ?? null, truncated,
+    ...(next !== undefined ? { next_offset: next } : {}),
+  } }
+}
+
+/** TAL-2323: a `matches_text` row under its file's path line: `  12: text`. */
+const MATCH_ROW_RE = /^ {2}(\d{1,9}): ?(.*)$/
+
+/**
+ * TAL-2323: a `search_files` result (Agent `SearchResult.to_dict(densify=True)`) grouped by file in the Agent's order: a
+ * `matches` list, a path-grouped `matches_text` block, a files-only `files` list, or a count search's `counts`. Undefined for
+ * an error or any other shape, which the generic rule shows.
+ */
+export function searchFilesView(data: Record<string, unknown>): SearchMatches | undefined {
+  const total = safeInt(data.total_count)
+  if (total === undefined || data.error) return undefined
+  const files: SearchMatchFile[] = []
+  const file = (path: string): SearchMatchFile => {
+    const last = files[files.length - 1]
+    if (last?.path === path) return last
+    const next: SearchMatchFile = { path, matches: [] }
+    files.push(next)
+    return next
+  }
+  for (const match of Array.isArray(data.matches) ? data.matches : []) {
+    if (isDict(match) && typeof match.path === 'string') file(match.path).matches.push({ line: safeInt(match.line) ?? 0, text: str(match.content) })
+  }
+  if (typeof data.matches_text === 'string') {
+    for (const line of data.matches_text.split('\n')) {
+      const row = MATCH_ROW_RE.exec(line)
+      if (row && files.length) files[files.length - 1]!.matches.push({ line: Number(row[1]), text: row[2]! })
+      else if (line.trim() && !row) file(line)
+    }
+  }
+  for (const path of Array.isArray(data.files) ? data.files : []) if (typeof path === 'string') file(path)
+  if (isDict(data.counts)) for (const [path, count] of Object.entries(data.counts)) if (safeInt(count) !== undefined) file(path).count = count as number
+  return { total, truncated: data.truncated === true, files }
+}
+
+/**
+ * TAL-2323: a result view's `file_excerpt` and `matches` files with the `focus_path` each path names inside the session's
+ * `workspace` (the call-level TAL-1458 rule). Callers pass the redacted view, so a focus path never shows more than its path.
+ * Without a workspace an absolute path keeps the focus path it was given.
+ */
+export function withResultFocusPaths<T extends Record<string, unknown>>(view: T, workspace: string | null): T {
+  const located = <F extends { path: string; focus_path?: string | undefined }>(item: F): F => {
+    const { focus_path: given, ...rest } = item
+    const focus = focusPath(item.path, workspace) ?? (workspace ? null : given)
+    return (focus ? { ...rest, focus_path: focus } : rest) as F
+  }
+  const excerpt = view.file_excerpt === undefined ? undefined : FileExcerptSchema.safeParse(view.file_excerpt).data
+  const matches = view.matches === undefined ? undefined : SearchMatchesSchema.safeParse(view.matches).data
+  return { ...view, ...(excerpt ? { file_excerpt: located(excerpt) } : {}), ...(matches ? { matches: { ...matches, files: matches.files.map(located) } } : {}) }
 }
 
 /** MCP progress is untrusted; only finite percentages and a bounded message reach clients. */

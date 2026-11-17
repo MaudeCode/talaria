@@ -107,6 +107,47 @@ public struct ToolField: Decodable, Equatable, Sendable {
     }
 }
 
+/// TAL-2323: one line a `read_file` result returned: its number in the file and its text.
+public struct FileExcerptLine: Decodable, Equatable, Sendable {
+    public let n: Int
+    public let text: String
+}
+
+/// TAL-2323: a `read_file` result: the file the call named, the lines it returned with their real numbers, the file's
+/// `totalLines`, and whether the read stopped early. `focusPath` locates the file inside the session workspace;
+/// `language` is the highlight grammar the server named.
+public struct FileExcerpt: Decodable, Equatable, Sendable {
+    public let path: String
+    public let focusPath: String?
+    public let language: String?
+    public let startLine: Int
+    public let lines: [FileExcerptLine]
+    public let totalLines: Int?
+    public let truncated: Bool
+    public let nextOffset: Int?
+}
+
+/// TAL-2323: one matching line of a `search_files` result.
+public struct SearchMatch: Decodable, Equatable, Sendable {
+    public let line: Int
+    public let text: String
+}
+
+/// TAL-2323: one file of a `search_files` result: its matching lines, or its match `count` for a count search.
+public struct SearchMatchFile: Decodable, Equatable, Sendable {
+    public let path: String
+    public let focusPath: String?
+    public let count: Int?
+    public let matches: [SearchMatch]
+}
+
+/// TAL-2323: a `search_files` result grouped by file, in the Agent's order.
+public struct SearchMatches: Decodable, Equatable, Sendable {
+    public let total: Int
+    public let truncated: Bool
+    public let files: [SearchMatchFile]
+}
+
 /// TAL-315: a tool result's display sections, decided on the server for every client. Shown in this order: `text`, or
 /// `stdout`, `stderr`, a labelled `error` and a labelled `exitCode` (sent only when worth showing).
 public struct ToolResultView: Decodable, Equatable, Sendable {
@@ -125,13 +166,19 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
     public let terminal: TerminalRef?
     /// TAL-2318: a JSON-object result's rows, shown in place of `text`.
     public let fields: [ToolField]?
+    /// TAL-2323: a `read_file` result's lines, shown in place of `text`.
+    public let fileExcerpt: FileExcerpt?
+    /// TAL-2323: a `search_files` result's matches by file, shown in place of `text`.
+    public let matches: SearchMatches?
 
     public init(
         text: String? = nil, stdout: String? = nil, stderr: String? = nil, error: String? = nil, exitCode: Int? = nil,
         decisionReview: DecisionReviewRef? = nil, proposal: ProposalRef? = nil, block: ShowBlockRef? = nil,
-        terminal: TerminalRef? = nil, fields: [ToolField]? = nil
+        terminal: TerminalRef? = nil, fields: [ToolField]? = nil, fileExcerpt: FileExcerpt? = nil, matches: SearchMatches? = nil
     ) {
         self.fields = fields
+        self.fileExcerpt = fileExcerpt
+        self.matches = matches
         self.text = text
         self.stdout = stdout
         self.stderr = stderr
@@ -151,6 +198,8 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         case block
         case terminal
         case fields
+        case fileExcerpt = "file_excerpt"
+        case matches
     }
 
     public init(from decoder: Decoder) throws {
@@ -165,6 +214,8 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         proposal = DecisionReview.decode(ProposalRef.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .proposal))
         block = DecisionReview.decode(ShowBlockRef.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .block))
         terminal = DecisionReview.decode(TerminalRef.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .terminal))
+        fileExcerpt = DecisionReview.decode(FileExcerpt.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .fileExcerpt))
+        matches = DecisionReview.decode(SearchMatches.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .matches))
     }
 
     /// The view a decoded JSON field holds; nil when the server sent none.

@@ -1149,7 +1149,9 @@ export class TurnRunner {
                 // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server; TAL-315: so
                 // are its display sections, which keep the stderr and exit code the flat preview drops.
                 const { raw_result: rawResult, todo_result: todoResult, result_diff: resultDiff, display_metadata: displayMetadata, ...complete } = data
-                const outcome = toolOutcome(rawResult, data.name)
+                const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
+                // TAL-2323: a `read_file` excerpt names the file its start frame's arguments read.
+                const outcome = toolOutcome(rawResult, data.name, false, data.args ?? tc?.args)
                 complete.progress = null
                 complete.is_error = outcome.is_error
                 if (rawResult !== undefined) complete.result_view = outcome.result_view
@@ -1157,7 +1159,6 @@ export class TurnRunner {
                 // else the diff in the metadata the Agent persisted on the result row, which a reload reads the same way.
                 const editDiff = toolEditDiff(data.name, { diff: resultDiff }, displayMetadata)
                 if (editDiff) complete.edit_diff = editDiff
-                const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
                 this.registry.noteToolEvent(streamId, receivedAt, false)
                 if (tc) {
                   const startedAt = toolStartedAt.get(tc)

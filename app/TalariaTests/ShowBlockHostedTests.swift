@@ -65,7 +65,7 @@ final class ShowBlockHostedTests: XCTestCase {
         let client = APIClient(baseURL: URL(string: "https://show.test")!, session: URLSession(configuration: configuration))
         return ScrollView { VStack { ForEach(calls) { ToolCallCardView(toolCall: $0) } }.padding() }
             .chatEnvironmentAction(\.chatShowBlockModel) { ShowBlockCardModel(blockID: $0, client: client) }
-            .chatEnvironmentAction(\.chatOpenWorkspaceFile) { opened($0) }
+            .chatEnvironmentAction(\.chatOpenWorkspaceFile) { opened($0.path) }
     }
 
     func testTablesAndChartsShowTheServersValuesOnThePhoneAndBothDuoDisplays() throws {

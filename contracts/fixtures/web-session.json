@@ -5937,5 +5937,603 @@
         "workspace_name": null
       }
     ]
+  },
+  "tool_file_views": {
+    "expected": {
+      "call-read": {
+        "text": "12|import { run } from './run'\n13|run(2)",
+        "file_excerpt": {
+          "path": "src/app.ts",
+          "focus_path": "src/app.ts",
+          "language": "ts",
+          "start_line": 12,
+          "lines": [
+            {
+              "n": 12,
+              "text": "import { run } from './run'"
+            },
+            {
+              "n": 13,
+              "text": "run(2)"
+            }
+          ],
+          "total_lines": 40,
+          "truncated": true,
+          "next_offset": 14
+        }
+      },
+      "call-search": {
+        "text": "{\n  \"total_count\": 5,\n  \"matches_format\": \"path-grouped\",\n  \"matches_text\": \"src/app.ts\\n  1: import { run } from './run'\\n  13: run(2)\\nsrc/run.ts\\n  1: export function run(n: number) {}\\n  4: run(0)\\n  9: run(1)\"\n}",
+        "matches": {
+          "total": 5,
+          "truncated": false,
+          "files": [
+            {
+              "path": "src/app.ts",
+              "focus_path": "src/app.ts",
+              "matches": [
+                {
+                  "line": 1,
+                  "text": "import { run } from './run'"
+                },
+                {
+                  "line": 13,
+                  "text": "run(2)"
+                }
+              ]
+            },
+            {
+              "path": "src/run.ts",
+              "focus_path": "src/run.ts",
+              "matches": [
+                {
+                  "line": 1,
+                  "text": "export function run(n: number) {}"
+                },
+                {
+                  "line": 4,
+                  "text": "run(0)"
+                },
+                {
+                  "line": 9,
+                  "text": "run(1)"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "call-count": {
+        "text": "{\n  \"total_count\": 5,\n  \"counts\": {\n    \"src/app.ts\": 2,\n    \"src/run.ts\": 3\n  }\n}",
+        "matches": {
+          "total": 5,
+          "truncated": false,
+          "files": [
+            {
+              "path": "src/app.ts",
+              "focus_path": "src/app.ts",
+              "count": 2,
+              "matches": []
+            },
+            {
+              "path": "src/run.ts",
+              "focus_path": "src/run.ts",
+              "count": 3,
+              "matches": []
+            }
+          ]
+        }
+      },
+      "call-again": {
+        "text": "Unchanged since the last read"
+      }
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Read app.ts and find run",
+          "message_id": "file-user",
+          "timestamp": 6000,
+          "_turn_id": "file-run",
+          "_display": "row"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "message_id": "file-calls",
+          "timestamp": 6001,
+          "tool_calls": [
+            {
+              "args_fields": [
+                {
+                  "key": "path",
+                  "value": "src/app.ts",
+                  "multiline": false
+                },
+                {
+                  "key": "offset",
+                  "value": "12",
+                  "multiline": false
+                },
+                {
+                  "key": "limit",
+                  "value": "2",
+                  "multiline": false
+                }
+              ],
+              "kind": "read",
+              "target": "src/app.ts",
+              "focus_path": "src/app.ts",
+              "function": {
+                "name": "read_file",
+                "arguments": "{\"path\":\"src/app.ts\",\"offset\":12,\"limit\":2}"
+              },
+              "id": "call-read",
+              "done": true,
+              "is_error": false,
+              "result": "{\"content\":\"12|import { run } from './run'\\n13|run(2)\",\"total_lines\":40,\"file_size\":600,\"truncated\":true,\"hint\":\"Use offset=14 to continue reading (showing 12-13 of 40 lines)\"}",
+              "result_view": {
+                "text": "12|import { run } from './run'\n13|run(2)",
+                "file_excerpt": {
+                  "path": "src/app.ts",
+                  "focus_path": "src/app.ts",
+                  "language": "ts",
+                  "start_line": 12,
+                  "lines": [
+                    {
+                      "n": 12,
+                      "text": "import { run } from './run'"
+                    },
+                    {
+                      "n": 13,
+                      "text": "run(2)"
+                    }
+                  ],
+                  "total_lines": 40,
+                  "truncated": true,
+                  "next_offset": 14
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "pattern",
+                  "value": "run",
+                  "multiline": false
+                }
+              ],
+              "kind": "search",
+              "target": "run",
+              "function": {
+                "name": "search_files",
+                "arguments": "{\"pattern\":\"run\"}"
+              },
+              "id": "call-search",
+              "done": true,
+              "is_error": false,
+              "result": "{\"total_count\":5,\"matches_format\":\"path-grouped\",\"matches_text\":\"src/app.ts\\n  1: import { run } from './run'\\n  13: run(2)\\nsrc/run.ts\\n  1: export function run(n: number) {}\\n  4: run(0)\\n  9: run(1)\"}",
+              "result_view": {
+                "text": "{\n  \"total_count\": 5,\n  \"matches_format\": \"path-grouped\",\n  \"matches_text\": \"src/app.ts\\n  1: import { run } from './run'\\n  13: run(2)\\nsrc/run.ts\\n  1: export function run(n: number) {}\\n  4: run(0)\\n  9: run(1)\"\n}",
+                "matches": {
+                  "total": 5,
+                  "truncated": false,
+                  "files": [
+                    {
+                      "path": "src/app.ts",
+                      "focus_path": "src/app.ts",
+                      "matches": [
+                        {
+                          "line": 1,
+                          "text": "import { run } from './run'"
+                        },
+                        {
+                          "line": 13,
+                          "text": "run(2)"
+                        }
+                      ]
+                    },
+                    {
+                      "path": "src/run.ts",
+                      "focus_path": "src/run.ts",
+                      "matches": [
+                        {
+                          "line": 1,
+                          "text": "export function run(n: number) {}"
+                        },
+                        {
+                          "line": 4,
+                          "text": "run(0)"
+                        },
+                        {
+                          "line": 9,
+                          "text": "run(1)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "pattern",
+                  "value": "run",
+                  "multiline": false
+                },
+                {
+                  "key": "output_mode",
+                  "value": "count",
+                  "multiline": false
+                }
+              ],
+              "kind": "search",
+              "target": "run",
+              "function": {
+                "name": "search_files",
+                "arguments": "{\"pattern\":\"run\",\"output_mode\":\"count\"}"
+              },
+              "id": "call-count",
+              "done": true,
+              "is_error": false,
+              "result": "{\"total_count\":5,\"counts\":{\"src/app.ts\":2,\"src/run.ts\":3}}",
+              "result_view": {
+                "text": "{\n  \"total_count\": 5,\n  \"counts\": {\n    \"src/app.ts\": 2,\n    \"src/run.ts\": 3\n  }\n}",
+                "matches": {
+                  "total": 5,
+                  "truncated": false,
+                  "files": [
+                    {
+                      "path": "src/app.ts",
+                      "focus_path": "src/app.ts",
+                      "count": 2,
+                      "matches": []
+                    },
+                    {
+                      "path": "src/run.ts",
+                      "focus_path": "src/run.ts",
+                      "count": 3,
+                      "matches": []
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "path",
+                  "value": "src/app.ts",
+                  "multiline": false
+                },
+                {
+                  "key": "offset",
+                  "value": "12",
+                  "multiline": false
+                },
+                {
+                  "key": "limit",
+                  "value": "2",
+                  "multiline": false
+                }
+              ],
+              "kind": "read",
+              "target": "src/app.ts",
+              "focus_path": "src/app.ts",
+              "function": {
+                "name": "read_file",
+                "arguments": "{\"path\":\"src/app.ts\",\"offset\":12,\"limit\":2}"
+              },
+              "id": "call-again",
+              "done": true,
+              "is_error": false,
+              "result": "{\"status\":\"unchanged\",\"message\":\"File unchanged since last read.\",\"path\":\"src/app.ts\",\"dedup\":true,\"content_returned\":false}",
+              "result_view": {
+                "text": "Unchanged since the last read"
+              },
+              "duration": null,
+              "type": "function"
+            }
+          ],
+          "_turn_id": "file-run",
+          "_display": "row"
+        },
+        {
+          "role": "tool",
+          "content": "{\"content\":\"12|import { run } from './run'\\n13|run(2)\",\"total_lines\":40,\"file_size\":600,\"truncated\":true,\"hint\":\"Use offset=14 to continue reading (showing 12-13 of 40 lines)\"}",
+          "timestamp": 6002,
+          "tool_call_id": "call-read",
+          "_turn_id": "file-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"total_count\":5,\"matches_format\":\"path-grouped\",\"matches_text\":\"src/app.ts\\n  1: import { run } from './run'\\n  13: run(2)\\nsrc/run.ts\\n  1: export function run(n: number) {}\\n  4: run(0)\\n  9: run(1)\"}",
+          "timestamp": 6003,
+          "tool_call_id": "call-search",
+          "_turn_id": "file-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"total_count\":5,\"counts\":{\"src/app.ts\":2,\"src/run.ts\":3}}",
+          "timestamp": 6004,
+          "tool_call_id": "call-count",
+          "_turn_id": "file-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"status\":\"unchanged\",\"message\":\"File unchanged since last read.\",\"path\":\"src/app.ts\",\"dedup\":true,\"content_returned\":false}",
+          "timestamp": 6005,
+          "tool_call_id": "call-again",
+          "_turn_id": "file-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "assistant",
+          "content": "Done.",
+          "message_id": "file-answer",
+          "timestamp": 6006,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {
+                "row_id": "tool:call-read",
+                "order_index": 0,
+                "role": "tool",
+                "created_at": 6001,
+                "tool": {
+                  "id": "call-read",
+                  "name": "read_file",
+                  "args_fields": [
+                    {
+                      "key": "path",
+                      "value": "src/app.ts",
+                      "multiline": false
+                    },
+                    {
+                      "key": "offset",
+                      "value": "12",
+                      "multiline": false
+                    },
+                    {
+                      "key": "limit",
+                      "value": "2",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "read",
+                  "target": "src/app.ts",
+                  "focus_path": "src/app.ts",
+                  "args": {
+                    "path": "src/app.ts",
+                    "offset": 12,
+                    "limit": 2
+                  },
+                  "preview": null,
+                  "result": "{\"content\":\"12|import { run } from './run'\\n13|run(2)\",\"total_lines\":40,\"file_size\":600,\"truncated\":true,\"hint\":\"Use offset=14 to continue reading (showing 12-13 of 40 lines)\"}",
+                  "result_view": {
+                    "text": "12|import { run } from './run'\n13|run(2)",
+                    "file_excerpt": {
+                      "path": "src/app.ts",
+                      "focus_path": "src/app.ts",
+                      "language": "ts",
+                      "start_line": 12,
+                      "lines": [
+                        {
+                          "n": 12,
+                          "text": "import { run } from './run'"
+                        },
+                        {
+                          "n": 13,
+                          "text": "run(2)"
+                        }
+                      ],
+                      "total_lines": 40,
+                      "truncated": true,
+                      "next_offset": 14
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-search",
+                "order_index": 1,
+                "role": "tool",
+                "created_at": 6001,
+                "tool": {
+                  "id": "call-search",
+                  "name": "search_files",
+                  "args_fields": [
+                    {
+                      "key": "pattern",
+                      "value": "run",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "search",
+                  "target": "run",
+                  "args": {
+                    "pattern": "run"
+                  },
+                  "preview": null,
+                  "result": "{\"total_count\":5,\"matches_format\":\"path-grouped\",\"matches_text\":\"src/app.ts\\n  1: import { run } from './run'\\n  13: run(2)\\nsrc/run.ts\\n  1: export function run(n: number) {}\\n  4: run(0)\\n  9: run(1)\"}",
+                  "result_view": {
+                    "text": "{\n  \"total_count\": 5,\n  \"matches_format\": \"path-grouped\",\n  \"matches_text\": \"src/app.ts\\n  1: import { run } from './run'\\n  13: run(2)\\nsrc/run.ts\\n  1: export function run(n: number) {}\\n  4: run(0)\\n  9: run(1)\"\n}",
+                    "matches": {
+                      "total": 5,
+                      "truncated": false,
+                      "files": [
+                        {
+                          "path": "src/app.ts",
+                          "focus_path": "src/app.ts",
+                          "matches": [
+                            {
+                              "line": 1,
+                              "text": "import { run } from './run'"
+                            },
+                            {
+                              "line": 13,
+                              "text": "run(2)"
+                            }
+                          ]
+                        },
+                        {
+                          "path": "src/run.ts",
+                          "focus_path": "src/run.ts",
+                          "matches": [
+                            {
+                              "line": 1,
+                              "text": "export function run(n: number) {}"
+                            },
+                            {
+                              "line": 4,
+                              "text": "run(0)"
+                            },
+                            {
+                              "line": 9,
+                              "text": "run(1)"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-count",
+                "order_index": 2,
+                "role": "tool",
+                "created_at": 6001,
+                "tool": {
+                  "id": "call-count",
+                  "name": "search_files",
+                  "args_fields": [
+                    {
+                      "key": "pattern",
+                      "value": "run",
+                      "multiline": false
+                    },
+                    {
+                      "key": "output_mode",
+                      "value": "count",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "search",
+                  "target": "run",
+                  "args": {
+                    "pattern": "run",
+                    "output_mode": "count"
+                  },
+                  "preview": null,
+                  "result": "{\"total_count\":5,\"counts\":{\"src/app.ts\":2,\"src/run.ts\":3}}",
+                  "result_view": {
+                    "text": "{\n  \"total_count\": 5,\n  \"counts\": {\n    \"src/app.ts\": 2,\n    \"src/run.ts\": 3\n  }\n}",
+                    "matches": {
+                      "total": 5,
+                      "truncated": false,
+                      "files": [
+                        {
+                          "path": "src/app.ts",
+                          "focus_path": "src/app.ts",
+                          "count": 2,
+                          "matches": []
+                        },
+                        {
+                          "path": "src/run.ts",
+                          "focus_path": "src/run.ts",
+                          "count": 3,
+                          "matches": []
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-again",
+                "order_index": 3,
+                "role": "tool",
+                "created_at": 6001,
+                "tool": {
+                  "id": "call-again",
+                  "name": "read_file",
+                  "args_fields": [
+                    {
+                      "key": "path",
+                      "value": "src/app.ts",
+                      "multiline": false
+                    },
+                    {
+                      "key": "offset",
+                      "value": "12",
+                      "multiline": false
+                    },
+                    {
+                      "key": "limit",
+                      "value": "2",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "read",
+                  "target": "src/app.ts",
+                  "focus_path": "src/app.ts",
+                  "args": {
+                    "path": "src/app.ts",
+                    "offset": 12,
+                    "limit": 2
+                  },
+                  "preview": null,
+                  "result": "{\"status\":\"unchanged\",\"message\":\"File unchanged since last read.\",\"path\":\"src/app.ts\",\"dedup\":true,\"content_returned\":false}",
+                  "result_view": {
+                    "text": "Unchanged since the last read"
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              }
+            ],
+            "final_answer": "Done.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": false,
+            "has_consumed_steering": false,
+            "file_changes": [],
+            "activity_rows_total": 4,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "325e6e9b8e2e9c24a84b940387ae56336ff77947a70e0b5742f10b81a86c1836"
+          },
+          "_turn_id": "file-run",
+          "_display": "row"
+        }
+      ]
+    }
   }
 }

@@ -33,6 +33,7 @@ import { anchorMessageKey, anchorSummary, CompressionJobs, insertCompactionRow, 
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, normalizeUserDisplay, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withheldPromptText, withheldRowForModel, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, isDict as isMessageDict, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
+import { withResultFocusPaths } from './tool-display.js'
 import { inheritedTalariaActivities, pruneTalariaActivities, recordTalariaActivity, talariaActivity, withTalariaActivities } from './talaria-activities.js'
 import { redactNestedMessageContainers } from '../redact.js'
 import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
@@ -3531,9 +3532,12 @@ export class SessionService {
     const sid = query.session_id.trim()
     const id = query.tool_call_id.trim()
     if (!sid || !id) throw new HttpFailure(400, 'session_id and tool_call_id are required')
-    const full = fullToolResult((await this.fullTranscript(sid)).transcript, id)
+    const { session, transcript } = await this.fullTranscript(sid)
+    const full = fullToolResult(transcript, id)
     if (full === null) throw new HttpFailure(404, 'Tool result not found')
-    return { tool_call_id: id, ...redactValue(full, this.deps.redactEnabled()) as typeof full }
+    const redacted = redactValue(full, this.deps.redactEnabled()) as typeof full
+    // TAL-2323: located like the capped view the call's row shows (`withToolDisplay`).
+    return { tool_call_id: id, result: redacted.result, result_view: withResultFocusPaths(redacted.result_view, session.workspace) }
   }
 
   /**

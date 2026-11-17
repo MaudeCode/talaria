@@ -2153,8 +2153,8 @@ struct ChatView: View {
             .chatEnvironmentAction(\.chatShowBlockModel) { blockID in
                 ShowBlockCardModel(blockID: blockID, client: viewModel.client)
             }
-            .chatEnvironmentAction(\.chatOpenWorkspaceFile) { path in
-                chat.openWorkspaceFile(path)
+            .chatEnvironmentAction(\.chatOpenWorkspaceFile) { link in
+                chat.openWorkspaceFile(link)
             }
             .chatEnvironmentAction(\.voiceNoteAction) { id, action in
                 switch action {
@@ -2197,12 +2197,13 @@ struct ChatView: View {
     /// the system behaviour. The viewer's own error state covers a file the
     /// server refuses or no longer has.
     /// TAL-1968: a workspace file a transcript block opens: on the companion page when it is beside the chat, else in
-    /// the file preview a file link opens.
-    private func openWorkspaceFile(_ path: String) {
-        if companionPageIsBeside {
-            viewModel.pinCompanionFile(path)
+    /// the file preview a file link opens. TAL-2323: a read or search result's line opens in that preview, like a
+    /// transcript link to a line.
+    private func openWorkspaceFile(_ link: WorkspaceFileLink) {
+        if companionPageIsBeside, link.line == nil {
+            viewModel.pinCompanionFile(link.path)
         } else {
-            openedFileLink = WorkspaceFileLink(path: path)
+            openedFileLink = link
         }
     }
 

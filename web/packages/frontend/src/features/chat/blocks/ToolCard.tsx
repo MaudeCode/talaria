@@ -4,7 +4,7 @@ import { useApprovalFlash, useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon } from '../toolKind'
-import type { ApprovalAnsweredBy, BackgroundLink, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
+import type { ApprovalAnsweredBy, BackgroundLink, FileExcerpt, SearchMatches, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
 import { agentsSummary, statusLabel } from '../../background/BackgroundWork'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
@@ -14,6 +14,10 @@ import { fetchToolResult } from '../../../api/endpoints'
 import { Button } from '../../../ui/Button'
 import { SwapText } from '../../../ui/SwapText'
 import { useArrival } from '../arrival'
+import { lazy, Suspense } from 'react'
+import { requestOpenFile } from '../../workspace/openFileRequest'
+import { RowContextMenu, type RowAction } from '../../../ui/Menu'
+import { copyWithToast } from '../../../lib/clipboard'
 
 export interface ToolCardData {
   id: string
@@ -82,8 +86,72 @@ function FieldRows({ fields }: { fields: ToolField[] }) {
   )
 }
 
-/** A result's rows when the server sent them (a JSON object), else its sections as text. */
-function ResultBody({ view, text }: { view: ToolResultView | null; text: string }) {
+/**
+ * TAL-2323: a file path as the Agent wrote it; a button opening the file (at `line`) in the session's Files page when the
+ * server located it inside the workspace (`focusPath`).
+ */
+function FilePath({ path, focusPath, line, sessionId, className }: { path: string; focusPath?: string | undefined; line?: number | undefined; sessionId?: string | undefined; className?: string }) {
+  const style = cn('min-w-0 break-all text-left font-mono text-xs', className)
+  const open = fileOpen(path, focusPath, line, sessionId)
+  const actions = [...(open ? [open] : []), { label: m.copy_file_path(), run: () => { copyWithToast(path) } }]
+  const trigger = open
+    ? <button type="button" className={cn(style, 'text-accent-text hover:underline')} title={open.label} aria-label={open.label} onClick={open.run}>{path}</button>
+    : <span className={cn(style, 'text-text')}>{path}</span>
+  return <RowContextMenu label={path} actions={actions} trigger={trigger} />
+}
+
+/** TAL-2323: a located file's Open action (at `line`), for its button and its right-click and long-press menu alike. */
+function fileOpen(path: string, focusPath: string | undefined, line: number | undefined, sessionId: string | undefined): RowAction | null {
+  if (!focusPath || !sessionId) return null
+  return { label: line ? m.tool_open_file_at_line({ path, line: String(line) }) : m.show_open(), run: () => { requestOpenFile({ sessionId, path: focusPath, line }) } }
+}
+
+/** The chat code block's body, from the renderer chunk the transcript's Markdown loads, so the layout bundle stays without Shiki. */
+const CodeBlockBody = lazy(() => import('../render/MarkdownRenderer').then((module) => ({ default: module.CodeBlockBody })))
+
+/** TAL-2323: a read's lines under its path, highlighted like a chat code block with their real numbers, and where a cut-short read stopped. */
+function FileExcerptResult({ excerpt, sessionId }: { excerpt: FileExcerpt; sessionId?: string | undefined }) {
+  const last = excerpt.lines.at(-1)?.n
+  const code = excerpt.lines.map((line) => line.text).join('\n')
+  return (
+    <div className="tool-file-excerpt">
+      {excerpt.path && <div className="mb-1"><FilePath path={excerpt.path} focusPath={excerpt.focus_path} line={excerpt.start_line} sessionId={sessionId} /></div>}
+      {excerpt.lines.length > 0 && <div className="max-h-72 overflow-auto rounded-md text-xs"><Suspense fallback={<pre className={RESULT_PRE}>{code}</pre>}><CodeBlockBody code={code} language={excerpt.language ?? 'text'} incomplete={false} numbers={excerpt.lines.map((line) => line.n)} /></Suspense></div>}
+      {excerpt.truncated && last !== undefined && <div className={cn(LABEL, 'mt-1')}>{excerpt.total_lines === null ? m.tool_read_stopped_at({ line: String(last) }) : m.tool_read_stopped({ line: String(last), total: String(excerpt.total_lines) })}</div>}
+    </div>
+  )
+}
+
+/** TAL-2323: a search's matches under each file's path, `line: text` rows that open the file at that line. */
+function MatchesResult({ matches, sessionId }: { matches: SearchMatches; sessionId?: string | undefined }) {
+  if (!matches.files.length) return <div className={cn(LABEL, 'tool-matches')}>{m.tool_matches_none()}</div>
+  return (
+    <div className="tool-matches max-h-72 space-y-2 overflow-auto">
+      {matches.files.map((file, i) => (
+        <div key={i}>
+          <div className="flex items-baseline gap-2">
+            <FilePath path={file.path} focusPath={file.focus_path} line={file.matches[0]?.line} sessionId={sessionId} className="flex-1" />
+            {file.count !== undefined && <span className={cn(LABEL, 'shrink-0 tabular-nums')}>{m.tool_match_count({ count: String(file.count) })}</span>}
+          </div>
+          {file.matches.map((match, j) => {
+            const row = <><span className="mr-3 inline-block min-w-[3ch] select-none text-right tabular-nums text-muted">{match.line}</span>{match.text}</>
+            const open = fileOpen(file.path, file.focus_path, match.line, sessionId)
+            const trigger = open
+              ? <button type="button" className={cn('block w-full whitespace-pre-wrap break-words rounded px-1 text-left hover:bg-hover', MONO)} title={open.label} aria-label={open.label} onClick={open.run}>{row}</button>
+              : <div className={cn('whitespace-pre-wrap break-words px-1', MONO)}>{row}</div>
+            return <RowContextMenu key={j} label={`${file.path}:${String(match.line)}`} actions={[...(open ? [open] : []), { label: m.copy(), run: () => { copyWithToast(match.text) } }]} trigger={trigger} />
+          })}
+        </div>
+      ))}
+      {matches.truncated && <div className={LABEL}>{m.tool_matches_more()}</div>}
+    </div>
+  )
+}
+
+/** A result's file excerpt or matches, else its rows when the server sent them (a JSON object), else its sections as text. */
+function ResultBody({ view, text, sessionId }: { view: ToolResultView | null; text: string; sessionId?: string | undefined }) {
+  if (view?.file_excerpt) return <FileExcerptResult excerpt={view.file_excerpt} sessionId={sessionId} />
+  if (view?.matches) return <MatchesResult matches={view.matches} sessionId={sessionId} />
   return view?.fields?.length ? <FieldRows fields={view.fields} /> : <pre className={RESULT_PRE}>{text}</pre>
 }
 
@@ -92,7 +160,7 @@ function ClippedResult({ sessionId, callId, view, clipped }: { sessionId: string
   const query = useQuery({ queryKey: ['tool-result', sessionId, callId], queryFn: ({ signal }) => fetchToolResult(sessionId, callId, signal), enabled: false, staleTime: Infinity })
   return (
     <>
-      {query.data ? <ResultBody view={query.data.result_view} text={resultText(query.data.result_view)} /> : <ResultBody view={view} text={clipped} />}
+      {query.data ? <ResultBody view={query.data.result_view} text={resultText(query.data.result_view)} sessionId={sessionId} /> : <ResultBody view={view} text={clipped} sessionId={sessionId} />}
       {!query.data && <Button variant="ghost" className="mt-1" disabled={query.isFetching} onClick={() => { void query.refetch() }}>{query.isFetching ? m.loading() : query.isError ? m.retry() : m.tool_show_full_output()}</Button>}
     </>
   )
@@ -135,10 +203,10 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
               {call.argsFields ? <FieldRows fields={call.argsFields} /> : <pre className={`max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 ${MONO}`}>{args}</pre>}
             </div>
           )}
-          {result && (
+          {(result || call.resultView?.file_excerpt || call.resultView?.matches) && (
             <div className="tool-card-result">
               <div className="mb-1 text-[11px] uppercase tracking-wider text-muted">{call.isError ? m.tool_error_label() : m.tool_result_label()}</div>
-              {call.resultTruncated && sessionId ? <ClippedResult sessionId={sessionId} callId={call.id} view={call.resultView} clipped={result} /> : <ResultBody view={call.resultView} text={result} />}
+              {call.resultTruncated && sessionId ? <ClippedResult sessionId={sessionId} callId={call.id} view={call.resultView} clipped={result} /> : <ResultBody view={call.resultView} text={result} sessionId={sessionId} />}
             </div>
           )}
           {call.costUsd !== null && <div className="mt-1 text-[11px] text-muted">${call.costUsd.toFixed(4)}</div>}

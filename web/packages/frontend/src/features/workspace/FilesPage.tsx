@@ -47,6 +47,24 @@ type Pending = { kind: 'new-file' } | { kind: 'new-folder' } | { kind: 'rename';
 
 /** Files a checkpoint restore rewrote in `workspace`; `seq` tells one restore from the next. */
 export interface RestoredFiles { seq: number; paths: string[]; workspace: string }
+/** TAL-1968: the latest file a transcript block asked Files to show; TAL-2323: at a line. */
+interface OpenedFile { seq: number; path: string; line?: number | undefined }
+
+/** TAL-2323: selects a one-based line of a text area and scrolls it to the middle, measuring the wrapped text above it. */
+function revealLine(area: HTMLTextAreaElement, line: number): void {
+  const lines = area.value.split('\n')
+  const at = Math.max(0, Math.min(line, lines.length) - 1)
+  const start = lines.slice(0, at).reduce((sum, text) => sum + text.length + 1, 0)
+  area.focus({ preventScroll: true })
+  area.setSelectionRange(start, start + (lines[at]?.length ?? 0))
+  const style = getComputedStyle(area)
+  const mirror = document.createElement('div')
+  Object.assign(mirror.style, { position: 'absolute', visibility: 'hidden', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', boxSizing: 'border-box', width: `${String(area.clientWidth)}px`, padding: style.padding, font: style.font, letterSpacing: style.letterSpacing, tabSize: style.tabSize })
+  mirror.textContent = area.value.slice(0, start)
+  document.body.append(mirror)
+  area.scrollTop = Math.max(0, mirror.scrollHeight - area.clientHeight / 2)
+  mirror.remove()
+}
 
 /** The right panel's Files page (TAL-373): directory tree, file preview/edit, git status. Its folder and preview stay
  * while another page is shown; it fetches only while `active`. Unsaved drafts live here, above the per-workspace
@@ -58,13 +76,13 @@ export function FilesPage({ workspace, sessionId, active, restored = null }: { w
   // TAL-571: a restore rewrote these files; a draft of one would put the pre-restore text back on Save, so it goes.
   const [seenRestore, setSeenRestore] = useState(restored?.seq)
   // TAL-1968: the latest file a transcript block asked Files to show.
-  const [opened, setOpened] = useState<{ seq: number; path: string } | null>(null)
+  const [opened, setOpened] = useState<OpenedFile | null>(null)
   useEffect(() => {
     const take = () => {
       const request = takeOpenFileRequest(sessionId)
       if (!request) return
       setSource('workspace')
-      setOpened((o) => ({ seq: (o?.seq ?? 0) + 1, path: request.path }))
+      setOpened((o) => ({ seq: (o?.seq ?? 0) + 1, path: request.path, line: request.line }))
     }
     take()
     return onOpenFileRequest(take)
@@ -88,7 +106,7 @@ export function FilesPage({ workspace, sessionId, active, restored = null }: { w
   </>
 }
 
-function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, drafts, setDrafts, opened }: { workspace: string; sessionId: string; sourceControl: ReactNode; source: 'workspace' | 'managed'; active: boolean; drafts: Drafts; setDrafts: Dispatch<SetStateAction<Drafts>>; opened: { seq: number; path: string } | null }) {
+function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, drafts, setDrafts, opened }: { workspace: string; sessionId: string; sourceControl: ReactNode; source: 'workspace' | 'managed'; active: boolean; drafts: Drafts; setDrafts: Dispatch<SetStateAction<Drafts>>; opened: OpenedFile | null }) {
   const managed = source === 'managed'
   const sourceArgs: [] | ['managed'] = managed ? ['managed'] : []
   const qc = useQueryClient()
@@ -117,6 +135,9 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   // TAL-1606: the tree has one tab stop, the row last focused in this folder. A refresh keeps it on that row; a removed
   // row passes it to the row now at its index. Opening a folder starts at its first row; Up returns to the folder left.
   const [cursor, setCursor] = useState({ dir: '.', path: '', index: 0 })
+  // TAL-2323: the line a read or search result opened the file at, selected and scrolled to once its text shows.
+  const textRef = useRef<HTMLTextAreaElement>(null)
+  const revealedSeq = useRef<number | undefined>(undefined)
   // TAL-1968: a file a transcript block opened, shown in its folder.
   const [seenOpened, setSeenOpened] = useState(opened?.seq)
   if (opened && opened.seq !== seenOpened) {
@@ -144,6 +165,11 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   // A row shown ahead of the server may not exist there yet, so its preview reads once the write and the listing have answered.
   const opening = writing.some((e) => pathOf(e) === file)
   const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? '', ...sourceArgs), enabled: !!file && active && !opening, staleTime: 5_000 })
+  useEffect(() => {
+    if (!opened?.line || opened.path !== file || !content.data || !textRef.current || revealedSeq.current === opened.seq) return
+    revealedSeq.current = opened.seq
+    revealLine(textRef.current, opened.line)
+  }, [opened, file, content.data])
   // The saved text shows until the reread of that same file confirms it; edits typed meanwhile stay as the draft.
   const save = useResourceMutation({
     resource: ({ path }: { path: string; text: string }) => contentResource(workspace, path),
@@ -215,8 +241,10 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const fileName = content.data?.name ?? listing.data?.entries.find((entry) => entry.path === file)?.name ?? file
   // An older server sends no `preview`: its replies are always text, Markdown by extension. Delete once Stable sends it.
   const kind = content.data ? (content.data.preview ?? (/\.(md|markdown)$/i.test(file ?? '') ? 'markdown' : 'text')) : undefined
-  // Markdown, CSV and HTML show their rendered form until Edit opens the text.
-  const rendered = draft === null && (kind === 'markdown' || kind === 'csv' || kind === 'html')
+  // Markdown, CSV and HTML show their rendered form until Edit opens the text; TAL-2323: a file opened at a line shows its text.
+  const atLine = opened?.line !== undefined && opened.path === file
+  const renderable = kind === 'markdown' || kind === 'csv' || kind === 'html'
+  const rendered = draft === null && !atLine && renderable
   const saving = file ? effects[contentResource(workspace, file)]?.value : undefined
   const text = draft ?? (typeof saving === 'string' ? saving : content.data?.content ?? '')
   const rawUrl = (inline?: boolean) => appUrl(api.rawFileUrl(sessionId, file ?? '', inline)).href
@@ -256,7 +284,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
               <div className="border-t border-border-subtle px-2 py-1.5 text-right text-[11px] text-muted">{formatBytes(content.data?.size)}</div>
             </div>
           )}
-          {content.data && (kind === 'text' || rendered || draft !== null) && (
+          {content.data && (kind === 'text' || renderable || draft !== null) && (
             <div className="flex min-h-0 flex-1 flex-col">
               {rendered && kind === 'markdown' && <div className="min-h-0 flex-1 overflow-auto p-3 text-[13px]"><Markdown text={text} /></div>}
               {rendered && kind === 'csv' && <CsvTable rows={content.data.table ?? []} truncated={!!content.data.table_truncated} />}
@@ -266,7 +294,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
                 <iframe src={content.data.preview_url ? appUrl(content.data.preview_url).href : rawUrl(true)} title={file} sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" className="min-h-0 w-full flex-1 border-0 bg-white" />
               )}
               {!rendered && (
-                <textarea readOnly={readOnly} value={text} onChange={(e) => setDraft(e.target.value)} spellCheck={false} aria-label={m.ws_panel_preview()} className="min-h-0 flex-1 resize-none bg-code-bg p-3 font-mono text-[12px] text-pre-text outline-none" />
+                <textarea ref={textRef} readOnly={readOnly} value={text} onChange={(e) => setDraft(e.target.value)} spellCheck={false} aria-label={m.ws_panel_preview()} className="min-h-0 flex-1 resize-none bg-code-bg p-3 font-mono text-[12px] text-pre-text outline-none" />
               )}
               <div className="flex items-center gap-2 border-t border-border-subtle px-2 py-1.5">
                 {rendered && !readOnly && <Button variant="ghost" onClick={() => setDraft(text)}>{m.edit()}</Button>}

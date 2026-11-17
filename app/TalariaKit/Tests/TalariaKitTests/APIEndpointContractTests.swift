@@ -1090,6 +1090,36 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(results(groups.first { $0.anchorMessageID == "view-calls" }?.toolCalls ?? []), expected)
     }
 
+    func testSharedWebSessionCarriesEachReadAndSearchSection() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-2323 has no such example.
+        guard let example = object["tool_file_views"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
+        let messages = try XCTUnwrap(session.messages)
+        let answer = try XCTUnwrap(messages.first { $0.messageId == "file-answer" })
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: answer))
+        let groups = ToolCallGroup.groups(messages: messages, messageOffset: nil)
+        for calls in [timeline.toolCalls, groups.first { $0.anchorMessageID == "file-calls" }?.toolCalls ?? []] {
+            let views = Dictionary(uniqueKeysWithValues: calls.map { ($0.id, $0.resultView) })
+            let excerpt = try XCTUnwrap(views["call-read"]??.fileExcerpt)
+            XCTAssertEqual(excerpt.path, "src/app.ts")
+            XCTAssertEqual(excerpt.focusPath, "src/app.ts")
+            XCTAssertEqual(excerpt.language, "ts")
+            XCTAssertEqual(excerpt.lines.map(\.n), [12, 13])
+            XCTAssertEqual(excerpt.lines.last?.text, "run(2)")
+            XCTAssertEqual([excerpt.totalLines, excerpt.nextOffset], [40, 14])
+            XCTAssertTrue(excerpt.truncated)
+            let search = try XCTUnwrap(views["call-search"]??.matches)
+            XCTAssertEqual(search.files.map(\.path), ["src/app.ts", "src/run.ts"])
+            XCTAssertEqual(search.files.last?.matches.map(\.line), [1, 4, 9])
+            XCTAssertEqual(search.files.first?.focusPath, "src/app.ts")
+            XCTAssertEqual(views["call-count"]??.matches?.files.map(\.count), [2, 3])
+            XCTAssertEqual(views["call-again"]??.text, "Unchanged since the last read")
+        }
+    }
+
     func testSharedWebSessionCarriesEachFileEditsDiff() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-448 has no such example.
