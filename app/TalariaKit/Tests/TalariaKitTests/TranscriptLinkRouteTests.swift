@@ -18,8 +18,15 @@ final class TranscriptLinkRouteTests: XCTestCase {
     }
 
     func testOtherSchemesKeepTheSystemBehaviour() throws {
-        for destination in ["mailto:fixture@example.invalid", "tel:+15550100", "talaria://session/fixture", "ftp://example.invalid/file", "docs/readme", "https:///no-host"] {
+        for destination in ["mailto:fixture@example.invalid", "tel:+15550100", "ftp://example.invalid/file", "docs/readme", "https:///no-host"] {
             XCTAssertEqual(try route(destination), .system, destination)
+        }
+    }
+
+    /// TAL-2326: the app's own links (a tool row's chat, Tasks, Skills or Settings page) go to its deep-link router.
+    func testAppLinksGoToTheAppRouter() throws {
+        for destination in ["talaria://session?id=fixture", "talaria://section?name=tasks"] {
+            XCTAssertEqual(try route(destination), .app(try XCTUnwrap(URL(string: destination))), destination)
         }
     }
 

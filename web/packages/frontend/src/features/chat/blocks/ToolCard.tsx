@@ -4,7 +4,7 @@ import { useApprovalFlash, useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon } from '../toolKind'
-import type { ApprovalAnsweredBy, BackgroundLink, FileExcerpt, ResultLinks, ResultPage, SearchMatches, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
+import type { ApprovalAnsweredBy, BackgroundLink, FileExcerpt, ResultLinks, ResultPage, SearchMatches, ToolApprovalOutcome, ToolField, ToolKind, ToolProgress, ToolResultView, ToolRow, ToolRows } from '@maudecode/talaria-web-contracts'
 import { agentsSummary, statusLabel } from '../../background/BackgroundWork'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
@@ -19,6 +19,8 @@ import { requestOpenFile } from '../../workspace/openFileRequest'
 import { RowContextMenu, type RowAction } from '../../../ui/Menu'
 import { copyWithToast } from '../../../lib/clipboard'
 import { Markdown } from '../render/Markdown'
+import { Link } from '@tanstack/react-router'
+import { Dot, type DotState } from '../../../ui/Badge'
 import { MediaTiles } from './MediaTiles'
 
 export interface ToolCardData {
@@ -190,8 +192,40 @@ function PagesResult({ pages }: { pages: ResultPage[] }) {
   )
 }
 
-/** The typed section a result view carries in place of its text (TAL-2323, TAL-2324, TAL-2325). */
-const hasSection = (view: ToolResultView | null): boolean => Boolean(view?.file_excerpt ?? view?.matches ?? view?.links ?? view?.pages ?? view?.analysis)
+const ROW_DOT: Record<NonNullable<ToolRow['status']>, DotState> = { ok: 'ok', warn: 'warning', error: 'error', pending: 'changed' }
+const ROW_LINK = 'min-w-0 truncate text-accent-text hover:underline'
+
+/** TAL-2326: a row's label, opening the Talaria page the server named: a chat, the scheduled jobs page, connections or a skill. */
+function ToolRowLabel({ row }: { row: ToolRow }) {
+  const link = row.link
+  if (link?.kind === 'session' && link.id) return <Link to="/session/$sessionId" params={{ sessionId: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>
+  if (link?.kind === 'crons') return <Link to="/tasks" search={link.id ? { job: link.id } : {}} className={ROW_LINK} title={row.label}>{row.label}</Link>
+  if (link?.kind === 'connectors') return <Link to="/settings/$section" params={{ section: 'tools' }} search={{ tab: 'connectors' }} className={ROW_LINK} title={row.label}>{row.label}</Link>
+  if (link?.kind === 'skill' && link.id) return <Link to="/skills" search={{ skill: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>
+  return <span className="min-w-0 truncate text-text" title={row.label}>{row.label}</span>
+}
+
+/** TAL-2326: a memory, skill, past-chat, scheduled job, connection or clarify result as its title, rows and a skill's text. */
+function ToolRowsResult({ rows }: { rows: ToolRows }) {
+  return (
+    <div className="tool-rows max-h-72 space-y-1.5 overflow-auto">
+      {rows.title && <div className={cn(LABEL, 'truncate')} title={rows.title}>{rows.title}</div>}
+      {rows.rows.map((row, i) => (
+        <div key={i} className="tool-row min-w-0" data-row-status={row.status}>
+          <div className="flex min-w-0 items-center gap-1.5">
+            {row.status && <Dot state={ROW_DOT[row.status]} />}
+            <ToolRowLabel row={row} />
+          </div>
+          {row.detail && <div className="truncate text-xs text-muted" title={row.detail}>{row.detail}</div>}
+        </div>
+      ))}
+      {rows.markdown && <Markdown text={rows.markdown} className="hermes-prose text-[13px]" />}
+    </div>
+  )
+}
+
+/** The typed section a result view carries in place of its text (TAL-2323, TAL-2324, TAL-2325, TAL-2326). */
+const hasSection = (view: ToolResultView | null): boolean => Boolean(view?.file_excerpt ?? view?.matches ?? view?.links ?? view?.pages ?? view?.analysis ?? view?.rows)
 
 /** A result's typed section, else its rows when the server sent them (a JSON object), else its sections as text. */
 function ResultBody({ view, text, sessionId }: { view: ToolResultView | null; text: string; sessionId?: string | undefined }) {
@@ -201,6 +235,7 @@ function ResultBody({ view, text, sessionId }: { view: ToolResultView | null; te
   if (view?.pages) return <PagesResult pages={view.pages} />
   // TAL-2325: what an image or video analysis said, formatted.
   if (view?.analysis) return <Markdown text={view.analysis} className="tool-analysis hermes-prose max-h-72 overflow-auto text-[13px]" />
+  if (view?.rows) return <ToolRowsResult rows={view.rows} />
   return view?.fields?.length ? <FieldRows fields={view.fields} /> : <pre className={RESULT_PRE}>{text}</pre>
 }
 

@@ -40,7 +40,7 @@
     "presentation": "generic"
   },
   "clarify": {
-    "kind": "unknown",
+    "kind": "question",
     "presentation": "clarify"
   },
   "close_terminal": {
@@ -52,8 +52,8 @@
     "presentation": "generic"
   },
   "cronjob_manage": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "schedule",
+    "presentation": "rows"
   },
   "delegate_task": {
     "kind": "delegate",
@@ -180,12 +180,12 @@
     "presentation": "generic"
   },
   "manage_connections": {
-    "kind": "unknown",
-    "presentation": "generic"
+    "kind": "connection",
+    "presentation": "rows"
   },
   "memory": {
     "kind": "memory",
-    "presentation": "generic"
+    "presentation": "rows"
   },
   "patch": {
     "kind": "write",
@@ -216,8 +216,8 @@
     "presentation": "matches"
   },
   "session_search": {
-    "kind": "search",
-    "presentation": "generic"
+    "kind": "session",
+    "presentation": "rows"
   },
   "set_theme": {
     "kind": "unknown",
@@ -233,15 +233,15 @@
   },
   "skill_manage": {
     "kind": "skill",
-    "presentation": "generic"
+    "presentation": "rows"
   },
   "skill_view": {
     "kind": "skill",
-    "presentation": "generic"
+    "presentation": "rows"
   },
   "skills_list": {
     "kind": "skill",
-    "presentation": "generic"
+    "presentation": "rows"
   },
   "terminal": {
     "kind": "shell",

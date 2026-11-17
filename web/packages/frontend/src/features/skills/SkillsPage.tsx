@@ -18,10 +18,11 @@ import { SkillRow } from './SkillRow'
 import { PendingWritesPanel, TextDiffReview } from '../pending-writes/PendingWritesPanel'
 import { useStreamContext } from '../../stream/connection'
 
-export function SkillsPage() {
+/** TAL-2326: `initialSkill` opens that skill's detail first, as a tool row's link asks. */
+export function SkillsPage({ initialSkill }: { initialSkill?: string | undefined } = {}) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('')
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(initialSkill ?? null)
   const skills = useQuery({ queryKey: keys.skills.all, queryFn: () => api.fetchSkills(), staleTime: 30_000 })
   const usage = useQuery({ queryKey: keys.skills.usage, queryFn: api.fetchSkillsUsage, staleTime: 60_000 })
   const effects = useResourceEffects<boolean>()

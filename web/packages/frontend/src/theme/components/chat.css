@@ -51,8 +51,8 @@
 /* Keep Markdown list markers explicit alongside Tailwind's native-style reset (TAL-423). */
 .hermes-prose ol{list-style:decimal}
 .hermes-prose ul{list-style:disc}
-/* TAL-2324: a web result's answer and page excerpts sit inside a tool row; their headings keep the row's text size. TAL-2325: an analysis too. */
-:is(.tool-links .hermes-prose,.tool-pages .hermes-prose,.tool-analysis.hermes-prose) :is(h1,h2,h3,h4,h5,h6){font-size:inherit;line-height:inherit;margin:.5em 0 .25em;font-weight:600}
+/* TAL-2324: a web result's answer and page excerpts sit inside a tool row; their headings keep the row's text size. TAL-2325: an analysis too; TAL-2326: a viewed skill's text. */
+:is(.tool-links .hermes-prose,.tool-pages .hermes-prose,.tool-analysis.hermes-prose,.tool-rows .hermes-prose) :is(h1,h2,h3,h4,h5,h6){font-size:inherit;line-height:inherit;margin:.5em 0 .25em;font-weight:600}
 /* TAL-1641: fullscreen overlays use the app's dialog layer. Auto margins centre a smaller table and
    fall back to the start edge when it overflows, so a large table still scrolls from its first row. */
 :is([data-streamdown="table-fullscreen"],[data-streamdown="mermaid-fullscreen"]){z-index:1300;background:var(--bg);color:var(--text)}

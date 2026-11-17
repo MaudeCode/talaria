@@ -69,6 +69,13 @@ it.each([[null], [undefined]])('offers no lock while the server reports it unava
   expect(screen.queryByRole('button', { name: 'Lock demo' })).toBeNull()
 })
 
+it('opens the skill a tool row links to (TAL-2326)', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><SkillsPage initialSkill="demo" /></QueryClientProvider>)
+  expect(await screen.findByLabelText('Skill content')).toHaveValue('Current editable content')
+  expect(api.fetchSkillContent).toHaveBeenCalledWith('demo')
+})
+
 async function openHistory() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={client}><SkillsPage /></QueryClientProvider>)

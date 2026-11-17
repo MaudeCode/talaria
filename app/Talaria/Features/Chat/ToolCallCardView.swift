@@ -110,6 +110,9 @@ struct ToolCallCardView: View {
                 } else if let analysis = shownCall.resultView?.analysis {
                     // TAL-2325: an image or video analysis, formatted.
                     ToolAnalysisSection(analysis: analysis)
+                } else if let rows = shownCall.resultView?.rows {
+                    // TAL-2326: memory, skill, past-chat, job, connection and clarify results as rows.
+                    ToolRowsSection(rows: rows)
                 } else if let result = displayContent.result {
                     resultSection(result)
                 }

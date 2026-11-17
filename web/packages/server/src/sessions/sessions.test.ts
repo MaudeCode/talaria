@@ -3211,6 +3211,59 @@ describe('session detail ships web_search, x_search and web_extract sections (TA
   })
 })
 
+describe('session detail ships memory, skill, session, scheduled job, connection and clarify rows (TAL-2326)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
+  const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
+  /** A memory write, a staged skill write, a skill view, a past-chat search, a paused job, a connect operation and an answered question, as Agent v0.23 returns them. */
+  const transcript: Json[] = [
+    { role: 'user', content: 'Tidy up', message_id: 'rows-user', timestamp: 9000, _turn_id: 'rows-run' },
+    { role: 'assistant', content: '', message_id: 'rows-calls', timestamp: 9001, _turn_id: 'rows-run', tool_calls: [
+      call('call-memory', 'memory', { target: 'user', operations: [{ action: 'add', content: 'Prefers short replies' }] }),
+      call('call-skill', 'skill_manage', { action: 'create', name: 'digest', content: '# Digest' }),
+      call('call-view', 'skill_view', { name: 'pdf' }),
+      call('call-search', 'session_search', { query: 'deploy' }),
+      call('call-cron', 'cronjob_manage', { action: 'pause', job_id: 'job-1' }),
+      call('call-connect', 'manage_connections', { action: 'connect', connectors: ['github'] }),
+      call('call-clarify', 'clarify', { questions: [{ question: 'Which branch?', choices: ['main', 'dev'] }] }),
+    ] },
+    { role: 'tool', tool_call_id: 'call-memory', content: JSON.stringify({ success: true, done: true, target: 'user', usage: '4% — 88/2,200 chars', entry_count: 2, message: 'Applied 1 operation(s).', note: 'Write saved.' }), timestamp: 9002, _turn_id: 'rows-run' },
+    { role: 'tool', tool_call_id: 'call-skill', content: JSON.stringify({ success: true, staged: true, pending_id: 'pend-1', gist: 'New digest skill', message: 'Waiting for the user to approve.' }), timestamp: 9003, _turn_id: 'rows-run' },
+    { role: 'tool', tool_call_id: 'call-view', content: JSON.stringify({ success: true, name: 'pdf', description: 'Read PDFs', tags: [], content: '# PDF\n\nUse **pdftotext**.', path: 'pdf/SKILL.md', linked_files: null, readiness_status: 'setup_needed', setup_needed: true, setup_note: 'Set $PDF_KEY.' }), timestamp: 9004, _turn_id: 'rows-run' },
+    { role: 'tool', tool_call_id: 'call-search', content: JSON.stringify({ success: true, mode: 'discover', query: 'deploy', detail: 'summary', results: [{ session_id: 'past-1', when: 'November 16, 2026 at 09:00 AM', source: 'web', model: 'm', title: 'Deploy fix', matched_role: 'user', snippet: 'the deploy failed' }], count: 1 }), timestamp: 9005, _turn_id: 'rows-run' },
+    { role: 'tool', tool_call_id: 'call-cron', content: JSON.stringify({ success: true, job: { job_id: 'job-1', name: 'Morning digest', schedule: 'every day at 09:00', next_run_at: null, last_status: 'ok', enabled: false, state: 'paused' } }), timestamp: 9006, _turn_id: 'rows-run' },
+    { role: 'tool', tool_call_id: 'call-connect', content: JSON.stringify({ targets: [{ name: 'github', kind: 'connector', action: 'connect', state: 'initiated', connect_url: 'https://portal.example/authorize?code=abc' }], status: 'initiated', note: 'Show each connect_url to the user.' }), timestamp: 9007, _turn_id: 'rows-run' },
+    { role: 'tool', tool_call_id: 'call-clarify', content: JSON.stringify({ responses: [{ question: 'Which branch?', choices_offered: ['main', 'dev'], status: 'answered', user_response: 'dev' }], outcome: 'answered' }), timestamp: 9008, _turn_id: 'rows-run' },
+    { role: 'assistant', content: 'Done.', message_id: 'rows-answer', timestamp: 9009, _turn_id: 'rows-run' },
+  ]
+
+  it('matches the shared contract fixture in full detail and every window, on the calls and the scene alike, with no connect URL shown', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = structuredClone(transcript)
+    session.title = 'Tool rows views'
+    await s.deps.sessionStore.save(session)
+    const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_rows_views as Json
+    const expected = fixture.expected as Json
+    expect((expected['call-search'] as Json).rows).toMatchObject({ rows: [{ link: { kind: 'session', id: 'past-1' } }] })
+    // What a client shows, which every served view below equals, never carries the connect URL.
+    expect(JSON.stringify(expected)).not.toContain('portal.example')
+    for (const query of ['', '&msg_limit=50']) {
+      const served = (await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json
+      const messages = served.messages as Json[]
+      expect(messages, query).toEqual((fixture.session as Json).messages)
+      const calls = messages.find((m) => m.message_id === 'rows-calls')?.tool_calls as Json[]
+      expect(Object.fromEntries(calls.map((c) => [c.id, c.result_view])), query).toEqual(expected)
+      expect(Object.fromEntries(calls.map((c) => [c.id, c.kind])), query).toMatchObject({ 'call-search': 'session', 'call-cron': 'schedule', 'call-connect': 'connection', 'call-clarify': 'question' })
+      const rows = ((messages.find((m) => m.message_id === 'rows-answer')?._anchor_activity_scene as Json).activity_rows as Json[]).filter((r) => r.role === 'tool')
+      expect(Object.fromEntries(rows.map((r) => [(r.tool as Json).id, (r.tool as Json).result_view])), query).toEqual(expected)
+    }
+  })
+})
+
 describe('session detail ships media and analysis sections (TAL-2325)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

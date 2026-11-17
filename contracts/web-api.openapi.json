@@ -8046,6 +8046,10 @@
                                         "video",
                                         "image_analysis",
                                         "video_analysis",
+                                        "session",
+                                        "schedule",
+                                        "connection",
+                                        "question",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -8635,6 +8639,53 @@
                                             "analysis": {
                                               "type": "string"
                                             },
+                                            "rows": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "rows": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "label": {
+                                                        "type": "string"
+                                                      },
+                                                      "detail": {
+                                                        "type": "string"
+                                                      },
+                                                      "status": {
+                                                        "enum": [
+                                                          "ok",
+                                                          "warn",
+                                                          "error",
+                                                          "pending"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "link": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "kind": {},
+                                                          "id": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "markdown": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "rows"
+                                              ]
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -9001,6 +9052,10 @@
                                                 "video",
                                                 "image_analysis",
                                                 "video_analysis",
+                                                "session",
+                                                "schedule",
+                                                "connection",
+                                                "question",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -9379,6 +9434,31 @@
                                                     },
                                                     "analysis": {
                                                       "type": "string"
+                                                    },
+                                                    "rows": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "rows": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "markdown": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "rows"
+                                                      ]
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -10156,6 +10236,10 @@
                                   "video",
                                   "image_analysis",
                                   "video_analysis",
+                                  "session",
+                                  "schedule",
+                                  "connection",
+                                  "question",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -10790,6 +10874,66 @@
                                       },
                                       "analysis": {
                                         "type": "string"
+                                      },
+                                      "rows": {
+                                        "type": "object",
+                                        "properties": {
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "detail": {
+                                                  "type": "string"
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "ok",
+                                                    "warn",
+                                                    "error",
+                                                    "pending"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "link": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "session",
+                                                        "crons",
+                                                        "connectors",
+                                                        "skill"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "id": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label"
+                                              ]
+                                            }
+                                          },
+                                          "markdown": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "rows"
+                                        ]
                                       },
                                       "fields": {
                                         "type": "array",
@@ -14786,6 +14930,10 @@
                                         "video",
                                         "image_analysis",
                                         "video_analysis",
+                                        "session",
+                                        "schedule",
+                                        "connection",
+                                        "question",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -15375,6 +15523,53 @@
                                             "analysis": {
                                               "type": "string"
                                             },
+                                            "rows": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "rows": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "label": {
+                                                        "type": "string"
+                                                      },
+                                                      "detail": {
+                                                        "type": "string"
+                                                      },
+                                                      "status": {
+                                                        "enum": [
+                                                          "ok",
+                                                          "warn",
+                                                          "error",
+                                                          "pending"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "link": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "kind": {},
+                                                          "id": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "markdown": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "rows"
+                                              ]
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -15741,6 +15936,10 @@
                                                 "video",
                                                 "image_analysis",
                                                 "video_analysis",
+                                                "session",
+                                                "schedule",
+                                                "connection",
+                                                "question",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -16119,6 +16318,31 @@
                                                     },
                                                     "analysis": {
                                                       "type": "string"
+                                                    },
+                                                    "rows": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "rows": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "markdown": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "rows"
+                                                      ]
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -16896,6 +17120,10 @@
                                   "video",
                                   "image_analysis",
                                   "video_analysis",
+                                  "session",
+                                  "schedule",
+                                  "connection",
+                                  "question",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -17530,6 +17758,66 @@
                                       },
                                       "analysis": {
                                         "type": "string"
+                                      },
+                                      "rows": {
+                                        "type": "object",
+                                        "properties": {
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "detail": {
+                                                  "type": "string"
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "ok",
+                                                    "warn",
+                                                    "error",
+                                                    "pending"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "link": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "session",
+                                                        "crons",
+                                                        "connectors",
+                                                        "skill"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "id": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label"
+                                              ]
+                                            }
+                                          },
+                                          "markdown": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "rows"
+                                        ]
                                       },
                                       "fields": {
                                         "type": "array",
@@ -20197,6 +20485,10 @@
                                         "video",
                                         "image_analysis",
                                         "video_analysis",
+                                        "session",
+                                        "schedule",
+                                        "connection",
+                                        "question",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -20786,6 +21078,53 @@
                                             "analysis": {
                                               "type": "string"
                                             },
+                                            "rows": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "rows": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "label": {
+                                                        "type": "string"
+                                                      },
+                                                      "detail": {
+                                                        "type": "string"
+                                                      },
+                                                      "status": {
+                                                        "enum": [
+                                                          "ok",
+                                                          "warn",
+                                                          "error",
+                                                          "pending"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "link": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "kind": {},
+                                                          "id": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "markdown": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "rows"
+                                              ]
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -21152,6 +21491,10 @@
                                                 "video",
                                                 "image_analysis",
                                                 "video_analysis",
+                                                "session",
+                                                "schedule",
+                                                "connection",
+                                                "question",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -21530,6 +21873,31 @@
                                                     },
                                                     "analysis": {
                                                       "type": "string"
+                                                    },
+                                                    "rows": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "rows": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "markdown": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "rows"
+                                                      ]
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -22307,6 +22675,10 @@
                                   "video",
                                   "image_analysis",
                                   "video_analysis",
+                                  "session",
+                                  "schedule",
+                                  "connection",
+                                  "question",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -22941,6 +23313,66 @@
                                       },
                                       "analysis": {
                                         "type": "string"
+                                      },
+                                      "rows": {
+                                        "type": "object",
+                                        "properties": {
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "detail": {
+                                                  "type": "string"
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "ok",
+                                                    "warn",
+                                                    "error",
+                                                    "pending"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "link": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "session",
+                                                        "crons",
+                                                        "connectors",
+                                                        "skill"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "id": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label"
+                                              ]
+                                            }
+                                          },
+                                          "markdown": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "rows"
+                                        ]
                                       },
                                       "fields": {
                                         "type": "array",
@@ -28740,6 +29172,10 @@
                                         "video",
                                         "image_analysis",
                                         "video_analysis",
+                                        "session",
+                                        "schedule",
+                                        "connection",
+                                        "question",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -29329,6 +29765,53 @@
                                             "analysis": {
                                               "type": "string"
                                             },
+                                            "rows": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "rows": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "label": {
+                                                        "type": "string"
+                                                      },
+                                                      "detail": {
+                                                        "type": "string"
+                                                      },
+                                                      "status": {
+                                                        "enum": [
+                                                          "ok",
+                                                          "warn",
+                                                          "error",
+                                                          "pending"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "link": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "kind": {},
+                                                          "id": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "markdown": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "rows"
+                                              ]
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -29695,6 +30178,10 @@
                                                 "video",
                                                 "image_analysis",
                                                 "video_analysis",
+                                                "session",
+                                                "schedule",
+                                                "connection",
+                                                "question",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -30073,6 +30560,31 @@
                                                     },
                                                     "analysis": {
                                                       "type": "string"
+                                                    },
+                                                    "rows": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "rows": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "markdown": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "rows"
+                                                      ]
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -30850,6 +31362,10 @@
                                   "video",
                                   "image_analysis",
                                   "video_analysis",
+                                  "session",
+                                  "schedule",
+                                  "connection",
+                                  "question",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -31484,6 +32000,66 @@
                                       },
                                       "analysis": {
                                         "type": "string"
+                                      },
+                                      "rows": {
+                                        "type": "object",
+                                        "properties": {
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "detail": {
+                                                  "type": "string"
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "ok",
+                                                    "warn",
+                                                    "error",
+                                                    "pending"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "link": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "session",
+                                                        "crons",
+                                                        "connectors",
+                                                        "skill"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "id": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label"
+                                              ]
+                                            }
+                                          },
+                                          "markdown": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "rows"
+                                        ]
                                       },
                                       "fields": {
                                         "type": "array",
@@ -36594,6 +37170,10 @@
                                         "video",
                                         "image_analysis",
                                         "video_analysis",
+                                        "session",
+                                        "schedule",
+                                        "connection",
+                                        "question",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -37183,6 +37763,53 @@
                                             "analysis": {
                                               "type": "string"
                                             },
+                                            "rows": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "rows": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "label": {
+                                                        "type": "string"
+                                                      },
+                                                      "detail": {
+                                                        "type": "string"
+                                                      },
+                                                      "status": {
+                                                        "enum": [
+                                                          "ok",
+                                                          "warn",
+                                                          "error",
+                                                          "pending"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "link": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "kind": {},
+                                                          "id": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "markdown": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "rows"
+                                              ]
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -37549,6 +38176,10 @@
                                                 "video",
                                                 "image_analysis",
                                                 "video_analysis",
+                                                "session",
+                                                "schedule",
+                                                "connection",
+                                                "question",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -37927,6 +38558,31 @@
                                                     },
                                                     "analysis": {
                                                       "type": "string"
+                                                    },
+                                                    "rows": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "rows": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "markdown": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "rows"
+                                                      ]
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -38704,6 +39360,10 @@
                                   "video",
                                   "image_analysis",
                                   "video_analysis",
+                                  "session",
+                                  "schedule",
+                                  "connection",
+                                  "question",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -39338,6 +39998,66 @@
                                       },
                                       "analysis": {
                                         "type": "string"
+                                      },
+                                      "rows": {
+                                        "type": "object",
+                                        "properties": {
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "detail": {
+                                                  "type": "string"
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "ok",
+                                                    "warn",
+                                                    "error",
+                                                    "pending"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "link": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "session",
+                                                        "crons",
+                                                        "connectors",
+                                                        "skill"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "id": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label"
+                                              ]
+                                            }
+                                          },
+                                          "markdown": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "rows"
+                                        ]
                                       },
                                       "fields": {
                                         "type": "array",
@@ -45080,6 +45800,10 @@
                                         "video",
                                         "image_analysis",
                                         "video_analysis",
+                                        "session",
+                                        "schedule",
+                                        "connection",
+                                        "question",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -45669,6 +46393,53 @@
                                             "analysis": {
                                               "type": "string"
                                             },
+                                            "rows": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "rows": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "label": {
+                                                        "type": "string"
+                                                      },
+                                                      "detail": {
+                                                        "type": "string"
+                                                      },
+                                                      "status": {
+                                                        "enum": [
+                                                          "ok",
+                                                          "warn",
+                                                          "error",
+                                                          "pending"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "link": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "kind": {},
+                                                          "id": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "markdown": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "rows"
+                                              ]
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -46035,6 +46806,10 @@
                                                 "video",
                                                 "image_analysis",
                                                 "video_analysis",
+                                                "session",
+                                                "schedule",
+                                                "connection",
+                                                "question",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -46413,6 +47188,31 @@
                                                     },
                                                     "analysis": {
                                                       "type": "string"
+                                                    },
+                                                    "rows": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "rows": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "markdown": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "rows"
+                                                      ]
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -47190,6 +47990,10 @@
                                   "video",
                                   "image_analysis",
                                   "video_analysis",
+                                  "session",
+                                  "schedule",
+                                  "connection",
+                                  "question",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -47824,6 +48628,66 @@
                                       },
                                       "analysis": {
                                         "type": "string"
+                                      },
+                                      "rows": {
+                                        "type": "object",
+                                        "properties": {
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "detail": {
+                                                  "type": "string"
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "ok",
+                                                    "warn",
+                                                    "error",
+                                                    "pending"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "link": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "session",
+                                                        "crons",
+                                                        "connectors",
+                                                        "skill"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "id": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label"
+                                              ]
+                                            }
+                                          },
+                                          "markdown": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "rows"
+                                        ]
                                       },
                                       "fields": {
                                         "type": "array",
@@ -50436,6 +51300,10 @@
                                         "video",
                                         "image_analysis",
                                         "video_analysis",
+                                        "session",
+                                        "schedule",
+                                        "connection",
+                                        "question",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -51025,6 +51893,53 @@
                                             "analysis": {
                                               "type": "string"
                                             },
+                                            "rows": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "rows": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "label": {
+                                                        "type": "string"
+                                                      },
+                                                      "detail": {
+                                                        "type": "string"
+                                                      },
+                                                      "status": {
+                                                        "enum": [
+                                                          "ok",
+                                                          "warn",
+                                                          "error",
+                                                          "pending"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "link": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "kind": {},
+                                                          "id": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "markdown": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "rows"
+                                              ]
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -51391,6 +52306,10 @@
                                                 "video",
                                                 "image_analysis",
                                                 "video_analysis",
+                                                "session",
+                                                "schedule",
+                                                "connection",
+                                                "question",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -51769,6 +52688,31 @@
                                                     },
                                                     "analysis": {
                                                       "type": "string"
+                                                    },
+                                                    "rows": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "rows": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "markdown": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "rows"
+                                                      ]
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -52546,6 +53490,10 @@
                                   "video",
                                   "image_analysis",
                                   "video_analysis",
+                                  "session",
+                                  "schedule",
+                                  "connection",
+                                  "question",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -53180,6 +54128,66 @@
                                       },
                                       "analysis": {
                                         "type": "string"
+                                      },
+                                      "rows": {
+                                        "type": "object",
+                                        "properties": {
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "detail": {
+                                                  "type": "string"
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "ok",
+                                                    "warn",
+                                                    "error",
+                                                    "pending"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "link": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "session",
+                                                        "crons",
+                                                        "connectors",
+                                                        "skill"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "id": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label"
+                                              ]
+                                            }
+                                          },
+                                          "markdown": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "rows"
+                                        ]
                                       },
                                       "fields": {
                                         "type": "array",
@@ -55854,6 +56862,10 @@
                                         "video",
                                         "image_analysis",
                                         "video_analysis",
+                                        "session",
+                                        "schedule",
+                                        "connection",
+                                        "question",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -56443,6 +57455,53 @@
                                             "analysis": {
                                               "type": "string"
                                             },
+                                            "rows": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "rows": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "label": {
+                                                        "type": "string"
+                                                      },
+                                                      "detail": {
+                                                        "type": "string"
+                                                      },
+                                                      "status": {
+                                                        "enum": [
+                                                          "ok",
+                                                          "warn",
+                                                          "error",
+                                                          "pending"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "link": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "kind": {},
+                                                          "id": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "markdown": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "rows"
+                                              ]
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -56809,6 +57868,10 @@
                                                 "video",
                                                 "image_analysis",
                                                 "video_analysis",
+                                                "session",
+                                                "schedule",
+                                                "connection",
+                                                "question",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -57187,6 +58250,31 @@
                                                     },
                                                     "analysis": {
                                                       "type": "string"
+                                                    },
+                                                    "rows": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "rows": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "markdown": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "rows"
+                                                      ]
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -57964,6 +59052,10 @@
                                   "video",
                                   "image_analysis",
                                   "video_analysis",
+                                  "session",
+                                  "schedule",
+                                  "connection",
+                                  "question",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -58598,6 +59690,66 @@
                                       },
                                       "analysis": {
                                         "type": "string"
+                                      },
+                                      "rows": {
+                                        "type": "object",
+                                        "properties": {
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "detail": {
+                                                  "type": "string"
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "ok",
+                                                    "warn",
+                                                    "error",
+                                                    "pending"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "link": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "session",
+                                                        "crons",
+                                                        "connectors",
+                                                        "skill"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "id": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label"
+                                              ]
+                                            }
+                                          },
+                                          "markdown": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "rows"
+                                        ]
                                       },
                                       "fields": {
                                         "type": "array",
@@ -61270,6 +62422,10 @@
                                         "video",
                                         "image_analysis",
                                         "video_analysis",
+                                        "session",
+                                        "schedule",
+                                        "connection",
+                                        "question",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -61859,6 +63015,53 @@
                                             "analysis": {
                                               "type": "string"
                                             },
+                                            "rows": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "rows": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "label": {
+                                                        "type": "string"
+                                                      },
+                                                      "detail": {
+                                                        "type": "string"
+                                                      },
+                                                      "status": {
+                                                        "enum": [
+                                                          "ok",
+                                                          "warn",
+                                                          "error",
+                                                          "pending"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "link": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "kind": {},
+                                                          "id": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "markdown": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "rows"
+                                              ]
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -62225,6 +63428,10 @@
                                                 "video",
                                                 "image_analysis",
                                                 "video_analysis",
+                                                "session",
+                                                "schedule",
+                                                "connection",
+                                                "question",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -62603,6 +63810,31 @@
                                                     },
                                                     "analysis": {
                                                       "type": "string"
+                                                    },
+                                                    "rows": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "rows": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "markdown": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "rows"
+                                                      ]
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -63380,6 +64612,10 @@
                                   "video",
                                   "image_analysis",
                                   "video_analysis",
+                                  "session",
+                                  "schedule",
+                                  "connection",
+                                  "question",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -64014,6 +65250,66 @@
                                       },
                                       "analysis": {
                                         "type": "string"
+                                      },
+                                      "rows": {
+                                        "type": "object",
+                                        "properties": {
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "detail": {
+                                                  "type": "string"
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "ok",
+                                                    "warn",
+                                                    "error",
+                                                    "pending"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "link": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "session",
+                                                        "crons",
+                                                        "connectors",
+                                                        "skill"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "id": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label"
+                                              ]
+                                            }
+                                          },
+                                          "markdown": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "rows"
+                                        ]
                                       },
                                       "fields": {
                                         "type": "array",
@@ -66459,6 +67755,10 @@
                                   "video",
                                   "image_analysis",
                                   "video_analysis",
+                                  "session",
+                                  "schedule",
+                                  "connection",
+                                  "question",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -67065,6 +68365,66 @@
                                       },
                                       "analysis": {
                                         "type": "string"
+                                      },
+                                      "rows": {
+                                        "type": "object",
+                                        "properties": {
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "detail": {
+                                                  "type": "string"
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "ok",
+                                                    "warn",
+                                                    "error",
+                                                    "pending"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "link": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "session",
+                                                        "crons",
+                                                        "connectors",
+                                                        "skill"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "id": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label"
+                                              ]
+                                            }
+                                          },
+                                          "markdown": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "rows"
+                                        ]
                                       },
                                       "fields": {
                                         "type": "array",
@@ -68293,6 +69653,66 @@
                         },
                         "analysis": {
                           "type": "string"
+                        },
+                        "rows": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "rows": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "detail": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "enum": [
+                                      "ok",
+                                      "warn",
+                                      "error",
+                                      "pending"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "link": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "session",
+                                          "crons",
+                                          "connectors",
+                                          "skill"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "label"
+                                ]
+                              }
+                            },
+                            "markdown": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "rows"
+                          ]
                         },
                         "fields": {
                           "type": "array",
@@ -78787,6 +80207,10 @@
                                         "video",
                                         "image_analysis",
                                         "video_analysis",
+                                        "session",
+                                        "schedule",
+                                        "connection",
+                                        "question",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -79376,6 +80800,53 @@
                                             "analysis": {
                                               "type": "string"
                                             },
+                                            "rows": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "rows": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "label": {
+                                                        "type": "string"
+                                                      },
+                                                      "detail": {
+                                                        "type": "string"
+                                                      },
+                                                      "status": {
+                                                        "enum": [
+                                                          "ok",
+                                                          "warn",
+                                                          "error",
+                                                          "pending"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "link": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "kind": {},
+                                                          "id": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "markdown": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "rows"
+                                              ]
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -79742,6 +81213,10 @@
                                                 "video",
                                                 "image_analysis",
                                                 "video_analysis",
+                                                "session",
+                                                "schedule",
+                                                "connection",
+                                                "question",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -80120,6 +81595,31 @@
                                                     },
                                                     "analysis": {
                                                       "type": "string"
+                                                    },
+                                                    "rows": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "rows": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "markdown": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "rows"
+                                                      ]
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -80897,6 +82397,10 @@
                                   "video",
                                   "image_analysis",
                                   "video_analysis",
+                                  "session",
+                                  "schedule",
+                                  "connection",
+                                  "question",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -81531,6 +83035,66 @@
                                       },
                                       "analysis": {
                                         "type": "string"
+                                      },
+                                      "rows": {
+                                        "type": "object",
+                                        "properties": {
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "detail": {
+                                                  "type": "string"
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "ok",
+                                                    "warn",
+                                                    "error",
+                                                    "pending"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "link": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "session",
+                                                        "crons",
+                                                        "connectors",
+                                                        "skill"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "id": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label"
+                                              ]
+                                            }
+                                          },
+                                          "markdown": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "rows"
+                                        ]
                                       },
                                       "fields": {
                                         "type": "array",
@@ -84195,6 +85759,10 @@
                                         "video",
                                         "image_analysis",
                                         "video_analysis",
+                                        "session",
+                                        "schedule",
+                                        "connection",
+                                        "question",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -84784,6 +86352,53 @@
                                             "analysis": {
                                               "type": "string"
                                             },
+                                            "rows": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "rows": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "label": {
+                                                        "type": "string"
+                                                      },
+                                                      "detail": {
+                                                        "type": "string"
+                                                      },
+                                                      "status": {
+                                                        "enum": [
+                                                          "ok",
+                                                          "warn",
+                                                          "error",
+                                                          "pending"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "link": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "kind": {},
+                                                          "id": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "markdown": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "rows"
+                                              ]
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -85150,6 +86765,10 @@
                                                 "video",
                                                 "image_analysis",
                                                 "video_analysis",
+                                                "session",
+                                                "schedule",
+                                                "connection",
+                                                "question",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -85528,6 +87147,31 @@
                                                     },
                                                     "analysis": {
                                                       "type": "string"
+                                                    },
+                                                    "rows": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "rows": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "markdown": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "rows"
+                                                      ]
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -86305,6 +87949,10 @@
                                   "video",
                                   "image_analysis",
                                   "video_analysis",
+                                  "session",
+                                  "schedule",
+                                  "connection",
+                                  "question",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -86939,6 +88587,66 @@
                                       },
                                       "analysis": {
                                         "type": "string"
+                                      },
+                                      "rows": {
+                                        "type": "object",
+                                        "properties": {
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "detail": {
+                                                  "type": "string"
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "ok",
+                                                    "warn",
+                                                    "error",
+                                                    "pending"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "link": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "session",
+                                                        "crons",
+                                                        "connectors",
+                                                        "skill"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "id": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label"
+                                              ]
+                                            }
+                                          },
+                                          "markdown": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "rows"
+                                        ]
                                       },
                                       "fields": {
                                         "type": "array",
@@ -90289,6 +91997,10 @@
                                         "video",
                                         "image_analysis",
                                         "video_analysis",
+                                        "session",
+                                        "schedule",
+                                        "connection",
+                                        "question",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -90878,6 +92590,53 @@
                                             "analysis": {
                                               "type": "string"
                                             },
+                                            "rows": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "rows": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "label": {
+                                                        "type": "string"
+                                                      },
+                                                      "detail": {
+                                                        "type": "string"
+                                                      },
+                                                      "status": {
+                                                        "enum": [
+                                                          "ok",
+                                                          "warn",
+                                                          "error",
+                                                          "pending"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "link": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "kind": {},
+                                                          "id": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "markdown": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "rows"
+                                              ]
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -91244,6 +93003,10 @@
                                                 "video",
                                                 "image_analysis",
                                                 "video_analysis",
+                                                "session",
+                                                "schedule",
+                                                "connection",
+                                                "question",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -91622,6 +93385,31 @@
                                                     },
                                                     "analysis": {
                                                       "type": "string"
+                                                    },
+                                                    "rows": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "rows": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "markdown": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "rows"
+                                                      ]
                                                     },
                                                     "fields": {
                                                       "type": "array",
@@ -92399,6 +94187,10 @@
                                   "video",
                                   "image_analysis",
                                   "video_analysis",
+                                  "session",
+                                  "schedule",
+                                  "connection",
+                                  "question",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -93033,6 +94825,66 @@
                                       },
                                       "analysis": {
                                         "type": "string"
+                                      },
+                                      "rows": {
+                                        "type": "object",
+                                        "properties": {
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "detail": {
+                                                  "type": "string"
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "ok",
+                                                    "warn",
+                                                    "error",
+                                                    "pending"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "link": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "enum": [
+                                                        "session",
+                                                        "crons",
+                                                        "connectors",
+                                                        "skill"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "id": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "label"
+                                              ]
+                                            }
+                                          },
+                                          "markdown": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "rows"
+                                        ]
                                       },
                                       "fields": {
                                         "type": "array",
@@ -96254,6 +98106,10 @@
                                             "video",
                                             "image_analysis",
                                             "video_analysis",
+                                            "session",
+                                            "schedule",
+                                            "connection",
+                                            "question",
                                             "unknown"
                                           ],
                                           "type": "string"
@@ -96789,6 +98645,32 @@
                                                 "analysis": {
                                                   "type": "string"
                                                 },
+                                                "rows": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "title": {
+                                                      "type": "string"
+                                                    },
+                                                    "rows": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "label": {},
+                                                          "detail": {},
+                                                          "status": {},
+                                                          "link": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "markdown": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "rows"
+                                                  ]
+                                                },
                                                 "fields": {
                                                   "type": "array",
                                                   "items": {
@@ -97137,6 +99019,10 @@
                                                     "video",
                                                     "image_analysis",
                                                     "video_analysis",
+                                                    "session",
+                                                    "schedule",
+                                                    "connection",
+                                                    "question",
                                                     "unknown"
                                                   ],
                                                   "type": "string"
@@ -97333,6 +99219,14 @@
                                                         },
                                                         "analysis": {
                                                           "type": "string"
+                                                        },
+                                                        "rows": {
+                                                          "type": "object",
+                                                          "properties": {
+                                                            "title": {},
+                                                            "rows": {},
+                                                            "markdown": {}
+                                                          }
                                                         },
                                                         "fields": {
                                                           "type": "array",
@@ -98093,6 +99987,10 @@
                                       "video",
                                       "image_analysis",
                                       "video_analysis",
+                                      "session",
+                                      "schedule",
+                                      "connection",
+                                      "question",
                                       "unknown"
                                     ],
                                     "type": "string"
@@ -98717,6 +100615,66 @@
                                           },
                                           "analysis": {
                                             "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "object",
+                                            "properties": {
+                                              "title": {
+                                                "type": "string"
+                                              },
+                                              "rows": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "label": {
+                                                      "type": "string"
+                                                    },
+                                                    "detail": {
+                                                      "type": "string"
+                                                    },
+                                                    "status": {
+                                                      "enum": [
+                                                        "ok",
+                                                        "warn",
+                                                        "error",
+                                                        "pending"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "link": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "kind": {
+                                                          "enum": [
+                                                            "session",
+                                                            "crons",
+                                                            "connectors",
+                                                            "skill"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "id": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "kind"
+                                                      ]
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "label"
+                                                  ]
+                                                }
+                                              },
+                                              "markdown": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "rows"
+                                            ]
                                           },
                                           "fields": {
                                             "type": "array",
@@ -146629,6 +148587,10 @@
                                         "video",
                                         "image_analysis",
                                         "video_analysis",
+                                        "session",
+                                        "schedule",
+                                        "connection",
+                                        "question",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -147218,6 +149180,53 @@
                                             "analysis": {
                                               "type": "string"
                                             },
+                                            "rows": {
+                                              "type": "object",
+                                              "properties": {
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "rows": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "label": {
+                                                        "type": "string"
+                                                      },
+                                                      "detail": {
+                                                        "type": "string"
+                                                      },
+                                                      "status": {
+                                                        "enum": [
+                                                          "ok",
+                                                          "warn",
+                                                          "error",
+                                                          "pending"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "link": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "kind": {},
+                                                          "id": {}
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "markdown": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "rows"
+                                              ]
+                                            },
                                             "fields": {
                                               "type": "array",
                                               "items": {
@@ -147584,6 +149593,10 @@
                                                 "video",
                                                 "image_analysis",
                                                 "video_analysis",
+                                                "session",
+                                                "schedule",
+                                                "connection",
+                                                "question",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -147962,6 +149975,31 @@
                                                     },
                                                     "analysis": {
                                                       "type": "string"
+                                                    },
+                                                    "rows": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "title": {
+                                                          "type": "string"
+                                                        },
+                                                        "rows": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "anyOf": [
+                                                              {},
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "markdown": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "rows"
+                                                      ]
                                                     },
                                                     "fields": {
                                                       "type": "array",

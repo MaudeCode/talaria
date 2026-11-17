@@ -725,14 +725,16 @@ on the next turn. The Agent's filter also scopes deferred tool search and calls.
 `TOOL_PRESENTATIONS` in `packages/contracts` (TAL-2322) lists every tool a supported Agent
 registers, with two columns: `kind`, the icon and verb clients map, and `presentation`, how the
 server shows the call's result. `terminal` (`terminal`, `process_manage`, `execute_code`) shows the
-output streams, error and exit code; `diff` (`patch`, `write_file`) the file edit; `clarify` shows
-as the question dialog, never a tool row; `todo` and `delegate` show in the session's todo list and
+output streams, error and exit code; `diff` (`patch`, `write_file`) the file edit; `clarify` asks
+through the question dialog and, answered, shows each question and its answer as `rows`; `todo` and `delegate` show in the session's todo list and
 subagent rows; `file_excerpt` (`read_file`, TAL-2323) shows the lines read under the file's path
 with their real numbers, and `matches` (`search_files`) the matches grouped by file; `links`
 (`web_search`, `x_search`, TAL-2324) the result's links, under an X search's answer, and `pages`
 (`web_extract`) each page's excerpt or error; `media` (`image_generate`, `text_to_speech`, `video_generate`,
 `xai_video_edit`, `xai_video_extend`, TAL-2325) the images, speech or video the tool made, under its row, and `analysis`
-(`vision_analyze`, `video_analyze`) what it said about its image or video; every other tool is `generic`, its result's text, else its key/value fields. The
+(`vision_analyze`, `video_analyze`) what it said about its image or video; `rows` (`memory`, `skills_list`,
+`skill_view`, `skill_manage`, `session_search`, `cronjob_manage`, `manage_connections`, TAL-2326) a titled list of
+rows, each opening the chat, scheduled job, connected apps or skill it names, and a viewed skill's Markdown; every other tool is `generic`, its result's text, else its key/value fields. The
 server reads a listed tool's kind and presentation from the table; MCP, connector and plugin tools
 keep the name-token rules and the generic result parser, and Talaria's own tools stay in
 `TALARIA_TOOL_NAMES`.

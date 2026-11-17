@@ -72,6 +72,11 @@ public enum AssistantActivitySummary: Sendable {
         case video
         case imageAnalysis
         case videoAnalysis
+        // TAL-2326: past chats searched, scheduled jobs, connected apps and questions asked.
+        case session
+        case schedule
+        case connection
+        case question
         case generic
     }
 
@@ -129,7 +134,8 @@ public enum AssistantActivitySummary: Sendable {
             case .delegate: return String(localized: "Failed to delegate \(target)")
             case .talaria: return String(localized: "Failed to use \(target)")
             // A media tool reads as its kind's phrase; the server sends it no target.
-            case .image, .audio, .video, .imageAnalysis, .videoAnalysis: return failedPhrase(for: category(for: toolCall))
+            case .session: return String(localized: "Failed to search past chats for \(target)")
+            case .image, .audio, .video, .imageAnalysis, .videoAnalysis, .schedule, .connection, .question: return failedPhrase(for: category(for: toolCall))
             }
         }
         switch (kind, toolCall.isCompleted) {
@@ -153,7 +159,10 @@ public enum AssistantActivitySummary: Sendable {
         case (.delegate, false): return String(localized: "Delegating \(target)")
         case (.talaria, true): return String(localized: "Used \(target)")
         case (.talaria, false): return String(localized: "Using \(target)")
-        case (.image, _), (.audio, _), (.video, _), (.imageAnalysis, _), (.videoAnalysis, _):
+        case (.session, true): return String(localized: "Searched past chats for \(target)")
+        case (.session, false): return String(localized: "Searching past chats for \(target)")
+        // TAL-2326: a job, connection or question reads as its kind's phrase, as a media tool does.
+        case (.image, _), (.audio, _), (.video, _), (.imageAnalysis, _), (.videoAnalysis, _), (.schedule, _), (.connection, _), (.question, _):
             return phrase(for: category(for: toolCall), count: 1, completed: toolCall.isCompleted)
         }
     }
@@ -200,6 +209,10 @@ public enum AssistantActivitySummary: Sendable {
         case .video: .video
         case .imageAnalysis: .imageAnalysis
         case .videoAnalysis: .videoAnalysis
+        case .session: .session
+        case .schedule: .schedule
+        case .connection: .connection
+        case .question: .question
         case .memory, .delegate, .unknown: .generic
         }
     }
@@ -248,6 +261,18 @@ public enum AssistantActivitySummary: Sendable {
         case (.videoAnalysis, false, true): String(localized: "Analyzed videos")
         case (.videoAnalysis, true, false): String(localized: "Analyzing a video")
         case (.videoAnalysis, false, false): String(localized: "Analyzing videos")
+        case (.session, _, true): String(localized: "Searched past chats")
+        case (.session, _, false): String(localized: "Searching past chats")
+        case (.schedule, true, true): String(localized: "Managed a scheduled job")
+        case (.schedule, false, true): String(localized: "Managed scheduled jobs")
+        case (.schedule, true, false): String(localized: "Managing a scheduled job")
+        case (.schedule, false, false): String(localized: "Managing scheduled jobs")
+        case (.connection, _, true): String(localized: "Managed connections")
+        case (.connection, _, false): String(localized: "Managing connections")
+        case (.question, true, true): String(localized: "Asked a question")
+        case (.question, false, true): String(localized: "Asked questions")
+        case (.question, true, false): String(localized: "Asking a question")
+        case (.question, false, false): String(localized: "Asking questions")
         case (.generic, true, true): String(localized: "Called a tool")
         case (.generic, false, true): String(localized: "Called tools")
         case (.generic, true, false): String(localized: "Calling a tool")
@@ -269,6 +294,10 @@ public enum AssistantActivitySummary: Sendable {
         case .video: String(localized: "Failed to generate a video")
         case .imageAnalysis: String(localized: "Failed to analyze an image")
         case .videoAnalysis: String(localized: "Failed to analyze a video")
+        case .session: String(localized: "Failed to search past chats")
+        case .schedule: String(localized: "Failed to manage a scheduled job")
+        case .connection: String(localized: "Failed to manage connections")
+        case .question: String(localized: "Failed to ask a question")
         case .generic: String(localized: "Tool failed")
         }
     }
@@ -285,6 +314,10 @@ public enum AssistantActivitySummary: Sendable {
         case .image, .imageAnalysis: "photo"
         case .audio: "waveform"
         case .video, .videoAnalysis: "video"
+        case .session: "bubble.left.and.bubble.right"
+        case .schedule: "calendar.badge.clock"
+        case .connection: "powerplug"
+        case .question: "questionmark.bubble"
         case .generic: "wrench"
         }
     }

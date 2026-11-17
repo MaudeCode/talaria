@@ -4,7 +4,7 @@
 // they compose grammar from tables with count-free fallbacks.
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/restrict-plus-operands */
 export type ToolActionState = 'running' | 'done'
-export type ToolKind = 'shell' | 'read' | 'list' | 'search' | 'web' | 'write' | 'skill' | 'memory' | 'delegate' | 'talaria' | 'image' | 'audio' | 'video' | 'image_analysis' | 'video_analysis' | 'unknown' | (string & {})
+export type ToolKind = 'shell' | 'read' | 'list' | 'search' | 'web' | 'write' | 'skill' | 'memory' | 'delegate' | 'talaria' | 'image' | 'audio' | 'video' | 'image_analysis' | 'video_analysis' | 'session' | 'schedule' | 'connection' | 'question' | 'unknown' | (string & {})
 
 const _I18N_TOOL_ACTION_TEXT_EN: any = {
     shell: { running: 'Running', done: 'Ran', fail: 'run', fallback: 'a command' },
@@ -22,6 +22,10 @@ const _I18N_TOOL_ACTION_TEXT_EN: any = {
     video: { running: 'Generating', done: 'Generated', fail: 'generate', fallback: 'a video' },
     image_analysis: { running: 'Analyzing', done: 'Analyzed', fail: 'analyze', fallback: 'an image' },
     video_analysis: { running: 'Analyzing', done: 'Analyzed', fail: 'analyze', fallback: 'a video' },
+    session: { running: 'Searching', done: 'Searched', fail: 'search', fallback: 'past chats' },
+    schedule: { running: 'Managing', done: 'Managed', fail: 'manage', fallback: 'scheduled jobs' },
+    connection: { running: 'Managing', done: 'Managed', fail: 'manage', fallback: 'connections' },
+    question: { running: 'Asking', done: 'Asked', fail: 'ask', fallback: 'a question' },
     unknown: { running: 'Running', done: 'Ran', fail: 'run', fallback: 'a tool' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_EN: any = {
@@ -40,6 +44,10 @@ const _I18N_TOOL_SUMMARY_TEXT_EN: any = {
     video: { running: ['Generating a video', 'Generating videos'], done: ['Generated a video', 'Generated videos'] },
     image_analysis: { running: ['Analyzing an image', 'Analyzing images'], done: ['Analyzed an image', 'Analyzed images'] },
     video_analysis: { running: ['Analyzing a video', 'Analyzing videos'], done: ['Analyzed a video', 'Analyzed videos'] },
+    session: { running: ['Searching past chats', 'Searching past chats'], done: ['Searched past chats', 'Searched past chats'] },
+    schedule: { running: ['Managing a scheduled job', 'Managing scheduled jobs'], done: ['Managed a scheduled job', 'Managed scheduled jobs'] },
+    connection: { running: ['Managing connections', 'Managing connections'], done: ['Managed connections', 'Managed connections'] },
+    question: { running: ['Asking a question', 'Asking questions'], done: ['Asked a question', 'Asked questions'] },
     unknown: { running: ['Calling a tool', 'Calling tools'], done: ['Called a tool', 'Called tools'] },
 };
 const _I18N_TOOL_ACTION_TEXT_RU: any = {
@@ -58,6 +66,10 @@ const _I18N_TOOL_ACTION_TEXT_RU: any = {
     video: { running: 'Создаю', done: 'Создано', fail: 'создать', fallback: 'видео' },
     image_analysis: { running: 'Анализирую', done: 'Проанализировано', fail: 'проанализировать', fallback: 'изображение' },
     video_analysis: { running: 'Анализирую', done: 'Проанализировано', fail: 'проанализировать', fallback: 'видео' },
+    session: { running: 'Ищу', done: 'Поиск выполнен', fail: 'найти', fallback: 'в прошлых чатах' },
+    schedule: { running: 'Управляю', done: 'Изменено', fail: 'изменить', fallback: 'задания по расписанию' },
+    connection: { running: 'Управляю', done: 'Изменено', fail: 'изменить', fallback: 'подключения' },
+    question: { running: 'Задаю', done: 'Задан', fail: 'задать', fallback: 'вопрос' },
     unknown: { running: 'Выполняю', done: 'Выполнен', fail: 'выполнить', fallback: 'инструмент' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_RU: any = {
@@ -76,6 +88,10 @@ const _I18N_TOOL_SUMMARY_TEXT_RU: any = {
     video: { running: ['Создаётся видео', 'Создаются {n} видео', 'Создаётся {n} видео'], done: ['Создано видео', 'Созданы {n} видео', 'Создано {n} видео'] },
     image_analysis: { running: ['Анализируется изображение', 'Анализируются {n} изображения', 'Анализируется {n} изображений'], done: ['Изображение проанализировано', 'Проанализированы {n} изображения', 'Проанализировано {n} изображений'] },
     video_analysis: { running: ['Анализируется видео', 'Анализируются {n} видео', 'Анализируется {n} видео'], done: ['Видео проанализировано', 'Проанализированы {n} видео', 'Проанализировано {n} видео'] },
+    session: { running: ['Идёт поиск в прошлых чатах', 'Идут {n} поиска в прошлых чатах', 'Идёт {n} поисков в прошлых чатах'], done: ['Поиск в прошлых чатах выполнен', 'Выполнены {n} поиска в прошлых чатах', 'Выполнено {n} поисков в прошлых чатах'] },
+    schedule: { running: ['Изменяется задание по расписанию', 'Изменяются {n} задания по расписанию', 'Изменяется {n} заданий по расписанию'], done: ['Задание по расписанию изменено', 'Изменены {n} задания по расписанию', 'Изменено {n} заданий по расписанию'] },
+    connection: { running: ['Изменяются подключения', 'Изменяются подключения ({n})', 'Изменяются подключения ({n})'], done: ['Подключения изменены', 'Подключения изменены ({n})', 'Подключения изменены ({n})'] },
+    question: { running: ['Задаётся вопрос', 'Задаются {n} вопроса', 'Задаётся {n} вопросов'], done: ['Вопрос задан', 'Заданы {n} вопроса', 'Задано {n} вопросов'] },
     unknown: { running: ['Выполняется инструмент', 'Выполняются {n} инструмента', 'Выполняется {n} инструментов'], done: ['Инструмент выполнен', 'Выполнены {n} инструмента', 'Выполнено {n} инструментов'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_RU_COUNT_FREE: any = {
@@ -94,6 +110,10 @@ const _I18N_TOOL_SUMMARY_TEXT_RU_COUNT_FREE: any = {
     video: { running: 'Создаются видео', done: 'Созданы видео' },
     image_analysis: { running: 'Анализируются изображения', done: 'Изображения проанализированы' },
     video_analysis: { running: 'Анализируются видео', done: 'Видео проанализированы' },
+    session: { running: 'Идут поиски в прошлых чатах', done: 'Поиски в прошлых чатах выполнены' },
+    schedule: { running: 'Изменяются задания по расписанию', done: 'Задания по расписанию изменены' },
+    connection: { running: 'Изменяются подключения', done: 'Подключения изменены' },
+    question: { running: 'Задаются вопросы', done: 'Вопросы заданы' },
     unknown: { running: 'Выполняются инструменты', done: 'Инструменты выполнены' },
 };
 const _I18N_TOOL_ACTION_TEXT_ZH: any = {
@@ -112,6 +132,10 @@ const _I18N_TOOL_ACTION_TEXT_ZH: any = {
     video: { running: '正在生成', done: '已生成', fail: '生成', fallback: '视频' },
     image_analysis: { running: '正在分析', done: '已分析', fail: '分析', fallback: '图片' },
     video_analysis: { running: '正在分析', done: '已分析', fail: '分析', fallback: '视频' },
+    session: { running: '正在搜索', done: '已搜索', fail: '搜索', fallback: '过往对话' },
+    schedule: { running: '正在管理', done: '已管理', fail: '管理', fallback: '定时任务' },
+    connection: { running: '正在管理', done: '已管理', fail: '管理', fallback: '连接' },
+    question: { running: '正在提问', done: '已提问', fail: '提问', fallback: '问题' },
     unknown: { running: '正在运行', done: '已运行', fail: '运行', fallback: '工具' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_ZH: any = {
@@ -130,6 +154,10 @@ const _I18N_TOOL_SUMMARY_TEXT_ZH: any = {
     video: { running: ['正在生成视频', '正在生成 {n} 个视频'], done: ['已生成视频', '已生成 {n} 个视频'] },
     image_analysis: { running: ['正在分析图片', '正在分析 {n} 张图片'], done: ['已分析图片', '已分析 {n} 张图片'] },
     video_analysis: { running: ['正在分析视频', '正在分析 {n} 个视频'], done: ['已分析视频', '已分析 {n} 个视频'] },
+    session: { running: ['正在搜索过往对话', '正在搜索过往对话 {n} 次'], done: ['已搜索过往对话', '已搜索过往对话 {n} 次'] },
+    schedule: { running: ['正在管理定时任务', '正在管理 {n} 个定时任务'], done: ['已管理定时任务', '已管理 {n} 个定时任务'] },
+    connection: { running: ['正在管理连接', '正在管理连接 {n} 次'], done: ['已管理连接', '已管理连接 {n} 次'] },
+    question: { running: ['正在提问', '正在提出 {n} 个问题'], done: ['已提问', '已提出 {n} 个问题'] },
     unknown: { running: ['正在运行工具', '正在运行 {n} 个工具'], done: ['已运行工具', '已运行 {n} 个工具'] },
 };
 const _I18N_TOOL_ACTION_TEXT_ZH_HANT: any = {
@@ -148,6 +176,10 @@ const _I18N_TOOL_ACTION_TEXT_ZH_HANT: any = {
     video: { running: '正在生成', done: '已生成', fail: '生成', fallback: '影片' },
     image_analysis: { running: '正在分析', done: '已分析', fail: '分析', fallback: '圖片' },
     video_analysis: { running: '正在分析', done: '已分析', fail: '分析', fallback: '影片' },
+    session: { running: '正在搜尋', done: '已搜尋', fail: '搜尋', fallback: '過往對話' },
+    schedule: { running: '正在管理', done: '已管理', fail: '管理', fallback: '排程工作' },
+    connection: { running: '正在管理', done: '已管理', fail: '管理', fallback: '連線' },
+    question: { running: '正在提問', done: '已提問', fail: '提問', fallback: '問題' },
     unknown: { running: '正在執行', done: '已執行', fail: '執行', fallback: '工具' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_ZH_HANT: any = {
@@ -166,6 +198,10 @@ const _I18N_TOOL_SUMMARY_TEXT_ZH_HANT: any = {
     video: { running: ['正在生成影片', '正在生成 {n} 部影片'], done: ['已生成影片', '已生成 {n} 部影片'] },
     image_analysis: { running: ['正在分析圖片', '正在分析 {n} 張圖片'], done: ['已分析圖片', '已分析 {n} 張圖片'] },
     video_analysis: { running: ['正在分析影片', '正在分析 {n} 部影片'], done: ['已分析影片', '已分析 {n} 部影片'] },
+    session: { running: ['正在搜尋過往對話', '正在搜尋過往對話 {n} 次'], done: ['已搜尋過往對話', '已搜尋過往對話 {n} 次'] },
+    schedule: { running: ['正在管理排程工作', '正在管理 {n} 個排程工作'], done: ['已管理排程工作', '已管理 {n} 個排程工作'] },
+    connection: { running: ['正在管理連線', '正在管理連線 {n} 次'], done: ['已管理連線', '已管理連線 {n} 次'] },
+    question: { running: ['正在提問', '正在提出 {n} 個問題'], done: ['已提問', '已提出 {n} 個問題'] },
     unknown: { running: ['正在執行工具', '正在執行 {n} 個工具'], done: ['已執行工具', '已執行 {n} 個工具'] },
 };
 function _i18nProcessedElapsed(prefix?: any, duration?: any) {
@@ -270,6 +306,10 @@ const _I18N_TOOL_ACTION_TEXT_VI: any = {
     video: { running: 'Đang tạo', done: 'Đã tạo', fail: 'tạo', fallback: 'video' },
     image_analysis: { running: 'Đang phân tích', done: 'Đã phân tích', fail: 'phân tích', fallback: 'hình ảnh' },
     video_analysis: { running: 'Đang phân tích', done: 'Đã phân tích', fail: 'phân tích', fallback: 'video' },
+    session: { running: 'Đang tìm kiếm', done: 'Đã tìm kiếm', fail: 'tìm kiếm', fallback: 'các cuộc trò chuyện trước' },
+    schedule: { running: 'Đang quản lý', done: 'Đã quản lý', fail: 'quản lý', fallback: 'tác vụ theo lịch' },
+    connection: { running: 'Đang quản lý', done: 'Đã quản lý', fail: 'quản lý', fallback: 'kết nối' },
+    question: { running: 'Đang hỏi', done: 'Đã hỏi', fail: 'hỏi', fallback: 'một câu hỏi' },
     unknown: { running: 'Đang chạy', done: 'Đã chạy', fail: 'chạy', fallback: 'công cụ' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_VI: any = {
@@ -288,6 +328,10 @@ const _I18N_TOOL_SUMMARY_TEXT_VI: any = {
     video: { running: ['Đang tạo video', 'Đang tạo {n} video'], done: ['Đã tạo video', 'Đã tạo {n} video'] },
     image_analysis: { running: ['Đang phân tích hình ảnh', 'Đang phân tích {n} hình ảnh'], done: ['Đã phân tích hình ảnh', 'Đã phân tích {n} hình ảnh'] },
     video_analysis: { running: ['Đang phân tích video', 'Đang phân tích {n} video'], done: ['Đã phân tích video', 'Đã phân tích {n} video'] },
+    session: { running: ['Đang tìm trong các cuộc trò chuyện trước', 'Đang tìm trong các cuộc trò chuyện trước {n} lần'], done: ['Đã tìm trong các cuộc trò chuyện trước', 'Đã tìm trong các cuộc trò chuyện trước {n} lần'] },
+    schedule: { running: ['Đang quản lý tác vụ theo lịch', 'Đang quản lý {n} tác vụ theo lịch'], done: ['Đã quản lý tác vụ theo lịch', 'Đã quản lý {n} tác vụ theo lịch'] },
+    connection: { running: ['Đang quản lý kết nối', 'Đang quản lý kết nối {n} lần'], done: ['Đã quản lý kết nối', 'Đã quản lý kết nối {n} lần'] },
+    question: { running: ['Đang hỏi một câu hỏi', 'Đang hỏi {n} câu hỏi'], done: ['Đã hỏi một câu hỏi', 'Đã hỏi {n} câu hỏi'] },
     unknown: { running: ['Đang chạy công cụ', 'Đang chạy {n} công cụ'], done: ['Đã chạy công cụ', 'Đã chạy {n} công cụ'] },
 };
 function _i18nProcessedElapsedVi(duration?: any) {
@@ -319,6 +363,10 @@ const _I18N_TOOL_ACTION_TEXT_PL: any = {
     video: { running: 'Generowanie', done: 'Wygenerowano', fail: 'wygenerować', fallback: 'wideo' },
     image_analysis: { running: 'Analizowanie', done: 'Przeanalizowano', fail: 'przeanalizować', fallback: 'obraz' },
     video_analysis: { running: 'Analizowanie', done: 'Przeanalizowano', fail: 'przeanalizować', fallback: 'wideo' },
+    session: { running: 'Przeszukiwanie', done: 'Przeszukano', fail: 'przeszukać', fallback: 'poprzednie czaty' },
+    schedule: { running: 'Zarządzanie', done: 'Zmieniono', fail: 'zmienić', fallback: 'zadania harmonogramu' },
+    connection: { running: 'Zarządzanie', done: 'Zmieniono', fail: 'zmienić', fallback: 'połączenia' },
+    question: { running: 'Zadawanie', done: 'Zadano', fail: 'zadać', fallback: 'pytanie' },
     unknown: { running: 'Uruchamianie', done: 'Uruchomiono', fail: 'uruchomić', fallback: 'narzędzie' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_PL: any = {
@@ -337,6 +385,10 @@ const _I18N_TOOL_SUMMARY_TEXT_PL: any = {
     video: { running: ['Generowanie wideo', 'Generowanie {n} filmów'], done: ['Wygenerowano wideo', 'Wygenerowano {n} filmów'] },
     image_analysis: { running: ['Analizowanie obrazu', 'Analizowanie {n} obrazów'], done: ['Przeanalizowano obraz', 'Przeanalizowano {n} obrazów'] },
     video_analysis: { running: ['Analizowanie wideo', 'Analizowanie {n} filmów'], done: ['Przeanalizowano wideo', 'Przeanalizowano {n} filmów'] },
+    session: { running: ['Przeszukiwanie poprzednich czatów', 'Przeszukiwanie {n}-krotne poprzednich czatów'], done: ['Przeszukano poprzednie czaty', 'Przeszukano {n}-krotnie poprzednie czaty'] },
+    schedule: { running: ['Zmienianie zadania harmonogramu', 'Zmienianie {n} zadań harmonogramu'], done: ['Zmieniono zadanie harmonogramu', 'Zmieniono {n} zadań harmonogramu'] },
+    connection: { running: ['Zmienianie połączeń', 'Zmienianie połączeń ({n})'], done: ['Zmieniono połączenia', 'Zmieniono połączenia ({n})'] },
+    question: { running: ['Zadawanie pytania', 'Zadawanie {n} pytań'], done: ['Zadano pytanie', 'Zadano {n} pytań'] },
     unknown: { running: ['Uruchamianie narzędzia', 'Uruchamianie {n} narzędzi'], done: ['Uruchomiono narzędzie', 'Uruchomiono {n} narzędzi'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_PL_COUNT_FREE: any = {
@@ -355,6 +407,10 @@ const _I18N_TOOL_SUMMARY_TEXT_PL_COUNT_FREE: any = {
     video: { running: 'Generowanie filmów', done: 'Wygenerowano filmy' },
     image_analysis: { running: 'Analizowanie obrazów', done: 'Przeanalizowano obrazy' },
     video_analysis: { running: 'Analizowanie filmów', done: 'Przeanalizowano filmy' },
+    session: { running: 'Wielokrotne przeszukiwanie poprzednich czatów', done: 'Wielokrotnie przeszukano poprzednie czaty' },
+    schedule: { running: 'Zmienianie zadań harmonogramu', done: 'Zmieniono zadania harmonogramu' },
+    connection: { running: 'Zmienianie połączeń', done: 'Zmieniono połączenia' },
+    question: { running: 'Zadawanie pytań', done: 'Zadano pytania' },
     unknown: { running: 'Uruchamianie narzędzi', done: 'Uruchomiono narzędzia' },
 };
 function _i18nProcessedElapsedPl(duration?: any) {
@@ -399,6 +455,10 @@ const _I18N_TOOL_ACTION_TEXT_CS: any = {
     video: { running: 'Generování', done: 'Vygenerováno', fail: 'vygenerovat', fallback: 'video' },
     image_analysis: { running: 'Analýza', done: 'Analyzováno', fail: 'analyzovat', fallback: 'obrázek' },
     video_analysis: { running: 'Analýza', done: 'Analyzováno', fail: 'analyzovat', fallback: 'video' },
+    session: { running: 'Prohledávání', done: 'Prohledáno', fail: 'prohledat', fallback: 'dřívější chaty' },
+    schedule: { running: 'Správa', done: 'Upraveno', fail: 'upravit', fallback: 'plánované úlohy' },
+    connection: { running: 'Správa', done: 'Upraveno', fail: 'upravit', fallback: 'připojení' },
+    question: { running: 'Dotaz', done: 'Položen dotaz', fail: 'položit', fallback: 'otázku' },
     unknown: { running: 'Spouštění', done: 'Spuštěno', fail: 'spustit', fallback: 'nástroj' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_CS: any = {
@@ -417,6 +477,10 @@ const _I18N_TOOL_SUMMARY_TEXT_CS: any = {
     video: { running: ['Generování videa', 'Generování {n} videí'], done: ['Vygenerováno video', 'Vygenerováno {n} videí'] },
     image_analysis: { running: ['Analýza obrázku', 'Analýza {n} obrázků'], done: ['Analyzován obrázek', 'Analyzováno {n} obrázků'] },
     video_analysis: { running: ['Analýza videa', 'Analýza {n} videí'], done: ['Analyzováno video', 'Analyzováno {n} videí'] },
+    session: { running: ['Prohledávání dřívějších chatů', 'Prohledávání dřívějších chatů {n}×'], done: ['Prohledány dřívější chaty', 'Prohledány dřívější chaty {n}×'] },
+    schedule: { running: ['Úprava plánované úlohy', 'Úprava {n} plánovaných úloh'], done: ['Upravena plánovaná úloha', 'Upraveno {n} plánovaných úloh'] },
+    connection: { running: ['Úprava připojení', 'Úprava připojení {n}×'], done: ['Upravena připojení', 'Upravena připojení {n}×'] },
+    question: { running: ['Pokládání otázky', 'Pokládání {n} otázek'], done: ['Položena otázka', 'Položeno {n} otázek'] },
     unknown: { running: ['Spouštění nástroje', 'Spouštění {n} nástrojů'], done: ['Spuštěn nástroj', 'Spuštěno {n} nástrojů'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_CS_COUNT_FREE: any = {
@@ -435,6 +499,10 @@ const _I18N_TOOL_SUMMARY_TEXT_CS_COUNT_FREE: any = {
     video: { running: 'Generování videí', done: 'Vygenerována videa' },
     image_analysis: { running: 'Analýza obrázků', done: 'Analyzovány obrázky' },
     video_analysis: { running: 'Analýza videí', done: 'Analyzována videa' },
+    session: { running: 'Opakované prohledávání dřívějších chatů', done: 'Dřívější chaty opakovaně prohledány' },
+    schedule: { running: 'Úprava plánovaných úloh', done: 'Upraveny plánované úlohy' },
+    connection: { running: 'Úprava připojení', done: 'Upravena připojení' },
+    question: { running: 'Pokládání otázek', done: 'Položeny otázky' },
     unknown: { running: 'Spouštění nástrojů', done: 'Spuštěny nástroje' },
 };
 function _i18nProcessedElapsedCs(duration?: any) {

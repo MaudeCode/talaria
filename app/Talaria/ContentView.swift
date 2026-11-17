@@ -236,6 +236,16 @@ struct ContentView: View {
             return
         }
 
+        // TAL-2326: a transcript row's Tasks, Skills or Settings › Tools page.
+        if let section = TalariaDeepLink.section(from: url) {
+            pendingDestination = switch section {
+            case .tasks: .tasks
+            case .skills: .skills
+            case .tools: .settings(.tools)
+            }
+            return
+        }
+
         if let sourceID = TalariaDeepLink.quotaSourceID(from: url) {
             if TalariaDeepLink.requestsQuotaRefresh(url) {
                 UserDefaults.standard.set(sourceID, forKey: ProviderQuotaWidgetLaunchAction.pendingRefreshSourceKey)

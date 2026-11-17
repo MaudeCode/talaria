@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Memory, skill, past-chat search, scheduled job, connection and question tool calls show readable rows that open the chat, Tasks, Skills or connections page they name, and past-chat searches, scheduled jobs, connections and questions have their own icons and wording, on the App and the Web.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

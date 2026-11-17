@@ -46,8 +46,10 @@ export type Attachment = z.infer<typeof AttachmentSchema>
  * The server's display class for a tool call: clients map it to an icon and localized verb, and never classify names themselves.
  * TAL-2325: `image`, `audio` and `video` generate that medium; `image_analysis` and `video_analysis` describe one (an image
  * or video icon with an "Analyzing" verb).
+ * TAL-2326: `session` searches past chats (`session_search`), `schedule` manages scheduled jobs (`cronjob_manage`),
+ * `connection` manages connected apps (`manage_connections`) and `question` asks the user (`clarify`).
  */
-export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'image', 'audio', 'video', 'image_analysis', 'video_analysis', 'unknown'])
+export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'image', 'audio', 'video', 'image_analysis', 'video_analysis', 'session', 'schedule', 'connection', 'question', 'unknown'])
 export type ToolKind = z.infer<typeof ToolKindSchema>
 /**
  * TAL-2317: the tools the sidecar's `talaria` and `harness` toolsets register, which the server shows as kind `talaria`.
@@ -65,15 +67,15 @@ export const TALARIA_TOOL_NAMES = [
  * TAL-2322: how the server shows each tool a supported Hermes Agent registers: its `kind` (the icon and verb clients map)
  * and its result `presentation`. A listed tool takes both from here; any other name (MCP, connector, plugin) keeps the
  * name-token rules and the generic result parser, and Talaria's own tools stay in `TALARIA_TOOL_NAMES`.
- * `terminal` shows a result's output streams, error and exit code; `diff` its file edit; `clarify` shows as the question
- * dialog, never a tool row; `todo` and `delegate` show in the session's todo list and subagent rows; `file_excerpt` and
- * `matches` (TAL-2323), `links` and `pages` (TAL-2324), `media` and `analysis` (TAL-2325) show the result's `ToolResultView`
- * section of that name; `generic`
+ * `terminal` shows a result's output streams, error and exit code; `diff` its file edit; `clarify` asks through the question
+ * dialog while it runs and, answered, shows its questions and answers as `rows` (TAL-2326); `todo` and `delegate` show in
+ * the session's todo list and subagent rows; `file_excerpt` and `matches` (TAL-2323), `links` and `pages` (TAL-2324),
+ * `media` and `analysis` (TAL-2325) and `rows` (TAL-2326) show the result's `ToolResultView` section of that name; `generic`
  * reads the result's text, else its key/value fields (TAL-2318). `npm run fixtures` writes it to
  * `contracts/fixtures/tool-presentations.json`, which a sidecar test checks against the Agent's tool registry: a tool an
  * Agent release adds joins here as `generic` until its own view ships.
  */
-export const ToolPresentationSchema = z.enum(['terminal', 'diff', 'todo', 'delegate', 'clarify', 'file_excerpt', 'matches', 'links', 'pages', 'media', 'analysis', 'generic'])
+export const ToolPresentationSchema = z.enum(['terminal', 'diff', 'todo', 'delegate', 'clarify', 'file_excerpt', 'matches', 'links', 'pages', 'media', 'analysis', 'rows', 'generic'])
 export type ToolPresentation = z.infer<typeof ToolPresentationSchema>
 export const ToolPresentationEntrySchema = z.object({ kind: ToolKindSchema, presentation: ToolPresentationSchema })
 export type ToolPresentationEntry = z.infer<typeof ToolPresentationEntrySchema>
@@ -88,10 +90,10 @@ export const TOOL_PRESENTATIONS: Readonly<Record<string, ToolPresentationEntry>>
   browser_dialog: { kind: 'web', presentation: 'generic' },
   browser_exec: { kind: 'web', presentation: 'generic' },
   browser_vault: { kind: 'web', presentation: 'generic' },
-  clarify: { kind: 'unknown', presentation: 'clarify' },
+  clarify: { kind: 'question', presentation: 'clarify' },
   close_terminal: { kind: 'shell', presentation: 'generic' },
   computer_use: { kind: 'unknown', presentation: 'generic' },
-  cronjob_manage: { kind: 'unknown', presentation: 'generic' },
+  cronjob_manage: { kind: 'schedule', presentation: 'rows' },
   delegate_task: { kind: 'delegate', presentation: 'delegate' },
   desktop_preview: { kind: 'unknown', presentation: 'generic' },
   desktop_project: { kind: 'unknown', presentation: 'generic' },
@@ -123,8 +125,8 @@ export const TOOL_PRESENTATIONS: Readonly<Record<string, ToolPresentationEntry>>
   kanban_show: { kind: 'unknown', presentation: 'generic' },
   kanban_unblock: { kind: 'unknown', presentation: 'generic' },
   manage_catalog: { kind: 'unknown', presentation: 'generic' },
-  manage_connections: { kind: 'unknown', presentation: 'generic' },
-  memory: { kind: 'memory', presentation: 'generic' },
+  manage_connections: { kind: 'connection', presentation: 'rows' },
+  memory: { kind: 'memory', presentation: 'rows' },
   patch: { kind: 'write', presentation: 'diff' },
   process_manage: { kind: 'shell', presentation: 'terminal' },
   react_to_message: { kind: 'unknown', presentation: 'generic' },
@@ -132,13 +134,13 @@ export const TOOL_PRESENTATIONS: Readonly<Record<string, ToolPresentationEntry>>
   read_terminal: { kind: 'shell', presentation: 'generic' },
   read_window_below: { kind: 'read', presentation: 'generic' },
   search_files: { kind: 'search', presentation: 'matches' },
-  session_search: { kind: 'search', presentation: 'generic' },
+  session_search: { kind: 'session', presentation: 'rows' },
   set_theme: { kind: 'unknown', presentation: 'generic' },
   setup_beat: { kind: 'unknown', presentation: 'generic' },
   show_tip: { kind: 'unknown', presentation: 'generic' },
-  skill_manage: { kind: 'skill', presentation: 'generic' },
-  skill_view: { kind: 'skill', presentation: 'generic' },
-  skills_list: { kind: 'skill', presentation: 'generic' },
+  skill_manage: { kind: 'skill', presentation: 'rows' },
+  skill_view: { kind: 'skill', presentation: 'rows' },
+  skills_list: { kind: 'skill', presentation: 'rows' },
   terminal: { kind: 'shell', presentation: 'terminal' },
   text_to_speech: { kind: 'audio', presentation: 'media' },
   todo_list: { kind: 'list', presentation: 'todo' },
@@ -232,6 +234,21 @@ export type ResultLinks = z.infer<typeof ResultLinksSchema>
 /** TAL-2324: one page a `web_extract` result read: its title, host and the start of its Markdown (`excerpt`), or the `error` that page failed with. `url` is http(s), empty for a URL the Agent refused as invalid, which shows as text. */
 export const ResultPageSchema = z.object({ url: z.string(), domain: z.string(), title: z.string(), excerpt: z.string(), error: z.string().optional() })
 export type ResultPage = z.infer<typeof ResultPageSchema>
+/**
+ * TAL-2326: where a result row opens in the client: a Talaria `session` (`id` its session id), the scheduled jobs page
+ * (`crons`, `id` the job), connected apps (`connectors`) or a `skill` (`id` its name).
+ */
+export const ToolRowLinkSchema = z.object({ kind: z.enum(['session', 'crons', 'connectors', 'skill']), id: z.string().optional() })
+export type ToolRowLink = z.infer<typeof ToolRowLinkSchema>
+/** TAL-2326: one row of a result: its label, a muted `detail` line, a status dot (`pending` waits for approval) and where it opens. */
+export const ToolRowSchema = z.object({ label: z.string(), detail: z.string().optional(), status: z.enum(['ok', 'warn', 'error', 'pending']).optional(), link: ToolRowLinkSchema.optional() })
+export type ToolRow = z.infer<typeof ToolRowSchema>
+/**
+ * TAL-2326: a memory, skill, session search, scheduled job, connection or clarify result as a titled list of rows, and a
+ * viewed skill's `markdown` under them.
+ */
+export const ToolRowsSchema = z.object({ title: z.string().optional(), rows: z.array(ToolRowSchema), markdown: z.string().optional() })
+export type ToolRows = z.infer<typeof ToolRowsSchema>
 
 /**
  * TAL-315: a tool result's display sections, decided by the server's one rule for live, replayed and persisted results
@@ -239,7 +256,7 @@ export type ResultPage = z.infer<typeof ResultPageSchema>
  * `text`, in that order, then `approval_note` (TAL-1910: the Agent's note on why a flagged command ran), and never parse
  * result text. Each string is capped server-side; a client without the field shows `preview`.
  */
-export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), /** TAL-1967: the proposal a `propose` result made; the card follows `proposal` events. */ proposal: ProposalRefSchema.optional(), /** TAL-1968: the block a `show` result stored; the card loads it from `/api/show/{block_id}`. */ block: ShowBlockRefSchema.optional(), /** TAL-1974: the terminal a `terminal_open` result started; the card opens the session's terminal pane. */ terminal: TerminalRefSchema.optional(), text: z.string().optional(), /** TAL-2323: a `read_file` result's lines; clients show it in place of `text`, which keeps the Agent's text for older clients. */ file_excerpt: FileExcerptSchema.optional(), /** TAL-2323: a `search_files` result's matches by file; clients show it in place of `text`, which keeps the result for older clients. */ matches: SearchMatchesSchema.optional(), /** TAL-2324: a `web_search` or `x_search` result's links (and answer); clients show it in place of `text`, which keeps the result for older clients. */ links: ResultLinksSchema.optional(), /** TAL-2324: a `web_extract` result's pages; clients show it in place of `text`, which keeps the result for older clients. */ pages: z.array(ResultPageSchema).optional(), /** TAL-2325: the images, speech or video a media tool made, in order: a remote URL as the Agent gave it or a local file as an `/api/media` URL; clients show them under the row without expanding it, images inline and the rest as playable tiles. Empty for a failed call, whose `error` shows instead. */ media: z.array(DisplayMediaSchema).optional(), /** TAL-2325: what `vision_analyze` or `video_analyze` said about its image or video, as Markdown; image data never ships. */ analysis: z.string().optional(), /** TAL-2318: a JSON-object result's top-level keys, in order, rendered like `ToolCall.args_fields`; `text` keeps the whole result for copy. Absent for any other result. */ fields: z.array(ToolFieldSchema).optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
+export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), /** TAL-1967: the proposal a `propose` result made; the card follows `proposal` events. */ proposal: ProposalRefSchema.optional(), /** TAL-1968: the block a `show` result stored; the card loads it from `/api/show/{block_id}`. */ block: ShowBlockRefSchema.optional(), /** TAL-1974: the terminal a `terminal_open` result started; the card opens the session's terminal pane. */ terminal: TerminalRefSchema.optional(), text: z.string().optional(), /** TAL-2323: a `read_file` result's lines; clients show it in place of `text`, which keeps the Agent's text for older clients. */ file_excerpt: FileExcerptSchema.optional(), /** TAL-2323: a `search_files` result's matches by file; clients show it in place of `text`, which keeps the result for older clients. */ matches: SearchMatchesSchema.optional(), /** TAL-2324: a `web_search` or `x_search` result's links (and answer); clients show it in place of `text`, which keeps the result for older clients. */ links: ResultLinksSchema.optional(), /** TAL-2324: a `web_extract` result's pages; clients show it in place of `text`, which keeps the result for older clients. */ pages: z.array(ResultPageSchema).optional(), /** TAL-2325: the images, speech or video a media tool made, in order: a remote URL as the Agent gave it or a local file as an `/api/media` URL; clients show them under the row without expanding it, images inline and the rest as playable tiles. Empty for a failed call, whose `error` shows instead. */ media: z.array(DisplayMediaSchema).optional(), /** TAL-2325: what `vision_analyze` or `video_analyze` said about its image or video, as Markdown; image data never ships. */ analysis: z.string().optional(), /** TAL-2326: a `rows`-presented result's rows; clients show it in place of `text`, which keeps the result (without any connect URL) for older clients. */ rows: ToolRowsSchema.optional(), /** TAL-2318: a JSON-object result's top-level keys, in order, rendered like `ToolCall.args_fields`; `text` keeps the whole result for copy. Absent for any other result. */ fields: z.array(ToolFieldSchema).optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
 export type ToolResultView = z.infer<typeof ToolResultViewSchema>
 
 /**

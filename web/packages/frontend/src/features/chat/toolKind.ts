@@ -1,10 +1,10 @@
 import { createElement } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { AudioLines, Bot, BookOpen, Brain, FilePen, FileText, Globe, Image, List, Search, Terminal, Video, Wrench } from 'lucide-react'
+import { AudioLines, Bot, BookOpen, Brain, CalendarClock, FilePen, FileText, Globe, Image, List, MessageCircleQuestion, MessagesSquare, Plug, Search, Terminal, Video, Wrench } from 'lucide-react'
 import type { ToolKind } from '../../i18n/toolText'
 import { Brandmark } from '../../shell/Brandmark'
 
-const ICONS: Record<string, LucideIcon> = { shell: Terminal, read: FileText, list: List, search: Search, web: Globe, write: FilePen, skill: BookOpen, memory: Brain, delegate: Bot, image: Image, audio: AudioLines, video: Video, image_analysis: Image, video_analysis: Video, unknown: Wrench }
+const ICONS: Record<string, LucideIcon> = { shell: Terminal, read: FileText, list: List, search: Search, web: Globe, write: FilePen, skill: BookOpen, memory: Brain, delegate: Bot, image: Image, audio: AudioLines, video: Video, image_analysis: Image, video_analysis: Video, session: MessagesSquare, schedule: CalendarClock, connection: Plug, question: MessageCircleQuestion, unknown: Wrench }
 export function toolIcon(kind: ToolKind): LucideIcon {
   return ICONS[kind] ?? Wrench
 }
