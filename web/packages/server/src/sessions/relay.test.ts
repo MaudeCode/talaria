@@ -1190,10 +1190,10 @@ describe('the current call on a relay row (TAL-2336)', () => {
       // The publisher sends it on the row.
       await waitForRelay(() => { expect((relay.snapshots().at(-1)?.body.states as Json[] | undefined)?.find((state) => state.sessionId === sid)).toMatchObject({ currentTool: { kind: 'shell', target: 'npm test', done: false } }) })
       await next(1)
-      await waitForRelay(async () => { expect(steps).toHaveLength(2) })
+      await waitForRelay(() => { expect(steps).toHaveLength(2) })
       expect(await tool()).toEqual({ kind: 'shell', target: 'npm test', done: false })
       await next(2)
-      await waitForRelay(async () => { expect(await tool()).toEqual({ kind: 'shell', target: 'npm test', done: true, outcome: { key: 'exit', tone: 'error', count: 1 } }) })
+      await waitForRelay(async () => { expect(await tool()).toEqual({ kind: 'shell', target: 'npm test', done: true, failed: true, outcome: { key: 'exit', tone: 'error', count: 1 } }) })
       await next(3)
       await waitForRelay(async () => { expect((await tool())?.target).toBe(`${long.slice(0, 63)}…`) })
       await next(4)

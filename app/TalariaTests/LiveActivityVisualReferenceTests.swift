@@ -180,6 +180,75 @@ final class LiveActivityVisualReferenceTests: XCTestCase {
         )
     }
 
+    /// TAL-2336: the run's current call, named with its transcript row's icon and label, on the Lock Screen (relay-driven,
+    /// so beside the tool count), in the expanded island and on the aggregate rows: running, failed with its outcome, a
+    /// Talaria tool's mark, a connector's app, and a call an approval holds in the attention colour.
+    func testCurrentToolReferences() throws {
+        let call = { (kind: String, target: String, done: Bool) in AgentRunActivityTool(kind: kind, target: target, done: done) }
+        var failed = call("shell", "npm test", true)
+        failed.failed = true
+        failed.outcome = AgentRunActivityTool.Outcome(key: "exit", tone: "error", count: 1)
+        var connector = call("connector", "Send message", false)
+        connector.app = AgentRunActivityTool.App(name: "Slack")
+        let held = AgentRunActivityTool(kind: "shell", target: "npm publish", done: false, outcome: AgentRunActivityTool.Outcome(key: "pending_approval", tone: "attention"))
+        let state = { (status: AgentRunActivityStatus, tool: AgentRunActivityTool, head: String?) in
+            AgentRunActivityAttributes.ContentState(
+                sessionID: "session-visual-reference", sessionTitle: "Talaria visual references", status: status,
+                currentActivity: "Working", startedAt: AgentRunScenario.startedAt, updatedAt: AgentRunScenario.frozenClock,
+                approvalHeadID: head, toolCount: 3, activityAt: AgentRunScenario.startedAt.addingTimeInterval(60), currentTool: tool
+            )
+        }
+        for (name, tool, status, head) in [
+            ("running", call("shell", "npm test", false), AgentRunActivityStatus.thinking, nil as String?),
+            ("failed", failed, .thinking, nil),
+            ("talaria", call("talaria", "session_send", true), .thinking, nil),
+            ("connector", connector, .thinking, nil),
+            ("approval", held, .waitingForApproval, AgentRunScenario.approvalHeadID),
+        ] {
+            try VisualReference.assertMatchesReference(
+                AgentRunLockScreenView(state: state(status, tool, head), publisherID: "https://fixture.example")
+                    .environment(\.agentRunFrozenClock, AgentRunScenario.frozenClock),
+                named: "live-activity-lock-screen-tool-\(name)",
+                size: CGSize(width: 360, height: 140),
+                colorScheme: .dark,
+                background: AgentRunLiveActivityTheme.background
+            )
+        }
+        for (name, tool) in [("running", call("shell", "npm test", false)), ("failed", failed)] {
+            try VisualReference.assertMatchesReference(
+                expandedIsland(state(.thinking, tool, nil))
+                    .environment(\.agentRunFrozenClock, AgentRunScenario.frozenClock),
+                named: "live-activity-island-expanded-tool-\(name)",
+                size: CGSize(width: 360, height: 108),
+                colorScheme: .dark,
+                background: .black
+            )
+        }
+        let row = { (session: String, phase: String, status: String, tool: AgentRunActivityTool?) in
+            TalariaAggregateActivityAttributes.ContentState.Row(
+                publisherId: "https://fixture.example", publisherLabel: "fixture", sessionId: session,
+                title: "Session \(session)", phase: phase, status: status, updatedAt: 0, deepLink: "", currentTool: tool
+            )
+        }
+        let aggregate = TalariaAggregateActivityAttributes.ContentState(
+            schemaVersion: 1, activeCount: 3, title: "Talaria", subtitle: "3 active", updatedAt: 0,
+            rows: [
+                row("A", "running", "Working", call("shell", "npm test", false)), row("B", "running", "Working", connector),
+                row("C", "running", "Working", nil), row("D", "completed", "Done", failed)
+            ]
+        )
+        try VisualReference.assertMatchesReference(
+            TalariaAggregateRows(
+                state: aggregate, isStale: false,
+                limit: TalariaAggregateLiveActivityPresentation.lockScreenRowLimit, spacing: 6
+            ).padding(14),
+            named: "live-activity-aggregate-rows-tool",
+            size: CGSize(width: 360, height: 160),
+            colorScheme: .dark,
+            background: AgentRunLiveActivityTheme.background
+        )
+    }
+
     func testDynamicIslandExpandedReferences() throws {
         for scenario in AgentRunScenario.allCases {
             try VisualReference.assertMatchesReference(

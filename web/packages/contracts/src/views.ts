@@ -302,11 +302,11 @@ const ActivityText = z.string().max(ACTIVITY_TOOL_MAX)
 /**
  * TAL-2336: the call a Live Activity, its Dynamic Island and a push alert name: the run's latest running call, else its last
  * finished one, with the display fields its transcript row carries (redacted, each string capped at `ACTIVITY_TOOL_MAX`).
- * `done` picks the label's tense. A call an approval holds carries the `pending_approval` outcome (`attention`). Sent to
+ * `done` picks the label's tense and `failed` (the call's `is_error`, absent when it did not fail) its failure wording. A call an approval holds carries the `pending_approval` outcome (`attention`). Sent to
  * Relay as `currentTool` on a live row; absent before the run's first call, on a finished row, and from an older server.
  */
 export const ActivityToolSchema = z.object({
-  kind: ToolKindSchema, target: ActivityText, done: z.boolean(), verb: ToolVerbSchema.optional(),
+  kind: ToolKindSchema, target: ActivityText, done: z.boolean(), failed: z.literal(true).optional(), verb: ToolVerbSchema.optional(),
   app: z.object({ name: ActivityText }).optional(),
   outcome: ToolOutcomeSchema.extend({ value: ActivityText.optional() }).optional(),
 })

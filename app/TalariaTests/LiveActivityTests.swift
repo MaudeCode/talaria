@@ -162,9 +162,9 @@ final class LiveActivityTests: XCTestCase {
         manager.start(sessionID: "phase-fixture", sessionTitle: "Phases", streamID: "phase-stream", publisherURL: publisher)
         manager.update(.token(String(repeating: "x", count: 141)))
         let excerpt = manager.currentState?.responseExcerpt
-        manager.update(.toolStarted(kind: .shell, name: "fixture"))
+        manager.update(.toolStarted(AgentRunActivityTool(kind: "shell", target: "fixture", done: false)))
         XCTAssertEqual(manager.currentState?.status, .runningCommand)
-        manager.update(.toolCompleted)
+        manager.update(.toolCompleted(AgentRunActivityTool(kind: "shell", target: "fixture", done: true)))
         XCTAssertEqual(manager.currentState?.currentActivity, "Processing result")
         waitingForResume = true
         manager.update(.token(" invisible tail"))

@@ -350,6 +350,46 @@ public struct ToolOutcome: Decodable, Equatable, Sendable {
     }
 }
 
+extension ToolOutcome {
+    /// TAL-2335: the outcome in the reader's words, as a collapsed row and a Live Activity (TAL-2336) show it.
+    public var text: String {
+        let count = self.count ?? 0
+        let value = self.value ?? ""
+        switch key {
+        case .sent: return String(localized: "Sent")
+        case .approved: return String(localized: "Approved")
+        case .denied: return String(localized: "Denied")
+        case .goalSet: return String(localized: "Goal set")
+        case .created: return String(localized: "Created")
+        case .memoryAdded: return String(localized: "Added \(count) memories")
+        case .memoryUpdated: return String(localized: "Updated \(count) memories")
+        case .memoryRemoved: return String(localized: "Removed \(count) memories")
+        case .skillCreated: return String(localized: "Skill created")
+        case .skillUpdated: return String(localized: "Skill updated")
+        case .pendingApproval: return String(localized: "Waiting for approval")
+        case .jobCreated:
+            guard let next = try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(value) else { return String(localized: "Scheduled") }
+            return String(localized: "Next run \(next.formatted(date: .abbreviated, time: .shortened))")
+        case .paused: return String(localized: "Paused")
+        case .resumed: return String(localized: "Resumed")
+        case .removed: return String(localized: "Removed")
+        case .ranNow: return String(localized: "Ran now")
+        case .movedTo: return String(localized: "Moved to \(value)")
+        case .blocked: return String(localized: "Blocked")
+        case .completed: return String(localized: "Completed")
+        case .commented: return String(localized: "Commented")
+        case .connected: return String(localized: "Connected \(value)")
+        case .needsSignIn: return String(localized: "Needs sign-in")
+        case .answered: return String(localized: "Answered: \(value)")
+        case .skipped: return String(localized: "Skipped")
+        case .noMatches: return String(localized: "No matches")
+        case .noResults: return String(localized: "No results")
+        case .exit: return String(localized: "Exit \(count)")
+        case .failed: return value.isEmpty ? String(localized: "Failed") : value
+        }
+    }
+}
+
 /// TAL-315: a tool result's display sections, decided on the server for every client. Shown in this order: `text`, or
 /// `stdout`, `stderr`, a labelled `error` and a labelled `exitCode` (sent only when worth showing).
 public struct ToolResultView: Decodable, Equatable, Sendable {

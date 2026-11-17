@@ -2692,10 +2692,10 @@ const activityText = (text: string): string => {
 }
 
 /** TAL-2336: a call's display fields as a Live Activity and a push alert name it, each string capped. */
-function activityFields(fields: { kind?: unknown; target?: unknown; verb?: unknown; app?: unknown }, done: boolean, outcome: ActivityTool['outcome']): ActivityTool {
+function activityFields(fields: { kind?: unknown; target?: unknown; verb?: unknown; app?: unknown }, done: boolean, failed: boolean, outcome: ActivityTool['outcome']): ActivityTool {
   const app = isDict(fields.app) ? str(fields.app.name) : ''
   return {
-    kind: (str(fields.kind) || 'unknown') as ActivityTool['kind'], target: activityText(str(fields.target)), done,
+    kind: (str(fields.kind) || 'unknown') as ActivityTool['kind'], target: activityText(str(fields.target)), done, ...(failed ? { failed: true as const } : {}),
     ...(fields.verb ? { verb: fields.verb as ActivityTool['verb'] } : {}), ...(app ? { app: { name: activityText(app) } } : {}),
     ...(outcome ? { outcome: { ...outcome, ...(outcome.value === undefined ? {} : { value: activityText(outcome.value) }) } } : {}),
   }
@@ -2705,12 +2705,12 @@ function activityFields(fields: { kind?: unknown; target?: unknown; verb?: unkno
 export function activityTool(call: Record<string, unknown>, enabled: boolean, workspace: string | null): ActivityTool {
   const frame = publicToolFrame(call, enabled, workspace)
   const outcome = isDict(frame.result_view) && isDict(frame.result_view.outcome) ? frame.result_view.outcome as ActivityTool['outcome'] : undefined
-  return activityFields(frame, call.done === true, outcome)
+  return activityFields(frame, call.done === true, call.is_error === true, outcome)
 }
 
 /** TAL-2336: the call an approval holds (its `tool`), still running and waiting on the user. */
 export function heldActivityTool(tool: ApprovalTool): ActivityTool {
-  return activityFields(tool, false, { key: 'pending_approval', tone: 'attention' })
+  return activityFields(tool, false, false, { key: 'pending_approval', tone: 'attention' })
 }
 
 /** The open call a tool completion settles: the one with its Agent id, else the newest id-less call of the same name; -1 when none. */

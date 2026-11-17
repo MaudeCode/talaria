@@ -197,7 +197,7 @@ it("maps the run's start, tool count and last activity into a relay-pushed Live 
     // TAL-2336: the current call's words and texts are bounded, and it carries no field Relay does not know.
     const call = { kind: "shell", target: "npm test", done: false };
     for (const currentTool of [
-      null, "npm test", { ...call, kind: "Shell" }, { ...call, target: "t".repeat(65) }, { ...call, done: "false" },
+      null, "npm test", { ...call, kind: "Shell" }, { ...call, target: "t".repeat(65) }, { ...call, done: "false" }, { ...call, failed: false },
       { ...call, verb: "x".repeat(33) }, { ...call, app: { name: "" } }, { ...call, app: { name: "Slack", logo_url: null } },
       { ...call, outcome: { key: "exit", tone: "loud" } }, { ...call, outcome: { key: "exit", tone: "error", count: 1.5 } },
       { ...call, outcome: { key: "failed", tone: "error", value: "v".repeat(65) } }, { ...call, args: { command: "npm test" } },

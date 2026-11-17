@@ -317,7 +317,7 @@ it("fits a full aggregate's largest plan and worker counts without dropping a ro
 
 // TAL-2336: the largest current call a publisher may send, on every row of a full aggregate with the longest titles.
 const largestTool = {
-  kind: "connector", target: "t".repeat(64), done: true, verb: "comment", app: { name: "a".repeat(64) },
+  kind: "connector", target: "t".repeat(64), done: true, failed: true, verb: "comment", app: { name: "a".repeat(64) },
   outcome: { key: "failed", tone: "error" as const, count: 1, value: "v".repeat(64) },
 };
 

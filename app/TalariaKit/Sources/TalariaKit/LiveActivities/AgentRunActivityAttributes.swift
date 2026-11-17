@@ -32,10 +32,21 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
         public var planCompleted: Int?
         public var planTotal: Int?
         public var workerCount: Int?
+        /// TAL-2336: the run's current call, from Relay or the App's own stream; nil before its first call, once the run
+        /// moved on to thinking or writing, and from an older Relay or Web.
+        public var currentTool: AgentRunActivityTool?
 
         /// TAL-1422: the plan and worker counts to show, or nil when there are none.
         public var workCounts: AgentRunWorkCounts? {
             AgentRunWorkCounts(planCompleted: planCompleted, planTotal: planTotal, workerCount: workerCount)
+        }
+
+        /// TAL-2336: the call the activity line shows in place of `currentActivity`: none once the run finished or failed,
+        /// and none while stale unless it still waits on the user, as `lockScreenLead` decides.
+        public var shownTool: AgentRunActivityTool? {
+            guard !isFinal, errorSummary?.isEmpty ?? true else { return nil }
+            if isStale, status != .waitingForApproval, status != .waitingForClarification { return nil }
+            return currentTool
         }
 
         /// The lock screen's lead line. A stale activity still waiting on the user keeps its ask.
@@ -79,7 +90,8 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
             activityAt: Date? = nil,
             planCompleted: Int? = nil,
             planTotal: Int? = nil,
-            workerCount: Int? = nil
+            workerCount: Int? = nil,
+            currentTool: AgentRunActivityTool? = nil
         ) {
             self.sessionID = sessionID
             self.sessionTitle = AgentRunActivitySanitizer.sessionTitle(sessionTitle)
@@ -98,6 +110,7 @@ public struct AgentRunActivityAttributes: Codable, Sendable {
             self.planCompleted = planCompleted
             self.planTotal = planTotal
             self.workerCount = workerCount
+            self.currentTool = currentTool
         }
     }
 
@@ -143,12 +156,19 @@ public struct TalariaAggregateActivityAttributes: Codable, Sendable {
             public var planCompleted: Int? = nil
             public var planTotal: Int? = nil
             public var workerCount: Int? = nil
+            /// TAL-2336: the row's current call, as Relay sends it.
+            public var currentTool: AgentRunActivityTool? = nil
 
             public var workCounts: AgentRunWorkCounts? {
                 AgentRunWorkCounts(planCompleted: planCompleted, planTotal: planTotal, workerCount: workerCount)
             }
 
-            public init(completionId: String? = nil, streamId: String? = nil, publisherId: String, publisherLabel: String, sessionId: String, title: String, phase: String, status: String, updatedAt: Double, deepLink: String, approvalHeadId: String? = nil, planCompleted: Int? = nil, planTotal: Int? = nil, workerCount: Int? = nil) {
+            /// TAL-2336: the call a working row shows in place of its status word.
+            public var shownTool: AgentRunActivityTool? {
+                TalariaAggregateLiveActivityPresentation.isWorking(phase) ? currentTool : nil
+            }
+
+            public init(completionId: String? = nil, streamId: String? = nil, publisherId: String, publisherLabel: String, sessionId: String, title: String, phase: String, status: String, updatedAt: Double, deepLink: String, approvalHeadId: String? = nil, planCompleted: Int? = nil, planTotal: Int? = nil, workerCount: Int? = nil, currentTool: AgentRunActivityTool? = nil) {
                 self.completionId = completionId
                 self.streamId = streamId
                 self.publisherId = publisherId
@@ -163,6 +183,7 @@ public struct TalariaAggregateActivityAttributes: Codable, Sendable {
                 self.planCompleted = planCompleted
                 self.planTotal = planTotal
                 self.workerCount = workerCount
+                self.currentTool = currentTool
             }
 
             public var id: String { "\(publisherId):\(sessionId)" }
@@ -437,7 +458,7 @@ public enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable, Sen
 /// The server's display class for a tool call, sent as `kind` on live frames and persisted calls.
 /// The app maps it to an icon and localized verb; it never classifies tool names itself.
 /// Declared here because this file is shared with the Live Activity widget.
-public enum ToolDisplayKind: String, Equatable, Sendable {
+public enum ToolDisplayKind: String, CaseIterable, Equatable, Sendable {
     case shell, read, list, search, web, write, skill, memory, delegate, talaria, unknown
     /// TAL-2325: a tool that generates an image, speech or a video, or describes an image or a video.
     case image, audio, video
@@ -471,11 +492,110 @@ public enum ToolVerb: String, Equatable, Sendable {
     }
 }
 
-enum AgentRunActivityToolKind: Equatable {
-    case generic(String)
-    case search
-    case files
-    case command
+/// TAL-2336: the call a Live Activity names, with its transcript row's server fields (`ActivityToolSchema`): its kind,
+/// redacted target, whether it finished, a verb and app where its kind has one, and its outcome. Relay sends it as
+/// `currentTool`; the App's own stream builds it from the same fields of its tool frames. Every field decodes as sent, so an
+/// unknown kind, verb or outcome key reads as the transcript reads it rather than failing the activity.
+public struct AgentRunActivityTool: Codable, Hashable, Sendable {
+    public struct App: Codable, Hashable, Sendable {
+        public var name: String
+    }
+
+    public struct Outcome: Codable, Hashable, Sendable {
+        public var key: String
+        public var tone: String
+        public var count: Int?
+        public var value: String?
+    }
+
+    public var kind: String
+    public var target: String
+    public var done: Bool
+    /// The call failed (the server's `is_error`); nil when it did not.
+    public var failed: Bool?
+    public var verb: String?
+    public var app: App?
+    public var outcome: Outcome?
+
+    public init(kind: String, target: String, done: Bool, failed: Bool? = nil, verb: String? = nil, app: App? = nil, outcome: Outcome? = nil) {
+        self.kind = kind
+        self.target = target
+        self.done = done
+        self.failed = failed
+        self.verb = verb
+        self.app = app
+        self.outcome = outcome
+    }
+
+    /// A call as the App's stream or an approval carries it; an older server's call without a kind reads as an unknown tool.
+    public init(_ call: ToolCall, outcome: ToolOutcome? = nil) {
+        self.init(
+            kind: call.kind?.rawValue ?? ToolDisplayKind.unknown.rawValue,
+            target: call.target ?? "",
+            done: call.isCompleted,
+            failed: call.isError == true ? true : nil,
+            verb: call.verb?.rawValue,
+            app: call.app.map { App(name: $0.name) },
+            outcome: (outcome ?? call.resultView?.outcome).map {
+                Outcome(key: $0.key.rawValue, tone: $0.tone.rawValue, count: $0.count, value: $0.value)
+            }
+        )
+    }
+
+    /// A call as its live `tool` (`done` false) or `tool_complete` frame carries it.
+    public init(_ event: ToolStreamEvent, done: Bool) {
+        self.init(
+            kind: event.kind?.rawValue ?? ToolDisplayKind.unknown.rawValue,
+            target: event.target ?? "",
+            done: done,
+            failed: event.isError == true ? true : nil,
+            verb: event.verb?.rawValue,
+            app: event.app.map { App(name: $0.name) },
+            outcome: event.resultView?.outcome.map {
+                Outcome(key: $0.key.rawValue, tone: $0.tone.rawValue, count: $0.count, value: $0.value)
+            }
+        )
+    }
+
+    /// TAL-2336: the call an approval holds, still running and waiting on the user, as the server marks it on Relay.
+    public static func held(_ call: ToolCall) -> Self {
+        Self(call, outcome: ToolOutcome(key: .pendingApproval, tone: .attention))
+    }
+
+    /// The call as a transcript row, so the activity names it with the transcript's own icon and label.
+    public var toolCall: ToolCall {
+        ToolCall(
+            id: "activity-tool", name: nil, preview: nil, args: nil,
+            kind: ToolDisplayKind(serverValue: kind), verb: ToolVerb(serverValue: verb), app: app.map { ToolApp(name: $0.name) },
+            target: target.isEmpty ? nil : target, resultView: toolOutcome.map { ToolResultView(outcome: $0) },
+            isError: failed, isCompleted: done, startedAt: 0
+        )
+    }
+
+    /// The outcome the App can word; an unknown key or tone shows none.
+    public var toolOutcome: ToolOutcome? {
+        guard let outcome, let key = ToolOutcome.Key(rawValue: outcome.key), let tone = ToolOutcome.Tone(rawValue: outcome.tone) else {
+            return nil
+        }
+        return ToolOutcome(key: key, tone: tone, count: outcome.count, value: outcome.value)
+    }
+
+    /// "Running npm test", "Used session_send": the transcript row's label.
+    public var label: String { AssistantActivitySummary.label(for: toolCall) }
+    /// The transcript row's icon: an SF Symbol, or `AssistantActivitySummary.talariaMarkIcon` for the Talaria mark.
+    public var icon: String { AssistantActivitySummary.icon(for: toolCall) }
+    /// "Waiting for approval", "Exit 1": the outcome as the transcript words it.
+    public var outcomeText: String? { toolOutcome?.text }
+
+    /// The activity status for the call's kind, which picks the status glyph.
+    var status: AgentRunActivityStatus {
+        switch ToolDisplayKind(serverValue: kind) {
+        case .shell: .runningCommand
+        case .search: .searchingFiles
+        case .read, .list: .readingFiles
+        default: .usingTool
+        }
+    }
 }
 
 public enum AgentRunActivitySanitizer: Sendable {
@@ -485,7 +605,6 @@ public enum AgentRunActivitySanitizer: Sendable {
     /// About two lines of an activity's monospaced caption, so the text and its buttons fit a Lock Screen activity.
     static let maximumApprovalTextCharacters = 80
     static let maximumResponsePrefixScalars = 1_024
-    static let maximumToolLabelCharacters = 28
 
     public static func sessionTitle(_ rawValue: String) -> String {
         let normalized = normalizedSingleLine(rawValue)
@@ -526,32 +645,6 @@ public enum AgentRunActivitySanitizer: Sendable {
     static func responseExcerpt(_ rawValue: String) -> String {
         let normalized = normalizedSingleLine(rawValue)
         return trimmed(normalized, limit: maximumExcerptCharacters)
-    }
-
-    /// The Live Activity phase for the server's tool kind; other kinds show the tool's name.
-    static func toolKind(_ kind: ToolDisplayKind?, name: String?) -> AgentRunActivityToolKind {
-        switch kind {
-        case .shell: .command
-        case .search: .search
-        case .read, .list: .files
-        default: .generic(toolLabel(name))
-        }
-    }
-
-    static func toolLabel(_ rawValue: String?) -> String {
-        let fallback = String(localized: "tool")
-        guard let rawValue else { return fallback }
-
-        let noPathSeparators = rawValue
-            .replacingOccurrences(of: "\\", with: "/")
-            .split(separator: "/")
-            .last
-            .map(String.init) ?? rawValue
-        let words = noPathSeparators
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: "-", with: " ")
-        let normalized = normalizedSingleLine(words)
-        return trimmed(normalized.isEmpty ? fallback : normalized, limit: maximumToolLabelCharacters)
     }
 
     private static func normalizedSingleLine(_ rawValue: String) -> String {
@@ -683,7 +776,7 @@ public enum AgentRunActivityStateReducer {
         state: AgentRunActivityAttributes.ContentState,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
-        keepingWorkCounts(of: state, in: AgentRunActivityAttributes.ContentState(
+        keepingTool(of: state, in: AgentRunActivityAttributes.ContentState(
             sessionID: state.sessionID,
             sessionTitle: title,
             status: state.status,
@@ -733,6 +826,16 @@ public enum AgentRunActivityStateReducer {
         result.planCompleted = state.planCompleted
         result.planTotal = state.planTotal
         result.workerCount = state.workerCount
+        return result
+    }
+
+    /// TAL-2336: a change that is not the run's next step (a rename, a cleared excerpt, going stale) keeps the call shown.
+    private static func keepingTool(
+        of state: AgentRunActivityAttributes.ContentState,
+        in next: AgentRunActivityAttributes.ContentState
+    ) -> AgentRunActivityAttributes.ContentState {
+        var result = keepingWorkCounts(of: state, in: next)
+        result.currentTool = state.currentTool
         return result
     }
 
@@ -806,7 +909,7 @@ public enum AgentRunActivityStateReducer {
         state: AgentRunActivityAttributes.ContentState,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
-        keepingWorkCounts(of: state, in: AgentRunActivityAttributes.ContentState(
+        keepingTool(of: state, in: AgentRunActivityAttributes.ContentState(
             sessionID: state.sessionID,
             sessionTitle: state.sessionTitle,
             status: state.status,
@@ -831,42 +934,52 @@ public enum AgentRunActivityStateReducer {
         return statusState(.thinking, activity: activity, state: state, now: now)
     }
 
+    /// TAL-2336: the activity names the call that started, as its transcript row does.
     public static func toolStarted(
-        kind: ToolDisplayKind?,
-        name: String?,
+        _ tool: AgentRunActivityTool,
         state: AgentRunActivityAttributes.ContentState,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
-        switch AgentRunActivitySanitizer.toolKind(kind, name: name) {
-        case .command:
-            return statusState(.runningCommand, activity: String(localized: "Running command"), state: state, now: now)
-        case .search:
-            return statusState(.searchingFiles, activity: String(localized: "Searching files"), state: state, now: now)
-        case .files:
-            return statusState(.readingFiles, activity: String(localized: "Reading files"), state: state, now: now)
-        case .generic(let label):
-            return statusState(.usingTool, activity: String(localized: "Using \(label)"), state: state, now: now)
-        }
+        var result = statusState(tool.status, activity: tool.label, state: state, now: now)
+        result.currentTool = tool
+        return result
     }
 
+    /// TAL-2336: the call finished; it stays named, in the past tense with its outcome, until the run moves on. A completion
+    /// frame without its target or kind (the start frame carried them) keeps the ones shown.
     public static func toolCompleted(
+        _ tool: AgentRunActivityTool,
         state: AgentRunActivityAttributes.ContentState,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
-        statusState(.responding, activity: String(localized: "Processing result"), state: state, now: now)
+        var completed = tool
+        completed.done = true
+        if completed.target.isEmpty, let shown = state.currentTool,
+           shown.kind == completed.kind || completed.kind == ToolDisplayKind.unknown.rawValue {
+            completed.kind = shown.kind
+            completed.target = shown.target
+            completed.app = completed.app ?? shown.app
+            completed.verb = completed.verb ?? shown.verb
+        }
+        var result = statusState(.responding, activity: String(localized: "Processing result"), state: state, now: now)
+        result.currentTool = completed
+        return result
     }
 
     /// `approvalHeadID` names the approval the activity shows; without one, it offers Open instead of Allow and Deny.
     /// `approvalText` is what it runs, shown beside Allow; a text too long for an activity is left out.
+    /// TAL-2336: `tool` is the call the approval holds (the server's `tool`), which the activity names as waiting.
     public static func waitingForApproval(
         state: AgentRunActivityAttributes.ContentState,
         approvalHeadID: String? = nil,
         approvalText: String? = nil,
+        tool: AgentRunActivityTool? = nil,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
         var result = statusState(.waitingForApproval, activity: String(localized: "Waiting for approval"), state: state, now: now)
         result.approvalHeadID = approvalHeadID
         result.approvalText = approvalText.flatMap(AgentRunActivitySanitizer.approvalText)
+        result.currentTool = tool
         return result
     }
 
@@ -888,7 +1001,7 @@ public enum AgentRunActivityStateReducer {
         state: AgentRunActivityAttributes.ContentState,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
-        keepingWorkCounts(of: state, in: AgentRunActivityAttributes.ContentState(
+        keepingTool(of: state, in: AgentRunActivityAttributes.ContentState(
             sessionID: state.sessionID,
             sessionTitle: state.sessionTitle,
             status: state.status,

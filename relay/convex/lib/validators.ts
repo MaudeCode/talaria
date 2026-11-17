@@ -40,6 +40,7 @@ export const activityToolValidator = v.object({
   kind: v.string(),
   target: v.string(),
   done: v.boolean(),
+  failed: v.optional(v.boolean()),
   verb: v.optional(v.string()),
   app: v.optional(v.object({ name: v.string() })),
   outcome: v.optional(v.object({

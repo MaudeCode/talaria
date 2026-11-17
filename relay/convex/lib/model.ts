@@ -57,13 +57,14 @@ export interface SessionState {
 
 /**
  * TAL-2336: the call a Live Activity names, with its transcript row's display fields, each string at most 64 characters:
- * its server display `kind`, `target`, whether it finished (`done`), a `verb` and `app` for kinds that carry one, and its
+ * its server display `kind`, `target`, whether it finished (`done`) or failed (`failed`), a `verb` and `app` for kinds that carry one, and its
  * `outcome`. The App words and draws it; Relay only bounds and copies it.
  */
 export interface ActivityTool {
   kind: string;
   target: string;
   done: boolean;
+  failed?: boolean;
   verb?: string;
   app?: { name: string };
   outcome?: { key: string; tone: "neutral" | "error" | "attention"; count?: number; value?: string };

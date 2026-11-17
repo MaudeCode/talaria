@@ -45,7 +45,11 @@ private struct AggregateRowLink: View {
             if actions == nil, let counts = row.workCounts {
                 AgentRunWorkCountsLabel(counts: counts, font: .system(size: 12, weight: .medium))
             }
-            if actions == nil {
+            if actions == nil, let tool = row.shownTool {
+                // TAL-2336: a working row names its current call in place of its status word.
+                AgentRunToolLine(tool: tool, font: .system(size: 11, weight: .semibold), iconSize: 10, labelColor: palette.secondaryText)
+                    .layoutPriority(1)
+            } else if actions == nil {
                 AggregateStatusLabel(
                     status: row.status,
                     phase: row.phase,

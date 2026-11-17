@@ -15,6 +15,9 @@ struct AgentRunExpandedIslandBottomView: View {
                 // The island has no activity line, so a refused answer's error shows with the choices.
                 LiveActivityActionButtons(actions: actions, error: state.errorSummary)
                     .controlSize(.small)
+            } else if let tool = state.shownTool {
+                // TAL-2336: the current call; the run's writing clears it, and the excerpt shows again.
+                AgentRunToolLine(tool: tool, font: .caption2.weight(.semibold), iconSize: 11, labelColor: palette.secondaryText)
             } else if !state.responseExcerpt.isEmpty {
                 Text(state.responseExcerpt)
                     .font(.caption2)

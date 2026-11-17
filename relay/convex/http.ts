@@ -332,9 +332,9 @@ const isToolWord = (value: unknown): value is string => typeof value === "string
 const hasOnly = (value: Record<string, unknown>, keys: readonly string[]) => Object.keys(value).every((key) => keys.includes(key));
 
 function parseActivityTool(value: unknown): ActivityTool | null {
-  if (!isRecord(value) || !hasOnly(value, ["kind", "target", "done", "verb", "app", "outcome"])) return null;
-  const { kind, target, done, verb, app, outcome } = value;
-  if (!isToolWord(kind) || !toolText(target) || typeof done !== "boolean" || (verb !== undefined && !isToolWord(verb))) return null;
+  if (!isRecord(value) || !hasOnly(value, ["kind", "target", "done", "failed", "verb", "app", "outcome"])) return null;
+  const { kind, target, done, failed, verb, app, outcome } = value;
+  if (!isToolWord(kind) || !toolText(target) || typeof done !== "boolean" || (failed !== undefined && failed !== true) || (verb !== undefined && !isToolWord(verb))) return null;
   if (app !== undefined && (!isRecord(app) || !hasOnly(app, ["name"]) || !toolText(app.name, 1))) return null;
   if (outcome !== undefined) {
     if (!isRecord(outcome) || !hasOnly(outcome, ["key", "tone", "count", "value"]) || !isToolWord(outcome.key)) return null;
@@ -344,6 +344,7 @@ function parseActivityTool(value: unknown): ActivityTool | null {
   }
   return {
     kind, target, done,
+    ...(failed ? { failed } : {}),
     ...(verb === undefined ? {} : { verb }),
     ...(isRecord(app) ? { app: { name: app.name as string } } : {}),
     ...(isRecord(outcome) ? { outcome: {

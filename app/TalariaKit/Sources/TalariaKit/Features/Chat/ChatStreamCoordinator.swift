@@ -778,7 +778,7 @@ public final class ChatStreamCoordinator {
                 markProgress()
             }
         case .toolStarted(let payload):
-            liveActivityManager?.update(.toolStarted(kind: payload.kind, name: payload.name))
+            liveActivityManager?.update(.toolStarted(AgentRunActivityTool(payload, done: false)))
             if delegate?.streamCoordinatorAppendToolCall(payload) == true {
                 markProgress()
             }
@@ -787,7 +787,7 @@ public final class ChatStreamCoordinator {
                 markProgress()
             }
         case .toolCompleted(let payload):
-            liveActivityManager?.update(.toolCompleted)
+            liveActivityManager?.update(.toolCompleted(AgentRunActivityTool(payload, done: true)))
             if delegate?.streamCoordinatorCompleteToolCall(payload) == true {
                 markProgress()
             }
@@ -816,7 +816,7 @@ public final class ChatStreamCoordinator {
             // An empty update is the settled prompt (`approval_cleared`); the run goes on. Allow sits beside the server's
             // `action_text` only (TAL-1469).
             liveActivityManager?.update(
-                update.pending.map { .waitingForApproval(headID: $0.headId, text: $0.actionText) } ?? .promptSettled
+                update.pending.map { .waitingForApproval(headID: $0.headId, text: $0.actionText, tool: $0.tool.map(AgentRunActivityTool.held)) } ?? .promptSettled
             )
             delegate?.streamCoordinatorApplyApprovalUpdate(update)
             markProgress()
