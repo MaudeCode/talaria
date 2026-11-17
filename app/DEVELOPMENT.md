@@ -58,7 +58,8 @@ Kanban, settings, workspace, auth). The App, the share extension and the Live
 Activity widget link it. Its tests run on macOS without a simulator; CI runs
 them on every App change, beside the App build for testing. The
 simulator-hosted `TalariaTests` run on `main` pushes, at release and on pull
-requests labelled `hosted-tests`:
+requests labelled `hosted-tests`. A pull request runs only the tests its diff
+reaches ([Run the tests a change affects](#run-the-tests-a-change-affects)):
 
 ```zsh
 swift test --package-path TalariaKit
@@ -174,6 +175,53 @@ xcodebuildmcp simulator list --enabled
 scripts/test-ios TalariaTests/ExampleTests/testExample
 scripts/test-ios
 ```
+
+### Run the tests a change affects
+
+`scripts/test-ios --changed` runs the App tests this checkout's changes reach:
+committed, staged, unstaged and untracked, against the merge-base with
+`origin/main` (`--base REF` for another). It is the plan pull request CI makes
+for the same diff (`scripts/changed-components.py --app-plan`). Each target,
+TalariaKit's package tests and the simulator-hosted `TalariaTests`, comes out
+full, as explicit `Target/Class` or `Target/Class/testMethod` identifiers, or
+empty, with the reasons:
+
+- A change inside one test method runs that method; a change elsewhere in a test
+  class (setup, helpers, properties) runs the class and its subclasses.
+- A change in test support runs every test that reaches the changed declaration,
+  through other helpers too; the reasons name the helpers it went through.
+- Production code narrows only through a reviewed rule in
+  `ci/test-ownership.json`. Anything else runs the affected target in full: App,
+  extension, project and resource changes the hosted target; TalariaKit sources,
+  the package manifest and shared CI both. Comments and whitespace run nothing.
+
+`--dry-run` prints the plan and the hosted shard layout CI would use without
+running anything. Locally the hosted lane runs on one simulator lease. For full
+proof, run `scripts/test-ios` and `scripts/test-package`; for a branch on CI,
+`gh workflow run ci.yml --ref <branch>` runs every suite in full. Main pushes and
+releases always run both targets in full.
+
+### Repeat one test
+
+To investigate a flaky test, repeat it alone with the identifier a failure
+names:
+
+```zsh
+scripts/test-ios --repeat 20 TalariaTests/SessionListHostedTests/testDeepLinkedChatKeepsNavigationStackAndToolbarMounted
+scripts/test-ios --repeat 20 TalariaKitTests/SharedContractTests/testToolsetCatalogDecodesServerPolicy
+scripts/test-ios --remote --sha "$(git rev-parse HEAD)" --repeat 20 TalariaTests/SessionListHostedTests/testDeepLinkedChatKeepsNavigationStackAndToolbarMounted
+```
+
+Hosted identifiers build once and run on one simulator with
+`-test-iterations N -run-tests-until-failure`; `TalariaKitTests` identifiers run
+through `scripts/test-package`, which builds once and repeats `swift test
+--skip-build`. Both stop at the first failing attempt and report the completed
+attempts, the failing one and where its result bundle or log is. `--remote`
+dispatches the same run to the `App test diagnostics` workflow on a hosted runner
+at a pushed commit and prints its run and tested commit. It runs beside the pull
+request's CI: it never cancels it, posts statuses only under its own run's name,
+and never counts as CI or release evidence. Repetitions are 1 to 100; a typo, an
+unknown commit or an invalid count fails before anything builds.
 
 ```zsh
 scripts/run-ios

@@ -2,11 +2,20 @@
 
 if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
     echo 'Usage: scripts/test-ios [test-identifier ...]'
+    echo '       scripts/test-ios --changed [--dry-run] [--base REF]'
+    echo '       scripts/test-ios --repeat N test-identifier ...'
+    echo '       scripts/test-ios --remote [--sha SHA] [--repeat N] test-identifier ...'
     echo 'Runs the identifiers once through the shared simulator pool; defaults to TalariaTests.'
     echo 'Set IOS_SIMULATOR_ID to lease a specific disposable simulator.'
     echo 'A test runner that fails to launch, or does not connect within TALARIA_RUNNER_CONNECT_TIMEOUT seconds'
     echo '(default 30), gets one relaunch on a rebooted simulator, then stops the run with status 70.'
     echo 'Explicit app installation has its own TALARIA_RUNNER_PREPARATION_TIMEOUT budget (default 30).'
+    echo '--changed runs the App tests this checkout changes against its merge-base with REF (default origin/main),'
+    echo 'committed, staged, unstaged and untracked, the plan PR CI makes; --dry-run prints the plan and the hosted'
+    echo 'shard layout without running. --repeat runs one target'"'"'s identifiers N times (1 to 100) and stops at the'
+    echo 'first failing attempt: TalariaTests on one simulator, TalariaKitTests with scripts/test-package. --remote'
+    echo 'dispatches that to the App test diagnostics workflow at SHA (default HEAD, which must be pushed) and prints'
+    echo 'its run and tested commit. TalariaKitTests identifiers always run through scripts/test-package.'
     exit 0
 fi
 
@@ -14,7 +23,81 @@ set -euo pipefail
 shopt -s nullglob globstar
 
 repo_root=$(cd "$(dirname "$(realpath "$0")")/.." && pwd -P)
-[[ "${_TALARIA_ENV_LOADED:-}" == 1 ]] || exec "$repo_root/scripts/load-env" "$repo_root/scripts/test-ios" "$@"
+repeat=1
+changed=""
+dry_run=""
+base_ref=origin/main
+remote=""
+sha=""
+while [[ "${1:-}" == --* ]]; do
+    case "$1" in
+        --changed) changed=1; shift ;;
+        --dry-run) dry_run=1; shift ;;
+        --base) base_ref=${2:?--base needs a ref}; shift 2 ;;
+        --repeat) repeat=${2:?--repeat needs a count}; shift 2 ;;
+        --remote) remote=1; shift ;;
+        --sha) sha=${2:?--sha needs a commit}; shift 2 ;;
+        --) shift; break ;;
+        *) echo "Unknown option $1; see scripts/test-ios --help." >&2; exit 64 ;;
+    esac
+done
+
+if [[ -n "$remote" ]]; then
+    (( $# )) || { echo "--remote needs test identifiers." >&2; exit 64; }
+    sha=$(git -C "$repo_root" rev-parse --verify "${sha:-HEAD}^{commit}")
+    "$repo_root/ci/hosted-test-shard" focus "$repeat" "$@" > /dev/null || exit 64
+    request="r$(date +%s)$$"
+    repository=${TALARIA_DIAGNOSTICS_REPOSITORY:-MaudeCode/talaria}
+    gh workflow run app-test-diagnostics.yml --repo "$repository" --ref "${TALARIA_DIAGNOSTICS_REF:-main}" \
+        -f identifiers="$*" -f sha="$sha" -f repetitions="$repeat" -f request="$request"
+    for _ in $(seq 30); do
+        url=$(gh run list --repo "$repository" --workflow app-test-diagnostics.yml --limit 30 --json url,displayTitle \
+            --jq ".[] | select(.displayTitle | startswith(\"App test diagnostics $request \")) | .url" | head -n 1)
+        [[ -z "$url" ]] || { echo "Run: $url"; echo "Tested commit: $sha"; exit 0; }
+        sleep 2
+    done
+    echo "Dispatched request $request for $sha, but its run is not listed yet: gh run list --workflow app-test-diagnostics.yml" >&2
+    exit 75
+fi
+
+if [[ -n "$changed" ]]; then
+    plan_file=$(mktemp "${TMPDIR:-/tmp}/talaria-app-plan.XXXXXX")
+    trap 'rm -f "$plan_file" "$plan_file.lane"' EXIT
+    python3 "$repo_root/../scripts/changed-components.py" --local --base "$base_ref" --app-plan json > "$plan_file"
+    python3 "$repo_root/../scripts/changed-components.py" --local --base "$base_ref" --app-plan text
+    hosted_mode=$(jq -r '.lanes.TalariaTests.mode' "$plan_file")
+    package_mode=$(jq -r '.lanes.TalariaKitTests.mode' "$plan_file")
+    if [[ -n "$dry_run" ]]; then
+        if [[ "$hosted_mode" != empty ]]; then
+            jq '.lanes.TalariaTests' "$plan_file" > "$plan_file.lane"
+            echo "Hosted layout in CI (locally the run takes one simulator lease):"
+            "$repo_root/ci/hosted-test-shard" plan "$plan_file.lane" 2>&1 > /dev/null
+        fi
+        exit 0
+    fi
+    case "$package_mode" in
+        full) "$repo_root/scripts/test-package" ;;
+        explicit) mapfile -t identifiers < <(jq -r '.lanes.TalariaKitTests.identifiers[]' "$plan_file")
+                  "$repo_root/scripts/test-package" "${identifiers[@]}" ;;
+    esac
+    [[ "$hosted_mode" != empty ]] || exit 0
+    mapfile -t identifiers < <(jq -r '.lanes.TalariaTests.identifiers[]' "$plan_file")
+    set -- "${identifiers[@]}"
+elif [[ -n "$dry_run" ]]; then
+    echo "--dry-run goes with --changed." >&2
+    exit 64
+fi
+
+if [[ "${1:-}" == TalariaKitTests* ]]; then
+    exec "$repo_root/scripts/test-package" --repeat "$repeat" "$@"
+fi
+iterations=()
+if [[ "$repeat" != 1 ]]; then
+    (( $# )) || { echo "--repeat needs test identifiers." >&2; exit 64; }
+    "$repo_root/ci/hosted-test-shard" focus "$repeat" "$@" > /dev/null || exit 64
+    iterations=(-test-iterations "$repeat" -run-tests-until-failure)
+fi
+[[ "${_TALARIA_ENV_LOADED:-}" == 1 ]] || exec "$repo_root/scripts/load-env" "$repo_root/scripts/test-ios" --repeat "$repeat" -- "$@"
 runtime_dir="$repo_root/.codex-tmp/xctest"
 # Per worktree: runs here share derived data. Worktrees run concurrently, each on
 # its own pool lease.
@@ -116,6 +199,7 @@ xctest_recover() {
     destination="platform=iOS Simulator,id=$simulator_id"
 }
 run_name="$(date +%Y%m%d-%H%M%S)-$$"
+status=0
 xctest_launch "$runtime_dir/results/$run_name.xcresult" "$runtime_dir/results/$run_name.log" \
     -quiet -xctestrun "${test_runs[0]}" \
     -enableCodeCoverage NO \
@@ -123,4 +207,11 @@ xctest_launch "$runtime_dir/results/$run_name.xcresult" "$runtime_dir/results/$r
     -testRegion US \
     -parallel-testing-enabled NO \
     -collect-test-diagnostics never \
-    "${filters[@]}"
+    "${filters[@]}" ${iterations[@]+"${iterations[@]}"} || status=$?
+if (( ${#iterations[@]} )) && [[ -d "$runtime_dir/results/$run_name.xcresult" ]]; then
+    xcrun xcresulttool get test-results tests --path "$runtime_dir/results/$run_name.xcresult" --compact \
+        > "$runtime_dir/results/$run_name.json" &&
+        "$repo_root/ci/hosted-test-shard" attempts "$runtime_dir/results/$run_name.json" || true
+    echo "Result bundle: $runtime_dir/results/$run_name.xcresult"
+fi
+exit "$status"

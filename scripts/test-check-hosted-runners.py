@@ -174,6 +174,8 @@ RUN apt-get update \\
         native = {("ci.yml", "app-tooling"): "test-ios-simulator-pool", ("app-tests.yml", "app-build"): "ci/build-for-testing",
                   ("app-tests.yml", "app-test"): "source scripts/xctest-launch",
                   ("app-tests.yml", "package-test"): "./.github/actions/app-package-tests",
+                  # A focused diagnostic repeats TalariaKit tests with swift test (TAL-2390).
+                  ("app-test-diagnostics.yml", "package"): "scripts/test-package",
                   ("ios-release-build.yml", "build"): "xcodebuild archive",
                   # Both App contract gates share one runner (TAL-414).
                   ("release-set.yml", "contracts"): "check-previous-app.py --app-ref",
