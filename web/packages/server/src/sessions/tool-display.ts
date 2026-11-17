@@ -442,23 +442,27 @@ export function resultLinksView(data: Record<string, unknown>): ResultLinks | un
   return { ...(data.answer.trim() ? { answer: data.answer.trim() } : {}), items: [...cited.values()] }
 }
 
-/** TAL-2324: how much of a page's Markdown a `web_extract` row shows; the whole result stays behind "Show full output". */
+/** TAL-2324: how much of a page's Markdown a `web_extract` row shows; the whole page stays behind "Show full output". */
 export const PAGE_EXCERPT_CHARS = 600
 /** TAL-2324: where the Agent's cut of a long page begins (`web_tools_truncate._truncate_with_footer`): its middle marker, else its footer. */
 const PAGE_CUT_RE = /\n\n\[\.\.\. middle omitted|\n─+ \[TRUNCATED\] ─+/
 
-/** TAL-2324: a page's Markdown up to its cut, its first `PAGE_EXCERPT_CHARS` characters ending at a word where one is near. */
-function pageExcerpt(content: string): string {
+/**
+ * TAL-2324: a page's Markdown up to the Agent's cut, at most `PAGE_EXCERPT_CHARS` characters ending at a word where one is
+ * near. An excerpt is its own excerpt, so a stored view capped again keeps it.
+ */
+export function pageExcerpt(content: string): string {
   const page = content.split(PAGE_CUT_RE)[0]!.trim()
   if (page.length <= PAGE_EXCERPT_CHARS) return page
-  const head = page.slice(0, PAGE_EXCERPT_CHARS)
+  const head = page.slice(0, PAGE_EXCERPT_CHARS - 1)
   const word = head.search(/\s\S*$/)
   return `${(word > PAGE_EXCERPT_CHARS * 0.8 ? head.slice(0, word) : head).trimEnd()}…`
 }
 
 /**
- * TAL-2324: a `web_extract` result's `results`, one page each with its excerpt, or the error that page failed with (a policy
- * block carries its message there too). Undefined for a whole-call error or any other shape, which the generic rule shows.
+ * TAL-2324: a `web_extract` result's `results`, one page each with its whole Markdown as `excerpt` (the display cap cuts it
+ * to `pageExcerpt`; the whole-result read keeps it), or the error that page failed with (a policy block carries its message
+ * there too). Undefined for a whole-call error or any other shape, which the generic rule shows.
  */
 export function resultPagesView(data: Record<string, unknown>): ResultPage[] | undefined {
   if (!Array.isArray(data.results) || data.error) return undefined
@@ -467,7 +471,7 @@ export function resultPagesView(data: Record<string, unknown>): ResultPage[] | u
     const url = webUrl(row.url)
     const error = typeof row.error === 'string' && row.error.trim() ? row.error.trim() : undefined
     // A URL the Agent refused as invalid still names its row, as text.
-    return [{ url: url?.href ?? '', domain: url ? urlDomain(url) : '', title: str(row.title).trim() || str(row.url).trim(), excerpt: error ? '' : pageExcerpt(str(row.content)), ...(error ? { error } : {}) }]
+    return [{ url: url?.href ?? '', domain: url ? urlDomain(url) : '', title: str(row.title).trim() || str(row.url).trim(), excerpt: error ? '' : str(row.content), ...(error ? { error } : {}) }]
   })
 }
 

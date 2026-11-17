@@ -13,7 +13,7 @@ import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
 import type { MediaProjection } from '../workspace/media-refs.js'
-import { decidedEditDiff, decisionReviewRef, outboundDraftRef, proposalRef, readFileView, resultLinksView, resultPagesView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName, toolPresentation } from './tool-display.js'
+import { decidedEditDiff, decisionReviewRef, outboundDraftRef, pageExcerpt, proposalRef, readFileView, resultLinksView, resultPagesView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName, toolPresentation } from './tool-display.js'
 import { sourceKind } from './source-kind.js'
 
 const TOOL_RESULT_SNIPPET_MAX = 4000
@@ -736,17 +736,31 @@ function typedResultView(presentation: 'file_excerpt' | 'matches' | 'links' | 'p
 }
 const wrapped = <K extends keyof ToolResultView>(key: K, section: ToolResultView[K] | undefined): ToolResultView | undefined => (section ? { [key]: section } : undefined)
 
-/** TAL-2324: a list's whole rows (a cut URL would open the wrong page) while characters of `limit` are left. */
-function cappedRows<T extends Record<string, unknown>>(rows: readonly T[], limit: number): T[] {
+/**
+ * TAL-2324: a list's rows while characters of `limit` are left, each row's text cut to what is left. A URL is never cut (a
+ * cut URL would open the wrong page): a row whose URL no longer fits ends the list.
+ */
+function cappedRows<T extends { url: string }>(rows: readonly T[], limit: number): T[] {
   const out: T[] = []
   let left = limit
   for (const row of rows) {
+    left -= row.url.length + 1
     if (left <= 0) break
-    out.push(row)
-    left -= rowChars(row)
+    const cut = { ...row }
+    for (const [key, field] of Object.entries(row)) {
+      if (key === 'url' || typeof field !== 'string') continue
+      const text = field.length > left ? toolResultSnippet(field, Math.max(left, 0)) : field
+      ;(cut as Record<string, unknown>)[key] = text
+      left -= text.length + 1
+    }
+    out.push(cut)
   }
   return out
 }
+/** TAL-2324: each page's excerpt (the whole page on the whole-result read, `limit` Infinity), then the rows that fit. */
+const cappedPages = (pages: readonly ResultPage[], limit: number): ResultPage[] => cappedRows(Number.isFinite(limit) ? pages.map((page) => ({ ...page, excerpt: pageExcerpt(page.excerpt) })) : pages, limit)
+/** TAL-2324: whether a display cut a page's text to its excerpt, so the whole page is one request away. */
+const pagesCut = (pages: readonly ResultPage[] | undefined): boolean => (pages ?? []).some((page) => pageExcerpt(page.excerpt) !== page.excerpt)
 const rowChars = (row: Record<string, unknown>): number => Object.values(row).reduce<number>((sum, field) => sum + (typeof field === 'string' ? field.length + 1 : 0), 0)
 /** TAL-2324: a links section's answer and the links that fit after it in `limit` characters. */
 function cappedLinks(links: ResultLinks, limit: number): ResultLinks {
@@ -789,7 +803,7 @@ function cappedMatches(matches: SearchMatches, limit: number): SearchMatches {
 const excerptChars = (excerpt: FileExcerpt | undefined): number => (excerpt?.lines ?? []).reduce((sum, line) => sum + line.text.length + 1, 0)
 const matchesChars = (matches: SearchMatches | undefined): number => (matches?.files ?? []).reduce((sum, file) => file.matches.reduce((chars, match) => chars + match.text.length + 1, sum + file.path.length + 1), 0)
 
-const cappedView = (view: ToolResultView, limit: number): ToolResultView => Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field, limit) : key === 'fields' ? cappedFields(field as ToolField[], limit, limit) : key === 'file_excerpt' ? cappedExcerpt(field as FileExcerpt, limit) : key === 'matches' ? cappedMatches(field as SearchMatches, limit) : key === 'links' ? cappedLinks(field as ResultLinks, limit) : key === 'pages' ? cappedRows(field as ResultPage[], limit) : field]))
+const cappedView = (view: ToolResultView, limit: number): ToolResultView => Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field, limit) : key === 'fields' ? cappedFields(field as ToolField[], limit, limit) : key === 'file_excerpt' ? cappedExcerpt(field as FileExcerpt, limit) : key === 'matches' ? cappedMatches(field as SearchMatches, limit) : key === 'links' ? cappedLinks(field as ResultLinks, limit) : key === 'pages' ? cappedPages(field as ResultPage[], limit) : field]))
 
 /** A view the server already decided (a built scene row, or one stored with its scene): its known fields, capped. */
 export function decidedResultView(value: Record<string, unknown>): ToolResultView {
@@ -818,7 +832,7 @@ export function decidedResultView(value: Record<string, unknown>): ToolResultVie
   const links = ResultLinksSchema.safeParse(value.links).data
   if (links) view.links = cappedLinks(links, TOOL_RESULT_SNIPPET_MAX)
   const pages = ResultPageSchema.array().safeParse(value.pages).data
-  if (pages) view.pages = cappedRows(pages, TOOL_RESULT_SNIPPET_MAX)
+  if (pages) view.pages = cappedPages(pages, TOOL_RESULT_SNIPPET_MAX)
   return view
 }
 
@@ -865,7 +879,7 @@ export function toolOutcome(raw: unknown, toolName?: unknown, flagged = false, a
   const terminal = !failed ? terminalRef(toolName, data) : undefined
   // The whole view once: capped for display, and whether any section was cut (TAL-331's whole-result offer).
   const full = uncappedResultView(raw, toolName, args)
-  const capped = Object.values(full).some((field) => typeof field === 'string' && field.length > TOOL_RESULT_SNIPPET_MAX) || [fieldChars(full.fields), excerptChars(full.file_excerpt), matchesChars(full.matches), linksChars(full.links), pagesChars(full.pages)].some((chars) => chars > TOOL_RESULT_SNIPPET_MAX)
+  const capped = Object.values(full).some((field) => typeof field === 'string' && field.length > TOOL_RESULT_SNIPPET_MAX) || [fieldChars(full.fields), excerptChars(full.file_excerpt), matchesChars(full.matches), linksChars(full.links), pagesChars(full.pages)].some((chars) => chars > TOOL_RESULT_SNIPPET_MAX) || pagesCut(full.pages)
   return { is_error, capped, result_text: toolResultSnippet(value), result_view: { ...cappedView(full, TOOL_RESULT_SNIPPET_MAX), ...(ref ? { outbound_draft: ref } : {}), ...(review ? { decision_review: review } : {}), ...(proposal ? { proposal } : {}), ...(block ? { block } : {}), ...(terminal ? { terminal } : {}) } }
 }
 

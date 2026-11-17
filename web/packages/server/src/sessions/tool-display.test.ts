@@ -439,6 +439,28 @@ describe('web_search, x_search and web_extract sections (TAL-2324)', () => {
     expect(view('web_extract', { success: false, error: 'Content was inaccessible or not found' })).toEqual({ error: 'Content was inaccessible or not found' })
   })
 
+  it('offers a cut page whole, which the whole-result read returns', () => {
+    const content = `# Title\n\n${'word '.repeat(300)}`
+    const result = JSON.stringify({ results: [{ url: 'https://example.com/long', title: 'Long', content, error: null }] })
+    const outcome = toolOutcome(result, 'web_extract')
+    expect(outcome.capped).toBe(true)
+    expect(outcome.result_view.pages?.[0]?.excerpt.length).toBeLessThanOrEqual(600)
+    const messages = [{ role: 'assistant', tool_calls: [{ id: 'e1', type: 'function', function: { name: 'web_extract', arguments: '{}' } }] }, { role: 'tool', tool_call_id: 'e1', content: result }]
+    expect(fullToolResult(messages, 'e1')?.result_view.pages?.[0]?.excerpt).toBe(content)
+    // A short page shows whole, with nothing more to offer.
+    expect(toolOutcome(JSON.stringify({ results: [{ url: 'https://example.com/', title: 'Short', content: 'All of it.', error: null }] }), 'web_extract').capped).toBe(false)
+  })
+
+  it('cuts an oversized row\'s text to the budget and keeps its URL whole', () => {
+    const url = 'https://example.com/a?b=1'
+    const outcome = toolOutcome(JSON.stringify({ success: true, data: { web: [{ title: 't'.repeat(1_000_000), url, description: 'd'.repeat(10_000) }, { title: 'Next', url: 'https://example.com/next', description: '' }] } }), 'web_search')
+    const items = outcome.result_view.links!.items
+    expect(outcome.capped).toBe(true)
+    expect(items).toHaveLength(1)
+    expect(items[0]!.url).toBe(url)
+    expect(JSON.stringify(items).length).toBeLessThan(4200)
+  })
+
   it('ships links and pages redacted, their domains too', () => {
     const token = `ghp_${'abcdef0123'.repeat(3)}abcdef`
     const url = `https://${token}.example.com/page?access_token=${token}`
