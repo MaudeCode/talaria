@@ -15,7 +15,7 @@ echo "$count" > "$LOOKUP_TEST_DIR/calls"
 for failure in "$LOOKUP_TEST_DIR/fail.$count" "$LOOKUP_TEST_DIR/fail"; do
   [[ ! -f "$failure" ]] || { cat "$failure" >&2; exit 1; }
 done
-if [[ "$*" == *"repos/MaudeCode/talaria/actions/workflows/ci.yml/runs?head_sha=${LOOKUP_SHA}&branch=main&event=push&status=completed&per_page=100"* ]]; then
+if [[ "$*" == *"repos/MaudeCode/talaria/actions/workflows/ci.yml/runs?head_sha=${LOOKUP_SHA}&branch=main&event=push&per_page=100"* ]]; then
   data="$LOOKUP_TEST_DIR/runs.json"
 elif [[ "$*" =~ repos/MaudeCode/talaria/actions/runs/([0-9]+)/jobs\?filter=latest\&per_page=100 ]]; then
   data="$LOOKUP_TEST_DIR/jobs-${BASH_REMATCH[1]}.json"
@@ -31,16 +31,20 @@ sha=$(printf 'a%.0s' {1..40})
 other=$(printf 'b%.0s' {1..40})
 export PATH="$work/bin:$PATH" LOOKUP_TEST_DIR="$work" LOOKUP_SHA="$sha" GH_API_POLL_SECONDS=0 GITHUB_REPOSITORY=MaudeCode/talaria
 
-# run ID HEAD_SHA BRANCH EVENT CONCLUSION [PATH]
+# run ID HEAD_SHA BRANCH EVENT CONCLUSION [PATH]; CONCLUSION null is a run still in progress.
 run() {
-  printf '{"id":%s,"head_sha":"%s","head_branch":"%s","event":"%s","status":"completed","conclusion":"%s","path":"%s"}' \
-    "$1" "$2" "$3" "$4" "$5" "${6:-.github/workflows/ci.yml}"
+  local status=completed conclusion="\"$5\""
+  [[ "$5" != null ]] || { status=in_progress; conclusion=null; }
+  printf '{"id":%s,"head_sha":"%s","head_branch":"%s","event":"%s","status":"%s","conclusion":%s,"path":"%s"}' \
+    "$1" "$2" "$3" "$4" "${status}" "${conclusion}" "${6:-.github/workflows/ci.yml}"
 }
 runs() { rm -f "$work"/fail* "$work/calls" "$work"/jobs-*.json; local IFS=,; echo "{\"workflow_runs\":[$*]}" > "$work/runs.json"; }
-# job ID RUN NAME CONCLUSION [HEAD_SHA]
+# job ID RUN NAME CONCLUSION [HEAD_SHA]; CONCLUSION null is a job still running.
 job() {
-  printf '{"id":%s,"name":"%s","head_sha":"%s","status":"completed","conclusion":"%s","html_url":"https://github.com/MaudeCode/talaria/actions/runs/%s/job/%s"}' \
-    "$1" "$3" "${5:-$sha}" "$4" "$2" "$1"
+  local status=completed conclusion="\"$4\""
+  [[ "$4" != null ]] || { status=in_progress; conclusion=null; }
+  printf '{"id":%s,"name":"%s","head_sha":"%s","status":"%s","conclusion":%s,"html_url":"https://github.com/MaudeCode/talaria/actions/runs/%s/job/%s"}' \
+    "$1" "$3" "${5:-$sha}" "${status}" "${conclusion}" "$2" "$1"
 }
 jobs() { local run=$1; shift; local IFS=,; echo "{\"jobs\":[$*]}" > "$work/jobs-$run.json"; }
 fails() { if "$script" "$@" >/dev/null 2>&1; then echo "Expected find-hosted-tests-run $* to fail." >&2; exit 1; fi; }
@@ -57,23 +61,32 @@ jobs 5 "$(job 50 5 "App / App build" success)"
 jobs 6 "$(job 60 6 "$hosted" success)"
 [[ "$("$script" "$sha")" == "https://github.com/MaudeCode/talaria/actions/runs/6/job/60" ]]
 
-# No run qualifies: another commit, another branch or event, a failed or cancelled run, or another workflow file. The
-# jobs of a run that does not qualify are never read.
+# The job's own success counts, not the run's (TAL-2396): a run whose unrelated sibling job failed, or that is still
+# running other jobs, still lends its passed hosted tests.
+for conclusion in failure cancelled null; do
+  runs "$(run 7 "$sha" main push "$conclusion")"
+  jobs 7 "$(job 70 7 "Relay / Relay tests" failure)" "$(job 71 7 "$hosted" success)"
+  [[ "$("$script" "$sha")" == "https://github.com/MaudeCode/talaria/actions/runs/7/job/71" ]]
+done
+
+# No run qualifies: another commit, another branch or event (a pull request's run included), or another workflow file.
+# The jobs of a run that does not qualify are never read.
 runs "$(run 1 "$other" main push success)" "$(run 2 "$sha" feature push success)" \
      "$(run 3 "$sha" main pull_request success)" "$(run 4 "$sha" main workflow_dispatch success)" \
-     "$(run 5 "$sha" main push failure)" "$(run 6 "$sha" main push cancelled)" \
      "$(run 8 "$sha" main push success .github/workflows/other.yml)"
-for id in 1 2 3 4 5 6 8; do jobs "$id" "$(job "${id}0" "$id" "$hosted" success)"; done
+for id in 1 2 3 4 8; do jobs "$id" "$(job "${id}0" "$id" "$hosted" success)"; done
 [[ -z "$("$script" "$sha")" ]]
 [[ "$(cat "$work/calls")" == 1 ]]
 runs
 [[ -z "$("$script" "$sha")" ]]
 
-# A green run that skipped, failed or never ran the hosted tests (a push that left the App alone), or whose job tested
-# another commit, does not count.
+# Hosted tests that were skipped (a push that left the App alone), failed, were cancelled or are still running do not
+# count; nothing waits for them. Neither does one shard (a partial suite), a job that tested another commit, or a
+# release's own hosted tests.
 runs "$(run 9 "$sha" main push success)"
 jobs 9 "$(job 90 9 "$hosted" skipped)" "$(job 91 9 "$hosted" failure)" "$(job 92 9 "App / App hosted tests 1" success)" \
-       "$(job 93 9 "$hosted" success "$other")" "$(job 94 9 "release / app-hosted-tests / App hosted tests" success)"
+       "$(job 93 9 "$hosted" success "$other")" "$(job 94 9 "release / app-hosted-tests / App hosted tests" success)" \
+       "$(job 95 9 "$hosted" cancelled)" "$(job 96 9 "$hosted" null)"
 [[ -z "$("$script" "$sha")" ]]
 [[ "$(cat "$work/calls")" == 2 ]]
 

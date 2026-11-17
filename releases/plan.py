@@ -61,6 +61,9 @@ def resolve(root, request, previous=None):
         VALIDATOR.validate(previous)
         if previous["status"] != "complete" or previous["releaseSet"] == source:
             raise ValueError("previous must be a different completed release set")
+        # A release is any commit after the last one (TAL-2396), never one beside or before it.
+        if subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", previous["releaseSet"], source]).returncode:
+            raise ValueError(f"{source} does not come after release set {previous['releaseSet']}")
 
     plan = {"releaseSet": source, "previousReleaseSet": previous["releaseSet"] if previous else None,
             "components": {}, "changed": {}, "contracts": {key: {} for key in CONTRACT_PEERS}}

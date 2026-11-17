@@ -51,7 +51,6 @@ case "$component" in
     node --test app/scripts/duo-pose.test.mjs
     ruby app/ci/inspect_testflight_test.rb
     ruby app/ci/test_ios_runner_test.rb
-    app/ci/require_successful_main_ci_test.sh
     app/ci/find_hosted_tests_run_test.sh
     python3 app/ci/hosted_test_shard_test.py
     app/ci/wait_for_job_test.sh

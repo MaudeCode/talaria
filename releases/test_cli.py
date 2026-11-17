@@ -13,7 +13,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import cli
-from release_set import COMMON_GATES
 
 
 class WorkflowCommandTests(unittest.TestCase):
@@ -40,7 +39,9 @@ class WorkflowCommandTests(unittest.TestCase):
             # Without a plan, CI only lists them to probe (TAL-2345).
             self.assertEqual(cli.supported_web_sources(None, experimental, published), ["a" * 40, "b" * 40])
 
-    def test_reused_components_do_not_need_retained_ci_runs(self):
+    def test_prepare_neither_waits_for_main_ci_nor_records_it(self):
+        # No main CI wait (TAL-2396): prepare runs only the notes it writes and records no receipt; the manifest's
+        # gates are its gate jobs' receipts alone (test_release_set owns that a set without mainCI validates).
         from test_release_set import candidate, complete
 
         previous = complete(candidate("a" * 40))
@@ -53,23 +54,14 @@ class WorkflowCommandTests(unittest.TestCase):
         request = {"sourceRevision": source, "tags": {n: c["tag"] for n, c in plan["components"].items()},
                    "relayDeploymentId": "synthetic-relay"}
         published = [{"tag_name": "release-set-" + previous["releaseSet"], "published_at": "2026-01-01"}]
-        def run(command, **kwargs):
-            if command[0].endswith("require_successful_main_ci") and kwargs["env"]["GITHUB_SHA"] != source:
-                raise subprocess.CalledProcessError(1, command)
-            return SimpleNamespace(returncode=0)
         with tempfile.TemporaryDirectory() as temporary, patch.object(cli, "load", side_effect=[request, previous]), \
                 patch.dict(os.environ, {}, clear=True), patch("builtins.print"), \
                 patch.object(cli, "run_url", return_value="https://github.com/MaudeCode/talaria/actions/runs/1"), patch.object(cli, "require_latest_predecessor", return_value=published), \
                 patch.object(cli, "unused_release"), patch.object(cli, "resolve", return_value=plan), \
-                patch.object(cli, "git"), patch.object(cli.subprocess, "run", side_effect=run) as calls:
+                patch.object(cli, "git"), patch.object(cli.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as calls:
             cli.prepare(SimpleNamespace(request="request", previous="previous", dry_run=False, release_tag=None, output=Path(temporary) / "out"))
-            checked = [call for call in calls.call_args_list if call.args[0][0].endswith("require_successful_main_ci")]
-            self.assertEqual(len(checked), 1)
-            # Preparation records only the check it ran (main CI; no tag signature is checked any more), and with the
-            # gate jobs' receipts that covers every gate a manifest requires.
-            written = {path.stem for path in (Path(temporary) / "out/receipts").glob("*.json")}
-            self.assertEqual(written, {"mainCI"})
-            self.assertEqual(written | {"currentContracts", "previousAppContracts", "agentCompatibility"}, COMMON_GATES)
+            self.assertEqual([call.args[0][1:3] for call in calls.call_args_list], [[str(cli.ROOT / "app/ci/release_notes.py"), "generate"]])
+            self.assertFalse((Path(temporary) / "out/receipts").exists())
 
     def test_the_release_version_names_every_changed_component(self):
         from test_release_set import candidate

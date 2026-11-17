@@ -147,9 +147,7 @@ jobs:
           "$RELEASE_PYTHON" releases/cli.py assemble --complete --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" \
             --receipts "$RUNNER_TEMP/receipts" --notes "$RUNNER_TEMP/recovered/release-plan/notes" \
             --output "$RUNNER_TEMP/completed/release-set.json" "${options[@]}"
-          # Releases attach to existing tags; GitHub refuses GITHUB_TOKEN a workflow-changing target_commitish (TAL-340).
-          source=$(jq -r .releaseSet "$RUNNER_TEMP/recovered/release-plan/plan.json")
-          git ls-remote --exit-code origin "refs/tags/release-set-${source}" >/dev/null || git push origin "${source}:refs/tags/release-set-${source}"
+          # finalize creates the release-set-<sha> tag its release attaches to, unless the original run already did.
           PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" finalize \
             --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" --manifest "$RUNNER_TEMP/completed/release-set.json" \
             --directory "$RUNNER_TEMP/recovered" "${options[@]}"
@@ -196,7 +194,7 @@ jobs:
           PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" tag-components \
             --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" --directory "$RUNNER_TEMP/recovered"
       - name: Tag the release
-        uses: MaudeCode/.github/actions/release-tag@3e8fc1995784e2d3004e4de05205a767472efb7c
+        uses: MaudeCode/.github/actions/release-tag@08c2f55e411fda2d193638c89b3a923efdf66c0b
         with:
           tag: ${{ steps.components.outputs.release_tag }}
           sha: ${{ needs.app.outputs.source }}

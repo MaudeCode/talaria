@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import plistlib
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -380,6 +381,9 @@ def finalize(plan, manifest, previous, artifacts):
     root_tag = "release-set-" + plan["releaseSet"]
     require_current_predecessor(plan, previous)
     web_tarballs(plan, artifacts)
+    # The release attaches to its existing tag: GitHub refuses GITHUB_TOKEN a workflow-changing target_commitish
+    # (TAL-340). Created here, not at preflight, so a release that fails earlier leaves no ref (TAL-2396).
+    ensure_tag(root_tag, plan["releaseSet"])
     # The updater consumes only this completed manifest. The component releases follow in the tag job
     # (tag_components()), because their tags are created only once the set has published (TAL-2342).
     with tempfile.TemporaryDirectory(prefix="talaria-completed-set-") as temporary:
@@ -407,16 +411,30 @@ def tagged_commit(tag):
     return refs.get(f"refs/tags/{tag}^{{}}", refs.get(f"refs/tags/{tag}"))
 
 
-def ensure_tag(tag, source, message):
-    """Create the annotated tag at source; one already there from an earlier attempt is kept, one elsewhere refused."""
+def ensure_tag(tag, source, message=None):
+    """Create the tag at source with the job's own token: annotated with a message, otherwise a plain ref. One already
+    there from an earlier attempt is kept, one elsewhere refused; nothing is forced.
+
+    GitHub refuses the token a ref whose commit's workflow files differ from main's, as when a workflow file changes on
+    main mid-release (TAL-2396). Then the step fails with the command that pushes this ref by hand; nothing retries it
+    or reaches for another credential."""
     existing = tagged_commit(tag)
     if existing == source:
         return
     if existing:
         raise ValueError(f"{tag} already names {existing}, not {source}")
-    git(ROOT, "-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
-        "tag", "--force", "--annotate", "--message", message, tag, source)
-    git(ROOT, "push", "origin", f"refs/tags/{tag}")
+    if message is None:
+        refspec, manual = f"{source}:refs/tags/{tag}", f"git push origin {source}:refs/tags/{tag}"
+    else:
+        git(ROOT, "-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
+            "tag", "--force", "--annotate", "--message", message, tag, source)
+        refspec = f"refs/tags/{tag}"
+        manual = f"git tag --annotate --message {shlex.quote(message)} {tag} {source} && git push origin refs/tags/{tag}"
+    try:
+        git(ROOT, "push", "origin", refspec)
+    except subprocess.CalledProcessError as error:
+        raise ValueError(f"GitHub refused pushing {tag} at {source}. If a workflow file changed on main during this "
+                         f"release, push it by hand, then re-run the failed jobs: {manual}") from error
 
 
 def tag_components(plan, artifacts):

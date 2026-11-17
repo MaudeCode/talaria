@@ -3,7 +3,7 @@
 from copy import deepcopy
 import hashlib
 import io
-from itertools import product
+from itertools import combinations, product
 import json
 import re
 import os
@@ -64,7 +64,7 @@ class PublicationTests(unittest.TestCase):
             for latest in (None, manifest["releaseSet"], "f" * 40):
                 releases = [] if latest is None else [{"tag_name": "release-set-" + latest,
                                                        "draft": False, "published_at": "2026-01-01"}]
-                with self.subTest(latest=latest), patch("publish._publish_release") as publish_release, \
+                with self.subTest(latest=latest), patch("publish._publish_release") as publish_release, patch("publish.ensure_tag"), \
                         patch("publish.require_latest_predecessor", wraps=require_latest_predecessor), \
                         patch("cli.subprocess.check_output", return_value=json.dumps([releases])):
                     if latest == "f" * 40:
@@ -175,15 +175,17 @@ class PublicationTests(unittest.TestCase):
 
                 def git(_root, *args):
                     if args[-2:-1] == ("push",) or args[-3:-1] == ("push", "origin"):
-                        tag = args[-1].removeprefix("refs/tags/")
+                        tag = args[-1].split(":")[-1].removeprefix("refs/tags/")
                         remote_tags[tag] = plan["releaseSet"]
                     return ""
+
+                root_tag = "release-set-" + plan["releaseSet"]
 
                 def publish_set_then_tags(first=False):
                     finalize(plan, manifest, None, root)
                     if first:
-                        self.assertFalse(remote_tags, "no component tag before the completed set publishes")
-                        self.assertEqual(set(releases), {"release-set-" + plan["releaseSet"]})
+                        self.assertEqual(set(remote_tags), {root_tag}, "no component tag before the completed set publishes")
+                        self.assertEqual(set(releases), {root_tag})
                     self.assertEqual(publish.tag_components(plan, root), "v1.0.0")
 
                 with patch.object(publish, "_release_info", side_effect=lambda tag: deepcopy(releases.get(tag)), create=True), \
@@ -196,11 +198,11 @@ class PublicationTests(unittest.TestCase):
                     with self.assertRaises(subprocess.CalledProcessError):
                         publish_set_then_tags(first=True)
                     if failure.startswith("root"):
-                        self.assertFalse(remote_tags)
-                        self.assertEqual(set(releases), {"release-set-" + plan["releaseSet"]})
+                        self.assertEqual(set(remote_tags), {root_tag})
+                        self.assertEqual(set(releases), {root_tag})
                     publish_set_then_tags()
                     self.assertEqual(len(releases), 4)
-                    self.assertEqual(set(remote_tags), {component["tag"] for component in plan["components"].values()})
+                    self.assertEqual(set(remote_tags), {root_tag, *(component["tag"] for component in plan["components"].values())})
                     self.assertTrue(all(not value["draft"] for value in releases.values()))
                     published = [args[3] for args in commands if args[2] == "edit"]
                     self.assertEqual(published.count(plan["components"]["app"]["tag"]), 1)
@@ -225,11 +227,15 @@ class PublicationTests(unittest.TestCase):
     def test_completed_manifest_publishes_before_any_component_is_tagged(self):
         manifest = complete(candidate())
         plan = {**deepcopy(manifest), "changed": {"app": True, "web": True, "relay": False}, "releaseTag": "v1.0.0"}
-        with TemporaryDirectory() as temporary, patch("publish._publish_release") as run:
+        events = []
+        with TemporaryDirectory() as temporary, \
+                patch("publish._publish_release", side_effect=lambda tag, *args, **kwargs: events.append(("release", tag))) as run, \
+                patch("publish.ensure_tag", side_effect=lambda *args: events.append(("ref", *args))):
             root = Path(temporary)
             with self.assertRaisesRegex(ValueError, "built npm tarballs"):
                 finalize(plan, manifest, None, root)
             run.assert_not_called()
+            self.assertEqual(events, [], "a release that fails before publication leaves no release-set ref (TAL-2396)")
             wheel = root / "web-build/npm/maudecode-talaria-web-1.0.0.tgz"
             wheel.parent.mkdir(parents=True)
             wheel.write_bytes(b"synthetic archive; no publication")
@@ -237,14 +243,55 @@ class PublicationTests(unittest.TestCase):
             contracts.write_bytes(b"synthetic contracts archive")
             # publish-set publishes only the completed set; the component releases wait for their tags.
             finalize(plan, manifest, None, root)
-            self.assertEqual([call.args[0] for call in run.call_args_list], ["release-set-" + plan["releaseSet"]])
+            # The release-set ref is written at the release source right before the release that attaches to it.
+            self.assertEqual(events, [("ref", "release-set-" + plan["releaseSet"], plan["releaseSet"]),
+                                      ("release", "release-set-" + plan["releaseSet"])])
             self.assertTrue(run.call_args.kwargs["latest"])
             run.reset_mock()
+            events.clear()
             broken = deepcopy(manifest)
             broken["agent"]["sourceRevision"] = "f" * 40
             with self.assertRaisesRegex(ValueError, "compatibility metadata"):
                 finalize(plan, broken, None, root)
             run.assert_not_called()
+
+    def test_a_refused_ref_write_fails_with_the_command_that_pushes_it_by_hand(self):
+        # Every ref the release writes goes through ensure_tag with the job's own token. When GitHub refuses one (a
+        # workflow file changed on main mid-release), the step fails once with the exact command that pushes that ref
+        # at the frozen source; the operator's command then writes it (TAL-2396). A disposable remote refuses pushes
+        # as GitHub would.
+        identity = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_AUTHOR_NAME": "Synthetic",
+                    "GIT_AUTHOR_EMAIL": "synthetic@example.invalid", "GIT_COMMITTER_NAME": "Synthetic",
+                    "GIT_COMMITTER_EMAIL": "synthetic@example.invalid"}
+        with TemporaryDirectory() as temporary, patch.dict(os.environ, identity):
+            root = Path(temporary)
+            subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(root / "origin.git")], check=True)
+            hook = root / "origin.git/hooks/pre-receive"
+            hook.write_text("#!/bin/sh\necho 'refusing to allow a GitHub App to create or update workflow' >&2\nexit 1\n")
+            hook.chmod(0o755)
+            subprocess.run(["git", "clone", "-q", str(root / "origin.git"), str(root / "runner")], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(root / "runner"), "commit", "-q", "--allow-empty", "-m", "A"], check=True)
+            source = subprocess.check_output(["git", "-C", str(root / "runner"), "rev-parse", "HEAD"], text=True).strip()
+            hook.write_text("#!/bin/sh\nexit 0\n")
+            subprocess.run(["git", "-C", str(root / "runner"), "push", "-q", "origin", "HEAD:main"], check=True)
+            hook.write_text("#!/bin/sh\necho 'refusing to allow a GitHub App to create or update workflow' >&2\nexit 1\n")
+            for tag, message in (("release-set-" + source, None), ("app-v1.0.0", "Talaria App 1.0.0; release v1.0.0")):
+                with self.subTest(tag=tag), patch.object(publish, "ROOT", root / "runner"):
+                    with self.assertRaises(ValueError) as refused:
+                        publish.ensure_tag(tag, source, message)
+                    self.assertIsNone(publish.tagged_commit(tag))
+                    manual = str(refused.exception).split("re-run the failed jobs: ", 1)[1]
+                    self.assertIn(source, manual)
+                    hook.write_text("#!/bin/sh\nexit 0\n")
+                    operator = root / ("operator-" + tag)
+                    subprocess.run(["git", "clone", "-q", str(root / "origin.git"), str(operator)], check=True, capture_output=True)
+                    subprocess.run(manual, shell=True, cwd=operator, check=True, capture_output=True)
+                    self.assertEqual(publish.tagged_commit(tag), source)
+                    # A rerun keeps the ref now there; one at another commit is refused, never moved.
+                    publish.ensure_tag(tag, source, message)
+                    with patch.object(publish, "tagged_commit", return_value="f" * 40), self.assertRaisesRegex(ValueError, "already names"):
+                        publish.ensure_tag(tag, source, message)
+                    hook.write_text("#!/bin/sh\necho 'refusing to allow a GitHub App to create or update workflow' >&2\nexit 1\n")
 
     def test_tag_job_tags_each_shipped_component_at_the_source_before_its_release(self):
         manifest = complete(candidate())
@@ -383,10 +430,10 @@ class PublicationTests(unittest.TestCase):
         self.assertIn("${GITHUB_WORKFLOW_SHA}:releases/publish.py", bridge)
         self.assertTrue(any("check_results.py publication" in step.get("run", "")
                             for step in jobs["publish-set"]["steps"]))
+        # finalize writes the release-set ref itself, at publication (TAL-2396); no workflow step pushes one.
         for job in (jobs["publish-set"], workflow("recover-cutover.yml")["jobs"]["publish-set"]):
             script = next(step["run"] for step in job["steps"] if "finalize" in step.get("run", ""))
-            self.assertLess(script.index('refs/tags/release-set-${source}"'), script.index("finalize"),
-                            "the root tag must exist before its release is created")
+            self.assertNotIn("git push", script)
         cutover = workflow("production-cutover.yml")
         self.assertEqual(cutover["jobs"]["release"]["secrets"], "inherit")
         self.assertEqual(cutover["jobs"]["release"]["permissions"]["id-token"], "write")
@@ -566,7 +613,7 @@ class PublicationTests(unittest.TestCase):
         jobs = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/release-set.yml")], text=True))["jobs"]
-        gates = ("contracts", "component-contracts", "agent-release", "agent", "app-hosted-tests-lookup", "app-hosted-tests")
+        gates = ("contracts", "component-contracts", "agent-release", "agent", "app-hosted-tests")
         agent_steps = jobs['agent-release']['steps']
         node = [(index, step) for index, step in enumerate(agent_steps) if step.get('uses', '').startswith('actions/setup-node@')]
         self.assertEqual(len(node), 1, 'the Agent gate must provision Node for its selected server build')
@@ -574,8 +621,9 @@ class PublicationTests(unittest.TestCase):
         self.assertLess(node[0][0], next(index for index, step in enumerate(agent_steps) if 'check-release-agent.py' in step.get('run', '')))
         builds = ("relay-build", "bridge-build", "web-build", "app-dry-build", "app-signed-build")
         # Every gate and build starts once prepare has the plan; both App contract gates share the contracts runner
-        # (TAL-414). The Agent join waits for its release jobs, and the hosted tests for their lookup (TAL-1550).
-        joins = {"agent": ["prepare", "agent-release"], "app-hosted-tests": ["prepare", "app-hosted-tests-lookup"]}
+        # (TAL-414). The Agent join waits for its release jobs, and the hosted tests for the other macOS jobs (TAL-2396).
+        joins = {"agent": ["prepare", "agent-release"],
+                 "app-hosted-tests": ["prepare", "contracts", "app-dry-build", "app-signed-build"]}
         for name in (*gates, *builds):
             with self.subTest(job=name):
                 self.assertEqual(jobs[name]["needs"], joins.get(name, "prepare"))
@@ -608,11 +656,11 @@ class PublicationTests(unittest.TestCase):
         self.assertIn('--expect "$JOBS" --receipts "$RUNNER_TEMP/agent-shards"', join_steps[join]["run"])
         self.assertEqual(join_steps[join]["env"]["JOBS"], "${{ needs.prepare.outputs.agent_jobs }}")
         self.assertNotIn("if", jobs["agent"])
-        # The lookup runs the workflow's own read-only script; its answer selects the suite, and a failed lookup skips it.
-        lookup = jobs["app-hosted-tests-lookup"]
-        self.assertEqual(lookup["if"], "needs.prepare.outputs.app_changed == 'true'")
-        self.assertEqual(lookup["permissions"], {"contents": "read", "actions": "read"})
-        self.assertIn('url=$(app/ci/find-hosted-tests-run "$SOURCE")', next(step["run"] for step in lookup["steps"] if "run" in step))
+        # prepare looks for main CI's hosted tests with the workflow's own read-only script; its answer selects the suite.
+        lookup = next(step for step in jobs["prepare"]["steps"] if step.get("id") == "hosted")
+        self.assertEqual(lookup["if"], "steps.plan.outputs.app_changed == 'true'")
+        self.assertIn('url=$(app/ci/find-hosted-tests-run "$SOURCE")', lookup["run"])
+        self.assertEqual(jobs["prepare"]["outputs"]["hosted_tests_url"], "${{ steps.hosted.outputs.url }}")
         self.assertNotIn("previous-app-contracts", jobs)
         gate = next(step["run"] for step in jobs["contracts"]["steps"] if "cli.py gate" in step.get("run", ""))
         for name in ("currentContracts", "previousAppContracts"):
@@ -623,8 +671,12 @@ class PublicationTests(unittest.TestCase):
         hosted = jobs["app-hosted-tests"]
         self.assertEqual(hosted["uses"], "./.github/workflows/app-tests.yml")
         self.assertEqual(hosted["with"], {"mode": "hosted", "ref": "${{ needs.prepare.outputs.source }}",
-                                          "package_tests": False})
-        self.assertEqual(hosted["if"], "needs.prepare.outputs.app_changed == 'true' && needs.app-hosted-tests-lookup.outputs.reused == 'false'")
+                                          "package_tests": False, "shards_at_once": 2})
+        condition = " ".join(hosted["if"].split())
+        for clause in ("needs.prepare.outputs.app_changed == 'true'", "needs.prepare.outputs.hosted_tests_url == ''",
+                       "needs.contracts.result == 'success'",
+                       "(needs.app-dry-build.result == 'success' || needs.app-signed-build.result == 'success')"):
+            self.assertIn(clause, condition)
         # The test job posts failing tests as commit statuses while it runs (TAL-673).
         self.assertEqual(hosted["permissions"], {"contents": "read", "actions": "read", "statuses": "write"})
         app_tests = json.loads(subprocess.check_output([
@@ -669,20 +721,81 @@ class PublicationTests(unittest.TestCase):
                          ({"candidate", "tag"}, "always()", {"contents": "read", "actions": "read"}))
         self.assertTrue(all(step.get("continue-on-error") for step in timeline["steps"] if "run" in step))
 
+    def test_a_release_runs_at_most_three_macos_jobs_at_once(self):
+        # The organization has five hosted macOS slots, shared with other work: a release holds at most three at any
+        # moment, on every route (TAL-2396). Only the jobs' needs and the shards' matrix width enforce it, so two macOS
+        # jobs may overlap exactly when neither needs the other, directly or not.
+        root = Path(__file__).resolve().parents[1]
+
+        def workflow(name):
+            return json.loads(subprocess.check_output([
+                "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+                str(root / ".github/workflows" / name)], text=True))["jobs"]
+
+        def macos(job):
+            return str(job.get("runs-on", "")).startswith(("xcode-", "macos-"))
+
+        # The called workflows' macOS jobs. app-tests.yml in hosted mode without package tests runs its build beside the
+        # shards it lets run at once; its package-test job needs another mode or the package tests.
+        app_tests, ios_build = workflow("app-tests.yml"), workflow("ios-release-build.yml")
+        self.assertEqual({name for name, job in app_tests.items() if macos(job)}, {"app-build", "package-test", "app-test"})
+        self.assertEqual(app_tests["package-test"]["if"], "inputs.mode != 'hosted' && inputs.package_tests")
+        self.assertEqual(app_tests["app-test"]["strategy"]["max-parallel"], "${{ inputs.shards_at_once }}")
+        self.assertEqual({name for name, job in ios_build.items() if macos(job)}, {"build"})
+
+        jobs = workflow("release-set.yml")
+        hosted = jobs["app-hosted-tests"]["with"]
+        self.assertEqual((hosted["mode"], hosted["package_tests"]), ("hosted", False))
+        width = {"app-hosted-tests": 1 + hosted["shards_at_once"], "app-signed-build": 1}
+        width.update({name: 1 for name, job in jobs.items() if macos(job)})
+        for name, job in jobs.items():
+            if macos(job):
+                self.assertNotIn("strategy", job, name)
+        self.assertEqual(set(width), {"contracts", "app-dry-build", "app-signed-build", "app-hosted-tests", "app-publish"})
+
+        def needs(name):
+            direct = jobs[name].get("needs", [])
+            direct = [direct] if isinstance(direct, str) else direct
+            return set(direct).union(*(needs(parent) for parent in direct))
+
+        for dry, app, reused in product((False, True), repeat=3):
+            active = {"contracts"} | ({"app-dry-build" if dry else "app-signed-build"} if app else set())
+            active |= ({"app-hosted-tests"} if app and not reused else set()) | ({"app-publish"} if app and not dry else set())
+            peak = 0
+            for size in range(1, len(active) + 1):
+                for group in combinations(sorted(active), size):
+                    if all(a not in needs(b) and b not in needs(a) for a, b in combinations(group, 2)):
+                        peak = max(peak, sum(width[name] for name in group))
+            with self.subTest(dry=dry, app=app, reused=reused):
+                self.assertLessEqual(peak, 3)
+
     def test_timeline_orders_jobs_by_start_from_the_attempt_start(self):
         from timeline import table
-        run = {"run_started_at": "2026-01-01T00:00:00Z"}
-        jobs = [{"name": "publish-set", "created_at": "2026-01-01T00:17:00Z", "started_at": "2026-01-01T00:17:05Z",
+        # A second attempt, re-run 40 minutes after the dispatch: its jobs count from its own start, and the release's
+        # end points from the dispatch, the manifest's readbacks apart from the final tag (TAL-2396).
+        run = {"created_at": "2025-12-31T23:20:00Z", "run_started_at": "2026-01-01T00:00:00Z", "run_attempt": 2}
+        jobs = [{"name": "release / publish-set", "created_at": "2026-01-01T00:17:00Z", "started_at": "2026-01-01T00:17:05Z",
                  "completed_at": "2026-01-01T00:17:40Z", "conclusion": "success"},
-                {"name": "contracts", "created_at": "2026-01-01T00:00:50Z", "started_at": "2026-01-01T00:01:00Z",
+                {"name": "release / contracts", "created_at": "2026-01-01T00:00:50Z", "started_at": "2026-01-01T00:01:00Z",
                  "completed_at": "2026-01-01T00:06:00Z", "conclusion": "success"},
-                {"name": "candidate", "created_at": "2026-01-01T00:10:00Z", "started_at": "2026-01-01T00:10:00Z",
-                 "completed_at": "2026-01-01T00:10:00Z", "conclusion": "skipped"}]
+                {"name": "release / candidate", "created_at": "2026-01-01T00:10:00Z", "started_at": "2026-01-01T00:10:00Z",
+                 "completed_at": "2026-01-01T00:10:00Z", "conclusion": "skipped"},
+                {"name": "release / tag", "created_at": "2026-01-01T00:17:41Z", "started_at": "2026-01-01T00:17:45Z",
+                 "completed_at": "2026-01-01T00:19:00Z", "conclusion": "success",
+                 "steps": [{"name": "Tag and release the components that shipped", "conclusion": "success",
+                            "completed_at": "2026-01-01T00:18:30Z"},
+                           {"name": "Tag the release", "conclusion": "success", "completed_at": "2026-01-01T00:18:50Z"}]}]
         lines = table(run, jobs).splitlines()
-        self.assertIn("the last job finished at 17:40", lines[2])
-        self.assertEqual(lines[6:], ["| contracts | 0:50 | 0:10 | 1:00 | 5:00 | 6:00 | success |",
-                                     "| publish-set | 17:00 | 0:05 | 17:05 | 0:35 | 17:40 | success |",
-                                     "| candidate | 10:00 |  |  |  |  | skipped |"])
+        self.assertEqual(lines[2], "Attempt 2, dispatched 2025-12-31T23:20:00Z: manifest published with its readbacks at 57:40, "
+                                   "final version tag at 58:50 from the dispatch.")
+        self.assertIn("the last job finished at 19:00", lines[4])
+        self.assertEqual(lines[8:11], ["| release / contracts | 0:50 | 0:10 | 1:00 | 5:00 | 6:00 | success |",
+                                       "| release / publish-set | 17:00 | 0:05 | 17:05 | 0:35 | 17:40 | success |",
+                                       "| release / tag | 17:41 | 0:04 | 17:45 | 1:15 | 19:00 | success |"])
+        # A run that never tagged, such as a dry run or a failed attempt, says so.
+        failed = [job for job in jobs if job["name"] != "release / tag"]
+        failed[0] = {**failed[0], "conclusion": "failure"}
+        self.assertIn("published with its readbacks at never, final version tag at never", table(run, failed))
 
     def test_buildx_builders_are_never_fixed_names(self):
         # A Docker daemon that outlives a job would reject a second builder with the same fixed name.
@@ -730,9 +843,8 @@ class PublicationTests(unittest.TestCase):
                     needs[job] = {"result": "success" if changed else "skipped"}
                 if stage == "build":
                     needs["app-signed-build" if dry else "app-dry-build"] = {"result": "skipped"}
-                    needs["app-hosted-tests-lookup"] = {"result": "success" if app else "skipped", "outputs": {"reused": "false"}}
                     needs["app-hosted-tests"] = {"result": "success" if app else "skipped"}
-                    jobs += ["app-hosted-tests-lookup", "app-hosted-tests"]
+                    jobs.append("app-hosted-tests")
                 if stage == "publication" and dry:
                     with self.assertRaises(ValueError):
                         check(needs, stage, dry)
@@ -751,46 +863,42 @@ class PublicationTests(unittest.TestCase):
 
     def test_app_hosted_tests_gate_every_release_that_ships_the_app(self):
         # The App's hosted unit tests gate every release that ships the App, dry runs included, and never run otherwise.
-        # Main CI's successful hosted tests on the exact source are reused; without them the suite runs (TAL-1550).
+        # Main CI's successful hosted tests on the exact source, found by prepare, are reused; without them the suite
+        # runs (TAL-1550, TAL-2396).
         url = "https://github.com/MaudeCode/talaria/actions/runs/7/job/71"
         base = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts",
                                                           "agent-release", "agent", "app-dry-build")}
         base["prepare"]["outputs"] = {"app_changed": "true", "web_changed": "false", "relay_changed": "false"}
         base.update({name: {"result": "skipped"} for name in ("relay-build", "bridge-build", "web-build", "app-signed-build")})
-        reused = {**base, "app-hosted-tests-lookup": {"result": "success", "outputs": {"reused": "true", "job_url": url}},
-                  "app-hosted-tests": {"result": "skipped"}}
-        fallback = {**base, "app-hosted-tests-lookup": {"result": "success", "outputs": {"reused": "false", "job_url": ""}},
-                    "app-hosted-tests": {"result": "success"}}
-        check(reused, "build", True)
-        check(fallback, "build", True)
+
+        def needs(found, suite):
+            result = deepcopy(base)
+            result["prepare"]["outputs"]["hosted_tests_url"] = found
+            result["app-hosted-tests"] = {"result": suite}
+            return result
+
+        check(needs(url, "skipped"), "build", True)
+        check(needs("", "success"), "build", True)
         # Reused evidence never runs the suite, and a run suite must have passed.
         for result in ("success", "failure", "cancelled"):
             with self.subTest(reused=result), self.assertRaisesRegex(ValueError, "app-hosted-tests"):
-                check({**reused, "app-hosted-tests": {"result": result}}, "build", True)
+                check(needs(url, result), "build", True)
         for result in ("failure", "cancelled", "skipped"):
             with self.subTest(fallback=result), self.assertRaisesRegex(ValueError, "app-hosted-tests"):
-                check({**fallback, "app-hosted-tests": {"result": result}}, "build", True)
-        # Reuse needs a job URL in this repository; a fallback that reports one is inconsistent.
-        for outputs in ({"reused": "true", "job_url": ""}, {"reused": "true", "job_url": "https://example.com/job/1"},
-                        {"reused": "true"}, {"reused": "false", "job_url": url}, {}, {"reused": "maybe", "job_url": url}):
-            with self.subTest(outputs=outputs), self.assertRaisesRegex(ValueError, "app-hosted-tests"):
-                check({**reused, "app-hosted-tests-lookup": {"result": "success", "outputs": outputs}}, "build", True)
-        # A lookup that failed, was cancelled or never ran fails the gate: it never counts as reuse, whatever the suite did.
-        for lookup in ("failure", "cancelled", "skipped"):
-            for suite in ("skipped", "success"):
-                with self.subTest(lookup=lookup, suite=suite), self.assertRaisesRegex(ValueError, "app-hosted-tests-lookup"):
-                    check({**reused, "app-hosted-tests-lookup": {"result": lookup, "outputs": {"reused": "true", "job_url": url}},
-                           "app-hosted-tests": {"result": suite}}, "build", True)
-        with self.assertRaisesRegex(ValueError, "app-hosted-tests-lookup"):
-            check(base, "build", True)
-        unchanged = deepcopy(base)
+                check(needs("", result), "build", True)
+        # Reuse needs a job URL in this repository.
+        with self.assertRaisesRegex(ValueError, "app-hosted-tests"):
+            check(needs("https://example.com/job/1", "skipped"), "build", True)
+        unchanged = needs("", "skipped")
         unchanged["prepare"]["outputs"]["app_changed"] = "false"
         unchanged["app-dry-build"] = {"result": "skipped"}
-        skipped = {"app-hosted-tests-lookup": {"result": "skipped"}, "app-hosted-tests": {"result": "skipped"}}
-        check({**unchanged, **skipped}, "build", True)
-        for job in skipped:
-            with self.subTest(unchanged=job), self.assertRaisesRegex(ValueError, "app-hosted-tests"):
-                check({**unchanged, **skipped, job: {"result": "success"}}, "build", True)
+        check(unchanged, "build", True)
+        for found, suite in ((url, "skipped"), ("", "success")):
+            broken = deepcopy(unchanged)
+            broken["prepare"]["outputs"]["hosted_tests_url"] = found
+            broken["app-hosted-tests"] = {"result": suite}
+            with self.subTest(unchanged=(found, suite)), self.assertRaisesRegex(ValueError, "app-hosted-tests"):
+                check(broken, "build", True)
 
     def test_agent_gate_requires_every_release_job(self):
         # Each supported Agent release runs in its own agent-release job; agent writes the one agentCompatibility
@@ -799,7 +907,7 @@ class PublicationTests(unittest.TestCase):
                                                           "agent", "relay-build", "bridge-build", "app-dry-build")}
         needs["prepare"]["outputs"] = {"app_changed": "false", "web_changed": "false", "relay_changed": "true"}
         needs.update({name: {"result": "skipped"} for name in ("web-build", "app-signed-build", "app-dry-build",
-                                                               "app-hosted-tests-lookup", "app-hosted-tests")})
+                                                               "app-hosted-tests")})
         check(needs, "build", True)
         for job in ("agent-release", "agent"):
             for result in ("failure", "cancelled", "skipped"):

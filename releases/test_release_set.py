@@ -94,20 +94,32 @@ class ReleaseSetTests(unittest.TestCase):
         rest = json.dumps({**jobs, "preflight": {**jobs["preflight"], "steps": jobs["preflight"]["steps"][1:]}})
         self.assertNotIn("inputs.sha", rest, "jobs read the commit from preflight, never the possibly empty input")
         steps = jobs["preflight"]["steps"]
+        # The workflow revision's tooling plans the frozen commit (TAL-2396), with its full history.
         checkout = next(step for step in steps if step.get("uses", "").startswith("actions/checkout@"))
-        self.assertEqual(checkout["with"]["ref"], "${{ steps.check.outputs.sha }}")
+        self.assertEqual(checkout["with"], {"fetch-depth": 0})
         commands = "\n".join(step.get("run", "") for step in steps)
-        for required in ("app/ci/require_successful_main_ci", "releases/autorelease.py"):
-            self.assertIn(required, commands)
-        # Preflight creates no version tag: the only ref it may push is the release set's, which is not a version.
-        pushes = re.findall(r"git push origin (\S+)", commands)
-        self.assertEqual(pushes, ['"${SOURCE}:refs/tags/release-set-${SOURCE}"'])
+        self.assertIn('releases/autorelease.py --tag "$RELEASE_TAG" --sha "$SOURCE"', commands)
+        # Preflight neither waits for main CI nor writes a ref (TAL-2396): it only reads, so a release that fails
+        # before publication leaves nothing behind.
+        self.assertNotIn("main_ci", json.dumps(jobs["preflight"]))
+        self.assertNotIn("git push", commands)
+        self.assertNotIn("permissions", jobs["preflight"])
+        self.assertEqual(document["permissions"], {"contents": "read"})
         for job in jobs.values():
             self.assertNotIn("environment", job)
         self.assertEqual(jobs["release"]["uses"], "./.github/workflows/release-set.yml")
         self.assertEqual(jobs["release"]["with"], {
             "request": "${{ needs.preflight.outputs.request }}", "previous_release_set": "${{ needs.preflight.outputs.previous }}",
             "dry_run": False, "release_tag": "${{ needs.preflight.outputs.tag }}"})
+
+    def test_main_ci_evidence_is_no_longer_required_but_still_valid(self):
+        # Sets released before TAL-2396 recorded a mainCI receipt; new sets have none. Both validate.
+        new = complete(candidate())
+        new["evidence"] = [item for item in new["evidence"] if item["gate"] != "mainCI"]
+        validate(new)
+        historical = deepcopy(new)
+        historical["evidence"].append(receipt("mainCI", historical["releaseSet"]))
+        validate(historical)
 
     def test_independent_versions_and_expanded_contracts(self):
         self.assertEqual(validate(candidate()), list(COMPONENTS))

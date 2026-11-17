@@ -7,24 +7,20 @@ import os
 
 
 def check_hosted_tests(needs, app_changed):
-    """The App's hosted unit tests gate every release that ships the App, dry runs included (TAL-877): either the
-    lookup found main CI's successful hosted tests on the exact source and the suite was skipped, or it found none and
-    the suite succeeded (TAL-1550). A failed lookup skips the suite and fails here; it never counts as reuse."""
-    lookup = needs.get("app-hosted-tests-lookup", {})
+    """The App's hosted unit tests gate every release that ships the App, dry runs included (TAL-877): either prepare
+    found main CI's successful hosted tests on the exact source and the suite was skipped, or it found none and the
+    suite succeeded (TAL-1550, TAL-2396)."""
+    url = needs["prepare"]["outputs"].get("hosted_tests_url", "")
     suite = needs.get("app-hosted-tests", {}).get("result")
     if not app_changed:
-        if lookup.get("result") != "skipped" or suite != "skipped":
-            raise ValueError("app-hosted-tests-lookup and app-hosted-tests must be skipped")
+        if url or suite != "skipped":
+            raise ValueError("app-hosted-tests must be skipped")
         return
-    if lookup.get("result") != "success":
-        raise ValueError("app-hosted-tests-lookup did not succeed")
-    outputs = lookup.get("outputs", {})
-    reused, url = outputs.get("reused"), outputs.get("job_url", "")
-    if reused == "true" and url.startswith("https://github.com/MaudeCode/talaria/actions/runs/") and suite == "skipped":
+    if url.startswith("https://github.com/MaudeCode/talaria/actions/runs/") and suite == "skipped":
         return
-    if reused == "false" and not url and suite == "success":
+    if not url and suite == "success":
         return
-    raise ValueError(f"app-hosted-tests must reuse main CI's successful run or succeed (reused={reused!r}, app-hosted-tests {suite})")
+    raise ValueError(f"app-hosted-tests must reuse main CI's successful run or succeed (reused {url!r}, app-hosted-tests {suite})")
 
 
 def check(needs, stage, dry_run):
