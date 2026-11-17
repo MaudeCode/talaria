@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web keeps model-provider plugins installed in a profile usable on Hermes Agent v0.23.2, including after the plugin is updated, instead of listing them as not loaded.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
