@@ -6716,7 +6716,8 @@ public final class ChatViewModel {
                 verb: payload.verb,
                 app: payload.app,
                 target: payload.target,
-                progress: payload.progress
+                progress: payload.progress,
+                isHidden: payload.isHidden
             )
         )
         scheduleStreamingScrollTrigger()
@@ -6791,7 +6792,8 @@ public final class ChatViewModel {
                     editDiff: payload.editDiff,
                     duration: payload.duration,
                     isError: payload.isError,
-                    isCompleted: true
+                    isCompleted: true,
+                    isHidden: payload.isHidden
                 )
             )
             scheduleStreamingScrollTrigger()

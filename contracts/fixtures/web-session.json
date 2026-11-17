@@ -10439,5 +10439,276 @@
         }
       ]
     }
+  },
+  "tool_lookup_views": {
+    "session": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "List my chats about the deploy",
+          "message_id": "lookup-user",
+          "timestamp": 9400,
+          "_turn_id": "lookup-run",
+          "_display": "row"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "message_id": "lookup-calls",
+          "timestamp": 9401,
+          "tool_calls": [
+            {
+              "args_fields": [
+                {
+                  "key": "names",
+                  "value": "- session_list",
+                  "multiline": false
+                }
+              ],
+              "kind": "read",
+              "target": "session_list",
+              "hidden": true,
+              "function": {
+                "name": "tool_describe",
+                "arguments": "{\"names\":[\"session_list\"]}"
+              },
+              "id": "call-describe",
+              "done": true,
+              "is_error": false,
+              "result": "{\"tools\":[{\"name\":\"session_list\",\"description\":\"List chats\"}]}",
+              "result_view": {
+                "text": "{\n  \"tools\": [\n    {\n      \"name\": \"session_list\",\n      \"description\": \"List chats\"\n    }\n  ]\n}",
+                "fields": [
+                  {
+                    "key": "tools",
+                    "value": "- name: session_list\n  description: List chats",
+                    "multiline": true
+                  }
+                ]
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "queries",
+                  "value": "- deploy history",
+                  "multiline": false
+                }
+              ],
+              "kind": "search",
+              "target": "deploy history",
+              "function": {
+                "name": "tool_search",
+                "arguments": "{\"queries\":[\"deploy history\"]}"
+              },
+              "id": "call-search",
+              "done": true,
+              "is_error": true,
+              "result": "{\"error\":\"Tool search is unavailable\"}",
+              "result_view": {
+                "error": "Tool search is unavailable"
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "query",
+                  "value": "deploy",
+                  "multiline": false
+                }
+              ],
+              "kind": "talaria",
+              "target": "session_list",
+              "function": {
+                "name": "session_list",
+                "arguments": "{\"query\":\"deploy\"}"
+              },
+              "id": "call-list",
+              "done": true,
+              "is_error": false,
+              "result": "{\"sessions\":[{\"title\":\"Deploy notes\"}]}",
+              "result_view": {
+                "text": "{\n  \"sessions\": [\n    {\n      \"title\": \"Deploy notes\"\n    }\n  ]\n}",
+                "fields": [
+                  {
+                    "key": "sessions",
+                    "value": "- title: Deploy notes",
+                    "multiline": false
+                  }
+                ]
+              },
+              "duration": null,
+              "type": "function"
+            }
+          ],
+          "_turn_id": "lookup-run",
+          "_display": "row"
+        },
+        {
+          "role": "tool",
+          "content": "{\"tools\":[{\"name\":\"session_list\",\"description\":\"List chats\"}]}",
+          "timestamp": 9402,
+          "tool_call_id": "call-describe",
+          "_turn_id": "lookup-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"error\":\"Tool search is unavailable\"}",
+          "timestamp": 9403,
+          "tool_call_id": "call-search",
+          "_turn_id": "lookup-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"sessions\":[{\"title\":\"Deploy notes\"}]}",
+          "timestamp": 9404,
+          "tool_call_id": "call-list",
+          "_turn_id": "lookup-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "assistant",
+          "content": "One chat mentions the deploy: Deploy notes.",
+          "message_id": "lookup-answer",
+          "timestamp": 9405,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {
+                "row_id": "tool:call-describe",
+                "order_index": 0,
+                "role": "tool",
+                "created_at": 9401,
+                "tool": {
+                  "id": "call-describe",
+                  "name": "tool_describe",
+                  "args_fields": [
+                    {
+                      "key": "names",
+                      "value": "- session_list",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "read",
+                  "target": "session_list",
+                  "hidden": true,
+                  "args": {
+                    "names": [
+                      "session_list"
+                    ]
+                  },
+                  "preview": null,
+                  "result": "{\"tools\":[{\"name\":\"session_list\",\"description\":\"List chats\"}]}",
+                  "result_view": {
+                    "text": "{\n  \"tools\": [\n    {\n      \"name\": \"session_list\",\n      \"description\": \"List chats\"\n    }\n  ]\n}",
+                    "fields": [
+                      {
+                        "key": "tools",
+                        "value": "- name: session_list\n  description: List chats",
+                        "multiline": true
+                      }
+                    ]
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-search",
+                "order_index": 1,
+                "role": "tool",
+                "created_at": 9401,
+                "tool": {
+                  "id": "call-search",
+                  "name": "tool_search",
+                  "args_fields": [
+                    {
+                      "key": "queries",
+                      "value": "- deploy history",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "search",
+                  "target": "deploy history",
+                  "args": {
+                    "queries": [
+                      "deploy history"
+                    ]
+                  },
+                  "preview": null,
+                  "result": "{\"error\":\"Tool search is unavailable\"}",
+                  "result_view": {
+                    "error": "Tool search is unavailable"
+                  },
+                  "done": true,
+                  "is_error": true,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-list",
+                "order_index": 2,
+                "role": "tool",
+                "created_at": 9401,
+                "tool": {
+                  "id": "call-list",
+                  "name": "session_list",
+                  "args_fields": [
+                    {
+                      "key": "query",
+                      "value": "deploy",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "talaria",
+                  "target": "session_list",
+                  "args": {
+                    "query": "deploy"
+                  },
+                  "preview": null,
+                  "result": "{\"sessions\":[{\"title\":\"Deploy notes\"}]}",
+                  "result_view": {
+                    "text": "{\n  \"sessions\": [\n    {\n      \"title\": \"Deploy notes\"\n    }\n  ]\n}",
+                    "fields": [
+                      {
+                        "key": "sessions",
+                        "value": "- title: Deploy notes",
+                        "multiline": false
+                      }
+                    ]
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              }
+            ],
+            "final_answer": "One chat mentions the deploy: Deploy notes.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": false,
+            "has_consumed_steering": false,
+            "file_changes": [],
+            "activity_rows_total": 3,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "a80d1022621c7c267b14db1b26855d7338433fc5ab2bca18bef9f8392edf2771"
+          },
+          "_turn_id": "lookup-run",
+          "_display": "row"
+        }
+      ]
+    }
   }
 }

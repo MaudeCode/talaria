@@ -27,6 +27,8 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
     public var editDiff: ToolEditDiff?
     /// TAL-331: a limited response clipped this call's result (server scene field); `GET /api/session/tool-result` has it whole.
     public var resultTruncated = false
+    /// TAL-2331: the transcript leaves this call out (server `hidden`): a tool lookup while Settings hides them.
+    public var isHidden: Bool
 
     public init(
         id: String = "live-tool-\(UUID().uuidString)",
@@ -44,8 +46,10 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
         duration: Double? = nil,
         isError: Bool? = nil,
         isCompleted: Bool = false,
-        startedAt: Double = Date().timeIntervalSince1970
+        startedAt: Double = Date().timeIntervalSince1970,
+        isHidden: Bool = false
     ) {
+        self.isHidden = isHidden
         self.verb = verb
         self.app = app
         self.id = id
@@ -526,7 +530,8 @@ public struct ToolCallGroup: Identifiable, Equatable, Sendable {
             editDiff: ToolEditDiff(object["edit_diff"]),
             duration: object["duration"]?.numberValue,
             isError: object["is_error"]?.boolValue,
-            isCompleted: object["done"]?.boolValue ?? true
+            isCompleted: object["done"]?.boolValue ?? true,
+            isHidden: object["hidden"]?.boolValue == true
         )
     }
 

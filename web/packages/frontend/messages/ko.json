@@ -1645,6 +1645,7 @@
 	"settings_label_send_key": "보내기 키",
 	"settings_label_session_endless_scroll": "스크롤하는 동안 이전 메시지 불러오기",
 	"settings_label_session_jump_buttons": "이동 버튼",
+	"settings_label_show_tool_lookups": "도구 조회 표시",
 	"settings_label_shutdown": "Talaria Web 서버 중지",
 	"settings_label_skin": "스킨",
 	"settings_label_sound": "알림음",

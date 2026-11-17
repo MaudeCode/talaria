@@ -67,6 +67,11 @@ struct ServerSettingsSections: View {
                         Text("20").tag("20")
                     }
                 }
+                // TAL-2331: off, the server leaves the Agent's tool lookups out of the transcript.
+                if let value = settings.showToolLookups {
+                    toggle(SettingsIndex.systemShowToolLookups.titleResource, "text.magnifyingglass", \.showToolLookups, value,
+                           SettingsIndex.systemShowToolLookups.id, store.setShowToolLookups)
+                }
             case .updates:
                 if settings.checkForUpdates != nil || settings.autoApplyUpdates != nil || settings.summarizeUpdatesAutomatically != nil
                     || settings.continueInterruptedChats != nil || settings.updateChannel != nil || settings.agentUpdateChannel != nil || settings.ignoreAgentUpdates != nil {
@@ -132,6 +137,7 @@ struct ServerSettingsSections: View {
         case (.limits, .modelsMaxTokens): available = settings?.hasMaxTokens == true
         case (.limits, .modelsPrepareCompressionAhead): available = settings?.compressionPrepareAhead != nil
         case (.titles, .systemRefreshTitlesEvery): available = settings?.autoTitleRefreshEvery != nil
+        case (.titles, .systemShowToolLookups): available = settings?.showToolLookups != nil
         case (.updates, .systemCheckForUpdates): available = settings?.checkForUpdates != nil
         case (.updates, .systemApplyWebUpdatesAutomatically): available = settings?.autoApplyUpdates != nil
         case (.updates, .systemContinueInterruptedChats): available = settings?.continueInterruptedChats != nil

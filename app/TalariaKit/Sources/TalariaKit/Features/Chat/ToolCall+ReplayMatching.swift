@@ -21,7 +21,8 @@ extension ToolCall {
             duration: payload.duration,
             isError: payload.isError,
             isCompleted: true,
-            startedAt: startedAt
+            startedAt: startedAt,
+            isHidden: payload.isHidden
         )
     }
 }

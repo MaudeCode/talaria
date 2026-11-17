@@ -101,6 +101,8 @@ export function useSaveSettings() {
 
 /** The settings the server's chat list reads: one switch per outside source and the messaging sub-option (TAL-2159), and the density that decides whether rows carry `meta` (TAL-2153). */
 const SESSION_LIST_SETTINGS = new Set<string>([...OUTSIDE_SOURCE_SETTING_KEYS, 'show_previous_messaging_sessions', 'sidebar_density'])
+/** The settings the server's transcript reads: the Worklog default (TAL-2149) and whether tool lookups are `hidden` (TAL-2331). */
+const SESSION_DETAIL_SETTINGS = new Set<string>(['worklog_details_expanded_default', 'show_tool_lookups'])
 
 // Module scope: React Compiler cannot lower its try/finally, so it stays outside the hook.
 async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
@@ -137,10 +139,10 @@ async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {
   for (const [path, value] of paths) if (shown(path)) state.fields.set(path, { sequence, value })
   publish()
   // Settings the server reads into other payloads: once one is stored (or a reread settles an unknown outcome) those
-  // queries re-read, even after the page that wrote it has closed. TAL-2149: the server opens every Worklog by
-  // `worklog_details_expanded_default`; the chat list and sidebar searches read `SESSION_LIST_SETTINGS`.
+  // queries re-read, even after the page that wrote it has closed: open transcripts read `SESSION_DETAIL_SETTINGS`, the
+  // chat list and sidebar searches `SESSION_LIST_SETTINGS`.
   const refreshDependents = () => {
-    if ('worklog_details_expanded_default' in patch) void qc.invalidateQueries({ queryKey: [...keys.sessions.all, 'detail'] })
+    if (fields.some((key) => SESSION_DETAIL_SETTINGS.has(key))) void qc.invalidateQueries({ queryKey: [...keys.sessions.all, 'detail'] })
     if (fields.some((key) => SESSION_LIST_SETTINGS.has(key))) void invalidateSessionQueries(qc)
   }
   let unknown = false

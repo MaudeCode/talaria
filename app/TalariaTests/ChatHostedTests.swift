@@ -61,6 +61,52 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "reasoning-live-after-hide")
     }
 
+    /// TAL-2331: a call the server marks `hidden` (a tool lookup while Settings hides them) never shows in the transcript;
+    /// a lookup whose completion failed shows.
+    func testHiddenToolLookupsStayOutOfTheTranscriptUntilOneFails() async throws {
+        let fixture = try FixtureApp(for: self)
+        let stream = ScriptedSSEStreamingClient()
+        let summary = SessionSummary(sessionId: "session-lookups", title: "Tool lookups")
+        let model = try makeScriptedChatViewModel(streamClient: stream, sessionSummary: summary) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"session-lookups","stream_id":"lookup-run"}"#, for: request)
+            case "/api/session":
+                return apiTestJSONResponse("""
+                {"session":{"session_id":"session-lookups","title":"Tool lookups","active_stream_id":"lookup-run","messages":[{"role":"user","content":"Find it","message_id":"prompt"}]}}
+                """, for: request)
+            case "/api/chat/stream/status":
+                return apiTestJSONResponse(#"{"active":true,"stream_id":"lookup-run"}"#, for: request)
+            default:
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        defer {
+            model.suspendStreamForNavigation()
+            model.cleanupPollingTasks()
+            stream.stop()
+            ChatViewModel.resetActiveStreamSnapshotsForTesting()
+        }
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: URL(string: "https://example.test")!, onAPIError: { _ in },
+                     loadsInitialMessages: false, viewModel: model)
+        }.modelContainer(fixture.cache))
+        let started = await model.sendMessage("Find it")
+        XCTAssertTrue(started)
+        stream.emit(SSEEventDecoder.decode(eventType: "tool", data: #"{"id":"hidden","name":"tool_describe","kind":"read","target":"lookupnames","hidden":true}"#))
+        stream.emit(SSEEventDecoder.decode(eventType: "tool", data: #"{"id":"read","name":"read_file","kind":"read","target":"visible.txt"}"#))
+        stream.emit(SSEEventDecoder.decode(eventType: "tool_complete", data: #"{"id":"read","name":"read_file","kind":"read","target":"visible.txt","is_error":false}"#))
+        stream.emit(SSEEventDecoder.decode(eventType: "tool", data: #"{"id":"failed","name":"tool_search","kind":"search","target":"failedquery","hidden":true}"#))
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains("visible.txt") == true }
+        let labels = { HostedAccessibility.labels(in: window) }
+        XCTAssertFalse(labels().contains { $0.contains("lookupnames") || $0.contains("failedquery") }, "Hidden lookups stay out of the transcript")
+        attachHostedScreenshot(window, name: "tool-lookups-hidden")
+        stream.emit(SSEEventDecoder.decode(eventType: "tool_complete", data: #"{"id":"failed","name":"tool_search","kind":"search","target":"failedquery","is_error":true}"#))
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains("failedquery") == true }
+        XCTAssertFalse(labels().contains { $0.contains("lookupnames") }, "A lookup that did not fail stays hidden")
+        attachHostedScreenshot(window, name: "tool-lookups-failed-shown")
+    }
+
     /// TAL-839: an external chat shows at once and stays read-only, saying why, until the server verifies it.
     func testExternalChatChecksAccessUntilTheServerVerifiesIt() async throws {
         let fixture = try FixtureApp(for: self)

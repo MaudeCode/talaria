@@ -1262,6 +1262,19 @@ final class SharedContractTests: XCTestCase {
         }
     }
 
+    func testSharedWebSessionLeavesOutTheToolLookupsTheServerHides() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-2331 has no such example.
+        guard let example = object["tool_lookup_views"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
+        let answer = try XCTUnwrap(session.messages?.first { $0.messageId == "lookup-answer" })
+        let layout = AssistantTurnLayout(message: answer, liveRows: [], archivedRows: [])
+        // The lookup that worked is hidden; the failed one and the call it led to show.
+        XCTAssertEqual(layout.rows.flatMap(\.toolCalls).map(\.id), ["call-search", "call-list"])
+    }
+
     func testSharedWebSessionNamesEachMCPAndConnectorCallByItsApp() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-2330 has no such example.

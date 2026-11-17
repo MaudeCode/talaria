@@ -2750,6 +2750,7 @@
 	"settings_label_send_key": "Send with",
 	"settings_label_session_endless_scroll": "Load earlier messages while scrolling",
 	"settings_label_session_jump_buttons": "Jump buttons",
+	"settings_label_show_tool_lookups": "Show tool lookups",
 	"settings_label_shutdown": "Stop the Talaria Web server",
 	"settings_label_skin": "Skin",
 	"settings_label_sound": "Notification sound",

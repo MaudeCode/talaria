@@ -70,6 +70,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     virtualize_transcript_optin: false,
     show_tps: false,
     fade_text_effect: true,
+    show_tool_lookups: false,
     show_cli_sessions: true,
     show_claude_code_sessions: true,
     show_messaging_sessions: true,

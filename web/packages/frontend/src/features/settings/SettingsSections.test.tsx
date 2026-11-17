@@ -74,7 +74,7 @@ const renderPage = ({ section, page }: { section: SettingsSectionId; page?: Sett
  */
 const PLACEMENT: Record<string, string> = {
   send_key: 'chat', default_message_mode: 'chat', large_text_paste_as_attachment: 'chat', chat_activity_display_mode: 'chat', transparent_stream_event_timestamps: 'chat/advanced',
-  worklog_details_expanded_default: 'chat', auto_scroll_follow: 'chat', render_user_markdown: 'chat', fade_text_effect: 'chat/advanced', virtualize_transcript: 'chat/advanced',
+  worklog_details_expanded_default: 'chat', show_tool_lookups: 'chat', auto_scroll_follow: 'chat', render_user_markdown: 'chat', fade_text_effect: 'chat/advanced', virtualize_transcript: 'chat/advanced',
   show_busy_placeholder_hint: 'chat/advanced', show_token_usage: 'chat', show_tps: 'chat/advanced',
   max_tokens: 'models', compression_prepare_ahead: 'models', group_discussion_max_rounds: 'system', group_discussion_max_messages: 'system', auto_title_refresh_every: 'chat/advanced',
   sidebar_density: 'navigation', pinned_sessions_limit: 'navigation', session_endless_scroll: 'chat/advanced', session_jump_buttons: 'chat', show_conversation_outline: 'chat', project_quick_create_buttons: 'navigation',
@@ -121,7 +121,7 @@ it('edits every retired Preferences, Conversation, System and Models & Providers
 const GROUPS: Record<string, [string, string][]> = {
   chat: [
     ['Send with', 'composer'], ['While the agent is working', 'composer'], ['Attach long pasted text as a file', 'composer'],
-    ['Activity display', 'transcript'], ['Open worklog details automatically', 'transcript'], ['Format Markdown in my messages', 'transcript'], ['Show token usage', 'transcript'],
+    ['Activity display', 'transcript'], ['Open worklog details automatically', 'transcript'], ['Show tool lookups', 'transcript'], ['Format Markdown in my messages', 'transcript'], ['Show token usage', 'transcript'],
     ['Follow new content', 'transcript'], ['Conversation outline', 'transcript'], ['Jump buttons', 'transcript'],
   ],
   'chat/workspace-panel': [

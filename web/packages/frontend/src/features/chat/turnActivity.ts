@@ -114,8 +114,9 @@ export function sceneItems(value: unknown): ActivityItem[] {
     if (row.role === 'prose') return [{ key, kind: 'text', text: text(row.text), ...displayBody(row.display_text, row.media), ...at }]
     if (row.role === 'reasoning') return [{ key, kind: 'reasoning', text: text(row.text), titles: Array.isArray(row.titles) ? row.titles.map(text) : [], ...(text(row.disclosure_key) ? { disclosureKey: text(row.disclosure_key) } : {}), ...at }]
     if (row.role === 'steering') return [{ key, kind: 'steering', text: text(row.text), consumed: record(row.steering).consumed === true, activity: TalariaActivitySchema.safeParse(row.talaria_activity).data, ...at }]
-    if (row.role !== 'tool') return []
     const tool = record(row.tool)
+    // TAL-2331: a call the server hides is left out of the turn and its tool group.
+    if (row.role !== 'tool' || tool.hidden === true) return []
     return [{ key, kind: 'tool', ...at, call: {
       progress: ToolProgressSchema.safeParse(tool.progress).data ?? null, id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), ...verbOf(tool.verb), ...appOf(tool.app), target: text(tool.target), args: tool.args, ...argsFieldsOf(tool.args_fields), preview: typeof tool.preview === 'string' ? tool.preview : null, resultView: resultViewOf(tool.result_view), ...(tool.shows_card === true ? { showsCard: true as const } : {}),
       done: tool.done === true, isError: tool.is_error === true, duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
@@ -167,7 +168,7 @@ export function liveActivity(turn: Pick<LiveTurn, 'segments' | 'tools' | 'status
     else if (!seen.has(segment.toolId) && !omitToolIds?.has(segment.toolId)) {
       seen.add(segment.toolId)
       const call = turn.tools[segment.toolId]
-      if (call) items.push({ key: `tool:${call.id}`, kind: 'tool', call })
+      if (call && !call.hidden) items.push({ key: `tool:${call.id}`, kind: 'tool', call })
     }
   })
   // Live rendering only: the server's scene decides the settled answer, outcome and fold. Until it replaces this view,

@@ -1555,6 +1555,7 @@
 	"settings_label_send_key": "发送方式",
 	"settings_label_session_endless_scroll": "滚动时加载更早的消息",
 	"settings_label_session_jump_buttons": "跳转按钮",
+	"settings_label_show_tool_lookups": "显示工具查找",
 	"settings_label_shutdown": "停止 Talaria Web 服务器",
 	"settings_label_skin": "皮肤",
 	"settings_label_sound": "通知声音",

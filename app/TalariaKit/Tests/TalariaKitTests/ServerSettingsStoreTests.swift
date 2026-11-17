@@ -17,11 +17,12 @@ final class ServerSettingsStoreTests: XCTestCase {
     }
 
     private enum Choice: CaseIterable {
-        case approval, channel, maximum, noLimit, botName, continueChats
+        case approval, channel, maximum, noLimit, botName, continueChats, toolLookups
         var key: String {
             switch self {
             case .botName: "bot_name"
             case .continueChats: "continue_interrupted_chats"
+            case .toolLookups: "show_tool_lookups"
             case .approval: "agent_approvals"
             case .channel: "update_channel"
             case .maximum, .noLimit: "max_tokens"
@@ -30,7 +31,7 @@ final class ServerSettingsStoreTests: XCTestCase {
         var chosen: JSONValue {
             switch self {
             case .botName: .string("Assistant")
-            case .continueChats: .bool(true)
+            case .continueChats, .toolLookups: .bool(true)
             case .approval: .bool(false)
             case .channel: .string("nightly")
             case .maximum: .number(4096)
@@ -42,6 +43,7 @@ final class ServerSettingsStoreTests: XCTestCase {
             switch self {
             case .botName: .string(store.settings?.botName ?? "")
             case .continueChats: .bool(store.settings?.continueInterruptedChats ?? false)
+            case .toolLookups: .bool(store.settings?.showToolLookups ?? false)
             case .approval: .bool(store.settings?.agentApprovals ?? false)
             case .channel: .string(store.settings?.updateChannel ?? "")
             case .maximum, .noLimit: store.settings?.maxTokens.map { .number(Double($0)) } ?? .null
@@ -52,6 +54,7 @@ final class ServerSettingsStoreTests: XCTestCase {
             switch self {
             case .botName: store.setBotName("Assistant")
             case .continueChats: store.setContinueInterruptedChats(true)
+            case .toolLookups: store.setShowToolLookups(true)
             case .approval: store.setAgentApprovals(false)
             case .channel: store.setUpdateChannel("nightly")
             case .maximum: store.setMaxTokensText("4096")!

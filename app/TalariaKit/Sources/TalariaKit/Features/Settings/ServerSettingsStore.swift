@@ -100,6 +100,17 @@ public final class ServerSettingsStore {
     public func setContinueInterruptedChats(_ value: Bool) -> Task<Void, Never> {
         save("continue_interrupted_chats", \.continueInterruptedChats, value)
     }
+    /// TAL-2331: the server marks tool lookups `hidden` by this setting, so open chats reread their transcript once it settles.
+    @discardableResult
+    public func setShowToolLookups(_ value: Bool) -> Task<Void, Never> {
+        let write = save("show_tool_lookups", \.showToolLookups, value)
+        let server = client.baseURL
+        return Task {
+            await write.value
+            NotificationCenter.default.post(name: .talariaSessionsChanged, object: server,
+                                            userInfo: [SessionsChange.userInfoKey: SessionsChange.changed(reason: "show_tool_lookups", sessionID: nil)])
+        }
+    }
     @discardableResult
     public func setQuotaThresholds(_ value: ProviderQuotaThresholds) -> Task<Void, Never> {
         save("provider_quota_thresholds", \.providerQuotaThresholds, value)

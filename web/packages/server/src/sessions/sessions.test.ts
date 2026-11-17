@@ -3356,6 +3356,51 @@ describe('session detail names MCP and connector calls by app and action (TAL-23
   })
 })
 
+describe('session detail hides the Agent\'s tool lookups while Settings does (TAL-2331)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
+  const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
+  /** A lookup that worked, one that failed, and the call the lookup led to. */
+  const transcript: Json[] = [
+    { role: 'user', content: 'List my chats about the deploy', message_id: 'lookup-user', timestamp: 9400, _turn_id: 'lookup-run' },
+    { role: 'assistant', content: '', message_id: 'lookup-calls', timestamp: 9401, _turn_id: 'lookup-run', tool_calls: [
+      call('call-describe', 'tool_describe', { names: ['session_list'] }),
+      call('call-search', 'tool_search', { queries: ['deploy history'] }),
+      call('call-list', 'session_list', { query: 'deploy' }),
+    ] },
+    { role: 'tool', tool_call_id: 'call-describe', content: JSON.stringify({ tools: [{ name: 'session_list', description: 'List chats' }] }), timestamp: 9402, _turn_id: 'lookup-run' },
+    { role: 'tool', tool_call_id: 'call-search', content: JSON.stringify({ error: 'Tool search is unavailable' }), timestamp: 9403, _turn_id: 'lookup-run' },
+    { role: 'tool', tool_call_id: 'call-list', content: JSON.stringify({ sessions: [{ title: 'Deploy notes' }] }), timestamp: 9404, _turn_id: 'lookup-run' },
+    { role: 'assistant', content: 'One chat mentions the deploy: Deploy notes.', message_id: 'lookup-answer', timestamp: 9405, _turn_id: 'lookup-run' },
+  ]
+
+  it('marks a lookup that worked hidden on the calls and the scene, never a failed one, until the setting shows them', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = structuredClone(transcript)
+    session.title = 'Tool lookups'
+    await s.deps.sessionStore.save(session)
+    const read = async () => JSON.parse(JSON.stringify(((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages).replaceAll(sid, 'lookup-session')) as Json[]
+    const hidden = (messages: Json[]) => {
+      const calls = messages.find((m) => m.message_id === 'lookup-calls')?.tool_calls as Json[]
+      const rows = ((messages.find((m) => m.message_id === 'lookup-answer')?._anchor_activity_scene as Json).activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => r.tool as Json)
+      return [calls, rows].map((list) => list.map((c) => [c.id, c.is_error, c.hidden ?? false]))
+    }
+    const messages = await read()
+    expect(messages).toEqual((((JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_lookup_views as Json).session as Json).messages)
+    const off = [['call-describe', false, true], ['call-search', true, false], ['call-list', false, false]]
+    expect(hidden(messages)).toEqual([off, off])
+    const save = (on: boolean) => s.get('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ show_tool_lookups: on }) })
+    expect((await json(await save(true))).show_tool_lookups).toBe(true)
+    const on = off.map(([id, error]) => [id, error, false])
+    expect(hidden(await read())).toEqual([on, on])
+    await save(false)
+  })
+})
+
 describe('session detail ships browser and computer-use views (TAL-2328)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

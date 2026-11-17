@@ -541,6 +541,10 @@
                               "type": "boolean",
                               "description": "TAL-2148: fade the streaming reply's new words in (default true); clients skip code and honour reduced motion."
                             },
+                            "show_tool_lookups": {
+                              "type": "boolean",
+                              "description": "TAL-2331: show the Agent's `tool_search` and `tool_describe` calls in the transcript (default false); off, the server marks them `hidden`."
+                            },
                             "show_busy_placeholder_hint": {
                               "type": "boolean",
                               "description": "TAL-2148: while a chat is busy and the draft is empty, the composer placeholder names the busy action (default true)."
@@ -8226,6 +8230,10 @@
                                       "const": true,
                                       "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
                                     },
+                                    "hidden": {
+                                      "const": true,
+                                      "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -9217,6 +9225,10 @@
                                             "shows_card": {
                                               "const": true,
                                               "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
+                                            "hidden": {
+                                              "const": true,
+                                              "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -10549,6 +10561,10 @@
                               "shows_card": {
                                 "const": true,
                                 "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
+                              "hidden": {
+                                "const": true,
+                                "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -15259,6 +15275,10 @@
                                       "const": true,
                                       "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
                                     },
+                                    "hidden": {
+                                      "const": true,
+                                      "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -16250,6 +16270,10 @@
                                             "shows_card": {
                                               "const": true,
                                               "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
+                                            "hidden": {
+                                              "const": true,
+                                              "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -17582,6 +17606,10 @@
                               "shows_card": {
                                 "const": true,
                                 "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
+                              "hidden": {
+                                "const": true,
+                                "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -20963,6 +20991,10 @@
                                       "const": true,
                                       "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
                                     },
+                                    "hidden": {
+                                      "const": true,
+                                      "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -21954,6 +21986,10 @@
                                             "shows_card": {
                                               "const": true,
                                               "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
+                                            "hidden": {
+                                              "const": true,
+                                              "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -23286,6 +23322,10 @@
                               "shows_card": {
                                 "const": true,
                                 "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
+                              "hidden": {
+                                "const": true,
+                                "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -29799,6 +29839,10 @@
                                       "const": true,
                                       "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
                                     },
+                                    "hidden": {
+                                      "const": true,
+                                      "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -30790,6 +30834,10 @@
                                             "shows_card": {
                                               "const": true,
                                               "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
+                                            "hidden": {
+                                              "const": true,
+                                              "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -32122,6 +32170,10 @@
                               "shows_card": {
                                 "const": true,
                                 "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
+                              "hidden": {
+                                "const": true,
+                                "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -37946,6 +37998,10 @@
                                       "const": true,
                                       "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
                                     },
+                                    "hidden": {
+                                      "const": true,
+                                      "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -38937,6 +38993,10 @@
                                             "shows_card": {
                                               "const": true,
                                               "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
+                                            "hidden": {
+                                              "const": true,
+                                              "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -40269,6 +40329,10 @@
                               "shows_card": {
                                 "const": true,
                                 "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
+                              "hidden": {
+                                "const": true,
+                                "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -46725,6 +46789,10 @@
                                       "const": true,
                                       "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
                                     },
+                                    "hidden": {
+                                      "const": true,
+                                      "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -47716,6 +47784,10 @@
                                             "shows_card": {
                                               "const": true,
                                               "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
+                                            "hidden": {
+                                              "const": true,
+                                              "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -49048,6 +49120,10 @@
                               "shows_card": {
                                 "const": true,
                                 "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
+                              "hidden": {
+                                "const": true,
+                                "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -52374,6 +52450,10 @@
                                       "const": true,
                                       "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
                                     },
+                                    "hidden": {
+                                      "const": true,
+                                      "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -53365,6 +53445,10 @@
                                             "shows_card": {
                                               "const": true,
                                               "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
+                                            "hidden": {
+                                              "const": true,
+                                              "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -54697,6 +54781,10 @@
                               "shows_card": {
                                 "const": true,
                                 "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
+                              "hidden": {
+                                "const": true,
+                                "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -58085,6 +58173,10 @@
                                       "const": true,
                                       "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
                                     },
+                                    "hidden": {
+                                      "const": true,
+                                      "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -59076,6 +59168,10 @@
                                             "shows_card": {
                                               "const": true,
                                               "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
+                                            "hidden": {
+                                              "const": true,
+                                              "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -60408,6 +60504,10 @@
                               "shows_card": {
                                 "const": true,
                                 "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
+                              "hidden": {
+                                "const": true,
+                                "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -63794,6 +63894,10 @@
                                       "const": true,
                                       "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
                                     },
+                                    "hidden": {
+                                      "const": true,
+                                      "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -64785,6 +64889,10 @@
                                             "shows_card": {
                                               "const": true,
                                               "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
+                                            "hidden": {
+                                              "const": true,
+                                              "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -66117,6 +66225,10 @@
                               "shows_card": {
                                 "const": true,
                                 "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
+                              "hidden": {
+                                "const": true,
+                                "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -69312,6 +69424,10 @@
                               "shows_card": {
                                 "const": true,
                                 "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
+                              "hidden": {
+                                "const": true,
+                                "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -81784,6 +81900,10 @@
                                       "const": true,
                                       "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
                                     },
+                                    "hidden": {
+                                      "const": true,
+                                      "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -82775,6 +82895,10 @@
                                             "shows_card": {
                                               "const": true,
                                               "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
+                                            "hidden": {
+                                              "const": true,
+                                              "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -84107,6 +84231,10 @@
                               "shows_card": {
                                 "const": true,
                                 "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
+                              "hidden": {
+                                "const": true,
+                                "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -87485,6 +87613,10 @@
                                       "const": true,
                                       "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
                                     },
+                                    "hidden": {
+                                      "const": true,
+                                      "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -88476,6 +88608,10 @@
                                             "shows_card": {
                                               "const": true,
                                               "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
+                                            "hidden": {
+                                              "const": true,
+                                              "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -89808,6 +89944,10 @@
                               "shows_card": {
                                 "const": true,
                                 "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
+                              "hidden": {
+                                "const": true,
+                                "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -93872,6 +94012,10 @@
                                       "const": true,
                                       "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
                                     },
+                                    "hidden": {
+                                      "const": true,
+                                      "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -94863,6 +95007,10 @@
                                             "shows_card": {
                                               "const": true,
                                               "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
+                                            "hidden": {
+                                              "const": true,
+                                              "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",
@@ -96195,6 +96343,10 @@
                               "shows_card": {
                                 "const": true,
                                 "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                              },
+                              "hidden": {
+                                "const": true,
+                                "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                               },
                               "approval_answered_by": {
                                 "type": "object",
@@ -100129,6 +100281,10 @@
                                           "const": true,
                                           "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
                                         },
+                                        "hidden": {
+                                          "const": true,
+                                          "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                        },
                                         "approval_answered_by": {
                                           "type": "object",
                                           "properties": {
@@ -101023,6 +101179,10 @@
                                                 "shows_card": {
                                                   "const": true,
                                                   "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                                },
+                                                "hidden": {
+                                                  "const": true,
+                                                  "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                                 },
                                                 "approval_answered_by": {
                                                   "type": "object",
@@ -102143,6 +102303,10 @@
                                   "shows_card": {
                                     "const": true,
                                     "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                  },
+                                  "hidden": {
+                                    "const": true,
+                                    "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                   },
                                   "approval_answered_by": {
                                     "type": "object",
@@ -107031,6 +107195,10 @@
                       "type": "boolean",
                       "description": "TAL-2148: fade the streaming reply's new words in (default true); clients skip code and honour reduced motion."
                     },
+                    "show_tool_lookups": {
+                      "type": "boolean",
+                      "description": "TAL-2331: show the Agent's `tool_search` and `tool_describe` calls in the transcript (default false); off, the server marks them `hidden`."
+                    },
                     "show_busy_placeholder_hint": {
                       "type": "boolean",
                       "description": "TAL-2148: while a chat is busy and the draft is empty, the composer placeholder names the busy action (default true)."
@@ -107503,6 +107671,10 @@
                     "fade_text_effect": {
                       "type": "boolean",
                       "description": "TAL-2148: fade the streaming reply's new words in (default true); clients skip code and honour reduced motion."
+                    },
+                    "show_tool_lookups": {
+                      "type": "boolean",
+                      "description": "TAL-2331: show the Agent's `tool_search` and `tool_describe` calls in the transcript (default false); off, the server marks them `hidden`."
                     },
                     "show_busy_placeholder_hint": {
                       "type": "boolean",
@@ -150759,6 +150931,10 @@
                                       "const": true,
                                       "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
                                     },
+                                    "hidden": {
+                                      "const": true,
+                                      "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                    },
                                     "approval_answered_by": {
                                       "type": "object",
                                       "properties": {
@@ -151750,6 +151926,10 @@
                                             "shows_card": {
                                               "const": true,
                                               "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                            },
+                                            "hidden": {
+                                              "const": true,
+                                              "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                             },
                                             "approval_answered_by": {
                                               "type": "object",

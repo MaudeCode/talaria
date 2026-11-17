@@ -200,7 +200,7 @@ describe('shared optimistic settings', () => {
     expect(result.current.settings.data).not.toHaveProperty('_set_password')
   })
 
-  it('re-reads open transcripts only when the Worklog default changes (TAL-2149), and the chat list only when density does (TAL-2153)', async () => {
+  it('re-reads open transcripts only when the Worklog default (TAL-2149) or tool lookups (TAL-2331) change, and the chat list only when density does (TAL-2153)', async () => {
     vi.mocked(api.saveSettings).mockImplementation((patch) => Promise.resolve({ ...initial, ...patch }))
     const { result, qc } = setup()
     qc.setQueryData(keys.sessions.detail('s1'), { session: {} })
@@ -209,6 +209,10 @@ describe('shared optimistic settings', () => {
     await act(async () => { await result.current.save.mutateAsync({ sound_enabled: true }) })
     expect(stale()).toEqual([false, false])
     await act(async () => { await result.current.save.mutateAsync({ worklog_details_expanded_default: true }) })
+    expect(stale()).toEqual([true, false])
+    qc.setQueryData(keys.sessions.detail('s1'), { session: {} })
+    // TAL-2331: the server's `hidden` tool lookups follow `show_tool_lookups`.
+    await act(async () => { await result.current.save.mutateAsync({ show_tool_lookups: true }) })
     expect(stale()).toEqual([true, false])
     qc.setQueryData(keys.sessions.detail('s1'), { session: {} })
     await act(async () => { await result.current.save.mutateAsync({ sidebar_density: 'detailed' }) })
