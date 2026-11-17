@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Tables in a chat reply read like the text around them, as on Web: a thin rule between rows and a stronger one under the header, with no cell grid or striped rows, in light and dark appearance.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

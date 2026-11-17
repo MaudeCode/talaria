@@ -177,10 +177,7 @@ extension MarkdownUI.Theme {
             }
             .table { configuration in
                 MarkdownMainActorBlock {
-                    ChatMarkdownTable(
-                        label: configuration.label,
-                        colorScheme: colorScheme
-                    )
+                    ChatMarkdownTable(label: configuration.label)
                     .markdownMargin(.table)
                 }
             }
@@ -207,6 +204,9 @@ extension MarkdownUI.Theme {
                     .padding(.vertical, 6)
                     .padding(.horizontal, 13)
                     .relativeLineSpacing(.em(0.25))
+                    .anchorPreference(key: ChatMarkdownTable.RowCellBounds.self, value: .bounds) {
+                        [configuration.row: [$0]]
+                    }
                 }
             }
     }
