@@ -1,0 +1,76 @@
+{
+  "root": "..",
+  "roots": [
+    "app/TalariaTests",
+    "app/TalariaKit/Tests",
+    "relay/tests",
+    "web/packages",
+    "web/sidecar/tests"
+  ],
+  "filePattern": "^(?:app/TalariaTests/.*\\.swift|app/TalariaKit/Tests/.*\\.swift|web/sidecar/tests/.*\\.py|relay/tests/.*\\.ts|web/packages/[^/]+/(?:e2e/.*|src/test/.*|src/.*\\.test|(?:vitest|playwright)\\.config)\\.tsx?)$",
+  "excludeFilePattern": "/node_modules/",
+  "baseline": "scripts/test-rules-baseline.json",
+  "rules": {
+    "clock-sleep": {
+      "paths": [
+        ""
+      ],
+      "patterns": [
+        "\\bTask\\.sleep\\(",
+        "\\bThread\\.sleep\\(",
+        "\\busleep\\(",
+        "\\bwaitForTimeout\\(",
+        "\\bsetTimeout\\(\\s*[A-Za-z_$][\\w$]*\\s*,\\s*[1-9]",
+        "\\btime\\.sleep\\(",
+        "\\basyncio\\.sleep\\(\\s*(?!0\\s*\\))"
+      ],
+      "message": "test-audit clock: wait on the event or drive a controlled clock, never a fixed sleep (docs/testing.md)"
+    },
+    "clock-elapsed": {
+      "paths": [
+        ""
+      ],
+      "patterns": [
+        "\\bDate\\.now\\(\\)\\s*-",
+        "\\bperformance\\.now\\(\\)\\s*-",
+        "\\bmonotonic\\(\\)\\s*-",
+        "\\btime\\.time\\(\\)\\s*-",
+        "\\.timeIntervalSince\\(",
+        "\\bCFAbsoluteTimeGetCurrent\\(\\)\\s*-"
+      ],
+      "message": "test-audit clock: assert work done (calls, renders, rows), never elapsed time (docs/testing.md)"
+    },
+    "unheld-clock": {
+      "paths": [
+        ""
+      ],
+      "patterns": [
+        "\\bspyOn\\(\\s*Date\\s*,\\s*['\"]now['\"]",
+        "\\bDate\\.now\\s*=[^=]"
+      ],
+      "message": "test-audit unheld: fake the whole clock (vi.useFakeTimers({ now })) so real timers cannot run behind the test (docs/testing.md)"
+    },
+    "retry": {
+      "paths": [
+        ""
+      ],
+      "patterns": [
+        "\\.configure\\(\\s*\\{[^}]*\\bretries\\b",
+        "\\bmark\\.flaky\\b",
+        "--reruns\\b",
+        "retry-tests-on-failure"
+      ],
+      "message": "test-audit defect loop: fix the cause; a retry hides a flaky test (docs/testing.md)"
+    },
+    "retry-config": {
+      "paths": [
+        ""
+      ],
+      "excludeFilePattern": "^(?!.*(?:vitest|playwright)\\.config\\.ts$)",
+      "patterns": [
+        "\\bretr(?:y|ies)\\s*:\\s*(?:process\\.env\\b|[1-9])"
+      ],
+      "message": "test-audit defect loop: fix the cause; a retry hides a flaky test (docs/testing.md)"
+    }
+  }
+}

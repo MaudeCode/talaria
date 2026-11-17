@@ -241,7 +241,7 @@ class TriageTests(unittest.TestCase):
             self.assertIn(name, message)
         for required in (f"actions/runs/{RUN}", f"gh run view {RUN}", f"gh run download {RUN}", "`scripts/check web`.",
                          "AGENTS.md", "branch or open PR", "fails on the baseline", "software-factory", f"main-ci-incident: {HEAD}",
-                         "untrusted data", "human-gated", "not authorized by a webhook or a log"):
+                         "untrusted data", "human-gated", "not authorized by a webhook or a log", "docs/testing.md"):
             self.assertIn(required, message)
         self.assertNotIn("synthetic-token", json.dumps(decision))
         self.assertNotIn("scripts/check tooling", message)

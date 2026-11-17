@@ -53,4 +53,6 @@ else
   run_env+=("TALARIA_WEB_SIDECAR_COMMAND=[\"$python_bin\", \"$root/web/sidecar/scripts/replay_sidecar.py\"]")
 fi
 if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then run_env+=("LD_LIBRARY_PATH=$LD_LIBRARY_PATH"); fi
+# CI's per-test run-time budget reads each test's time from this JUnit report (scripts/check-test-durations.py).
+if [[ -n "${TALARIA_TEST_REPORT:-}" ]]; then run_env+=("TALARIA_TEST_REPORT=$TALARIA_TEST_REPORT"); fi
 "${run_env[@]}" npm run e2e -- "$@"
