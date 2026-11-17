@@ -20,6 +20,18 @@ on:
     outputs:
       artifacts:
         value: ${{ jobs.build.outputs.artifacts }}
+  # A signing check of any commit: builds, signs and verifies the IPA with the shared iOS actions, with no environment,
+  # no release plan, no handoffs and no upload. Publication still only happens on the channels above.
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Full SHA of the commit to build.
+        required: true
+        type: string
+      version:
+        description: Marketing version to build, such as 1.2.3.
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -35,9 +47,11 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' && (
       inputs.channel == 'production' && github.workflow_ref == 'MaudeCode/talaria/.github/workflows/production-cutover.yml@refs/heads/main' ||
-      inputs.channel == 'nightly' && github.workflow_ref == 'MaudeCode/talaria/.github/workflows/nightly.yml@refs/heads/main')
+      inputs.channel == 'nightly' && github.workflow_ref == 'MaudeCode/talaria/.github/workflows/nightly.yml@refs/heads/main') ||
+      !inputs.channel && startsWith(github.workflow_ref, 'MaudeCode/talaria/.github/workflows/ios-release-build.yml@')
     runs-on: xcode-27
-    environment: testflight
+    # The deployment gate for both release channels; a signing check publishes nothing and needs none.
+    environment: ${{ inputs.channel && 'testflight' || '' }}
     # Production and Nightly (TAL-1569) can build the same App train: selecting a build number and uploading
     # it must not interleave, so both join the TestFlight publication queue.
     concurrency:
@@ -47,7 +61,6 @@ jobs:
     env:
       PROJECT_PATH: Talaria.xcodeproj
       SCHEME: Talaria
-      TEAM_ID: Q28NF3NH3D
       RELEASE_ARTIFACTS: ${{ inputs.artifacts }}
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
@@ -105,35 +118,26 @@ jobs:
           {
             echo "ARCHIVE_PATH=${RUNNER_TEMP}/Talaria.xcarchive"
             echo "DERIVED_DATA_PATH=${RUNNER_TEMP}/TalariaDerivedData"
-            echo "EXPORT_PATH=${RUNNER_TEMP}/TalariaExport"
-            echo "EXPORT_OPTIONS_PATH=${RUNNER_TEMP}/ExportOptions.plist"
           } >> "${GITHUB_ENV}"
 
+      # Inputs reach the script through the environment, never interpolated into it: a dispatch supplies them.
       - name: Resolve release metadata
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+          REF_INPUT: ${{ inputs.ref }}
         run: |
           set -euo pipefail
-          marketing_version="${{ inputs.version }}"
+          marketing_version="${VERSION_INPUT}"
           if [[ ! "${marketing_version}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "Release version must use X.Y.Z numeric semantic versioning: ${marketing_version}" >&2
             exit 1
           fi
-          echo "MARKETING_VERSION=${marketing_version}" >> "${GITHUB_ENV}"
-          echo "Building version ${marketing_version} from ${{ inputs.ref }}."
-
-      - name: Write App Store Connect key
-        env:
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          key_path="${RUNNER_TEMP}/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
-          if [[ "${APP_STORE_CONNECT_PRIVATE_KEY}" == *"\\n"* ]]; then
-            printf "%s" "${APP_STORE_CONNECT_PRIVATE_KEY}" | perl -pe 's/\\n/\n/g' > "${key_path}"
-          else
-            printf "%s" "${APP_STORE_CONNECT_PRIVATE_KEY}" > "${key_path}"
+          if [[ ! "${REF_INPUT}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "The commit to build must be a full SHA: ${REF_INPUT}" >&2
+            exit 1
           fi
-          chmod 600 "${key_path}"
-          echo "APP_STORE_CONNECT_KEY_PATH=${key_path}" >> "${GITHUB_ENV}"
+          echo "MARKETING_VERSION=${marketing_version}" >> "${GITHUB_ENV}"
+          echo "Building version ${marketing_version} from ${REF_INPUT}."
 
       # Nightly checked for a cutover before it started; one dispatched since may hold a selected, unuploaded number.
       - name: Defer Nightly to a running cutover
@@ -143,23 +147,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: '"$RELEASE_PYTHON" releases/nightly.py require-no-cutover'
 
+      # A re-run for the same version and commit gets the number it already uploaded. Nightly and production stamp
+      # different identities into one commit's app, so Nightly's uploads are a variant of their own.
       - name: Select App Store Connect build number
-        env:
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-          BUNDLE_ID: dev.kil.talaria
-          ENFORCE_OPEN_TRAIN: "1"
-        run: |
-          set -euo pipefail
-          build_number="$(REQUESTED_BUILD_NUMBER='' ruby ci/select_testflight_build_number.rb)"
-          echo "BUILD_NUMBER=${build_number}" >> "${GITHUB_ENV}"
-          echo "Building ${MARKETING_VERSION} (${build_number}) from ${{ inputs.ref }}."
+        id: number
+        uses: MaudeCode/.github/actions/ios-build-number@eb704dbfc3862ea1143d5c7737d9f02bf97f49fa
+        with:
+          bundle-id: dev.kil.talaria
+          version: ${{ env.MARKETING_VERSION }}
+          commit: ${{ inputs.ref }}
+          variant: ${{ inputs.channel == 'nightly' && 'nightly' || '' }}
+          app-store-connect-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          app-store-connect-issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          app-store-connect-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
 
       - name: Stamp the selected release identity
         working-directory: .
         env:
           RELEASE_SOURCE: ${{ inputs.ref }}
+          BUILD_NUMBER: ${{ steps.number.outputs.build-number }}
         run: |
           "$RELEASE_PYTHON" scripts/stamp-release.py app --version "$MARKETING_VERSION" --build-number "$BUILD_NUMBER" --source-revision "$RELEASE_SOURCE"
 
@@ -171,92 +177,24 @@ jobs:
             -scheme "${SCHEME}" \
             -disableAutomaticPackageResolution
 
-      - name: Import the distribution certificate into a job-owned keychain
-        env:
-          IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
-          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
-        run: |
-          set -euo pipefail
-          keychain="${RUNNER_TEMP}/talaria-signing.keychain-db"
-          certificate="${RUNNER_TEMP}/talaria-distribution.p12"
-          password="$(openssl rand -hex 32)"
-          echo "::add-mask::${password}"
-          echo "SIGNING_KEYCHAIN=${keychain}" >> "${GITHUB_ENV}"
-          trap 'rm -f "${certificate}"' EXIT
-          security create-keychain -p "${password}" "${keychain}"
-          security set-keychain-settings -lut 21600 "${keychain}"
-          security unlock-keychain -p "${password}" "${keychain}"
-          (umask 077 && printf '%s' "${IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64}" | base64 --decode > "${certificate}")
-          security import "${certificate}" -k "${keychain}" -f pkcs12 -P "${IOS_DISTRIBUTION_CERTIFICATE_PASSWORD}" \
-            -T /usr/bin/codesign -T /usr/bin/security
-          # Apple's intermediates ship with the selected Xcode; codesign needs the chain in a searched keychain.
-          resources="$(xcode-select -p)/../SharedFrameworks/DVTFoundation.framework/Versions/A/Resources"
-          for intermediate in AppleWWDRCA-2030.cer AppleWWDRCAG6.cer; do
-            if [[ -f "${resources}/${intermediate}" ]]; then
-              security import "${resources}/${intermediate}" -k "${keychain}" || true
-            fi
-          done
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${password}" "${keychain}" >/dev/null
-          # Search the job keychain first; the runner's own keychains stay listed and untouched.
-          existing=()
-          while IFS= read -r line; do
-            line="${line#"${line%%[![:space:]]*}"}"
-            existing+=("${line//\"/}")
-          done < <(security list-keychains -d user)
-          security list-keychains -d user -s "${keychain}" "${existing[@]}"
-          identities="$(security find-identity -p codesigning "${keychain}")"
-          [[ "${identities}" == *"Apple Distribution"* ]] || {
-            echo "The distribution certificate did not import an Apple Distribution identity." >&2
-            exit 1
-          }
-
-      - name: Download app provisioning profile
-        id: app-profile
-        uses: apple-actions/download-provisioning-profiles@233aa54e59082c0e8a8cf8b0b02c72dea2422ef9 # v7.1.0
+      - name: Set up signing
+        id: signing
+        uses: MaudeCode/.github/actions/ios-signing@eb704dbfc3862ea1143d5c7737d9f02bf97f49fa
         with:
-          bundle-id: dev.kil.talaria
-          profile-type: IOS_APP_STORE
-          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-
-      - name: Download share extension provisioning profile
-        id: share-profile
-        uses: apple-actions/download-provisioning-profiles@233aa54e59082c0e8a8cf8b0b02c72dea2422ef9 # v7.1.0
-        with:
-          bundle-id: dev.kil.talaria.shareextension
-          profile-type: IOS_APP_STORE
-          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-
-      - name: Download Live Activity provisioning profile
-        id: live-activity-profile
-        uses: apple-actions/download-provisioning-profiles@233aa54e59082c0e8a8cf8b0b02c72dea2422ef9 # v7.1.0
-        with:
-          bundle-id: dev.kil.talaria.liveactivitywidget
-          profile-type: IOS_APP_STORE
-          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-
-      - name: Verify provisioning profiles
-        env:
-          APP_PROFILES_JSON: ${{ steps.app-profile.outputs.profiles }}
-          SHARE_PROFILES_JSON: ${{ steps.share-profile.outputs.profiles }}
-          LIVE_ACTIVITY_PROFILES_JSON: ${{ steps.live-activity-profile.outputs.profiles }}
-        run: |
-          set -euo pipefail
-          app_profile="$(jq -er 'map(select(.type == "IOS_APP_STORE")) | first | .name' <<< "${APP_PROFILES_JSON}")"
-          share_profile="$(jq -er 'map(select(.type == "IOS_APP_STORE")) | first | .name' <<< "${SHARE_PROFILES_JSON}")"
-          live_activity_profile="$(jq -er 'map(select(.type == "IOS_APP_STORE")) | first | .name' <<< "${LIVE_ACTIVITY_PROFILES_JSON}")"
-          {
-            echo "TALARIA_APP_PROVISIONING_PROFILE_SPECIFIER=${app_profile}"
-            echo "TALARIA_SHARE_PROVISIONING_PROFILE_SPECIFIER=${share_profile}"
-            echo "TALARIA_LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER=${live_activity_profile}"
-          } >> "${GITHUB_ENV}"
+          certificate-p12-base64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
+          certificate-password: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          app-store-connect-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          app-store-connect-issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          app-store-connect-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          bundle-ids: dev.kil.talaria, dev.kil.talaria.shareextension, dev.kil.talaria.liveactivitywidget
 
       - name: Archive
+        env:
+          TEAM_ID: ${{ steps.signing.outputs.team-id }}
+          TALARIA_APP_PROVISIONING_PROFILE_SPECIFIER: ${{ fromJSON(steps.signing.outputs.profiles)['dev.kil.talaria'] }}
+          TALARIA_SHARE_PROVISIONING_PROFILE_SPECIFIER: ${{ fromJSON(steps.signing.outputs.profiles)['dev.kil.talaria.shareextension'] }}
+          TALARIA_LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER: ${{ fromJSON(steps.signing.outputs.profiles)['dev.kil.talaria.liveactivitywidget'] }}
+          BUILD_NUMBER: ${{ steps.number.outputs.build-number }}
         run: |
           set -euo pipefail
           xcodebuild archive \
@@ -277,71 +215,62 @@ jobs:
             CURRENT_PROJECT_VERSION="${BUILD_NUMBER}"
 
       - name: Verify archive versions
+        env:
+          BUILD_NUMBER: ${{ steps.number.outputs.build-number }}
         run: ci/verify_bundle_versions "${ARCHIVE_PATH}/Products/Applications/Talaria.app" "${MARKETING_VERSION}" "${BUILD_NUMBER}"
 
-      - name: Write export options
-        run: |
-          cat > "${EXPORT_OPTIONS_PATH}" <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>destination</key>
-            <string>export</string>
-            <key>manageAppVersionAndBuildNumber</key>
-            <false/>
-            <key>method</key>
-            <string>app-store-connect</string>
-            <key>signingStyle</key>
-            <string>manual</string>
-            <key>signingCertificate</key>
-            <string>Apple Distribution</string>
-            <key>provisioningProfiles</key>
-            <dict>
-              <key>dev.kil.talaria</key>
-              <string>${TALARIA_APP_PROVISIONING_PROFILE_SPECIFIER}</string>
-              <key>dev.kil.talaria.shareextension</key>
-              <string>${TALARIA_SHARE_PROVISIONING_PROFILE_SPECIFIER}</string>
-              <key>dev.kil.talaria.liveactivitywidget</key>
-              <string>${TALARIA_LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER}</string>
-            </dict>
-            <key>stripSwiftSymbols</key>
-            <true/>
-            <key>teamID</key>
-            <string>${TEAM_ID}</string>
-            <key>uploadSymbols</key>
-            <true/>
-          </dict>
-          </plist>
-          PLIST
+      # Exports and verifies the signed IPA (identifiers, versions, embedded App Store profiles, signature). It never
+      # uploads here: production uploads after the cutover's gates, Nightly after its identity check below.
+      - name: Export and verify the signed IPA
+        id: export
+        uses: MaudeCode/.github/actions/ios-publish@eb704dbfc3862ea1143d5c7737d9f02bf97f49fa
+        with:
+          archive: ${{ env.ARCHIVE_PATH }}
+          export-options: ${{ steps.signing.outputs.export-options }}
+          bundle-id: dev.kil.talaria
+          version: ${{ env.MARKETING_VERSION }}
+          build-number: ${{ steps.number.outputs.build-number }}
 
-      - name: Export IPA
+      - name: Verify the Nightly identity and write its TestFlight notes
+        if: inputs.channel == 'nightly'
+        id: nightly
+        working-directory: .
+        env:
+          RELEASE_SOURCE: ${{ inputs.ref }}
+          IPA: ${{ steps.export.outputs.ipa }}
+          BUILD_NUMBER: ${{ steps.number.outputs.build-number }}
         run: |
           set -euo pipefail
-          xcodebuild -exportArchive \
-            -archivePath "${ARCHIVE_PATH}" \
-            -exportPath "${EXPORT_PATH}" \
-            -exportOptionsPlist "${EXPORT_OPTIONS_PATH}"
-
+          "$RELEASE_PYTHON" releases/nightly.py verify --ipa "$IPA" --version "$MARKETING_VERSION" \
+            --build-number "$BUILD_NUMBER" --source "$RELEASE_SOURCE" --notes "$RUNNER_TEMP/testflight-notes.txt"
+          delimiter="notes-$(openssl rand -hex 16)"
+          { echo "notes<<${delimiter}"; cat "$RUNNER_TEMP/testflight-notes.txt"; echo "${delimiter}"; } >> "$GITHUB_OUTPUT"
 
       - name: Upload the Nightly build to TestFlight
         if: inputs.channel == 'nightly'
-        working-directory: .
-        env:
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-          RELEASE_SOURCE: ${{ inputs.ref }}
-        run: |
-          "$RELEASE_PYTHON" releases/nightly.py upload --directory "$EXPORT_PATH" --version "$MARKETING_VERSION" \
-            --build-number "$BUILD_NUMBER" --source "$RELEASE_SOURCE"
+        uses: MaudeCode/.github/actions/ios-publish@eb704dbfc3862ea1143d5c7737d9f02bf97f49fa
+        with:
+          ipa: ${{ steps.export.outputs.ipa }}
+          bundle-id: dev.kil.talaria
+          version: ${{ env.MARKETING_VERSION }}
+          build-number: ${{ steps.number.outputs.build-number }}
+          commit: ${{ steps.number.outputs.commit }}
+          variant: nightly
+          upload: true
+          whats-new: ${{ steps.nightly.outputs.notes }}
+          app-store-connect-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          app-store-connect-issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          app-store-connect-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
 
       - name: Record the verified signed build
         if: inputs.channel == 'production'
         working-directory: .
+        env:
+          IPA: ${{ steps.export.outputs.ipa }}
+          BUILD_NUMBER: ${{ steps.number.outputs.build-number }}
         run: |
           "$RELEASE_PYTHON" releases/publish.py build-app-receipt --plan "$RUNNER_TEMP/release-plan/plan.json" \
-            --directory "$EXPORT_PATH" --build-number "$BUILD_NUMBER" --output "$RUNNER_TEMP/app-build/receipt.json"
+            --directory "$(dirname "$IPA")" --build-number "$BUILD_NUMBER" --output "$RUNNER_TEMP/app-build/receipt.json"
 
       # Three artifacts, so publication downloads the IPA without the dSYMs and receipt assembly neither.
       - name: Stage the verified build receipt
@@ -359,11 +288,15 @@ jobs:
           if-no-files-found: error
 
       - name: Stage the verified signed IPA
+        if: inputs.channel
         id: store-ipa
         working-directory: .
-        run: '"$RELEASE_PYTHON" releases/artifacts.py put ios-ipa "$EXPORT_PATH"'
+        env:
+          IPA: ${{ steps.export.outputs.ipa }}
+        run: '"$RELEASE_PYTHON" releases/artifacts.py put ios-ipa "$(dirname "$IPA")"'
 
-      - uses: actions/upload-artifact@v7
+      - if: inputs.channel
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.store-ipa.outputs.handoff_name }}
           path: ${{ steps.store-ipa.outputs.handoff_path }}
@@ -371,24 +304,15 @@ jobs:
           if-no-files-found: error
 
       - name: Stage the dSYMs
+        if: inputs.channel
         id: store
         working-directory: .
         run: '"$RELEASE_PYTHON" releases/artifacts.py put ios-dsyms "$ARCHIVE_PATH/dSYMs"'
 
-      - uses: actions/upload-artifact@v7
+      - if: inputs.channel
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.store.outputs.handoff_name }}
           path: ${{ steps.store.outputs.handoff_path }}
           retention-days: 30
           if-no-files-found: error
-
-      - name: Remove App Store Connect key and the signing keychain
-        if: always()
-        run: |
-          if [[ -n "${APP_STORE_CONNECT_KEY_PATH:-}" ]]; then
-            rm -f "${APP_STORE_CONNECT_KEY_PATH}"
-          fi
-          if [[ -n "${SIGNING_KEYCHAIN:-}" ]]; then
-            security delete-keychain "${SIGNING_KEYCHAIN}" || true
-            rm -f "${SIGNING_KEYCHAIN}"
-          fi

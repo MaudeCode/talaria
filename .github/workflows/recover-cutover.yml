@@ -28,7 +28,8 @@ concurrency:
 jobs:
   app:
     if: github.ref == 'refs/heads/main' && inputs.confirm_publication
-    runs-on: ubuntu-latest
+    # macOS: ios-publish verifies the IPA's signature and profiles before it uploads.
+    runs-on: xcode-27
     environment: testflight
     concurrency:
       group: talaria-testflight-publication
@@ -41,8 +42,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - uses: ./.github/actions/setup-xcode
       - uses: ./.github/actions/release-python
-      - uses: ./.github/actions/release-ruby
       # Only the authenticated original run's job outputs name which artifacts
       # of that run may be downloaded, and each must match its recorded digest.
       - name: Authenticate original run and restore immutable handoffs
@@ -59,22 +60,44 @@ jobs:
         run: |
           set -euo pipefail
           mkdir "$RUNNER_TEMP/reviewed-publisher"
-          git archive "$GITHUB_WORKFLOW_SHA" releases/publish.py app/ci/upload_testflight.rb app/ci/app_store_connect.rb \
-            app/ci/release_notes.py contracts/whats-new.schema.json |
+          git archive "$GITHUB_WORKFLOW_SHA" releases/publish.py app/ci/release_notes.py contracts/whats-new.schema.json |
             tar -x -C "$RUNNER_TEMP/reviewed-publisher"
           git checkout --detach "$SOURCE"
       # recover.py authenticates the successful original build/publication jobs
       # and their exact handoffs. A partially published set is not a dry run.
+      - name: Authorize the original verified build and write its TestFlight notes
+        id: verified
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/reviewed-publisher/releases/publish.py" verify-app \
+            --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" \
+            --build "$RUNNER_TEMP/recovered/app-build/receipt.json" --directory "$RUNNER_TEMP/recovered/ios-ipa" \
+            --notes "$RUNNER_TEMP/testflight-notes.txt"
+          delimiter="notes-$(openssl rand -hex 16)"
+          { echo "notes<<${delimiter}"; cat "$RUNNER_TEMP/testflight-notes.txt"; echo "${delimiter}"; } >> "$GITHUB_OUTPUT"
+      # The same version and build number already in TestFlight is success; an unfinished upload is resumed.
       - name: Resume the original verified IPA and require Apple VALID readback
+        id: upload
+        uses: MaudeCode/.github/actions/ios-publish@eb704dbfc3862ea1143d5c7737d9f02bf97f49fa
+        with:
+          ipa: ${{ steps.verified.outputs.ipa }}
+          bundle-id: dev.kil.talaria
+          version: ${{ steps.verified.outputs.version }}
+          build-number: ${{ steps.verified.outputs.build_number }}
+          commit: ${{ steps.verified.outputs.commit }}
+          upload: true
+          whats-new: ${{ steps.verified.outputs.notes }}
+          app-store-connect-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          app-store-connect-issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          app-store-connect-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+      - name: Record the uploaded build
         env:
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          BUILD_ID: ${{ steps.upload.outputs.build-id }}
         run: |
           PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/reviewed-publisher/releases/publish.py" app \
             --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" \
             --build "$RUNNER_TEMP/recovered/app-build/receipt.json" --directory "$RUNNER_TEMP/recovered/ios-ipa" \
-            --output "$RUNNER_TEMP/recovered/app-publish/receipt.json"
+            --output "$RUNNER_TEMP/recovered/app-publish/receipt.json" --build-id "$BUILD_ID"
       - name: Stage verified handoffs with actual recovery-run identity
         id: store
         run: |

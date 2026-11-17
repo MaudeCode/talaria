@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from nightly import TAG, select, upload
+from nightly import TAG, select, verify
 
 
 class NightlyTests(unittest.TestCase):
@@ -60,28 +60,23 @@ class NightlyTests(unittest.TestCase):
         self.assertEqual(select(self.root, [previous]), {"changed": "false", "source": previous})
         self.assertEqual(select(self.root, []), {"changed": "false", "source": previous})
 
-    def test_the_upload_carries_the_app_notes_since_the_last_app_release(self):
+    def test_verify_checks_the_nightly_identity_and_writes_the_app_notes_since_the_last_app_release(self):
         self.write_fragment()
         source = self.commit("app/Talaria/View.swift")
-        (self.root / "export").mkdir()
-        (self.root / "export/Talaria.ipa").write_bytes(b"synthetic")
-        uploads = []
-
-        def uploader(command, **kwargs):
-            notes = Path(command[-1])
-            uploads.append((command[2:], notes.read_text() if notes.is_file() else None))
-            return json.dumps({"buildId": "build", "uploadId": "upload", "version": "1.21.1", "buildNumber": 7,
-                               "ipaSha256": "f" * 64, "processingState": "VALID", **response})
-
-        with contextlib.chdir(self.root), patch("nightly.verify_ipa", return_value="f" * 64), \
-                patch("publish.subprocess.check_output", side_effect=uploader):
-            response = {"whatsNewSet": True}
-            upload(self.root / "export", "1.21.1", 7, source)
-            response = {}
-            with self.assertRaisesRegex(ValueError, "readback differs"):
-                upload(self.root / "export", "1.21.1", 7, source)
-        self.assertEqual(uploads[0], ([str(self.root / "export/Talaria.ipa"), "1.21.1", "7", "f" * 64, uploads[0][0][-1]],
-                                      "Changes since app-v1.21.0\n\nAdded\n- Nightly feature\n"))
+        ipa = self.root / "export/Talaria.ipa"
+        ipa.parent.mkdir()
+        ipa.write_bytes(b"synthetic")
+        notes = self.root / "notes/testflight.txt"
+        identity = {"version": "1.21.1", "buildNumber": 7, "sourceRevision": source, "releaseSet": source}
+        with contextlib.chdir(self.root), patch("nightly.verify_ipa", return_value="f" * 64) as verified:
+            verify(ipa, "1.21.1", 7, source, notes)
+        verified.assert_called_once_with(ipa, identity, keys=tuple(identity))
+        self.assertEqual(notes.read_text(), "Changes since app-v1.21.0\n\nAdded\n- Nightly feature\n")
+        notes.unlink()
+        with contextlib.chdir(self.root), patch("nightly.verify_ipa", side_effect=ValueError("IPA identity differs from the release plan")):
+            with self.assertRaisesRegex(ValueError, "identity differs"):
+                verify(ipa, "1.21.1", 7, source, notes)
+        self.assertFalse(notes.exists(), "no notes, so nothing uploads, for an IPA that fails its identity check")
 
     def write_fragment(self):
         fragment = self.root / "changelog.d/TAL-5.json"

@@ -276,7 +276,7 @@ A malformed fragment stops the stamp before it writes; no baseline tag is needed
 ## TestFlight What to Test
 
 Every App upload, Nightly and production, sets the build's en-US TestFlight
-"What to Test" text from these fragments. `releases/publish.py upload_testflight`
+"What to Test" text from these fragments. `releases/publish.py` (`testflight_notes`)
 runs `ci/release_notes.py testflight --target <source> --version <version>`, which
 uses the App range `generate` would use with its default `--previous`: everything
 since the highest lower `app-v` tag, so a Nightly lists every App change in its

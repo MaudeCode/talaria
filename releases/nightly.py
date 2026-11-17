@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The scheduled Nightly channel (TAL-1569): pick the day's source, upload its App build to TestFlight, record it.
+"""The scheduled Nightly channel (TAL-1569): pick the day's source, verify its App build for TestFlight, record it.
 
 The `nightly` git tag names the last source a run completed. A failed run leaves it in place, so the next run retries
 everything since then.
@@ -15,7 +15,7 @@ from build import next_patch
 from cli import REPOSITORY, ROOT
 from experimental import newest_published
 from plan import tag_commit
-from publish import upload_testflight, verify_ipa
+from publish import testflight_notes, verify_ipa
 
 TAG = "nightly"
 
@@ -53,12 +53,11 @@ def select(root, green):
     return {"changed": "true", "source": source, "app": str("app=true" in suites).lower(), "app_version": next_patch(root, "app-v")}
 
 
-def upload(directory, version, build_number, source):
+def verify(ipa, version, build_number, source, notes):
+    """Check the exported IPA carries the Nightly identity, and write its TestFlight notes; ios-publish uploads it."""
     component = {"version": version, "buildNumber": build_number, "sourceRevision": source, "releaseSet": source}
-    files = list(directory.glob("*.ipa"))
-    if len(files) != 1:
-        raise ValueError("the Nightly upload needs exactly one IPA")
-    upload_testflight(files[0], component, verify_ipa(files[0], component, keys=tuple(component)))
+    verify_ipa(ipa, component, keys=tuple(component))
+    testflight_notes(component, notes)
 
 
 def record(source):
@@ -76,11 +75,12 @@ def main():
     commands = parser.add_subparsers(dest="action", required=True)
     commands.add_parser("select", help="Print the selection as GITHUB_OUTPUT lines.")
     commands.add_parser("require-no-cutover", help="Fail while a production cutover is queued or running.")
-    sending = commands.add_parser("upload", help="Verify the exported IPA and upload it to TestFlight.")
-    sending.add_argument("--directory", type=Path, required=True)
-    sending.add_argument("--version", required=True)
-    sending.add_argument("--build-number", type=int, required=True)
-    sending.add_argument("--source", required=True)
+    checking = commands.add_parser("verify", help="Verify the exported IPA's Nightly identity and write its TestFlight notes.")
+    checking.add_argument("--ipa", type=Path, required=True)
+    checking.add_argument("--version", required=True)
+    checking.add_argument("--build-number", type=int, required=True)
+    checking.add_argument("--source", required=True)
+    checking.add_argument("--notes", type=Path, required=True)
     commands.add_parser("record", help="Move the nightly tag to a completed source.").add_argument("source")
     args = parser.parse_args()
     if args.action == "select":
@@ -90,8 +90,8 @@ def main():
     elif args.action == "require-no-cutover":
         if cutover_running():
             sys.exit("A production cutover started after Nightly selected its source; the next Nightly uploads instead.")
-    elif args.action == "upload":
-        upload(args.directory, args.version, args.build_number, args.source)
+    elif args.action == "verify":
+        verify(args.ipa, args.version, args.build_number, args.source, args.notes)
     else:
         record(args.source)
 

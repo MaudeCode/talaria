@@ -177,7 +177,11 @@ RUN apt-get update \\
                   ("ios-release-build.yml", "build"): "xcodebuild archive",
                   # Both App contract gates share one runner (TAL-414).
                   ("release-set.yml", "contracts"): "check-previous-app.py --app-ref",
-                  ("release-set.yml", "app-dry-build"): "build.py app"}
+                  ("release-set.yml", "app-dry-build"): "build.py app",
+                  # The shared ios-publish action verifies the IPA with codesign, plutil and security cms before it
+                  # uploads, in a release and in its recovery.
+                  ("release-set.yml", "app-publish"): "MaudeCode/.github/actions/ios-publish@",
+                  ("recover-cutover.yml", "app"): "MaudeCode/.github/actions/ios-publish@"}
         found = {}
         for name in hosted.workflows():
             for job_name, job in hosted.load(hosted.ROOT / ".github/workflows" / name)["jobs"].items():

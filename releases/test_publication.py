@@ -75,51 +75,51 @@ class PublicationTests(unittest.TestCase):
                         finalize(plan, manifest, None, root)
                         self.assertEqual(publish_release.call_count, 1)
 
-    def test_app_receipt_requires_verified_apple_readback(self):
+    def test_app_publication_verifies_before_the_upload_and_records_its_readback(self):
+        # verify-app gates the shared ios-publish upload: only the receipt's IPA, under the plan's identity, with the
+        # App's notes, reaches Apple. app then records the build ios-publish read back VALID.
         plan = {"releaseSet": "a" * 40, "changed": {"app": True}, "contracts": {"appWeb": {"app": [1]}},
                 "components": {"app": {"tag": "app-v1.9.0", "version": "1.9.0", "sourceRevision": "a" * 40}}}
         build = {"gate": "buildApp", "result": "success", "sourceRevision": plan["releaseSet"],
                  "tag": "app-v1.9.0", "buildNumber": 7, "ipaSha256": "b" * 64}
-        apple = {"buildId": "synthetic-build", "uploadId": "synthetic-upload", "version": "1.9.0",
-                 "buildNumber": 7, "ipaSha256": "b" * 64, "processingState": "VALID", "whatsNewSet": True}
         env = {"GITHUB_REPOSITORY": "MaudeCode/talaria", "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "2"}
 
         def notes(command, **kwargs):
             self.assertEqual(command[2:], ["testflight", "--target", "a" * 40, "--version", "1.9.0", "--output", command[-1]])
             Path(command[-1]).write_text("Changes since app-v1.8.0\n")
 
-        for field in (None, "version", "buildNumber", "ipaSha256", "processingState", "buildId", "uploadId", "whatsNewSet"):
-            with self.subTest(field=field), TemporaryDirectory() as temporary:
-                root = Path(temporary)
-                (root / "plan.json").write_text(json.dumps(plan))
-                (root / "build.json").write_text(json.dumps(build))
-                (root / "synthetic.ipa").write_bytes(b"IPA verification covered separately")
-                response = {**apple, **({field: ""} if field else {})}
-                output = root / "publication/receipt.json"
-                argv = ["publish.py", "app", "--plan", str(root / "plan.json"), "--build", str(root / "build.json"),
-                        "--directory", str(root), "--output", str(output)]
-                uploaded = []
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "plan.json").write_text(json.dumps(plan))
+            (root / "build.json").write_text(json.dumps(build))
+            ipa = root / "synthetic.ipa"
+            ipa.write_bytes(b"IPA verification covered separately")
+            outputs = root / "github-output"
+            output = root / "publication/receipt.json"
+            common = ["--plan", str(root / "plan.json"), "--build", str(root / "build.json"), "--directory", str(root)]
 
-                def upload(command, **kwargs):
-                    notes = Path(command[-1])
-                    uploaded.append((command, notes.read_text() if notes.is_file() else None))
-                    return json.dumps(response)
+            def run(operation, *extra, digest=build["ipaSha256"]):
+                with patch("sys.argv", ["publish.py", operation, *common, *extra]), \
+                        patch.dict(os.environ, {**env, "GITHUB_OUTPUT": str(outputs)}), patch("publish.authorize"), \
+                        patch("publish.verify_ipa", return_value=digest), patch("publish.subprocess.run", side_effect=notes):
+                    publish.main()
 
-                with patch("sys.argv", argv), patch.dict(os.environ, env), patch("publish.authorize"), \
-                        patch("publish.verify_ipa", return_value=build["ipaSha256"]), \
-                        patch("publish.subprocess.run", side_effect=notes), \
-                        patch("publish.subprocess.check_output", side_effect=upload):
-                    if field:
-                        with self.assertRaisesRegex(ValueError, "readback differs"):
-                            publish.main()
-                        self.assertFalse(output.exists())
-                    else:
-                        publish.main()
-                        self.assertEqual(json.loads(output.read_text())["gate"], "uploadApp")
-                        self.assertEqual(json.loads(output.with_name("apple-build.json").read_text()), apple)
-                    [(command, text)] = uploaded
-                    self.assertEqual(command[-2:], [build["ipaSha256"], command[-1]])
-                    self.assertEqual(text, "Changes since app-v1.8.0\n")
+            with self.assertRaisesRegex(ValueError, "differs from the verified build"):
+                run("verify-app", "--notes", str(root / "notes.txt"), digest="c" * 64)
+            self.assertFalse(outputs.exists())
+            run("verify-app", "--notes", str(root / "notes.txt"))
+            self.assertEqual((root / "notes.txt").read_text(), "Changes since app-v1.8.0\n")
+            self.assertEqual(outputs.read_text().splitlines(),
+                             [f"ipa={ipa}", "version=1.9.0", "build_number=7", f"commit={'a' * 40}"])
+
+            with self.assertRaisesRegex(ValueError, "needs --build-id"):
+                run("app", "--output", str(output), "--build-id", "")
+            self.assertFalse(output.exists())
+            run("app", "--output", str(output), "--build-id", "synthetic-build")
+            self.assertEqual(json.loads(output.read_text())["gate"], "uploadApp")
+            self.assertEqual(json.loads(output.with_name("apple-build.json").read_text()), {
+                "buildId": "synthetic-build", "version": "1.9.0", "buildNumber": 7, "ipaSha256": "b" * 64,
+                "processingState": "VALID", "whatsNewSet": True})
 
     def test_partial_release_publication_resumes_without_recreating_releases(self):
         # publish-set publishes the completed set (finalize); the tag job then tags and releases each component (tags).
@@ -312,7 +312,11 @@ class PublicationTests(unittest.TestCase):
             metadata = json.loads((root / "web/packages" / package / "package.json").read_text())
             self.assertEqual(metadata["repository"]["url"], "git+https://github.com/MaudeCode/talaria.git")
             self.assertEqual(metadata["publishConfig"], {"access": "public"})
-        self.assertEqual(ios["jobs"]["build"]["environment"], "testflight")
+        # Both release channels build in the testflight environment; only a signing check of a branch, which never
+        # uploads, runs without it.
+        self.assertEqual(ios["jobs"]["build"]["environment"], "${{ inputs.channel && 'testflight' || '' }}")
+        self.assertIn("!inputs.channel && startsWith(github.workflow_ref, 'MaudeCode/talaria/.github/workflows/ios-release-build.yml@')",
+                      ios["jobs"]["build"]["if"])
         recovery = workflow("recover-cutover.yml")
         self.assertEqual(ios["permissions"], {"contents": "read", "actions": "read"})
         for release_workflow in (document, ios, recovery):
@@ -457,26 +461,45 @@ class PublicationTests(unittest.TestCase):
                             "--target", "HEAD", "--version", "1.0.0", "--output", str(notes)], cwd=checkout, check=True)
             self.assertEqual(notes.read_text(), "No App changes since HEAD.\n")
 
-    def test_signing_uses_a_job_owned_keychain_that_is_always_deleted(self):
+    def test_signing_numbering_export_and_upload_go_through_the_pinned_shared_actions(self):
         root = Path(__file__).resolve().parents[1]
-        build = json.loads(subprocess.check_output([
-            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
-            str(root / ".github/workflows/ios-release-build.yml")], text=True))["jobs"]["build"]
+        def workflow(name):
+            return json.loads(subprocess.check_output([
+                "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+                str(root / ".github/workflows" / name)], text=True))
+        build = workflow("ios-release-build.yml")["jobs"]["build"]
         text = json.dumps(build)
-        self.assertNotIn("login.keychain", text)
-        self.assertNotIn("import-codesign-certs", text)
-        steps = {step.get("name"): step for step in build["steps"]}
-        imported = steps["Import the distribution certificate into a job-owned keychain"]["run"]
-        for required in ('security create-keychain -p "${password}" "${keychain}"', '"${RUNNER_TEMP}/talaria-signing.keychain-db"',
-                         "::add-mask::${password}", 'security import "${certificate}" -k "${keychain}"',
-                         "trap 'rm -f \"${certificate}\"' EXIT"):
-            self.assertIn(required, imported)
-        self.assertNotIn("set -x", imported)
-        cleanup = steps["Remove App Store Connect key and the signing keychain"]
-        self.assertEqual(cleanup["if"], "always()")
-        self.assertIn('security delete-keychain "${SIGNING_KEYCHAIN}"', cleanup["run"])
-        profiles = [step for step in build["steps"] if step.get("uses", "").startswith("apple-actions/download-provisioning-profiles@")]
-        self.assertEqual(len(profiles), 3)
+        for gone in ("security ", "login.keychain", "apple-actions/", "-exportArchive", "ExportOptions", "AuthKey", ".rb"):
+            self.assertNotIn(gone, text)
+        # A signing check is dispatched with its own inputs, so none is interpolated into a script.
+        for step in build["steps"]:
+            self.assertNotIn("${{ inputs.", step.get("run", ""), step.get("name"))
+        shared = [step["uses"] for step in build["steps"] if step.get("uses", "").startswith("MaudeCode/.github/actions/")]
+        self.assertEqual({uses.split("@")[0].rsplit("/", 1)[1] for uses in shared}, {"ios-build-number", "ios-signing", "ios-publish"})
+        self.assertTrue(all(re.fullmatch(r"[^@]+@[0-9a-f]{40}", uses) for uses in shared), shared)
+        signing = next(step for step in build["steps"] if "/ios-signing@" in step.get("uses", ""))
+        self.assertEqual(signing["with"]["bundle-ids"],
+                         "dev.kil.talaria, dev.kil.talaria.shareextension, dev.kil.talaria.liveactivitywidget")
+        # Nightly and production stamp different identities into one commit's app, so Nightly numbers and uploads
+        # as a variant of its own; only Nightly uploads from the build job.
+        number = next(step for step in build["steps"] if "/ios-build-number@" in step.get("uses", ""))
+        self.assertEqual(number["with"]["variant"], "${{ inputs.channel == 'nightly' && 'nightly' || '' }}")
+        uploads = [step for step in build["steps"] if step.get("with", {}).get("upload") is True]
+        self.assertEqual([(step["if"], step["with"]["variant"]) for step in uploads], [("inputs.channel == 'nightly'", "nightly")])
+        names = [step.get("name") for step in build["steps"]]
+        self.assertLess(names.index("Verify the Nightly identity and write its TestFlight notes"),
+                        names.index("Upload the Nightly build to TestFlight"))
+        # Production and its recovery upload only after publish.py verify-app has authorized the receipt's IPA.
+        for job in (workflow("release-set.yml")["jobs"]["app-publish"], workflow("recover-cutover.yml")["jobs"]["app"]):
+            steps = job["steps"]
+            verified = next(index for index, step in enumerate(steps) if " verify-app " in step.get("run", ""))
+            upload = next(index for index, step in enumerate(steps) if "/ios-publish@" in step.get("uses", ""))
+            recorded = next(index for index, step in enumerate(steps) if "--build-id" in step.get("run", ""))
+            self.assertLess(verified, upload)
+            self.assertLess(upload, recorded)
+            self.assertIs(steps[upload]["with"]["upload"], True)
+            self.assertEqual(steps[upload]["with"]["ipa"], "${{ steps.%s.outputs.ipa }}" % steps[verified]["id"])
+            self.assertEqual(job["runs-on"], "xcode-27")
 
     def test_assembly_restores_only_receipt_handoffs(self):
         # Candidate and publication assembly must not pull the Web image or iOS payloads off the NAS.
@@ -671,10 +694,10 @@ class PublicationTests(unittest.TestCase):
                         self.assertNotIn("--name", line)
 
     def test_linux_jobs_running_ruby_tooling_set_up_ruby(self):
-        # TestFlight upload (publish.py app) shells out to Ruby, so every Linux job that runs it pins it first instead
-        # of relying on whatever the runner image ships.
+        # The TestFlight inspection runs Ruby, so every Linux job that runs it pins it first instead of relying on
+        # whatever the runner image ships.
         root = Path(__file__).resolve().parents[1]
-        needs_ruby = ("publish.py app", ".rb")
+        needs_ruby = (".rb",)
         for path in sorted((root / ".github/workflows").glob("*.yml")):
             document = json.loads(subprocess.check_output([
                 "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(path),

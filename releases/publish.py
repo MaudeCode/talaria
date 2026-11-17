@@ -20,8 +20,8 @@ from cli import REPOSITORY, ROOT, load, published_set, receipt, require_latest_p
 from plan import ROOT_TAG, git
 from release_set import BRIDGE_IMAGE, validate
 
-# This publisher's own tree. Recovery runs a reviewed copy against an older source checkout (ROOT), so the upload
-# helpers come from beside this file, and recover-cutover.yml archives each of them.
+# This publisher's own tree. Recovery runs a reviewed copy against an older source checkout (ROOT), so the notes
+# helper comes from beside this file, and recover-cutover.yml archives it.
 TOOLS = Path(__file__).resolve().parents[1]
 
 
@@ -75,25 +75,18 @@ def file_digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def upload_testflight(ipa, component, digest):
-    """Upload a verified IPA with the App's release notes as its What to Test text; App Store Connect must read it back
-    VALID with the same identity and the notes set. Notes come from the checkout in the working directory."""
-    with tempfile.TemporaryDirectory() as temporary:
-        notes = Path(temporary) / "testflight-notes.txt"
-        subprocess.run([sys.executable, str(TOOLS / "app/ci/release_notes.py"), "testflight", "--target", component["sourceRevision"],
-                        "--version", component["version"], "--output", str(notes)], check=True)
-        with timed("TestFlight upload and processing to VALID"):
-            uploaded = subprocess.check_output([
-                "ruby", str(TOOLS / "app/ci/upload_testflight.rb"), str(ipa), component["version"], str(component["buildNumber"]), digest,
-                str(notes),
-            ], text=True)
-    result = json.loads(uploaded)
-    if (any(result.get(key) != component[key] for key in ("version", "buildNumber"))
-            or result.get("ipaSha256") != digest or result.get("processingState") != "VALID"
-            or not result.get("buildId") or not result.get("uploadId") or result.get("whatsNewSet") is not True):
-        raise ValueError("App Store Connect readback differs from the verified build")
-    print(json.dumps(result, sort_keys=True))
-    return result
+def testflight_notes(component, output):
+    """Write the App's release notes, the TestFlight build's What to Test text, from the checkout in the working
+    directory. The shared ios-publish action uploads the verified IPA with them and waits for Apple's VALID readback."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run([sys.executable, str(TOOLS / "app/ci/release_notes.py"), "testflight", "--target", component["sourceRevision"],
+                    "--version", component["version"], "--output", str(output)], check=True)
+
+
+def github_output(**values):
+    """Hand values to the workflow's next steps."""
+    with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
+        stream.writelines(f"{key}={value}\n" for key, value in values.items())
 
 
 def relay(plan, output):
@@ -456,6 +449,8 @@ def main():
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--previous", type=Path)
     parser.add_argument("--build-number", type=int)
+    parser.add_argument("--notes", type=Path, help="verify-app: where to write the TestFlight notes.")
+    parser.add_argument("--build-id", help="app: the TestFlight build ios-publish uploaded and read back VALID.")
     args = parser.parse_args()
     plan = load(args.plan)
     authorize(plan)
@@ -487,8 +482,18 @@ def main():
         files = list(args.directory.glob("*.ipa"))
         if len(files) != 1 or verify_ipa(files[0], component) != build["ipaSha256"]:
             raise ValueError("App upload artifact differs from the verified build")
-        if args.operation == "app":
-            result = upload_testflight(files[0], component, build["ipaSha256"])
+        if args.operation == "verify-app":
+            # Only this verified IPA, under this identity, reaches the upload step that follows.
+            if args.notes is None:
+                raise ValueError("verify-app needs --notes")
+            testflight_notes(component, args.notes)
+            github_output(ipa=files[0], version=component["version"], build_number=component["buildNumber"], commit=plan["releaseSet"])
+        else:
+            if not args.build_id:
+                raise ValueError("app needs --build-id, the build ios-publish read back VALID")
+            result = {"buildId": args.build_id, "version": component["version"], "buildNumber": component["buildNumber"],
+                      "ipaSha256": build["ipaSha256"], "processingState": "VALID", "whatsNewSet": True}
+            print(json.dumps(result, sort_keys=True))
             write(args.output.with_name("apple-build.json"), result)
             write(args.output, receipt("uploadApp", plan["releaseSet"], tag=component["tag"], buildNumber=component["buildNumber"], ipaSha256=build["ipaSha256"]))
     elif args.operation == "tag-components":
