@@ -265,6 +265,21 @@ it.each(['journal', 'buffer'])('chat %s replay of an active run omits a settled 
   expect(windows).toContainEqual({ afterSeq: 2, maxSeq: 7 })
 })
 
+// TAL-2331: a journaled tool frame, redacted when written, takes the lookup visibility the setting decides at replay.
+it('replays a journaled lookup frame hidden or shown by the current setting, never by its stamp', async () => {
+  const s = server = await bootTestServer()
+  const sid = (await s.deps.sessionStore.newSession()).session_id
+  const writer = await s.deps.journal.writer(sid, 'lookups')
+  await writer.appendSseEvent('tool', { id: 'd', name: 'tool_describe', kind: 'read', target: 'session_list', hidden: true }, { createdAt: 1, redacted: true })
+  await writer.appendSseEvent('tool', { id: 's', name: 'tool_search', kind: 'search', target: 'deploy' }, { createdAt: 2, redacted: true })
+  await writer.appendSseEvent('done', {}, { createdAt: 3 })
+  await writer.close()
+  const hidden = async () => (await s.sse('/api/chat/stream?stream_id=lookups&after_seq=0', () => false, { timeoutMs: 2000 })).filter((f) => f.event === 'tool').map((f) => (f.data as { hidden?: boolean }).hidden ?? false)
+  expect(await hidden()).toEqual([true, true])
+  await s.get('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ show_tool_lookups: true }) })
+  expect(await hidden()).toEqual([false, false])
+})
+
 it('per-session journal replay settles prompts only from their own run', async () => {
   const s = server = await bootTestServer()
   const sid = (await s.deps.sessionStore.newSession()).session_id

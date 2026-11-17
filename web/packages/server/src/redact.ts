@@ -2536,9 +2536,16 @@ function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean, workspa
   const { focus_path: focusPath, ...display } = redactedToolDisplay(record, enabled, workspace)
   // TAL-2323: the files a read or search result names, located in the workspace from their redacted paths; TAL-2325: its local media served for this session.
   if (isDict(out.result_view)) out.result_view = withResultFocusPaths(out.result_view, workspace, sessionId)
-  // TAL-2331: a lookup the transcript leaves out; a failed one stays, so its completion clears the start frame's flag.
-  const hidden = hiddenLookup(toolName(record), record.is_error === true)
-  return { ...out, ...display, ...(focusPath ? { focus_path: focusPath } : {}), ...(hidden ? { hidden: true } : {}) } as T
+  return withLookupVisibility({ ...out, ...display, ...(focusPath ? { focus_path: focusPath } : {}) }, toolName(record), record.is_error === true) as T
+}
+
+/**
+ * TAL-2331: a call with `hidden` as the setting decides it now, replacing any stamp it carries (a journaled frame): a lookup
+ * the transcript leaves out; a failed one stays, so its completion clears the start frame's flag.
+ */
+export function withLookupVisibility(call: Record<string, unknown>, name: unknown, isError: boolean): Record<string, unknown> {
+  const { hidden: _stamped, ...rest } = call
+  return hiddenLookup(name, isError) ? { ...rest, hidden: true } : rest
 }
 
 /** TAL-2328: a result view showing the code its call ran: an excerpt without a path (`code` presentation). */
