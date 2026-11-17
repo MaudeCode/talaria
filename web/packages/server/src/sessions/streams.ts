@@ -146,6 +146,8 @@ export interface ActiveRun {
   /** TAL-874: tool calls the run started, and when its latest tool call started or finished. */
   tool_count?: number
   tool_at?: number
+  /** TAL-2336: the live record of the run's latest running call, else its last finished one; Live Activities show it. */
+  current_call?: Record<string, unknown>
   /** TAL-1422: the plan this run last wrote (`planProgress`); a new run starts without one. */
   plan?: PlanProgress
 }
@@ -205,12 +207,18 @@ export class StreamRegistry {
   toolWakeMs = 5_000
   private toolWake: NodeJS.Timeout | null = null
 
-  /** TAL-874: a tool call of the run started or finished at `at`; the activity rows count the starts and show the latest. */
-  noteToolEvent(streamId: string, at: number, started: boolean): void {
+  /**
+   * TAL-874: a tool call of the run started or finished at `at`; the activity rows count the starts and show the latest.
+   * TAL-2336: `call` is the live record of the call, called once it shows the change: the run's current call is its latest
+   * running one, else the call that finished last.
+   */
+  noteToolEvent(streamId: string, at: number, started: boolean, call?: Record<string, unknown>): void {
     const run = this.activeRuns.get(streamId)
     if (!run) return
     if (started) run.tool_count = (run.tool_count ?? 0) + 1
     run.tool_at = at
+    const current = (this.liveToolCalls.get(streamId) ?? []).findLast((live) => !live.done) ?? call
+    if (current) run.current_call = current
     this.wakeActivity()
   }
 

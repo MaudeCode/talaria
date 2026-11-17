@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { agentNotifyAlerts, alertForTransition, completionNotification, type AlertKind, type AlertPreferences } from './alerts.js'
+import { agentNotifyAlerts, alertBody, alertForTransition, completionNotification, type AlertKind, type AlertPreferences } from './alerts.js'
 
 // The relay applies the same vectors (relay/tests/notificationAlerts.test.ts), so the rule cannot drift.
 interface Vector { name: string; previous: string | null; next: string; alertEligible: boolean; previousDecisionReviewId?: string | null; decisionReviewId?: string; preferences: AlertPreferences; expected: AlertKind | null }
@@ -29,4 +29,15 @@ it('composes a completion notification from the final answer: plain text, redact
   expect(shown.body.endsWith('…')).toBe(true)
   // A turn that ended without an answer says it completed; it never reuses an older turn's answer.
   expect(completionNotification('s', { title: '', messages: [...messages, { role: 'assistant', content: '', tool_calls: [{ id: 't' }] }] }, true)).toEqual({ title: 'Untitled', body: 'Completed', url: '/session/s', tag: 's' })
+})
+
+// TAL-2336: an approval or input alert names the call it waits on; the row's call is already redacted and capped.
+it('names the held call after an approval or input alert body', () => {
+  expect(alertBody('approval', { kind: 'shell', target: 'npm publish', done: false })).toBe('Approval needed · Run npm publish')
+  expect(alertBody('approval', { kind: 'connector', target: 'Send message', done: false, app: { name: 'Slack' } })).toBe('Approval needed · Slack · Send message')
+  expect(alertBody('input', { kind: 'question', target: 'Which branch?', done: false })).toBe('Input needed · Which branch?')
+  // No call, a call without a target, or another kind of alert keeps its body.
+  expect(alertBody('approval', undefined)).toBe('Approval needed')
+  expect(alertBody('input', { kind: 'question', target: '', done: false })).toBe('Input needed')
+  expect(alertBody('failure', { kind: 'shell', target: 'npm test', done: true })).toBe('Failed')
 })

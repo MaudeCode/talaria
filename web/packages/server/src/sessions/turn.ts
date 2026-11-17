@@ -1140,7 +1140,7 @@ export class TurnRunner {
                 liveToolCalls.push(call)
                 toolIds.set(call, call.tid || mintToolId())
                 toolStartedAt.set(call, receivedAt)
-                this.registry.noteToolEvent(streamId, receivedAt, true)
+                this.registry.noteToolEvent(streamId, receivedAt, true, call)
                 // TAL-2330: a connector call no catalog read has covered reads it, so its completion and a reload show its app's logo.
                 if (sidecar && connectorLogoUnread(data.name)) {
                   const home = deps.profileHome(s.profile)
@@ -1176,13 +1176,13 @@ export class TurnRunner {
                 // else the diff in the metadata the Agent persisted on the result row, which a reload reads the same way.
                 const editDiff = toolEditDiff(data.name, { diff: resultDiff }, displayMetadata)
                 if (editDiff) complete.edit_diff = editDiff
-                this.registry.noteToolEvent(streamId, receivedAt, false)
                 if (tc) {
                   const startedAt = toolStartedAt.get(tc)
                   if (startedAt !== undefined) complete.duration = Math.round(Math.max(0, receivedAt - startedAt) * 1000) / 1000
                   // TAL-315: the decided view too, so a failed or cancelled turn's snapshot keeps the sections shown live.
                   Object.assign(tc, { done: true, progress: null, snippet: complete.preview, is_error: complete.is_error, duration: complete.duration ?? null, ...(complete.result_view ? { result_view: complete.result_view } : {}), ...(editDiff ? { edit_diff: editDiff } : {}) })
                 }
+                this.registry.noteToolEvent(streamId, receivedAt, false, tc)
                 if (startsBackgroundWork(data.name, rawResult)) deps.onBackgroundWork?.(sessionId, s.profile ?? null)
                 const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
                 this.lastCompletedTool.set(streamId, id)

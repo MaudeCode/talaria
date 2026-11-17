@@ -314,3 +314,32 @@ it("fits a full aggregate's largest plan and worker counts without dropping a ro
   expect(full.rows[0]).toMatchObject({ planCompleted: 9_999, planTotal: 9_999, workerCount: 9_999 });
   expect(fitActivityAggregate(full).rows).toHaveLength(5);
 });
+
+// TAL-2336: the largest current call a publisher may send, on every row of a full aggregate with the longest titles.
+const largestTool = {
+  kind: "connector", target: "t".repeat(64), done: true, verb: "comment", app: { name: "a".repeat(64) },
+  outcome: { key: "failed", tone: "error" as const, count: 1, value: "v".repeat(64) },
+};
+
+it("maps the current call into the native content state, and leaves an older publisher's row without one", () => {
+  const request = (state: SessionState) => nativeSessionRequest(makeLiveActivityUpdate({
+    token: "synthetic", bundleId: "dev.kil.talaria", environment: "sandbox", aggregate: makeAggregate([state], 100)!, nowEpochSeconds: 1,
+  }), 0).payload.aps as { "content-state": Record<string, unknown> };
+  const running = { ...attentionState, phase: "running" as const, currentTool: { kind: "shell", target: "npm test", done: false } };
+  expect(request(running)["content-state"].currentTool).toEqual({ kind: "shell", target: "npm test", done: false });
+  expect(request({ ...attentionState, phase: "running" })["content-state"]).not.toHaveProperty("currentTool");
+});
+
+it("keeps every row of a full aggregate by dropping the later rows' current calls first", () => {
+  const states: SessionState[] = Array.from({ length: 5 }, (_, index) => ({
+    ...attentionState, publisherId: "https://publisher.example.com", sessionId: `session-${String(index)}-${"s".repeat(32)}`,
+    streamId: `stream-${"r".repeat(32)}`, title: "t".repeat(120), deepLink: `/sessions/session-${String(index)}-${"s".repeat(32)}`,
+    startedAt: 1_799_999_000_000, toolCount: 9_999, activityAt: 1_800_000_000_000,
+    planCompleted: 9_999, planTotal: 9_999, workerCount: 9_999, currentTool: largestTool,
+  }));
+  const fitted = fitActivityAggregate(makeAggregate(states, 1_800_000_000_000)!);
+  expect(fitted.rows).toHaveLength(5);
+  // The first row, which a per-session activity shows, keeps its call.
+  expect(fitted.rows[0]!.currentTool).toEqual(largestTool);
+  expect(new TextEncoder().encode(JSON.stringify(fitted)).byteLength).toBeLessThanOrEqual(3_500);
+});

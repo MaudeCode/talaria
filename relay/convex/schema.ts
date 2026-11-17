@@ -3,6 +3,7 @@ import { v } from "convex/values";
 
 import {
   activityModeValidator,
+  activityToolValidator,
   agentNotifyValidator,
   aggregateValidator,
   apnsRequestValidator,
@@ -176,6 +177,8 @@ export default defineSchema({
     updatedAt: v.number(),
     toolCount: v.optional(v.number()),
     activityAt: v.optional(v.number()),
+    // TAL-2336: the call the run's Live Activity names.
+    currentTool: v.optional(activityToolValidator),
     planCompleted: v.optional(v.number()),
     planTotal: v.optional(v.number()),
     workerCount: v.optional(v.number()),

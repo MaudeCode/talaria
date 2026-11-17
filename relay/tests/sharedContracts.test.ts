@@ -68,9 +68,10 @@ async function relayWithPublisher() {
 const publisherPath = (profileId: string, rest: string) =>
   `/v1/publishers/${encodeURIComponent("https://contract.example")}/profiles/${profileId}/${rest}`;
 
-// TAL-868, TAL-874, TAL-1422: fields an older Web publisher does not send; Relay copies each onto the App's row only when sent.
-const optionalRunFields = ["startedAt", "toolCount", "activityAt", "planCompleted", "planTotal", "workerCount"] as const;
-type PublisherSnapshot = { states: Partial<Record<(typeof optionalRunFields)[number], number>>[] };
+// TAL-868, TAL-874, TAL-1422, TAL-2336: fields an older Web publisher does not send; Relay copies each onto the App's row
+// only when sent.
+const optionalRunFields = ["startedAt", "toolCount", "activityAt", "currentTool", "planCompleted", "planTotal", "workerCount"] as const;
+type PublisherSnapshot = { states: Partial<Record<(typeof optionalRunFields)[number], unknown>>[] };
 
 function withoutRunFields(body: string) {
   const snapshot = JSON.parse(body) as PublisherSnapshot;
@@ -184,12 +185,26 @@ it("maps the run's start, tool count and last activity into a relay-pushed Live 
       expect(JSON.parse(job.request.payloadJson).aps["content-state"]).toMatchObject({
         responseExcerpt: "", startedAt: swiftDate(runStartedAt), toolCount: 3, activityAt: swiftDate(activityAt),
         planCompleted: 2, planTotal: 5, workerCount: 3,
+        // TAL-2336: the run's current call, as the publisher fixture sent it.
+        currentTool: { kind: "shell", target: "npm test", done: false },
       });
     }
     for (const [field, value] of [["startedAt", 1.5], ["toolCount", -1], ["toolCount", 1.5], ["activityAt", 1.5]] as const) {
       const invalid = JSON.parse(snapshot(3)) as { states: Record<string, unknown>[] };
       invalid.states[0]![field] = value;
       expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(invalid))).status).toBe(400);
+    }
+    // TAL-2336: the current call's words and texts are bounded, and it carries no field Relay does not know.
+    const call = { kind: "shell", target: "npm test", done: false };
+    for (const currentTool of [
+      null, "npm test", { ...call, kind: "Shell" }, { ...call, target: "t".repeat(65) }, { ...call, done: "false" },
+      { ...call, verb: "x".repeat(33) }, { ...call, app: { name: "" } }, { ...call, app: { name: "Slack", logo_url: null } },
+      { ...call, outcome: { key: "exit", tone: "loud" } }, { ...call, outcome: { key: "exit", tone: "error", count: 1.5 } },
+      { ...call, outcome: { key: "failed", tone: "error", value: "v".repeat(65) } }, { ...call, args: { command: "npm test" } },
+    ]) {
+      const invalid = JSON.parse(snapshot(3)) as { states: Record<string, unknown>[] };
+      invalid.states[0]!.currentTool = currentTool;
+      expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(invalid))).status, JSON.stringify(currentTool)).toBe(400);
     }
     // TAL-1422: a plan's counts travel together, stay within its total, and every count is bounded.
     for (const fields of [

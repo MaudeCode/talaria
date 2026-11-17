@@ -1148,6 +1148,68 @@ describe('relay activity of a running turn (TAL-874)', () => {
   })
 })
 
+describe('the current call on a relay row (TAL-2336)', () => {
+  it('names the latest running call, else the last finished one, and the call an approval holds, redacted and capped', async () => {
+    const sidecar = new FakeSidecar()
+    const steps: (() => void)[] = []
+    let ended = false
+    const step = (): Promise<void> => ended ? Promise.resolve() : new Promise((resolve) => { steps.push(resolve) })
+    const start = (tid: string, name: string, args: Json) => ({ event: 'tool', data: { event_type: 'tool.started', name, preview: null, args, tid } })
+    const complete = (tid: string, name: string, args: Json, raw_result: Json) => ({ event: 'tool_complete', data: { event_type: 'tool.completed', name, preview: 'done', args, tid, raw_result } })
+    const long = `echo ${'x'.repeat(100)}`
+    sidecar.respond('chat.start', async (params, emit, opts) => {
+      emit(start('a', 'terminal', { command: 'npm test' }))
+      await step()
+      // A later call that finishes leaves the earlier running one current.
+      emit(start('b', 'read_file', { path: 'README.md' }))
+      emit(complete('b', 'read_file', { path: 'README.md' }, { content: '1|hi', total_lines: 1 }))
+      await step()
+      emit(complete('a', 'terminal', { command: 'npm test' }, { output: '', exit_code: 1, error: 'failed' }))
+      await step()
+      emit(start('c', 'terminal', { command: long }))
+      await step()
+      emit(start('d', 'terminal', { command: 'npm publish --token ghp_abcdefghij0123456789' }))
+      emit({ event: 'approval', data: { request_id: 'req-1', approval_id: 'approval-1', tool_call_id: 'd', command: 'npm publish', session_id: params.session_id } })
+      await new Promise((resolve) => opts.signal?.addEventListener('abort', resolve))
+      return { status: 'cancelled', messages: [], final_response: '', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: {}, context: {}, model: 'test-model', provider: 'test', compressed: false, agent_session_id: 'x', token_sent: false, pending_steer: '', live_tool_calls: [] } as unknown as SidecarResult<'chat.start'>
+    })
+    const server = await bootTestServer({ sidecar })
+    const relay = fakeRelay()
+    server.deps.fetch = relay.fetch
+    server.deps.registry.toolWakeMs = 0
+    let streamId = ''
+    try {
+      await post(server, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'synthetic' })
+      const sid = String(((await json(await post(server, '/api/session/new', { title: 'Tool run' }))).session as Json).session_id)
+      const response = await post(server, '/api/chat/start', { session_id: sid, message: 'Test and publish' })
+      expect(response.status, await response.clone().text()).toBe(200)
+      streamId = String((await json(response)).stream_id)
+      const tool = async () => (await server.deps.relay.current()!.buildStates('default')).find((state) => state.sessionId === sid)?.currentTool
+      const next = async (count: number) => { await waitForRelay(() => { expect(steps).toHaveLength(count) }); steps[count - 1]!() }
+      await waitForRelay(async () => { expect(await tool()).toEqual({ kind: 'shell', target: 'npm test', done: false }) })
+      // The publisher sends it on the row.
+      await waitForRelay(() => { expect((relay.snapshots().at(-1)?.body.states as Json[] | undefined)?.find((state) => state.sessionId === sid)).toMatchObject({ currentTool: { kind: 'shell', target: 'npm test', done: false } }) })
+      await next(1)
+      await waitForRelay(async () => { expect(steps).toHaveLength(2) })
+      expect(await tool()).toEqual({ kind: 'shell', target: 'npm test', done: false })
+      await next(2)
+      await waitForRelay(async () => { expect(await tool()).toEqual({ kind: 'shell', target: 'npm test', done: true, outcome: { key: 'exit', tone: 'error', count: 1 } }) })
+      await next(3)
+      await waitForRelay(async () => { expect((await tool())?.target).toBe(`${long.slice(0, 63)}…`) })
+      await next(4)
+      await waitForRelay(async () => { expect(await tool()).toMatchObject({ kind: 'shell', done: false, outcome: { key: 'pending_approval', tone: 'attention' } }) })
+      // Redacted as the call's transcript row is.
+      expect((await tool())?.target).toBe('npm publish --token ***')
+    } finally {
+      ended = true
+      for (const release of steps) release()
+      if (streamId) { await server.get(`/api/chat/cancel?stream_id=${streamId}`); await server.deps.turns.finished(streamId) }
+      server.deps.relay.stop()
+      await server.close()
+    }
+  })
+})
+
 describe('plan and worker counts on activity rows (TAL-1422)', () => {
   const todos = (...states: string[]) => JSON.stringify({ todos: states.map((status, index) => ({ id: String(index), content: `Step ${String(index)}`, status })) })
 

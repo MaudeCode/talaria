@@ -21,6 +21,7 @@ import {
   defaultNotificationPreferences,
   isSessionPhase,
   type ActivityMode,
+  type ActivityTool,
   type ApsEnvironment,
   type NotificationPreferences,
   type AgentNotify,
@@ -322,6 +323,37 @@ function parseAgentNotify(value: unknown): AgentNotify | null {
   return { id, title, body, level };
 }
 
+// TAL-2336: the call a Live Activity names. Its strings are display text the publisher redacted and capped at 64
+// characters; kinds, verbs and outcome keys are lower-case words, so a newer publisher's value passes and the App reads an
+// unknown one as it would in the transcript. Any other field is rejected.
+const toolWordPattern = /^[a-z_]{1,32}$/;
+const toolText = (value: unknown, min = 0): value is string => typeof value === "string" && value.length >= min && value.length <= 64;
+const isToolWord = (value: unknown): value is string => typeof value === "string" && toolWordPattern.test(value);
+const hasOnly = (value: Record<string, unknown>, keys: readonly string[]) => Object.keys(value).every((key) => keys.includes(key));
+
+function parseActivityTool(value: unknown): ActivityTool | null {
+  if (!isRecord(value) || !hasOnly(value, ["kind", "target", "done", "verb", "app", "outcome"])) return null;
+  const { kind, target, done, verb, app, outcome } = value;
+  if (!isToolWord(kind) || !toolText(target) || typeof done !== "boolean" || (verb !== undefined && !isToolWord(verb))) return null;
+  if (app !== undefined && (!isRecord(app) || !hasOnly(app, ["name"]) || !toolText(app.name, 1))) return null;
+  if (outcome !== undefined) {
+    if (!isRecord(outcome) || !hasOnly(outcome, ["key", "tone", "count", "value"]) || !isToolWord(outcome.key)) return null;
+    if (outcome.tone !== "neutral" && outcome.tone !== "error" && outcome.tone !== "attention") return null;
+    if (outcome.count !== undefined && !Number.isSafeInteger(outcome.count)) return null;
+    if (outcome.value !== undefined && !toolText(outcome.value)) return null;
+  }
+  return {
+    kind, target, done,
+    ...(verb === undefined ? {} : { verb }),
+    ...(isRecord(app) ? { app: { name: app.name as string } } : {}),
+    ...(isRecord(outcome) ? { outcome: {
+      key: outcome.key as string, tone: outcome.tone as "neutral" | "error" | "attention",
+      ...(outcome.count === undefined ? {} : { count: outcome.count as number }),
+      ...(outcome.value === undefined ? {} : { value: outcome.value as string }),
+    } } : {}),
+  };
+}
+
 // A non-negative integer: a count, or an instant in epoch milliseconds.
 const isCount = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 // TAL-1422: plan and worker counts the publisher bounds before they reach a Live Activity.
@@ -344,6 +376,7 @@ function parseState(
   const updatedAt = numberField(value, "updatedAt");
   const toolCount = value.toolCount;
   const activityAt = value.activityAt;
+  const currentTool = value.currentTool === undefined ? undefined : parseActivityTool(value.currentTool);
   const planCompleted = value.planCompleted;
   const planTotal = value.planTotal;
   const workerCount = value.workerCount;
@@ -357,6 +390,7 @@ function parseState(
   const agentNotices = value.agentNotices === undefined ? undefined : parseAgentNotices(value.agentNotices);
   if (
     agentNotices === null ||
+    currentTool === null ||
     (origin !== undefined && origin !== "user" && origin !== "background") ||
     (alertEligible !== undefined && typeof alertEligible !== "boolean") ||
     (approvalHeadId !== undefined && (typeof approvalHeadId !== "string" || !approvalHeadPattern.test(approvalHeadId))) ||
@@ -397,6 +431,7 @@ function parseState(
     updatedAt,
     ...(isCount(toolCount) ? { toolCount } : {}),
     ...(isCount(activityAt) ? { activityAt } : {}),
+    ...(currentTool ? { currentTool } : {}),
     ...(isWorkCount(planTotal) && isWorkCount(planCompleted) ? { planCompleted, planTotal } : {}),
     ...(isWorkCount(workerCount) ? { workerCount } : {}),
     deepLink,
@@ -617,6 +652,7 @@ http.route({
               updatedAt: state.updatedAt,
               toolCount: state.toolCount,
               activityAt: state.activityAt,
+              currentTool: state.currentTool,
               planCompleted: state.planCompleted,
               planTotal: state.planTotal,
               workerCount: state.workerCount,

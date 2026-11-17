@@ -110,6 +110,7 @@ BASE64URL_SHA256_OF_EXACT_BODY
       "updatedAt": 1787845600000,
       "toolCount": 3,
       "activityAt": 1787845580000,
+      "currentTool": { "kind": "shell", "target": "npm test", "done": false },
       "planCompleted": 2,
       "planTotal": 5,
       "workerCount": 1,
@@ -154,6 +155,8 @@ updated or revoked at the limit.
 Each state may carry `startedAt`, the run's start in epoch milliseconds (a non-negative integer). Relay copies it onto the aggregate row and uses it as the native Live Activity's timer start, so the lock screen counts from the same instant as the chat. Publishers that omit it fall back to when Relay registered the activity.
 
 Each state may carry `toolCount`, the tool calls the run started, and `activityAt`, the run's last phase change or tool event in epoch milliseconds; both are non-negative integers. Unlike `updatedAt`, `activityAt` does not move when the publisher republishes an unchanged run. Relay copies both onto the aggregate row and into the native Live Activity's content state, where the lock screen shows the count and how long ago the run last changed.
+
+Each live state may carry `currentTool`, the call the run's Live Activity names: its latest running call, else its last finished one, or the call an approval holds. It has the call's server display `kind`, its redacted `target`, whether it finished (`done`), and, for kinds that carry them, a `verb` and an `app` with its `name`; a finished call may carry its `outcome` (`key`, `tone` of `neutral`, `error` or `attention`, and an optional integer `count` and `value`), and a held call carries `pending_approval` with `attention`. Kinds, verbs and outcome keys are 1 to 32 lower-case letters or underscores, every text at most 64 characters, and any other field is rejected. Relay copies it onto the aggregate row and into the native Live Activity's content state, where the App draws the call's icon and label as its transcript does. When an aggregate outgrows the Live Activity's content-state limit, Relay drops the later rows' calls before it drops any row. A state without it comes from an older publisher, and the Live Activity keeps its earlier wording.
 
 Each state may carry `planCompleted` and `planTotal`, the run's plan as completed items of all but cancelled ones, and `workerCount`, the session's running subagents, processes and `/background` tasks; each is an integer from 0 to 9999, the plan's two travel together, and `planCompleted` never exceeds `planTotal`. A publisher that knows them sends them on every state: `planTotal: 0` means the run has no open plan (none written, every item done, or the run finished or was replaced), and `workerCount: 0` means nothing runs, so each clears what the Live Activity showed. A state without them comes from an older publisher. Relay copies all three onto the aggregate row and into the native Live Activity's content state.
 

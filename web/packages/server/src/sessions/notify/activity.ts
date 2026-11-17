@@ -4,7 +4,7 @@
  * own transport fields (the Relay adds revisions and event IDs) on top of these rows.
  */
 import { randomBytes } from 'node:crypto'
-import type { ActivitySummary, AgentNotifyLevel, DecisionReviewRef, SessionActivityPhase } from '@maudecode/talaria-web-contracts'
+import type { ActivitySummary, ActivityTool, AgentNotifyLevel, ApprovalTool, DecisionReviewRef, SessionActivityPhase } from '@maudecode/talaria-web-contracts'
 import { settledActivityPhase, type BackgroundActivity } from '../background-tasks.js'
 import { promptHeadId, type PendingPrompts } from '../pending.js'
 import type { SessionPrefixIndex } from '../prefix-index.js'
@@ -14,7 +14,7 @@ import type { SessionStore } from '../store.js'
 import type { ActiveRun, StreamRegistry } from '../streams.js'
 import type { TurnOrigin } from '../background-updates.js'
 import { str } from '../../util.js'
-import { redactString } from '../../redact.js'
+import { activityTool, heldActivityTool, redactString } from '../../redact.js'
 
 const TERMINAL_RETENTION_S = 15 * 60
 // ponytail: bounds the terminal ledger when no channel ever reads it; the oldest finished run goes first.
@@ -40,6 +40,8 @@ export interface ActivityDeps {
   profilesMatch: (row: string | null | undefined, active: string | null | undefined) => boolean
   /** TAL-1966: the session's newest decision review by creation, which alerts once when a row first holds it. */
   decisionReview?: (sid: string) => Pick<DecisionReviewRef, 'review_id' | 'title'> | null
+  /** TAL-2336: the `api_redact_enabled` policy, which a row's current call is redacted under as its transcript row is. */
+  redactEnabled?: () => boolean
   now: () => number
 }
 
@@ -54,6 +56,8 @@ export interface ActivityState {
   /** TAL-874: tool calls the run started, and its last phase change or tool event (epoch ms); absent without a tracked run. */
   toolCount?: number
   activityAt?: number
+  /** TAL-2336: the call a live row's run shows: its latest running call, else its last finished one, or the one an approval holds. */
+  currentTool?: ActivityTool
   /**
    * TAL-1422: the run's plan (`planProgress`) and the session's running workers (`runningWorkers`), sent on every row whose
    * background work could be read: 0 of 0 once the plan has nothing open or the run finished, 0 workers when none runs.
@@ -82,7 +86,7 @@ export interface ActivityState {
 
 /** The fields of a row every channel shows. The Relay adds its transport fields; the activity summary renames a few. */
 export function activityRowFields(row: ActivityState) {
-  return { sessionId: row.sessionId, streamId: row.streamId, ...(row.activityPhase ? { activityPhase: row.activityPhase } : {}), title: row.title, phase: row.phase, startedAt: row.startedAt, updatedAt: row.updatedAt, ...(row.activityAt === undefined ? {} : { toolCount: row.toolCount, activityAt: row.activityAt }), ...(row.workerCount === undefined ? {} : { planCompleted: row.planCompleted, planTotal: row.planTotal, workerCount: row.workerCount }), deepLink: row.deepLink, origin: row.origin, ...(row.approvalHeadId ? { approvalHeadId: row.approvalHeadId } : {}), ...(row.inputHeadId ? { inputHeadId: row.inputHeadId } : {}), ...(row.decisionReviewId ? { decisionReviewId: row.decisionReviewId, decisionReviewTitle: row.decisionReviewTitle ?? '' } : {}), ...(row.agentNotices ? { agentNotices: row.agentNotices } : {}) }
+  return { sessionId: row.sessionId, streamId: row.streamId, ...(row.activityPhase ? { activityPhase: row.activityPhase } : {}), title: row.title, phase: row.phase, startedAt: row.startedAt, updatedAt: row.updatedAt, ...(row.activityAt === undefined ? {} : { toolCount: row.toolCount, activityAt: row.activityAt }), ...(row.currentTool ? { currentTool: row.currentTool } : {}), ...(row.workerCount === undefined ? {} : { planCompleted: row.planCompleted, planTotal: row.planTotal, workerCount: row.workerCount }), deepLink: row.deepLink, origin: row.origin, ...(row.approvalHeadId ? { approvalHeadId: row.approvalHeadId } : {}), ...(row.inputHeadId ? { inputHeadId: row.inputHeadId } : {}), ...(row.decisionReviewId ? { decisionReviewId: row.decisionReviewId, decisionReviewTitle: row.decisionReviewTitle ?? '' } : {}), ...(row.agentNotices ? { agentNotices: row.agentNotices } : {}) }
 }
 
 /** TAL-2232: the summary's phases by display rank: waiting for an approval, then for input, then running or starting. */
@@ -110,6 +114,9 @@ export function activitySummary(rows: readonly ActivityState[], visible: (owner:
     approvals: waiting.filter((row) => row.phase === 'waiting_for_approval' && row.approval_id),
   }
 }
+
+/** TAL-2336: an approval's `tool` as TAL-2333 sets it; an Agent's own `tool` field (a name) is not one. */
+const isApprovalTool = (tool: unknown): tool is ApprovalTool => typeof tool === 'object' && tool !== null && typeof (tool as ApprovalTool).kind === 'string'
 
 /** `seen_phase`: TAL-874: the row phase the run last showed and when it changed, kept across rebuilds of the rows. */
 type TrackedRun = ActiveRun & { relay_phase?: string; terminal_at?: number; seen_phase?: { phase: string; at: number } }
@@ -271,10 +278,14 @@ export class ActivityStates {
       const clarifyId = phase === 'waiting_for_input' ? str(clarify?.clarify_id) : ''
       // TAL-874: a run's first phase dates from its start, a later one from when a build first saw it (a finished run's
       // from its end); a rebuild of an unchanged run keeps it. A row with no tracked run reports neither field.
-      let activity: Pick<ActivityState, 'toolCount' | 'activityAt'> = {}
+      let activity: Pick<ActivityState, 'toolCount' | 'activityAt' | 'currentTool'> = {}
       if (run.phase !== 'settled') {
         if (run.seen_phase?.phase !== phase) run.seen_phase = { phase, at: run.seen_phase ? run.terminal_at ?? this.deps.now() : run.started_at }
         activity = { toolCount: run.tool_count ?? 0, activityAt: Math.floor(Math.max(run.seen_phase.at, run.tool_at ?? 0) * 1000) }
+        // TAL-2336: a live row names its call: the one an approval holds, else the run's current one; a finished row none.
+        const held = phase === 'waiting_for_approval' && isApprovalTool(approval?.tool) ? approval.tool : undefined
+        const current = held ? heldActivityTool(held) : run.current_call && !run.relay_phase ? activityTool(run.current_call, this.deps.redactEnabled?.() ?? true, session.workspace ?? null) : undefined
+        if (current) activity.currentTool = current
       }
       // TAL-1422: only a live run has a plan; a finished, replaced or restarted one clears it.
       const plan = run.relay_phase || run.phase === 'settled' ? undefined : run.plan

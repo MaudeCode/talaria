@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { type ApprovalTool, FileExcerptLineSchema, type RedactionPolicy, SearchMatchSchema, TurnUsageSchema } from '@maudecode/talaria-web-contracts'
+import { ACTIVITY_TOOL_MAX, type ActivityTool, type ApprovalTool, FileExcerptLineSchema, type RedactionPolicy, SearchMatchSchema, TurnUsageSchema } from '@maudecode/talaria-web-contracts'
 import { channel } from 'node:diagnostics_channel'
 import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
@@ -2683,6 +2683,34 @@ export function approvalTool(call: Record<string, unknown>, enabled: boolean, wo
     ...(frame.verb ? { verb: frame.verb as ApprovalTool['verb'] } : {}), ...(frame.app ? { app: frame.app as ApprovalTool['app'] } : {}),
     ...(kind !== 'shell' && Array.isArray(frame.args_fields) ? { args_fields: frame.args_fields as ApprovalTool['args_fields'] } : {}),
   }
+}
+
+/** TAL-2336: `text` on one line within a Live Activity's limit, an ellipsis marking a cut. */
+const activityText = (text: string): string => {
+  const chars = Array.from(text.replace(/\s+/g, ' ').trim())
+  return chars.length > ACTIVITY_TOOL_MAX ? `${chars.slice(0, ACTIVITY_TOOL_MAX - 1).join('')}…` : chars.join('')
+}
+
+/** TAL-2336: a call's display fields as a Live Activity and a push alert name it, each string capped. */
+function activityFields(fields: { kind?: unknown; target?: unknown; verb?: unknown; app?: unknown }, done: boolean, outcome: ActivityTool['outcome']): ActivityTool {
+  const app = isDict(fields.app) ? str(fields.app.name) : ''
+  return {
+    kind: (str(fields.kind) || 'unknown') as ActivityTool['kind'], target: activityText(str(fields.target)), done,
+    ...(fields.verb ? { verb: fields.verb as ActivityTool['verb'] } : {}), ...(app ? { app: { name: activityText(app) } } : {}),
+    ...(outcome ? { outcome: { ...outcome, ...(outcome.value === undefined ? {} : { value: activityText(outcome.value) }) } } : {}),
+  }
+}
+
+/** TAL-2336: a run's call from its live record, as its transcript row shows it: redacted, with its outcome once it finished. */
+export function activityTool(call: Record<string, unknown>, enabled: boolean, workspace: string | null): ActivityTool {
+  const frame = publicToolFrame(call, enabled, workspace)
+  const outcome = isDict(frame.result_view) && isDict(frame.result_view.outcome) ? frame.result_view.outcome as ActivityTool['outcome'] : undefined
+  return activityFields(frame, call.done === true, outcome)
+}
+
+/** TAL-2336: the call an approval holds (its `tool`), still running and waiting on the user. */
+export function heldActivityTool(tool: ApprovalTool): ActivityTool {
+  return activityFields(tool, false, { key: 'pending_approval', tone: 'attention' })
 }
 
 /** The open call a tool completion settles: the one with its Agent id, else the newest id-less call of the same name; -1 when none. */

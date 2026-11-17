@@ -1490,8 +1490,9 @@ export class GatewaySessions {
               const call = calls.findLast((call) => call.tid === id)
               if (kind === 'tool.start') {
                 if (id && call) return
-                calls.push({ tid: id, name: data.name || data.tool_name, args: data.args ?? {}, done: false })
-                registry.noteToolEvent(watch.stream, this.deps.now(), true)
+                const started = { tid: id, name: data.name || data.tool_name, args: data.args ?? {}, done: false }
+                calls.push(started)
+                registry.noteToolEvent(watch.stream, this.deps.now(), true, started)
                 await put('tool', { ...data, id, name: data.name || data.tool_name })
               } else if (kind === 'tool.progress') {
                 if (!id || !call || call.done || !watch.snapshot.running) return
@@ -1500,7 +1501,7 @@ export class GatewaySessions {
               } else {
                 if (call?.done) return
                 if (call) Object.assign(call, { done: true, progress: null })
-                registry.noteToolEvent(watch.stream, this.deps.now(), false)
+                registry.noteToolEvent(watch.stream, this.deps.now(), false, call)
                 await put('tool_complete', { ...data, id, name: data.name || data.tool_name, progress: null })
               }
             }

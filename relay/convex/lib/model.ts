@@ -34,6 +34,8 @@ export interface SessionState {
   toolCount?: number;
   /** TAL-874: the run's last phase change or tool event, in epoch milliseconds. */
   activityAt?: number;
+  /** TAL-2336: the call the run's Live Activity names: its latest running call, else its last finished one. */
+  currentTool?: ActivityTool;
   /** TAL-1422: the run's plan, completed items of all but cancelled ones; 0 of 0 while it has none open. */
   planCompleted?: number;
   planTotal?: number;
@@ -51,6 +53,20 @@ export interface SessionState {
   decisionReviewId?: string;
   decisionReviewTitle?: string;
   agentNotices?: AgentNotify[];
+}
+
+/**
+ * TAL-2336: the call a Live Activity names, with its transcript row's display fields, each string at most 64 characters:
+ * its server display `kind`, `target`, whether it finished (`done`), a `verb` and `app` for kinds that carry one, and its
+ * `outcome`. The App words and draws it; Relay only bounds and copies it.
+ */
+export interface ActivityTool {
+  kind: string;
+  target: string;
+  done: boolean;
+  verb?: string;
+  app?: { name: string };
+  outcome?: { key: string; tone: "neutral" | "error" | "attention"; count?: number; value?: string };
 }
 
 /** TAL-1970: an agent notice the session carries; one the stored state did not hold alerts once. */
@@ -73,6 +89,7 @@ export interface PublishedSessionState {
   updatedAt: number;
   toolCount?: number;
   activityAt?: number;
+  currentTool?: ActivityTool;
   planCompleted?: number;
   planTotal?: number;
   workerCount?: number;
@@ -100,6 +117,7 @@ export interface AggregateRow {
   updatedAt: number;
   toolCount?: number;
   activityAt?: number;
+  currentTool?: ActivityTool;
   planCompleted?: number;
   planTotal?: number;
   workerCount?: number;

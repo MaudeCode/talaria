@@ -14,7 +14,7 @@ import { readFileSync, statSync } from 'node:fs'
 import { z } from 'zod'
 import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
-import { FEEDBACK_ATTACHMENT_LIMITS, type SessionActivityPhase } from '@maudecode/talaria-web-contracts'
+import { FEEDBACK_ATTACHMENT_LIMITS, type ActivityTool, type SessionActivityPhase } from '@maudecode/talaria-web-contracts'
 import type { BackgroundActivity } from './background-tasks.js'
 import type { TurnOrigin } from './background-updates.js'
 import type { StreamRegistry } from './streams.js'
@@ -232,7 +232,7 @@ export interface RelayPublisherDeps {
 /** Per relay profile scope: sessions started before `floor` (first tracking) are never announced. */
 type StartedLedger = Map<string, { floor: number; sessions: Map<string, { startedAt: number; sent: boolean }> }>
 
-export interface RelayState { sessionId: string; streamId: string | null; eventId: string; revision: number; title: string; phase: string; activityPhase?: SessionActivityPhase; startedAt: number; updatedAt: number; toolCount?: number; activityAt?: number; planCompleted?: number; planTotal?: number; workerCount?: number; deepLink: string; origin: TurnOrigin; alertEligible?: false; approvalHeadId?: string; inputHeadId?: string; decisionReviewId?: string; decisionReviewTitle?: string; agentNotices?: AgentNotice[] }
+export interface RelayState { sessionId: string; streamId: string | null; eventId: string; revision: number; title: string; phase: string; activityPhase?: SessionActivityPhase; startedAt: number; updatedAt: number; toolCount?: number; activityAt?: number; currentTool?: ActivityTool; planCompleted?: number; planTotal?: number; workerCount?: number; deepLink: string; origin: TurnOrigin; alertEligible?: false; approvalHeadId?: string; inputHeadId?: string; decisionReviewId?: string; decisionReviewTitle?: string; agentNotices?: AgentNotice[] }
 
 /** Python `TalariaRelayPublisher`: coalesces changes into signed complete snapshots with capped backoff. */
 export class RelayPublisher {
