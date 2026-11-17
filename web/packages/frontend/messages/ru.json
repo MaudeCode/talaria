@@ -2081,6 +2081,108 @@
 	"tree_view": "Дерево",
 	"tts_listen": "Прослушать",
 	"tts_not_supported": "Синтез речи не поддерживается",
+	"turn_summary_files_changed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Изменён {count} файл",
+				"countPlural=few": "Изменены {count} файла",
+				"countPlural=many": "Изменено {count} файлов",
+				"countPlural=other": "Изменено {count} файла"
+			}
+		}
+	],
+	"turn_summary_memories_saved": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Сохранена {count} запись памяти",
+				"countPlural=few": "Сохранены {count} записи памяти",
+				"countPlural=many": "Сохранено {count} записей памяти",
+				"countPlural=other": "Сохранено {count} записи памяти"
+			}
+		}
+	],
+	"turn_summary_messages_sent": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Отправлено {count} сообщение",
+				"countPlural=few": "Отправлены {count} сообщения",
+				"countPlural=many": "Отправлено {count} сообщений",
+				"countPlural=other": "Отправлено {count} сообщения"
+			}
+		}
+	],
+	"turn_summary_schedules_changed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Изменено {count} расписание",
+				"countPlural=few": "Изменены {count} расписания",
+				"countPlural=many": "Изменено {count} расписаний",
+				"countPlural=other": "Изменено {count} расписания"
+			}
+		}
+	],
+	"turn_summary_skills_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Обновлён {count} навык",
+				"countPlural=few": "Обновлены {count} навыка",
+				"countPlural=many": "Обновлено {count} навыков",
+				"countPlural=other": "Обновлено {count} навыка"
+			}
+		}
+	],
+	"turn_summary_tasks_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Обновлена {count} задача",
+				"countPlural=few": "Обновлены {count} задачи",
+				"countPlural=many": "Обновлено {count} задач",
+				"countPlural=other": "Обновлено {count} задачи"
+			}
+		}
+	],
 	"type_slash": "Введите /, чтобы увидеть команды",
 	"undid_messages_suffix": "сообщ.",
 	"undid_n_messages": "Удалено",

@@ -1,4 +1,4 @@
-import type { MessageReactionView, TurnUsage } from '@maudecode/talaria-web-contracts'
+import type { MessageReactionView, TurnSummaryPart, TurnUsage } from '@maudecode/talaria-web-contracts'
 import { Popover } from '@base-ui/react/popover'
 import { ContextMenu, Menu, MenuItem } from '../../ui/Menu'
 import { memo, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
@@ -297,6 +297,18 @@ function TurnUsageMeta({ usage }: { usage: TurnUsage }) {
   )
 }
 
+/** TAL-2339: one part of a turn's summary in the reader's words; the server counted it. */
+function turnSummaryPartText({ key, count }: TurnSummaryPart): string {
+  switch (key) {
+    case 'files_changed': return m.turn_summary_files_changed({ count })
+    case 'memories_saved': return m.turn_summary_memories_saved({ count })
+    case 'skills_updated': return m.turn_summary_skills_updated({ count })
+    case 'schedules_changed': return m.turn_summary_schedules_changed({ count })
+    case 'tasks_updated': return m.turn_summary_tasks_updated({ count })
+    case 'messages_sent': return m.turn_summary_messages_sent({ count })
+  }
+}
+
 /** `continuation`: the live turn that continues this running scene (TAL-374). `tokenUsage`: the `show_token_usage` setting.
  *  `tps`: the `show_tps` setting, independent of `tokenUsage` (TAL-2150). */
 export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, tokenUsage = false, tps = false, isLast, retainHeight = isLast, sessionId, scope, continuation }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; tokenUsage?: boolean; tps?: boolean; isLast: boolean; retainHeight?: boolean; sessionId?: string | undefined; scope?: string | undefined; continuation?: LiveTurn | undefined }) {
@@ -306,6 +318,7 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
   const run = row.message as { _turnDuration?: number | null; _usedModel?: string | null }
   const speed = tps && typeof row.message._turnTps === 'number' ? row.message._turnTps : null
   const meta = [typeof run._turnDuration === 'number' && run._turnDuration >= 0.5 ? `${run._turnDuration < 10 ? run._turnDuration.toFixed(1) : Math.round(run._turnDuration)}s` : null, run._usedModel || null].filter(Boolean).join(' · ')
+  const summary = (activity.summary ?? []).map(turnSummaryPartText).join(' · ')
   const ref = useRef<HTMLDivElement>(null)
   const jumpToQuestion = () => {
     let prev = ref.current?.previousElementSibling
@@ -326,10 +339,11 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
         <TurnActivityView activity={activity} mode={mode} sessionId={sessionId} scope={scope} />
         {parts.map((part) => <AttachmentList key={part.key} message={part.message} sessionId={undefined} />)}
       </div>
-      <div className={cn('msg-foot', isLast && 'msg-foot-latest')}>
+      <div className={cn('msg-foot', isLast && 'msg-foot-latest')} data-turn-summary={summary ? '1' : undefined}>
         {parts.map((part) => <MessageReactions key={part.key} row={part} actions={actions} />)}
         {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
-        {meta && <span className="msg-run-meta font-mono text-[11px] tabular-nums text-muted opacity-75">{meta}</span>}
+        {/* TAL-2339: the turn's summary follows the duration and model on the footer's one line, which cuts it first. */}
+        {(meta || summary) && <span className="msg-run-meta font-mono text-[11px] tabular-nums text-muted opacity-75" title={summary ? [meta, summary].filter(Boolean).join(' · ') : undefined}>{meta && <span className="msg-run-info">{meta}{summary ? ' · ' : null}</span>}{summary && <span className="msg-turn-summary">{summary}</span>}</span>}
         {speed !== null && <span className="msg-turn-tps whitespace-nowrap font-mono text-[11px] tabular-nums text-muted opacity-75" title={`${speed} tok/s`}>{Math.round(speed)} tok/s</span>}
         {tokenUsage && row.message._turnUsage && <TurnUsageMeta usage={row.message._turnUsage} />}
         <span className="ml-auto" aria-hidden="true" />

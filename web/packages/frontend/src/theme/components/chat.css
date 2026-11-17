@@ -159,6 +159,9 @@ textarea#msg::placeholder{color:var(--muted)}
 .steer-action:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .msg-foot{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;row-gap:2px;gap:6px;margin-top:4px;font-size:11px;color:var(--muted)}
 .msg-foot .msg-time{font-size:10.5px;opacity:.75;flex:0 0 auto}
+/* TAL-2339: a turn's summary, in the outcome colour, ends the run meta; the footer's one line cuts it before the time. */
+.msg-turn-summary{color:color-mix(in srgb,var(--muted) 82%,var(--text))}
+.msg-foot[data-turn-summary] .msg-time{flex-shrink:0}
 
 
 @media (max-width: 600px){}
@@ -211,7 +214,8 @@ textarea#msg::-webkit-scrollbar{display:var(--composer-scrollbar-display)}
 .msg-foot .msg-time,.msg-foot .msg-run-meta{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .msg-foot > button{flex-shrink:0;width:26px;height:26px}
 .msg-foot > .msg-turn-usage{width:auto;height:26px;white-space:nowrap}
-@media (max-width:640px){.msg-foot .msg-run-meta{display:none}}
+/* TAL-2339: a phone drops the duration and model but keeps a turn's summary. */
+@media (max-width:640px){.msg-foot .msg-run-info{display:none}.msg-foot:not([data-turn-summary]) .msg-run-meta{display:none}}
 }
 /* Transcript loading skeleton (TranscriptSkeleton.tsx). Sheen/fade keyframes live in keyframes.css. */
 .msg-row[data-member-author] .msg-role.assistant{display:flex;margin-bottom:6px}

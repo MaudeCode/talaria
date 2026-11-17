@@ -425,6 +425,18 @@ export type ActivitySceneRow = z.infer<typeof ActivitySceneRowSchema>
 export const TurnFileChangeSchema = z.looseObject({ path: z.string(), action: z.enum(['added', 'edited', 'deleted', 'renamed']) })
 export type TurnFileChange = z.infer<typeof TurnFileChangeSchema>
 
+/**
+ * TAL-2339: what a settled turn changed, as its reply's footer says it after the duration and model, in this order:
+ * `files_changed` (files its successful file-mutating calls changed), `memories_saved` (memory entries added or updated),
+ * `skills_updated` (skills created, updated or removed), `schedules_changed` (scheduled jobs created, paused, resumed or
+ * removed), `tasks_updated` (Kanban tasks moved, blocked, completed or commented on) and `messages_sent`. Counted from the
+ * turn's successful calls' outcomes (`ToolOutcomeSchema`); a key with nothing to count is absent. Clients only word each part.
+ */
+export const TurnSummaryKeySchema = z.enum(['files_changed', 'memories_saved', 'skills_updated', 'schedules_changed', 'tasks_updated', 'messages_sent'])
+export type TurnSummaryKey = z.infer<typeof TurnSummaryKeySchema>
+export const TurnSummaryPartSchema = z.object({ key: TurnSummaryKeySchema, count: z.number().int().min(1) })
+export type TurnSummaryPart = z.infer<typeof TurnSummaryPartSchema>
+
 /** `_anchor_activity_scene`: a completed turn's server-owned presentation: the rows under "Worked" (a tail preview plus paging fields), the visible final answer, the outcome, and the default disclosure. */
 /** How a turn ended: every terminal chat frame carries it, and the turn's settled scene shows the same value. */
 export const TurnTerminalStateSchema = z.enum(['completed', 'no_response', 'cancelled', 'interrupted', 'tool_limit_reached', 'compression_exhausted', 'error'])
@@ -445,6 +457,8 @@ export const ActivitySceneSchema = z.looseObject({
   has_consumed_steering: z.boolean().optional(),
   /** The files the whole turn's file-mutating calls changed, in first-touch order; clients join them to `git/status` for line counts. */
   file_changes: z.array(TurnFileChangeSchema).optional(),
+  /** TAL-2339: what the whole turn changed, for its reply's footer; empty when it changed nothing, absent on an older server. */
+  turn_summary: z.array(TurnSummaryPartSchema).optional(),
   /** TAL-2332: the activity groups of the shipped rows, counted over each whole group (paged-out rows included). */
   activity_groups: z.array(ActivityGroupSchema).optional(),
   /** TAL-2332: the calls of the work phase after the turn's last consumed steer (the whole turn without one), which its "Worked" header words. */

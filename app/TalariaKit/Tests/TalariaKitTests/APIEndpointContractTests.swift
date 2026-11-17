@@ -1262,6 +1262,41 @@ final class SharedContractTests: XCTestCase {
         }
     }
 
+    /// TAL-2339: each reply's turn summary in the shared tool-outcome session, as the App decodes it.
+    func testSharedWebSessionCarriesEachTurnSummary() throws {
+        let data = try fixture("web-session")
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-2339 ships no summary.
+        guard let example = object["tool_outcome_views"] as? [String: Any], String(decoding: data, as: UTF8.self).contains(#""turn_summary""#) else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
+        let messages = try XCTUnwrap(session.messages)
+        let summaries = (1...3).map { turn in messages.first { $0.messageId == "outcome-answer-\(turn)" }?.turnSummary }
+        XCTAssertEqual(summaries, [
+            [TurnSummaryPart(key: .memoriesSaved, count: 1), TurnSummaryPart(key: .schedulesChanged, count: 1), TurnSummaryPart(key: .messagesSent, count: 1)],
+            [TurnSummaryPart(key: .filesChanged, count: 1)],
+            [TurnSummaryPart(key: .tasksUpdated, count: 1)],
+        ])
+    }
+
+    /// TAL-2339: a summary part a newer server adds, or a malformed one, drops alone; an older server's scene carries none.
+    func testTurnSummaryDecodesEachPartOnItsOwn() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let scene = try decoder.decode(AssistantActivityScene.self, from: Data(#"""
+        {"version": "activity_scene_v1", "activity_rows": [], "turn_summary": [
+          {"key": "files_changed", "count": 3}, {"key": "widgets_built", "count": 2}, {"key": "memories_saved", "count": 0},
+          {"key": "skills_updated", "count": 1.5}, {"key": "messages_sent", "count": 2}
+        ]}
+        """#.utf8))
+        XCTAssertEqual(scene.turnSummary, [TurnSummaryPart(key: .filesChanged, count: 3), TurnSummaryPart(key: .messagesSent, count: 2)])
+        XCTAssertEqual(AssistantTurnSummary.changes(scene.turnSummary), "Changed 3 files · Sent 2 messages")
+        let older = try decoder.decode(AssistantActivityScene.self, from: Data(#"{"version": "activity_scene_v1", "activity_rows": []}"#.utf8))
+        XCTAssertNil(older.turnSummary)
+        XCTAssertNil(AssistantTurnSummary.changes([]))
+    }
+
     func testSharedWebSessionCarriesEachKanbanRow() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-2327 has no such example.

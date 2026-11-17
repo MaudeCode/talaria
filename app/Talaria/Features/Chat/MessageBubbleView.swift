@@ -204,8 +204,8 @@ struct MessageBubbleView: View {
 
     /// A compact, generic `glyph + time` marker drawn above each assistant text
     /// turn so back-to-back responses are visually separable. Deliberately carries
-    /// no model/profile/agent identity — only the message's own timestamp, which
-    /// is the single per-message-accurate datum available.
+    /// no model/profile/agent identity — only the message's own timestamp and speed,
+    /// and what the turn changed (TAL-2339).
     private var assistantTurnHeader: some View {
         HStack(spacing: 5) {
             Image(systemName: "sparkle")
@@ -221,7 +221,16 @@ struct MessageBubbleView: View {
                 Text(speed)
                     .foregroundStyle(.secondary)
             }
+
+            // TAL-2339: what the turn changed, after the time and speed on the same line, which cuts it first.
+            if let summary = assistantTurnSummaryText {
+                Text(summary)
+                    .foregroundStyle(.secondary)
+                    .layoutPriority(-1)
+            }
         }
+        .lineLimit(1)
+        .truncationMode(.tail)
         .font(AppFont.footnote())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(assistantTurnHeaderAccessibilityLabel)
@@ -233,7 +242,8 @@ struct MessageBubbleView: View {
             hasTextContent: hasVisibleAssistantText,
             isEnabled: showsAssistantTurnTimestamps,
             showsResponseSpeed: showsResponseSpeed,
-            hasResponseSpeed: assistantResponseSpeedText != nil
+            hasResponseSpeed: assistantResponseSpeedText != nil,
+            hasTurnSummary: assistantTurnSummaryText != nil
         )
     }
 
@@ -255,10 +265,15 @@ struct MessageBubbleView: View {
         return ResponseSpeedFormatter.compactText(isStreaming ? liveTokensPerSecond : message.turnTps)
     }
 
+    private var assistantTurnSummaryText: String? {
+        AssistantTurnSummary.changes(message.turnSummary)
+    }
+
     private var assistantTurnHeaderAccessibilityLabel: String {
         let details = [
             assistantTurnTimeText,
-            assistantResponseSpeedAccessibilityText
+            assistantResponseSpeedAccessibilityText,
+            assistantTurnSummaryText
         ].compactMap { $0 }
         guard !details.isEmpty else { return String(localized: "Assistant") }
         return String(localized: "Assistant, \(details.joined(separator: ", "))")

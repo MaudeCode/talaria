@@ -589,6 +589,7 @@ struct ChatTranscriptView: View {
                 isEditingMessage: isEditingMessage,
                 isForkingMessage: isForkingMessage,
                 disablesHistoryActions: isSyntheticSteeringNeighbor,
+                showsGitRecap: turnChangesSummary != nil && index == displayedTranscriptMessages.count - 1,
                 loadAttachmentImage: loadAttachmentImage,
                 loadAttachmentData: loadAttachmentData,
                 loadTranscriptMediaImage: loadTranscriptMediaImage,

@@ -2001,6 +2001,96 @@
 	"tree_view": "Arborescence",
 	"tts_listen": "Écouter",
 	"tts_not_supported": "La synthèse vocale n'est pas prise en charge dans ce navigateur.",
+	"turn_summary_files_changed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} fichier modifié",
+				"countPlural=other": "{count} fichiers modifiés"
+			}
+		}
+	],
+	"turn_summary_memories_saved": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} entrée de mémoire enregistrée",
+				"countPlural=other": "{count} entrées de mémoire enregistrées"
+			}
+		}
+	],
+	"turn_summary_messages_sent": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} message envoyé",
+				"countPlural=other": "{count} messages envoyés"
+			}
+		}
+	],
+	"turn_summary_schedules_changed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} planification modifiée",
+				"countPlural=other": "{count} planifications modifiées"
+			}
+		}
+	],
+	"turn_summary_skills_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} compétence mise à jour",
+				"countPlural=other": "{count} compétences mises à jour"
+			}
+		}
+	],
+	"turn_summary_tasks_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} tâche mise à jour",
+				"countPlural=other": "{count} tâches mises à jour"
+			}
+		}
+	],
 	"type_slash": "Tapez / pour voir les commandes",
 	"undid_messages_suffix": " message(s).",
 	"undid_n_messages": "Supprimé",

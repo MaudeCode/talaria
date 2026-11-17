@@ -3393,6 +3393,96 @@
 	"tree_view": "Tree",
 	"tts_listen": "Listen",
 	"tts_not_supported": "Speech synthesis not supported in this browser.",
+	"turn_summary_files_changed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Changed {count} file",
+				"countPlural=other": "Changed {count} files"
+			}
+		}
+	],
+	"turn_summary_memories_saved": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Saved {count} memory",
+				"countPlural=other": "Saved {count} memories"
+			}
+		}
+	],
+	"turn_summary_messages_sent": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Sent {count} message",
+				"countPlural=other": "Sent {count} messages"
+			}
+		}
+	],
+	"turn_summary_schedules_changed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Changed {count} schedule",
+				"countPlural=other": "Changed {count} schedules"
+			}
+		}
+	],
+	"turn_summary_skills_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Updated {count} skill",
+				"countPlural=other": "Updated {count} skills"
+			}
+		}
+	],
+	"turn_summary_tasks_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Updated {count} task",
+				"countPlural=other": "Updated {count} tasks"
+			}
+		}
+	],
 	"turn_usage_label": "Token usage for this reply: {input} in, {output} out",
 	"turn_usage_summary": "{input} in · {output} out",
 	"type_slash": "Type / to see commands",

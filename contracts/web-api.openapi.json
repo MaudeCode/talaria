@@ -10117,6 +10117,34 @@
                                       "additionalProperties": {}
                                     }
                                   },
+                                  "turn_summary": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "enum": [
+                                            "files_changed",
+                                            "memories_saved",
+                                            "skills_updated",
+                                            "schedules_changed",
+                                            "tasks_updated",
+                                            "messages_sent"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "count"
+                                      ]
+                                    }
+                                  },
                                   "activity_groups": {
                                     "type": "array",
                                     "items": {
@@ -17757,6 +17785,34 @@
                                       "additionalProperties": {}
                                     }
                                   },
+                                  "turn_summary": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "enum": [
+                                            "files_changed",
+                                            "memories_saved",
+                                            "skills_updated",
+                                            "schedules_changed",
+                                            "tasks_updated",
+                                            "messages_sent"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "count"
+                                      ]
+                                    }
+                                  },
                                   "activity_groups": {
                                     "type": "array",
                                     "items": {
@@ -24066,6 +24122,34 @@
                                         "action"
                                       ],
                                       "additionalProperties": {}
+                                    }
+                                  },
+                                  "turn_summary": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "enum": [
+                                            "files_changed",
+                                            "memories_saved",
+                                            "skills_updated",
+                                            "schedules_changed",
+                                            "tasks_updated",
+                                            "messages_sent"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "count"
+                                      ]
                                     }
                                   },
                                   "activity_groups": {
@@ -33511,6 +33595,34 @@
                                       "additionalProperties": {}
                                     }
                                   },
+                                  "turn_summary": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "enum": [
+                                            "files_changed",
+                                            "memories_saved",
+                                            "skills_updated",
+                                            "schedules_changed",
+                                            "tasks_updated",
+                                            "messages_sent"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "count"
+                                      ]
+                                    }
+                                  },
                                   "activity_groups": {
                                     "type": "array",
                                     "items": {
@@ -42263,6 +42375,34 @@
                                         "action"
                                       ],
                                       "additionalProperties": {}
+                                    }
+                                  },
+                                  "turn_summary": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "enum": [
+                                            "files_changed",
+                                            "memories_saved",
+                                            "skills_updated",
+                                            "schedules_changed",
+                                            "tasks_updated",
+                                            "messages_sent"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "count"
+                                      ]
                                     }
                                   },
                                   "activity_groups": {
@@ -51651,6 +51791,34 @@
                                       "additionalProperties": {}
                                     }
                                   },
+                                  "turn_summary": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "enum": [
+                                            "files_changed",
+                                            "memories_saved",
+                                            "skills_updated",
+                                            "schedules_changed",
+                                            "tasks_updated",
+                                            "messages_sent"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "count"
+                                      ]
+                                    }
+                                  },
                                   "activity_groups": {
                                     "type": "array",
                                     "items": {
@@ -57905,6 +58073,34 @@
                                         "action"
                                       ],
                                       "additionalProperties": {}
+                                    }
+                                  },
+                                  "turn_summary": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "enum": [
+                                            "files_changed",
+                                            "memories_saved",
+                                            "skills_updated",
+                                            "schedules_changed",
+                                            "tasks_updated",
+                                            "messages_sent"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "count"
+                                      ]
                                     }
                                   },
                                   "activity_groups": {
@@ -64225,6 +64421,34 @@
                                       "additionalProperties": {}
                                     }
                                   },
+                                  "turn_summary": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "enum": [
+                                            "files_changed",
+                                            "memories_saved",
+                                            "skills_updated",
+                                            "schedules_changed",
+                                            "tasks_updated",
+                                            "messages_sent"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "count"
+                                      ]
+                                    }
+                                  },
                                   "activity_groups": {
                                     "type": "array",
                                     "items": {
@@ -70539,6 +70763,34 @@
                                         "action"
                                       ],
                                       "additionalProperties": {}
+                                    }
+                                  },
+                                  "turn_summary": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "enum": [
+                                            "files_changed",
+                                            "memories_saved",
+                                            "skills_updated",
+                                            "schedules_changed",
+                                            "tasks_updated",
+                                            "messages_sent"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "count"
+                                      ]
                                     }
                                   },
                                   "activity_groups": {
@@ -89475,6 +89727,34 @@
                                       "additionalProperties": {}
                                     }
                                   },
+                                  "turn_summary": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "enum": [
+                                            "files_changed",
+                                            "memories_saved",
+                                            "skills_updated",
+                                            "schedules_changed",
+                                            "tasks_updated",
+                                            "messages_sent"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "count"
+                                      ]
+                                    }
+                                  },
                                   "activity_groups": {
                                     "type": "array",
                                     "items": {
@@ -95781,6 +96061,34 @@
                                         "action"
                                       ],
                                       "additionalProperties": {}
+                                    }
+                                  },
+                                  "turn_summary": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "enum": [
+                                            "files_changed",
+                                            "memories_saved",
+                                            "skills_updated",
+                                            "schedules_changed",
+                                            "tasks_updated",
+                                            "messages_sent"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "count"
+                                      ]
                                     }
                                   },
                                   "activity_groups": {
@@ -102777,6 +103085,34 @@
                                       "additionalProperties": {}
                                     }
                                   },
+                                  "turn_summary": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "enum": [
+                                            "files_changed",
+                                            "memories_saved",
+                                            "skills_updated",
+                                            "schedules_changed",
+                                            "tasks_updated",
+                                            "messages_sent"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "count"
+                                      ]
+                                    }
+                                  },
                                   "activity_groups": {
                                     "type": "array",
                                     "items": {
@@ -109237,6 +109573,34 @@
                                             "action"
                                           ],
                                           "additionalProperties": {}
+                                        }
+                                      },
+                                      "turn_summary": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "key": {
+                                              "enum": [
+                                                "files_changed",
+                                                "memories_saved",
+                                                "skills_updated",
+                                                "schedules_changed",
+                                                "tasks_updated",
+                                                "messages_sent"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "count": {
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 9007199254740991
+                                            }
+                                          },
+                                          "required": [
+                                            "key",
+                                            "count"
+                                          ]
                                         }
                                       },
                                       "activity_groups": {
@@ -160924,6 +161288,34 @@
                                         "action"
                                       ],
                                       "additionalProperties": {}
+                                    }
+                                  },
+                                  "turn_summary": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "enum": [
+                                            "files_changed",
+                                            "memories_saved",
+                                            "skills_updated",
+                                            "schedules_changed",
+                                            "tasks_updated",
+                                            "messages_sent"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "count": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        }
+                                      },
+                                      "required": [
+                                        "key",
+                                        "count"
+                                      ]
                                     }
                                   },
                                   "activity_groups": {

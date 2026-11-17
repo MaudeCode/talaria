@@ -3,7 +3,7 @@ import { TalariaActivitySchema } from '@maudecode/talaria-web-contracts'
 import type { LiveTurn, Segment } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import type { ToolCardData } from './blocks/ToolCard'
-import { ActivityGroupSchema, type ActivityGroup, ApprovalAnsweredBySchema, BackgroundLinkSchema, DisplayMediaSchema, ToolFieldSchema, ToolKindSchema, ToolProgressSchema, ToolAppSchema, ToolResultViewSchema, ToolVerbSchema, type DisplayMedia, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
+import { ActivityGroupSchema, TurnSummaryPartSchema, type ActivityGroup, type TurnSummaryPart, ApprovalAnsweredBySchema, BackgroundLinkSchema, DisplayMediaSchema, ToolFieldSchema, ToolKindSchema, ToolProgressSchema, ToolAppSchema, ToolResultViewSchema, ToolVerbSchema, type DisplayMedia, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
 import { extractInlineThinking, messageText, stripToolCallXml } from './render/text'
 import type { VisibleMessage } from './useTranscript'
 
@@ -43,6 +43,8 @@ export interface TurnActivity {
   groups?: Record<string, ActivityGroup>
   /** TAL-2332: the work phase after the last consumed steer, which the turn's last "Worked" header words. */
   finalPhase?: ActivityGroup
+  /** TAL-2339: what the settled turn changed, which its reply's footer words; empty or absent when it changed nothing. */
+  summary?: TurnSummaryPart[]
 }
 
 const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
@@ -159,10 +161,13 @@ export function persistedActivity(row: VisibleMessage): TurnActivity {
   }
   return {
     key, items: sceneItems(scene.activity_rows), ...serverGroups(scene), finalAnswer: text(scene.final_answer), finalAnswerDisplay: displayBody(scene.final_answer_display, scene.final_answer_media), ...(text(scene.final_answer_excerpt) ? { finalAnswerExcerpt: text(scene.final_answer_excerpt) } : {}), status: text(scene.terminal_state) || 'completed', expandedByDefault: scene.expanded_by_default === true,
-    sceneRows: scene.activity_rows,
+    sceneRows: scene.activity_rows, summary: summaryParts(scene.turn_summary),
     ...(typeof scene.activity_rows_offset === 'number' && scene.activity_rows_offset > 0 ? { history: { ref: text(scene.activity_scene_ref), index: row.index, before: scene.activity_rows_offset } } : {}),
   }
 }
+
+/** TAL-2339: the scene's summary parts; a part a newer server adds drops alone. */
+const summaryParts = (parts: unknown): TurnSummaryPart[] => (Array.isArray(parts) ? parts.flatMap((part) => TurnSummaryPartSchema.safeParse(part).data ?? []) : [])
 
 /** TAL-2332: a scene's activity groups and last work phase, when the server sent them. */
 function serverGroups(scene: Record<string, unknown>): Pick<TurnActivity, 'groups' | 'finalPhase'> {

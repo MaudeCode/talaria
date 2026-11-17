@@ -788,7 +788,7 @@ final class TranscriptHostedTests: XCTestCase {
 
 
 @MainActor
-private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageCount: Int = 50, messageOffset: Int? = nil, hasOlderMessages: Bool = true, onMetrics: @escaping (ChatScrollMetrics) -> Void = { _ in }, shouldRender: @escaping (ChatMessage) -> Bool = { _ in true }, scrollRequest: Int = 0, onScrollRequest: @escaping (ChatTranscriptScrollProxy) -> Void = { _ in }, load: @escaping (@MainActor () -> Void) async -> Bool) -> some View {
+private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageCount: Int = 50, messageOffset: Int? = nil, hasOlderMessages: Bool = true, onMetrics: @escaping (ChatScrollMetrics) -> Void = { _ in }, shouldRender: @escaping (ChatMessage) -> Bool = { _ in true }, scrollRequest: Int = 0, onScrollRequest: @escaping (ChatTranscriptScrollProxy) -> Void = { _ in }, turnChangesSummary: TurnFileChangeSummary? = nil, load: @escaping (@MainActor () -> Void) async -> Bool) -> some View {
     let messages = supplied ?? (0..<messageCount).map { index in
         ChatMessage(role: "user", content: "History row \(index). Synthetic transcript text.", timestamp: nil, messageId: "history-\(index)")
     }
@@ -820,7 +820,7 @@ private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageC
         onScrollToLatestTranscriptMessage: { _ in }, onScrollToLatestContent: { _, _ in },
         onPreviewAttachment: { _, _ in }, onPreviewTranscriptMedia: { _ in },
         onToggleListening: { _ in }, onSelectText: { _ in }, onRegenerate: { _ in },
-        onEdit: { _ in }, onFork: { _ in }, onCopy: { _ in }
+        onEdit: { _ in }, onFork: { _ in }, onCopy: { _ in }, turnChangesSummary: turnChangesSummary
     )
 }
 
@@ -1034,6 +1034,54 @@ extension TranscriptHostedTests {
         return data
     }
 
+}
+
+/// TAL-2339: a reply's header says what its turn changed, without the file count where the git recap card under it says that.
+@MainActor
+extension TranscriptHostedTests {
+    private func summarizedTurn(_ summary: String) throws -> (ChatMessage, AssistantActivityScene) {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let answer = "Fixed the cookie expiry and saved your preference."
+        let scene = try decoder.decode(AssistantActivityScene.self, from: Data("""
+        {"version": "activity_scene_v1", "final_answer": "\(answer)", "terminal_state": "completed",
+         "activity_rows": [{"row_id": "tool:p", "order_index": 0, "role": "tool", "tool": {"id": "p", "name": "patch", "preview": null, "done": true, "is_error": false, "duration": null, "cost_usd": null}}],
+         "file_changes": [{"path": "src/auth/session.ts", "action": "edited"}], "turn_summary": \(summary)}
+        """.utf8))
+        return (ChatMessage(role: "assistant", content: answer, timestamp: nil, messageId: "summary-answer", activityScene: scene, turnSummary: scene.turnSummary, turnId: "summary-run"), scene)
+    }
+
+    func testReplyHeaderSaysWhatTheTurnChangedAndLeavesTheFileCountToTheRecapCard() async throws {
+        let (message, scene) = try summarizedTurn(#"[{"key": "files_changed", "count": 1}, {"key": "memories_saved", "count": 1}]"#)
+        let recap = TurnFileChangeAggregator.summarize(changes: scene.fileChanges ?? [], status: nil)
+        for (name, card, label) in [("alone", nil, "Assistant, Changed 1 file · Saved 1 memory"), ("recap", recap, "Assistant, Saved 1 memory")] {
+            let window = try hostWindow(historyTranscript(messages: [message], hasOlderMessages: false, turnChangesSummary: card) { _ in false })
+            let header = await awaitElement(in: window, label: label)
+            XCTAssertNotNil(header, "\(name): the header never read \(label)")
+            if card != nil {
+                XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "Changed 1 file").isEmpty, "The header repeats the recap card's file count")
+            }
+            attachHostedScreenshot(window, name: "turn-summary-header-\(name)")
+            window.isHidden = true
+        }
+    }
+
+    func testReplyHeaderKeepsALongSummaryOnOneLine() async throws {
+        let (message, _) = try summarizedTurn(#"""
+        [{"key": "files_changed", "count": 3}, {"key": "memories_saved", "count": 2}, {"key": "skills_updated", "count": 1},
+         {"key": "schedules_changed", "count": 1}, {"key": "tasks_updated", "count": 4}, {"key": "messages_sent", "count": 2}]
+        """#)
+        let window = try hostWindow(historyTranscript(messages: [message], hasOlderMessages: false) { _ in false })
+        let label = "Assistant, Changed 3 files · Saved 2 memories · Updated 1 skill · Changed 1 schedule · Updated 4 tasks · Sent 2 messages"
+        let found = await awaitElement(in: window, label: label)
+        let header = try XCTUnwrap(found, "The header never read the whole summary")
+        // One footnote line, cut at the window's edge rather than wrapped.
+        let frame = header.accessibilityFrame
+        XCTAssertLessThan(frame.height, UIFont.preferredFont(forTextStyle: .footnote).lineHeight * 1.8)
+        XCTAssertLessThanOrEqual(frame.maxX, window.bounds.maxX)
+        attachHostedScreenshot(window, name: "turn-summary-header-long")
+        window.isHidden = true
+    }
 }
 
 /// A code block wider than the reading column grows into the chat's margins before it scrolls (TAL-1487).
