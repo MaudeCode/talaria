@@ -65,8 +65,12 @@ public enum AssistantActivitySummary: Sendable {
         case search
         case web
         case load
+        case talaria
         case generic
     }
+
+    /// TAL-2317: the Talaria mark (the shared `BrandAssets` sandal), the icon of Talaria's own tools; every other icon is an SF Symbol.
+    public static let talariaMarkIcon = "Sandal"
 
     static func title(for toolCalls: [ToolCall]) -> String {
         guard !toolCalls.isEmpty else { return String(localized: "Thinking") }
@@ -117,6 +121,7 @@ public enum AssistantActivitySummary: Sendable {
             case .skill: return String(localized: "Failed to load \(target)")
             case .memory: return String(localized: "Failed to save \(target)")
             case .delegate: return String(localized: "Failed to delegate \(target)")
+            case .talaria: return String(localized: "Failed to use \(target)")
             }
         }
         switch (kind, toolCall.isCompleted) {
@@ -138,6 +143,8 @@ public enum AssistantActivitySummary: Sendable {
         case (.memory, false): return String(localized: "Saving \(target)")
         case (.delegate, true): return String(localized: "Delegated \(target)")
         case (.delegate, false): return String(localized: "Delegating \(target)")
+        case (.talaria, true): return String(localized: "Used \(target)")
+        case (.talaria, false): return String(localized: "Using \(target)")
         }
     }
 
@@ -177,6 +184,7 @@ public enum AssistantActivitySummary: Sendable {
         case .search: .search
         case .web: .web
         case .skill: .load
+        case .talaria: .talaria
         case .memory, .delegate, .unknown: .generic
         }
     }
@@ -203,6 +211,10 @@ public enum AssistantActivitySummary: Sendable {
         case (.load, false, true): String(localized: "Loaded tools")
         case (.load, true, false): String(localized: "Loading a tool")
         case (.load, false, false): String(localized: "Loading tools")
+        case (.talaria, true, true): String(localized: "Used a Talaria tool")
+        case (.talaria, false, true): String(localized: "Used Talaria tools")
+        case (.talaria, true, false): String(localized: "Using a Talaria tool")
+        case (.talaria, false, false): String(localized: "Using Talaria tools")
         case (.generic, true, true): String(localized: "Called a tool")
         case (.generic, false, true): String(localized: "Called tools")
         case (.generic, true, false): String(localized: "Calling a tool")
@@ -218,6 +230,7 @@ public enum AssistantActivitySummary: Sendable {
         case .search: String(localized: "Failed to search files")
         case .web: String(localized: "Failed to search the web")
         case .load: String(localized: "Failed to load a tool")
+        case .talaria: String(localized: "Failed to use a Talaria tool")
         case .generic: String(localized: "Tool failed")
         }
     }
@@ -230,6 +243,7 @@ public enum AssistantActivitySummary: Sendable {
         case .search: "magnifyingglass"
         case .web: "globe"
         case .load: "puzzlepiece.extension"
+        case .talaria: talariaMarkIcon
         case .generic: "wrench"
         }
     }

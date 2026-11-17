@@ -26,7 +26,7 @@ SIDECAR_SERVER_INPUTS = ("packages/server/src/sidecar/", "packages/server/src/ru
 # release-note generator and stamp tests share the What's New fixture (TAL-1616).
 FIXTURE_READERS = {
     "web_sidecar": {"mcp-cost-policy.json", "mcp-events.json", "native-cron-refusal.json", "plan-allowance.json",
-                    "web-native-notices.json", "web-native-todos.json", "web-native-work.json", "web-reactions.json"},
+                    "talaria-tool-names.json", "web-native-notices.json", "web-native-todos.json", "web-native-work.json", "web-reactions.json"},
     "tooling": {"whats-new.json"},
     "app": {"connectors.json", "decision-review.json", "delegation-status.json", "execution-modes.json",
             "model-confirmation.json", "proposal.json", "running-subagent.json", "settings-model-picker.json", "show.json",

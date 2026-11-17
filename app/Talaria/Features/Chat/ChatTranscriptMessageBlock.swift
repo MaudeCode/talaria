@@ -312,8 +312,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                                     }
                                 } label: {
                                     HStack(spacing: 8) {
-                                        Image(systemName: activityIcon(for: visibleRows))
-                                            .font(.system(size: 14))
+                                        ToolActivityIcon(name: activityIcon(for: visibleRows))
                                             .foregroundStyle(.secondary)
                                             .frame(width: 16, height: 16)
 

@@ -8017,6 +8017,7 @@
                                         "skill",
                                         "memory",
                                         "delegate",
+                                        "talaria",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -8678,6 +8679,7 @@
                                                 "skill",
                                                 "memory",
                                                 "delegate",
+                                                "talaria",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -9647,6 +9649,7 @@
                                   "skill",
                                   "memory",
                                   "delegate",
+                                  "talaria",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -13974,6 +13977,7 @@
                                         "skill",
                                         "memory",
                                         "delegate",
+                                        "talaria",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -14635,6 +14639,7 @@
                                                 "skill",
                                                 "memory",
                                                 "delegate",
+                                                "talaria",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -15604,6 +15609,7 @@
                                   "skill",
                                   "memory",
                                   "delegate",
+                                  "talaria",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -18602,6 +18608,7 @@
                                         "skill",
                                         "memory",
                                         "delegate",
+                                        "talaria",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -19263,6 +19270,7 @@
                                                 "skill",
                                                 "memory",
                                                 "delegate",
+                                                "talaria",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -20232,6 +20240,7 @@
                                   "skill",
                                   "memory",
                                   "delegate",
+                                  "talaria",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -26362,6 +26371,7 @@
                                         "skill",
                                         "memory",
                                         "delegate",
+                                        "talaria",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -27023,6 +27033,7 @@
                                                 "skill",
                                                 "memory",
                                                 "delegate",
+                                                "talaria",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -27992,6 +28003,7 @@
                                   "skill",
                                   "memory",
                                   "delegate",
+                                  "talaria",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -33433,6 +33445,7 @@
                                         "skill",
                                         "memory",
                                         "delegate",
+                                        "talaria",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -34094,6 +34107,7 @@
                                                 "skill",
                                                 "memory",
                                                 "delegate",
+                                                "talaria",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -35063,6 +35077,7 @@
                                   "skill",
                                   "memory",
                                   "delegate",
+                                  "talaria",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -41136,6 +41151,7 @@
                                         "skill",
                                         "memory",
                                         "delegate",
+                                        "talaria",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -41797,6 +41813,7 @@
                                                 "skill",
                                                 "memory",
                                                 "delegate",
+                                                "talaria",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -42766,6 +42783,7 @@
                                   "skill",
                                   "memory",
                                   "delegate",
+                                  "talaria",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -45709,6 +45727,7 @@
                                         "skill",
                                         "memory",
                                         "delegate",
+                                        "talaria",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -46370,6 +46389,7 @@
                                                 "skill",
                                                 "memory",
                                                 "delegate",
+                                                "talaria",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -47339,6 +47359,7 @@
                                   "skill",
                                   "memory",
                                   "delegate",
+                                  "talaria",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -50344,6 +50365,7 @@
                                         "skill",
                                         "memory",
                                         "delegate",
+                                        "talaria",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -51005,6 +51027,7 @@
                                                 "skill",
                                                 "memory",
                                                 "delegate",
+                                                "talaria",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -51974,6 +51997,7 @@
                                   "skill",
                                   "memory",
                                   "delegate",
+                                  "talaria",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -54977,6 +55001,7 @@
                                         "skill",
                                         "memory",
                                         "delegate",
+                                        "talaria",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -55638,6 +55663,7 @@
                                                 "skill",
                                                 "memory",
                                                 "delegate",
+                                                "talaria",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -56607,6 +56633,7 @@
                                   "skill",
                                   "memory",
                                   "delegate",
+                                  "talaria",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -59383,6 +59410,7 @@
                                   "skill",
                                   "memory",
                                   "delegate",
+                                  "talaria",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -71134,6 +71162,7 @@
                                         "skill",
                                         "memory",
                                         "delegate",
+                                        "talaria",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -71795,6 +71824,7 @@
                                                 "skill",
                                                 "memory",
                                                 "delegate",
+                                                "talaria",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -72764,6 +72794,7 @@
                                   "skill",
                                   "memory",
                                   "delegate",
+                                  "talaria",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -75759,6 +75790,7 @@
                                         "skill",
                                         "memory",
                                         "delegate",
+                                        "talaria",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -76420,6 +76452,7 @@
                                                 "skill",
                                                 "memory",
                                                 "delegate",
+                                                "talaria",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -77389,6 +77422,7 @@
                                   "skill",
                                   "memory",
                                   "delegate",
+                                  "talaria",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -81070,6 +81104,7 @@
                                         "skill",
                                         "memory",
                                         "delegate",
+                                        "talaria",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -81731,6 +81766,7 @@
                                                 "skill",
                                                 "memory",
                                                 "delegate",
+                                                "talaria",
                                                 "unknown"
                                               ],
                                               "type": "string"
@@ -82700,6 +82736,7 @@
                                   "skill",
                                   "memory",
                                   "delegate",
+                                  "talaria",
                                   "unknown"
                                 ],
                                 "type": "string"
@@ -86252,6 +86289,7 @@
                                             "skill",
                                             "memory",
                                             "delegate",
+                                            "talaria",
                                             "unknown"
                                           ],
                                           "type": "string"
@@ -86905,6 +86943,7 @@
                                                     "skill",
                                                     "memory",
                                                     "delegate",
+                                                    "talaria",
                                                     "unknown"
                                                   ],
                                                   "type": "string"
@@ -87768,6 +87807,7 @@
                                       "skill",
                                       "memory",
                                       "delegate",
+                                      "talaria",
                                       "unknown"
                                     ],
                                     "type": "string"
@@ -136011,6 +136051,7 @@
                                         "skill",
                                         "memory",
                                         "delegate",
+                                        "talaria",
                                         "unknown"
                                       ],
                                       "type": "string"
@@ -136672,6 +136713,7 @@
                                                 "skill",
                                                 "memory",
                                                 "delegate",
+                                                "talaria",
                                                 "unknown"
                                               ],
                                               "type": "string"

@@ -65,6 +65,23 @@ func testAssistantActivitySummaryRendersTheServerKindAndTarget() {
     XCTAssertEqual(label("terminal", .shell, nil), "Ran a command")
 }
 
+/// TAL-2317: Talaria's own tools carry its mark and read by the tool's name, as on Web.
+func testAssistantActivitySummaryNamesTalariaToolsWithTheTalariaMark() {
+    XCTAssertEqual(ToolDisplayKind(serverValue: "talaria"), .talaria)
+    func call(_ name: String, isError: Bool? = nil, isCompleted: Bool = true) -> ToolCall {
+        ToolCall(name: name, preview: nil, args: nil, kind: .talaria, target: name, isError: isError, isCompleted: isCompleted)
+    }
+    XCTAssertEqual(AssistantActivitySummary.label(for: call("profile_list")), "Used profile_list")
+    XCTAssertEqual(AssistantActivitySummary.label(for: call("profile_list", isCompleted: false)), "Using profile_list")
+    XCTAssertEqual(AssistantActivitySummary.label(for: call("profile_list", isError: true)), "Failed to use profile_list")
+    XCTAssertEqual(AssistantActivitySummary.title(for: [call("profile_list")]), "Used a Talaria tool")
+    XCTAssertEqual(AssistantActivitySummary.title(for: [call("profile_list"), call("session_list")]), "Used Talaria tools")
+    XCTAssertEqual(AssistantActivitySummary.title(for: [call("profile_list", isCompleted: false), call("session_list")]), "Using Talaria tools")
+    XCTAssertEqual(AssistantActivitySummary.icon(for: call("profile_list")), AssistantActivitySummary.talariaMarkIcon)
+    XCTAssertEqual(AssistantActivitySummary.talariaMarkIcon, "Sandal")
+    XCTAssertEqual(AssistantActivitySummary.icon(for: [call("profile_list"), call("session_list")]), "Sandal")
+}
+
 func testAssistantActivityHeaderTracksCurrentInnerActivity() {
     let reasoning = AssistantActivityRow(
         id: "reasoning",

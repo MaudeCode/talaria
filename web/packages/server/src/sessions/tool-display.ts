@@ -4,7 +4,7 @@
  * redacted args, so the target never shows more than the arguments it came from.
  */
 import type { ToolEditDiff, ToolKind, ToolProgress } from '@maudecode/talaria-web-contracts'
-import { DecisionReviewRefSchema, OutboundDraftRefSchema, ProposalRefSchema, ShowBlockRefSchema, TerminalRefSchema, type DecisionReviewRef, type OutboundDraftRef, type ProposalRef, type ShowBlockRef, type TerminalRef } from '@maudecode/talaria-web-contracts'
+import { DecisionReviewRefSchema, OutboundDraftRefSchema, ProposalRefSchema, ShowBlockRefSchema, TALARIA_TOOL_NAMES, TerminalRefSchema, type DecisionReviewRef, type OutboundDraftRef, type ProposalRef, type ShowBlockRef, type TerminalRef } from '@maudecode/talaria-web-contracts'
 import { posix } from 'node:path'
 import { str } from '../util.js'
 import { expandHome } from '../workspace/paths.js'
@@ -60,7 +60,11 @@ const RULES: [ToolKind, (tokens: Set<string>, name: string) => boolean][] = [
   ['write', (t) => ['write', 'patch', 'edit'].some((k) => t.has(k))],
 ]
 
+/** TAL-2317: Talaria's own tools, by exact name, before any name-token rule reads them. */
+const TALARIA_TOOLS = new Set<string>(TALARIA_TOOL_NAMES)
+
 export function toolKind(name: unknown): ToolKind {
+  if (typeof name === 'string' && TALARIA_TOOLS.has(name)) return 'talaria'
   // camelCase and acronym words split like snake_case ones (`readFile` is `read`, `file`; `HTTPFetch` is `http`, `fetch`).
   const n = str(name).replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2').replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
   if (!n) return 'unknown'
@@ -77,6 +81,8 @@ const TARGET_KEYS: Partial<Record<ToolKind, string[]>> = {
   search: ['query', 'pattern', 'url', 'uri'],
   web: ['query', 'pattern', 'url', 'uri', 'session', 'code'],
 }
+/** TAL-2317: the Talaria tools named by what they act on; every other one is named by the tool itself. */
+const TALARIA_TARGET_KEYS: Record<string, string[]> = { deliver: ['path'], terminal_open: ['command'] }
 const FALLBACK_KEYS = ['cmd', 'command', 'path', 'file_path', 'file', 'uri', 'url', 'query', 'pattern', 'dir', 'task', 'name']
 const TOOL_TARGET_MAX = 200
 
@@ -161,7 +167,8 @@ export function toolDisplay(name: unknown, args: unknown, workspace: string | nu
   const a = isDict(args) ? args : {}
   const arg = (keys: string[]) => keys.map((k) => snapshotArg(a, k)).find((v): v is string => typeof v === 'string' && Boolean(v.trim())) ?? ''
   const special = name === 'delegate_task' ? delegateTarget(arg) : bridge ? bridge.target(snapshotItems(snapshotArg(a, bridge.key) ?? '')) : ''
-  const first = (special || arg(TARGET_KEYS[kind] ?? FALLBACK_KEYS)).trim().split('\n')[0] ?? ''
+  const own = kind === 'talaria' ? arg(TALARIA_TARGET_KEYS[str(name)] ?? []) || str(name) : ''
+  const first = (special || own || arg(TARGET_KEYS[kind] ?? FALLBACK_KEYS)).trim().split('\n')[0] ?? ''
   // Capped by code point, so the cap never splits a surrogate pair into invalid JSON.
   return {
     kind, target: Array.from(first.replace(/\s+/g, ' ').trim()).slice(0, TOOL_TARGET_MAX).join(''), focus_path: kind === 'read' || kind === 'write' ? focusPath(arg(FOCUS_KEYS), workspace) : null,

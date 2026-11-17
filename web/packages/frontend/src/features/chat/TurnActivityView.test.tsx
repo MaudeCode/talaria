@@ -15,6 +15,7 @@ import type { Message, Session } from '../../contracts'
 import type { ChatEvent } from '../../contracts/sse'
 import { MessageSchema } from '../../contracts/session'
 import { stubAnimate } from '../../test/animate'
+import { toolText } from '../../i18n/toolText'
 
 afterEach(() => { cleanup(); localStorage.clear() })
 
@@ -126,6 +127,23 @@ describe('turn worklog presentation', () => {
     const y = view.container.querySelector('[data-tool-id="y"]')!
     expect(y).toHaveAttribute('data-tool-kind', 'unknown')
     expect(y.querySelector('.tool-card-name')).not.toHaveTextContent('a.txt')
+  })
+
+  it('marks a Talaria tool with the brandmark and names it by the tool (TAL-2317)', () => {
+    const run = liveRun()
+    run.emit({ event: 'tool', data: { id: 't', name: 'profile_list', kind: 'talaria', target: 'profile_list', args: {} } })
+    const view = render(<View activity={liveActivity(run.turn)} />)
+    const row = () => view.container.querySelector('[data-tool-id="t"]')!
+    expect(row()).toHaveAttribute('data-tool-kind', 'talaria')
+    expect(row().querySelector('.tool-card-icon [data-tool-brandmark]')).toHaveClass('text-muted')
+    expect(row().querySelector('.tool-card-icon svg')).toBeNull()
+    expect(row().querySelector('.tool-card-name')).toHaveTextContent('Using profile_list')
+    run.emit({ event: 'tool_complete', data: { id: 't', name: 'profile_list', kind: 'talaria', target: 'profile_list', result: '[]' } })
+    view.rerender(<View activity={liveActivity(run.turn)} />)
+    expect(row().querySelector('.tool-card-name')).toHaveTextContent('Used profile_list')
+    expect(toolText('en').worklogSummary('talaria', 'done', 1)).toBe('Used a Talaria tool')
+    expect(toolText('en').worklogSummary('talaria', 'done', 2)).toBe('Used Talaria tools')
+    expect(toolText('en').worklogSummary('talaria', 'running', 2)).toBe('Using Talaria tools')
   })
 
   it('shows live work inline without a turn-level disclosure and preserves settled choices through remount', () => {

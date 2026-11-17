@@ -43,8 +43,20 @@ export const AttachmentSchema = z.looseObject({
 export type Attachment = z.infer<typeof AttachmentSchema>
 
 /** The server's display class for a tool call: clients map it to an icon and localized verb, and never classify names themselves. */
-export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'unknown'])
+export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'unknown'])
 export type ToolKind = z.infer<typeof ToolKindSchema>
+/**
+ * TAL-2317: the tools the sidecar's `talaria` and `harness` toolsets register, which the server shows as kind `talaria`.
+ * `contracts/fixtures/talaria-tool-names.json` carries the same list for the sidecar test that pins it to the registry.
+ */
+export const TALARIA_TOOL_NAMES = [
+  'session_list', 'queue_list', 'queue_send_now', 'queue_withdraw', 'session_new', 'session_send', 'session_wait', 'session_interrupt',
+  'session_branch', 'session_update', 'session_handoff', 'session_compress', 'background_list', 'pending_list', 'clarify_respond',
+  'approval_respond', 'project_list', 'project_create', 'project_rename', 'workspace_list', 'workspace_add', 'workspace_rename',
+  'profile_list', 'goal_get', 'goal_set',
+  'decision_review_put', 'decision_review_read', 'decision_review_record', 'propose', 'proposal_read', 'show', 'request_secret', 'notify',
+  'deliver', 'terminal_open', 'terminal_read', 'report_issue', 'usage_read',
+] as const
 export { DiffLineSchema } from './diff-line.js'
 /**
  * TAL-604: one hunk of a unified diff: its `@@` `header`, the first old and new line numbers, the last new line it covers

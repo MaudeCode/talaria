@@ -4,7 +4,7 @@
 // they compose grammar from tables with count-free fallbacks.
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/restrict-plus-operands */
 export type ToolActionState = 'running' | 'done'
-export type ToolKind = 'shell' | 'read' | 'list' | 'search' | 'web' | 'write' | 'skill' | 'memory' | 'delegate' | 'unknown' | (string & {})
+export type ToolKind = 'shell' | 'read' | 'list' | 'search' | 'web' | 'write' | 'skill' | 'memory' | 'delegate' | 'talaria' | 'unknown' | (string & {})
 
 const _I18N_TOOL_ACTION_TEXT_EN: any = {
     shell: { running: 'Running', done: 'Ran', fail: 'run', fallback: 'a command' },
@@ -16,6 +16,7 @@ const _I18N_TOOL_ACTION_TEXT_EN: any = {
     skill: { running: 'Loading', done: 'Loaded', fail: 'load', fallback: 'a skill' },
     memory: { running: 'Saving', done: 'Saved', fail: 'save', fallback: 'memory' },
     delegate: { running: 'Delegating', done: 'Delegated', fail: 'delegate', fallback: 'a task' },
+    talaria: { running: 'Using', done: 'Used', fail: 'use', fallback: 'a Talaria tool' },
     unknown: { running: 'Running', done: 'Ran', fail: 'run', fallback: 'a tool' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_EN: any = {
@@ -28,6 +29,7 @@ const _I18N_TOOL_SUMMARY_TEXT_EN: any = {
     skill: { running: ['Loading a tool', 'Loading tools'], done: ['Loaded a tool', 'Loaded tools'] },
     memory: { running: ['Saving memory', 'Saving memory'], done: ['Saved memory', 'Saved memory'] },
     delegate: { running: ['Delegating a task', 'Delegating tasks'], done: ['Delegated a task', 'Delegated tasks'] },
+    talaria: { running: ['Using a Talaria tool', 'Using Talaria tools'], done: ['Used a Talaria tool', 'Used Talaria tools'] },
     unknown: { running: ['Calling a tool', 'Calling tools'], done: ['Called a tool', 'Called tools'] },
 };
 const _I18N_TOOL_ACTION_TEXT_RU: any = {
@@ -40,6 +42,7 @@ const _I18N_TOOL_ACTION_TEXT_RU: any = {
     skill: { running: 'Загружаю', done: 'Загружен', fail: 'загрузить', fallback: 'навык' },
     memory: { running: 'Сохраняю', done: 'Сохранена', fail: 'сохранить', fallback: 'память' },
     delegate: { running: 'Делегирую', done: 'Делегировано', fail: 'делегировать', fallback: 'задачу' },
+    talaria: { running: 'Использую', done: 'Использован', fail: 'использовать', fallback: 'инструмент Talaria' },
     unknown: { running: 'Выполняю', done: 'Выполнен', fail: 'выполнить', fallback: 'инструмент' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_RU: any = {
@@ -52,6 +55,7 @@ const _I18N_TOOL_SUMMARY_TEXT_RU: any = {
     skill: { running: ['Загружается навык', 'Загружаются {n} навыка', 'Загружается {n} навыков'], done: ['Загружен навык', 'Загружены {n} навыка', 'Загружено {n} навыков'] },
     memory: { running: ['Сохраняется память', 'Сохраняются {n} обновления памяти', 'Сохраняется {n} обновлений памяти'], done: ['Память сохранена', 'Сохранены {n} обновления памяти', 'Сохранено {n} обновлений памяти'] },
     delegate: { running: ['Делегируется задача', 'Делегируются {n} задачи', 'Делегируется {n} задач'], done: ['Задача делегирована', 'Делегированы {n} задачи', 'Делегировано {n} задач'] },
+    talaria: { running: ['Используется инструмент Talaria', 'Используются {n} инструмента Talaria', 'Используется {n} инструментов Talaria'], done: ['Использован инструмент Talaria', 'Использованы {n} инструмента Talaria', 'Использовано {n} инструментов Talaria'] },
     unknown: { running: ['Выполняется инструмент', 'Выполняются {n} инструмента', 'Выполняется {n} инструментов'], done: ['Инструмент выполнен', 'Выполнены {n} инструмента', 'Выполнено {n} инструментов'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_RU_COUNT_FREE: any = {
@@ -64,6 +68,7 @@ const _I18N_TOOL_SUMMARY_TEXT_RU_COUNT_FREE: any = {
     skill: { running: 'Загружаются навыки', done: 'Загружены навыки' },
     memory: { running: 'Сохраняются обновления памяти', done: 'Сохранены обновления памяти' },
     delegate: { running: 'Делегируются задачи', done: 'Задачи делегированы' },
+    talaria: { running: 'Используются инструменты Talaria', done: 'Использованы инструменты Talaria' },
     unknown: { running: 'Выполняются инструменты', done: 'Инструменты выполнены' },
 };
 const _I18N_TOOL_ACTION_TEXT_ZH: any = {
@@ -76,6 +81,7 @@ const _I18N_TOOL_ACTION_TEXT_ZH: any = {
     skill: { running: '正在读取', done: '已读取', fail: '读取', fallback: '技能' },
     memory: { running: '正在保存', done: '已保存', fail: '保存', fallback: '记忆' },
     delegate: { running: '正在委派', done: '已委派', fail: '委派', fallback: '任务' },
+    talaria: { running: '正在使用', done: '已使用', fail: '使用', fallback: 'Talaria 工具' },
     unknown: { running: '正在运行', done: '已运行', fail: '运行', fallback: '工具' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_ZH: any = {
@@ -88,6 +94,7 @@ const _I18N_TOOL_SUMMARY_TEXT_ZH: any = {
     skill: { running: ['正在读取技能', '正在读取 {n} 个技能'], done: ['已读取技能', '已读取 {n} 个技能'] },
     memory: { running: ['正在保存记忆', '正在保存 {n} 条记忆'], done: ['已保存记忆', '已保存 {n} 条记忆'] },
     delegate: { running: ['正在委派任务', '正在委派 {n} 个任务'], done: ['已委派任务', '已委派 {n} 个任务'] },
+    talaria: { running: ['正在使用 Talaria 工具', '正在使用 {n} 个 Talaria 工具'], done: ['已使用 Talaria 工具', '已使用 {n} 个 Talaria 工具'] },
     unknown: { running: ['正在运行工具', '正在运行 {n} 个工具'], done: ['已运行工具', '已运行 {n} 个工具'] },
 };
 const _I18N_TOOL_ACTION_TEXT_ZH_HANT: any = {
@@ -100,6 +107,7 @@ const _I18N_TOOL_ACTION_TEXT_ZH_HANT: any = {
     skill: { running: '正在讀取', done: '已讀取', fail: '讀取', fallback: '技能' },
     memory: { running: '正在儲存', done: '已儲存', fail: '儲存', fallback: '記憶' },
     delegate: { running: '正在委派', done: '已委派', fail: '委派', fallback: '任務' },
+    talaria: { running: '正在使用', done: '已使用', fail: '使用', fallback: 'Talaria 工具' },
     unknown: { running: '正在執行', done: '已執行', fail: '執行', fallback: '工具' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_ZH_HANT: any = {
@@ -112,6 +120,7 @@ const _I18N_TOOL_SUMMARY_TEXT_ZH_HANT: any = {
     skill: { running: ['正在讀取技能', '正在讀取 {n} 個技能'], done: ['已讀取技能', '已讀取 {n} 個技能'] },
     memory: { running: ['正在儲存記憶', '正在儲存 {n} 條記憶'], done: ['已儲存記憶', '已儲存 {n} 條記憶'] },
     delegate: { running: ['正在委派任務', '正在委派 {n} 個任務'], done: ['已委派任務', '已委派 {n} 個任務'] },
+    talaria: { running: ['正在使用 Talaria 工具', '正在使用 {n} 個 Talaria 工具'], done: ['已使用 Talaria 工具', '已使用 {n} 個 Talaria 工具'] },
     unknown: { running: ['正在執行工具', '正在執行 {n} 個工具'], done: ['已執行工具', '已執行 {n} 個工具'] },
 };
 function _i18nProcessedElapsed(prefix?: any, duration?: any) {
@@ -210,6 +219,7 @@ const _I18N_TOOL_ACTION_TEXT_VI: any = {
     skill: { running: 'Đang tải', done: 'Đã tải', fail: 'tải', fallback: 'kỹ năng' },
     memory: { running: 'Đang lưu', done: 'Đã lưu', fail: 'lưu', fallback: 'bộ nhớ' },
     delegate: { running: 'Đang ủy quyền', done: 'Đã ủy quyền', fail: 'ủy quyền', fallback: 'tác vụ' },
+    talaria: { running: 'Đang dùng', done: 'Đã dùng', fail: 'dùng', fallback: 'công cụ Talaria' },
     unknown: { running: 'Đang chạy', done: 'Đã chạy', fail: 'chạy', fallback: 'công cụ' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_VI: any = {
@@ -222,6 +232,7 @@ const _I18N_TOOL_SUMMARY_TEXT_VI: any = {
     skill: { running: ['Đang tải kỹ năng', 'Đang tải {n} kỹ năng'], done: ['Đã tải kỹ năng', 'Đã tải {n} kỹ năng'] },
     memory: { running: ['Đang lưu bộ nhớ', 'Đang lưu {n} cập nhật bộ nhớ'], done: ['Đã lưu bộ nhớ', 'Đã lưu {n} cập nhật bộ nhớ'] },
     delegate: { running: ['Đang ủy quyền tác vụ', 'Đang ủy quyền {n} tác vụ'], done: ['Đã ủy quyền tác vụ', 'Đã ủy quyền {n} tác vụ'] },
+    talaria: { running: ['Đang dùng công cụ Talaria', 'Đang dùng {n} công cụ Talaria'], done: ['Đã dùng công cụ Talaria', 'Đã dùng {n} công cụ Talaria'] },
     unknown: { running: ['Đang chạy công cụ', 'Đang chạy {n} công cụ'], done: ['Đã chạy công cụ', 'Đã chạy {n} công cụ'] },
 };
 function _i18nProcessedElapsedVi(duration?: any) {
@@ -247,6 +258,7 @@ const _I18N_TOOL_ACTION_TEXT_PL: any = {
     skill: { running: 'Wczytywanie', done: 'Wczytano', fail: 'wczytać', fallback: 'umiejętność' },
     memory: { running: 'Zapisywanie', done: 'Zapisano', fail: 'zapisać', fallback: 'pamięć' },
     delegate: { running: 'Delegowanie', done: 'Delegowano', fail: 'delegować', fallback: 'zadanie' },
+    talaria: { running: 'Używanie', done: 'Użyto', fail: 'użyć', fallback: 'narzędzia Talaria' },
     unknown: { running: 'Uruchamianie', done: 'Uruchomiono', fail: 'uruchomić', fallback: 'narzędzie' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_PL: any = {
@@ -259,6 +271,7 @@ const _I18N_TOOL_SUMMARY_TEXT_PL: any = {
     skill: { running: ['Wczytywanie umiejętności', 'Wczytywanie {n} umiejętności'], done: ['Wczytano umiejętność', 'Wczytano {n} umiejętności'] },
     memory: { running: ['Zapisywanie pamięci', 'Zapisywanie {n} wpisów pamięci'], done: ['Zapisano pamięć', 'Zapisano {n} wpisów pamięci'] },
     delegate: { running: ['Delegowanie zadania', 'Delegowanie {n} zadań'], done: ['Delegowano zadanie', 'Delegowano {n} zadań'] },
+    talaria: { running: ['Używanie narzędzia Talaria', 'Używanie {n} narzędzi Talaria'], done: ['Użyto narzędzia Talaria', 'Użyto {n} narzędzi Talaria'] },
     unknown: { running: ['Uruchamianie narzędzia', 'Uruchamianie {n} narzędzi'], done: ['Uruchomiono narzędzie', 'Uruchomiono {n} narzędzi'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_PL_COUNT_FREE: any = {
@@ -271,6 +284,7 @@ const _I18N_TOOL_SUMMARY_TEXT_PL_COUNT_FREE: any = {
     skill: { running: 'Wczytywanie umiejętności', done: 'Wczytano umiejętności' },
     memory: { running: 'Zapisywanie wpisów pamięci', done: 'Zapisano wpisy pamięci' },
     delegate: { running: 'Delegowanie zadań', done: 'Delegowano zadania' },
+    talaria: { running: 'Używanie narzędzi Talaria', done: 'Użyto narzędzi Talaria' },
     unknown: { running: 'Uruchamianie narzędzi', done: 'Uruchomiono narzędzia' },
 };
 function _i18nProcessedElapsedPl(duration?: any) {
@@ -309,6 +323,7 @@ const _I18N_TOOL_ACTION_TEXT_CS: any = {
     skill: { running: 'Načítání', done: 'Načteno', fail: 'načíst', fallback: 'dovednost' },
     memory: { running: 'Ukládání', done: 'Uloženo', fail: 'uložit', fallback: 'paměť' },
     delegate: { running: 'Delegování', done: 'Delegováno', fail: 'delegovat', fallback: 'úkol' },
+    talaria: { running: 'Používání', done: 'Použito', fail: 'použít', fallback: 'nástroj Talaria' },
     unknown: { running: 'Spouštění', done: 'Spuštěno', fail: 'spustit', fallback: 'nástroj' },
 };
 const _I18N_TOOL_SUMMARY_TEXT_CS: any = {
@@ -321,6 +336,7 @@ const _I18N_TOOL_SUMMARY_TEXT_CS: any = {
     skill: { running: ['Načítání dovednosti', 'Načítání {n} dovedností'], done: ['Načtena dovednost', 'Načteno {n} dovedností'] },
     memory: { running: ['Ukládání paměti', 'Ukládání {n} záznamů paměti'], done: ['Uložena paměť', 'Uloženo {n} záznamů paměti'] },
     delegate: { running: ['Delegování úkolu', 'Delegování {n} úkolů'], done: ['Delegován úkol', 'Delegováno {n} úkolů'] },
+    talaria: { running: ['Používání nástroje Talaria', 'Používání {n} nástrojů Talaria'], done: ['Použit nástroj Talaria', 'Použito {n} nástrojů Talaria'] },
     unknown: { running: ['Spouštění nástroje', 'Spouštění {n} nástrojů'], done: ['Spuštěn nástroj', 'Spuštěno {n} nástrojů'] },
 };
 const _I18N_TOOL_SUMMARY_TEXT_CS_COUNT_FREE: any = {
@@ -333,6 +349,7 @@ const _I18N_TOOL_SUMMARY_TEXT_CS_COUNT_FREE: any = {
     skill: { running: 'Načítání dovedností', done: 'Načteny dovednosti' },
     memory: { running: 'Ukládání záznamů paměti', done: 'Uloženy záznamy paměti' },
     delegate: { running: 'Delegování úkolů', done: 'Delegovány úkoly' },
+    talaria: { running: 'Používání nástrojů Talaria', done: 'Použity nástroje Talaria' },
     unknown: { running: 'Spouštění nástrojů', done: 'Spuštěny nástroje' },
 };
 function _i18nProcessedElapsedCs(duration?: any) {

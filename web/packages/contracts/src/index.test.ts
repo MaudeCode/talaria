@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, SystemHealthSchema, ErrorBodySchema, ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SettingsModelPickerSchema, ProviderQuotasSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema, WhatsNewAnnouncementSchema, WhatsNewStateSchema } from './index.js'
+import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, SystemHealthSchema, ErrorBodySchema, ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SettingsModelPickerSchema, ProviderQuotasSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema, TALARIA_TOOL_NAMES, WhatsNewAnnouncementSchema, WhatsNewStateSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
@@ -114,6 +114,10 @@ describe('contracts package', () => {
     expect(ChatEventSchema.parse(fixture.completed)).toEqual(fixture.completed)
     expect(ToolCallSchema.parse(fixture.tool)).toEqual(fixture.tool)
     expect(ToolCallSchema.parse({ id: 'old-agent', name: 'tool' }).progress).toBeUndefined()
+  })
+  it('names the same Talaria tools as the shared fixture the sidecar registry is checked against (TAL-2317)', () => {
+    const fixture = shared('fixtures/talaria-tool-names.json') as { talaria: string[]; harness: string[] }
+    expect([...fixture.talaria, ...fixture.harness]).toEqual([...TALARIA_TOOL_NAMES])
   })
   it('validates the companion page focus path frames and session field (TAL-1458)', () => {
     const fixture = shared('fixtures/focus-path.json') as { tool_a: unknown; tool_b: unknown; shell: unknown; session: { focus_path: string } }
