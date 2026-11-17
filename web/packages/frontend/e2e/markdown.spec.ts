@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { crc32, deflateSync, gzipSync } from 'node:zlib'
 import type { Page } from '@playwright/test'
-import { expect, test } from './fixtures'
+import { expect, expectNoOverflow, test } from './fixtures'
 import { hydrateAnchorActivityScenes, withTurnIds } from '../../server/dist/sessions/anchor.js'
 import { redactSessionData } from '../../server/dist/redact.js'
 
@@ -268,6 +268,88 @@ test('table and diagram fullscreen views are opaque and centre the table (TAL-16
   await page.screenshot({ path: testInfo.outputPath(`mermaid-fullscreen-${testInfo.project.name}.png`) })
   await page.keyboard.press('Escape')
   await expect(diagramOverlay).toHaveCount(0)
+})
+
+test('a chat table reads as prose: no frame, a readable header, controls at its edge (TAL-2319)', async ({ page }, testInfo) => {
+  const wide = Array.from({ length: 12 }, (_, i) => i + 1)
+  const messages = [
+    { role: 'user', id: 1, content: 'Compare the models' },
+    { role: 'assistant', id: 2, content: [
+      'Tokens by model:', '',
+      '| Model | Tokens |', '| --- | --- |', '| `gpt-5` | 1,204 |', '| claude | 980 |', '| gemini | 640 |', '| llama | 311 |', '| qwen | 207 |', '',
+      `| ${wide.map((i) => `Column ${i}`).join(' | ')} |`, `|${' --- |'.repeat(wide.length)}`, `| ${wide.map((i) => `value-${i}-of-the-wide-row`).join(' | ')} |`,
+    ].join('\n') },
+  ]
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
+    session_id: 'markdown-reading-table', title: 'Compare the models', messages: redactSessionData({ messages: hydrateAnchorActivityScenes(withTurnIds(messages), {}) }, true).messages,
+  } } }))
+  await page.goto('/session/markdown-reading-table')
+  const tables = page.locator('[data-final-answer="1"] [data-streamdown="table-wrapper"]')
+  await expect(tables).toHaveCount(2)
+  const [small, wideTable] = [tables.nth(0), tables.nth(1)]
+  const controls = small.locator(':scope > :first-child')
+  await expect(small.getByTitle('View fullscreen')).toBeAttached()
+
+  // Header text over the page background, both composited in a canvas so any colour syntax or alpha resolves.
+  const headerContrast = () => small.locator('th').first().evaluate((th) => {
+    const probe = document.body.appendChild(document.createElement('div'))
+    probe.style.background = 'var(--bg)'
+    const bg = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    const ctx = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d')!
+    const paint = (...colors: string[]) => { for (const color of colors) { ctx.fillStyle = color; ctx.fillRect(0, 0, 1, 1) } return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)] }
+    const luminance = (rgb: number[]) => rgb.map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i]!, 0)
+    const [a, b] = [luminance(paint(bg, getComputedStyle(th).color)), luminance(paint(bg))]
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+  })
+  const box = (el: Element) => { const style = getComputedStyle(el); return { border: style.borderTopWidth, background: style.backgroundColor, padding: style.paddingTop, radius: style.borderTopLeftRadius } }
+  const bare = { border: '0px', background: 'rgba(0, 0, 0, 0)', padding: '0px', radius: '0px' }
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), scheme === 'dark')
+    await page.mouse.move(0, 0)
+    await expect(small.locator('thead')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+    expect(await headerContrast(), `${scheme} header contrast`).toBeGreaterThanOrEqual(4.5)
+    // No card, inner frame or table border: the wrapper, its scroller and the table are bare.
+    expect(await small.evaluate(box)).toEqual(bare)
+    expect(await small.locator(':scope > :last-child').evaluate(box)).toEqual(bare)
+    expect((await small.locator('table').evaluate(box)).border).toBe('0px')
+    await page.screenshot({ path: testInfo.outputPath(`reading-table-${scheme}-${testInfo.project.name}.png`) })
+  }
+
+  // Cells use the conversation font; inline code in a cell stays monospace.
+  const font = (value: string) => page.evaluate((v) => { const probe = document.body.appendChild(document.createElement('div')); probe.style.fontFamily = v; const f = getComputedStyle(probe).fontFamily; probe.remove(); return f }, value)
+  await expect(small.locator('td').nth(1)).toHaveCSS('font-family', await font('var(--font-conversation)'))
+  await expect(small.locator('td code')).toHaveCSS('font-family', await font('var(--font-mono)'))
+
+  // The controls row ends at the table's right edge.
+  const right = async (locator: typeof small) => { const b = (await locator.boundingBox())!; return b.x + b.width }
+  expect(Math.abs((await right(controls)) - (await right(small.locator('table'))))).toBeLessThan(2)
+  if (testInfo.project.name === 'mobile') {
+    // Touch devices cannot hover: the controls stay visible.
+    expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(true)
+    await expect(controls).toHaveCSS('opacity', '1')
+  } else {
+    await expect(controls).toHaveCSS('opacity', '0')
+    await small.locator('table').hover()
+    await expect(controls).toHaveCSS('opacity', '1')
+    await page.mouse.move(0, 0)
+    await expect(controls).toHaveCSS('opacity', '0')
+    await small.getByTitle('View fullscreen').focus()
+    await expect(controls).toHaveCSS('opacity', '1')
+  }
+
+  // A wide table scrolls inside the reading column; the page never scrolls sideways.
+  await wideTable.scrollIntoViewIfNeeded()
+  const scroller = wideTable.locator('table')
+  expect(await scroller.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true)
+  expect(await right(wideTable)).toBeLessThanOrEqual((await right(page.locator('[data-final-answer="1"]'))) + 1)
+  if (testInfo.project.name === 'desktop') {
+    await small.scrollIntoViewIfNeeded()
+    for (const scheme of ['light', 'dark'] as const) {
+      await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), scheme === 'dark')
+      await expectNoOverflow(page, `reading-table-${scheme}`, async (name) => { await page.screenshot({ path: testInfo.outputPath(`${name}.png`) }) })
+    }
+  }
 })
 
 /** A visible synthetic chart: a 240×140 RGB PNG with a diagonal gradient. */

@@ -159,7 +159,9 @@ no line numbers, labeled or not.
 
 An ordinary markdown table is a reading table: row separators only, no cell
 grid, no header fill, no zebra rows. A wide table scrolls inside the reading
-column instead of squeezing columns to an unreadable width.
+column instead of squeezing columns to an unreadable width. Its copy,
+download and fullscreen buttons sit at the table's top-right edge and appear on
+hover or keyboard focus; touch screens always show them.
 
 Explanations live behind help, not under labels. Copy that says what a page,
 section, setting, or control does and when to use it goes in a `HelpTip` (the

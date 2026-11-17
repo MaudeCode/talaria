@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Tables in a chat reply read like the text around them: the header is readable in light and dark themes, the box around the table is gone, and its copy, download and fullscreen buttons show when you point at it.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
