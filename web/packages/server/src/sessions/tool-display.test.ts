@@ -780,6 +780,22 @@ describe('browser and computer-use calls (TAL-2328)', () => {
     expect(outcome.result_view.fields).toBeUndefined()
   })
 
+  it('reads a live completion, whose nested values the sidecar forwards as JSON text, as its stored result', () => {
+    // The sidecar's `_raw_result`: a non-empty nested object or list becomes its JSON text.
+    const live = (result: Record<string, unknown>) => Object.fromEntries(Object.entries(result).map(([key, value]) => [key, value && typeof value === 'object' && Object.keys(value).length ? JSON.stringify(value) : value]))
+    const cases: [string, Record<string, unknown>, Record<string, unknown>][] = [
+      ['browser_vault', { success: true, items: [{ label: 'GitHub', kind: 'login', origin: 'https://github.com', available: true }], locked: [{ backend: 'op', display_name: '1Password' }] }, { action: 'list' }],
+      ['browser_dialog', { success: true, action: 'accept', dialog: { type: 'alert', message: 'Saved', default_prompt: '' } }, { action: 'accept' }],
+      ['computer_use', { ok: true, action: 'type', verdict: { decision: 'verify_fresh_state' } }, { action: 'type' }],
+      ['computer_use', { apps: [{ name: 'Safari', pid: 1 }], count: 1 }, { action: 'list_apps' }],
+    ]
+    for (const [name, result, args] of cases) {
+      const stored = toolOutcome(JSON.stringify(result), name, false, args).result_view.rows
+      expect(stored, name).toBeDefined()
+      expect(toolOutcome(live(result), name, false, args).result_view.rows, name).toEqual(stored)
+    }
+  })
+
   it('shows an answered dialog as its message, type and answer', () => {
     expect(view('browser_dialog', { success: true, action: 'dismiss', dialog: { type: 'confirm', message: 'Leave this page?\nChanges are lost.', default_prompt: '' } }, { action: 'dismiss' }).rows)
       .toEqual({ rows: [{ label: 'Leave this page?', detail: 'confirm · Dismissed', status: 'ok' }] })

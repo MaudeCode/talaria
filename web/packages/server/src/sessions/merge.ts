@@ -760,7 +760,9 @@ function uncappedResultView(input: unknown, name?: unknown, args?: unknown): Too
     if (!isEmptyView(terminal) || excerpt) return { ...(excerpt ? { file_excerpt: excerpt } : {}), ...terminal, ...(media.length ? { media } : {}) }
   }
   if (presentation === 'file_excerpt' || presentation === 'matches' || presentation === 'links' || presentation === 'pages' || presentation === 'media' || presentation === 'analysis' || presentation === 'rows' || presentation === 'clarify') {
-    const data = typeof value === 'string' ? resultJson(value) : value
+    const parsed = typeof value === 'string' ? resultJson(value) : value
+    // TAL-2328: a live completion's nested values arrive as the JSON text the sidecar forwards them as; rows read them whole.
+    const data = (presentation === 'rows' || presentation === 'clarify') && isDict(parsed) ? withNestedJson(parsed) : parsed
     // TAL-2325: an analysis the Agent kept as text (a multimodal result's summary) is the analysis itself. TAL-2328: and a
     // `computer_use` capture kept as text its capture summary.
     const typed = isDict(data) ? typedResultView(presentation, data, args, name) : presentation === 'analysis' && typeof value === 'string' ? wrapped('analysis', resultAnalysisView({ analysis: value })) : presentation === 'rows' && typeof value === 'string' ? wrapped('rows', toolTextRows(name, value)) : undefined
@@ -792,6 +794,18 @@ function typedResultView(presentation: 'file_excerpt' | 'matches' | 'links' | 'p
   if (presentation === 'links') return wrapped('links', resultLinksView(data))
   return wrapped('pages', resultPagesView(data))
 }
+/**
+ * TAL-2328: a result whose top-level values the sidecar's `_raw_result` forwarded as JSON text (every non-empty nested object
+ * or list) with each one parsed back; text that is not a whole JSON object or list (or that the sidecar cut) stays text.
+ */
+function withNestedJson(data: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(data).map(([key, item]) => {
+    if (typeof item !== 'string' || !/^\s*[[{]/.test(item)) return [key, item]
+    const nested = tryJson(item)
+    return [key, nested !== null && typeof nested === 'object' ? nested : item]
+  }))
+}
+
 const wrapped = <K extends keyof ToolResultView>(key: K, section: ToolResultView[K] | undefined): ToolResultView | undefined => (section ? { [key]: section } : undefined)
 
 /**
