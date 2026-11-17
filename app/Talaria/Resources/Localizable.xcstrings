@@ -115506,114 +115506,114 @@
         }
       }
     },
-    "Sidebar sections" : {
+    "Sidebar items" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sidebar sections"
+            "value" : "Sidebar items"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bereiche der Seitenleiste"
+            "value" : "Elemente der Seitenleiste"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Secciones de la barra lateral"
+            "value" : "Elementos de la barra lateral"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sections de la barre latérale"
+            "value" : "Éléments de la barre latérale"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sezioni della barra laterale"
+            "value" : "Elementi della barra laterale"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sekcje paska bocznego"
+            "value" : "Elementy paska bocznego"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Seções da barra lateral"
+            "value" : "Itens da barra lateral"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zijbalksecties"
+            "value" : "Zijbalkitems"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kenar Çubuğu Bölümleri"
+            "value" : "Kenar Çubuğu Öğeleri"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Разделы боковой панели"
+            "value" : "Элементы боковой панели"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "サイドバーのセクション"
+            "value" : "サイドバーの項目"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "侧边栏分区"
+            "value" : "侧边栏项目"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "사이드바 섹션"
+            "value" : "사이드바 항목"
           }
         },
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أقسام الشريط الجانبي"
+            "value" : "عناصر الشريط الجانبي"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "מקטעי סרגל הצד"
+            "value" : "פריטי סרגל הצד"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "سائیڈ بار کے حصے"
+            "value" : "سائیڈ بار آئٹمز"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "側邊欄區段"
+            "value" : "側邊欄項目"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "側邊欄區段"
+            "value" : "側邊欄項目"
           }
         }
       }

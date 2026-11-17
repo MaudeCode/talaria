@@ -48,20 +48,19 @@ export function SidebarSection() {
   const outsideCount = counts('outside_chats', OUTSIDE_KEYS, () => OUTSIDE_CHATS.filter((o) => bool(o.key)).length)
   return (
     <div className={SETTINGS_PAGE} data-section="navigation">
-      <SettingsGroup id="sidebar" title={m.settings_group_sidebar()} detail={sidebarCount && m.settings_items_shown(sidebarCount)}>
-        <div className="@container">
-          <div className="grid gap-x-6 gap-y-3 py-2 @min-[601px]:grid-cols-[240px_minmax(0,1fr)] @min-[601px]:items-start">
-            <SidebarPreview destinations={destinations} buttons={buttons} />
-            <div className="flex min-w-0 flex-col divide-y divide-border-subtle">
-              <SettingSegmented label={m.settings_label_density()} id="settingsSidebarDensity" settingKey="sidebar_density" fallback="compact" icon={Rows3} options={[
-                { value: 'compact', label: m.settings_sidebar_density_compact() },
-                { value: 'detailed', label: m.settings_sidebar_density_detailed() },
-              ]} />
-              <SettingNumber label={m.settings_label_pinned_shown()} id="settingsPinnedLimit" settingKey="pinned_sessions_limit" fallback={3} max={num('pinned_sessions_limit_max', 99)} icon={Pin} />
-              <SettingToggle label={m.settings_label_project_new_chat()} settingKey="project_quick_create_buttons" icon={FolderPlus} />
-            </div>
-          </div>
+      {/* TAL-2343: the drawing's items and the sidebar's other rows are two groups (design-system §11). */}
+      <SettingsGroup id="sidebar-items" title={m.settings_group_sidebar_items()} detail={sidebarCount && m.settings_items_shown(sidebarCount)}>
+        <div className="@container py-2">
+          <div className="@min-[601px]:w-60"><SidebarPreview destinations={destinations} buttons={buttons} /></div>
         </div>
+      </SettingsGroup>
+      <SettingsGroup id="sidebar" title={m.settings_group_sidebar()}>
+        <SettingSegmented label={m.settings_label_density()} id="settingsSidebarDensity" settingKey="sidebar_density" fallback="compact" icon={Rows3} options={[
+          { value: 'compact', label: m.settings_sidebar_density_compact() },
+          { value: 'detailed', label: m.settings_sidebar_density_detailed() },
+        ]} />
+        <SettingNumber label={m.settings_label_pinned_shown()} id="settingsPinnedLimit" settingKey="pinned_sessions_limit" fallback={3} max={num('pinned_sessions_limit_max', 99)} icon={Pin} />
+        <SettingToggle label={m.settings_label_project_new_chat()} settingKey="project_quick_create_buttons" icon={FolderPlus} />
       </SettingsGroup>
       <SettingsGroup id="outside-chats" title={m.settings_group_outside_chats()} detail={outsideCount && m.settings_items_shown(outsideCount)}>
         {OUTSIDE_CHATS.map((o) => <Fragment key={o.key}>

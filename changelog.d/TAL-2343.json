@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings › Navigation shows the sidebar's items and its other options as separate groups, and the App splits Chats into Transcript and Conversation, so no Settings group runs past eight rows.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

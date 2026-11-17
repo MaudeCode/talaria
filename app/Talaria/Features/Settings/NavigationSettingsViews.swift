@@ -33,7 +33,7 @@ struct NavigationSettingsView: View {
     var body: some View {
         SettingsCategoryPage(category: .navigation) {
             ProviderQuotaDisplaySettingsSection()
-            SettingsSection(title: String(localized: "Sidebar sections")) {
+            SettingsSection(title: String(localized: "Sidebar items")) {
                 SettingsToggleRow(
                     title: SettingsIndex.navigationTasks.title, systemImage: "checklist", isOn: $showsTasks
                 )
