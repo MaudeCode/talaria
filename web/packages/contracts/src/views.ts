@@ -57,6 +57,100 @@ export const TALARIA_TOOL_NAMES = [
   'decision_review_put', 'decision_review_read', 'decision_review_record', 'propose', 'proposal_read', 'show', 'request_secret', 'notify',
   'deliver', 'terminal_open', 'terminal_read', 'report_issue', 'usage_read',
 ] as const
+/**
+ * TAL-2322: how the server shows each tool a supported Hermes Agent registers: its `kind` (the icon and verb clients map)
+ * and its result `presentation`. A listed tool takes both from here; any other name (MCP, connector, plugin) keeps the
+ * name-token rules and the generic result parser, and Talaria's own tools stay in `TALARIA_TOOL_NAMES`.
+ * `terminal` shows a result's output streams, error and exit code; `diff` its file edit; `clarify` shows as the question
+ * dialog, never a tool row; `todo` and `delegate` show in the session's todo list and subagent rows; `generic` reads the
+ * result's text, else its key/value fields (TAL-2318). `npm run fixtures` writes it to
+ * `contracts/fixtures/tool-presentations.json`, which a sidecar test checks against the Agent's tool registry: a tool an
+ * Agent release adds joins here as `generic` until its own view ships.
+ */
+export const ToolPresentationSchema = z.enum(['terminal', 'diff', 'todo', 'delegate', 'clarify', 'generic'])
+export type ToolPresentation = z.infer<typeof ToolPresentationSchema>
+export const ToolPresentationEntrySchema = z.object({ kind: ToolKindSchema, presentation: ToolPresentationSchema })
+export type ToolPresentationEntry = z.infer<typeof ToolPresentationEntrySchema>
+export const TOOL_PRESENTATIONS: Readonly<Record<string, ToolPresentationEntry>> = {
+  a2a_call: { kind: 'unknown', presentation: 'generic' },
+  a2a_discover: { kind: 'unknown', presentation: 'generic' },
+  a2a_history: { kind: 'unknown', presentation: 'generic' },
+  a2a_list: { kind: 'list', presentation: 'generic' },
+  a2a_orchestrate: { kind: 'unknown', presentation: 'generic' },
+  annotate_preview: { kind: 'unknown', presentation: 'generic' },
+  browser_cdp: { kind: 'web', presentation: 'generic' },
+  browser_dialog: { kind: 'web', presentation: 'generic' },
+  browser_exec: { kind: 'web', presentation: 'generic' },
+  browser_vault: { kind: 'web', presentation: 'generic' },
+  clarify: { kind: 'unknown', presentation: 'clarify' },
+  close_terminal: { kind: 'shell', presentation: 'generic' },
+  computer_use: { kind: 'unknown', presentation: 'generic' },
+  cronjob_manage: { kind: 'unknown', presentation: 'generic' },
+  delegate_task: { kind: 'delegate', presentation: 'delegate' },
+  desktop_preview: { kind: 'unknown', presentation: 'generic' },
+  desktop_project: { kind: 'unknown', presentation: 'generic' },
+  discord: { kind: 'unknown', presentation: 'generic' },
+  discord_admin: { kind: 'unknown', presentation: 'generic' },
+  drive_preview: { kind: 'unknown', presentation: 'generic' },
+  execute_code: { kind: 'shell', presentation: 'terminal' },
+  feishu_doc_read: { kind: 'read', presentation: 'generic' },
+  feishu_drive_add_comment: { kind: 'unknown', presentation: 'generic' },
+  feishu_drive_list_comment_replies: { kind: 'list', presentation: 'generic' },
+  feishu_drive_list_comments: { kind: 'list', presentation: 'generic' },
+  feishu_drive_reply_comment: { kind: 'unknown', presentation: 'generic' },
+  focus_pane: { kind: 'unknown', presentation: 'generic' },
+  gui_tour: { kind: 'unknown', presentation: 'generic' },
+  image_generate: { kind: 'unknown', presentation: 'generic' },
+  kanban_attach: { kind: 'unknown', presentation: 'generic' },
+  kanban_attach_url: { kind: 'unknown', presentation: 'generic' },
+  kanban_attachments: { kind: 'unknown', presentation: 'generic' },
+  kanban_block: { kind: 'unknown', presentation: 'generic' },
+  kanban_comment: { kind: 'unknown', presentation: 'generic' },
+  kanban_complete: { kind: 'unknown', presentation: 'generic' },
+  kanban_create: { kind: 'unknown', presentation: 'generic' },
+  kanban_heartbeat: { kind: 'unknown', presentation: 'generic' },
+  kanban_link: { kind: 'unknown', presentation: 'generic' },
+  kanban_list: { kind: 'list', presentation: 'generic' },
+  kanban_request_changes: { kind: 'unknown', presentation: 'generic' },
+  kanban_request_review: { kind: 'unknown', presentation: 'generic' },
+  kanban_schedule: { kind: 'unknown', presentation: 'generic' },
+  kanban_show: { kind: 'unknown', presentation: 'generic' },
+  kanban_unblock: { kind: 'unknown', presentation: 'generic' },
+  manage_catalog: { kind: 'unknown', presentation: 'generic' },
+  manage_connections: { kind: 'unknown', presentation: 'generic' },
+  memory: { kind: 'memory', presentation: 'generic' },
+  patch: { kind: 'write', presentation: 'diff' },
+  process_manage: { kind: 'shell', presentation: 'terminal' },
+  react_to_message: { kind: 'unknown', presentation: 'generic' },
+  read_file: { kind: 'read', presentation: 'generic' },
+  read_terminal: { kind: 'shell', presentation: 'generic' },
+  read_window_below: { kind: 'read', presentation: 'generic' },
+  search_files: { kind: 'search', presentation: 'generic' },
+  session_search: { kind: 'search', presentation: 'generic' },
+  set_theme: { kind: 'unknown', presentation: 'generic' },
+  setup_beat: { kind: 'unknown', presentation: 'generic' },
+  show_tip: { kind: 'unknown', presentation: 'generic' },
+  skill_manage: { kind: 'skill', presentation: 'generic' },
+  skill_view: { kind: 'skill', presentation: 'generic' },
+  skills_list: { kind: 'skill', presentation: 'generic' },
+  terminal: { kind: 'shell', presentation: 'terminal' },
+  text_to_speech: { kind: 'unknown', presentation: 'generic' },
+  todo_list: { kind: 'list', presentation: 'todo' },
+  video_analyze: { kind: 'unknown', presentation: 'generic' },
+  video_generate: { kind: 'unknown', presentation: 'generic' },
+  vision_analyze: { kind: 'read', presentation: 'generic' },
+  web_extract: { kind: 'web', presentation: 'generic' },
+  web_search: { kind: 'web', presentation: 'generic' },
+  write_file: { kind: 'write', presentation: 'diff' },
+  x_search: { kind: 'search', presentation: 'generic' },
+  xai_video_edit: { kind: 'write', presentation: 'generic' },
+  xai_video_extend: { kind: 'unknown', presentation: 'generic' },
+  yb_query_group_info: { kind: 'unknown', presentation: 'generic' },
+  yb_query_group_members: { kind: 'unknown', presentation: 'generic' },
+  yb_search_sticker: { kind: 'search', presentation: 'generic' },
+  yb_send_dm: { kind: 'unknown', presentation: 'generic' },
+  yb_send_sticker: { kind: 'unknown', presentation: 'generic' },
+}
 export { DiffLineSchema } from './diff-line.js'
 /**
  * TAL-604: one hunk of a unified diff: its `@@` `header`, the first old and new line numbers, the last new line it covers

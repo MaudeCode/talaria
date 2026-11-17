@@ -248,7 +248,7 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
         id: toolId || rowId, name: str(tool.name) || 'tool', args: tool.args ?? null, preview: str(tool.snippet) || str(tool.preview) || null,
         // A built row keeps the view its full result decided (deciding twice would unescape text kept as written); a row
         // stored without one gets it from its own result.
-        result, result_view: isDict(tool.result_view) ? decidedResultView(tool.result_view) : result === null ? null : toolResultView(result),
+        result, result_view: isDict(tool.result_view) ? decidedResultView(tool.result_view) : result === null ? null : toolResultView(result, undefined, tool.name),
         ...(tool.progress !== undefined ? { progress: done ? null : ToolProgressSchema.safeParse(tool.progress).data ?? null } : {}),
         ...(editDiff ? { edit_diff: editDiff } : {}),
         done,
@@ -353,7 +353,18 @@ export function toolReplies(messages: unknown[]): Map<string, Record<string, unk
 /** One tool call's whole result: its text as a full scene row shows it and its uncapped view; null when no reply carries that id. */
 export function fullToolResult(messages: unknown[], toolCallId: string): { result: string; result_view: ToolResultView } | null {
   const reply = toolCallId ? toolReplies(messages).get(toolCallId) : undefined
-  return reply ? { result: messageText(reply.content), result_view: toolResultView(reply.content, Infinity) } : null
+  return reply ? { result: messageText(reply.content), result_view: toolResultView(reply.content, Infinity, calledToolName(messages, toolCallId)) } : null
+}
+
+/** TAL-2322: the name of the call with this id, from an assistant row's `tool_calls` or `tool_use` blocks, so its whole result shows as its capped one did. */
+function calledToolName(messages: unknown[], toolCallId: string): string {
+  for (const m of messages) {
+    if (!isDict(m) || m.role !== 'assistant') continue
+    const calls: unknown[] = [...(Array.isArray(m.tool_calls) ? m.tool_calls as unknown[] : []), ...(Array.isArray(m.content) ? m.content as unknown[] : [])]
+    const call = calls.find((c) => isDict(c) && str(c.id) === toolCallId)
+    if (isDict(call)) return toolName(call)
+  }
+  return ''
 }
 
 /**

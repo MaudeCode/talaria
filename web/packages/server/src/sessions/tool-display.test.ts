@@ -1,10 +1,11 @@
 import { homedir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
-import { withToolCallOutcomes } from './merge.js'
+import { toolOutcome, toolResultView, withToolCallOutcomes } from './merge.js'
 import { diffHunks } from '../text/diff.js'
-import { decidedEditDiff, EDIT_DIFF_MAX_LINES, toolArgs, toolDisplay, toolEditDiff, toolKind, toolName, toolProgress } from './tool-display.js'
+import { decidedEditDiff, EDIT_DIFF_MAX_LINES, tokenToolKind, toolArgs, toolDisplay, toolEditDiff, toolKind, toolName, toolProgress } from './tool-display.js'
+import { fullToolResult } from './anchor.js'
 import { publicToolFrame } from '../redact.js'
-import { TALARIA_TOOL_NAMES } from '@maudecode/talaria-web-contracts'
+import { TALARIA_TOOL_NAMES, TOOL_PRESENTATIONS } from '@maudecode/talaria-web-contracts'
 
 // TAL-1537: a `~/` path expands against a stubbed home.
 vi.mock('node:os', async (importOriginal) => {
@@ -291,5 +292,30 @@ describe('MCP tool progress', () => {
     expect(toolProgress({ message: 'x'.repeat(2000) }).message).toHaveLength(1000)
     expect(toolProgress({ message: 42 })).toEqual({ percent: null, message: null })
     expect(toolProgress({ percent: 0, message: '  ' })).toEqual({ percent: 0, message: null })
+  })
+})
+
+describe('Agent tool presentation table (TAL-2322)', () => {
+  // A terminal result that also carries a readable text key: the text key wins under the generic parser.
+  const ran = { output: '', result: 'partial', error: 'Command timed out', exit_code: 124 }
+  const edit = { success: true, diff: '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n' }
+
+  it('shows a terminal tool result as its terminal sections, and an unlisted tool by the generic parser', () => {
+    expect(toolOutcome(JSON.stringify(ran), 'process_manage').result_view).toEqual({ error: 'Command timed out', exit_code: 124 })
+    expect(toolResultView(JSON.stringify(ran), Infinity, 'terminal')).toEqual({ error: 'Command timed out', exit_code: 124 })
+    expect(toolOutcome(JSON.stringify(ran), 'mcp_ops_run').result_view).toEqual({ text: 'partial' })
+    // The whole-result read names the call from its assistant row, so it shows as the capped view did.
+    const messages = [{ role: 'assistant', content: [{ type: 'tool_use', id: 'c1', name: 'terminal', input: {} }] }, { role: 'tool', tool_call_id: 'c1', content: JSON.stringify(ran) }]
+    expect(fullToolResult(messages, 'c1')?.result_view).toEqual({ error: 'Command timed out', exit_code: 124 })
+  })
+
+  it('gives every listed tool the kind its name tokens gave before the table', () => {
+    for (const [name, { kind }] of Object.entries(TOOL_PRESENTATIONS)) expect([name, kind]).toEqual([name, tokenToolKind(name)])
+  })
+
+  it('takes a file edit only from a diff tool, and from an unlisted write tool by its name tokens', () => {
+    expect(toolEditDiff('write_file', edit)).toMatchObject({ added: 1, removed: 1 })
+    expect(toolEditDiff('xai_video_edit', edit)).toBeUndefined()
+    expect(toolEditDiff('mcp_fs_edit_file', edit)).toMatchObject({ added: 1, removed: 1 })
   })
 })

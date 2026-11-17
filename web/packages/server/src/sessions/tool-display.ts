@@ -3,8 +3,8 @@
  * module computes for live frames and the public projection of persisted calls (`redact.ts` stamps them). Callers pass
  * redacted args, so the target never shows more than the arguments it came from.
  */
-import type { ToolEditDiff, ToolKind, ToolProgress } from '@maudecode/talaria-web-contracts'
-import { DecisionReviewRefSchema, OutboundDraftRefSchema, ProposalRefSchema, ShowBlockRefSchema, TALARIA_TOOL_NAMES, TerminalRefSchema, type DecisionReviewRef, type OutboundDraftRef, type ProposalRef, type ShowBlockRef, type TerminalRef } from '@maudecode/talaria-web-contracts'
+import type { ToolEditDiff, ToolKind, ToolPresentation, ToolPresentationEntry, ToolProgress } from '@maudecode/talaria-web-contracts'
+import { DecisionReviewRefSchema, OutboundDraftRefSchema, ProposalRefSchema, ShowBlockRefSchema, TALARIA_TOOL_NAMES, TerminalRefSchema, TOOL_PRESENTATIONS, type DecisionReviewRef, type OutboundDraftRef, type ProposalRef, type ShowBlockRef, type TerminalRef } from '@maudecode/talaria-web-contracts'
 import { posix } from 'node:path'
 import { str } from '../util.js'
 import { expandHome } from '../workspace/paths.js'
@@ -63,8 +63,21 @@ const RULES: [ToolKind, (tokens: Set<string>, name: string) => boolean][] = [
 /** TAL-2317: Talaria's own tools, by exact name, before any name-token rule reads them. */
 const TALARIA_TOOLS = new Set<string>(TALARIA_TOOL_NAMES)
 
+/** TAL-2322: a supported Agent's registered tool's table entry; undefined for any other name (MCP, connector, plugin, Talaria). */
+function agentTool(name: unknown): ToolPresentationEntry | undefined {
+  return typeof name === 'string' && Object.hasOwn(TOOL_PRESENTATIONS, name) ? TOOL_PRESENTATIONS[name] : undefined
+}
+
+/** TAL-2322: how a registered Agent tool's result shows; undefined for a name the table does not list. */
+export const toolPresentation = (name: unknown): ToolPresentation | undefined => agentTool(name)?.presentation
+
 export function toolKind(name: unknown): ToolKind {
   if (typeof name === 'string' && TALARIA_TOOLS.has(name)) return 'talaria'
+  return agentTool(name)?.kind ?? tokenToolKind(name)
+}
+
+/** The name-token rules, for a tool neither Talaria nor the Agent table lists. */
+export function tokenToolKind(name: unknown): ToolKind {
   // camelCase and acronym words split like snake_case ones (`readFile` is `read`, `file`; `HTTPFetch` is `http`, `fetch`).
   const n = str(name).replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2').replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
   if (!n) return 'unknown'
@@ -290,9 +303,10 @@ export function toolEditDiff(name: unknown, result: unknown, displayMetadata?: u
   return withHunks({ added, removed, diff: shown.join('\n'), truncated: shown.length < lines.length })
 }
 
-/** A file-edit result's own unified `diff`. */
+/** A file-edit result's own unified `diff`: a listed tool's when it presents a diff, an unlisted one's when its name reads `write`. */
 function resultDiff(name: unknown, result: unknown): unknown {
-  if (toolKind(name) !== 'write') return undefined
+  const presentation = toolPresentation(name)
+  if (presentation ? presentation !== 'diff' : toolKind(name) !== 'write') return undefined
   let data: unknown = Array.isArray(result) ? messageText(result) : result
   if (typeof data === 'string') { try { data = JSON.parse(data) } catch { return undefined } }
   const diff = isDict(data) ? data.diff : undefined
