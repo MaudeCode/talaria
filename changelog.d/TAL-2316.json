@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "After a turn finishes or the page reloads, Talaria tool calls the Agent loaded on demand keep their names instead of reading \"Ran a tool\", and tool lookups show which tools they read or searched for.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

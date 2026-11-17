@@ -13,7 +13,7 @@ import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
 import type { MediaProjection } from '../workspace/media-refs.js'
-import { decidedEditDiff, decisionReviewRef, outboundDraftRef, proposalRef, showBlockRef, terminalRef, toolEditDiff, toolName } from './tool-display.js'
+import { decidedEditDiff, decisionReviewRef, outboundDraftRef, proposalRef, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName } from './tool-display.js'
 import { sourceKind } from './source-kind.js'
 
 const TOOL_RESULT_SNIPPET_MAX = 4000
@@ -762,10 +762,11 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
       for (const tc of Array.isArray(m.tool_calls) ? m.tool_calls : []) {
         if (!isDict(tc)) continue
         const tid = str(tc.id) || str(tc.call_id)
-        const fn = isDict(tc.function) ? tc.function : {}
-        const name = str(fn.name)
-        let args: unknown = {}
-        try { args = JSON.parse(str(fn.arguments) || '{}') } catch { args = {} }
+        // Only the OpenAI `function` shape names a stored call here; a bridged one by the call it carries (TAL-2316).
+        const fn = { function: isDict(tc.function) ? tc.function : {} }
+        const name = toolName(fn)
+        const parsed = toolArgs(fn)
+        const args = isDict(parsed) || Array.isArray(parsed) ? parsed : {}
         if (tid && name) {
           pendingNames.set(tid, name)
           pendingArgs.set(tid, args)

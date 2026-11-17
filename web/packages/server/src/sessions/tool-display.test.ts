@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { withToolCallOutcomes } from './merge.js'
 import { diffHunks } from '../text/diff.js'
-import { decidedEditDiff, EDIT_DIFF_MAX_LINES, toolArgs, toolDisplay, toolEditDiff, toolKind, toolProgress } from './tool-display.js'
+import { decidedEditDiff, EDIT_DIFF_MAX_LINES, toolArgs, toolDisplay, toolEditDiff, toolKind, toolName, toolProgress } from './tool-display.js'
 import { publicToolFrame } from '../redact.js'
 
 // TAL-1537: a `~/` path expands against a stubbed home.
@@ -139,6 +139,26 @@ describe('toolDisplay', () => {
       ['write_file', { file: `${'p'.repeat(130)}.ts` }],
       ['write_file', { path: '  ' }],
     ] as const) expect(toolDisplay(name, args).focus_path, `${name} ${JSON.stringify(args)}`).toBeNull()
+  })
+})
+
+describe('deferred tool bridges (TAL-2316)', () => {
+  const bridged = (calls: unknown) => ({ id: 'c', type: 'function', function: { name: 'tool_call', arguments: JSON.stringify({ calls }) } })
+
+  it('names a single-entry tool_call by the call it carries, and leaves a batch or empty bridge wrapped', () => {
+    const one = bridged([{ name: 'session_list', arguments: { query: 'deploy' } }])
+    expect([toolName(one), toolArgs(one)]).toEqual(['session_list', { query: 'deploy' }])
+    expect(toolName(bridged([{ name: 'a', arguments: {} }, { name: 'b', arguments: {} }]))).toBe('tool_call')
+    expect(toolName(bridged([]))).toBe('tool_call')
+    expect(toolName({ function: { name: 'tool_call', arguments: 'not json' } })).toBe('tool_call')
+  })
+
+  it('labels tool_describe by the names it reads and tool_search by its first query, live and persisted alike', () => {
+    const names = ['profile_list', 'session_list']
+    expect(toolDisplay('tool_describe', { names })).toMatchObject({ kind: 'read', target: 'profile_list, session_list' })
+    expect(toolDisplay('tool_describe', { names: 'profile_list' })).toMatchObject({ kind: 'read', target: 'profile_list' })
+    expect(toolDisplay('tool_search', { queries: ['', 'session tools'] })).toMatchObject({ kind: 'search', target: 'session tools' })
+    expect(publicToolFrame({ name: 'tool_describe', tid: 'd', args: { names: "['profile_list', 'session_list']" } }, true)).toMatchObject({ kind: 'read', target: 'profile_list, session_list' })
   })
 })
 

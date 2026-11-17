@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto'
 import { codexCommentary, withoutReasoningParts, hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isCompactionRow, isReasoningBlock, joinReasoning, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, toolOutcome, approvalAnsweredBy, projectedOutcome, withToolCallOutcomes, type ProjectedOutcome, type ToolResultView } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
-import { decidedEditDiff, toolArgs, toolEditDiff } from './tool-display.js'
+import { decidedEditDiff, toolArgs, toolEditDiff, toolName } from './tool-display.js'
 import { ToolProgressSchema, type ToolProgress, type ToolEditDiff } from '@maudecode/talaria-web-contracts'
 import { turnFileChanges } from './file-changes.js'
 
@@ -407,7 +407,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
       // Full results, except in a limited response, which clips them like its raw tool rows (the full detail keeps them).
       const shown = reply && opts.clipToolResults ? toolMessageForLimitedPayload(reply) as Record<string, unknown> : reply
       const result = shown ? messageText(shown.content) : call.result ?? call.output ?? null
-      const outcomeName = str(call.name) || str(isDict(call.function) ? call.function.name : '')
+      const outcomeName = toolName(call)
       // TAL-1718: the projection (withToolCallOutcomes) already decided this exact reply unflagged; its outcome is this one.
       const reuse = reply !== undefined && decided !== undefined && !decided.flagged && decided.name === outcomeName && decided.content === reply.content && decided.display_metadata === reply.display_metadata
       // The view always comes from the full result (TAL-315), with each section capped.

@@ -156,15 +156,34 @@ function delegateTarget(arg: (keys: string[]) => string): string {
  * `focus_path` is a read or write call's file inside the session's `workspace` root, the file a companion page shows.
  */
 export function toolDisplay(name: unknown, args: unknown, workspace: string | null = null): { kind: ToolKind; target: string; focus_path: string | null; shows_card?: true } {
-  const kind = toolKind(name)
+  const bridge = BRIDGES.get(str(name))
+  const kind = bridge?.kind ?? toolKind(name)
   const a = isDict(args) ? args : {}
   const arg = (keys: string[]) => keys.map((k) => snapshotArg(a, k)).find((v): v is string => typeof v === 'string' && Boolean(v.trim())) ?? ''
-  const first = ((name === 'delegate_task' ? delegateTarget(arg) : '') || arg(TARGET_KEYS[kind] ?? FALLBACK_KEYS)).trim().split('\n')[0] ?? ''
+  const special = name === 'delegate_task' ? delegateTarget(arg) : bridge ? bridge.target(snapshotItems(snapshotArg(a, bridge.key) ?? '')) : ''
+  const first = (special || arg(TARGET_KEYS[kind] ?? FALLBACK_KEYS)).trim().split('\n')[0] ?? ''
   // Capped by code point, so the cap never splits a surrogate pair into invalid JSON.
   return {
     kind, target: Array.from(first.replace(/\s+/g, ' ').trim()).slice(0, TOOL_TARGET_MAX).join(''), focus_path: kind === 'read' || kind === 'write' ? focusPath(arg(FOCUS_KEYS), workspace) : null,
     ...(typeof name === 'string' && CARD_TOOLS.has(name) ? { shows_card: true as const } : {}),
   }
+}
+
+/**
+ * TAL-2316: the Agent's tool-discovery bridges, labelled as its own `_bridge_labels` does: `tool_describe` reads the
+ * named tools' details, `tool_search` searches by its first non-empty query.
+ */
+const BRIDGES = new Map<string, { kind: ToolKind; key: string; target: (items: string[]) => string }>([
+  ['tool_describe', { kind: 'read', key: 'names', target: (names) => names.filter((n) => n.trim()).join(', ') }],
+  ['tool_search', { kind: 'search', key: 'queries', target: (queries) => queries.find((q) => q.trim()) ?? '' }],
+])
+
+/** A quoted string in a `pythonStr` list, whose closing quote the snapshot cap may have cut. */
+const QUOTED = /(['"])((?:(?!\1)[^\\]|\\.)*)\1?/gs
+
+/** A snapshot argument's items: each string of a `pythonStr` list (which the cap may cut short), else the one value. */
+function snapshotItems(value: string): string[] {
+  return value.startsWith('[') ? Array.from(value.matchAll(QUOTED), (m) => unescapeGoal(m[2] ?? '')) : [value]
 }
 
 /** TAL-1968: calls whose transcript card the user must see, as a settled turn keeps them open (`buildTurnScene`). */
@@ -194,18 +213,47 @@ function workspaceRelative(path: string, workspace: string | null): string | nul
   return full.startsWith(`${root}/`) ? full.slice(root.length + 1) : null
 }
 
-/** A persisted call's arguments: live `args`, a `tool_use` block's `input`, or OpenAI `function.arguments` JSON. */
+/**
+ * A persisted call's arguments: live `args`, a `tool_use` block's `input`, or OpenAI `function.arguments` JSON. TAL-2316:
+ * a bridged call's are its one entry's `arguments`, as the Agent ran it and the live frame carried them.
+ */
 export function toolArgs(call: Record<string, unknown>): unknown {
+  return bridgedCall(call)?.arguments ?? rawToolArgs(call)
+}
+
+function rawToolArgs(call: Record<string, unknown>): unknown {
   if (call.args !== undefined) return call.args
   if (call.input !== undefined) return call.input
-  const raw = isDict(call.function) ? call.function.arguments : undefined
+  return parsedJson(isDict(call.function) ? call.function.arguments : undefined)
+}
+
+/** A JSON-string value parsed, else the value as is; null when absent. */
+function parsedJson(raw: unknown): unknown {
   if (typeof raw !== 'string') return raw ?? null
   try { return JSON.parse(raw) as unknown } catch { return raw }
 }
 
-/** A live frame's or persisted call's tool name, in any of the shapes the transcript carries. */
+/** A live frame's or persisted call's tool name, in any of the shapes the transcript carries; a bridged call's own name (TAL-2316). */
 export function toolName(call: Record<string, unknown>): string {
+  return bridgedCall(call)?.name ?? rawToolName(call)
+}
+
+function rawToolName(call: Record<string, unknown>): string {
   return str(call.name) || str(call.tool_name) || (isDict(call.function) ? str(call.function.name) : '')
+}
+
+/**
+ * TAL-2316: the one call a single-entry `tool_call` bridge carries. The Agent defers toolsets behind `tool_call {calls}`
+ * and stores one entry per invocation, but runs (and streams) that entry's tool by its own name and arguments. A bridge
+ * with no entry or several (a connector batch) stays itself.
+ */
+function bridgedCall(call: Record<string, unknown>): { name: string; arguments: unknown } | undefined {
+  if (rawToolName(call) !== 'tool_call') return undefined
+  const args = rawToolArgs(call)
+  const calls = isDict(args) ? args.calls : undefined
+  const entry = Array.isArray(calls) && calls.length === 1 && isDict(calls[0]) ? calls[0] : undefined
+  const name = entry ? str(entry.name) : ''
+  return entry && name ? { name, arguments: parsedJson(entry.arguments) ?? {} } : undefined
 }
 
 /** TAL-448: the most diff lines (and characters) an `edit_diff` carries; its counts always cover the whole diff. */
