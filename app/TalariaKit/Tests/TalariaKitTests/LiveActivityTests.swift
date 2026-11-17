@@ -1734,6 +1734,13 @@ final class LiveActivityTests: XCTestCase {
         ])
 
         streamClient.emit(.reasoning("I should inspect failures."))
+        // TAL-2336: a tool lookup the transcript hides (TAL-2331) is not named on the activity either.
+        for event in [SSEEvent.toolStarted, SSEEvent.toolCompleted] {
+            streamClient.emit(event(ToolStreamEvent(
+                eventType: nil, name: "tool_search", preview: nil, args: nil, duration: nil, isError: nil,
+                stableID: "call-lookup", kind: .search, target: "calendar", isHidden: true
+            )))
+        }
         streamClient.emit(.toolStarted(ToolStreamEvent(
             eventType: nil,
             name: "shell_command",

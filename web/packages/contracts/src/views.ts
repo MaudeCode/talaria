@@ -296,7 +296,7 @@ export type ToolOutcomeKey = z.infer<typeof ToolOutcomeKeySchema>
 export const ToolOutcomeSchema = z.object({ key: ToolOutcomeKeySchema, tone: z.enum(['neutral', 'error', 'attention']), count: z.number().int().optional(), value: z.string().optional() })
 export type ToolOutcome = z.infer<typeof ToolOutcomeSchema>
 
-/** TAL-2336: the longest `target`, app name or outcome value a Live Activity shows (the App's `maximumActivityCharacters`). */
+/** TAL-2336: the longest `target`, app name or outcome value a Live Activity shows, in UTF-16 code units as Relay counts them. */
 export const ACTIVITY_TOOL_MAX = 64
 const ActivityText = z.string().max(ACTIVITY_TOOL_MAX)
 /**

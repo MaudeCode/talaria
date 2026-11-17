@@ -3,7 +3,7 @@ import { subscribe, unsubscribe } from 'node:diagnostics_channel'
 import { describe, expect, it, vi } from 'vitest'
 import { isRasterDataUri } from './raster-image.js'
 import { toolOutcome } from './sessions/merge.js'
-import { activityTool, mightContainSensitiveText, publicToolFrame, redactNestedMessageContainers, redactSensitive, redactSessionData, redactText } from './redact.js'
+import { activityText, activityTool, mightContainSensitiveText, publicToolFrame, redactNestedMessageContainers, redactSensitive, redactSessionData, redactText } from './redact.js'
 import { MessageSchema } from '@maudecode/talaria-web-contracts'
 import { sanitizeShareMessage } from './sessions/shares.js'
 import { hydrateAnchorActivityScenes, withTurnIds } from './sessions/anchor.js'
@@ -1701,4 +1701,12 @@ it('names no hidden tool lookup on a Live Activity, and a failed one as its row 
   const lookup = { name: 'tool_search', args: { query: 'calendar' }, tid: 't', done: true }
   expect(activityTool(lookup, true, null)).toBeUndefined()
   expect(activityTool({ ...lookup, is_error: true }, true, null)).toMatchObject({ kind: 'search', done: true, failed: true })
+})
+
+// TAL-2336: Relay and the contract count UTF-16 code units, so a cut target fits both and never splits an emoji.
+it('caps a Live Activity text in UTF-16 code units without splitting a character', () => {
+  const capped = activityText(`echo ${'😀'.repeat(40)}`)
+  expect(capped.length).toBeLessThanOrEqual(64)
+  expect(capped).toBe(`echo ${'😀'.repeat(29)}…`)
+  expect(activityText('  npm   test ')).toBe('npm test')
 })

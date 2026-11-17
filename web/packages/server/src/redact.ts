@@ -2685,10 +2685,19 @@ export function approvalTool(call: Record<string, unknown>, enabled: boolean, wo
   }
 }
 
-/** TAL-2336: `text` on one line within a Live Activity's limit, an ellipsis marking a cut. */
-const activityText = (text: string): string => {
-  const chars = Array.from(text.replace(/\s+/g, ' ').trim())
-  return chars.length > ACTIVITY_TOOL_MAX ? `${chars.slice(0, ACTIVITY_TOOL_MAX - 1).join('')}…` : chars.join('')
+/**
+ * TAL-2336: `text` on one line within a Live Activity's limit, an ellipsis marking a cut. The limit counts UTF-16 code units,
+ * as the contract's `max` and Relay's validator do, and a cut never splits a character.
+ */
+export const activityText = (text: string): string => {
+  const line = text.replace(/\s+/g, ' ').trim()
+  if (line.length <= ACTIVITY_TOOL_MAX) return line
+  let cut = ''
+  for (const char of line) {
+    if (cut.length + char.length > ACTIVITY_TOOL_MAX - 1) break
+    cut += char
+  }
+  return `${cut}…`
 }
 
 /** TAL-2336: a call's display fields as a Live Activity and a push alert name it, each string capped. */

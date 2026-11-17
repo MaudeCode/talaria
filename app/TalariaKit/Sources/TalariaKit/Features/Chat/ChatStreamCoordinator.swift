@@ -778,7 +778,8 @@ public final class ChatStreamCoordinator {
                 markProgress()
             }
         case .toolStarted(let payload):
-            liveActivityManager?.update(.toolStarted(AgentRunActivityTool(payload, done: false)))
+            // TAL-2336: a call the transcript leaves out (TAL-2331 `hidden`) is named nowhere else either.
+            if !payload.isHidden { liveActivityManager?.update(.toolStarted(AgentRunActivityTool(payload, done: false))) }
             if delegate?.streamCoordinatorAppendToolCall(payload) == true {
                 markProgress()
             }
@@ -787,7 +788,7 @@ public final class ChatStreamCoordinator {
                 markProgress()
             }
         case .toolCompleted(let payload):
-            liveActivityManager?.update(.toolCompleted(AgentRunActivityTool(payload, done: true)))
+            if !payload.isHidden { liveActivityManager?.update(.toolCompleted(AgentRunActivityTool(payload, done: true))) }
             if delegate?.streamCoordinatorCompleteToolCall(payload) == true {
                 markProgress()
             }

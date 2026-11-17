@@ -324,7 +324,7 @@ function parseAgentNotify(value: unknown): AgentNotify | null {
 }
 
 // TAL-2336: the call a Live Activity names. Its strings are display text the publisher redacted and capped at 64
-// characters; kinds, verbs and outcome keys are lower-case words, so a newer publisher's value passes and the App reads an
+// UTF-16 code units (`length`, as the Web contract counts them); kinds, verbs and outcome keys are lower-case words, so a newer publisher's value passes and the App reads an
 // unknown one as it would in the transcript. Any other field is rejected.
 const toolWordPattern = /^[a-z_]{1,32}$/;
 const toolText = (value: unknown, min = 0): value is string => typeof value === "string" && value.length >= min && value.length <= 64;
