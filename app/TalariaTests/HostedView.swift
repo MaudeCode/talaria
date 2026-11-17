@@ -64,10 +64,9 @@ enum HostedScene {
         let deadline = Date().addingTimeInterval(10)
         while scene() == nil, Date() < deadline {
             // A host leaving for another app passes through inactive first, so watch for the background throughout.
-            if !reopened, UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .background }),
-               let bundleID = Bundle.main.bundleIdentifier {
+            if !reopened, UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .background }) {
                 reopened = true
-                print("The test host's scene was in the background; reopened: \(open(bundleID))")
+                print("The test host's scene was in the background; reopened: \(reopenHost())")
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
@@ -77,14 +76,14 @@ enum HostedScene {
                              file: file, line: line)
     }
 
-    /// Brings the app with `bundleID` to the foreground, as tapping its icon does. UIKit gives an iPhone app no public
-    /// way to foreground itself or another app.
-    @discardableResult
-    static func open(_ bundleID: String) -> Bool {
+    /// Brings the host back to the foreground, as tapping its icon does. UIKit gives an iPhone app no public way to
+    /// foreground itself: `activateSceneSession` refuses on a device without multiple scenes.
+    private static func reopenHost() -> Bool {
         let selector = NSSelectorFromString("openApplicationWithBundleID:")
-        guard let workspace = (NSClassFromString("LSApplicationWorkspace") as AnyObject?)?
-            .perform(NSSelectorFromString("defaultWorkspace"))?.takeUnretainedValue(),
-            let method = class_getInstanceMethod(object_getClass(workspace), selector) else { return false }
+        guard let bundleID = Bundle.main.bundleIdentifier,
+              let workspace = (NSClassFromString("LSApplicationWorkspace") as AnyObject?)?
+                .perform(NSSelectorFromString("defaultWorkspace"))?.takeUnretainedValue(),
+              let method = class_getInstanceMethod(object_getClass(workspace), selector) else { return false }
         typealias Open = @convention(c) (AnyObject, Selector, NSString) -> Bool
         return unsafeBitCast(method_getImplementation(method), to: Open.self)(workspace, selector, bundleID as NSString)
     }
@@ -650,10 +649,10 @@ final class HostedWindowTests: XCTestCase {
     /// draws; the next hosted test brings it back instead of failing like every test after it (TAL-2347).
     func testAHostTheSystemSentToTheBackgroundIsBroughtBack() async throws {
         let scene = try HostedScene.current()
-        XCTAssertTrue(HostedScene.open("com.apple.Preferences"), "Settings did not open")
-        // Settings' first launch on a hosted runner keeps the host inactive for over 10 s.
-        let backgrounded = await awaitCondition(timeout: 60) { scene.activationState == .background }
-        XCTAssertTrue(backgrounded, "Opening Settings left the host's scene \(scene.activationState.rawValue)")
+        // Goes to the Home Screen, as the Home button does. Opening another app instead slowed the rest of a CI shard.
+        UIApplication.shared.perform(NSSelectorFromString("suspend"))
+        let backgrounded = await awaitCondition { scene.activationState == .background }
+        XCTAssertTrue(backgrounded, "Suspending left the host's scene \(scene.activationState.rawValue)")
         XCTAssertTrue(try HostedScene.current() === scene)
     }
 }
