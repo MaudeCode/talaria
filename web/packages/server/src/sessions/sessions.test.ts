@@ -3211,6 +3211,85 @@ describe('session detail ships web_search, x_search and web_extract sections (TA
   })
 })
 
+describe('session detail ships media and analysis sections (TAL-2325)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
+  const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
+  const base64 = `data:image/png;base64,${'iVBORw0KGgo'.repeat(50)}`
+  /** A generated image (local and remote), speech, a video, a failed generation and two analyses, as Agent v0.23 returns them. */
+  const transcript: Json[] = [
+    { role: 'user', content: 'Make media', message_id: 'media-user', timestamp: 8000, _turn_id: 'media-run' },
+    { role: 'assistant', content: '', message_id: 'media-calls', timestamp: 8001, _turn_id: 'media-run', tool_calls: [
+      call('call-image', 'image_generate', { prompt: 'a cat', aspect_ratio: 'square' }), call('call-speech', 'text_to_speech', { text: 'Hello' }),
+      call('call-video', 'video_generate', { prompt: 'a wave' }), call('call-failed', 'image_generate', { prompt: 'a dog' }),
+      call('call-vision', 'vision_analyze', { image_url: '/srv/hermes/in.png', question: 'What is it?' }), call('call-native', 'vision_analyze', { image_url: '/srv/hermes/in.png', question: 'And now?' }),
+    ] },
+    { role: 'tool', tool_call_id: 'call-image', content: JSON.stringify({ success: true, image: '/srv/hermes/cache/generated/images/cat.png', additional_images: ['https://cdn.example/cat-2.png'], model: 'flux', prompt: 'a cat', aspect_ratio: 'square', modality: 'text', provider: 'fal' }), timestamp: 8002, _turn_id: 'media-run' },
+    { role: 'tool', tool_call_id: 'call-speech', content: JSON.stringify({ success: true, file_path: '/srv/hermes/cache/audio/tts_1.mp3', file_paths: ['/srv/hermes/cache/audio/tts_1.mp3'], media_tag: 'MEDIA:/srv/hermes/cache/audio/tts_1.mp3', provider: 'edge', voice_compatible: false }), timestamp: 8003, _turn_id: 'media-run' },
+    { role: 'tool', tool_call_id: 'call-video', content: JSON.stringify({ success: true, video: 'https://cdn.example/wave.mp4', model: 'grok', prompt: 'a wave', modality: 'text', aspect_ratio: '16:9', duration: 5, provider: 'xai' }), timestamp: 8004, _turn_id: 'media-run' },
+    { role: 'tool', tool_call_id: 'call-failed', content: JSON.stringify({ success: false, image: null, error: 'FAL_KEY is not set', error_type: 'auth_required' }), timestamp: 8005, _turn_id: 'media-run' },
+    { role: 'tool', tool_call_id: 'call-vision', content: JSON.stringify({ success: true, analysis: 'A **cat** on a sofa.' }), timestamp: 8006, _turn_id: 'media-run' },
+    // The Agent's history keeps a native-vision result as the content list it handed the model.
+    { role: 'tool', tool_call_id: 'call-native', content: [{ type: 'text', text: 'Image loaded into your context.' }, { type: 'image_url', image_url: { url: base64 } }], timestamp: 8007, _turn_id: 'media-run' },
+    { role: 'assistant', content: 'Done.', message_id: 'media-answer', timestamp: 8008, _turn_id: 'media-run' },
+  ]
+
+  it('matches the shared contract fixture in full detail and every window, on the calls and the scene alike, with no image data', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = structuredClone(transcript)
+    session.title = 'Tool media views'
+    await s.deps.sessionStore.save(session)
+    const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_media_views as Json
+    const expected = fixture.expected as Json
+    expect((expected['call-image'] as Json).media).toHaveLength(2)
+    // The fixture names the session `media-session`; a served URL carries this one's id.
+    const named = <T>(value: T): T => JSON.parse(JSON.stringify(value).replaceAll(sid, 'media-session')) as T
+    for (const query of ['', '&msg_limit=50']) {
+      const served = (await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json
+      expect(JSON.stringify(served)).not.toContain('base64')
+      const messages = named(served.messages as Json[])
+      expect(messages, query).toEqual((fixture.session as Json).messages)
+      const calls = messages.find((m) => m.message_id === 'media-calls')?.tool_calls as Json[]
+      expect(Object.fromEntries(calls.map((c) => [c.id, c.result_view])), query).toEqual(expected)
+      const answer = messages.find((m) => m.message_id === 'media-answer')?._anchor_activity_scene as Json
+      const rows = (answer.activity_rows as Json[]).filter((r) => r.role === 'tool')
+      expect(Object.fromEntries(rows.map((r) => [(r.tool as Json).id, (r.tool as Json).result_view])), query).toEqual(expected)
+      // The worklog that made media opens, as a shown card's does.
+      expect(answer.expanded_by_default).toBe(true)
+    }
+  })
+
+  it('serves a media tool\'s local file through the session\'s media URL and refuses one in a denied location', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const ws = realpathSync(join(s.state, 'workspace'))
+    writeFileSync(join(ws, 'made.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    mkdirSync(join(s.state, 'sessions'), { recursive: true })
+    const denied = join(s.state, 'sessions', 'leak.png')
+    writeFileSync(denied, 'secret')
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = [
+      { role: 'user', content: 'draw', message_id: 'u', timestamp: 1, _turn_id: 't' },
+      { role: 'assistant', content: '', message_id: 'a', timestamp: 2, _turn_id: 't', tool_calls: [call('c1', 'image_generate', {}), call('c2', 'image_generate', {})] },
+      { role: 'tool', tool_call_id: 'c1', content: JSON.stringify({ success: true, image: join(ws, 'made.png') }), timestamp: 3, _turn_id: 't' },
+      { role: 'tool', tool_call_id: 'c2', content: JSON.stringify({ success: true, image: denied }), timestamp: 4, _turn_id: 't' },
+      { role: 'assistant', content: 'Done.', message_id: 'b', timestamp: 5, _turn_id: 't' },
+    ]
+    await s.deps.sessionStore.save(session)
+    const served = (await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json
+    const calls = (served.messages as Json[]).find((m) => m.message_id === 'a')?.tool_calls as Json[]
+    const [made, leak] = calls.map((c) => ((c.result_view as Json).media as Json[])[0]?.url as string)
+    expect(made).toBe(`./api/media?${new URLSearchParams({ path: join(ws, 'made.png'), session_id: sid }).toString()}`)
+    const image = await s.get(`/${made!.slice(2)}`)
+    expect(image.status).toBe(200)
+    expect(image.headers.get('content-type')).toBe('image/png')
+    expect((await s.get(`/${leak!.slice(2)}`)).status).toBe(403)
+  })
+})
+
 describe('session detail ships each file edit\'s diff (TAL-448)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

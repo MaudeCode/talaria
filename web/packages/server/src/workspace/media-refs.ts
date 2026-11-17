@@ -9,7 +9,7 @@ import { basename, extname, isAbsolute, resolve } from 'node:path'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import type { Nodes } from 'mdast'
 import { MESHY_TASK_ID_RE, type DisplayMedia } from '@maudecode/talaria-web-contracts'
-import { INLINE_IMAGE_TYPES, mimeFor } from './media.js'
+import { INLINE_IMAGE_TYPES, mediaRefTarget, mediaResultRefs, mimeFor } from './media.js'
 
 export interface MediaRefResolver {
   /** The session workspace `./` and `../` image destinations resolve against; null leaves them as text. */
@@ -191,6 +191,24 @@ function imageDestinationRef(url: string, workspace: string | null): string | nu
   if ((url.startsWith('/') && !url.startsWith('//')) || url.startsWith('~/')) return path
   if ((url.startsWith('./') || url.startsWith('../')) && workspace && isAbsolute(workspace)) return resolve(workspace, path)
   return null
+}
+
+/** TAL-2325: a media tool result's local file as its `/api/media` URL; the session's id joins it where the result ships (`withResultFocusPaths`). */
+function toolMediaUrl(path: string): string | null {
+  try { return `./api/media?${new URLSearchParams({ path: mediaRefTarget(path) }).toString()}` } catch { return null }
+}
+
+/**
+ * TAL-2325: the media a media tool's result made (`mediaResultRefs`), each as `projectMediaRefs` shows one: a remote URL
+ * as written, a local absolute or `~/` path as its `/api/media` URL, which the session's media grant serves.
+ */
+export function toolResultMedia(data: Record<string, unknown>): DisplayMedia[] {
+  const resolver: MediaRefResolver = { workspace: null, localUrl: toolMediaUrl }
+  return mediaResultRefs(data).flatMap((ref) => {
+    if (!/^https?:\/\//i.test(ref) && !ref.startsWith('/') && !ref.startsWith('~/')) return []
+    const media = mediaFor(ref, resolver)
+    return media ? [media] : []
+  })
 }
 
 /** One reference's media item: a remote `http(s)` URL as written, or a local path the resolver serves. */

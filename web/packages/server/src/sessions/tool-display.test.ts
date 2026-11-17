@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
-import { toolOutcome, toolResultView, withToolCallOutcomes } from './merge.js'
+import { decidedResultView, toolOutcome, toolResultSnippet, toolResultView, withToolCallOutcomes } from './merge.js'
 import { diffHunks } from '../text/diff.js'
 import { decidedEditDiff, EDIT_DIFF_MAX_LINES, tokenToolKind, toolArgs, toolDisplay, toolEditDiff, toolKind, toolName, toolProgress } from './tool-display.js'
 import { fullToolResult } from './anchor.js'
@@ -19,13 +19,13 @@ describe('toolKind', () => {
     ['skill_view', 'skill'], ['skills_list', 'skill'],
     ['memory', 'memory'],
     ['terminal', 'shell'], ['bash', 'shell'], ['exec_command', 'shell'], ['process', 'shell'], ['execute_code', 'shell'],
-    ['read_file', 'read'], ['read_url', 'read'], ['vision_analyze', 'read'],
+    ['read_file', 'read'], ['read_url', 'read'], ['vision_analyze', 'image_analysis'], ['video_analyze', 'video_analysis'],
     ['list_directory', 'list'], ['todo', 'list'], ['todo_list', 'list'],
     ['web_search', 'web'], ['web_extract', 'web'], ['browser_navigate', 'web'],
     ['search_files', 'search'], ['grep', 'search'], ['rg', 'search'], ['ripgrep', 'search'], ['glob', 'search'],
     ['write_file', 'write'], ['patch', 'write'], ['mcp_filesystem_edit_file', 'write'],
     ['HTTPFetch', 'web'], ['URLRead', 'read'], ['readFile', 'read'], ['webSearch', 'web'], ['shellCommand', 'shell'], ['mergePullRequest', 'unknown'],
-    ['merge_pull_request', 'unknown'], ['image_generate', 'unknown'], ['', 'unknown'], [undefined, 'unknown'],
+    ['merge_pull_request', 'unknown'], ['image_generate', 'image'], ['text_to_speech', 'audio'], ['video_generate', 'video'], ['', 'unknown'], [undefined, 'unknown'],
   ])('%s is %s', (name, kind) => {
     expect(toolKind(name)).toBe(kind)
   })
@@ -309,8 +309,8 @@ describe('Agent tool presentation table (TAL-2322)', () => {
     expect(fullToolResult(messages, 'c1')?.result_view).toEqual({ error: 'Command timed out', exit_code: 124 })
   })
 
-  it('gives every listed tool the kind its name tokens gave before the table', () => {
-    for (const [name, { kind }] of Object.entries(TOOL_PRESENTATIONS)) expect([name, kind]).toEqual([name, tokenToolKind(name)])
+  it('gives every listed tool the kind its name tokens gave before the table, but a media tool its own (TAL-2325)', () => {
+    for (const [name, { kind, presentation }] of Object.entries(TOOL_PRESENTATIONS)) if (presentation !== 'media' && presentation !== 'analysis') expect([name, kind]).toEqual([name, tokenToolKind(name)])
   })
 
   it('takes a file edit only from a diff tool, and from an unlisted write tool by its name tokens', () => {
@@ -471,5 +471,76 @@ describe('web_search, x_search and web_extract sections (TAL-2324)', () => {
       expect(shown).toContain('example.com')
       expect(shown).not.toContain(token)
     }
+  })
+})
+
+describe('media and analysis sections (TAL-2325)', () => {
+  const view = (name: string, result: unknown) => toolOutcome(typeof result === 'string' ? result : JSON.stringify(result), name).result_view
+  const local = (path: string) => `./api/media?${new URLSearchParams({ path }).toString()}`
+
+  it('maps each media tool to its kind and presentation', () => {
+    expect(Object.fromEntries(['image_generate', 'text_to_speech', 'video_generate', 'xai_video_edit', 'xai_video_extend', 'vision_analyze', 'video_analyze'].map((name) => [name, TOOL_PRESENTATIONS[name]]))).toEqual({
+      image_generate: { kind: 'image', presentation: 'media' }, text_to_speech: { kind: 'audio', presentation: 'media' }, video_generate: { kind: 'video', presentation: 'media' },
+      xai_video_edit: { kind: 'video', presentation: 'media' }, xai_video_extend: { kind: 'video', presentation: 'media' },
+      vision_analyze: { kind: 'image_analysis', presentation: 'analysis' }, video_analyze: { kind: 'video_analysis', presentation: 'analysis' },
+    })
+    // A media call reads as its kind's phrase, and its media stays out of a folded run.
+    expect(toolDisplay('image_generate', { prompt: 'a cat', aspect_ratio: 'square' })).toEqual({ kind: 'image', target: '', focus_path: null, shows_card: true })
+    expect(toolDisplay('vision_analyze', { image_url: '/tmp/a.png', question: 'what?' })).toEqual({ kind: 'image_analysis', target: '', focus_path: null })
+  })
+
+  it('shows a remote image, a local one and its additional images, in order and once each', () => {
+    expect(view('image_generate', { success: true, image: 'https://cdn.example/out/cat.png', model: 'm', prompt: 'a cat', provider: 'fal' }).media).toEqual([
+      { url: 'https://cdn.example/out/cat.png', name: 'cat.png', mime: 'image/png', kind: 'image' },
+    ])
+    const shown = view('image_generate', { success: true, image: '/srv/hermes/cache/generated/images/a.png', additional_images: ['/srv/hermes/cache/generated/images/b.webp', { url: 'https://cdn.example/c.jpg' }, '/srv/hermes/cache/generated/images/a.png', 'data:image/png;base64,AAAA'] })
+    expect(shown.media).toEqual([
+      { url: local('/srv/hermes/cache/generated/images/a.png'), name: 'a.png', mime: 'image/png', kind: 'image' },
+      { url: local('/srv/hermes/cache/generated/images/b.webp'), name: 'b.webp', mime: 'image/webp', kind: 'image' },
+      { url: 'https://cdn.example/c.jpg', name: 'c.jpg', mime: 'image/jpeg', kind: 'image' },
+    ])
+    // The call's details keep its rows (prompt, model), under the media shown above them.
+    expect(shown.fields?.map((field) => field.key)).toEqual(['success', 'image', 'additional_images'])
+  })
+
+  it('shows speech files and a video, its local file before its public URL', () => {
+    expect(view('text_to_speech', { success: true, file_path: '/srv/out/tts_1.mp3', file_paths: ['/srv/out/tts_1.mp3', '/srv/out/tts_2.ogg'], media_tag: 'MEDIA:/srv/out/tts_1.mp3', provider: 'edge', voice_compatible: false }).media).toEqual([
+      { url: local('/srv/out/tts_1.mp3'), name: 'tts_1.mp3', mime: 'audio/mpeg', kind: 'audio' },
+      { url: local('/srv/out/tts_2.ogg'), name: 'tts_2.ogg', mime: 'audio/ogg', kind: 'audio' },
+    ])
+    expect(view('video_generate', { success: true, video: 'https://cdn.example/v/clip.mp4', model: 'm', prompt: 'p', duration: 5, aspect_ratio: '16:9', provider: 'xai' }).media).toEqual([{ url: 'https://cdn.example/v/clip.mp4', name: 'clip.mp4', mime: 'video/mp4', kind: 'video' }])
+    expect(view('xai_video_edit', { success: true, video: '/srv/out/edit.mp4', public_url: 'https://cdn.example/edit.mp4' }).media?.map((item) => item.url)).toEqual([local('/srv/out/edit.mp4')])
+    expect(view('xai_video_extend', { success: true, video: '', public_url: 'https://cdn.example/ext.mp4' }).media?.map((item) => item.url)).toEqual(['https://cdn.example/ext.mp4'])
+  })
+
+  it('shows a failed media call as its error on one line', () => {
+    const outcome = toolOutcome(JSON.stringify({ success: false, image: null, error: 'FAL_KEY is not set', error_type: 'auth_required' }), 'image_generate')
+    expect(outcome.is_error).toBe(true)
+    expect(outcome.result_view).toEqual({ error: 'FAL_KEY is not set' })
+    expect(view('text_to_speech', { success: false, error: 'No TTS provider' })).toEqual({ error: 'No TTS provider' })
+  })
+
+  it('shows an analysis as Markdown, and a multimodal result as its summary without image data', () => {
+    expect(view('vision_analyze', { success: true, analysis: '**A cat** on a sofa.' }).analysis).toBe('**A cat** on a sofa.')
+    expect(view('video_analyze', { success: false, error: 'Error analyzing video: x', analysis: 'The video could not be analyzed.' })).toMatchObject({ analysis: 'The video could not be analyzed.', error: 'Error analyzing video: x' })
+    const base64 = `data:image/png;base64,${'iVBORw0KGgo'.repeat(400)}`
+    const multimodal = { _multimodal: true, content: [{ type: 'text', text: 'Image loaded into your context.' }, { type: 'image_url', image_url: { url: base64 } }], text_summary: 'Image attached natively for the main model (3.2 KB).', meta: { image_url: '/tmp/a.png', size_bytes: 3300, native_vision: true } }
+    // Live, the sidecar bounds the envelope (its content becomes capped JSON text); persisted, it may be the dict itself.
+    for (const raw of [multimodal, { ...multimodal, content: JSON.stringify(multimodal.content).slice(0, 4000) }, JSON.stringify(multimodal)]) {
+      const outcome = toolOutcome(raw, 'vision_analyze')
+      expect(outcome.result_view).toEqual({ text: 'Image attached natively for the main model (3.2 KB).', analysis: 'Image attached natively for the main model (3.2 KB).' })
+      expect(JSON.stringify(outcome)).not.toContain('base64')
+    }
+    expect(view('vision_analyze', { success: true, analysis: `See ${base64} here.` }).analysis).toBe('See  here.')
+  })
+
+  it('keeps media and analysis in a stored view, and joins the session id to a local media URL only', () => {
+    const media = [{ url: local('/srv/out/a.png'), name: 'a.png', mime: 'image/png', kind: 'image' as const }, { url: 'https://cdn.example/b.png', name: 'b.png', mime: 'image/png', kind: 'image' as const }]
+    expect(decidedResultView({ media, analysis: 'x'.repeat(5000) })).toEqual({ media, analysis: toolResultSnippet('x'.repeat(5000)) })
+    const frame = publicToolFrame({ name: 'image_generate', args: {}, result_view: { media } }, true, null, 'sid-1')
+    expect((frame.result_view as ToolResultView).media?.map((item) => item.url)).toEqual([`./api/media?${new URLSearchParams({ path: '/srv/out/a.png', session_id: 'sid-1' }).toString()}`, 'https://cdn.example/b.png'])
+    // Without a session the URL stays as built; restamping replaces, never repeats, the id.
+    expect((publicToolFrame({ name: 'image_generate', result_view: { media } }, true).result_view as ToolResultView).media).toEqual(media)
+    expect((publicToolFrame({ name: 'image_generate', result_view: frame.result_view }, true, null, 'sid-1').result_view as ToolResultView).media?.[0]?.url.match(/session_id/g)).toHaveLength(1)
   })
 })

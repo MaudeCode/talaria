@@ -4,7 +4,7 @@
  * redacted args, so the target never shows more than the arguments it came from.
  */
 import type { FileExcerpt, FileExcerptLine, ResultLink, ResultLinks, ResultPage, SearchMatches, SearchMatchFile, ToolEditDiff, ToolKind, ToolPresentation, ToolPresentationEntry, ToolProgress } from '@maudecode/talaria-web-contracts'
-import { DecisionReviewRefSchema, FileExcerptSchema, OutboundDraftRefSchema, SearchMatchesSchema, ProposalRefSchema, ShowBlockRefSchema, TALARIA_TOOL_NAMES, TerminalRefSchema, TOOL_PRESENTATIONS, type DecisionReviewRef, type OutboundDraftRef, type ProposalRef, type ShowBlockRef, type TerminalRef } from '@maudecode/talaria-web-contracts'
+import { DecisionReviewRefSchema, DisplayMediaSchema, FileExcerptSchema, OutboundDraftRefSchema, SearchMatchesSchema, ProposalRefSchema, ShowBlockRefSchema, TALARIA_TOOL_NAMES, TerminalRefSchema, TOOL_PRESENTATIONS, type DecisionReviewRef, type DisplayMedia, type OutboundDraftRef, type ProposalRef, type ShowBlockRef, type TerminalRef } from '@maudecode/talaria-web-contracts'
 import { posix } from 'node:path'
 import { str } from '../util.js'
 import { expandHome } from '../workspace/paths.js'
@@ -53,7 +53,7 @@ const RULES: [ToolKind, (tokens: Set<string>, name: string) => boolean][] = [
   ['memory', (t) => t.has('memory')],
   ['web', (_, n) => n === 'browser_exec'],
   ['shell', (t, n) => ['terminal', 'shell', 'command', 'process', 'bash', 'exec'].some((k) => t.has(k)) || n === 'execute_code'],
-  ['read', (t, n) => ['read', 'view', 'open'].some((k) => t.has(k)) || n === 'vision_analyze'],
+  ['read', (t) => ['read', 'view', 'open'].some((k) => t.has(k))],
   ['list', (t, n) => t.has('list') || n === 'todo'],
   ['web', (t) => ['web', 'fetch', 'curl', 'extract', 'browse', 'browser', 'navigate'].some((k) => t.has(k))],
   ['search', (t) => ['search', 'grep', 'find', 'rg', 'ripgrep', 'glob'].some((k) => t.has(k))],
@@ -93,6 +93,8 @@ const TARGET_KEYS: Partial<Record<ToolKind, string[]>> = {
   write: ['path', 'file_path', 'file', 'target', 'name'],
   search: ['query', 'pattern', 'url', 'uri'],
   web: ['query', 'pattern', 'url', 'uri', 'session', 'code'],
+  // TAL-2325: a media tool reads as its kind's phrase ("Generated an image"), never a prompt or path.
+  image: [], audio: [], video: [], image_analysis: [], video_analysis: [],
 }
 /** TAL-2317: the Talaria tools named by what they act on; every other one is named by the tool itself. */
 const TALARIA_TARGET_KEYS: Record<string, string[]> = { deliver: ['path'], terminal_open: ['command'] }
@@ -206,8 +208,8 @@ function snapshotItems(value: string): string[] {
   return value.startsWith('[') ? Array.from(value.matchAll(QUOTED), (m) => unescapeGoal(m[2] ?? '')) : [value]
 }
 
-/** TAL-1968: calls whose transcript card the user must see, as a settled turn keeps them open (`buildTurnScene`). */
-const CARD_TOOLS = new Set(['show', 'deliver', 'propose', 'draft_card', 'terminal_open'])
+/** TAL-1968: calls whose transcript card the user must see, as a settled turn keeps them open (`buildTurnScene`). TAL-2325: and the media a media tool made. */
+const CARD_TOOLS = new Set(['show', 'deliver', 'propose', 'draft_card', 'terminal_open', ...Object.entries(TOOL_PRESENTATIONS).flatMap(([name, entry]) => (entry.presentation === 'media' ? [name] : []))])
 
 const FOCUS_KEYS = ['path', 'file_path', 'file', 'target']
 
@@ -402,6 +404,18 @@ export function searchFilesView(data: Record<string, unknown>): SearchMatches | 
   return { total, truncated: data.truncated === true, files }
 }
 
+/** TAL-2325: image data a model was given, which never ships to a client. */
+const DATA_URL_RE = /data:[\w.+-]+\/[\w.+-]+;base64,[A-Za-z0-9+/=]+/g
+
+/**
+ * TAL-2325: what `vision_analyze` or `video_analyze` said, as Markdown: its `analysis` (on failure the Agent's explanation),
+ * else a multimodal result's `text_summary`, without any `data:` URL. Undefined when it said nothing.
+ */
+export function resultAnalysisView(data: Record<string, unknown>): string | undefined {
+  const text = typeof data.analysis === 'string' ? data.analysis : typeof data.text_summary === 'string' ? data.text_summary : ''
+  return text.replace(DATA_URL_RE, '').trim() || undefined
+}
+
 /** TAL-2324: an http(s) URL as written, the only kind a link row opens; undefined for any other scheme or text. */
 function webUrl(value: unknown): URL | undefined {
   if (typeof value !== 'string') return undefined
@@ -478,9 +492,10 @@ export function resultPagesView(data: Record<string, unknown>): ResultPage[] | u
 /**
  * TAL-2323: a result view's `file_excerpt` and `matches` files with the `focus_path` each path names inside the session's
  * `workspace` (the call-level TAL-1458 rule). Callers pass the redacted view, so a focus path never shows more than its path.
- * Without a workspace an absolute path keeps the focus path it was given.
+ * Without a workspace an absolute path keeps the focus path it was given. TAL-2325: with the session's id, each local `media`
+ * URL carries it, so the session's media grant serves a file the allowed roots do not.
  */
-export function withResultFocusPaths<T extends Record<string, unknown>>(view: T, workspace: string | null): T {
+export function withResultFocusPaths<T extends Record<string, unknown>>(view: T, workspace: string | null, sessionId: string | null = null): T {
   const located = <F extends { path: string; focus_path?: string | undefined }>(item: F): F => {
     const { focus_path: given, ...rest } = item
     const focus = focusPath(item.path, workspace) ?? (workspace ? null : given)
@@ -488,7 +503,17 @@ export function withResultFocusPaths<T extends Record<string, unknown>>(view: T,
   }
   const excerpt = view.file_excerpt === undefined ? undefined : FileExcerptSchema.safeParse(view.file_excerpt).data
   const matches = view.matches === undefined ? undefined : SearchMatchesSchema.safeParse(view.matches).data
-  return { ...view, ...(excerpt ? { file_excerpt: located(excerpt) } : {}), ...(matches ? { matches: { ...matches, files: matches.files.map(located) } } : {}) }
+  const media = sessionId && view.media !== undefined ? DisplayMediaSchema.array().safeParse(view.media).data : undefined
+  return { ...view, ...(excerpt ? { file_excerpt: located(excerpt) } : {}), ...(matches ? { matches: { ...matches, files: matches.files.map(located) } } : {}), ...(media && sessionId ? { media: media.map((item) => sessionMedia(item, sessionId)) } : {}) }
+}
+
+const MEDIA_URL = './api/media?'
+/** TAL-2325: a local media URL with the session's id; a remote one as it is. */
+function sessionMedia(item: DisplayMedia, sessionId: string): DisplayMedia {
+  if (!item.url.startsWith(MEDIA_URL)) return item
+  const query = new URLSearchParams(item.url.slice(MEDIA_URL.length))
+  query.set('session_id', sessionId)
+  return { ...item, url: `${MEDIA_URL}${query.toString()}` }
 }
 
 /** MCP progress is untrusted; only finite percentages and a bounded message reach clients. */

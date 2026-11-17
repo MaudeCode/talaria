@@ -5,6 +5,7 @@ import type { ToolResultView } from '@maudecode/talaria-web-contracts'
 import { ToolCard, type ToolCardData } from './ToolCard'
 import { sceneItems } from '../turnActivity'
 import { requestOpenFile } from '../../workspace/openFileRequest'
+import { toolText } from '../../../i18n/toolText'
 
 vi.mock('../../workspace/openFileRequest', () => ({ requestOpenFile: vi.fn() }))
 
@@ -184,5 +185,52 @@ describe('web_search, x_search and web_extract results (TAL-2324)', () => {
     // A URL the Agent refused shows as text, never a link.
     expect(result.querySelectorAll('.tool-page')[2]).toHaveTextContent('not a urlInvalid URL')
     expect(result.querySelectorAll('.tool-page')[2]!.querySelector('a')).toBeNull()
+  })
+})
+
+describe('media and analysis results (TAL-2325)', () => {
+  const media = [
+    { url: './api/media?path=%2Fsrv%2Fcat.png&session_id=s1', name: 'cat.png', mime: 'image/png', kind: 'image' as const },
+    { url: './api/media?path=%2Fsrv%2Fhello.mp3&session_id=s1', name: 'hello.mp3', mime: 'audio/mpeg', kind: 'audio' as const },
+    { url: 'https://cdn.example/wave.mp4', name: 'wave.mp4', mime: 'video/mp4', kind: 'video' as const },
+  ]
+
+  it('shows a generated image inline and speech and video as players, without opening the call', () => {
+    const view = render(<ToolCard call={{ ...call, name: 'image_generate', kind: 'image', target: '', resultView: { text: '{}', media } }} sessionId="s1" />)
+    const shown = view.container.querySelector('.tool-card-media')!
+    expect(view.container.querySelector('.tool-card-detail')).toBeNull()
+    expect(within(shown as HTMLElement).getByRole('img', { name: 'cat.png' })).toHaveAttribute('src', expect.stringMatching(/\/api\/media\?path=%2Fsrv%2Fcat\.png&session_id=s1$/) as string)
+    expect(shown.querySelector('audio[aria-label="hello.mp3"]')).toHaveAttribute('src', expect.stringMatching(/\/api\/media\?path=%2Fsrv%2Fhello\.mp3&session_id=s1$/) as string)
+    expect(shown.querySelector('video[aria-label="wave.mp4"]')).toHaveAttribute('src', 'https://cdn.example/wave.mp4')
+    expect(view.container.querySelector('.tool-card-name')).toHaveTextContent('Generated an image')
+    expect(view.container.querySelector('[data-tool-kind="image"] svg.lucide-image')).not.toBeNull()
+  })
+
+  it('shows a failed media call as its error on one line', async () => {
+    const view = render(<ToolCard call={{ ...call, name: 'image_generate', kind: 'image', target: '', isError: true, resultView: { error: 'FAL_KEY is not set' } }} sessionId="s1" />)
+    expect(view.container.querySelector('.tool-card-media')).toBeNull()
+    expect(view.container.querySelector('.tool-card-name')).toHaveTextContent('Failed to generate an image')
+    await userEvent.click(within(view.container).getAllByRole('button')[0]!)
+    expect(view.container.querySelector('.tool-card-result pre')?.textContent).toBe('Error: FAL_KEY is not set')
+  })
+
+  it('shows an analysis as formatted text, never its JSON', async () => {
+    const view = render(<ToolCard call={{ ...call, name: 'vision_analyze', kind: 'image_analysis', target: '', resultView: { text: '{"analysis": "A **cat**."}', analysis: 'A **cat**.' } }} sessionId="s1" />)
+    expect(view.container.querySelector('.tool-card-name')).toHaveTextContent('Analyzed an image')
+    await userEvent.click(within(view.container).getAllByRole('button')[0]!)
+    const result = view.container.querySelector('.tool-card-result')!
+    await vi.waitFor(() => { expect(result.querySelector('.tool-analysis [data-streamdown="strong"]')?.textContent).toBe('cat') }, { timeout: 5000 })
+    expect(result.textContent).not.toContain('"analysis"')
+  })
+
+  it('names every media kind in every locale', () => {
+    for (const locale of ['en', 'ru', 'zh', 'zh-Hant', 'vi', 'pl', 'cs']) {
+      const text = toolText(locale)
+      // A kind a table lacks reads as the unknown tool's words.
+      for (const kind of ['image', 'audio', 'video', 'image_analysis', 'video_analysis']) {
+        expect(text.actionLabel(kind, 'done', '', 'tool'), `${locale} ${kind}`).not.toBe(text.actionLabel('unknown', 'done', '', 'tool'))
+        expect(text.worklogSummary(kind, 'running', 2), `${locale} ${kind}`).not.toBe(text.worklogSummary('unknown', 'running', 2))
+      }
+    }
   })
 })

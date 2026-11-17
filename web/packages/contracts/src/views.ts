@@ -42,8 +42,12 @@ export const AttachmentSchema = z.looseObject({
 })
 export type Attachment = z.infer<typeof AttachmentSchema>
 
-/** The server's display class for a tool call: clients map it to an icon and localized verb, and never classify names themselves. */
-export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'unknown'])
+/**
+ * The server's display class for a tool call: clients map it to an icon and localized verb, and never classify names themselves.
+ * TAL-2325: `image`, `audio` and `video` generate that medium; `image_analysis` and `video_analysis` describe one (an image
+ * or video icon with an "Analyzing" verb).
+ */
+export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'talaria', 'image', 'audio', 'video', 'image_analysis', 'video_analysis', 'unknown'])
 export type ToolKind = z.infer<typeof ToolKindSchema>
 /**
  * TAL-2317: the tools the sidecar's `talaria` and `harness` toolsets register, which the server shows as kind `talaria`.
@@ -63,12 +67,13 @@ export const TALARIA_TOOL_NAMES = [
  * name-token rules and the generic result parser, and Talaria's own tools stay in `TALARIA_TOOL_NAMES`.
  * `terminal` shows a result's output streams, error and exit code; `diff` its file edit; `clarify` shows as the question
  * dialog, never a tool row; `todo` and `delegate` show in the session's todo list and subagent rows; `file_excerpt` and
- * `matches` (TAL-2323), `links` and `pages` (TAL-2324) show the result's `ToolResultView` section of that name; `generic`
+ * `matches` (TAL-2323), `links` and `pages` (TAL-2324), `media` and `analysis` (TAL-2325) show the result's `ToolResultView`
+ * section of that name; `generic`
  * reads the result's text, else its key/value fields (TAL-2318). `npm run fixtures` writes it to
  * `contracts/fixtures/tool-presentations.json`, which a sidecar test checks against the Agent's tool registry: a tool an
  * Agent release adds joins here as `generic` until its own view ships.
  */
-export const ToolPresentationSchema = z.enum(['terminal', 'diff', 'todo', 'delegate', 'clarify', 'file_excerpt', 'matches', 'links', 'pages', 'generic'])
+export const ToolPresentationSchema = z.enum(['terminal', 'diff', 'todo', 'delegate', 'clarify', 'file_excerpt', 'matches', 'links', 'pages', 'media', 'analysis', 'generic'])
 export type ToolPresentation = z.infer<typeof ToolPresentationSchema>
 export const ToolPresentationEntrySchema = z.object({ kind: ToolKindSchema, presentation: ToolPresentationSchema })
 export type ToolPresentationEntry = z.infer<typeof ToolPresentationEntrySchema>
@@ -101,7 +106,7 @@ export const TOOL_PRESENTATIONS: Readonly<Record<string, ToolPresentationEntry>>
   feishu_drive_reply_comment: { kind: 'unknown', presentation: 'generic' },
   focus_pane: { kind: 'unknown', presentation: 'generic' },
   gui_tour: { kind: 'unknown', presentation: 'generic' },
-  image_generate: { kind: 'unknown', presentation: 'generic' },
+  image_generate: { kind: 'image', presentation: 'media' },
   kanban_attach: { kind: 'unknown', presentation: 'generic' },
   kanban_attach_url: { kind: 'unknown', presentation: 'generic' },
   kanban_attachments: { kind: 'unknown', presentation: 'generic' },
@@ -135,17 +140,17 @@ export const TOOL_PRESENTATIONS: Readonly<Record<string, ToolPresentationEntry>>
   skill_view: { kind: 'skill', presentation: 'generic' },
   skills_list: { kind: 'skill', presentation: 'generic' },
   terminal: { kind: 'shell', presentation: 'terminal' },
-  text_to_speech: { kind: 'unknown', presentation: 'generic' },
+  text_to_speech: { kind: 'audio', presentation: 'media' },
   todo_list: { kind: 'list', presentation: 'todo' },
-  video_analyze: { kind: 'unknown', presentation: 'generic' },
-  video_generate: { kind: 'unknown', presentation: 'generic' },
-  vision_analyze: { kind: 'read', presentation: 'generic' },
+  video_analyze: { kind: 'video_analysis', presentation: 'analysis' },
+  video_generate: { kind: 'video', presentation: 'media' },
+  vision_analyze: { kind: 'image_analysis', presentation: 'analysis' },
   web_extract: { kind: 'web', presentation: 'pages' },
   web_search: { kind: 'web', presentation: 'links' },
   write_file: { kind: 'write', presentation: 'diff' },
   x_search: { kind: 'search', presentation: 'links' },
-  xai_video_edit: { kind: 'write', presentation: 'generic' },
-  xai_video_extend: { kind: 'unknown', presentation: 'generic' },
+  xai_video_edit: { kind: 'video', presentation: 'media' },
+  xai_video_extend: { kind: 'video', presentation: 'media' },
   yb_query_group_info: { kind: 'unknown', presentation: 'generic' },
   yb_query_group_members: { kind: 'unknown', presentation: 'generic' },
   yb_search_sticker: { kind: 'search', presentation: 'generic' },
@@ -234,7 +239,7 @@ export type ResultPage = z.infer<typeof ResultPageSchema>
  * `text`, in that order, then `approval_note` (TAL-1910: the Agent's note on why a flagged command ran), and never parse
  * result text. Each string is capped server-side; a client without the field shows `preview`.
  */
-export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), /** TAL-1967: the proposal a `propose` result made; the card follows `proposal` events. */ proposal: ProposalRefSchema.optional(), /** TAL-1968: the block a `show` result stored; the card loads it from `/api/show/{block_id}`. */ block: ShowBlockRefSchema.optional(), /** TAL-1974: the terminal a `terminal_open` result started; the card opens the session's terminal pane. */ terminal: TerminalRefSchema.optional(), text: z.string().optional(), /** TAL-2323: a `read_file` result's lines; clients show it in place of `text`, which keeps the Agent's text for older clients. */ file_excerpt: FileExcerptSchema.optional(), /** TAL-2323: a `search_files` result's matches by file; clients show it in place of `text`, which keeps the result for older clients. */ matches: SearchMatchesSchema.optional(), /** TAL-2324: a `web_search` or `x_search` result's links (and answer); clients show it in place of `text`, which keeps the result for older clients. */ links: ResultLinksSchema.optional(), /** TAL-2324: a `web_extract` result's pages; clients show it in place of `text`, which keeps the result for older clients. */ pages: z.array(ResultPageSchema).optional(), /** TAL-2318: a JSON-object result's top-level keys, in order, rendered like `ToolCall.args_fields`; `text` keeps the whole result for copy. Absent for any other result. */ fields: z.array(ToolFieldSchema).optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
+export const ToolResultViewSchema = z.object({ outbound_draft: OutboundDraftRefSchema.optional(), /** TAL-1963: the review a `decision_review_put` result made or revised, as it stood then; the card follows `decision_review` events. */ decision_review: DecisionReviewRefSchema.optional(), /** TAL-1967: the proposal a `propose` result made; the card follows `proposal` events. */ proposal: ProposalRefSchema.optional(), /** TAL-1968: the block a `show` result stored; the card loads it from `/api/show/{block_id}`. */ block: ShowBlockRefSchema.optional(), /** TAL-1974: the terminal a `terminal_open` result started; the card opens the session's terminal pane. */ terminal: TerminalRefSchema.optional(), text: z.string().optional(), /** TAL-2323: a `read_file` result's lines; clients show it in place of `text`, which keeps the Agent's text for older clients. */ file_excerpt: FileExcerptSchema.optional(), /** TAL-2323: a `search_files` result's matches by file; clients show it in place of `text`, which keeps the result for older clients. */ matches: SearchMatchesSchema.optional(), /** TAL-2324: a `web_search` or `x_search` result's links (and answer); clients show it in place of `text`, which keeps the result for older clients. */ links: ResultLinksSchema.optional(), /** TAL-2324: a `web_extract` result's pages; clients show it in place of `text`, which keeps the result for older clients. */ pages: z.array(ResultPageSchema).optional(), /** TAL-2325: the images, speech or video a media tool made, in order: a remote URL as the Agent gave it or a local file as an `/api/media` URL; clients show them under the row without expanding it, images inline and the rest as playable tiles. Empty for a failed call, whose `error` shows instead. */ media: z.array(DisplayMediaSchema).optional(), /** TAL-2325: what `vision_analyze` or `video_analyze` said about its image or video, as Markdown; image data never ships. */ analysis: z.string().optional(), /** TAL-2318: a JSON-object result's top-level keys, in order, rendered like `ToolCall.args_fields`; `text` keeps the whole result for copy. Absent for any other result. */ fields: z.array(ToolFieldSchema).optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional(), approval_note: z.string().optional() })
 export type ToolResultView = z.infer<typeof ToolResultViewSchema>
 
 /**

@@ -65,6 +65,12 @@ struct ToolCallCardView: View {
                 TerminalResultSection(reference: reference)
             }
 
+            // TAL-2325: and the images, speech or video a media tool made.
+            if let media = toolCall.resultView?.media, !media.isEmpty {
+                ToolResultMediaSection(media: media)
+                    .padding(.top, 6)
+            }
+
             if isExpanded {
                 expandedContent(statusDisplay: statusDisplay)
                     .padding(.leading, 24)
@@ -101,6 +107,9 @@ struct ToolCallCardView: View {
                     ResultLinksSection(links: links)
                 } else if let pages = shownCall.resultView?.pages {
                     ResultPagesSection(pages: pages)
+                } else if let analysis = shownCall.resultView?.analysis {
+                    // TAL-2325: an image or video analysis, formatted.
+                    ToolAnalysisSection(analysis: analysis)
                 } else if let result = displayContent.result {
                     resultSection(result)
                 }

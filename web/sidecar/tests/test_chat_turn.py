@@ -675,6 +675,8 @@ def test_tool_frames_keep_content_args_long_and_extract_result_previews(monkeypa
     assert chat._snippet('{"output": "hello", "extra": "x"}') == "hello"
     assert chat._snippet({"error": "boom"}) == "boom"
     assert chat._snippet("a" * 5000) == "a" * 4000
+    multimodal = {"_multimodal": True, "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}], "text_summary": "Image attached."}
+    assert chat._snippet(multimodal) == "Image attached."
     assert chat._delegation_cost_usd("delegate_task", {"results": [{"cost_usd": 0.5}, {"cost_usd": 0.25}]}) == 0.75
     assert chat._delegation_cost_usd("delegate_task", {"results": [{"cost_usd": 0.5}, {"cost_status": "unknown"}]}) is None
     assert chat._delegation_cost_usd("read_file", {"results": [{"cost_usd": 1}]}) is None

@@ -19,6 +19,7 @@ import { requestOpenFile } from '../../workspace/openFileRequest'
 import { RowContextMenu, type RowAction } from '../../../ui/Menu'
 import { copyWithToast } from '../../../lib/clipboard'
 import { Markdown } from '../render/Markdown'
+import { MediaTiles } from './MediaTiles'
 
 export interface ToolCardData {
   id: string
@@ -189,8 +190,8 @@ function PagesResult({ pages }: { pages: ResultPage[] }) {
   )
 }
 
-/** The typed section a result view carries in place of its text (TAL-2323, TAL-2324). */
-const hasSection = (view: ToolResultView | null): boolean => Boolean(view?.file_excerpt ?? view?.matches ?? view?.links ?? view?.pages)
+/** The typed section a result view carries in place of its text (TAL-2323, TAL-2324, TAL-2325). */
+const hasSection = (view: ToolResultView | null): boolean => Boolean(view?.file_excerpt ?? view?.matches ?? view?.links ?? view?.pages ?? view?.analysis)
 
 /** A result's typed section, else its rows when the server sent them (a JSON object), else its sections as text. */
 function ResultBody({ view, text, sessionId }: { view: ToolResultView | null; text: string; sessionId?: string | undefined }) {
@@ -198,6 +199,8 @@ function ResultBody({ view, text, sessionId }: { view: ToolResultView | null; te
   if (view?.matches) return <MatchesResult matches={view.matches} sessionId={sessionId} />
   if (view?.links) return <LinksResult links={view.links} />
   if (view?.pages) return <PagesResult pages={view.pages} />
+  // TAL-2325: what an image or video analysis said, formatted.
+  if (view?.analysis) return <Markdown text={view.analysis} className="tool-analysis hermes-prose max-h-72 overflow-auto text-[13px]" />
   return view?.fields?.length ? <FieldRows fields={view.fields} /> : <pre className={RESULT_PRE}>{text}</pre>
 }
 
@@ -239,6 +242,8 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
       {call.resultView?.decision_review && <DecisionReviewResult key={call.resultView.decision_review.review_id} reference={call.resultView.decision_review} />}
       {call.resultView?.proposal && <ProposalResult key={call.resultView.proposal.proposal_id} reference={call.resultView.proposal} />}
       {call.resultView?.block && <ShowBlockResult key={call.resultView.block.block_id} reference={call.resultView.block} />}
+      {/* TAL-2325: the images, speech or video a media tool made, in view without opening the call. */}
+      {call.resultView?.media?.length ? <div className="tool-card-media px-2.5 pb-2"><MediaTiles media={call.resultView.media} sessionId={sessionId} images /></div> : null}
       {sessionId && call.resultView?.terminal && <TerminalResult key={call.resultView.terminal.terminal_id} sessionId={sessionId} reference={call.resultView.terminal} />}
       {sessionId && call.resultView?.outbound_draft && <OutboundDraftResult key={JSON.stringify([sessionId, call.id, call.resultView.outbound_draft])} sessionId={sessionId} callId={call.id} reference={call.resultView.outbound_draft} />}
       {open && (

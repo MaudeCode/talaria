@@ -1,4 +1,4 @@
-import { ApprovalAnsweredBySchema, DecisionReviewRefSchema, FileExcerptSchema, OutboundDraftRefSchema, ProposalRefSchema, ResultLinksSchema, ResultPageSchema, SearchMatchesSchema, ShowBlockRefSchema, TerminalRefSchema, ToolFieldSchema, type ApprovalAnsweredBy, type FileExcerpt, type ResultLinks, type ResultPage, type SearchMatches, type ToolField, type ToolResultView } from '@maudecode/talaria-web-contracts'
+import { ApprovalAnsweredBySchema, DecisionReviewRefSchema, DisplayMediaSchema, FileExcerptSchema, OutboundDraftRefSchema, ProposalRefSchema, ResultLinksSchema, ResultPageSchema, SearchMatchesSchema, ShowBlockRefSchema, TerminalRefSchema, ToolFieldSchema, type ApprovalAnsweredBy, type FileExcerpt, type ResultLinks, type ResultPage, type SearchMatches, type ToolField, type ToolResultView } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 /**
  * Transcript settlement after an Agent turn (the core of Python
@@ -12,8 +12,8 @@ import { stateDbMessageBucket, stateDbMessageKey, stateDbKeyFingerprint, stateDb
 import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './session.js'
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
-import type { MediaProjection } from '../workspace/media-refs.js'
-import { decidedEditDiff, decisionReviewRef, outboundDraftRef, pageExcerpt, proposalRef, readFileView, resultLinksView, resultPagesView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName, toolPresentation } from './tool-display.js'
+import { toolResultMedia, type MediaProjection } from '../workspace/media-refs.js'
+import { decidedEditDiff, decisionReviewRef, outboundDraftRef, pageExcerpt, proposalRef, readFileView, resultAnalysisView, resultLinksView, resultPagesView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName, toolPresentation } from './tool-display.js'
 import { sourceKind } from './source-kind.js'
 
 const TOOL_RESULT_SNIPPET_MAX = 4000
@@ -697,13 +697,30 @@ export function toolResultView(raw: unknown, limit = TOOL_RESULT_SNIPPET_MAX, na
   return cappedView(uncappedResultView(raw, name, args), limit)
 }
 
+const IMAGE_PART_TYPES = new Set(['image', 'image_url', 'input_image'])
+
+/**
+ * TAL-2325: a tool result without the image data a model was handed: a multimodal result (`_multimodal`) as the text the
+ * Agent persists for it, its `text_summary`, else its text parts; a content list (the Agent's history keeps one) without
+ * its image parts. Any other result as it is.
+ */
+export function withoutImageData(raw: unknown): unknown {
+  if (Array.isArray(raw)) return raw.some((part) => isDict(part) && IMAGE_PART_TYPES.has(str(part.type))) ? raw.filter((part) => !(isDict(part) && IMAGE_PART_TYPES.has(str(part.type)))) : raw
+  const data = typeof raw === 'string' && raw.includes('"_multimodal"') ? resultJson(raw) : raw
+  if (!isDict(data) || data._multimodal !== true) return raw
+  return str(data.text_summary).trim() || (Array.isArray(data.content) ? messageText(data.content) : '')
+}
+
 /**
  * TAL-2322: a `terminal`-presented Agent tool's object result shows its terminal sections when it has any; every other result the rule above.
  * TAL-2323: a `file_excerpt` or `matches` presented one adds that section (a `read_file` excerpt names the file its call's
  * `args` read) in place of the generic key/value rows; `text` stays for older clients.
  * TAL-2324: `links` and `pages` presented ones likewise add their `links` or `pages` section.
+ * TAL-2325: `media` and `analysis` presented ones add the `media` a tool made (a failed one shows its `error` alone) or the
+ * `analysis` it gave.
  */
-function uncappedResultView(raw: unknown, name?: unknown, args?: unknown): ToolResultView {
+function uncappedResultView(input: unknown, name?: unknown, args?: unknown): ToolResultView {
+  const raw = withoutImageData(input)
   // Content parts read as their text; a list with no text (`[{ title }]`) is the result itself.
   const flat = Array.isArray(raw) ? messageText(raw) : raw
   const value = Array.isArray(raw) && !str(flat).trim() ? raw : flat
@@ -713,13 +730,15 @@ function uncappedResultView(raw: unknown, name?: unknown, args?: unknown): ToolR
     if (!isEmptyView(terminal)) return terminal
   }
   const presentation = toolPresentation(name)
-  if (presentation === 'file_excerpt' || presentation === 'matches' || presentation === 'links' || presentation === 'pages') {
+  if (presentation === 'file_excerpt' || presentation === 'matches' || presentation === 'links' || presentation === 'pages' || presentation === 'media' || presentation === 'analysis') {
     const data = typeof value === 'string' ? resultJson(value) : value
-    const typed = isDict(data) ? typedResultView(presentation, data, args) : undefined
-    // A section joins the generic text, never its key/value rows; a one-line outcome (a repeat read, not found) replaces it.
-    if (typed?.file_excerpt || typed?.matches || typed?.links || typed?.pages) {
+    // TAL-2325: an analysis the Agent kept as text (a multimodal result's summary) is the analysis itself.
+    const typed = isDict(data) ? typedResultView(presentation, data, args) : presentation === 'analysis' && typeof value === 'string' ? wrapped('analysis', resultAnalysisView({ analysis: value })) : undefined
+    // A section joins the generic text, never its key/value rows (but media, which shows above its call's details, keeps the
+    // rows that name its prompt and model); a one-line outcome (a repeat read, not found) replaces it.
+    if (typed?.file_excerpt || typed?.matches || typed?.links || typed?.pages || typed?.media || typed?.analysis !== undefined) {
       const generic = resultView(value, 0)
-      delete generic.fields
+      if (!typed.media) delete generic.fields
       return { ...generic, ...typed }
     }
     if (typed) return typed
@@ -728,8 +747,11 @@ function uncappedResultView(raw: unknown, name?: unknown, args?: unknown): ToolR
 }
 
 /** TAL-2323/TAL-2324: the typed section a presentation's parser reads from an object result; undefined for a shape it does not know. */
-function typedResultView(presentation: 'file_excerpt' | 'matches' | 'links' | 'pages', data: Record<string, unknown>, args: unknown): ToolResultView | undefined {
+function typedResultView(presentation: 'file_excerpt' | 'matches' | 'links' | 'pages' | 'media' | 'analysis', data: Record<string, unknown>, args: unknown): ToolResultView | undefined {
   if (presentation === 'file_excerpt') return readFileView(data, args)
+  if (presentation === 'analysis') return wrapped('analysis', resultAnalysisView(data))
+  // A failed media call is its error on one line.
+  if (presentation === 'media') return data.success === false || data.error ? wrapped('error', str(data.error).trim() || undefined) : wrapped('media', toolResultMedia(data))
   if (presentation === 'matches') return wrapped('matches', searchFilesView(data))
   if (presentation === 'links') return wrapped('links', resultLinksView(data))
   return wrapped('pages', resultPagesView(data))
@@ -833,6 +855,9 @@ export function decidedResultView(value: Record<string, unknown>): ToolResultVie
   if (links) view.links = cappedLinks(links, TOOL_RESULT_SNIPPET_MAX)
   const pages = ResultPageSchema.array().safeParse(value.pages).data
   if (pages) view.pages = cappedPages(pages, TOOL_RESULT_SNIPPET_MAX)
+  const media = DisplayMediaSchema.array().safeParse(value.media).data
+  if (media) view.media = media
+  if (typeof value.analysis === 'string') view.analysis = toolResultSnippet(value.analysis)
   return view
 }
 
@@ -866,7 +891,8 @@ const toolIsError = (raw: unknown, toolName?: unknown, flagged = false): boolean
  * `is_neutral_failure`). `result_text` is the result's display snippet; `result_view` its display sections (TAL-315);
  * `capped` whether any section was cut short (TAL-331).
  */
-export function toolOutcome(raw: unknown, toolName?: unknown, flagged = false, args?: unknown): { is_error: boolean; result_text: string; result_view: ToolResultView; capped: boolean } {
+export function toolOutcome(input: unknown, toolName?: unknown, flagged = false, args?: unknown): { is_error: boolean; result_text: string; result_view: ToolResultView; capped: boolean } {
+  const raw = withoutImageData(input)
   const { value, data, failed, is_error } = classifyTool(raw, toolName, flagged)
   const ref = !failed ? outboundDraftRef(toolName, raw) : undefined
   // TAL-1963: a review the agent made or revised links its transcript card.

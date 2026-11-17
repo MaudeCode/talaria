@@ -730,7 +730,9 @@ as the question dialog, never a tool row; `todo` and `delegate` show in the sess
 subagent rows; `file_excerpt` (`read_file`, TAL-2323) shows the lines read under the file's path
 with their real numbers, and `matches` (`search_files`) the matches grouped by file; `links`
 (`web_search`, `x_search`, TAL-2324) the result's links, under an X search's answer, and `pages`
-(`web_extract`) each page's excerpt or error; every other tool is `generic`, its result's text, else its key/value fields. The
+(`web_extract`) each page's excerpt or error; `media` (`image_generate`, `text_to_speech`, `video_generate`,
+`xai_video_edit`, `xai_video_extend`, TAL-2325) the images, speech or video the tool made, under its row, and `analysis`
+(`vision_analyze`, `video_analyze`) what it said about its image or video; every other tool is `generic`, its result's text, else its key/value fields. The
 server reads a listed tool's kind and presentation from the table; MCP, connector and plugin tools
 keep the name-token rules and the generic result parser, and Talaria's own tools stay in
 `TALARIA_TOOL_NAMES`.

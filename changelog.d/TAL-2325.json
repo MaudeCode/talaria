@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "A generated image shows under its tool call, generated speech and video play there, and an image or video analysis reads as formatted text; the media tools have their own icons and wording, on the App and the Web.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

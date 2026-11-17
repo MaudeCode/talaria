@@ -198,13 +198,19 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
     public let links: ResultLinks?
     /// TAL-2324: a `web_extract` result's pages, shown in place of `text`.
     public let pages: [ResultPage]?
+    /// TAL-2325: the images, speech or video a media tool made, shown under its row without opening it.
+    public let media: [TranscriptMediaReference]?
+    /// TAL-2325: what an image or video analysis said, as Markdown, shown in place of `text`.
+    public let analysis: String?
 
     public init(
         text: String? = nil, stdout: String? = nil, stderr: String? = nil, error: String? = nil, exitCode: Int? = nil,
         decisionReview: DecisionReviewRef? = nil, proposal: ProposalRef? = nil, block: ShowBlockRef? = nil,
         terminal: TerminalRef? = nil, fields: [ToolField]? = nil, fileExcerpt: FileExcerpt? = nil, matches: SearchMatches? = nil,
-        links: ResultLinks? = nil, pages: [ResultPage]? = nil
+        links: ResultLinks? = nil, pages: [ResultPage]? = nil, media: [TranscriptMediaReference]? = nil, analysis: String? = nil
     ) {
+        self.media = media
+        self.analysis = analysis
         self.links = links
         self.pages = pages
         self.fields = fields
@@ -233,6 +239,8 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         case matches
         case links
         case pages
+        case media
+        case analysis
     }
 
     public init(from decoder: Decoder) throws {
@@ -251,6 +259,9 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         matches = DecisionReview.decode(SearchMatches.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .matches))
         links = DecisionReview.decode(ResultLinks.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .links))
         pages = try? container.decodeIfPresent([ResultPage].self, forKey: .pages)
+        // An item an App cannot read is dropped, never its neighbours.
+        media = (try? container.decodeIfPresent([JSONValue].self, forKey: .media))?.map { TranscriptMediaReference.decodeLossily($0) }
+        analysis = container.decodeLossyStringIfPresent(forKey: .analysis)
     }
 
     /// The view a decoded JSON field holds; nil when the server sent none.

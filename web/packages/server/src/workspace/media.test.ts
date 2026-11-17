@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { read } from 'node:fs'
 import type { RequestContext } from '../http/context.js'
 import type { Session } from '../sessions/session.js'
-import { mediaAnchorRoot, serveFileBytes, type MediaAccessDeps, type ServeFileOptions } from './media.js'
+import { grantLiveMedia, mediaAnchorRoot, serveFileBytes, type MediaAccessDeps, type ServeFileOptions } from './media.js'
 
 const io = vi.hoisted(() => ({ bytes: 0, syncBytes: 0 }))
 
@@ -285,6 +285,40 @@ describe('mediaAnchorRoot session MEDIA scan (TAL-573)', () => {
       const session = { messages: [{ role: 'assistant', content }] } as unknown as Session
       expect(await mediaAnchorRoot(target, session, deps), content).toBe(join(base, 'outside'))
     }
+  })
+
+  it('grants the local files a media tool made, and only for a media tool (TAL-2325)', async () => {
+    const outside = join(base, 'outside')
+    const [image, speech, video] = ['a.png', 'b.mp3', 'c.mp4'].map((name) => join(outside, name)) as [string, string, string]
+    const call = (id: string, name: string): unknown => ({ id, type: 'function', function: { name, arguments: '{}' } })
+    const session = { messages: [
+      { role: 'assistant', content: '', tool_calls: [call('i', 'image_generate'), call('t', 'text_to_speech'), call('v', 'video_generate'), call('r', 'read_file')] },
+      { role: 'tool', tool_call_id: 'i', content: JSON.stringify({ success: true, image: image, additional_images: ['https://cdn.example/x.png'] }) },
+      // The sidecar's bounded result sends a nested list as its JSON text.
+      { role: 'tool', tool_call_id: 't', content: JSON.stringify({ success: true, file_path: speech, file_paths: JSON.stringify([speech]) }) },
+      { role: 'tool', tool_call_id: 'v', content: JSON.stringify({ success: true, video: video, public_url: 'https://cdn.example/c.mp4' }) },
+      { role: 'tool', tool_call_id: 'r', content: JSON.stringify({ image: join(outside, 'read.png') }) },
+    ] } as unknown as Session
+    for (const target of [image, speech, video]) expect(await mediaAnchorRoot(target, session, deps), target).toBe(outside)
+    // Another tool's result names no media; the session grants a path only from a media tool.
+    expect(await mediaAnchorRoot(join(outside, 'read.png'), session, deps)).toBeNull()
+    expect(await mediaAnchorRoot(join(outside, 'other.png'), session, deps)).toBeNull()
+    // A failed call made nothing.
+    const failed = { messages: [{ role: 'assistant', content: '', tool_calls: [call('f', 'image_generate')] }, { role: 'tool', tool_call_id: 'f', content: JSON.stringify({ success: false, image: image, error: 'quota' }) }] } as unknown as Session
+    expect(await mediaAnchorRoot(image, failed, deps)).toBeNull()
+  })
+
+  it('grants a running turn\'s media file before its rows reach the transcript, to that session only (TAL-2325)', async () => {
+    const outside = join(base, 'outside')
+    const image = join(outside, 'live.png')
+    const session = (id: string) => ({ session_id: id, messages: [] }) as unknown as Session
+    grantLiveMedia('live-session', 'image_generate', { success: true, image })
+    grantLiveMedia('live-session', 'read_file', { image: join(outside, 'read.png') })
+    grantLiveMedia('live-session', 'image_generate', { success: false, image: join(outside, 'failed.png'), error: 'quota' })
+    expect(await mediaAnchorRoot(image, session('live-session'), deps)).toBe(outside)
+    expect(await mediaAnchorRoot(image, session('other-session'), deps)).toBeNull()
+    expect(await mediaAnchorRoot(join(outside, 'read.png'), session('live-session'), deps)).toBeNull()
+    expect(await mediaAnchorRoot(join(outside, 'failed.png'), session('live-session'), deps)).toBeNull()
   })
 
   it('scans a saved transcript once until it grows or its revision changes (TAL-1730)', async () => {

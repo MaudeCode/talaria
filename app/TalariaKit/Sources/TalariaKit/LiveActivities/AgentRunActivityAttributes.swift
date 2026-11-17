@@ -439,6 +439,10 @@ public enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable, Sen
 /// Declared here because this file is shared with the Live Activity widget.
 public enum ToolDisplayKind: String, Equatable, Sendable {
     case shell, read, list, search, web, write, skill, memory, delegate, talaria, unknown
+    /// TAL-2325: a tool that generates an image, speech or a video, or describes an image or a video.
+    case image, audio, video
+    case imageAnalysis = "image_analysis"
+    case videoAnalysis = "video_analysis"
 
     /// An older server sends no kind; an unrecognized one decodes as `.unknown`.
     public init?(serverValue: String?) {
