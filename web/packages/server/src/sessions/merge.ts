@@ -1161,6 +1161,8 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
         done: Boolean(reply) || answered || !running, is_error: outcome ? outcome.is_error : rec?.is_error === true,
         ...approvalAnsweredBy(rec?.approval_answered_by),
         duration: finiteOrNull(rec?.duration), result: outcome ? outcome.result_text : typeof rec?.snippet === 'string' ? rec.snippet : null,
+        // TAL-2340: the process a live call started, decided when it completed, until its stored result names it.
+        ...(typeof rec?.process_id === 'string' ? { process_id: rec.process_id } : {}),
         result_view: outcome ? outcome.result_view : isDict(rec?.result_view) ? decidedResultView(rec.result_view) : typeof rec?.snippet === 'string' ? toolResultView(rec.snippet, undefined, name, args) : null,
       }
       if (reply && outcome) projectedOutcomes.set(out, { content: reply.content, name: str(name), flagged: reply.is_error, display_metadata: reply.display_metadata, outcome, edit_diff: editDiff })

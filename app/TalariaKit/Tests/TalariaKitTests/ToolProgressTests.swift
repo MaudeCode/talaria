@@ -2,6 +2,32 @@ import XCTest
 @testable import TalariaKit
 
 final class ToolProgressTests: XCTestCase {
+    /// TAL-2340: a running call's timer counts from the server's start in the run chip's units, and leaves once it ends.
+    func testRunningCallTimerCountsFromTheServerStartUntilItEnds() throws {
+        let english = Locale(identifier: "en_US")
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let event = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"bg","name":"terminal","started_at":1700000000}"#.utf8))
+        var call = ToolCall(id: "bg", name: "terminal", preview: nil, args: nil)
+        call.timerStart = event.startedAt
+        XCTAssertEqual(ToolCallStatusDisplay.runningElapsed(for: call, now: start.addingTimeInterval(34.6), locale: english), "34s")
+        XCTAssertEqual(ToolCallStatusDisplay.runningElapsed(for: call, now: start.addingTimeInterval(125), locale: english), "2m")
+        // A row without the server's start never shows a clock that would restart when the row is rebuilt.
+        XCTAssertNil(ToolCallStatusDisplay.runningElapsed(for: ToolCall(id: "old", name: "terminal", preview: nil, args: nil), now: start))
+        let completion = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"bg","name":"terminal","duration":35.2,"process_id":"proc_0123456789ab"}"#.utf8))
+        let done = call.applyingCompletionPayload(completion)
+        XCTAssertNil(ToolCallStatusDisplay.runningElapsed(for: done, now: start.addingTimeInterval(40), locale: english))
+        XCTAssertEqual(done.processID, "proc_0123456789ab")
+    }
+
+    /// TAL-2340: a settled scene row names the background process its call started.
+    func testSceneToolRowNamesTheProcessItStarted() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"assistant","content":"","_anchor_activity_scene":{"version":"activity_scene_v1","terminal_state":"completed","activity_rows":[{"row_id":"tool:bg","role":"tool","tool":{"id":"bg","name":"terminal","done":true,"process_id":"proc_0123456789ab"}},{"row_id":"tool:fg","role":"tool","tool":{"id":"fg","name":"terminal","done":true}}]}}"#.utf8))
+        let calls = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: message)?.toolCalls)
+        XCTAssertEqual(calls.map(\.processID), ["proc_0123456789ab", nil])
+    }
+
     func testSharedProgressFixtureDecodesStreamAndRunningScene() throws {
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("tool-progress")) as? [String: Any])
         let frame = try XCTUnwrap(fixture["running"] as? [String: Any])
@@ -75,6 +101,19 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(model.liveToolCalls.last?.progress?.percent, 10)
         stream.emit(.streamEnd)
         XCTAssertNil(model.liveToolCalls.last?.progress)
+    }
+
+    /// TAL-2340: a live call keeps the server's start for its timer and, on completion, the process it started.
+    func testLiveToolFramesCarryTheServerStartAndTheStartedProcess() async throws {
+        let stream = SpySSEStreamingClient()
+        let model = try makeReloadedToolProgressModel(stream: stream)
+        await model.loadMessages()
+        await model.reconnectStreamIfNeeded()
+        stream.emit(SSEEventDecoder.decode(eventType: "tool", data: #"{"id":"bg","name":"terminal","started_at":1700000000}"#))
+        XCTAssertEqual(model.liveToolCalls.last?.timerStart, 1_700_000_000)
+        stream.emit(SSEEventDecoder.decode(eventType: "tool_complete", data: #"{"id":"bg","name":"terminal","duration":0.2,"process_id":"proc_0123456789ab"}"#))
+        let call = try XCTUnwrap(model.liveToolCalls.last)
+        XCTAssertEqual([call.isCompleted ? "done" : "running", call.processID], ["done", "proc_0123456789ab"])
     }
 
     func testTerminationClearsReloadedSceneProgressWithoutAnotherToolFrame() async throws {

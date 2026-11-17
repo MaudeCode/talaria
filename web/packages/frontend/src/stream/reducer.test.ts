@@ -17,6 +17,15 @@ function started(): StreamState {
 }
 
 describe('stream reducer: ordering and projection', () => {
+  it('times a running call from the server start, so a replay keeps its clock, and keeps the process its completion names (TAL-2340)', () => {
+    let s = ev(started(), 'tool', { name: 'terminal', id: 'bg', started_at: 900 }, { now: 1_000_000 })
+    expect(s.turns[SID]!.tools.bg!.startedAt).toBe(900_000)
+    s = ev(s, 'tool', { name: 'terminal', id: 'old' }, { now: 1_000_000 })
+    expect(s.turns[SID]!.tools.old!.startedAt).toBe(1_000_000)
+    s = ev(s, 'tool_complete', { name: 'terminal', id: 'bg', process_id: 'proc_0123456789ab' })
+    expect(s.turns[SID]!.tools.bg).toMatchObject({ done: true, processId: 'proc_0123456789ab' })
+  })
+
   it('replaces a native replay gap without duplicating old tokens or reviving a terminal turn', () => {
     let s = ev(started(), 'token', { text: 'old output' }, { id: `${STREAM}:1` })
     const snapshot = { session: sessionFixture({ session_id: SID }), replay_gap: true }

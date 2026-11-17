@@ -21,7 +21,7 @@ import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
 import { TRANSCRIPT_WINDOW, ChatUsageSchema, type TurnUsage, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ApprovalAnswerer, type ApprovalInstructionOutcome, type ClarifyAnswers, type VaultPrompt, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
-import { connectorLogoUnread, toolProgress } from './tool-display.js'
+import { connectorLogoUnread, startedProcessId, toolProgress } from './tool-display.js'
 import { catalogNames, connectorOperation, rememberCatalogNames } from '../tools/connectors.js'
 import { PendingPrompts, approvalAllows, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
 import type { JournalEventMeta } from './storage/backend.js'
@@ -1150,7 +1150,8 @@ export class TurnRunner {
                   void sidecar.call('connectors.catalog', { profile_home: home }).then((r) => rememberCatalogNames(home, r.connectors), () => undefined)
                 }
                 const redacted = deps.redactEnabled()
-                await emitFrame('tool', { ...publicToolFrame(withToolId(data, toolIds.get(call)!), redacted, s.workspace, sessionId), ...groups.start(toolIds.get(call)!, data.name) }, { redacted })
+                // TAL-2340: the start the row's timer counts from, the same one its completion's `duration` measures from.
+                await emitFrame('tool', { ...publicToolFrame(withToolId(data, toolIds.get(call)!), redacted, s.workspace, sessionId), started_at: receivedAt, ...groups.start(toolIds.get(call)!, data.name) }, { redacted })
                 return
               }
               case 'tool_progress': {
@@ -1183,7 +1184,9 @@ export class TurnRunner {
                   const startedAt = toolStartedAt.get(tc)
                   if (startedAt !== undefined) complete.duration = Math.round(Math.max(0, receivedAt - startedAt) * 1000) / 1000
                   // TAL-315: the decided view too, so a failed or cancelled turn's snapshot keeps the sections shown live.
-                  Object.assign(tc, { done: true, progress: null, snippet: complete.preview, is_error: complete.is_error, duration: complete.duration ?? null, ...(complete.result_view ? { result_view: complete.result_view } : {}), ...(editDiff ? { edit_diff: editDiff } : {}) })
+                  // TAL-2340: the process it started, which the running scene's row names before the result is stored.
+                  const processId = startedProcessId(data.name, rawResult)
+                  Object.assign(tc, { done: true, progress: null, snippet: complete.preview, is_error: complete.is_error, duration: complete.duration ?? null, ...(complete.result_view ? { result_view: complete.result_view } : {}), ...(editDiff ? { edit_diff: editDiff } : {}), ...(processId ? { process_id: processId } : {}) })
                 }
                 this.registry.noteToolEvent(streamId, receivedAt, false, tc)
                 if (startsBackgroundWork(data.name, rawResult)) deps.onBackgroundWork?.(sessionId, s.profile ?? null)

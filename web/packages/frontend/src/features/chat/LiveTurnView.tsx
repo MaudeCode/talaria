@@ -1,9 +1,9 @@
 import { ProviderQuotaPace } from '../settings/ProviderQuotaPace'
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import { useLocale } from '../../i18n/useLocale'
-import { formatElapsed, resetTime } from '../../i18n/units'
+import { resetTime } from '../../i18n/units'
 import { ArrowUp, Pencil, X } from 'lucide-react'
 import type { LiveTurn, PendingSteerRow } from '../../stream/reducer'
 import { useLiveTurn } from '../../stream/store'
@@ -16,6 +16,7 @@ import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { returnToComposer } from '../composer/composerReturn'
 import { rememberLiveTurnHeight, SteerMessage, TurnActivityView } from './TurnActivityView'
+import { RunElapsed } from './RunElapsed'
 import { liveActivity } from './turnActivity'
 import type { ActivityMode } from './blocks/Worklog'
 import { toolCardLabel, toolOutcomeText } from './blocks/ToolCard'
@@ -35,7 +36,7 @@ export function LiveTurnView({ turn, name, mode, userVisible, omitToolIds }: { t
     <div ref={rowRef} className="msg-row assistant-turn live-turn" data-role="assistant" data-live="1" data-stream-id={turn.streamId} data-status={turn.status} aria-busy={streaming}>
       <div className="msg-role assistant"><span className="msg-role-name">{name}</span></div>
       <div className="assistant-turn-blocks">
-        <TurnActivityView activity={activity} mode={mode} />
+        <TurnActivityView activity={activity} mode={mode} sessionId={turn.sessionId} />
         {turn.pendingSteers.map((steer) => <PendingSteerMessage key={steer.steerId} sessionId={turn.sessionId} steer={steer} />)}
         {turn.warning && <div className="mt-1 text-[12px] text-warning" role="status">{turn.warning}</div>}
         {turn.status === 'cancelled' && turn.cancelledMessage && <div className="status-card mt-2 text-[13px] text-muted">{turn.cancelledMessage}</div>}
@@ -153,19 +154,6 @@ function rateLimitLabel(wait: RateLimitWait, locale: string): string {
   const provider = wait.provider_label
   if (wait.until_kind === 'reset') return provider ? m.live_rate_limited_by({ provider, time }) : m.live_rate_limited({ time })
   return provider ? m.live_rate_limited_by_retry({ provider, time }) : m.live_rate_limited_retry({ time })
-}
-
-/** Time since the run started in T3 Code's units (TAL-922): `42s`, then `5m`, then `1h 30m`. Redrawn each second and
- *  hidden from the live region so it is not announced every tick. */
-export function RunElapsed({ since, showSeconds = false }: { since: number; showSeconds?: boolean }) {
-  const locale = useLocale()
-  const [now, setNow] = useState(Date.now)
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
-  }, [])
-  const text = formatElapsed(locale, (now - since) / 1000, showSeconds)
-  return <span className="live-run-elapsed" aria-hidden="true">{text}</span>
 }
 
 /** Laurel-wreath activity indicator: ten leaves brighten in turn around the ring (styles in chat.css). */

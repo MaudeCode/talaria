@@ -1494,7 +1494,7 @@ export class GatewaySessions {
                 const started = { tid: id, name: data.name || data.tool_name, args: data.args ?? {}, done: false }
                 calls.push(started)
                 registry.noteToolEvent(watch.stream, this.deps.now(), true, started)
-                await put('tool', { ...data, id, name: data.name || data.tool_name })
+                await put('tool', { ...data, id, name: data.name || data.tool_name, started_at: this.deps.now() })
               } else if (kind === 'tool.progress') {
                 if (!id || !call || call.done || !watch.snapshot.running) return
                 call.progress = toolProgress({ ...data, message: typeof data.message === 'string' ? redactString(data.message, this.deps.redactEnabled()) : null })
@@ -1504,7 +1504,7 @@ export class GatewaySessions {
                 if (call) Object.assign(call, { done: true, progress: null })
                 const frame = await put('tool_complete', { ...data, id, name: data.name || data.tool_name, progress: null })
                 // TAL-2336: the run's activity names the call as its transcript row shows it: failed, with its outcome.
-                if (call) Object.assign(call, { is_error: frame.is_error === true, ...(frame.result_view ? { result_view: frame.result_view } : {}) })
+                if (call) Object.assign(call, { is_error: frame.is_error === true, ...(frame.result_view ? { result_view: frame.result_view } : {}), ...(typeof frame.process_id === 'string' ? { process_id: frame.process_id } : {}) })
                 registry.noteToolEvent(watch.stream, this.deps.now(), false, call)
               }
             }

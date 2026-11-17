@@ -427,3 +427,57 @@ describe('connector call logos (TAL-2330)', () => {
     } finally { await server.close() }
   })
 })
+
+describe('running and background tool rows (TAL-2340)', () => {
+  const started = JSON.stringify({ output: 'Background process started', session_id: 'proc_0123456789ab', pid: 7, exit_code: 0, notify_on_complete: true })
+  interface Detail { session: { messages: { _anchor_activity_scene?: { activity_rows: { tool?: Record<string, unknown> }[] } }[] } }
+  const sceneTools = (detail: Detail) => detail.session.messages.flatMap((m) => m._anchor_activity_scene?.activity_rows ?? []).flatMap((r) => (r.tool ? [r.tool] : []))
+
+  it('stamps a start on running frames and the started process on the row, live and after a reload', async () => {
+    const poll = JSON.stringify({ session_id: 'proc_0123456789ab', status: 'running', output: '' })
+    const sidecar = new FakeSidecar()
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'tool', data: { name: 'terminal', tid: 'bg', args: { command: 'npm run dev', background: true } } })
+      emit({ event: 'tool_complete', data: { name: 'terminal', tid: 'bg', result: started, raw_result: started } })
+      emit({ event: 'tool', data: { name: 'process_manage', tid: 'poll', args: { action: 'poll', session_id: 'proc_0123456789ab' } } })
+      emit({ event: 'tool_complete', data: { name: 'process_manage', tid: 'poll', result: poll, raw_result: poll } })
+      const user = { role: 'user', content: params.user_message }
+      const calls = [{ id: 'bg', type: 'function', function: { name: 'terminal', arguments: '{"command":"npm run dev","background":true}' } }, { id: 'poll', type: 'function', function: { name: 'process_manage', arguments: '{"action":"poll"}' } }]
+      return { ...completed(params), messages: [...params.conversation_history, user, { role: 'assistant', content: '', tool_calls: calls }, { role: 'tool', tool_call_id: 'bg', content: started }, { role: 'tool', tool_call_id: 'poll', content: poll }, { role: 'assistant', content: 'answer' }] }
+    })
+    const server = await bootTestServer({ sidecar })
+    try {
+      const session = await server.deps.sessionStore.newSession()
+      const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'serve it' }), headers: { 'content-type': 'application/json' } })
+      const { stream_id: streamId } = await start.json() as { stream_id: string }
+      const frames = await server.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+      const tool = (event: string, id: string) => frames.find((f) => f.event === event && (f.data as { id: string }).id === id)?.data as Record<string, unknown>
+      expect(tool('tool', 'bg').started_at).toEqual(expect.any(Number))
+      expect(tool('tool_complete', 'bg').process_id).toBe('proc_0123456789ab')
+      // Only the call that started the process names it; a poll of it does not.
+      expect(tool('tool_complete', 'poll')).not.toHaveProperty('process_id')
+      const rows = sceneTools(await (await server.get(`/api/session?session_id=${session.session_id}`)).json() as Detail)
+      expect(rows.find((t) => t.id === 'bg')?.process_id).toBe('proc_0123456789ab')
+      expect(rows.find((t) => t.id === 'poll')).not.toHaveProperty('process_id')
+    } finally { await server.close() }
+  })
+
+  it('keeps the process a call started on the row of a stopped turn, whose results were never stored', async () => {
+    const sidecar = new FakeSidecar()
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'token', data: { text: 'Starting the server' } })
+      emit({ event: 'tool', data: { name: 'terminal', tid: 'bg', args: { command: 'npm run dev', background: true } } })
+      emit({ event: 'tool_complete', data: { name: 'terminal', tid: 'bg', preview: 'Background process started', raw_result: started } })
+      return { ...completed(params), status: 'cancelled', messages: [...params.conversation_history, { role: 'user', content: params.user_message }], final_response: '' }
+    })
+    const server = await bootTestServer({ sidecar })
+    try {
+      const session = await server.deps.sessionStore.newSession()
+      const start = await server.get('/api/chat/start', { method: 'POST', body: JSON.stringify({ session_id: session.session_id, message: 'serve it' }), headers: { 'content-type': 'application/json' } })
+      const { stream_id: streamId } = await start.json() as { stream_id: string }
+      await server.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+      const rows = sceneTools(await (await server.get(`/api/session?session_id=${session.session_id}`)).json() as Detail)
+      expect(rows.find((t) => t.id === 'bg')).toMatchObject({ done: true, process_id: 'proc_0123456789ab' })
+    } finally { await server.close() }
+  })
+})

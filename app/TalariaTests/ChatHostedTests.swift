@@ -1054,6 +1054,31 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertEqual(state.toolResultCalls, 1)
     }
 
+    /// TAL-2340: a running call's row counts its time from the server's start, and the row that started a background
+    /// command shows the command's latest output line from Background Work while it runs; the line leaves when it ends.
+    func testRunningToolRowTimerAndBackgroundOutputLine() async throws {
+        var running = ToolCall(id: "test-run", name: "terminal", preview: nil, args: nil, kind: .shell, target: "npm test -- auth.spec.ts")
+        running.timerStart = Date().timeIntervalSince1970 - 34
+        let started = ToolCall(id: "dev-server", name: "terminal", preview: "Background process started", args: nil, kind: .shell, target: "npm run dev",
+                               duration: 0.1, isCompleted: true, processID: "proc_dev0123456789")
+        let tail = "✓ 41 passing · auth.spec.ts › refreshes an expired session"
+        let rows = { (tails: [String: String]) in
+            VStack(alignment: .leading, spacing: 0) {
+                ToolCallCardView(toolCall: started)
+                ToolCallCardView(toolCall: running)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .environment(\.chatProcessOutputTails, tails)
+        }
+        let window = try hostWindow(rows(["proc_dev0123456789": tail]))
+        _ = try await requireElement(in: window, label: tail)
+        attachHostedScreenshot(window, name: "TAL-2340 running row and background output line")
+        let ended = try hostWindow(rows([:]))
+        let gone = await awaitNoElement(in: ended) { $0.accessibilityLabel == tail }
+        XCTAssertTrue(gone, "A process that ended has no output line")
+    }
+
     /// Driven by scripts/test-history-drag; ordinary hosted runs have no external gesture driver.
     func testHistoryInsertionPreservesReaderDuringNativeDrag() async throws {
         try await assertFullChatHistoryInsertion(expandDisclosure: true, boundaryTurn: true, nativeDrag: true)

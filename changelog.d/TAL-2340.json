@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A running tool call counts its time on Web and in the App, and a command left running in the background shows its latest output line under its row.",
+      "highlight": false,
+      "components": [
+        "web",
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}

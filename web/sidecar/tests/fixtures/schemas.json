@@ -9974,6 +9974,9 @@
             },
             "watched": {
               "type": "boolean"
+            },
+            "output_tail": {
+              "type": "string"
             }
           },
           "required": [

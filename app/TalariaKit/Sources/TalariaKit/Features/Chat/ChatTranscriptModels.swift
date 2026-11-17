@@ -579,7 +579,7 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
             for toolIndex in toolCalls.indices {
                 let toolCall = toolCalls[toolIndex]
                 guard let resolved = resolvedTools.last(where: { $0.id == toolCall.id }) else { continue }
-                toolCalls[toolIndex] = ToolCall(
+                var enriched = ToolCall(
                     id: toolCall.id,
                     name: toolCall.name ?? resolved.name,
                     preview: resolved.preview ?? toolCall.preview,
@@ -597,8 +597,12 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
                     isError: resolved.isError ?? toolCall.isError,
                     isCompleted: toolCall.isCompleted || resolved.isCompleted,
                     startedAt: min(toolCall.startedAt, resolved.startedAt),
-                    isHidden: toolCall.isHidden
+                    isHidden: toolCall.isHidden,
+                    processID: toolCall.processID ?? resolved.processID
                 )
+                // TAL-2340: a running call keeps the server's start its timer counts from.
+                enriched.timerStart = toolCall.timerStart ?? resolved.timerStart
+                toolCalls[toolIndex] = enriched
             }
             rows[rowIndex].content = .tools(toolCalls)
         }
@@ -772,7 +776,8 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
             duration: Self.number(object["duration"]),
             isError: Self.bool(object["is_error"]),
             isCompleted: Self.bool(object["done"]) == true,
-            isHidden: Self.bool(object["hidden"]) == true
+            isHidden: Self.bool(object["hidden"]) == true,
+            processID: Self.nonEmpty(Self.string(object["process_id"]))
         )
         call.background = Self.backgroundLink(object["background"])
         call.resultTruncated = Self.bool(object["result_truncated"]) == true

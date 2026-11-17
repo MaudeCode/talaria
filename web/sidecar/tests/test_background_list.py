@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 import pathlib
 import sqlite3
+import threading
 from contextlib import closing
+from types import SimpleNamespace
+
+import pytest
 
 from conftest import SidecarProcess
 from test_process_delivery import _agent
@@ -154,3 +158,22 @@ def test_an_image_tasks_child_is_linked_by_the_goal_inside_its_stored_message(ha
     listed = handshaken.result("process.background_list", {"profile_home": str(hermes_home), "session_ids": ["web-a"]})
     units = {d["delegation_id"]: d.get("children") for d in listed["delegations"]}
     assert units["call-img"] == [{"goal": "Describe the chart", "session_id": "child-hints"}, {"goal": "Read the scan", "session_id": "child-parts"}]
+
+
+def test_a_running_process_lists_its_latest_output_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TAL-2340: a running notified process carries its last non-empty output line without escape sequences (a `\\r`
+    redraw shows its last frame), bounded; a quiet or finished one carries none."""
+    from talaria_sidecar.methods import process
+
+    def proc(pid: str, buffer: str, exited: bool = False) -> SimpleNamespace:
+        return SimpleNamespace(id=pid, session_key="web-a", command="npm test", started_at=1.0, exited=exited, exited_at=None, exit_code=None,
+                               completion_reason="", notify_on_complete=True, watch_patterns=None, output_buffer=buffer)
+    registry = SimpleNamespace(_lock=threading.Lock(), _running={
+        "proc_ansi": proc("proc_ansi", "starting\n\x1b[32m✓ 41 passing\x1b[0m\n\n"),
+        "proc_bar": proc("proc_bar", "Downloading 10%\rDownloading 55%\r"),
+        "proc_long": proc("proc_long", "x" * 5000),
+        "proc_quiet": proc("proc_quiet", "\n  \n"),
+    }, _finished={"proc_done": proc("proc_done", "built\n", exited=True)})
+    monkeypatch.setattr(process, "_registry", lambda: registry)
+    tails = {p["process_id"]: p["output_tail"] for p in process._owned_processes({"web-a"})}
+    assert tails == {"proc_ansi": "✓ 41 passing", "proc_bar": "Downloading 55%", "proc_long": "x" * 1000, "proc_quiet": "", "proc_done": ""}

@@ -140,6 +140,28 @@ describe('background task records (TAL-372)', () => {
     expect(startsBackgroundWork('read_file', { session_id: 'proc_0123456789ab' })).toBe(false)
   })
 
+  it('give a running process its latest output line, redacted and capped, and none once it ends (TAL-2340)', async () => {
+    const dir = tempDir()
+    const process = (id: string, exited: boolean, tail: string) => ({ process_id: id, session_key: 's', command: 'npm test', started_at: 90, exited, exited_at: exited ? 99 : null, exit_code: exited ? 0 : null, completion_reason: exited ? 'exited' : '', watched: false, output_tail: tail })
+    const secret = 'sk-proj-' + 'a'.repeat(40)
+    const sidecar = { call: () => Promise.resolve({ delegations: [], processes: [
+      process('proc_test', false, '✓ 41 passing · auth.spec.ts'),
+      process('proc_key', false, `token ${secret}`),
+      process('proc_long', false, 'x'.repeat(500)),
+      process('proc_quiet', false, ''),
+      process('proc_done', true, ''),
+    ] }) } as unknown as SidecarLike
+    const activity = new BackgroundActivity({ store: new BackgroundTaskStore(testSessionDocuments(dir), () => 200), sidecar: () => sidecar, profileHome: () => dir, liveStream: () => false, now: () => 200, log: () => undefined })
+    const tasks = Object.fromEntries((await activity.snapshot('s', null)).tasks.map((t) => [t.task_id, t]))
+    expect(tasks.proc_test).toMatchObject({ process_id: 'proc_test', output_tail: '✓ 41 passing · auth.spec.ts' })
+    expect(tasks.proc_key?.output_tail).not.toContain(secret)
+    expect(tasks.proc_long?.output_tail).toBe(`${'x'.repeat(199)}…`)
+    expect(tasks.proc_quiet).toMatchObject({ process_id: 'proc_quiet' })
+    expect(tasks.proc_quiet).not.toHaveProperty('output_tail')
+    expect(tasks.proc_done).toMatchObject({ process_id: 'proc_done', status: 'completed' })
+    expect(tasks.proc_done).not.toHaveProperty('output_tail')
+  })
+
   it('refresh a session one Agent read at a time, reading once more after a burst (TAL-1305)', async () => {
     const dir = tempDir()
     const gates: (() => void)[] = []

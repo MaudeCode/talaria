@@ -7,6 +7,7 @@ struct ToolCallCardView: View {
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @Environment(\.chatFullToolResultLoader) private var loadFullToolResult
     @Environment(\.chatScreenReads) private var screenReads
+    @Environment(\.chatProcessOutputTails) private var processOutputTails
     @AppStorage(ChatTranscriptDisplaySettings.toolCardsStartExpandedKey) private var startsExpanded = false
     @ChatRetainedState("tool-expansion") private var userToggledExpansion: Bool? = nil
     /// TAL-331: the whole result of a call the server clipped or capped, once the reader asked for it.
@@ -48,6 +49,18 @@ struct ToolCallCardView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(Self.accessibilityText(for: toolCall, detail: statusDisplay.detailText))
             .accessibilityHint(isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
+
+            // TAL-2340: the latest output line of the background process the call started, while it runs.
+            if let processID = toolCall.processID, let tail = processOutputTails[processID] {
+                Text(verbatim: tail)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.leading, 24)
+                    .padding(.bottom, 4)
+                    .forcedLeftToRight()
+            }
 
             // TAL-2333: a delegation's subagents stay in view under its counts.
             if let agents = toolCall.background?.agentsDetail, !agents.isEmpty {
@@ -201,6 +214,19 @@ struct ToolCallCardView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+            }
+
+            // TAL-2340: a running call's time so far, from the server's start; it leaves when the call ends.
+            if ToolCallStatusDisplay.runningElapsed(for: toolCall, now: .now) != nil {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(ToolCallStatusDisplay.runningElapsed(for: toolCall, now: context.date) ?? "")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .accessibilityHidden(true)
+                }
             }
 
             if hasExpandableContent {
@@ -604,6 +630,8 @@ typealias ChatFullToolResultLoader = ChatEnvironmentAction<String, @MainActor ()
 extension EnvironmentValues {
     /// TAL-2338: the chat screen's button-started reads, which a tool row's whole-result fetch runs under.
     @Entry var chatScreenReads: ScreenReads? = nil
+    /// TAL-2340: each running background process's latest output line by its process id, from the chat's Background Work.
+    @Entry var chatProcessOutputTails: [String: String] = [:]
 }
 
 struct ChatFullToolResultLoaderKey: EnvironmentKey {

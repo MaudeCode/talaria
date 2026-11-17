@@ -412,7 +412,9 @@ export const ActivitySceneRowSchema = z.looseObject({
   display_text: z.string().optional(), media: z.array(DisplayMediaSchema).optional(),
   tool: z.looseObject({ id: z.string(), name: z.string(), ...ToolDisplayFields, args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), result_view: ToolResultViewSchema.nullable().optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable(), background: BackgroundLinkSchema.optional(),
     /** TAL-331: a limited response clipped `result` (originally `result_chars` long); `GET /api/session/tool-result` serves it whole. */
-    result_truncated: z.literal(true).optional(), result_chars: z.number().int().nullable().optional() }).optional(),
+    result_truncated: z.literal(true).optional(), result_chars: z.number().int().nullable().optional(),
+    /** TAL-2340: the Agent process a shell call started in the background; the `BackgroundTask` with this `process_id` carries its `output_tail`. */
+    process_id: z.string().optional() }).optional(),
   steering: z.looseObject({ steer_id: z.string(), consumed: z.boolean(), submitted_at: z.number().nullable(), consumed_at: z.number().nullable(), phase_duration: z.number().nullable().optional() }).optional(),
   group_id: z.string().optional().describe('TAL-2332: the activity group (`ActivityScene.activity_groups`) a reasoning or tool row belongs to; consecutive rows sharing it fold under one header. Absent on prose and steering rows, and on an older server.'),
   merged_count: z.number().int().min(2).optional().describe('TAL-2332: on the first of two or more consecutive successful calls of one kind and presentation in a group: how many calls the merged row stands for. Clients show one row with the plural summary that expands to each call.'),
@@ -1028,6 +1030,8 @@ export const BackgroundTaskSchema = z.object({
   /** TAL-1336: a native-owner subagent that takes a steering message now. */
   can_steer: z.boolean().optional(),
   active: z.boolean(),
+  process_id: z.string().optional().describe("TAL-2340: a `process` record's Agent process id, which the tool row that started it names as `process_id`."),
+  output_tail: z.string().optional().describe('TAL-2340: while a `process` record runs, its latest output line (escape sequences removed, redacted, at most 200 characters), which its tool row shows under it. Absent once it ends or before it prints.'),
 })
 export type BackgroundTask = z.infer<typeof BackgroundTaskSchema>
 /**

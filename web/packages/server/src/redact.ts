@@ -4,7 +4,7 @@ import { channel } from 'node:diagnostics_channel'
 import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
 import { isRasterDataUri } from './raster-image.js'
-import { gutterLines, gutterText, hiddenLookup, snapshotArgs, toolArgs, toolDisplay, toolName, withResultFocusPaths } from './sessions/tool-display.js'
+import { gutterLines, gutterText, hiddenLookup, snapshotArgs, startedProcessId, toolArgs, toolDisplay, toolName, withResultFocusPaths } from './sessions/tool-display.js'
 import { cappedFields, codexCommentary, hasNativeImages, isDict, messageText, normalizeAssistantDisplay, normalizeUserDisplay, toolFields, TOOL_ARG_CONTENT_CAP, withoutImageData, withoutReasoningParts } from './sessions/merge.js'
 import { REASONING_FIELDS } from './sessions/reasoning-display.js'
 import { stripAttachedFilesMarker } from './sessions/session.js'
@@ -2672,8 +2672,11 @@ const jsonOrNull = (text: string): object | null => { try { const value = JSON.p
 function withRawTool(raw: Record<string, unknown>, out: Record<string, unknown>, enabled: boolean): Record<string, unknown> {
   const { raw_args: _args, raw_result: _result, ...rest } = out
   const rawArgs = rawToolText(raw.raw_args ?? toolArgs(raw), enabled)
-  const rawResult = rawToolText(raw.raw_result ?? raw.result ?? raw.output, enabled)
-  return { ...rest, ...(rawArgs === undefined ? {} : { raw_args: rawArgs }), ...(rawResult === undefined ? {} : { raw_result: rawResult }) }
+  const result = raw.raw_result ?? raw.result ?? raw.output
+  const rawResult = rawToolText(result, enabled)
+  // TAL-2340: the background process the call started, whose latest output line its row shows.
+  const processId = startedProcessId(toolName(raw), result)
+  return { ...rest, ...(rawArgs === undefined ? {} : { raw_args: rawArgs }), ...(rawResult === undefined ? {} : { raw_result: rawResult }), ...(processId ? { process_id: processId } : {}) }
 }
 
 function redactMessages(messages: unknown, enabled: boolean, activeTurnToken: string | null, workspace: string | null, sessionId: string | null): unknown {

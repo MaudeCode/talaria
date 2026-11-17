@@ -173,8 +173,11 @@ export function anchorSceneRecords(session: Session): Record<string, unknown> {
   return isDict(session.anchor_activity_scenes) ? session.anchor_activity_scenes : {}
 }
 
+/** TAL-2340: the process a running scene's call started (its live record's), kept when a scene is built or re-read. */
+const processIdOf = (tool: Record<string, unknown>): { process_id?: string } => (typeof tool.process_id === 'string' && tool.process_id ? { process_id: tool.process_id } : {})
+
 /** `result_truncated`/`result_chars`: a limited response clipped `result`; `GET /api/session/tool-result` serves it whole. */
-export interface SceneTool { progress?: ToolProgress | null; id: string; name: string; args: unknown; preview: string | null; result: unknown; result_view: ToolResultView | null; edit_diff?: ToolEditDiff; done: boolean; is_error: boolean; duration: number | null; cost_usd: number | null; result_truncated?: true; result_chars?: number | null }
+export interface SceneTool { progress?: ToolProgress | null; id: string; name: string; args: unknown; preview: string | null; result: unknown; result_view: ToolResultView | null; edit_diff?: ToolEditDiff; done: boolean; is_error: boolean; duration: number | null; cost_usd: number | null; result_truncated?: true; result_chars?: number | null; process_id?: string }
 export interface SceneSteering { steer_id: string; consumed: boolean; submitted_at: number | null; consumed_at: number | null; phase_duration?: number | null }
 /** The one scene row shape both clients render: every decoding decision is made here. */
 export interface SceneRow {
@@ -263,6 +266,7 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
         is_error: tool.is_error === true || tool.error === true || status === 'error' || status === 'failed',
         duration: finite(tool.duration), cost_usd: finite(tool.cost_usd), ...approvalAnsweredBy(tool.approval_answered_by),
         ...(tool.result_truncated === true ? { result_truncated: true as const, result_chars: finite(tool.result_chars) } : {}),
+        ...processIdOf(tool),
       } })
     }
   }
@@ -447,6 +451,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
         preview: str(call.preview) || null, result, result_view: resultView, ...(editDiff ? { edit_diff: editDiff } : {}), done: typeof call.done === 'boolean' ? call.done : true,
         is_error: call.is_error === true || reply?.is_error === true, duration: finite(call.duration), cost_usd: finite(call.cost_usd), ...approvalAnsweredBy(call.approval_answered_by),
         ...(clipped && reply ? { result_truncated: true as const, result_chars: messageText(reply.content).length } : {}),
+        ...processIdOf(call),
       } })
     }
     if (walked) {
