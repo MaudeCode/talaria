@@ -321,4 +321,52 @@ public enum SessionNavigationPersistence {
             defaults.removeObject(forKey: key)
         }
     }
+
+    /// One window's chat on each server, kept in its scene state so the system restores every window's own chat
+    /// (TAL-2387). The app-wide key above stays the fallback for a window the system has no state for.
+    public struct WindowSelections: RawRepresentable, Equatable, Sendable {
+        private struct Stored: Codable, Equatable {
+            /// Session ID by server; an empty string is New Chat.
+            var sessionIDs: [String: String] = [:]
+            /// nil until decided; an empty string shares the app's New Chat draft.
+            var newChatDraftWindow: String?
+        }
+
+        private var stored = Stored()
+
+        public init() {}
+
+        public init?(rawValue: String) {
+            guard let decoded = try? JSONDecoder().decode(Stored.self, from: Data(rawValue.utf8)) else { return nil }
+            stored = decoded
+        }
+
+        public var rawValue: String {
+            (try? JSONEncoder().encode(stored)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        }
+
+        public mutating func save(_ sessionID: String?, for server: URL) {
+            stored.sessionIDs[server.absoluteString] = sessionID ?? ""
+        }
+
+        /// The window's New Chat draft identity for `ChatDraftKey.newChat(server:window:)`: the one it kept, else
+        /// `proposed`. nil shares the app's New Chat draft.
+        public func newChatDraftWindow(proposed: String?) -> String? {
+            guard let kept = stored.newChatDraftWindow else { return proposed }
+            return kept.isEmpty ? nil : kept
+        }
+
+        /// Keeps the first decision, so a window's New Chat draft survives relaunch under the same identity.
+        public mutating func keepNewChatDraftWindow(_ window: String?) {
+            guard stored.newChatDraftWindow == nil else { return }
+            stored.newChatDraftWindow = window ?? ""
+        }
+
+        public func restoredSessionID(
+            for server: URL, hasOtherWindows: Bool, defaults: UserDefaults = .standard
+        ) -> String? {
+            if let own = stored.sessionIDs[server.absoluteString] { return own.isEmpty ? nil : own }
+            return hasOtherWindows ? nil : SessionNavigationPersistence.load(for: server, defaults: defaults)
+        }
+    }
 }

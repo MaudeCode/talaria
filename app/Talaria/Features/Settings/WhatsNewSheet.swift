@@ -198,6 +198,9 @@ extension View {
 @Observable
 final class WhatsNewPresenter {
     var presented: WhatsNewAnnouncement?
+    /// The window that offered `presented`. Every window binds this one presenter, and only that window shows the
+    /// sheet (TAL-2387).
+    private(set) var presentingWindow: UUID?
     @ObservationIgnored private var pending: WhatsNewAnnouncement?
     @ObservationIgnored let defaults: UserDefaults
 
@@ -209,7 +212,7 @@ final class WhatsNewPresenter {
     /// Presents the pending announcement once no window is presenting a sheet, alert or sign-in of its own. The
     /// caller starts this only while its own startup work is settled, and cancels it when that changes.
     // ponytail: polls once a second; SwiftUI and UIKit post nothing when another presentation closes.
-    func offerWhenNothingIsPresented(interval: Duration = .seconds(1)) async {
+    func offerWhenNothingIsPresented(in window: UUID, interval: Duration = .seconds(1)) async {
         while pending != nil {
             try? await Task.sleep(for: interval)
             guard !Task.isCancelled else { return }
@@ -217,10 +220,19 @@ final class WhatsNewPresenter {
             if pending?.isAcknowledged(defaults: defaults) == true {
                 pending = nil
             } else if Self.nothingIsPresented() {
+                presentingWindow = window
                 presented = pending
                 pending = nil
             }
         }
+    }
+
+    /// `window`'s binding: the announcement in the window that offered it, nil in every other.
+    func presentation(in window: UUID) -> Binding<WhatsNewAnnouncement?> {
+        Binding(
+            get: { self.presentingWindow == window ? self.presented : nil },
+            set: { self.presented = $0 }
+        )
     }
 
     static func nothingIsPresented() -> Bool {

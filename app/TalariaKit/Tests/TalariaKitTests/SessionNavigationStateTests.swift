@@ -671,6 +671,51 @@ final class SessionNavigationStateTests: XCTestCase {
             "second-session"
         )
     }
+
+    /// TAL-2387: each window restores its own chat; a window with no scene state takes the app's last chat only
+    /// when it is the only window, so a new window beside another opens at New Chat.
+    func testEachWindowRestoresItsOwnChatAndANewWindowBesideAnotherStartsAtNewChat() throws {
+        let suiteName = "SessionNavigationStateTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let server = try XCTUnwrap(URL(string: "https://first.example.com"))
+        let otherServer = try XCTUnwrap(URL(string: "https://second.example.com"))
+        SessionNavigationPersistence.save("last-chat", for: server, defaults: defaults)
+
+        var left = SessionNavigationPersistence.WindowSelections()
+        left.save("left-chat", for: server)
+        var right = SessionNavigationPersistence.WindowSelections()
+        right.save(nil, for: server)
+        // Scene state survives relaunch as its raw value.
+        left = try XCTUnwrap(.init(rawValue: left.rawValue))
+        right = try XCTUnwrap(.init(rawValue: right.rawValue))
+
+        XCTAssertEqual(left.restoredSessionID(for: server, hasOtherWindows: true, defaults: defaults), "left-chat")
+        XCTAssertNil(right.restoredSessionID(for: server, hasOtherWindows: true, defaults: defaults),
+                     "A window left at New Chat stays there")
+        let fresh = SessionNavigationPersistence.WindowSelections()
+        XCTAssertNil(fresh.restoredSessionID(for: server, hasOtherWindows: true, defaults: defaults),
+                     "A new window beside another opens at New Chat")
+        XCTAssertEqual(fresh.restoredSessionID(for: server, hasOtherWindows: false, defaults: defaults), "last-chat",
+                       "A single-window launch still restores the last chat")
+        XCTAssertNil(left.restoredSessionID(for: otherServer, hasOtherWindows: true, defaults: defaults),
+                     "A window's chat belongs to the server it was chosen on")
+    }
+
+    /// TAL-2387: a window opened beside another drafts New Chat under its own identity, kept across relaunch; the
+    /// first window keeps sharing the app's New Chat draft.
+    func testANewWindowKeepsItsOwnNewChatDraftIdentity() throws {
+        var first = SessionNavigationPersistence.WindowSelections()
+        first.keepNewChatDraftWindow(first.newChatDraftWindow(proposed: nil))
+        first = try XCTUnwrap(.init(rawValue: first.rawValue))
+        XCTAssertNil(first.newChatDraftWindow(proposed: "later"), "Restored beside another window, it keeps the shared draft")
+
+        var second = SessionNavigationPersistence.WindowSelections()
+        second.keepNewChatDraftWindow(second.newChatDraftWindow(proposed: "window-b"))
+        second.keepNewChatDraftWindow("window-c")
+        second = try XCTUnwrap(.init(rawValue: second.rawValue))
+        XCTAssertEqual(second.newChatDraftWindow(proposed: nil), "window-b")
+    }
 }
 
 private enum ReturnRefreshEvent: Equatable {

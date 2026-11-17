@@ -1,7 +1,7 @@
 import Foundation
 public import Observation
 
-/// Reserves queued share-extension imports one at a time and tracks whether more are waiting.
+/// Reserves queued share-extension imports one at a time for the whole app and tracks whether more are waiting.
 @MainActor
 @Observable
 public final class SharedImportRouter {
@@ -9,12 +9,35 @@ public final class SharedImportRouter {
     public var pendingImport: SharedImportReservation?
     /// More shares remain in the inbox after the routed one.
     public private(set) var hasWaitingImport = false
-    @ObservationIgnored private var hasRoutedImport = false
+    /// Set the moment a window routes the reservation, so it is never handed to another window while its file is
+    /// still being consumed.
+    private var hasRoutedImport = false
     @ObservationIgnored private var inFlightImport: Task<Void, Never>?
     @ObservationIgnored private let directory: () -> URL?
 
     public init(directory: @escaping () -> URL? = { TalariaShareDraft.containerURL() }) {
         self.directory = directory
+    }
+
+    /// The windows in the foreground (active or inactive), earliest first. The first one routes the reserved share and offers the next,
+    /// so one app-wide router serves every window without opening a share twice (TAL-2387).
+    private var activeWindows: [UUID] = []
+
+    public func windowDidChange(_ window: UUID, isInForeground: Bool) {
+        let isListed = activeWindows.contains(window)
+        if isInForeground, !isListed {
+            activeWindows.append(window)
+        } else if !isInForeground, isListed {
+            activeWindows.removeAll { $0 == window }
+        }
+    }
+
+    public func pendingImport(in window: UUID) -> SharedImportReservation? {
+        activeWindows.first == window && !hasRoutedImport ? pendingImport : nil
+    }
+
+    public func hasWaitingImport(in window: UUID) -> Bool {
+        activeWindows.first == window && hasWaitingImport
     }
 
     /// Launch, foreground, and the share URL can all fire at once; each trigger waits for the

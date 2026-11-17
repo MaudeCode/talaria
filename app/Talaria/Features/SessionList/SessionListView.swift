@@ -9,6 +9,8 @@ struct SessionListView: View {
     let server: URL
     private let draftStore: ChatDraftStore
     @Binding private var pendingSharedImport: SharedImportReservation?
+    /// This window's own chat per server, restored with the window (TAL-2387).
+    @Binding private var windowSelections: SessionNavigationPersistence.WindowSelections
     private let didRoutePendingSharedImport: (SharedImportReservation) -> Void
     private let hasWaitingSharedImport: Bool
     private let openNextSharedImport: () -> Void
@@ -186,6 +188,7 @@ struct SessionListView: View {
         pendingDestination: Binding<SessionListUtilityDestination?> = .constant(nil),
         opensProviderQuotaWidgetSettings: Binding<Bool> = .constant(false),
         requestedNewChat: Binding<NewChatRequest?> = .constant(nil),
+        windowSelections: Binding<SessionNavigationPersistence.WindowSelections> = .constant(.init()),
         draftStore: ChatDraftStore? = nil,
         chats: ChatViewModelCache? = nil,
         viewModel: SessionListViewModel? = nil
@@ -201,6 +204,7 @@ struct SessionListView: View {
         _pendingDestination = pendingDestination
         _opensProviderQuotaWidgetSettings = opensProviderQuotaWidgetSettings
         _requestedNewChat = requestedNewChat
+        _windowSelections = windowSelections
         var archiveUndoLifetime = SessionListViewModel.defaultArchiveUndoLifetime
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdArchiveUndoArgument) {
@@ -226,7 +230,11 @@ struct SessionListView: View {
         #else
         _isPresentingUpdateNotifications = State(initialValue: false)
         #endif
-        var navigation = SessionNavigationState(lastSelectedSessionID: SessionNavigationPersistence.load(for: server))
+        var navigation = SessionNavigationState(
+            lastSelectedSessionID: windowSelections.wrappedValue.restoredSessionID(
+                for: server, hasOtherWindows: UIApplication.shared.hasSeveralWindows
+            )
+        )
         let hasExplicitRoute = pendingSharedImport.wrappedValue != nil
             || requestedNewChat.wrappedValue != nil
             || opensProviderQuotaWidgetSettings.wrappedValue || hasWaitingSharedImport
@@ -2590,6 +2598,7 @@ struct SessionListView: View {
 
     private func persistLastSelectedSession() {
         SessionNavigationPersistence.save(navigationState.lastSelectedSessionID, for: server)
+        windowSelections.save(navigationState.lastSelectedSessionID, for: server)
     }
 
 }

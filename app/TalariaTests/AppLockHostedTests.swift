@@ -118,7 +118,7 @@ final class AppLockHostedTests: XCTestCase {
         // Its own router: the test host's ContentView drains the shared one.
         let router = AppIntentRouter()
         let model = model(results: [.cancelled])
-        model.sceneDidChange(.active)
+        model.sceneDidChange(.active, scene: "hosted")
         await model.authentication?.value
 
         let fixture = try FixtureApp(for: self)

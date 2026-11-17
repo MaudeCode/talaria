@@ -84,6 +84,7 @@ struct SplitFilesInspector {
 }
 
 struct ChatView: View {
+    @Environment(\.newChatDraftWindow) private var newChatDraftWindow
 #if DEBUG
     @Environment(\.chatBodyEvaluation) private var recordBodyEvaluation
 #endif
@@ -2491,7 +2492,7 @@ struct ChatView: View {
                 if !viewModel.hasSession {
                     pendingCreationSettings = viewModel.newSessionSettings
                     pendingCreationInteractionGeneration = viewModel.composerConfigurationInteractionGeneration
-                    let newChatKey = ChatDraftKey.newChat(server: server)
+                    let newChatKey = ChatDraftKey.newChat(server: server, window: newChatDraftWindow)
                     persistComposerDraft()
                     let moved = draftStore.moveDraft(from: newChatKey, to: .session(server: server, session: created))
                     if pendingFirstDraft == nil, moved.text != draftMessage { draftMessage = moved.text }
@@ -3035,7 +3036,8 @@ struct ChatView: View {
 
     private var draftKey: ChatDraftKey {
         // A new chat's draft lives under the new-chat key until its session exists (TAL-636).
-        session.sessionId == nil ? .newChat(server: server) : .session(server: server, session: session)
+        session.sessionId == nil
+            ? .newChat(server: server, window: newChatDraftWindow) : .session(server: server, session: session)
     }
 
     private var messageActionErrorIsPresented: Binding<Bool> {
