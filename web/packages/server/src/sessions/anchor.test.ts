@@ -668,8 +668,8 @@ describe('anchor scenes over HTTP', () => {
     expect(settled[2]).toEqual([{ path: 'src/a.swift', action: 'edited' }, { path: 'new.swift', action: 'renamed' }])
     expect(settled[4]).toEqual([])
     expect(settled[6]).toEqual([{ path: 'c.swift', action: 'deleted' }])
-    // TAL-2339: the footer summary likewise, counted from the turn's own calls.
-    expect(messages.map((m) => (m._anchor_activity_scene as Json | undefined)?.turn_summary)).toEqual([undefined, undefined, [{ key: 'files_changed', count: 2 }], undefined, [], undefined, [{ key: 'files_changed', count: 1 }]])
+    // TAL-2339: the footer summary is the turn's own too, and counts only calls that returned a result: none of these did.
+    expect(messages.map((m) => (m._anchor_activity_scene as Json | undefined)?.turn_summary)).toEqual([undefined, undefined, [], undefined, [], undefined, []])
   })
 
   it('keeps full tool results in scenes, clipping them only in a limited response like raw tool rows', async () => {

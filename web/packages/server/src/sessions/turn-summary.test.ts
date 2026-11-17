@@ -2,8 +2,8 @@ import type { ToolOutcome } from '@maudecode/talaria-web-contracts'
 import { describe, expect, it } from 'vitest'
 import { turnSummary } from './turn-summary.js'
 
-const call = (name: string, outcome?: Partial<ToolOutcome> & Pick<ToolOutcome, 'key'>, extra: { args?: unknown; is_error?: boolean } = {}) =>
-  ({ tool: { name, args: extra.args ?? {}, is_error: extra.is_error ?? false, result_view: outcome ? { outcome: { tone: 'neutral' as const, ...outcome } } : null } })
+const call = (name: string, outcome?: Partial<ToolOutcome> & Pick<ToolOutcome, 'key'>, extra: { args?: unknown; is_error?: boolean; done?: boolean; unanswered?: boolean } = {}) =>
+  ({ tool: { name, args: extra.args ?? {}, is_error: extra.is_error ?? false, done: extra.done ?? true, result_view: extra.unanswered ? null : outcome ? { outcome: { tone: 'neutral' as const, ...outcome } } : { text: 'ok' } } })
 
 describe('turnSummary', () => {
   it('counts each kind of change in the fixed order, a memory write by its entries', () => {
@@ -25,7 +25,7 @@ describe('turnSummary', () => {
     ])
   })
 
-  it('leaves out failed calls, staged writes and outcomes that change nothing', () => {
+  it('leaves out failed or unanswered calls, staged writes and outcomes that change nothing', () => {
     expect(turnSummary([
       call('write_file', { key: 'failed', tone: 'error', value: 'Permission denied' }, { args: { path: 'a.ts' }, is_error: true }),
       call('memory', { key: 'pending_approval', tone: 'attention' }),
@@ -35,6 +35,9 @@ describe('turnSummary', () => {
       call('mcp__github__delete_repo', { key: 'removed' }),
       call('search_files', { key: 'no_matches' }),
       call('read_file', undefined, { args: { path: 'a.ts' } }),
+      // A write the turn ended before it returned, or one still running, may never have happened.
+      call('write_file', undefined, { args: { path: 'b.ts' }, unanswered: true }),
+      call('patch', undefined, { args: { path: 'c.ts' }, done: false }),
     ])).toEqual([])
     expect(turnSummary([])).toEqual([])
   })

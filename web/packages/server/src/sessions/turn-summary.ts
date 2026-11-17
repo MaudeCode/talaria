@@ -1,13 +1,13 @@
 /**
  * TAL-2339: a settled turn's summary (`turn_summary` on its activity scene): how many files, memories, skills, schedules,
  * tasks and messages its successful calls changed, which the reply's footer words. Counted from each call's outcome
- * (TAL-2335, `toolCallOutcome`), so a failed call, a refusal or a write waiting for approval never counts.
+ * (TAL-2335, `toolCallOutcome`), so a failed or unanswered call, a refusal or a write waiting for approval never counts.
  */
 import type { ToolOutcome, ToolResultView, TurnSummaryKey, TurnSummaryPart } from '@maudecode/talaria-web-contracts'
 import { TurnSummaryKeySchema } from '@maudecode/talaria-web-contracts'
 import { turnFileChanges } from './file-changes.js'
 
-interface SummaryRow { tool?: { name: string; args: unknown; is_error: boolean; result_view: ToolResultView | null } }
+interface SummaryRow { tool?: { name: string; args: unknown; done: boolean; is_error: boolean; result_view: ToolResultView | null } }
 
 /** The summary part an outcome counts toward; `removed` names a skill or a scheduled job by its tool. */
 function summaryKey(tool: string, outcome: ToolOutcome['key']): TurnSummaryKey | undefined {
@@ -24,7 +24,8 @@ function summaryKey(tool: string, outcome: ToolOutcome['key']): TurnSummaryKey |
 
 /** The turn's summary from its scene rows, in `TurnSummaryKeySchema` order; empty when it changed nothing. */
 export function turnSummary(rows: readonly SummaryRow[]): TurnSummaryPart[] {
-  const succeeded = rows.filter((row) => row.tool && !row.tool.is_error)
+  // Only a finished call with a result, and no error, happened: a write the turn ended before it returned may never have run.
+  const succeeded = rows.filter((row) => row.tool?.done && row.tool.result_view && !row.tool.is_error)
   const counts = new Map<TurnSummaryKey, number>([['files_changed', turnFileChanges(succeeded).length]])
   for (const { tool } of succeeded) {
     const outcome = tool?.result_view?.outcome
