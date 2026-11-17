@@ -405,9 +405,11 @@ export function backgroundLink(ids: string[], receipts: Receipt[]): BackgroundLi
   const status: Status = statuses.has('attention') ? 'attention' : statuses.has('running') ? 'running' : statuses.has('unknown') ? 'unknown'
     : statuses.size === 1 ? linked[0]!.status : statuses.has('completed') ? 'completed' : 'failed'
   // TAL-2333: each subagent in dispatch order (a split call's units by their `-<n>`); a receipt kept before its subagents
-  // were recorded lists its one subagent by its title.
+  // were recorded lists its one subagent by its title. An unsettled unit's subagents read as the unit does now (running,
+  // needing attention, or unknown when the Agent cannot confirm it).
   const ordered = [...linked].sort((a, b) => (a.started_at ?? 0) - (b.started_at ?? 0) || a.task_id.localeCompare(b.task_id, 'en', { numeric: true }))
-  const agents_detail = ordered.flatMap((r) => (r.subagents ?? ((r.agents?.total ?? 1) <= 1 ? [{ goal: r.title, status: r.status }] : [])).map((a) => ({ task_id: r.task_id, ...a })))
+  const agents_detail = ordered.flatMap((r) => (r.subagents ?? ((r.agents?.total ?? 1) <= 1 ? [{ goal: r.title, status: r.status }] : []))
+    .map((a) => ({ task_id: r.task_id, ...a, ...(isTerminal(r.status) ? {} : { status: r.status }) })))
   return { task_ids: linked.map((r) => r.task_id), status, agents, agents_detail }
 }
 

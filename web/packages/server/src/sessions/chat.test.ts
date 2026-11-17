@@ -3010,14 +3010,16 @@ describe('chat turns through the sidecar', () => {
       const rows = ((detail.session as Json).messages as Json[]).flatMap((m) => ((m._anchor_activity_scene as Json | undefined)?.activity_rows as Json[] | undefined) ?? [])
       return (rows.find((r) => (r.tool as Json | undefined)?.name === 'delegate_task')?.tool as Json | undefined)?.background
     }
-    expect(await link()).toEqual({ task_ids: ['call-1-1', 'call-1-2'], status: 'running', agents: { total: 3, completed: 0, failed: 0, running: 3 } })
+    const detail = (status: string, ...rest: Json[]) => [{ task_id: 'call-1-1', goal: 'Write docs', status }, { task_id: 'call-1-2', goal: 'Write tests', status }, { task_id: 'call-1-2', goal: 'Run tests', status }].map((a, i) => ({ ...a, ...rest[i] }))
+    expect(await link()).toEqual({ task_ids: ['call-1-1', 'call-1-2'], status: 'running', agents: { total: 3, completed: 0, failed: 0, running: 3 }, agents_detail: detail('running') })
     // TAL-494: the sidecar names each unit's subagent sessions; the record links each one to its read-only transcript.
     delegations = [unit('call-1-1', ['Write docs'], { children: [{ goal: 'Write docs', session_id: 'child-docs' }] }), unit('call-1-2', ['Write tests', 'Run tests'])]
     const linked = ((await json(await s.get(`/api/background/tasks?session_id=${sid}&kind=delegation`))).tasks as Json[]).map((t) => [t.task_id, t.child_sessions])
     expect(linked).toEqual(expect.arrayContaining([['call-1-1', [{ goal: 'Write docs', session_id: 'child-docs' }]], ['call-1-2', []]]))
     // The Agent cannot be asked: the running unit's row says unknown, like the card.
     sidecar.respond('process.background_list', () => { throw new SidecarError('agent down', { condition: 'sidecar_error' }) })
-    expect(await link()).toMatchObject({ status: 'unknown' })
+    // TAL-2333: its subagents read unknown with it, never the running status their unit last reported.
+    expect(await link()).toMatchObject({ status: 'unknown', agents_detail: detail('unknown') })
     sidecar.respond('process.background_list', () => ({ delegations, processes: [] }) as never)
     expect(await link()).toMatchObject({ status: 'running' })
     // An Agent restart lost one unit: the row says what the card says.
@@ -3025,7 +3027,9 @@ describe('chat turns through the sidecar', () => {
     expect(await link()).toMatchObject({ status: 'unknown' })
     expect(((await json(await s.get(`/api/background/tasks?session_id=${sid}`))).tasks as Json[]).find((t) => t.task_id === 'call-1-2')).toMatchObject({ status: 'unknown' })
     delegations = [unit('call-1-1', ['Write docs'], { state: 'completed', child_statuses: ['completed'] }), unit('call-1-2', ['Write tests', 'Run tests'], { state: 'completed', child_statuses: ['completed', 'error'] })]
-    expect(await link()).toEqual({ task_ids: ['call-1-1', 'call-1-2'], status: 'completed', agents: { total: 3, completed: 2, failed: 1, running: 0 } })
+    expect(await link()).toEqual({ task_ids: ['call-1-1', 'call-1-2'], status: 'completed', agents: { total: 3, completed: 2, failed: 1, running: 0 }, agents_detail: [
+      { task_id: 'call-1-1', goal: 'Write docs', status: 'completed' }, { task_id: 'call-1-2', goal: 'Write tests', status: 'completed' }, { task_id: 'call-1-2', goal: 'Run tests', status: 'failed' },
+    ] })
   })
 
   it('serves the session-list, per-session, and prompt streams with initial frames', async () => {
