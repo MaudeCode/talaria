@@ -3279,6 +3279,75 @@
 	"tool_matches_more": "More results not shown",
 	"tool_matches_none": "No matches",
 	"tool_open_file_at_line": "Open {path} at line {line}",
+	"tool_outcome_answered": "Answered: {answer}",
+	"tool_outcome_approved": "Approved",
+	"tool_outcome_blocked": "Blocked",
+	"tool_outcome_commented": "Commented",
+	"tool_outcome_completed": "Completed",
+	"tool_outcome_connected": "Connected {apps}",
+	"tool_outcome_created": "Created",
+	"tool_outcome_denied": "Denied",
+	"tool_outcome_exit": "Exit {code}",
+	"tool_outcome_failed": "Failed",
+	"tool_outcome_goal_set": "Goal set",
+	"tool_outcome_job_created": "Scheduled",
+	"tool_outcome_job_next_run": "Next run {when}",
+	"tool_outcome_memory_added": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Added {count} memory",
+				"countPlural=other": "Added {count} memories"
+			}
+		}
+	],
+	"tool_outcome_memory_removed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Removed {count} memory",
+				"countPlural=other": "Removed {count} memories"
+			}
+		}
+	],
+	"tool_outcome_memory_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Updated {count} memory",
+				"countPlural=other": "Updated {count} memories"
+			}
+		}
+	],
+	"tool_outcome_moved_to": "Moved to {status}",
+	"tool_outcome_needs_sign_in": "Needs sign-in",
+	"tool_outcome_paused": "Paused",
+	"tool_outcome_pending_approval": "Waiting for approval",
+	"tool_outcome_ran_now": "Ran now",
+	"tool_outcome_removed": "Removed",
+	"tool_outcome_resumed": "Resumed",
+	"tool_outcome_sent": "Sent",
+	"tool_outcome_skill_created": "Skill created",
+	"tool_outcome_skill_updated": "Skill updated",
+	"tool_outcome_skipped": "Skipped",
 	"tool_read_stopped": "Stopped at line {line} of {total}",
 	"tool_read_stopped_at": "Stopped at line {line}",
 	"tool_result_error": "Error: {error}",

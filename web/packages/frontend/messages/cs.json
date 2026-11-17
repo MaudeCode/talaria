@@ -1931,6 +1931,81 @@
 	"todos_open_chat": "Otevřete chat a zobrazte jeho seznam úkolů.",
 	"token_usage_off": "Využití tokenu vypnuto",
 	"token_usage_on": "Používání tokenu zapnuto",
+	"tool_outcome_answered": "Odpověď: {answer}",
+	"tool_outcome_approved": "Schváleno",
+	"tool_outcome_blocked": "Zablokováno",
+	"tool_outcome_commented": "Okomentováno",
+	"tool_outcome_completed": "Dokončeno",
+	"tool_outcome_connected": "Připojeno: {apps}",
+	"tool_outcome_created": "Vytvořeno",
+	"tool_outcome_denied": "Zamítnuto",
+	"tool_outcome_exit": "Ukončeno kódem {code}",
+	"tool_outcome_failed": "Selhalo",
+	"tool_outcome_goal_set": "Cíl nastaven",
+	"tool_outcome_job_created": "Naplánováno",
+	"tool_outcome_job_next_run": "Další spuštění {when}",
+	"tool_outcome_memory_added": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Přidán {count} záznam paměti",
+				"countPlural=few": "Přidány {count} záznamy paměti",
+				"countPlural=many": "Přidáno {count} záznamu paměti",
+				"countPlural=other": "Přidáno {count} záznamů paměti"
+			}
+		}
+	],
+	"tool_outcome_memory_removed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Odebrán {count} záznam paměti",
+				"countPlural=few": "Odebrány {count} záznamy paměti",
+				"countPlural=many": "Odebráno {count} záznamu paměti",
+				"countPlural=other": "Odebráno {count} záznamů paměti"
+			}
+		}
+	],
+	"tool_outcome_memory_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Aktualizován {count} záznam paměti",
+				"countPlural=few": "Aktualizovány {count} záznamy paměti",
+				"countPlural=many": "Aktualizováno {count} záznamu paměti",
+				"countPlural=other": "Aktualizováno {count} záznamů paměti"
+			}
+		}
+	],
+	"tool_outcome_moved_to": "Přesunuto do {status}",
+	"tool_outcome_needs_sign_in": "Vyžaduje přihlášení",
+	"tool_outcome_paused": "Pozastaveno",
+	"tool_outcome_pending_approval": "Čeká na schválení",
+	"tool_outcome_ran_now": "Spuštěno nyní",
+	"tool_outcome_removed": "Odebráno",
+	"tool_outcome_resumed": "Obnoveno",
+	"tool_outcome_sent": "Odesláno",
+	"tool_outcome_skill_created": "Dovednost vytvořena",
+	"tool_outcome_skill_updated": "Dovednost aktualizována",
+	"tool_outcome_skipped": "Přeskočeno",
 	"tool_target_skill_suffix": "dovednost",
 	"transcript": "Transkript",
 	"transcript_load_earlier": "Načíst starší zprávy",

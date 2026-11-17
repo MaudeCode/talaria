@@ -1925,6 +1925,75 @@
 	"todos_open_chat": "Ouvrez un chat pour voir sa liste de tâches.",
 	"token_usage_off": "Utilisation des jetons désactivée",
 	"token_usage_on": "Utilisation des jetons activée",
+	"tool_outcome_answered": "Réponse : {answer}",
+	"tool_outcome_approved": "Approuvé",
+	"tool_outcome_blocked": "Bloqué",
+	"tool_outcome_commented": "Commenté",
+	"tool_outcome_completed": "Terminé",
+	"tool_outcome_connected": "Connecté : {apps}",
+	"tool_outcome_created": "Créé",
+	"tool_outcome_denied": "Refusé",
+	"tool_outcome_exit": "Sortie {code}",
+	"tool_outcome_failed": "Échec",
+	"tool_outcome_goal_set": "Objectif défini",
+	"tool_outcome_job_created": "Planifié",
+	"tool_outcome_job_next_run": "Prochaine exécution {when}",
+	"tool_outcome_memory_added": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} entrée de mémoire ajoutée",
+				"countPlural=other": "{count} entrées de mémoire ajoutées"
+			}
+		}
+	],
+	"tool_outcome_memory_removed": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} entrée de mémoire supprimée",
+				"countPlural=other": "{count} entrées de mémoire supprimées"
+			}
+		}
+	],
+	"tool_outcome_memory_updated": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} entrée de mémoire mise à jour",
+				"countPlural=other": "{count} entrées de mémoire mises à jour"
+			}
+		}
+	],
+	"tool_outcome_moved_to": "Déplacé vers {status}",
+	"tool_outcome_needs_sign_in": "Connexion requise",
+	"tool_outcome_paused": "En pause",
+	"tool_outcome_pending_approval": "En attente d’approbation",
+	"tool_outcome_ran_now": "Exécuté maintenant",
+	"tool_outcome_removed": "Supprimé",
+	"tool_outcome_resumed": "Repris",
+	"tool_outcome_sent": "Envoyé",
+	"tool_outcome_skill_created": "Compétence créée",
+	"tool_outcome_skill_updated": "Compétence mise à jour",
+	"tool_outcome_skipped": "Ignoré",
 	"tool_target_skill_suffix": "compétence",
 	"transcript": "Transcription",
 	"transcript_load_earlier": "Charger les messages précédents",

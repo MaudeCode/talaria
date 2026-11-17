@@ -316,9 +316,9 @@ describe('Agent tool presentation table (TAL-2322)', () => {
   const edit = { success: true, diff: '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n' }
 
   it('shows a terminal tool result as its terminal sections, and an unlisted tool by the generic parser', () => {
-    expect(toolOutcome(JSON.stringify(ran), 'process_manage').result_view).toEqual({ error: 'Command timed out', exit_code: 124 })
+    expect(toolOutcome(JSON.stringify(ran), 'process_manage').result_view).toEqual({ error: 'Command timed out', exit_code: 124, outcome: { key: 'exit', tone: 'error', count: 124 } })
     expect(toolResultView(JSON.stringify(ran), Infinity, 'terminal')).toEqual({ error: 'Command timed out', exit_code: 124 })
-    expect(toolOutcome(JSON.stringify(ran), 'mcp_ops_run').result_view).toEqual({ text: 'partial' })
+    expect(toolOutcome(JSON.stringify(ran), 'mcp_ops_run').result_view).toEqual({ text: 'partial', outcome: { key: 'failed', tone: 'error', value: 'Command timed out' } })
     // The whole-result read names the call from its assistant row, so it shows as the capped view did.
     const messages = [{ role: 'assistant', content: [{ type: 'tool_use', id: 'c1', name: 'terminal', input: {} }] }, { role: 'tool', tool_call_id: 'c1', content: JSON.stringify(ran) }]
     expect(fullToolResult(messages, 'c1')?.result_view).toEqual({ error: 'Command timed out', exit_code: 124 })
@@ -353,8 +353,8 @@ describe('read_file and search_files sections (TAL-2323)', () => {
 
   it('shows a repeat read, a missing file and a blocked read as one line, never JSON', () => {
     expect(read({ status: 'unchanged', message: 'File unchanged since last read…', path: 'src/app.ts', dedup: true, content_returned: false })).toEqual({ text: 'Unchanged since the last read' })
-    expect(read({ error: 'File not found: src/ap.ts', not_found: true, similar_files: ['src/app.ts', 'src/api.ts'] })).toEqual({ error: 'File not found: src/ap.ts\nSimilar files: src/app.ts, src/api.ts' })
-    expect(read({ error: 'BLOCKED: You have read this exact file region 4 times in a row.', path: 'src/app.ts', already_read: 4, guardrail_refusal: true })).toEqual({ error: 'BLOCKED: You have read this exact file region 4 times in a row.' })
+    expect(read({ error: 'File not found: src/ap.ts', not_found: true, similar_files: ['src/app.ts', 'src/api.ts'] })).toEqual({ error: 'File not found: src/ap.ts\nSimilar files: src/app.ts, src/api.ts', outcome: { key: 'failed', tone: 'error', value: 'File not found: src/ap.ts' } })
+    expect(read({ error: 'BLOCKED: You have read this exact file region 4 times in a row.', path: 'src/app.ts', already_read: 4, guardrail_refusal: true })).toEqual({ error: 'BLOCKED: You have read this exact file region 4 times in a row.', outcome: { key: 'failed', tone: 'error', value: 'BLOCKED: You have read this exact file region 4 times in a row.' } })
   })
 
   it('groups matches by file from both match encodings, a files-only list and a count search', () => {
@@ -363,8 +363,8 @@ describe('read_file and search_files sections (TAL-2323)', () => {
     expect(search({ total_count: 6, matches_format: 'path-grouped', matches_text: 'src/a.ts\n  3: foo()\n  9:   foo(1)\nsrc/b.ts\n  1: foo', truncated: true, total_count_is_lower_bound: true }).matches).toEqual(grouped)
     expect(search({ total_count: 2, files: ['src/a.ts', 'src/b.ts'] }).matches).toEqual({ total: 2, truncated: false, files: [{ path: 'src/a.ts', matches: [] }, { path: 'src/b.ts', matches: [] }] })
     expect(search({ total_count: 5, counts: { 'src/a.ts': 3, 'src/b.ts': 2 } }).matches).toEqual({ total: 5, truncated: false, files: [{ path: 'src/a.ts', count: 3, matches: [] }, { path: 'src/b.ts', count: 2, matches: [] }] })
-    expect(search({ total_count: 0, error: 'Path not found: nope' })).toEqual({ error: 'Path not found: nope' })
-    expect(search({ error: 'BLOCKED: You have run this exact search 4 times in a row.', guardrail_refusal: true })).toEqual({ error: 'BLOCKED: You have run this exact search 4 times in a row.' })
+    expect(search({ total_count: 0, error: 'Path not found: nope' })).toEqual({ error: 'Path not found: nope', outcome: { key: 'failed', tone: 'error', value: 'Path not found: nope' } })
+    expect(search({ error: 'BLOCKED: You have run this exact search 4 times in a row.', guardrail_refusal: true })).toEqual({ error: 'BLOCKED: You have run this exact search 4 times in a row.', outcome: { key: 'failed', tone: 'error', value: 'BLOCKED: You have run this exact search 4 times in a row.' } })
   })
 
   it('caps a long excerpt to whole lines and offers the whole result, which the whole-result read returns', () => {
@@ -452,7 +452,7 @@ describe('web_search, x_search and web_extract sections (TAL-2324)', () => {
     expect(pages?.[3]?.error).toBe('URL returned binary content (sqlite), not a page.')
     // A URL the Agent refused as invalid names its row as text, with no link.
     expect(view('web_extract', { results: [{ url: 'file:///etc/passwd', title: '', content: '', error: 'Invalid URL' }] }).pages).toEqual([{ url: '', domain: '', title: 'file:///etc/passwd', excerpt: '', error: 'Invalid URL' }])
-    expect(view('web_extract', { success: false, error: 'Content was inaccessible or not found' })).toEqual({ error: 'Content was inaccessible or not found' })
+    expect(view('web_extract', { success: false, error: 'Content was inaccessible or not found' })).toEqual({ error: 'Content was inaccessible or not found', outcome: { key: 'failed', tone: 'error', value: 'Content was inaccessible or not found' } })
   })
 
   it('offers a cut page whole, which the whole-result read returns', () => {
@@ -532,8 +532,8 @@ describe('media and analysis sections (TAL-2325)', () => {
   it('shows a failed media call as its error on one line', () => {
     const outcome = toolOutcome(JSON.stringify({ success: false, image: null, error: 'FAL_KEY is not set', error_type: 'auth_required' }), 'image_generate')
     expect(outcome.is_error).toBe(true)
-    expect(outcome.result_view).toEqual({ error: 'FAL_KEY is not set' })
-    expect(view('text_to_speech', { success: false, error: 'No TTS provider' })).toEqual({ error: 'No TTS provider' })
+    expect(outcome.result_view).toEqual({ error: 'FAL_KEY is not set', outcome: { key: 'failed', tone: 'error', value: 'FAL_KEY is not set' } })
+    expect(view('text_to_speech', { success: false, error: 'No TTS provider' })).toEqual({ error: 'No TTS provider', outcome: { key: 'failed', tone: 'error', value: 'No TTS provider' } })
   })
 
   it('shows an analysis as Markdown, and a multimodal result as its summary without image data', () => {
@@ -777,7 +777,7 @@ describe('browser and computer-use calls (TAL-2328)', () => {
     // The Agent's history keeps a native-vision result as the parts it handed the model; the live frame as its envelope.
     expect(view('browser_exec', [{ type: 'text', text: `${JSON.stringify(ran)}\n\nThe screenshot from this call is attached — inspect it with your native vision.` }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${png}` } }], { code })).toEqual(expected)
     expect(view('browser_exec', { _multimodal: true, text_summary: JSON.stringify(ran), meta: { screenshot_path: shot, native_vision: true }, content: [{ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${png}` } }] }, { code })).toEqual(expected)
-    expect(view('browser_exec', { success: false, exit_code: 1, output: '', stderr: 'NameError: goto' }, { code: 'goto()' })).toEqual({ file_excerpt: { ...expected.file_excerpt, lines: [{ n: 1, text: 'goto()' }], total_lines: 1 }, stderr: 'NameError: goto', exit_code: 1 })
+    expect(view('browser_exec', { success: false, exit_code: 1, output: '', stderr: 'NameError: goto' }, { code: 'goto()' })).toEqual({ file_excerpt: { ...expected.file_excerpt, lines: [{ n: 1, text: 'goto()' }], total_lines: 1 }, stderr: 'NameError: goto', exit_code: 1, outcome: { key: 'failed', tone: 'error', value: 'NameError: goto' } })
     expect(view('browser_exec', { error: 'browser-use exec timed out after 60s.' }, { code: 'wait()' })).toMatchObject({ error: 'browser-use exec timed out after 60s.' })
     // Its code shows once: the completion's argument rows leave it out, replacing the start frame's that showed it.
     const started = publicToolFrame({ name: 'browser_exec', args: { code, session: 'checkout' } }, true)
@@ -853,7 +853,7 @@ describe('browser and computer-use calls (TAL-2328)', () => {
     expect(view('computer_use', after, { action: 'click', capture_after: true }).rows?.rows.map((r) => r.label)).toEqual(['Clicked', 'Safari'])
     expect(view('computer_use', { apps: [{ name: 'Safari', pid: 1 }, { name: 'Mail', pid: 2 }], count: 2 }, { action: 'list_apps' }).rows).toEqual({ title: 'Apps', rows: [{ label: 'Safari' }, { label: 'Mail' }] })
     expect(view('computer_use', { ok: false, action: 'click', code: 'human_has_control', error: 'The user has control.' }, { action: 'click' }).rows).toEqual({ rows: [{ label: 'You have control of the computer', status: 'warn' }] })
-    expect(view('computer_use', { error: 'click failed: no element 9' }, { action: 'click' })).toEqual({ error: 'click failed: no element 9' })
+    expect(view('computer_use', { error: 'click failed: no element 9' }, { action: 'click' })).toEqual({ error: 'click failed: no element 9', outcome: { key: 'failed', tone: 'error', value: 'click failed: no element 9' } })
   })
 })
 
@@ -892,5 +892,103 @@ describe('MCP and connector calls (TAL-2330)', () => {
       expect(display, name).not.toHaveProperty('app')
       expect(display.kind, name).toBe(tokenToolKind(name))
     }
+  })
+})
+
+describe('the outcome a collapsed tool row shows (TAL-2335)', () => {
+  const outcome = (name: string, result: unknown, args?: Record<string, unknown>, flagged = false) => toolOutcome(typeof result === 'string' ? result : JSON.stringify(result), name, flagged, args).result_view.outcome
+
+  it('says what a Talaria tool did', () => {
+    expect(outcome('session_send', { outcome: 'queued', stream_id: null, steer_id: 's1' })).toEqual({ key: 'sent', tone: 'neutral' })
+    expect(outcome('clarify_respond', { ok: true })).toEqual({ key: 'sent', tone: 'neutral' })
+    expect(outcome('queue_send_now', { redirected: false, outcome: 'delivered' })).toEqual({ key: 'sent', tone: 'neutral' })
+    expect(outcome('queue_send_now', { redirected: false, outcome: 'not_running' })).toBeUndefined()
+    expect(outcome('session_new', { session_id: 's2', title: 'New', stream_id: null })).toEqual({ key: 'created', tone: 'neutral' })
+    expect(outcome('approval_respond', { ok: true, choice: 'once' }, { approval_id: 'a1', choice: 'once' })).toEqual({ key: 'approved', tone: 'neutral' })
+    expect(outcome('approval_respond', { ok: true }, { approval_id: 'a1', choice: 'deny' })).toEqual({ key: 'denied', tone: 'neutral' })
+    expect(outcome('goal_set', { ok: true, action: 'set' })).toEqual({ key: 'goal_set', tone: 'neutral' })
+    expect(outcome('session_list', { sessions: [] })).toBeUndefined()
+  })
+
+  it('counts memory changes and waits on a staged write', () => {
+    expect(outcome('memory', { success: true, target: 'memory' }, { action: 'add', target: 'memory', content: 'Prefers Postgres' })).toEqual({ key: 'memory_added', tone: 'neutral', count: 1 })
+    expect(outcome('memory', { success: true }, { operations: [{ action: 'remove', old_text: 'a' }, { action: 'remove', old_text: 'b' }] })).toEqual({ key: 'memory_removed', tone: 'neutral', count: 2 })
+    expect(outcome('memory', { success: true }, { operations: [{ action: 'add', content: 'a' }, { action: 'patch', old_text: 'b', content: 'c' }] })).toEqual({ key: 'memory_updated', tone: 'neutral', count: 2 })
+    expect(outcome('memory', { success: true, staged: true, message: 'Queued.' }, { action: 'add', content: 'a' })).toEqual({ key: 'pending_approval', tone: 'attention' })
+    expect(outcome('memory', { success: true }, { action: 'constructor' })).toBeUndefined()
+  })
+
+  it('says what a skill write did, waits on a staged one and shows nothing for a refusal the Agent retries', () => {
+    expect(outcome('skill_manage', { success: true, path: '/skills/pdf' }, { action: 'create', name: 'pdf' })).toEqual({ key: 'skill_created', tone: 'neutral' })
+    expect(outcome('skill_manage', { success: true, results: [{ name: 'pdf', action: 'patch', success: true }] })).toEqual({ key: 'skill_updated', tone: 'neutral' })
+    expect(outcome('skill_manage', { success: true, results: [{ name: 'old', action: 'delete', success: true }] })).toEqual({ key: 'removed', tone: 'neutral' })
+    expect(outcome('skill_manage', { success: true, staged: true, gist: 'New skill' }, { action: 'edit', name: 'deploy-checklist' })).toEqual({ key: 'pending_approval', tone: 'attention' })
+    expect(outcome('skill_manage', { success: false, error: 'old_text not found' }, { action: 'patch', name: 'pdf' })).toBeUndefined()
+    expect(outcome('skill_view', { success: true, name: 'pdf', content: '# PDF' })).toBeUndefined()
+  })
+
+  it('says what a scheduled-job action did, with a new job\'s next run', () => {
+    expect(outcome('cronjob_manage', { success: true, job: { job_id: 'j1', name: 'Digest', next_run_at: '2026-11-18T09:00:00+01:00' } }, { action: 'create' })).toEqual({ key: 'job_created', tone: 'neutral', value: '2026-11-18T08:00:00.000Z' })
+    expect(outcome('cronjob_manage', { success: true, job: { job_id: 'j1', next_run_at: null } }, { action: 'create' })).toEqual({ key: 'job_created', tone: 'neutral' })
+    expect(['pause', 'resume', 'remove', 'run'].map((action) => outcome('cronjob_manage', { success: true, job: { job_id: 'j1' } }, { action, job_id: 'j1' })?.key)).toEqual(['paused', 'resumed', 'removed', 'ran_now'])
+    expect(outcome('cronjob_manage', { success: true, jobs: [] }, { action: 'list' })).toBeUndefined()
+  })
+
+  it('says where a Kanban task landed', () => {
+    expect(outcome('kanban_request_review', { ok: true, task_id: 't1', status: 'review' })).toEqual({ key: 'moved_to', tone: 'neutral', value: 'Review' })
+    expect(outcome('kanban_unblock', { ok: true, task_id: 't1', status: 'in_progress' })).toEqual({ key: 'moved_to', tone: 'neutral', value: 'In progress' })
+    expect(outcome('kanban_block', { ok: true, task_id: 't1', status: 'blocked' })).toEqual({ key: 'blocked', tone: 'neutral' })
+    expect(outcome('kanban_complete', { ok: true, task_id: 't1', status: 'done' })).toEqual({ key: 'completed', tone: 'neutral' })
+    expect(outcome('kanban_comment', { ok: true, task_id: 't1' }, { task_id: 't1', body: 'LGTM' })).toEqual({ key: 'commented', tone: 'neutral' })
+    expect(outcome('kanban_show', { task: { id: 't1', title: 'Fix', status: 'review' } })).toBeUndefined()
+  })
+
+  it('names connected apps, waits on a sign-in, and gives a question\'s answer or skip', () => {
+    expect(outcome('manage_connections', { targets: [{ name: 'GitHub', state: 'connected' }, { name: 'Gmail', state: 'connected' }] })).toEqual({ key: 'connected', tone: 'neutral', value: 'GitHub, Gmail' })
+    expect(outcome('manage_connections', { targets: [{ name: 'github', state: 'initiated', connect_url: 'https://portal.example/a' }] })).toEqual({ key: 'needs_sign_in', tone: 'attention' })
+    expect(outcome('manage_connections', { connectors: [{ connector: 'github', connected: true }] })).toBeUndefined()
+    expect(outcome('clarify', { responses: [{ question: 'Which repository?', status: 'answered', user_response: 'MaudeCode/talaria\nbecause it owns the bug' }] })).toEqual({ key: 'answered', tone: 'neutral', value: 'MaudeCode/talaria' })
+    expect(outcome('clarify', { responses: [{ question: 'Which?', status: 'skipped', user_response: null }] })).toEqual({ key: 'skipped', tone: 'neutral' })
+  })
+
+  it('shows a non-zero exit, never a zero one', () => {
+    expect(outcome('terminal', { output: 'FAIL auth.spec.ts', exit_code: 1, error: null })).toEqual({ key: 'exit', tone: 'error', count: 1 })
+    expect(outcome('execute_code', { stdout: '', stderr: 'boom', exit_code: 2 })).toEqual({ key: 'exit', tone: 'error', count: 2 })
+    expect(outcome('process_manage', { status: 'exited', exit_code: 137 })).toEqual({ key: 'exit', tone: 'error', count: 137 })
+    expect(outcome('terminal', { output: 'clean', exit_code: 0, error: null })).toBeUndefined()
+  })
+
+  it('says a search found nothing only when it did', () => {
+    expect(outcome('search_files', { total_count: 0, matches: [] }, { pattern: 'TODO(auth)' })).toEqual({ key: 'no_matches', tone: 'neutral' })
+    expect(outcome('search_files', { total_count: 1, matches: [{ path: 'a.ts', line: 1, content: 'TODO(auth)' }] })).toBeUndefined()
+    expect(outcome('web_search', { success: true, data: { web: [] } })).toEqual({ key: 'no_results', tone: 'neutral' })
+    expect(outcome('web_search', { success: true, data: { web: [{ title: 'Release', url: 'https://example.com/r', description: 'd' }] } })).toBeUndefined()
+    expect(outcome('x_search', { success: true, answer: '', citations: [] })).toEqual({ key: 'no_results', tone: 'neutral' })
+    expect(outcome('session_search', { success: true, mode: 'discover', query: 'deploy', results: [], count: 0 })).toEqual({ key: 'no_results', tone: 'neutral' })
+    expect(outcome('session_search', { success: true, mode: 'discover', query: 'deploy', results: [{ session_id: 's1', title: 'Deploy' }], count: 1 })).toBeUndefined()
+  })
+
+  it('shows any failed call\'s first error line, a flagged text result\'s included', () => {
+    expect(outcome('memory', { success: false, error: 'Memory is full\nTry removing entries.' })).toEqual({ key: 'failed', tone: 'error', value: 'Memory is full' })
+    expect(outcome('mcp__github__create_issue', 'Resource not accessible by integration', undefined, true)).toEqual({ key: 'failed', tone: 'error', value: 'Resource not accessible by integration' })
+    expect(outcome('terminal', { output: '', exit_code: 0, error: 'command timed out' })).toEqual({ key: 'failed', tone: 'error', value: 'command timed out' })
+    expect(outcome('session_send', { error: 'target is busy', condition: 'exceeds_caller' })).toEqual({ key: 'failed', tone: 'error', value: 'target is busy' })
+  })
+
+  it('shows nothing for reads, lists, views, media, edits and app successes', () => {
+    expect(outcome('read_file', { content: '1|a', total_lines: 1 }, { path: 'a.ts' })).toBeUndefined()
+    expect(outcome('skills_list', { success: true, skills: [] })).toBeUndefined()
+    expect(outcome('web_extract', { results: [{ url: 'https://example.com', title: 'E', content: 'x' }] })).toBeUndefined()
+    expect(outcome('browser_navigate', { success: true, url: 'https://example.com' })).toBeUndefined()
+    expect(outcome('image_generate', { success: true, image: 'https://example.com/a.png' })).toBeUndefined()
+    expect(outcome('write_file', { bytes_written: 12 }, { path: 'a.ts' })).toBeUndefined()
+    expect(outcome('patch', { success: true, diff: '--- a\n+++ b' })).toBeUndefined()
+    expect(outcome('mcp__gmail__send_email', { id: 'm1' })).toBeUndefined()
+  })
+
+  it('keeps a decided outcome, its value capped, and drops a malformed one', () => {
+    expect(decidedResultView({ text: 'x', outcome: { key: 'answered', tone: 'neutral', value: 'y'.repeat(500) } }).outcome?.value?.length).toBeLessThanOrEqual(200)
+    expect(decidedResultView({ text: 'x', outcome: { key: 'exit', tone: 'error', count: 1 } }).outcome).toEqual({ key: 'exit', tone: 'error', count: 1 })
+    expect(decidedResultView({ text: 'x', outcome: { key: 'made_up', tone: 'neutral' } }).outcome).toBeUndefined()
   })
 })

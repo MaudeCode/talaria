@@ -3,7 +3,7 @@
  * module computes for live frames and the public projection of persisted calls (`redact.ts` stamps them). Callers pass
  * redacted args, so the target never shows more than the arguments it came from.
  */
-import type { FileExcerpt, FileExcerptLine, ResultLink, ResultLinks, ResultPage, SearchMatches, SearchMatchFile, ToolApp, ToolEditDiff, ToolKind, ToolPresentation, ToolPresentationEntry, ToolProgress, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
+import type { FileExcerpt, FileExcerptLine, ResultLink, ResultLinks, ResultPage, SearchMatches, SearchMatchFile, ToolApp, ToolEditDiff, ToolKind, ToolOutcome, ToolPresentation, ToolPresentationEntry, ToolProgress, ToolResultView, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
 import { DecisionReviewRefSchema, DisplayMediaSchema, FileExcerptSchema, OutboundDraftRefSchema, SearchMatchesSchema, ProposalRefSchema, ShowBlockRefSchema, TALARIA_TOOL_NAMES, TerminalRefSchema, TOOL_PRESENTATIONS, type DecisionReviewRef, type DisplayMedia, type OutboundDraftRef, type ProposalRef, type ShowBlockRef, type TerminalRef } from '@maudecode/talaria-web-contracts'
 import { posix } from 'node:path'
 import { str } from '../util.js'
@@ -901,4 +901,111 @@ export function toolTextRows(name: unknown, text: string): ToolRows | undefined 
   const action = isDict(payload) && typeof payload.ok === 'boolean' && str(payload.action) ? [computerActionRow(payload)] : []
   const elements = ELEMENTS_LINE_RE.exec(text)
   return { rows: [...action, captureRow(capture[1] ?? '', capture[3] ?? '', elements ? Number(elements[1]) : undefined)] }
+}
+
+/** TAL-2335: the longest outcome `value` (an error's or answer's first line) a row carries; the row truncates it further. */
+const OUTCOME_VALUE_MAX = 200
+/** TAL-2335: an outcome `value`: the text's first line, cut to `OUTCOME_VALUE_MAX`; undefined when it has none. */
+export const outcomeValue = (text: unknown): string | undefined => {
+  const line = firstLine(text)
+  return line ? (line.length > OUTCOME_VALUE_MAX ? `${line.slice(0, OUTCOME_VALUE_MAX - 1)}…` : line) : undefined
+}
+const outcome = (key: ToolOutcome['key'], extra: Partial<Omit<ToolOutcome, 'key'>> = {}): ToolOutcome => ({ key, tone: 'neutral', ...extra })
+const withValue = (key: ToolOutcome['key'], value: string | undefined): ToolOutcome => outcome(key, value ? { value } : {})
+
+/** TAL-2335: the tools whose non-zero exit is their outcome; a zero exit shows nothing. */
+const EXIT_TOOLS = new Set(['terminal', 'execute_code', 'process_manage'])
+/** TAL-2335: the Kanban calls that move a task, whose outcome is the status it landed in. */
+const KANBAN_MOVES = new Set(['kanban_request_review', 'kanban_request_changes', 'kanban_unblock', 'kanban_schedule'])
+const KANBAN_OUTCOMES: Record<string, ToolOutcome['key']> = { kanban_block: 'blocked', kanban_complete: 'completed', kanban_comment: 'commented' }
+const CRON_OUTCOMES: Record<string, ToolOutcome['key']> = { pause: 'paused', resume: 'resumed', remove: 'removed', run: 'ran_now' }
+const TALARIA_OUTCOMES: Record<string, ToolOutcome['key']> = { session_send: 'sent', clarify_respond: 'sent', session_new: 'created', session_branch: 'created', project_create: 'created', goal_set: 'goal_set' }
+const MEMORY_OUTCOMES: Record<string, ToolOutcome['key']> = { add: 'memory_added', patch: 'memory_updated', replace: 'memory_updated', remove: 'memory_removed' }
+
+/** `in_progress` → `In progress`: a status slug as a row shows it. */
+const statusName = (slug: string): string => {
+  const words = slug.trim().replace(/[_-]+/g, ' ')
+  return words ? words[0]!.toUpperCase() + words.slice(1) : ''
+}
+/** An Agent timestamp as ISO 8601, which clients format; undefined when it is not a date. */
+const isoTime = (value: unknown): string | undefined => {
+  const time = typeof value === 'string' && value.trim() ? Date.parse(value) : Number.NaN
+  return Number.isFinite(time) ? new Date(time).toISOString() : undefined
+}
+
+/** A memory write: its staged approval, else how many entries it added, updated or removed (a mixed batch counts as updates). */
+function memoryOutcome(data: Record<string, unknown>, a: Record<string, unknown>): ToolOutcome | undefined {
+  if (data.staged === true) return outcome('pending_approval', { tone: 'attention' })
+  const keys = (Array.isArray(a.operations) ? dicts(a.operations) : [a]).flatMap((op) => (Object.hasOwn(MEMORY_OUTCOMES, str(op.action)) ? [MEMORY_OUTCOMES[str(op.action)]!] : []))
+  if (!keys.length) return undefined
+  return outcome(keys.every((key) => key === keys[0]) ? keys[0]! : 'memory_updated', { count: keys.length })
+}
+
+/** A skill write: its staged approval, else created (any create), removed (only deletes) or updated. */
+function skillOutcome(data: Record<string, unknown>, a: Record<string, unknown>): ToolOutcome | undefined {
+  if (data.staged === true) return outcome('pending_approval', { tone: 'attention' })
+  const actions = Array.isArray(data.results) ? dicts(data.results).map((r) => str(r.action)) : data.success === true ? (Array.isArray(a.operations) ? dicts(a.operations) : [a]).map((op) => str(op.action)) : []
+  if (!actions.length) return undefined
+  if (actions.includes('create')) return outcome('skill_created')
+  return outcome(actions.every((action) => action === 'delete') ? 'removed' : 'skill_updated')
+}
+
+/** A connection: waiting for the user to sign in, else the apps it connected. */
+function connectionOutcome(data: Record<string, unknown>): ToolOutcome | undefined {
+  const targets = dicts(data.targets)
+  if (targets.some((t) => str(t.state) === 'initiated' || str(t.state) === 'pending')) return outcome('needs_sign_in', { tone: 'attention' })
+  const names = targets.filter((t) => str(t.state) === 'connected').map((t) => str(t.name).trim()).filter(Boolean)
+  const value = outcomeValue(names.join(', '))
+  return value ? outcome('connected', { value }) : undefined
+}
+
+/** A question: the first answer's first line, or that the user skipped it. */
+function clarifyOutcome(data: Record<string, unknown>): ToolOutcome | undefined {
+  const response = dicts(data.responses)[0]
+  if (!response) return undefined
+  if (response.status === 'skipped') return outcome('skipped')
+  const answer = response.user_response
+  if (response.status !== 'answered' || answer === null || answer === undefined) return undefined
+  const value = outcomeValue(Array.isArray(answer) ? answer.map(str).join(', ') : str(answer))
+  return value ? outcome('answered', { value }) : undefined
+}
+
+/**
+ * TAL-2335: the outcome a completed call's collapsed row shows after its label (`ToolOutcomeSchema`), decided once for live,
+ * replayed and persisted calls from the classification `toolOutcome` made (`failed`, `isError`), the parsed result (`data`,
+ * nested JSON parsed) and its uncapped display `view`: a shell tool's non-zero exit; any other failure's first error line; a
+ * neutral `skill_manage` refusal (the Agent retries it) nothing; else what the tool changed, a search that found nothing, or
+ * what waits on the user. Undefined for every other call: reads, lists, views, media, edits and app successes.
+ */
+export function toolCallOutcome(name: unknown, args: unknown, data: unknown, view: ToolResultView, failed: boolean, isError: boolean): ToolOutcome | undefined {
+  const tool = str(name)
+  const d = isDict(data) ? data : {}
+  const a = isDict(args) ? args : {}
+  if (EXIT_TOOLS.has(tool)) {
+    const exit = d.exit_code ?? d.exitCode ?? view.exit_code
+    if (typeof exit === 'number' && Number.isSafeInteger(exit) && exit !== 0) return outcome('exit', { tone: 'error', count: exit })
+  }
+  if (isError) {
+    const value = outcomeValue(typeof d.error === 'string' ? d.error : '') ?? outcomeValue(view.error) ?? outcomeValue(view.stderr) ?? outcomeValue(view.text)
+    return outcome('failed', { tone: 'error', ...(value ? { value } : {}) })
+  }
+  if (failed) return undefined
+  if (Object.hasOwn(TALARIA_OUTCOMES, tool)) return outcome(TALARIA_OUTCOMES[tool]!)
+  if (tool === 'queue_send_now') return d.outcome === 'delivered' || d.outcome === 'next_step' ? outcome('sent') : undefined
+  if (tool === 'approval_respond') return outcome((str(d.choice) || str(a.choice)) === 'deny' ? 'denied' : 'approved')
+  if (tool === 'memory') return memoryOutcome(d, a)
+  if (tool === 'skill_manage') return skillOutcome(d, a)
+  if (tool === 'cronjob_manage') {
+    const action = str(a.action)
+    if (action === 'create') return withValue('job_created', isoTime(isDict(d.job) ? d.job.next_run_at : undefined))
+    return Object.hasOwn(CRON_OUTCOMES, action) ? outcome(CRON_OUTCOMES[action]!) : undefined
+  }
+  if (Object.hasOwn(KANBAN_OUTCOMES, tool)) return d.ok === true ? outcome(KANBAN_OUTCOMES[tool]!) : undefined
+  if (KANBAN_MOVES.has(tool)) return d.ok === true && statusName(str(d.status)) ? withValue('moved_to', statusName(str(d.status))) : undefined
+  if (tool === 'manage_connections') return connectionOutcome(d)
+  if (tool === 'clarify') return clarifyOutcome(d)
+  if (tool === 'search_files') return view.matches?.total === 0 ? outcome('no_matches') : undefined
+  if (tool === 'web_search' || tool === 'x_search') return view.links && !view.links.items.length && !view.links.answer?.trim() ? outcome('no_results') : undefined
+  if (tool === 'session_search') return (d.mode === 'discover' || d.mode === 'browse') && Array.isArray(d.results) && !d.results.length ? outcome('no_results') : undefined
+  return undefined
 }

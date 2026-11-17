@@ -8781,6 +8781,64 @@
                                             },
                                             "approval_note": {
                                               "type": "string"
+                                            },
+                                            "outcome": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "enum": [
+                                                    "sent",
+                                                    "approved",
+                                                    "denied",
+                                                    "goal_set",
+                                                    "created",
+                                                    "memory_added",
+                                                    "memory_updated",
+                                                    "memory_removed",
+                                                    "skill_created",
+                                                    "skill_updated",
+                                                    "pending_approval",
+                                                    "job_created",
+                                                    "paused",
+                                                    "resumed",
+                                                    "removed",
+                                                    "ran_now",
+                                                    "moved_to",
+                                                    "blocked",
+                                                    "completed",
+                                                    "commented",
+                                                    "connected",
+                                                    "needs_sign_in",
+                                                    "answered",
+                                                    "skipped",
+                                                    "no_matches",
+                                                    "no_results",
+                                                    "exit",
+                                                    "failed"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "tone": {
+                                                  "enum": [
+                                                    "neutral",
+                                                    "error",
+                                                    "attention"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "tone"
+                                              ]
                                             }
                                           }
                                         },
@@ -9596,6 +9654,64 @@
                                                     },
                                                     "approval_note": {
                                                       "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "key": {
+                                                          "enum": [
+                                                            "sent",
+                                                            "approved",
+                                                            "denied",
+                                                            "goal_set",
+                                                            "created",
+                                                            "memory_added",
+                                                            "memory_updated",
+                                                            "memory_removed",
+                                                            "skill_created",
+                                                            "skill_updated",
+                                                            "pending_approval",
+                                                            "job_created",
+                                                            "paused",
+                                                            "resumed",
+                                                            "removed",
+                                                            "ran_now",
+                                                            "moved_to",
+                                                            "blocked",
+                                                            "completed",
+                                                            "commented",
+                                                            "connected",
+                                                            "needs_sign_in",
+                                                            "answered",
+                                                            "skipped",
+                                                            "no_matches",
+                                                            "no_results",
+                                                            "exit",
+                                                            "failed"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "tone": {
+                                                          "enum": [
+                                                            "neutral",
+                                                            "error",
+                                                            "attention"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        "value": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "key",
+                                                        "tone"
+                                                      ]
                                                     }
                                                   }
                                                 },
@@ -11395,6 +11511,64 @@
                                       },
                                       "approval_note": {
                                         "type": "string"
+                                      },
+                                      "outcome": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "enum": [
+                                              "sent",
+                                              "approved",
+                                              "denied",
+                                              "goal_set",
+                                              "created",
+                                              "memory_added",
+                                              "memory_updated",
+                                              "memory_removed",
+                                              "skill_created",
+                                              "skill_updated",
+                                              "pending_approval",
+                                              "job_created",
+                                              "paused",
+                                              "resumed",
+                                              "removed",
+                                              "ran_now",
+                                              "moved_to",
+                                              "blocked",
+                                              "completed",
+                                              "commented",
+                                              "connected",
+                                              "needs_sign_in",
+                                              "answered",
+                                              "skipped",
+                                              "no_matches",
+                                              "no_results",
+                                              "exit",
+                                              "failed"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tone": {
+                                            "enum": [
+                                              "neutral",
+                                              "error",
+                                              "attention"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "tone"
+                                        ]
                                       }
                                     }
                                   },
@@ -16083,6 +16257,64 @@
                                             },
                                             "approval_note": {
                                               "type": "string"
+                                            },
+                                            "outcome": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "enum": [
+                                                    "sent",
+                                                    "approved",
+                                                    "denied",
+                                                    "goal_set",
+                                                    "created",
+                                                    "memory_added",
+                                                    "memory_updated",
+                                                    "memory_removed",
+                                                    "skill_created",
+                                                    "skill_updated",
+                                                    "pending_approval",
+                                                    "job_created",
+                                                    "paused",
+                                                    "resumed",
+                                                    "removed",
+                                                    "ran_now",
+                                                    "moved_to",
+                                                    "blocked",
+                                                    "completed",
+                                                    "commented",
+                                                    "connected",
+                                                    "needs_sign_in",
+                                                    "answered",
+                                                    "skipped",
+                                                    "no_matches",
+                                                    "no_results",
+                                                    "exit",
+                                                    "failed"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "tone": {
+                                                  "enum": [
+                                                    "neutral",
+                                                    "error",
+                                                    "attention"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "tone"
+                                              ]
                                             }
                                           }
                                         },
@@ -16898,6 +17130,64 @@
                                                     },
                                                     "approval_note": {
                                                       "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "key": {
+                                                          "enum": [
+                                                            "sent",
+                                                            "approved",
+                                                            "denied",
+                                                            "goal_set",
+                                                            "created",
+                                                            "memory_added",
+                                                            "memory_updated",
+                                                            "memory_removed",
+                                                            "skill_created",
+                                                            "skill_updated",
+                                                            "pending_approval",
+                                                            "job_created",
+                                                            "paused",
+                                                            "resumed",
+                                                            "removed",
+                                                            "ran_now",
+                                                            "moved_to",
+                                                            "blocked",
+                                                            "completed",
+                                                            "commented",
+                                                            "connected",
+                                                            "needs_sign_in",
+                                                            "answered",
+                                                            "skipped",
+                                                            "no_matches",
+                                                            "no_results",
+                                                            "exit",
+                                                            "failed"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "tone": {
+                                                          "enum": [
+                                                            "neutral",
+                                                            "error",
+                                                            "attention"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        "value": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "key",
+                                                        "tone"
+                                                      ]
                                                     }
                                                   }
                                                 },
@@ -18697,6 +18987,64 @@
                                       },
                                       "approval_note": {
                                         "type": "string"
+                                      },
+                                      "outcome": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "enum": [
+                                              "sent",
+                                              "approved",
+                                              "denied",
+                                              "goal_set",
+                                              "created",
+                                              "memory_added",
+                                              "memory_updated",
+                                              "memory_removed",
+                                              "skill_created",
+                                              "skill_updated",
+                                              "pending_approval",
+                                              "job_created",
+                                              "paused",
+                                              "resumed",
+                                              "removed",
+                                              "ran_now",
+                                              "moved_to",
+                                              "blocked",
+                                              "completed",
+                                              "commented",
+                                              "connected",
+                                              "needs_sign_in",
+                                              "answered",
+                                              "skipped",
+                                              "no_matches",
+                                              "no_results",
+                                              "exit",
+                                              "failed"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tone": {
+                                            "enum": [
+                                              "neutral",
+                                              "error",
+                                              "attention"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "tone"
+                                        ]
                                       }
                                     }
                                   },
@@ -22056,6 +22404,64 @@
                                             },
                                             "approval_note": {
                                               "type": "string"
+                                            },
+                                            "outcome": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "enum": [
+                                                    "sent",
+                                                    "approved",
+                                                    "denied",
+                                                    "goal_set",
+                                                    "created",
+                                                    "memory_added",
+                                                    "memory_updated",
+                                                    "memory_removed",
+                                                    "skill_created",
+                                                    "skill_updated",
+                                                    "pending_approval",
+                                                    "job_created",
+                                                    "paused",
+                                                    "resumed",
+                                                    "removed",
+                                                    "ran_now",
+                                                    "moved_to",
+                                                    "blocked",
+                                                    "completed",
+                                                    "commented",
+                                                    "connected",
+                                                    "needs_sign_in",
+                                                    "answered",
+                                                    "skipped",
+                                                    "no_matches",
+                                                    "no_results",
+                                                    "exit",
+                                                    "failed"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "tone": {
+                                                  "enum": [
+                                                    "neutral",
+                                                    "error",
+                                                    "attention"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "tone"
+                                              ]
                                             }
                                           }
                                         },
@@ -22871,6 +23277,64 @@
                                                     },
                                                     "approval_note": {
                                                       "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "key": {
+                                                          "enum": [
+                                                            "sent",
+                                                            "approved",
+                                                            "denied",
+                                                            "goal_set",
+                                                            "created",
+                                                            "memory_added",
+                                                            "memory_updated",
+                                                            "memory_removed",
+                                                            "skill_created",
+                                                            "skill_updated",
+                                                            "pending_approval",
+                                                            "job_created",
+                                                            "paused",
+                                                            "resumed",
+                                                            "removed",
+                                                            "ran_now",
+                                                            "moved_to",
+                                                            "blocked",
+                                                            "completed",
+                                                            "commented",
+                                                            "connected",
+                                                            "needs_sign_in",
+                                                            "answered",
+                                                            "skipped",
+                                                            "no_matches",
+                                                            "no_results",
+                                                            "exit",
+                                                            "failed"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "tone": {
+                                                          "enum": [
+                                                            "neutral",
+                                                            "error",
+                                                            "attention"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        "value": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "key",
+                                                        "tone"
+                                                      ]
                                                     }
                                                   }
                                                 },
@@ -24670,6 +25134,64 @@
                                       },
                                       "approval_note": {
                                         "type": "string"
+                                      },
+                                      "outcome": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "enum": [
+                                              "sent",
+                                              "approved",
+                                              "denied",
+                                              "goal_set",
+                                              "created",
+                                              "memory_added",
+                                              "memory_updated",
+                                              "memory_removed",
+                                              "skill_created",
+                                              "skill_updated",
+                                              "pending_approval",
+                                              "job_created",
+                                              "paused",
+                                              "resumed",
+                                              "removed",
+                                              "ran_now",
+                                              "moved_to",
+                                              "blocked",
+                                              "completed",
+                                              "commented",
+                                              "connected",
+                                              "needs_sign_in",
+                                              "answered",
+                                              "skipped",
+                                              "no_matches",
+                                              "no_results",
+                                              "exit",
+                                              "failed"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tone": {
+                                            "enum": [
+                                              "neutral",
+                                              "error",
+                                              "attention"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "tone"
+                                        ]
                                       }
                                     }
                                   },
@@ -31161,6 +31683,64 @@
                                             },
                                             "approval_note": {
                                               "type": "string"
+                                            },
+                                            "outcome": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "enum": [
+                                                    "sent",
+                                                    "approved",
+                                                    "denied",
+                                                    "goal_set",
+                                                    "created",
+                                                    "memory_added",
+                                                    "memory_updated",
+                                                    "memory_removed",
+                                                    "skill_created",
+                                                    "skill_updated",
+                                                    "pending_approval",
+                                                    "job_created",
+                                                    "paused",
+                                                    "resumed",
+                                                    "removed",
+                                                    "ran_now",
+                                                    "moved_to",
+                                                    "blocked",
+                                                    "completed",
+                                                    "commented",
+                                                    "connected",
+                                                    "needs_sign_in",
+                                                    "answered",
+                                                    "skipped",
+                                                    "no_matches",
+                                                    "no_results",
+                                                    "exit",
+                                                    "failed"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "tone": {
+                                                  "enum": [
+                                                    "neutral",
+                                                    "error",
+                                                    "attention"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "tone"
+                                              ]
                                             }
                                           }
                                         },
@@ -31976,6 +32556,64 @@
                                                     },
                                                     "approval_note": {
                                                       "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "key": {
+                                                          "enum": [
+                                                            "sent",
+                                                            "approved",
+                                                            "denied",
+                                                            "goal_set",
+                                                            "created",
+                                                            "memory_added",
+                                                            "memory_updated",
+                                                            "memory_removed",
+                                                            "skill_created",
+                                                            "skill_updated",
+                                                            "pending_approval",
+                                                            "job_created",
+                                                            "paused",
+                                                            "resumed",
+                                                            "removed",
+                                                            "ran_now",
+                                                            "moved_to",
+                                                            "blocked",
+                                                            "completed",
+                                                            "commented",
+                                                            "connected",
+                                                            "needs_sign_in",
+                                                            "answered",
+                                                            "skipped",
+                                                            "no_matches",
+                                                            "no_results",
+                                                            "exit",
+                                                            "failed"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "tone": {
+                                                          "enum": [
+                                                            "neutral",
+                                                            "error",
+                                                            "attention"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        "value": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "key",
+                                                        "tone"
+                                                      ]
                                                     }
                                                   }
                                                 },
@@ -33775,6 +34413,64 @@
                                       },
                                       "approval_note": {
                                         "type": "string"
+                                      },
+                                      "outcome": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "enum": [
+                                              "sent",
+                                              "approved",
+                                              "denied",
+                                              "goal_set",
+                                              "created",
+                                              "memory_added",
+                                              "memory_updated",
+                                              "memory_removed",
+                                              "skill_created",
+                                              "skill_updated",
+                                              "pending_approval",
+                                              "job_created",
+                                              "paused",
+                                              "resumed",
+                                              "removed",
+                                              "ran_now",
+                                              "moved_to",
+                                              "blocked",
+                                              "completed",
+                                              "commented",
+                                              "connected",
+                                              "needs_sign_in",
+                                              "answered",
+                                              "skipped",
+                                              "no_matches",
+                                              "no_results",
+                                              "exit",
+                                              "failed"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tone": {
+                                            "enum": [
+                                              "neutral",
+                                              "error",
+                                              "attention"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "tone"
+                                        ]
                                       }
                                     }
                                   },
@@ -39577,6 +40273,64 @@
                                             },
                                             "approval_note": {
                                               "type": "string"
+                                            },
+                                            "outcome": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "enum": [
+                                                    "sent",
+                                                    "approved",
+                                                    "denied",
+                                                    "goal_set",
+                                                    "created",
+                                                    "memory_added",
+                                                    "memory_updated",
+                                                    "memory_removed",
+                                                    "skill_created",
+                                                    "skill_updated",
+                                                    "pending_approval",
+                                                    "job_created",
+                                                    "paused",
+                                                    "resumed",
+                                                    "removed",
+                                                    "ran_now",
+                                                    "moved_to",
+                                                    "blocked",
+                                                    "completed",
+                                                    "commented",
+                                                    "connected",
+                                                    "needs_sign_in",
+                                                    "answered",
+                                                    "skipped",
+                                                    "no_matches",
+                                                    "no_results",
+                                                    "exit",
+                                                    "failed"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "tone": {
+                                                  "enum": [
+                                                    "neutral",
+                                                    "error",
+                                                    "attention"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "tone"
+                                              ]
                                             }
                                           }
                                         },
@@ -40392,6 +41146,64 @@
                                                     },
                                                     "approval_note": {
                                                       "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "key": {
+                                                          "enum": [
+                                                            "sent",
+                                                            "approved",
+                                                            "denied",
+                                                            "goal_set",
+                                                            "created",
+                                                            "memory_added",
+                                                            "memory_updated",
+                                                            "memory_removed",
+                                                            "skill_created",
+                                                            "skill_updated",
+                                                            "pending_approval",
+                                                            "job_created",
+                                                            "paused",
+                                                            "resumed",
+                                                            "removed",
+                                                            "ran_now",
+                                                            "moved_to",
+                                                            "blocked",
+                                                            "completed",
+                                                            "commented",
+                                                            "connected",
+                                                            "needs_sign_in",
+                                                            "answered",
+                                                            "skipped",
+                                                            "no_matches",
+                                                            "no_results",
+                                                            "exit",
+                                                            "failed"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "tone": {
+                                                          "enum": [
+                                                            "neutral",
+                                                            "error",
+                                                            "attention"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        "value": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "key",
+                                                        "tone"
+                                                      ]
                                                     }
                                                   }
                                                 },
@@ -42191,6 +43003,64 @@
                                       },
                                       "approval_note": {
                                         "type": "string"
+                                      },
+                                      "outcome": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "enum": [
+                                              "sent",
+                                              "approved",
+                                              "denied",
+                                              "goal_set",
+                                              "created",
+                                              "memory_added",
+                                              "memory_updated",
+                                              "memory_removed",
+                                              "skill_created",
+                                              "skill_updated",
+                                              "pending_approval",
+                                              "job_created",
+                                              "paused",
+                                              "resumed",
+                                              "removed",
+                                              "ran_now",
+                                              "moved_to",
+                                              "blocked",
+                                              "completed",
+                                              "commented",
+                                              "connected",
+                                              "needs_sign_in",
+                                              "answered",
+                                              "skipped",
+                                              "no_matches",
+                                              "no_results",
+                                              "exit",
+                                              "failed"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tone": {
+                                            "enum": [
+                                              "neutral",
+                                              "error",
+                                              "attention"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "tone"
+                                        ]
                                       }
                                     }
                                   },
@@ -48625,6 +49495,64 @@
                                             },
                                             "approval_note": {
                                               "type": "string"
+                                            },
+                                            "outcome": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "enum": [
+                                                    "sent",
+                                                    "approved",
+                                                    "denied",
+                                                    "goal_set",
+                                                    "created",
+                                                    "memory_added",
+                                                    "memory_updated",
+                                                    "memory_removed",
+                                                    "skill_created",
+                                                    "skill_updated",
+                                                    "pending_approval",
+                                                    "job_created",
+                                                    "paused",
+                                                    "resumed",
+                                                    "removed",
+                                                    "ran_now",
+                                                    "moved_to",
+                                                    "blocked",
+                                                    "completed",
+                                                    "commented",
+                                                    "connected",
+                                                    "needs_sign_in",
+                                                    "answered",
+                                                    "skipped",
+                                                    "no_matches",
+                                                    "no_results",
+                                                    "exit",
+                                                    "failed"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "tone": {
+                                                  "enum": [
+                                                    "neutral",
+                                                    "error",
+                                                    "attention"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "tone"
+                                              ]
                                             }
                                           }
                                         },
@@ -49440,6 +50368,64 @@
                                                     },
                                                     "approval_note": {
                                                       "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "key": {
+                                                          "enum": [
+                                                            "sent",
+                                                            "approved",
+                                                            "denied",
+                                                            "goal_set",
+                                                            "created",
+                                                            "memory_added",
+                                                            "memory_updated",
+                                                            "memory_removed",
+                                                            "skill_created",
+                                                            "skill_updated",
+                                                            "pending_approval",
+                                                            "job_created",
+                                                            "paused",
+                                                            "resumed",
+                                                            "removed",
+                                                            "ran_now",
+                                                            "moved_to",
+                                                            "blocked",
+                                                            "completed",
+                                                            "commented",
+                                                            "connected",
+                                                            "needs_sign_in",
+                                                            "answered",
+                                                            "skipped",
+                                                            "no_matches",
+                                                            "no_results",
+                                                            "exit",
+                                                            "failed"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "tone": {
+                                                          "enum": [
+                                                            "neutral",
+                                                            "error",
+                                                            "attention"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        "value": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "key",
+                                                        "tone"
+                                                      ]
                                                     }
                                                   }
                                                 },
@@ -51239,6 +52225,64 @@
                                       },
                                       "approval_note": {
                                         "type": "string"
+                                      },
+                                      "outcome": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "enum": [
+                                              "sent",
+                                              "approved",
+                                              "denied",
+                                              "goal_set",
+                                              "created",
+                                              "memory_added",
+                                              "memory_updated",
+                                              "memory_removed",
+                                              "skill_created",
+                                              "skill_updated",
+                                              "pending_approval",
+                                              "job_created",
+                                              "paused",
+                                              "resumed",
+                                              "removed",
+                                              "ran_now",
+                                              "moved_to",
+                                              "blocked",
+                                              "completed",
+                                              "commented",
+                                              "connected",
+                                              "needs_sign_in",
+                                              "answered",
+                                              "skipped",
+                                              "no_matches",
+                                              "no_results",
+                                              "exit",
+                                              "failed"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tone": {
+                                            "enum": [
+                                              "neutral",
+                                              "error",
+                                              "attention"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "tone"
+                                        ]
                                       }
                                     }
                                   },
@@ -54543,6 +55587,64 @@
                                             },
                                             "approval_note": {
                                               "type": "string"
+                                            },
+                                            "outcome": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "enum": [
+                                                    "sent",
+                                                    "approved",
+                                                    "denied",
+                                                    "goal_set",
+                                                    "created",
+                                                    "memory_added",
+                                                    "memory_updated",
+                                                    "memory_removed",
+                                                    "skill_created",
+                                                    "skill_updated",
+                                                    "pending_approval",
+                                                    "job_created",
+                                                    "paused",
+                                                    "resumed",
+                                                    "removed",
+                                                    "ran_now",
+                                                    "moved_to",
+                                                    "blocked",
+                                                    "completed",
+                                                    "commented",
+                                                    "connected",
+                                                    "needs_sign_in",
+                                                    "answered",
+                                                    "skipped",
+                                                    "no_matches",
+                                                    "no_results",
+                                                    "exit",
+                                                    "failed"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "tone": {
+                                                  "enum": [
+                                                    "neutral",
+                                                    "error",
+                                                    "attention"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "tone"
+                                              ]
                                             }
                                           }
                                         },
@@ -55358,6 +56460,64 @@
                                                     },
                                                     "approval_note": {
                                                       "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "key": {
+                                                          "enum": [
+                                                            "sent",
+                                                            "approved",
+                                                            "denied",
+                                                            "goal_set",
+                                                            "created",
+                                                            "memory_added",
+                                                            "memory_updated",
+                                                            "memory_removed",
+                                                            "skill_created",
+                                                            "skill_updated",
+                                                            "pending_approval",
+                                                            "job_created",
+                                                            "paused",
+                                                            "resumed",
+                                                            "removed",
+                                                            "ran_now",
+                                                            "moved_to",
+                                                            "blocked",
+                                                            "completed",
+                                                            "commented",
+                                                            "connected",
+                                                            "needs_sign_in",
+                                                            "answered",
+                                                            "skipped",
+                                                            "no_matches",
+                                                            "no_results",
+                                                            "exit",
+                                                            "failed"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "tone": {
+                                                          "enum": [
+                                                            "neutral",
+                                                            "error",
+                                                            "attention"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        "value": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "key",
+                                                        "tone"
+                                                      ]
                                                     }
                                                   }
                                                 },
@@ -57157,6 +58317,64 @@
                                       },
                                       "approval_note": {
                                         "type": "string"
+                                      },
+                                      "outcome": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "enum": [
+                                              "sent",
+                                              "approved",
+                                              "denied",
+                                              "goal_set",
+                                              "created",
+                                              "memory_added",
+                                              "memory_updated",
+                                              "memory_removed",
+                                              "skill_created",
+                                              "skill_updated",
+                                              "pending_approval",
+                                              "job_created",
+                                              "paused",
+                                              "resumed",
+                                              "removed",
+                                              "ran_now",
+                                              "moved_to",
+                                              "blocked",
+                                              "completed",
+                                              "commented",
+                                              "connected",
+                                              "needs_sign_in",
+                                              "answered",
+                                              "skipped",
+                                              "no_matches",
+                                              "no_results",
+                                              "exit",
+                                              "failed"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tone": {
+                                            "enum": [
+                                              "neutral",
+                                              "error",
+                                              "attention"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "tone"
+                                        ]
                                       }
                                     }
                                   },
@@ -60523,6 +61741,64 @@
                                             },
                                             "approval_note": {
                                               "type": "string"
+                                            },
+                                            "outcome": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "enum": [
+                                                    "sent",
+                                                    "approved",
+                                                    "denied",
+                                                    "goal_set",
+                                                    "created",
+                                                    "memory_added",
+                                                    "memory_updated",
+                                                    "memory_removed",
+                                                    "skill_created",
+                                                    "skill_updated",
+                                                    "pending_approval",
+                                                    "job_created",
+                                                    "paused",
+                                                    "resumed",
+                                                    "removed",
+                                                    "ran_now",
+                                                    "moved_to",
+                                                    "blocked",
+                                                    "completed",
+                                                    "commented",
+                                                    "connected",
+                                                    "needs_sign_in",
+                                                    "answered",
+                                                    "skipped",
+                                                    "no_matches",
+                                                    "no_results",
+                                                    "exit",
+                                                    "failed"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "tone": {
+                                                  "enum": [
+                                                    "neutral",
+                                                    "error",
+                                                    "attention"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "tone"
+                                              ]
                                             }
                                           }
                                         },
@@ -61338,6 +62614,64 @@
                                                     },
                                                     "approval_note": {
                                                       "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "key": {
+                                                          "enum": [
+                                                            "sent",
+                                                            "approved",
+                                                            "denied",
+                                                            "goal_set",
+                                                            "created",
+                                                            "memory_added",
+                                                            "memory_updated",
+                                                            "memory_removed",
+                                                            "skill_created",
+                                                            "skill_updated",
+                                                            "pending_approval",
+                                                            "job_created",
+                                                            "paused",
+                                                            "resumed",
+                                                            "removed",
+                                                            "ran_now",
+                                                            "moved_to",
+                                                            "blocked",
+                                                            "completed",
+                                                            "commented",
+                                                            "connected",
+                                                            "needs_sign_in",
+                                                            "answered",
+                                                            "skipped",
+                                                            "no_matches",
+                                                            "no_results",
+                                                            "exit",
+                                                            "failed"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "tone": {
+                                                          "enum": [
+                                                            "neutral",
+                                                            "error",
+                                                            "attention"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        "value": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "key",
+                                                        "tone"
+                                                      ]
                                                     }
                                                   }
                                                 },
@@ -63137,6 +64471,64 @@
                                       },
                                       "approval_note": {
                                         "type": "string"
+                                      },
+                                      "outcome": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "enum": [
+                                              "sent",
+                                              "approved",
+                                              "denied",
+                                              "goal_set",
+                                              "created",
+                                              "memory_added",
+                                              "memory_updated",
+                                              "memory_removed",
+                                              "skill_created",
+                                              "skill_updated",
+                                              "pending_approval",
+                                              "job_created",
+                                              "paused",
+                                              "resumed",
+                                              "removed",
+                                              "ran_now",
+                                              "moved_to",
+                                              "blocked",
+                                              "completed",
+                                              "commented",
+                                              "connected",
+                                              "needs_sign_in",
+                                              "answered",
+                                              "skipped",
+                                              "no_matches",
+                                              "no_results",
+                                              "exit",
+                                              "failed"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tone": {
+                                            "enum": [
+                                              "neutral",
+                                              "error",
+                                              "attention"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "tone"
+                                        ]
                                       }
                                     }
                                   },
@@ -66501,6 +67893,64 @@
                                             },
                                             "approval_note": {
                                               "type": "string"
+                                            },
+                                            "outcome": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "enum": [
+                                                    "sent",
+                                                    "approved",
+                                                    "denied",
+                                                    "goal_set",
+                                                    "created",
+                                                    "memory_added",
+                                                    "memory_updated",
+                                                    "memory_removed",
+                                                    "skill_created",
+                                                    "skill_updated",
+                                                    "pending_approval",
+                                                    "job_created",
+                                                    "paused",
+                                                    "resumed",
+                                                    "removed",
+                                                    "ran_now",
+                                                    "moved_to",
+                                                    "blocked",
+                                                    "completed",
+                                                    "commented",
+                                                    "connected",
+                                                    "needs_sign_in",
+                                                    "answered",
+                                                    "skipped",
+                                                    "no_matches",
+                                                    "no_results",
+                                                    "exit",
+                                                    "failed"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "tone": {
+                                                  "enum": [
+                                                    "neutral",
+                                                    "error",
+                                                    "attention"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "tone"
+                                              ]
                                             }
                                           }
                                         },
@@ -67316,6 +68766,64 @@
                                                     },
                                                     "approval_note": {
                                                       "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "key": {
+                                                          "enum": [
+                                                            "sent",
+                                                            "approved",
+                                                            "denied",
+                                                            "goal_set",
+                                                            "created",
+                                                            "memory_added",
+                                                            "memory_updated",
+                                                            "memory_removed",
+                                                            "skill_created",
+                                                            "skill_updated",
+                                                            "pending_approval",
+                                                            "job_created",
+                                                            "paused",
+                                                            "resumed",
+                                                            "removed",
+                                                            "ran_now",
+                                                            "moved_to",
+                                                            "blocked",
+                                                            "completed",
+                                                            "commented",
+                                                            "connected",
+                                                            "needs_sign_in",
+                                                            "answered",
+                                                            "skipped",
+                                                            "no_matches",
+                                                            "no_results",
+                                                            "exit",
+                                                            "failed"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "tone": {
+                                                          "enum": [
+                                                            "neutral",
+                                                            "error",
+                                                            "attention"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        "value": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "key",
+                                                        "tone"
+                                                      ]
                                                     }
                                                   }
                                                 },
@@ -69115,6 +70623,64 @@
                                       },
                                       "approval_note": {
                                         "type": "string"
+                                      },
+                                      "outcome": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "enum": [
+                                              "sent",
+                                              "approved",
+                                              "denied",
+                                              "goal_set",
+                                              "created",
+                                              "memory_added",
+                                              "memory_updated",
+                                              "memory_removed",
+                                              "skill_created",
+                                              "skill_updated",
+                                              "pending_approval",
+                                              "job_created",
+                                              "paused",
+                                              "resumed",
+                                              "removed",
+                                              "ran_now",
+                                              "moved_to",
+                                              "blocked",
+                                              "completed",
+                                              "commented",
+                                              "connected",
+                                              "needs_sign_in",
+                                              "answered",
+                                              "skipped",
+                                              "no_matches",
+                                              "no_results",
+                                              "exit",
+                                              "failed"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tone": {
+                                            "enum": [
+                                              "neutral",
+                                              "error",
+                                              "attention"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "tone"
+                                        ]
                                       }
                                     }
                                   },
@@ -72286,6 +73852,64 @@
                                       },
                                       "approval_note": {
                                         "type": "string"
+                                      },
+                                      "outcome": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "enum": [
+                                              "sent",
+                                              "approved",
+                                              "denied",
+                                              "goal_set",
+                                              "created",
+                                              "memory_added",
+                                              "memory_updated",
+                                              "memory_removed",
+                                              "skill_created",
+                                              "skill_updated",
+                                              "pending_approval",
+                                              "job_created",
+                                              "paused",
+                                              "resumed",
+                                              "removed",
+                                              "ran_now",
+                                              "moved_to",
+                                              "blocked",
+                                              "completed",
+                                              "commented",
+                                              "connected",
+                                              "needs_sign_in",
+                                              "answered",
+                                              "skipped",
+                                              "no_matches",
+                                              "no_results",
+                                              "exit",
+                                              "failed"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tone": {
+                                            "enum": [
+                                              "neutral",
+                                              "error",
+                                              "attention"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "tone"
+                                        ]
                                       }
                                     }
                                   },
@@ -73783,6 +75407,64 @@
                         },
                         "approval_note": {
                           "type": "string"
+                        },
+                        "outcome": {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "enum": [
+                                "sent",
+                                "approved",
+                                "denied",
+                                "goal_set",
+                                "created",
+                                "memory_added",
+                                "memory_updated",
+                                "memory_removed",
+                                "skill_created",
+                                "skill_updated",
+                                "pending_approval",
+                                "job_created",
+                                "paused",
+                                "resumed",
+                                "removed",
+                                "ran_now",
+                                "moved_to",
+                                "blocked",
+                                "completed",
+                                "commented",
+                                "connected",
+                                "needs_sign_in",
+                                "answered",
+                                "skipped",
+                                "no_matches",
+                                "no_results",
+                                "exit",
+                                "failed"
+                              ],
+                              "type": "string"
+                            },
+                            "tone": {
+                              "enum": [
+                                "neutral",
+                                "error",
+                                "attention"
+                              ],
+                              "type": "string"
+                            },
+                            "count": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "value": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "tone"
+                          ]
                         }
                       }
                     }
@@ -84969,6 +86651,64 @@
                                             },
                                             "approval_note": {
                                               "type": "string"
+                                            },
+                                            "outcome": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "enum": [
+                                                    "sent",
+                                                    "approved",
+                                                    "denied",
+                                                    "goal_set",
+                                                    "created",
+                                                    "memory_added",
+                                                    "memory_updated",
+                                                    "memory_removed",
+                                                    "skill_created",
+                                                    "skill_updated",
+                                                    "pending_approval",
+                                                    "job_created",
+                                                    "paused",
+                                                    "resumed",
+                                                    "removed",
+                                                    "ran_now",
+                                                    "moved_to",
+                                                    "blocked",
+                                                    "completed",
+                                                    "commented",
+                                                    "connected",
+                                                    "needs_sign_in",
+                                                    "answered",
+                                                    "skipped",
+                                                    "no_matches",
+                                                    "no_results",
+                                                    "exit",
+                                                    "failed"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "tone": {
+                                                  "enum": [
+                                                    "neutral",
+                                                    "error",
+                                                    "attention"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "tone"
+                                              ]
                                             }
                                           }
                                         },
@@ -85784,6 +87524,64 @@
                                                     },
                                                     "approval_note": {
                                                       "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "key": {
+                                                          "enum": [
+                                                            "sent",
+                                                            "approved",
+                                                            "denied",
+                                                            "goal_set",
+                                                            "created",
+                                                            "memory_added",
+                                                            "memory_updated",
+                                                            "memory_removed",
+                                                            "skill_created",
+                                                            "skill_updated",
+                                                            "pending_approval",
+                                                            "job_created",
+                                                            "paused",
+                                                            "resumed",
+                                                            "removed",
+                                                            "ran_now",
+                                                            "moved_to",
+                                                            "blocked",
+                                                            "completed",
+                                                            "commented",
+                                                            "connected",
+                                                            "needs_sign_in",
+                                                            "answered",
+                                                            "skipped",
+                                                            "no_matches",
+                                                            "no_results",
+                                                            "exit",
+                                                            "failed"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "tone": {
+                                                          "enum": [
+                                                            "neutral",
+                                                            "error",
+                                                            "attention"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        "value": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "key",
+                                                        "tone"
+                                                      ]
                                                     }
                                                   }
                                                 },
@@ -87583,6 +89381,64 @@
                                       },
                                       "approval_note": {
                                         "type": "string"
+                                      },
+                                      "outcome": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "enum": [
+                                              "sent",
+                                              "approved",
+                                              "denied",
+                                              "goal_set",
+                                              "created",
+                                              "memory_added",
+                                              "memory_updated",
+                                              "memory_removed",
+                                              "skill_created",
+                                              "skill_updated",
+                                              "pending_approval",
+                                              "job_created",
+                                              "paused",
+                                              "resumed",
+                                              "removed",
+                                              "ran_now",
+                                              "moved_to",
+                                              "blocked",
+                                              "completed",
+                                              "commented",
+                                              "connected",
+                                              "needs_sign_in",
+                                              "answered",
+                                              "skipped",
+                                              "no_matches",
+                                              "no_results",
+                                              "exit",
+                                              "failed"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tone": {
+                                            "enum": [
+                                              "neutral",
+                                              "error",
+                                              "attention"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "tone"
+                                        ]
                                       }
                                     }
                                   },
@@ -90939,6 +92795,64 @@
                                             },
                                             "approval_note": {
                                               "type": "string"
+                                            },
+                                            "outcome": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "enum": [
+                                                    "sent",
+                                                    "approved",
+                                                    "denied",
+                                                    "goal_set",
+                                                    "created",
+                                                    "memory_added",
+                                                    "memory_updated",
+                                                    "memory_removed",
+                                                    "skill_created",
+                                                    "skill_updated",
+                                                    "pending_approval",
+                                                    "job_created",
+                                                    "paused",
+                                                    "resumed",
+                                                    "removed",
+                                                    "ran_now",
+                                                    "moved_to",
+                                                    "blocked",
+                                                    "completed",
+                                                    "commented",
+                                                    "connected",
+                                                    "needs_sign_in",
+                                                    "answered",
+                                                    "skipped",
+                                                    "no_matches",
+                                                    "no_results",
+                                                    "exit",
+                                                    "failed"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "tone": {
+                                                  "enum": [
+                                                    "neutral",
+                                                    "error",
+                                                    "attention"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "tone"
+                                              ]
                                             }
                                           }
                                         },
@@ -91754,6 +93668,64 @@
                                                     },
                                                     "approval_note": {
                                                       "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "key": {
+                                                          "enum": [
+                                                            "sent",
+                                                            "approved",
+                                                            "denied",
+                                                            "goal_set",
+                                                            "created",
+                                                            "memory_added",
+                                                            "memory_updated",
+                                                            "memory_removed",
+                                                            "skill_created",
+                                                            "skill_updated",
+                                                            "pending_approval",
+                                                            "job_created",
+                                                            "paused",
+                                                            "resumed",
+                                                            "removed",
+                                                            "ran_now",
+                                                            "moved_to",
+                                                            "blocked",
+                                                            "completed",
+                                                            "commented",
+                                                            "connected",
+                                                            "needs_sign_in",
+                                                            "answered",
+                                                            "skipped",
+                                                            "no_matches",
+                                                            "no_results",
+                                                            "exit",
+                                                            "failed"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "tone": {
+                                                          "enum": [
+                                                            "neutral",
+                                                            "error",
+                                                            "attention"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        "value": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "key",
+                                                        "tone"
+                                                      ]
                                                     }
                                                   }
                                                 },
@@ -93553,6 +95525,64 @@
                                       },
                                       "approval_note": {
                                         "type": "string"
+                                      },
+                                      "outcome": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "enum": [
+                                              "sent",
+                                              "approved",
+                                              "denied",
+                                              "goal_set",
+                                              "created",
+                                              "memory_added",
+                                              "memory_updated",
+                                              "memory_removed",
+                                              "skill_created",
+                                              "skill_updated",
+                                              "pending_approval",
+                                              "job_created",
+                                              "paused",
+                                              "resumed",
+                                              "removed",
+                                              "ran_now",
+                                              "moved_to",
+                                              "blocked",
+                                              "completed",
+                                              "commented",
+                                              "connected",
+                                              "needs_sign_in",
+                                              "answered",
+                                              "skipped",
+                                              "no_matches",
+                                              "no_results",
+                                              "exit",
+                                              "failed"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tone": {
+                                            "enum": [
+                                              "neutral",
+                                              "error",
+                                              "attention"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "tone"
+                                        ]
                                       }
                                     }
                                   },
@@ -97595,6 +99625,64 @@
                                             },
                                             "approval_note": {
                                               "type": "string"
+                                            },
+                                            "outcome": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "enum": [
+                                                    "sent",
+                                                    "approved",
+                                                    "denied",
+                                                    "goal_set",
+                                                    "created",
+                                                    "memory_added",
+                                                    "memory_updated",
+                                                    "memory_removed",
+                                                    "skill_created",
+                                                    "skill_updated",
+                                                    "pending_approval",
+                                                    "job_created",
+                                                    "paused",
+                                                    "resumed",
+                                                    "removed",
+                                                    "ran_now",
+                                                    "moved_to",
+                                                    "blocked",
+                                                    "completed",
+                                                    "commented",
+                                                    "connected",
+                                                    "needs_sign_in",
+                                                    "answered",
+                                                    "skipped",
+                                                    "no_matches",
+                                                    "no_results",
+                                                    "exit",
+                                                    "failed"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "tone": {
+                                                  "enum": [
+                                                    "neutral",
+                                                    "error",
+                                                    "attention"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "tone"
+                                              ]
                                             }
                                           }
                                         },
@@ -98410,6 +100498,64 @@
                                                     },
                                                     "approval_note": {
                                                       "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "key": {
+                                                          "enum": [
+                                                            "sent",
+                                                            "approved",
+                                                            "denied",
+                                                            "goal_set",
+                                                            "created",
+                                                            "memory_added",
+                                                            "memory_updated",
+                                                            "memory_removed",
+                                                            "skill_created",
+                                                            "skill_updated",
+                                                            "pending_approval",
+                                                            "job_created",
+                                                            "paused",
+                                                            "resumed",
+                                                            "removed",
+                                                            "ran_now",
+                                                            "moved_to",
+                                                            "blocked",
+                                                            "completed",
+                                                            "commented",
+                                                            "connected",
+                                                            "needs_sign_in",
+                                                            "answered",
+                                                            "skipped",
+                                                            "no_matches",
+                                                            "no_results",
+                                                            "exit",
+                                                            "failed"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "tone": {
+                                                          "enum": [
+                                                            "neutral",
+                                                            "error",
+                                                            "attention"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        "value": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "key",
+                                                        "tone"
+                                                      ]
                                                     }
                                                   }
                                                 },
@@ -100209,6 +102355,64 @@
                                       },
                                       "approval_note": {
                                         "type": "string"
+                                      },
+                                      "outcome": {
+                                        "type": "object",
+                                        "properties": {
+                                          "key": {
+                                            "enum": [
+                                              "sent",
+                                              "approved",
+                                              "denied",
+                                              "goal_set",
+                                              "created",
+                                              "memory_added",
+                                              "memory_updated",
+                                              "memory_removed",
+                                              "skill_created",
+                                              "skill_updated",
+                                              "pending_approval",
+                                              "job_created",
+                                              "paused",
+                                              "resumed",
+                                              "removed",
+                                              "ran_now",
+                                              "moved_to",
+                                              "blocked",
+                                              "completed",
+                                              "commented",
+                                              "connected",
+                                              "needs_sign_in",
+                                              "answered",
+                                              "skipped",
+                                              "no_matches",
+                                              "no_results",
+                                              "exit",
+                                              "failed"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tone": {
+                                            "enum": [
+                                              "neutral",
+                                              "error",
+                                              "attention"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "value": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "key",
+                                          "tone"
+                                        ]
                                       }
                                     }
                                   },
@@ -104046,6 +106250,64 @@
                                                 },
                                                 "approval_note": {
                                                   "type": "string"
+                                                },
+                                                "outcome": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "key": {
+                                                      "enum": [
+                                                        "sent",
+                                                        "approved",
+                                                        "denied",
+                                                        "goal_set",
+                                                        "created",
+                                                        "memory_added",
+                                                        "memory_updated",
+                                                        "memory_removed",
+                                                        "skill_created",
+                                                        "skill_updated",
+                                                        "pending_approval",
+                                                        "job_created",
+                                                        "paused",
+                                                        "resumed",
+                                                        "removed",
+                                                        "ran_now",
+                                                        "moved_to",
+                                                        "blocked",
+                                                        "completed",
+                                                        "commented",
+                                                        "connected",
+                                                        "needs_sign_in",
+                                                        "answered",
+                                                        "skipped",
+                                                        "no_matches",
+                                                        "no_results",
+                                                        "exit",
+                                                        "failed"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "tone": {
+                                                      "enum": [
+                                                        "neutral",
+                                                        "error",
+                                                        "attention"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "count": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "value": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "key",
+                                                    "tone"
+                                                  ]
                                                 }
                                               }
                                             },
@@ -104644,6 +106906,15 @@
                                                         },
                                                         "approval_note": {
                                                           "type": "string"
+                                                        },
+                                                        "outcome": {
+                                                          "type": "object",
+                                                          "properties": {
+                                                            "key": {},
+                                                            "tone": {},
+                                                            "count": {},
+                                                            "value": {}
+                                                          }
                                                         }
                                                       }
                                                     },
@@ -106372,6 +108643,64 @@
                                           },
                                           "approval_note": {
                                             "type": "string"
+                                          },
+                                          "outcome": {
+                                            "type": "object",
+                                            "properties": {
+                                              "key": {
+                                                "enum": [
+                                                  "sent",
+                                                  "approved",
+                                                  "denied",
+                                                  "goal_set",
+                                                  "created",
+                                                  "memory_added",
+                                                  "memory_updated",
+                                                  "memory_removed",
+                                                  "skill_created",
+                                                  "skill_updated",
+                                                  "pending_approval",
+                                                  "job_created",
+                                                  "paused",
+                                                  "resumed",
+                                                  "removed",
+                                                  "ran_now",
+                                                  "moved_to",
+                                                  "blocked",
+                                                  "completed",
+                                                  "commented",
+                                                  "connected",
+                                                  "needs_sign_in",
+                                                  "answered",
+                                                  "skipped",
+                                                  "no_matches",
+                                                  "no_results",
+                                                  "exit",
+                                                  "failed"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "tone": {
+                                                "enum": [
+                                                  "neutral",
+                                                  "error",
+                                                  "attention"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "count": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "value": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "key",
+                                              "tone"
+                                            ]
                                           }
                                         }
                                       },
@@ -155109,6 +157438,64 @@
                                             },
                                             "approval_note": {
                                               "type": "string"
+                                            },
+                                            "outcome": {
+                                              "type": "object",
+                                              "properties": {
+                                                "key": {
+                                                  "enum": [
+                                                    "sent",
+                                                    "approved",
+                                                    "denied",
+                                                    "goal_set",
+                                                    "created",
+                                                    "memory_added",
+                                                    "memory_updated",
+                                                    "memory_removed",
+                                                    "skill_created",
+                                                    "skill_updated",
+                                                    "pending_approval",
+                                                    "job_created",
+                                                    "paused",
+                                                    "resumed",
+                                                    "removed",
+                                                    "ran_now",
+                                                    "moved_to",
+                                                    "blocked",
+                                                    "completed",
+                                                    "commented",
+                                                    "connected",
+                                                    "needs_sign_in",
+                                                    "answered",
+                                                    "skipped",
+                                                    "no_matches",
+                                                    "no_results",
+                                                    "exit",
+                                                    "failed"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "tone": {
+                                                  "enum": [
+                                                    "neutral",
+                                                    "error",
+                                                    "attention"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "key",
+                                                "tone"
+                                              ]
                                             }
                                           }
                                         },
@@ -155924,6 +158311,64 @@
                                                     },
                                                     "approval_note": {
                                                       "type": "string"
+                                                    },
+                                                    "outcome": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "key": {
+                                                          "enum": [
+                                                            "sent",
+                                                            "approved",
+                                                            "denied",
+                                                            "goal_set",
+                                                            "created",
+                                                            "memory_added",
+                                                            "memory_updated",
+                                                            "memory_removed",
+                                                            "skill_created",
+                                                            "skill_updated",
+                                                            "pending_approval",
+                                                            "job_created",
+                                                            "paused",
+                                                            "resumed",
+                                                            "removed",
+                                                            "ran_now",
+                                                            "moved_to",
+                                                            "blocked",
+                                                            "completed",
+                                                            "commented",
+                                                            "connected",
+                                                            "needs_sign_in",
+                                                            "answered",
+                                                            "skipped",
+                                                            "no_matches",
+                                                            "no_results",
+                                                            "exit",
+                                                            "failed"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "tone": {
+                                                          "enum": [
+                                                            "neutral",
+                                                            "error",
+                                                            "attention"
+                                                          ],
+                                                          "type": "string"
+                                                        },
+                                                        "count": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991
+                                                        },
+                                                        "value": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "key",
+                                                        "tone"
+                                                      ]
                                                     }
                                                   }
                                                 },

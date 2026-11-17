@@ -46,6 +46,12 @@
 .tool-worklog-list .tool-card-icon svg{width:14px;height:14px}
 .tool-worklog-list .tool-card-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-family:inherit;font-size:var(--message-body-font-size);font-weight:400;line-height:var(--message-body-line-height);letter-spacing:0;position:relative;opacity:.56}
 .tool-worklog-list .tool-card[data-tool-error="1"] .tool-card-icon,.tool-worklog-list .tool-card[data-tool-error="1"] .tool-card-icon svg,.tool-worklog-list .tool-card[data-tool-error="1"] .tool-card-name{color:var(--error);opacity:.85}
+/* TAL-2335: a call's outcome after its label, past a muted middle dot: muted a touch brighter than the label, the error or
+   warning colour only when the server's tone asks. The label truncates first; the outcome takes at most 55% of the row. */
+.tool-card-outcome{flex:0 0 auto;max-width:55%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:color-mix(in srgb,var(--muted) 82%,var(--text));font-size:var(--message-body-font-size);line-height:var(--message-body-line-height)}
+.tool-card-outcome::before{content:"·"/"";color:var(--muted);margin-right:6px}
+.tool-card-outcome[data-outcome-tone="error"]{color:var(--error)}
+.tool-card-outcome[data-outcome-tone="attention"]{color:var(--warning)}
 .tool-worklog-list .tool-card-result pre{margin:0}
 .tool-worklog-list > .thinking-card{margin:0;max-width:none;border:0;border-radius:0;background:transparent}
 .tool-worklog-list > .thinking-card .thinking-card-header{display:flex;align-items:center;gap:7px;padding:3px 8px;margin-left:-8px;border-radius:7px;color:var(--muted);font-size:var(--message-body-font-size);font-weight:400;line-height:var(--message-body-line-height);opacity:.56}

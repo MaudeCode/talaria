@@ -4064,3 +4064,91 @@ describe('project deletion unlinks every session that names it (TAL-1028)', () =
     }
   })
 })
+
+describe('session detail ships each call\'s outcome (TAL-2335)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
+  const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
+  const reply = (id: string, result: Json, timestamp: number, turn: string): Json => ({ role: 'tool', tool_call_id: id, content: JSON.stringify(result), timestamp, _turn_id: turn })
+  const diff = '--- a/src/auth/session.ts\n+++ b/src/auth/session.ts\n@@ -10,3 +10,4 @@\n-const expiry = Math.floor(ttl)\n+const expiry = Math.ceil(ttl)\n+// Round up so the cookie outlives the token.\n export { expiry }\n'
+  /** The owner-approved mock's three turns: Talaria tools and agent state, code and search, then web, a question, Kanban, apps and a skill. */
+  const transcript: Json[] = [
+    { role: 'user', content: 'Tell the release chat it\'s shipped, approve its deploy, remember I prefer Postgres, and pause the daily digest.', message_id: 'outcome-user-1', timestamp: 9500, _turn_id: 'outcome-run-1' },
+    { role: 'assistant', content: '', message_id: 'outcome-calls-1', timestamp: 9501, _turn_id: 'outcome-run-1', tool_calls: [
+      call('call-list', 'session_list', { query: 'release' }),
+      call('call-send', 'session_send', { session_id: 'release-chat', message: 'Shipped.' }),
+      call('call-approve', 'approval_respond', { session_id: 'release-chat', approval_id: 'approval-1', choice: 'once' }),
+      call('call-goal', 'goal_set', { session_id: 'release-chat', goal: 'Watch the deploy' }),
+      call('call-memory', 'memory', { action: 'add', target: 'user', content: 'Prefers Postgres' }),
+      call('call-pause', 'cronjob_manage', { action: 'pause', job_id: 'digest' }),
+    ] },
+    reply('call-list', { sessions: [{ session_id: 'release-chat', title: 'Release' }] }, 9502, 'outcome-run-1'),
+    reply('call-send', { outcome: 'queued', stream_id: null, steer_id: 'steer-1' }, 9503, 'outcome-run-1'),
+    reply('call-approve', { ok: true, choice: 'once' }, 9504, 'outcome-run-1'),
+    reply('call-goal', { ok: true, action: 'set' }, 9505, 'outcome-run-1'),
+    reply('call-memory', { success: true, done: true, target: 'user', usage: '5% — 110/2,200 chars', entry_count: 3, message: 'Applied 1 operation(s).' }, 9506, 'outcome-run-1'),
+    reply('call-pause', { success: true, job: { job_id: 'digest', name: 'Daily digest', schedule: 'every day at 08:00', next_run_at: null, enabled: false, state: 'paused' } }, 9507, 'outcome-run-1'),
+    { role: 'assistant', content: 'Done. The release chat has the message, its deploy is approved, Postgres is saved as your preference, and the daily digest is paused.', message_id: 'outcome-answer-1', timestamp: 9508, _turn_id: 'outcome-run-1' },
+    { role: 'user', content: 'Why is the login test failing?', message_id: 'outcome-user-2', timestamp: 9510, _turn_id: 'outcome-run-2' },
+    { role: 'assistant', content: '', message_id: 'outcome-calls-2', timestamp: 9511, _turn_id: 'outcome-run-2', tool_calls: [
+      call('call-test', 'terminal', { command: 'npm test -- auth.spec.ts' }),
+      call('call-status', 'terminal', { command: 'git status' }),
+      call('call-grep', 'search_files', { pattern: 'TODO(auth)' }),
+      call('call-read', 'read_file', { path: 'src/auth/session.ts' }),
+      call('call-patch', 'patch', { path: 'src/auth/session.ts', old_string: 'Math.floor(ttl)', new_string: 'Math.ceil(ttl)' }),
+    ] },
+    reply('call-test', { output: 'FAIL auth.spec.ts\n  expected cookie to outlive token', exit_code: 1, error: null }, 9512, 'outcome-run-2'),
+    reply('call-status', { output: 'On branch main\nnothing to commit', exit_code: 0, error: null }, 9513, 'outcome-run-2'),
+    reply('call-grep', { total_count: 0, matches: [] }, 9514, 'outcome-run-2'),
+    reply('call-read', { content: '10|const expiry = Math.floor(ttl)', total_lines: 40 }, 9515, 'outcome-run-2'),
+    reply('call-patch', { success: true, diff }, 9516, 'outcome-run-2'),
+    { role: 'assistant', content: 'The session cookie expired one second early because the expiry was rounded down. I changed it to round up; the test passes now.', message_id: 'outcome-answer-2', timestamp: 9517, _turn_id: 'outcome-run-2' },
+    { role: 'user', content: 'Check for a newer Agent release, then file it and move the login ticket along.', message_id: 'outcome-user-3', timestamp: 9520, _turn_id: 'outcome-run-3' },
+    { role: 'assistant', content: '', message_id: 'outcome-calls-3', timestamp: 9521, _turn_id: 'outcome-run-3', tool_calls: [
+      call('call-web', 'web_search', { query: 'hermes agent 0.23.2 release' }),
+      call('call-web-none', 'web_search', { query: 'hermes agent 0.24 changelog' }),
+      call('call-ask', 'clarify', { questions: [{ question: 'Which repository to file in?', choices: ['MaudeCode/talaria', 'MaudeCode/hermes'] }] }),
+      call('call-move', 'kanban_request_review', { task_id: 't_login', summary: 'Fixed the redirect' }),
+      call('call-issue', 'mcp__github__create_issue', { title: 'Agent 0.23.2 is out' }),
+      call('call-mail', 'connectors__gmail__GMAIL_SEND_EMAIL', { to: 'owner@example.com', subject: 'Agent 0.23.2' }),
+      call('call-skill', 'skill_manage', { action: 'edit', name: 'deploy-checklist', content: '# Deploy checklist' }),
+    ] },
+    reply('call-web', { success: true, data: { web: [{ title: 'Hermes Agent 0.23.2', url: 'https://example.com/hermes/0.23.2', description: 'Release notes' }] } }, 9522, 'outcome-run-3'),
+    reply('call-web-none', { success: true, data: { web: [] } }, 9523, 'outcome-run-3'),
+    reply('call-ask', { responses: [{ question: 'Which repository to file in?', choices_offered: ['MaudeCode/talaria', 'MaudeCode/hermes'], status: 'answered', user_response: 'MaudeCode/talaria' }], outcome: 'answered' }, 9524, 'outcome-run-3'),
+    reply('call-move', { ok: true, task_id: 't_login', status: 'review' }, 9525, 'outcome-run-3'),
+    reply('call-issue', { error: 'Resource not accessible by integration' }, 9526, 'outcome-run-3'),
+    reply('call-mail', { id: 'message-1', threadId: 'thread-1' }, 9527, 'outcome-run-3'),
+    reply('call-skill', { success: true, staged: true, pending_id: 'pending-1', gist: 'Add a rollback step', message: 'Waiting for the user to approve.' }, 9528, 'outcome-run-3'),
+    { role: 'assistant', content: '0.23.2 is out. GitHub refused the issue because the integration can\'t write to that repository, so I emailed you the details instead. The login ticket is in Review.', message_id: 'outcome-answer-3', timestamp: 9529, _turn_id: 'outcome-run-3' },
+  ]
+  const expected: Record<string, Json | undefined> = {
+    'call-list': undefined, 'call-send': { key: 'sent', tone: 'neutral' }, 'call-approve': { key: 'approved', tone: 'neutral' }, 'call-goal': { key: 'goal_set', tone: 'neutral' },
+    'call-memory': { key: 'memory_added', tone: 'neutral', count: 1 }, 'call-pause': { key: 'paused', tone: 'neutral' },
+    'call-test': { key: 'exit', tone: 'error', count: 1 }, 'call-status': undefined, 'call-grep': { key: 'no_matches', tone: 'neutral' }, 'call-read': undefined, 'call-patch': undefined,
+    'call-web': undefined, 'call-web-none': { key: 'no_results', tone: 'neutral' }, 'call-ask': { key: 'answered', tone: 'neutral', value: 'MaudeCode/talaria' },
+    'call-move': { key: 'moved_to', tone: 'neutral', value: 'Review' }, 'call-issue': { key: 'failed', tone: 'error', value: 'Resource not accessible by integration' },
+    'call-mail': undefined, 'call-skill': { key: 'pending_approval', tone: 'attention' },
+  }
+
+  it('matches the shared contract fixture, each call with the outcome its row shows, on the calls and the scene alike', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = structuredClone(transcript)
+    session.title = 'Tool row outcomes'
+    await s.deps.sessionStore.save(session)
+    const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_outcome_views as Json
+    for (const query of ['', '&msg_limit=50']) {
+      const messages = JSON.parse(JSON.stringify(((await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json).messages).replaceAll(sid, 'outcome-session')) as Json[]
+      expect(messages, query).toEqual((fixture.session as Json).messages)
+      for (const turn of [1, 2, 3]) {
+        const calls = messages.find((m) => m.message_id === `outcome-calls-${String(turn)}`)?.tool_calls as Json[]
+        const rows = ((messages.find((m) => m.message_id === `outcome-answer-${String(turn)}`)?._anchor_activity_scene as Json).activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => r.tool as Json)
+        for (const list of [calls, rows]) for (const c of list) expect((c.result_view as Json | null)?.outcome, `${query} ${String(c.id)}`).toEqual(expected[String(c.id)])
+      }
+    }
+  })
+})

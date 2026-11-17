@@ -1,4 +1,4 @@
-import { ApprovalAnsweredBySchema, DecisionReviewRefSchema, DisplayMediaSchema, FileExcerptSchema, OutboundDraftRefSchema, ProposalRefSchema, ResultLinksSchema, ResultPageSchema, SearchMatchesSchema, ShowBlockRefSchema, TerminalRefSchema, ToolFieldSchema, ToolRowsSchema, type ApprovalAnsweredBy, type FileExcerpt, type ResultLinks, type ResultPage, type SearchMatches, type ToolField, type ToolResultView, type ToolRows } from '@maudecode/talaria-web-contracts'
+import { ApprovalAnsweredBySchema, DecisionReviewRefSchema, DisplayMediaSchema, FileExcerptSchema, OutboundDraftRefSchema, ProposalRefSchema, ResultLinksSchema, ResultPageSchema, SearchMatchesSchema, ShowBlockRefSchema, TerminalRefSchema, ToolFieldSchema, ToolOutcomeSchema, ToolRowsSchema, type ApprovalAnsweredBy, type FileExcerpt, type ResultLinks, type ResultPage, type SearchMatches, type ToolField, type ToolResultView, type ToolRows } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 /**
  * Transcript settlement after an Agent turn (the core of Python
@@ -13,7 +13,7 @@ import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
 import { toolResultMedia, toolScreenshotMedia, type MediaProjection } from '../workspace/media-refs.js'
-import { codeExcerpt, DATA_URL_RE, decidedEditDiff, decisionReviewRef, humanControlRows, outboundDraftRef, pageExcerpt, proposalRef, readFileView, resultAnalysisView, resultLinksView, resultPagesView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName, toolPresentation, toolRowsView, toolTextRows } from './tool-display.js'
+import { codeExcerpt, DATA_URL_RE, decidedEditDiff, decisionReviewRef, humanControlRows, outboundDraftRef, outcomeValue, pageExcerpt, proposalRef, readFileView, resultAnalysisView, resultLinksView, resultPagesView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolCallOutcome, toolEditDiff, toolName, toolPresentation, toolRowsView, toolTextRows } from './tool-display.js'
 import { sourceKind } from './source-kind.js'
 
 const TOOL_RESULT_SNIPPET_MAX = 4000
@@ -917,6 +917,12 @@ export function decidedResultView(value: Record<string, unknown>): ToolResultVie
   if (typeof value.analysis === 'string') view.analysis = toolResultSnippet(value.analysis)
   const rows = ToolRowsSchema.safeParse(value.rows).data
   if (rows) view.rows = cappedToolRows(rows, TOOL_RESULT_SNIPPET_MAX)
+  const outcome = ToolOutcomeSchema.safeParse(value.outcome).data
+  if (outcome) {
+    const { value: text, ...rest } = outcome
+    const value = outcomeValue(text)
+    view.outcome = { ...rest, ...(value ? { value } : {}) }
+  }
   return view
 }
 
@@ -965,7 +971,9 @@ export function toolOutcome(input: unknown, toolName?: unknown, flagged = false,
   // The whole view once: capped for display, and whether any section was cut (TAL-331's whole-result offer).
   const full = uncappedResultView(raw, toolName, args)
   const capped = Object.values(full).some((field) => typeof field === 'string' && field.length > TOOL_RESULT_SNIPPET_MAX) || [fieldChars(full.fields), excerptChars(full.file_excerpt), matchesChars(full.matches), linksChars(full.links), pagesChars(full.pages), toolRowsChars(full.rows)].some((chars) => chars > TOOL_RESULT_SNIPPET_MAX) || pagesCut(full.pages)
-  return { is_error, capped, result_text: toolResultSnippet(value), result_view: { ...cappedView(full, TOOL_RESULT_SNIPPET_MAX), ...(ref ? { outbound_draft: ref } : {}), ...(review ? { decision_review: review } : {}), ...(proposal ? { proposal } : {}), ...(block ? { block } : {}), ...(terminal ? { terminal } : {}) } }
+  // TAL-2335: what the call did, which its collapsed row shows; nested JSON a live completion forwards as text read whole.
+  const outcome = toolCallOutcome(toolName, args, isDict(data) ? withNestedJson(data) : data, full, failed, is_error)
+  return { is_error, capped, result_text: toolResultSnippet(value), result_view: { ...cappedView(full, TOOL_RESULT_SNIPPET_MAX), ...(ref ? { outbound_draft: ref } : {}), ...(review ? { decision_review: review } : {}), ...(proposal ? { proposal } : {}), ...(block ? { block } : {}), ...(terminal ? { terminal } : {}), ...(outcome ? { outcome } : {}) } }
 }
 
 const finiteOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)

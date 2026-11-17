@@ -4772,7 +4772,7 @@ describe('live tool outcomes (TAL-313)', () => {
     expect(start.stream_id).toBeTypeOf('string')
     const streamId = String(start.stream_id)
     // Redacted like every string that leaves the server.
-    const view = { stdout: 'built\nok', stderr: 'warning: deprecated\nAuthorization: Bearer synthe...cdef', exit_code: 2, approval_note: `${approval} Authorization: Bearer synthe...cdef` }
+    const view = { stdout: 'built\nok', stderr: 'warning: deprecated\nAuthorization: Bearer synthe...cdef', exit_code: 2, approval_note: `${approval} Authorization: Bearer synthe...cdef`, outcome: { key: 'exit', tone: 'error', count: 2 } }
     const completes = (frames: SseFrame[]) => frames.filter((f) => f.event === 'tool_complete').map((f) => (f.data as Json).result_view)
     const live = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
     expect(completes(live)).toEqual([view])
@@ -4806,7 +4806,7 @@ describe('live tool outcomes (TAL-313)', () => {
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     const partial = (detail.messages as Json[]).find((m) => m._partial === true)
     // TAL-315: the sections shown live (stderr, the exit code) survive the failed turn's reload.
-    const view = { stderr: 'boom', exit_code: 2 }
+    const view = { stderr: 'boom', exit_code: 2, outcome: { key: 'exit', tone: 'error', count: 2 } }
     expect((partial?.tool_calls as Json[]).map((c) => [c.id, c.done, c.is_error, c.duration, c.result, c.result_view])).toEqual([['call-make', true, true, 4, 'failed', view]])
     const scene = (detail.messages as Json[]).at(-1)?._anchor_activity_scene as Json
     expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => { const t = r.tool as Json; return [t.id, t.is_error, t.duration, t.result_view] })).toEqual([['call-make', true, 4, view]])

@@ -188,7 +188,11 @@ describe('toolOutcome (TAL-313)', () => {
       ['plain \\n text', { text: 'plain \\n text' }], ['{"output": "unterminated"', { text: '{"output": "unterminated"' }],
       ['', {}], [undefined, {}], [null, {}], [{}, {}],
     ]
-    for (const [raw, view] of cases) expect(toolOutcome(raw).result_view, JSON.stringify(raw)).toEqual(view)
+    // The sections alone: a failed call's outcome (TAL-2335) has its own tests.
+    for (const [raw, view] of cases) {
+      const { outcome: _outcome, ...sections } = toolOutcome(raw).result_view
+      expect(sections, JSON.stringify(raw)).toEqual(view)
+    }
   })
 
   it('caps every result view field at the result cap (TAL-315)', () => {

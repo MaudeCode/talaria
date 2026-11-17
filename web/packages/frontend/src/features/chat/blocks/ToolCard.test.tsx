@@ -404,3 +404,32 @@ describe('MCP and connector calls (TAL-2330)', () => {
     }
   })
 })
+
+describe('a collapsed row\'s outcome (TAL-2335)', () => {
+  const outcomeOf = (resultView: ToolResultView, done = true) => {
+    const { container, unmount } = render(<ToolCard call={{ ...call, done, resultView }} />)
+    const el = container.querySelector<HTMLElement>('.tool-card-outcome')
+    const shown = el && { text: el.textContent, tone: el.dataset.outcomeTone, title: el.title, afterLabel: el.previousElementSibling?.classList.contains('tool-card-name') }
+    unmount()
+    return shown
+  }
+
+  it('follows the label in the server\'s tone, its whole text in the tooltip the row cuts', () => {
+    expect(outcomeOf({ outcome: { key: 'memory_added', tone: 'neutral', count: 1 } })).toEqual({ text: 'Added 1 memory', tone: 'neutral', title: 'Added 1 memory', afterLabel: true })
+    expect(outcomeOf({ outcome: { key: 'memory_removed', tone: 'neutral', count: 2 } })?.text).toBe('Removed 2 memories')
+    expect(outcomeOf({ outcome: { key: 'exit', tone: 'error', count: 1 } })).toMatchObject({ text: 'Exit 1', tone: 'error' })
+    expect(outcomeOf({ outcome: { key: 'failed', tone: 'error', value: 'Resource not accessible by integration' } })).toMatchObject({ text: 'Resource not accessible by integration', tone: 'error' })
+    expect(outcomeOf({ outcome: { key: 'failed', tone: 'error' } })?.text).toBe('Failed')
+    expect(outcomeOf({ outcome: { key: 'pending_approval', tone: 'attention' } })).toMatchObject({ text: 'Waiting for approval', tone: 'attention' })
+    expect(outcomeOf({ outcome: { key: 'moved_to', tone: 'neutral', value: 'Review' } })?.text).toBe('Moved to Review')
+    expect(outcomeOf({ outcome: { key: 'answered', tone: 'neutral', value: 'MaudeCode/talaria' } })?.text).toBe('Answered: MaudeCode/talaria')
+    expect(outcomeOf({ outcome: { key: 'no_matches', tone: 'neutral' } })?.text).toBe('No matches')
+  })
+
+  it('names a new job\'s next run in the reader\'s time, and shows nothing without an outcome or before the call ends', () => {
+    expect(outcomeOf({ outcome: { key: 'job_created', tone: 'neutral', value: '2099-01-02T09:00:00.000Z' } })?.text).toMatch(/^Next run /)
+    expect(outcomeOf({ outcome: { key: 'job_created', tone: 'neutral' } })?.text).toBe('Scheduled')
+    expect(outcomeOf({ text: 'ok' })).toBeNull()
+    expect(outcomeOf({ outcome: { key: 'sent', tone: 'neutral' } }, false)).toBeNull()
+  })
+})

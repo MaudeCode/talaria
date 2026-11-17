@@ -237,6 +237,17 @@ func testToolStreamEventDecodesTheServerResultView() throws {
     XCTAssertEqual(ToolCallDisplayFormatter.content(for: completed).result?.text, "built\nwarn\nExit code: 2")
 }
 
+/// TAL-2335: a call's outcome decodes from a tool frame and a stored view; an outcome a newer server adds drops alone.
+func testToolResultViewDecodesTheServerOutcome() throws {
+    let event = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"call-make","name":"terminal","result_view":{"stderr":"boom","exit_code":2,"outcome":{"key":"exit","tone":"error","count":2}}}"#.utf8))
+    XCTAssertEqual(event.resultView?.outcome, ToolOutcome(key: .exit, tone: .error, count: 2))
+    let failed = ToolResultView(.object(["error": .string("denied"), "outcome": .object(["key": .string("failed"), "tone": .string("error"), "value": .string("Resource not accessible by integration")])]))
+    XCTAssertEqual(failed?.outcome, ToolOutcome(key: .failed, tone: .error, value: "Resource not accessible by integration"))
+    let newer = try XCTUnwrap(ToolResultView(.object(["text": .string("ok"), "outcome": .object(["key": .string("archived"), "tone": .string("neutral")])])))
+    XCTAssertEqual(newer.text, "ok")
+    XCTAssertNil(newer.outcome)
+}
+
 /// TAL-2318: the server's argument and result rows, from a tool frame and a session detail's call, win over local formatting.
 func testTheCardShowsTheServerArgumentAndResultRows() throws {
     let rows = #"[{"key":"names","value":"- a\n- b","multiline":true},{"key":"limit","value":"3","multiline":false}]"#
