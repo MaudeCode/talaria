@@ -1710,3 +1710,11 @@ it('caps a Live Activity text in UTF-16 code units without splitting a character
   expect(capped).toBe(`echo ${'😀'.repeat(29)}…`)
   expect(activityText('  npm   test ')).toBe('npm test')
 })
+
+// TAL-2336: with `activity_call_details` off a call carries its kind, tense and outcome key, never a text it named.
+it('leaves a call\'s target, app and outcome value off a Live Activity without call details', () => {
+  const call = { name: 'connectors__slack__send_message', args: { text: 'hi' }, tid: 't', done: true, is_error: true, result_view: { outcome: { key: 'failed', tone: 'error', value: 'channel #ops not found' } } }
+  const named = activityTool(call, true, null)
+  expect(named).toMatchObject({ kind: 'connector', app: { name: 'Slack' }, outcome: { value: 'channel #ops not found' } })
+  expect(activityTool(call, true, null, false)).toEqual({ kind: 'connector', target: '', done: true, failed: true, outcome: { key: 'failed', tone: 'error' } })
+})

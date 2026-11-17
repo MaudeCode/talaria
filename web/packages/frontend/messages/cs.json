@@ -1628,6 +1628,7 @@
 	"settings_help_issue_link": "Otevřít GitHub Issues",
 	"settings_help_meta": "Zdroje a podpora pro Talaria Web.",
 	"settings_items_shown": "Zobrazeno {shown} z {total}",
+	"settings_label_activity_call_details": "Podrobnosti volání nástrojů v živých aktivitách a upozorněních",
 	"settings_label_api_redact": "Redakce citlivých dat v odpovědích API",
 	"settings_label_auto_scroll_follow": "Sledovat nový obsah",
 	"settings_label_auto_title_refresh": "Obnovovat názvy chatů",

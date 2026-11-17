@@ -154413,6 +154413,112 @@
         }
       }
     },
+    "Tool Call Details in Live Activities and Alerts" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تفاصيل استدعاءات الأدوات في الأنشطة المباشرة والتنبيهات"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Werkzeugaufruf-Details in Live-Aktivitäten und Mitteilungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Detalles de las llamadas a herramientas en Actividades en vivo y alertas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Détails des appels d’outils dans les activités en direct et les alertes"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "פרטי קריאות לכלים בפעילויות חיות ובהתראות"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dettagli delle chiamate agli strumenti in Attività Live e avvisi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ライブアクティビティと通知にツール呼び出しの詳細を表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "실시간 현황 및 알림에 도구 호출 세부 정보 표시"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Details van toolaanroepen in live activiteiten en meldingen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Szczegóły wywołań narzędzi w aktywnościach na żywo i alertach"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Detalhes das chamadas de ferramentas em Atividades ao Vivo e alertas"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Подробности вызовов инструментов в Live Activities и уведомлениях"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Canlı Etkinliklerde ve uyarılarda araç çağrısı ayrıntıları"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "لائیو سرگرمیوں اور الرٹس میں ٹول کال کی تفصیلات"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在即時動態和提示中顯示工具呼叫詳情"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在实时活动和提醒中显示工具调用详情"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在即時動態和提醒中顯示工具呼叫詳細資訊"
+          }
+        }
+      }
+    },
     "Tool limit reached" : {
       "localizations" : {
         "ar" : {

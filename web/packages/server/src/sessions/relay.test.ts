@@ -1200,6 +1200,10 @@ describe('the current call on a relay row (TAL-2336)', () => {
       await waitForRelay(async () => { expect(await tool()).toMatchObject({ kind: 'shell', done: false, outcome: { key: 'pending_approval', tone: 'attention' } }) })
       // Redacted as the call's transcript row is.
       expect((await tool())?.target).toBe('npm publish --token ***')
+      // With call details off, the row carries the call's kind and outcome but no text it named.
+      const off = await post(server, '/api/settings', { activity_call_details: false })
+      expect(off.status, await off.clone().text()).toBe(200)
+      expect(await tool()).toEqual({ kind: 'shell', target: '', done: false, outcome: { key: 'pending_approval', tone: 'attention' } })
     } finally {
       ended = true
       for (const release of steps) release()

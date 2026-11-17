@@ -19,6 +19,17 @@
         "web"
       ],
       "announce": false
+    },
+    {
+      "category": "Added",
+      "summary": "A server setting can keep tool call details off Live Activities and notifications, so they show only what kind of call is running.",
+      "highlight": false,
+      "components": [
+        "web",
+        "app",
+        "relay"
+      ],
+      "announce": false
     }
   ]
 }

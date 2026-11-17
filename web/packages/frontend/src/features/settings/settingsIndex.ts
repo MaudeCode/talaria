@@ -112,6 +112,7 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ...rows('access', m.settings_group_sign_in, 'server', [['settingsPassword', m.settings_label_password], ['settingsAuthAck', m.settings_label_auth_acknowledged, 'settingsPassword']]),
   ...rows('access', m.settings_group_privacy, 'server', [
     [key('sync_to_insights'), m.settings_label_sync_insights], [key('api_redact_enabled'), m.settings_label_api_redact],
+    [key('activity_call_details'), m.settings_label_activity_call_details],
     [key('confirm_external_links'), m.settings_label_confirm_external_links], ['settingsTrustedLinkHosts', m.settings_label_trusted_link_hosts],
   ]),
   ...rows('system', m.system_software, 'server', [['settingsUpdateChannel', m.settings_label_web_update_channel], ['settingsAgentUpdateChannel', m.settings_label_agent_update_channel]]),

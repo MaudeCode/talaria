@@ -1506,6 +1506,7 @@
 	"settings_help_issue_link": "提交 GitHub 问题",
 	"settings_help_meta": "Talaria Web 的资源与支持 ",
 	"settings_items_shown": "已显示 {shown}/{total}",
+	"settings_label_activity_call_details": "在实时活动和提醒中显示工具调用详情",
 	"settings_label_api_redact": "在 API 响应中隐藏敏感数据",
 	"settings_label_auto_scroll_follow": "跟随新内容",
 	"settings_label_auto_title_refresh": "刷新聊天标题",

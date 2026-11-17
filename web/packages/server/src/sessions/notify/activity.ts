@@ -42,6 +42,8 @@ export interface ActivityDeps {
   decisionReview?: (sid: string) => Pick<DecisionReviewRef, 'review_id' | 'title'> | null
   /** TAL-2336: the `api_redact_enabled` policy, which a row's current call is redacted under as its transcript row is. */
   redactEnabled?: () => boolean
+  /** TAL-2336: the `activity_call_details` setting; off, a row's call carries no text it named. */
+  callDetails?: () => boolean
   now: () => number
 }
 
@@ -284,7 +286,8 @@ export class ActivityStates {
         activity = { toolCount: run.tool_count ?? 0, activityAt: Math.floor(Math.max(run.seen_phase.at, run.tool_at ?? 0) * 1000) }
         // TAL-2336: a live row names its call: the one an approval holds, else the run's current one; a finished row none.
         const held = phase === 'waiting_for_approval' && isApprovalTool(approval?.tool) ? approval.tool : undefined
-        const current = held ? heldActivityTool(held) : run.current_call && !run.relay_phase ? activityTool(run.current_call, this.deps.redactEnabled?.() ?? true, session.workspace ?? null) : undefined
+        const details = this.deps.callDetails?.() ?? true
+        const current = held ? heldActivityTool(held, details) : run.current_call && !run.relay_phase ? activityTool(run.current_call, this.deps.redactEnabled?.() ?? true, session.workspace ?? null, details) : undefined
         if (current) activity.currentTool = current
       }
       // TAL-1422: only a live run has a plan; a finished, replaced or restarted one clears it.

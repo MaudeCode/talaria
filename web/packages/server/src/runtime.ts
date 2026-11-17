@@ -561,7 +561,9 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   // eslint-disable-next-line prefer-const -- assigned after the turn runner exists
   let completions: CompletionDrain
   const presence = new PresenceLeases(now)
-  const activity = new ActivityStates({ registry, pending, store, background, activitySummary: (session) => sessions.activitySummary(session), presence, profilesMatch, decisionReview: (sid) => decisions.latestRef(sid), redactEnabled: sessions.deps.redactEnabled, now })
+  const activity = new ActivityStates({ registry, pending, store, background, activitySummary: (session) => sessions.activitySummary(session), presence, profilesMatch, decisionReview: (sid) => decisions.latestRef(sid), redactEnabled: sessions.deps.redactEnabled,
+    // TAL-2336: absent or unreadable keeps call details on, the setting's default.
+    callDetails: () => { try { const value = settings.peekValue('activity_call_details'); return value === undefined || value === null || pyBool(value) } catch { return true } }, now })
   const relay = new RelayService({
     events,
     registry, pending, store, background, activitySummary: (session) => sessions.activitySummary(session), presence, activity, profileHome, profilesMatch, fetch: () => lazyFetch, now, log,

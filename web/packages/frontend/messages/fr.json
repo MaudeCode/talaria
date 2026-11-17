@@ -1622,6 +1622,7 @@
 	"settings_help_issue_link": "Ouvrir les issues GitHub",
 	"settings_help_meta": "Ressources et support pour Talaria Web.",
 	"settings_items_shown": "{shown} affichés sur {total}",
+	"settings_label_activity_call_details": "Détails des appels d’outils dans les activités en direct et les alertes",
 	"settings_label_api_redact": "Masquer les données sensibles dans les réponses API",
 	"settings_label_auto_scroll_follow": "Suivre le nouveau contenu",
 	"settings_label_auto_title_refresh": "Actualiser les titres des discussions",

@@ -1115,6 +1115,7 @@ export const SettingsSchema = z.looseObject({
   dictation_append: z.boolean().optional(), persisted_speech_keys: z.array(z.string()).optional(),
   /** TAL-279: ask before opening external chat links; `trusted_link_hosts` are exact, server-normalized hostnames that skip the ask. */
   confirm_external_links: z.boolean().optional(), trusted_link_hosts: z.array(z.string()).optional(),
+  activity_call_details: z.boolean().optional().describe('TAL-2336: Live Activities, Relay and push alerts name a call by its target, app and outcome text (default true); off, they carry only its kind, tense and outcome key. Changing it needs an owner session.'),
   trusted_link_hosts_count: z.number().int().optional().describe('TAL-2143: how many normalized `trusted_link_hosts` there are; load and save both answer it.'),
   provider_quota_thresholds: QuotaThresholdsSchema.optional(),
   agent_approvals: z.boolean().nullable().optional().describe('TAL-1169: the profile\'s `talaria.agent_approvals` (default false): whether an agent with the talaria toolset may approve once or deny another session\'s pending command. Null when the profile config cannot be read.'),

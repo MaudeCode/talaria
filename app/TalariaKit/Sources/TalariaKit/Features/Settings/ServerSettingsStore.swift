@@ -111,6 +111,11 @@ public final class ServerSettingsStore {
                                             userInfo: [SessionsChange.userInfoKey: SessionsChange.changed(reason: "show_tool_lookups", sessionID: nil)])
         }
     }
+    /// TAL-2336: off, the server sends Live Activities and push alerts only each call's kind. Owner only.
+    @discardableResult
+    public func setActivityCallDetails(_ value: Bool) -> Task<Void, Never> {
+        save("activity_call_details", \.activityCallDetails, value)
+    }
     @discardableResult
     public func setQuotaThresholds(_ value: ProviderQuotaThresholds) -> Task<Void, Never> {
         save("provider_quota_thresholds", \.providerQuotaThresholds, value)

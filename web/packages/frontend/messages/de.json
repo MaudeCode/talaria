@@ -1571,6 +1571,7 @@
 	"settings_help_issue_link": "Open GitHub Issues",
 	"settings_help_meta": "Resources and support for Talaria Web.",
 	"settings_items_shown": "{shown} von {total} sichtbar",
+	"settings_label_activity_call_details": "Werkzeugaufruf-Details in Live-Aktivitäten und Mitteilungen",
 	"settings_label_api_redact": "Sensible Daten in API-Antworten schwärzen",
 	"settings_label_auto_scroll_follow": "Neuen Inhalten folgen",
 	"settings_label_auto_title_refresh": "Chat-Titel aktualisieren",

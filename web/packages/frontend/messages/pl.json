@@ -1638,6 +1638,7 @@
 	"settings_help_issue_link": "Otwórz zgłoszenia GitHub",
 	"settings_help_meta": "Zasoby i wsparcie dla Talaria Web.",
 	"settings_items_shown": "Widoczne: {shown} z {total}",
+	"settings_label_activity_call_details": "Szczegóły wywołań narzędzi w aktywnościach na żywo i alertach",
 	"settings_label_api_redact": "Ukrywaj poufne dane w odpowiedziach API",
 	"settings_label_auto_scroll_follow": "Śledź nową treść",
 	"settings_label_auto_title_refresh": "Odświeżaj tytuły czatów",

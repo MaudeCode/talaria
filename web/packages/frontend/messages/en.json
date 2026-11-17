@@ -2688,6 +2688,7 @@
 	"settings_help_issue_link": "Open GitHub Issues",
 	"settings_help_meta": "Resources and support for Talaria Web.",
 	"settings_items_shown": "{shown} of {total} shown",
+	"settings_label_activity_call_details": "Tool call details in Live Activities and alerts",
 	"settings_label_agent_approvals": "Let agents approve or deny other chats' commands",
 	"settings_label_agent_update_channel": "Agent update channel",
 	"settings_label_api_redact": "Redact sensitive data in API responses",
