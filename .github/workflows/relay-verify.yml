@@ -2,6 +2,11 @@ name: Relay verification
 
 on:
   workflow_call:
+    inputs:
+      # The commit to verify; empty for the triggering commit. A release verifies its selected commit (TAL-2396).
+      ref:
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -16,6 +21,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: relay/.node-version

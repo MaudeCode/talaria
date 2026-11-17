@@ -613,7 +613,7 @@ class PublicationTests(unittest.TestCase):
         jobs = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/release-set.yml")], text=True))["jobs"]
-        gates = ("contracts", "component-contracts", "agent-release", "agent", "app-hosted-tests")
+        gates = ("contracts", "component-contracts", "agent-release", "agent", "app-hosted-tests", "web-tests", "relay-tests")
         agent_steps = jobs['agent-release']['steps']
         node = [(index, step) for index, step in enumerate(agent_steps) if step.get('uses', '').startswith('actions/setup-node@')]
         self.assertEqual(len(node), 1, 'the Agent gate must provision Node for its selected server build')
@@ -656,11 +656,33 @@ class PublicationTests(unittest.TestCase):
         self.assertIn('--expect "$JOBS" --receipts "$RUNNER_TEMP/agent-shards"', join_steps[join]["run"])
         self.assertEqual(join_steps[join]["env"]["JOBS"], "${{ needs.prepare.outputs.agent_jobs }}")
         self.assertNotIn("if", jobs["agent"])
-        # prepare looks for main CI's hosted tests with the workflow's own read-only script; its answer selects the suite.
-        lookup = next(step for step in jobs["prepare"]["steps"] if step.get("id") == "hosted")
-        self.assertEqual(lookup["if"], "steps.plan.outputs.app_changed == 'true'")
-        self.assertIn('url=$(app/ci/find-hosted-tests-run "$SOURCE")', lookup["run"])
-        self.assertEqual(jobs["prepare"]["outputs"]["hosted_tests_url"], "${{ steps.hosted.outputs.url }}")
+        # prepare looks for main CI's passed suites with the workflow's own read-only lookup; each answer selects whether
+        # the release runs that suite (TAL-2396).
+        lookup = next(step for step in jobs["prepare"]["steps"] if step.get("id") == "reuse")
+        self.assertIn('releases/main_ci.py "$SOURCE" "${checks[@]}" | tee -a "$GITHUB_OUTPUT"', lookup["run"])
+        for job, component, output in (("app-hosted-tests", "app", "hosted_tests"), ("web-tests", "web", "web_tests"),
+                                        ("relay-tests", "relay", "relay_tests")):
+            with self.subTest(suite=job):
+                self.assertEqual(jobs["prepare"]["outputs"][output], "${{ steps.reuse.outputs.%s }}" % output)
+                self.assertIn(f'[[ "${component.upper()}" != true ]] || checks+=({output})', lookup["run"])
+                self.assertIn(f"needs.prepare.outputs.{output} == ''", jobs[job]["if"])
+                self.assertIn(f"needs.prepare.outputs.{component}_changed == 'true'", jobs[job]["if"])
+                self.assertEqual(jobs[job]["with"]["ref"], "${{ needs.prepare.outputs.source }}")
+        # The release's Web suite leaves the sidecar matrix to the Agent gate, which covers every supported Agent release.
+        self.assertEqual(jobs["web-tests"]["uses"], "./.github/workflows/web-verify.yml")
+        self.assertEqual(jobs["web-tests"]["with"], {"ref": "${{ needs.prepare.outputs.source }}", "server": True,
+                                                     "frontend": True, "sidecar": False})
+        self.assertEqual(jobs["relay-tests"]["uses"], "./.github/workflows/relay-verify.yml")
+        # Called workflows check out the requested commit, and the triggering one when none is given, as CI calls them.
+        for name in ("web-verify.yml", "relay-verify.yml"):
+            called = json.loads(subprocess.check_output([
+                "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+                str(root / ".github/workflows" / name)], text=True))["jobs"]
+            for job_name, job in called.items():
+                for step in job.get("steps", []):
+                    if step.get("uses", "").startswith("actions/checkout@"):
+                        with self.subTest(workflow=name, job=job_name):
+                            self.assertEqual(step["with"]["ref"], "${{ inputs.ref || github.sha }}")
         self.assertNotIn("previous-app-contracts", jobs)
         gate = next(step["run"] for step in jobs["contracts"]["steps"] if "cli.py gate" in step.get("run", ""))
         for name in ("currentContracts", "previousAppContracts"):
@@ -673,7 +695,7 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(hosted["with"], {"mode": "hosted", "ref": "${{ needs.prepare.outputs.source }}",
                                           "package_tests": False, "shards_at_once": 2})
         condition = " ".join(hosted["if"].split())
-        for clause in ("needs.prepare.outputs.app_changed == 'true'", "needs.prepare.outputs.hosted_tests_url == ''",
+        for clause in ("needs.prepare.outputs.app_changed == 'true'", "needs.prepare.outputs.hosted_tests == ''",
                        "needs.contracts.result == 'success'",
                        "(needs.app-dry-build.result == 'success' || needs.app-signed-build.result == 'success')"):
             self.assertIn(clause, condition)
@@ -843,8 +865,9 @@ class PublicationTests(unittest.TestCase):
                     needs[job] = {"result": "success" if changed else "skipped"}
                 if stage == "build":
                     needs["app-signed-build" if dry else "app-dry-build"] = {"result": "skipped"}
-                    needs["app-hosted-tests"] = {"result": "success" if app else "skipped"}
-                    jobs.append("app-hosted-tests")
+                    for job, changed in (("app-hosted-tests", app), ("web-tests", web), ("relay-tests", relay_changed)):
+                        needs[job] = {"result": "success" if changed else "skipped"}
+                        jobs.append(job)
                 if stage == "publication" and dry:
                     with self.assertRaises(ValueError):
                         check(needs, stage, dry)
@@ -861,44 +884,57 @@ class PublicationTests(unittest.TestCase):
                             with self.assertRaises(ValueError):
                                 check(broken, stage, dry)
 
-    def test_app_hosted_tests_gate_every_release_that_ships_the_app(self):
-        # The App's hosted unit tests gate every release that ships the App, dry runs included, and never run otherwise.
-        # Main CI's successful hosted tests on the exact source, found by prepare, are reused; without them the suite
-        # runs (TAL-1550, TAL-2396).
+    def test_each_changed_components_suite_is_reused_or_run(self):
+        # Each component that ships needs its suite passed on the exact source, dry runs included: main CI's passed
+        # suite found by prepare (this run's skipped), or this run's (TAL-1550, TAL-2396). Unchanged ones run none.
         url = "https://github.com/MaudeCode/talaria/actions/runs/7/job/71"
-        base = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts",
-                                                          "agent-release", "agent", "app-dry-build")}
-        base["prepare"]["outputs"] = {"app_changed": "true", "web_changed": "false", "relay_changed": "false"}
-        base.update({name: {"result": "skipped"} for name in ("relay-build", "bridge-build", "web-build", "app-signed-build")})
+        for component, job, output in (("app", "app-hosted-tests", "hosted_tests"), ("web", "web-tests", "web_tests"),
+                                       ("relay", "relay-tests", "relay_tests")):
+            builds = {"app": "app-dry-build", "web": "web-build", "relay": "relay-build"}
+            base = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts", "agent-release", "agent")}
+            base["prepare"]["outputs"] = {name + "_changed": str(name == component).lower() for name in ("app", "web", "relay")}
+            base.update({name: {"result": "skipped"} for name in ("relay-build", "bridge-build", "web-build", "app-dry-build",
+                                                                   "app-signed-build", "app-hosted-tests", "web-tests", "relay-tests")})
+            base[builds[component]] = {"result": "success"}
+            if component == "relay":
+                base["bridge-build"] = {"result": "success"}
 
-        def needs(found, suite):
-            result = deepcopy(base)
-            result["prepare"]["outputs"]["hosted_tests_url"] = found
-            result["app-hosted-tests"] = {"result": suite}
-            return result
+            def needs(found, suite):
+                result = deepcopy(base)
+                result["prepare"]["outputs"][output] = found
+                result[job] = {"result": suite}
+                return result
 
-        check(needs(url, "skipped"), "build", True)
-        check(needs("", "success"), "build", True)
-        # Reused evidence never runs the suite, and a run suite must have passed.
-        for result in ("success", "failure", "cancelled"):
-            with self.subTest(reused=result), self.assertRaisesRegex(ValueError, "app-hosted-tests"):
-                check(needs(url, result), "build", True)
-        for result in ("failure", "cancelled", "skipped"):
-            with self.subTest(fallback=result), self.assertRaisesRegex(ValueError, "app-hosted-tests"):
-                check(needs("", result), "build", True)
-        # Reuse needs a job URL in this repository.
-        with self.assertRaisesRegex(ValueError, "app-hosted-tests"):
-            check(needs("https://example.com/job/1", "skipped"), "build", True)
-        unchanged = needs("", "skipped")
-        unchanged["prepare"]["outputs"]["app_changed"] = "false"
-        unchanged["app-dry-build"] = {"result": "skipped"}
-        check(unchanged, "build", True)
-        for found, suite in ((url, "skipped"), ("", "success")):
-            broken = deepcopy(unchanged)
-            broken["prepare"]["outputs"]["hosted_tests_url"] = found
-            broken["app-hosted-tests"] = {"result": suite}
-            with self.subTest(unchanged=(found, suite)), self.assertRaisesRegex(ValueError, "app-hosted-tests"):
-                check(broken, "build", True)
+            with self.subTest(component=component):
+                check(needs(url, "skipped"), "build", True)
+                check(needs("", "success"), "build", True)
+            # Reused evidence never runs the suite, and a run suite must have passed.
+            for result in ("success", "failure", "cancelled"):
+                with self.subTest(component=component, reused=result), self.assertRaisesRegex(ValueError, job):
+                    check(needs(url, result), "build", True)
+            for result in ("failure", "cancelled", "skipped"):
+                with self.subTest(component=component, fallback=result), self.assertRaisesRegex(ValueError, job):
+                    check(needs("", result), "build", True)
+            # Reuse needs a job URL in this repository.
+            with self.subTest(component=component), self.assertRaisesRegex(ValueError, job):
+                check(needs("https://example.com/job/1", "skipped"), "build", True)
+            # An unchanged component neither reuses nor runs its suite.
+            unchanged = needs("", "skipped")
+            unchanged["prepare"]["outputs"][component + "_changed"] = "false"
+            unchanged["prepare"]["outputs"]["app_changed"] = "true"
+            unchanged["app-dry-build"] = {"result": "success"}
+            unchanged["app-hosted-tests"] = {"result": "success"}
+            unchanged[builds[component]] = {"result": "success" if component == "app" else "skipped"}
+            if component == "relay":
+                unchanged["bridge-build"] = {"result": "skipped"}
+            if component != "app":
+                check(unchanged, "build", True)
+                for found, suite in ((url, "skipped"), ("", "success")):
+                    broken = deepcopy(unchanged)
+                    broken["prepare"]["outputs"][output] = found
+                    broken[job] = {"result": suite}
+                    with self.subTest(component=component, unchanged=(found, suite)), self.assertRaisesRegex(ValueError, job):
+                        check(broken, "build", True)
 
     def test_agent_gate_requires_every_release_job(self):
         # Each supported Agent release runs in its own agent-release job; agent writes the one agentCompatibility
@@ -907,7 +943,8 @@ class PublicationTests(unittest.TestCase):
                                                           "agent", "relay-build", "bridge-build", "app-dry-build")}
         needs["prepare"]["outputs"] = {"app_changed": "false", "web_changed": "false", "relay_changed": "true"}
         needs.update({name: {"result": "skipped"} for name in ("web-build", "app-signed-build", "app-dry-build",
-                                                               "app-hosted-tests")})
+                                                               "app-hosted-tests", "web-tests")})
+        needs["relay-tests"] = {"result": "success"}
         check(needs, "build", True)
         for job in ("agent-release", "agent"):
             for result in ("failure", "cancelled", "skipped"):

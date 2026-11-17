@@ -86,24 +86,27 @@ dependency:
 | `release-set.yml` | `app-publish` | the shared `ios-publish` action, which verifies the IPA (`codesign`, `plutil`, `security cms`) before it uploads |
 | `recover-cutover.yml` | `app` | the same `ios-publish` verification and upload, resuming the original IPA |
 
-A release that ships the App needs the App's simulator-hosted unit tests to
-have passed on the exact release source, dry runs included (TAL-1550). No
-release waits for main CI (TAL-2396). `prepare` looks once
-(`app/ci/find-hosted-tests-run`) for a ci.yml push run on `main` at exactly
-that SHA whose `App / App hosted tests` job completed successfully, and records
-that job's URL in the summary. The job's own result counts, not the run's: a
-sibling job that failed, or one still running, does not stop the reuse. Only
-then is `app-hosted-tests` (`app-tests.yml` in hosted mode: the App build and
-four TalariaTests shards) skipped; otherwise it runs. A hosted tests job that
-is still running, was skipped, failed or tested another commit, a single shard
-(`App hosted tests N`, a partial suite), a pull request's run and a run of
-another workflow never count, and nothing waits for one to finish. Main CI
-leaves out the App jobs when a push does not touch the App, so a release on such
-a commit tests again. A lookup that errors fails `prepare` rather than counting
-as none. `build-gate` requires exactly one of reuse (the suite skipped) or a
-successful suite run when the App ships. Every other check runs in the release
-itself; a new dispatch repeats them, so compatibility is always verified against
-the peers that run's plan selected.
+No release waits for main CI (TAL-2396). Each component a release ships needs
+its own suite to have passed on the exact release source, dry runs included: the
+App's simulator-hosted unit tests (TAL-1550), Web's server suite on every
+storage backend with its frontend checks and Playwright shards, and Relay's
+suite. `prepare` looks once (`releases/main_ci.py`) for a ci.yml push run on
+`main` at exactly that SHA in which every job of that suite completed
+successfully, and records a job's URL in the summary. The suite's own jobs
+count, not the run's: a sibling that failed, or a run still going, does not stop
+the reuse. Only then is that suite's release job skipped: `app-hosted-tests`
+(`app-tests.yml` in hosted mode: the App build and four TalariaTests shards),
+`web-tests` (`web-verify.yml` without its sidecar matrix, which the Agent gate
+covers for every supported Agent release) or `relay-tests` (`relay-verify.yml`),
+each at the selected commit. Otherwise the release runs it. A suite main CI left
+out (a push that did not touch that component), a job of it that is still
+running, was skipped, failed or tested another commit, a single shard, a pull
+request's run and a run of another workflow never count, and nothing waits for
+one to finish. A lookup that errors fails `prepare` rather than counting as
+none. `build-gate` requires, for each component that ships, exactly one of reuse
+(its suite skipped) or a successful suite run. Every other check runs in the
+release itself; a new dispatch repeats them, so compatibility is always verified
+against the peers that run's plan selected.
 
 `app-tests.yml` splits TalariaTests by class into four simulator jobs that
 share the one build (`app/ci/hosted-test-shard`): three fixed, measured sets of
