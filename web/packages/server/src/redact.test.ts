@@ -771,8 +771,9 @@ describe('deferred tool bridges after reload (TAL-2316)', () => {
     const rows = (out.at(-1)!._anchor_activity_scene as { activity_rows: { tool?: Record<string, unknown> }[] }).activity_rows.flatMap((row) => (row.tool ? [row.tool] : []))
     expect(rows.map(({ name, kind, target }) => ({ name, kind, target }))).toEqual([
       { name: 'tool_describe', kind: 'read', target: 'profile_list, session_list' },
-      { name: 'session_list', kind: 'list', target: 'deploy' },
-      { name: 'show', kind: 'unknown', target: 'latency.csv' },
+      // TAL-2317: Talaria's own tools are named by the tool.
+      { name: 'session_list', kind: 'talaria', target: 'session_list' },
+      { name: 'show', kind: 'talaria', target: 'show' },
       { name: 'tool_call', kind: 'unknown', target: '' },
     ])
     const { name, kind, target } = publicToolFrame({ name: 'session_list', tid: 's', args: { query: 'deploy' } }, true)
