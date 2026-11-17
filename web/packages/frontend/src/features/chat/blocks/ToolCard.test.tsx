@@ -6,6 +6,7 @@ import { ToolCard, type ToolCardData } from './ToolCard'
 import { sceneItems } from '../turnActivity'
 import { requestOpenFile } from '../../workspace/openFileRequest'
 import { toolText } from '../../../i18n/toolText'
+import { renderRouted } from '../../../test/router'
 
 vi.mock('../../workspace/openFileRequest', () => ({ requestOpenFile: vi.fn() }))
 
@@ -228,6 +229,53 @@ describe('media and analysis results (TAL-2325)', () => {
       const text = toolText(locale)
       // A kind a table lacks reads as the unknown tool's words.
       for (const kind of ['image', 'audio', 'video', 'image_analysis', 'video_analysis']) {
+        expect(text.actionLabel(kind, 'done', '', 'tool'), `${locale} ${kind}`).not.toBe(text.actionLabel('unknown', 'done', '', 'tool'))
+        expect(text.worklogSummary(kind, 'running', 2), `${locale} ${kind}`).not.toBe(text.worklogSummary('unknown', 'running', 2))
+      }
+    }
+  })
+})
+
+describe('memory, skill, session, scheduled job, connection and clarify rows (TAL-2326)', () => {
+  const open = async (name: string, kind: string, resultView: ToolResultView) => {
+    const view = await renderRouted(<ToolCard call={{ ...call, name, kind, target: '', resultView }} sessionId="s1" />)
+    await userEvent.click(within(view.container).getAllByRole('button')[0]!)
+    return view.container.querySelector('.tool-card-result')!
+  }
+  const anchors = (result: Element) => Array.from(result.querySelectorAll('a'), (a) => [a.textContent, a.getAttribute('href')])
+
+  it('shows rows under their title, each opening its Talaria page, with a status dot, never the JSON', async () => {
+    const result = await open('session_search', 'session', { text: '{"results": []}', rows: { title: 'deploy', rows: [
+      { label: 'Deploy fix', detail: 'November 16 · the deploy failed', link: { kind: 'session', id: 'past-1' } },
+      { label: 'Digest', detail: 'every day', status: 'error', link: { kind: 'crons', id: 'job-1' } },
+      { label: 'github', detail: 'initiated', status: 'pending', link: { kind: 'connectors' } },
+      { label: 'pdf', link: { kind: 'skill', id: 'pdf' } },
+      { label: 'Which branch?', detail: 'dev' },
+    ] } })
+    expect(result.querySelector('.tool-rows')).toHaveTextContent('deployDeploy fixNovember 16 · the deploy failedDigestevery daygithubinitiatedpdfWhich branch?dev')
+    expect(anchors(result)).toEqual([['Deploy fix', '/session/past-1'], ['Digest', '/tasks?job=job-1'], ['github', '/settings/tools?tab=connectors'], ['pdf', '/skills?q=pdf']])
+    expect(Array.from(result.querySelectorAll('.tool-row'), (row) => row.querySelector('[data-dot]')?.getAttribute('data-dot') ?? null)).toEqual([null, 'error', 'changed', null, null])
+    expect(result.textContent).not.toContain('"results"')
+  })
+
+  it('shows a viewed skill\'s text formatted under its rows', async () => {
+    const result = await open('skill_view', 'skill', { text: '# PDF', rows: { title: 'pdf', rows: [{ label: 'Setup needed', detail: 'Set $PDF_KEY.', status: 'warn' }], markdown: 'Use **pdftotext**.' } })
+    expect(result.querySelector('.tool-rows')).toHaveTextContent('pdfSetup neededSet $PDF_KEY.')
+    await vi.waitFor(() => { expect(result.querySelector('.tool-rows [data-streamdown="strong"]')?.textContent).toBe('pdftotext') }, { timeout: 5000 })
+    expect(result.querySelector('[data-dot]')).toHaveAttribute('data-dot', 'warning')
+  })
+
+  it('gives sessions, scheduled jobs, connections and questions their own icons and words in every locale', async () => {
+    const icons = { session: 'lucide-messages-square', schedule: 'lucide-calendar-clock', connection: 'lucide-plug', question: 'lucide-message-circle-question' }
+    for (const [kind, icon] of Object.entries(icons)) {
+      const view = await renderRouted(<ToolCard call={{ ...call, kind, target: '' }} />)
+      expect(view.container.querySelector(`[data-tool-kind="${kind}"] svg.${icon}`), kind).not.toBeNull()
+      view.unmount()
+    }
+    expect(['session', 'schedule', 'connection', 'question'].map((kind) => toolText('en').actionLabel(kind, 'done', '', 'tool'))).toEqual(['Searched past chats', 'Managed scheduled jobs', 'Managed connections', 'Asked a question'])
+    for (const locale of ['en', 'ru', 'zh', 'zh-Hant', 'vi', 'pl', 'cs']) {
+      const text = toolText(locale)
+      for (const kind of Object.keys(icons)) {
         expect(text.actionLabel(kind, 'done', '', 'tool'), `${locale} ${kind}`).not.toBe(text.actionLabel('unknown', 'done', '', 'tool'))
         expect(text.worklogSummary(kind, 'running', 2), `${locale} ${kind}`).not.toBe(text.worklogSummary('unknown', 'running', 2))
       }

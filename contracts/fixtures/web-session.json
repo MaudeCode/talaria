@@ -5494,7 +5494,18 @@
               "is_error": false,
               "result": "{\"success\":true,\"message\":\"Skill demo updated.\"}",
               "result_view": {
-                "text": "Skill demo updated."
+                "text": "Skill demo updated.",
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "Edited demo",
+                      "link": {
+                        "kind": "skill",
+                        "id": "demo"
+                      }
+                    }
+                  ]
+                }
               },
               "duration": null,
               "type": "function",
@@ -5666,7 +5677,18 @@
                   "preview": null,
                   "result": "{\"success\":true,\"message\":\"Skill demo updated.\"}",
                   "result_view": {
-                    "text": "Skill demo updated."
+                    "text": "Skill demo updated.",
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "Edited demo",
+                          "link": {
+                            "kind": "skill",
+                            "id": "demo"
+                          }
+                        }
+                      ]
+                    }
                   },
                   "done": true,
                   "is_error": false,
@@ -7856,6 +7878,858 @@
             "activity_scene_ref": "af171865c433990af0bd40f4e3d1961a400f38c0a0cf60eb2dd154a0d59d27be"
           },
           "_turn_id": "media-run",
+          "_display": "row"
+        }
+      ]
+    }
+  },
+  "tool_rows_views": {
+    "expected": {
+      "call-memory": {
+        "text": "Applied 1 operation(s).",
+        "rows": {
+          "title": "User profile · 4% — 88/2,200 chars",
+          "rows": [
+            {
+              "label": "Added: Prefers short replies"
+            }
+          ]
+        }
+      },
+      "call-skill": {
+        "text": "Waiting for the user to approve.",
+        "rows": {
+          "rows": [
+            {
+              "label": "Waiting for approval",
+              "detail": "New digest skill",
+              "status": "pending"
+            },
+            {
+              "label": "Created digest",
+              "status": "pending",
+              "link": {
+                "kind": "skill",
+                "id": "digest"
+              }
+            }
+          ]
+        }
+      },
+      "call-view": {
+        "text": "# PDF\n\nUse **pdftotext**.",
+        "rows": {
+          "title": "pdf",
+          "rows": [
+            {
+              "label": "Read PDFs",
+              "link": {
+                "kind": "skill",
+                "id": "pdf"
+              }
+            },
+            {
+              "label": "Setup needed",
+              "detail": "Set $PDF_KEY.",
+              "status": "warn"
+            }
+          ],
+          "markdown": "# PDF\n\nUse **pdftotext**."
+        }
+      },
+      "call-search": {
+        "text": "[\n  {\n    \"session_id\": \"past-1\",\n    \"when\": \"November 16, 2026 at 09:00 AM\",\n    \"source\": \"web\",\n    \"model\": \"m\",\n    \"title\": \"Deploy fix\",\n    \"matched_role\": \"user\",\n    \"snippet\": \"the deploy failed\"\n  }\n]",
+        "rows": {
+          "title": "deploy",
+          "rows": [
+            {
+              "label": "Deploy fix",
+              "detail": "November 16, 2026 at 09:00 AM · the deploy failed",
+              "link": {
+                "kind": "session",
+                "id": "past-1"
+              }
+            }
+          ]
+        }
+      },
+      "call-cron": {
+        "text": "{\n  \"success\": true,\n  \"job\": {\n    \"job_id\": \"job-1\",\n    \"name\": \"Morning digest\",\n    \"schedule\": \"every day at 09:00\",\n    \"next_run_at\": null,\n    \"last_status\": \"ok\",\n    \"enabled\": false,\n    \"state\": \"paused\"\n  }\n}",
+        "rows": {
+          "title": "Paused",
+          "rows": [
+            {
+              "label": "Morning digest",
+              "detail": "every day at 09:00 · paused · last ok",
+              "status": "ok",
+              "link": {
+                "kind": "crons",
+                "id": "job-1"
+              }
+            }
+          ]
+        }
+      },
+      "call-connect": {
+        "text": "{\n  \"targets\": [\n    {\n      \"name\": \"github\",\n      \"kind\": \"connector\",\n      \"action\": \"connect\",\n      \"state\": \"initiated\"\n    }\n  ],\n  \"status\": \"initiated\",\n  \"note\": \"Show each connect_url to the user.\"\n}",
+        "rows": {
+          "rows": [
+            {
+              "label": "github",
+              "detail": "initiated",
+              "status": "pending",
+              "link": {
+                "kind": "connectors"
+              }
+            }
+          ]
+        }
+      },
+      "call-clarify": {
+        "text": "{\n  \"responses\": [\n    {\n      \"question\": \"Which branch?\",\n      \"choices_offered\": [\n        \"main\",\n        \"dev\"\n      ],\n      \"status\": \"answered\",\n      \"user_response\": \"dev\"\n    }\n  ],\n  \"outcome\": \"answered\"\n}",
+        "rows": {
+          "rows": [
+            {
+              "label": "Which branch?",
+              "detail": "dev"
+            }
+          ]
+        }
+      }
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tidy up",
+          "message_id": "rows-user",
+          "timestamp": 9000,
+          "_turn_id": "rows-run",
+          "_display": "row"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "message_id": "rows-calls",
+          "timestamp": 9001,
+          "tool_calls": [
+            {
+              "args_fields": [
+                {
+                  "key": "target",
+                  "value": "user",
+                  "multiline": false
+                },
+                {
+                  "key": "operations",
+                  "value": "- action: add\n  content: Prefers short replies",
+                  "multiline": true
+                }
+              ],
+              "kind": "memory",
+              "target": "user",
+              "function": {
+                "name": "memory",
+                "arguments": "{\"target\":\"user\",\"operations\":[{\"action\":\"add\",\"content\":\"Prefers short replies\"}]}"
+              },
+              "id": "call-memory",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"done\":true,\"target\":\"user\",\"usage\":\"4% — 88/2,200 chars\",\"entry_count\":2,\"message\":\"Applied 1 operation(s).\",\"note\":\"Write saved.\"}",
+              "result_view": {
+                "text": "Applied 1 operation(s).",
+                "rows": {
+                  "title": "User profile · 4% — 88/2,200 chars",
+                  "rows": [
+                    {
+                      "label": "Added: Prefers short replies"
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "action",
+                  "value": "create",
+                  "multiline": false
+                },
+                {
+                  "key": "name",
+                  "value": "digest",
+                  "multiline": false
+                },
+                {
+                  "key": "content",
+                  "value": "# Digest",
+                  "multiline": false
+                }
+              ],
+              "kind": "skill",
+              "target": "digest",
+              "function": {
+                "name": "skill_manage",
+                "arguments": "{\"action\":\"create\",\"name\":\"digest\",\"content\":\"# Digest\"}"
+              },
+              "id": "call-skill",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"staged\":true,\"pending_id\":\"pend-1\",\"gist\":\"New digest skill\",\"message\":\"Waiting for the user to approve.\"}",
+              "result_view": {
+                "text": "Waiting for the user to approve.",
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "Waiting for approval",
+                      "detail": "New digest skill",
+                      "status": "pending"
+                    },
+                    {
+                      "label": "Created digest",
+                      "status": "pending",
+                      "link": {
+                        "kind": "skill",
+                        "id": "digest"
+                      }
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "name",
+                  "value": "pdf",
+                  "multiline": false
+                }
+              ],
+              "kind": "skill",
+              "target": "pdf",
+              "function": {
+                "name": "skill_view",
+                "arguments": "{\"name\":\"pdf\"}"
+              },
+              "id": "call-view",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"name\":\"pdf\",\"description\":\"Read PDFs\",\"tags\":[],\"content\":\"# PDF\\n\\nUse **pdftotext**.\",\"path\":\"pdf/SKILL.md\",\"linked_files\":null,\"readiness_status\":\"setup_needed\",\"setup_needed\":true,\"setup_note\":\"Set $PDF_KEY.\"}",
+              "result_view": {
+                "text": "# PDF\n\nUse **pdftotext**.",
+                "rows": {
+                  "title": "pdf",
+                  "rows": [
+                    {
+                      "label": "Read PDFs",
+                      "link": {
+                        "kind": "skill",
+                        "id": "pdf"
+                      }
+                    },
+                    {
+                      "label": "Setup needed",
+                      "detail": "Set $PDF_KEY.",
+                      "status": "warn"
+                    }
+                  ],
+                  "markdown": "# PDF\n\nUse **pdftotext**."
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "query",
+                  "value": "deploy",
+                  "multiline": false
+                }
+              ],
+              "kind": "session",
+              "target": "deploy",
+              "function": {
+                "name": "session_search",
+                "arguments": "{\"query\":\"deploy\"}"
+              },
+              "id": "call-search",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"mode\":\"discover\",\"query\":\"deploy\",\"detail\":\"summary\",\"results\":[{\"session_id\":\"past-1\",\"when\":\"November 16, 2026 at 09:00 AM\",\"source\":\"web\",\"model\":\"m\",\"title\":\"Deploy fix\",\"matched_role\":\"user\",\"snippet\":\"the deploy failed\"}],\"count\":1}",
+              "result_view": {
+                "text": "[\n  {\n    \"session_id\": \"past-1\",\n    \"when\": \"November 16, 2026 at 09:00 AM\",\n    \"source\": \"web\",\n    \"model\": \"m\",\n    \"title\": \"Deploy fix\",\n    \"matched_role\": \"user\",\n    \"snippet\": \"the deploy failed\"\n  }\n]",
+                "rows": {
+                  "title": "deploy",
+                  "rows": [
+                    {
+                      "label": "Deploy fix",
+                      "detail": "November 16, 2026 at 09:00 AM · the deploy failed",
+                      "link": {
+                        "kind": "session",
+                        "id": "past-1"
+                      }
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "action",
+                  "value": "pause",
+                  "multiline": false
+                },
+                {
+                  "key": "job_id",
+                  "value": "job-1",
+                  "multiline": false
+                }
+              ],
+              "kind": "schedule",
+              "target": "job-1",
+              "function": {
+                "name": "cronjob_manage",
+                "arguments": "{\"action\":\"pause\",\"job_id\":\"job-1\"}"
+              },
+              "id": "call-cron",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"job\":{\"job_id\":\"job-1\",\"name\":\"Morning digest\",\"schedule\":\"every day at 09:00\",\"next_run_at\":null,\"last_status\":\"ok\",\"enabled\":false,\"state\":\"paused\"}}",
+              "result_view": {
+                "text": "{\n  \"success\": true,\n  \"job\": {\n    \"job_id\": \"job-1\",\n    \"name\": \"Morning digest\",\n    \"schedule\": \"every day at 09:00\",\n    \"next_run_at\": null,\n    \"last_status\": \"ok\",\n    \"enabled\": false,\n    \"state\": \"paused\"\n  }\n}",
+                "rows": {
+                  "title": "Paused",
+                  "rows": [
+                    {
+                      "label": "Morning digest",
+                      "detail": "every day at 09:00 · paused · last ok",
+                      "status": "ok",
+                      "link": {
+                        "kind": "crons",
+                        "id": "job-1"
+                      }
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "action",
+                  "value": "connect",
+                  "multiline": false
+                },
+                {
+                  "key": "connectors",
+                  "value": "- github",
+                  "multiline": false
+                }
+              ],
+              "kind": "connection",
+              "target": "",
+              "function": {
+                "name": "manage_connections",
+                "arguments": "{\"action\":\"connect\",\"connectors\":[\"github\"]}"
+              },
+              "id": "call-connect",
+              "done": true,
+              "is_error": false,
+              "result": "{\"targets\":[{\"name\":\"github\",\"kind\":\"connector\",\"action\":\"connect\",\"state\":\"initiated\",\"connect_url\":\"https://portal.example/authorize?code=abc\"}],\"status\":\"initiated\",\"note\":\"Show each connect_url to the user.\"}",
+              "result_view": {
+                "text": "{\n  \"targets\": [\n    {\n      \"name\": \"github\",\n      \"kind\": \"connector\",\n      \"action\": \"connect\",\n      \"state\": \"initiated\"\n    }\n  ],\n  \"status\": \"initiated\",\n  \"note\": \"Show each connect_url to the user.\"\n}",
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "github",
+                      "detail": "initiated",
+                      "status": "pending",
+                      "link": {
+                        "kind": "connectors"
+                      }
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "args_fields": [
+                {
+                  "key": "questions",
+                  "value": "- question: Which branch?\n  choices:\n    - main\n    - dev",
+                  "multiline": true
+                }
+              ],
+              "kind": "question",
+              "target": "",
+              "function": {
+                "name": "clarify",
+                "arguments": "{\"questions\":[{\"question\":\"Which branch?\",\"choices\":[\"main\",\"dev\"]}]}"
+              },
+              "id": "call-clarify",
+              "done": true,
+              "is_error": false,
+              "result": "{\"responses\":[{\"question\":\"Which branch?\",\"choices_offered\":[\"main\",\"dev\"],\"status\":\"answered\",\"user_response\":\"dev\"}],\"outcome\":\"answered\"}",
+              "result_view": {
+                "text": "{\n  \"responses\": [\n    {\n      \"question\": \"Which branch?\",\n      \"choices_offered\": [\n        \"main\",\n        \"dev\"\n      ],\n      \"status\": \"answered\",\n      \"user_response\": \"dev\"\n    }\n  ],\n  \"outcome\": \"answered\"\n}",
+                "rows": {
+                  "rows": [
+                    {
+                      "label": "Which branch?",
+                      "detail": "dev"
+                    }
+                  ]
+                }
+              },
+              "duration": null,
+              "type": "function"
+            }
+          ],
+          "_turn_id": "rows-run",
+          "_display": "row"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"done\":true,\"target\":\"user\",\"usage\":\"4% — 88/2,200 chars\",\"entry_count\":2,\"message\":\"Applied 1 operation(s).\",\"note\":\"Write saved.\"}",
+          "timestamp": 9002,
+          "tool_call_id": "call-memory",
+          "_turn_id": "rows-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"staged\":true,\"pending_id\":\"pend-1\",\"gist\":\"New digest skill\",\"message\":\"Waiting for the user to approve.\"}",
+          "timestamp": 9003,
+          "tool_call_id": "call-skill",
+          "_turn_id": "rows-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"name\":\"pdf\",\"description\":\"Read PDFs\",\"tags\":[],\"content\":\"# PDF\\n\\nUse **pdftotext**.\",\"path\":\"pdf/SKILL.md\",\"linked_files\":null,\"readiness_status\":\"setup_needed\",\"setup_needed\":true,\"setup_note\":\"Set $PDF_KEY.\"}",
+          "timestamp": 9004,
+          "tool_call_id": "call-view",
+          "_turn_id": "rows-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"mode\":\"discover\",\"query\":\"deploy\",\"detail\":\"summary\",\"results\":[{\"session_id\":\"past-1\",\"when\":\"November 16, 2026 at 09:00 AM\",\"source\":\"web\",\"model\":\"m\",\"title\":\"Deploy fix\",\"matched_role\":\"user\",\"snippet\":\"the deploy failed\"}],\"count\":1}",
+          "timestamp": 9005,
+          "tool_call_id": "call-search",
+          "_turn_id": "rows-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"job\":{\"job_id\":\"job-1\",\"name\":\"Morning digest\",\"schedule\":\"every day at 09:00\",\"next_run_at\":null,\"last_status\":\"ok\",\"enabled\":false,\"state\":\"paused\"}}",
+          "timestamp": 9006,
+          "tool_call_id": "call-cron",
+          "_turn_id": "rows-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"targets\":[{\"name\":\"github\",\"kind\":\"connector\",\"action\":\"connect\",\"state\":\"initiated\",\"connect_url\":\"https://portal.example/authorize?code=abc\"}],\"status\":\"initiated\",\"note\":\"Show each connect_url to the user.\"}",
+          "timestamp": 9007,
+          "tool_call_id": "call-connect",
+          "_turn_id": "rows-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"responses\":[{\"question\":\"Which branch?\",\"choices_offered\":[\"main\",\"dev\"],\"status\":\"answered\",\"user_response\":\"dev\"}],\"outcome\":\"answered\"}",
+          "timestamp": 9008,
+          "tool_call_id": "call-clarify",
+          "_turn_id": "rows-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "assistant",
+          "content": "Done.",
+          "message_id": "rows-answer",
+          "timestamp": 9009,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {
+                "row_id": "tool:call-memory",
+                "order_index": 0,
+                "role": "tool",
+                "created_at": 9001,
+                "tool": {
+                  "id": "call-memory",
+                  "name": "memory",
+                  "args_fields": [
+                    {
+                      "key": "target",
+                      "value": "user",
+                      "multiline": false
+                    },
+                    {
+                      "key": "operations",
+                      "value": "- action: add\n  content: Prefers short replies",
+                      "multiline": true
+                    }
+                  ],
+                  "kind": "memory",
+                  "target": "user",
+                  "args": {
+                    "target": "user",
+                    "operations": [
+                      {
+                        "action": "add",
+                        "content": "Prefers short replies"
+                      }
+                    ]
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"done\":true,\"target\":\"user\",\"usage\":\"4% — 88/2,200 chars\",\"entry_count\":2,\"message\":\"Applied 1 operation(s).\",\"note\":\"Write saved.\"}",
+                  "result_view": {
+                    "text": "Applied 1 operation(s).",
+                    "rows": {
+                      "title": "User profile · 4% — 88/2,200 chars",
+                      "rows": [
+                        {
+                          "label": "Added: Prefers short replies"
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-skill",
+                "order_index": 1,
+                "role": "tool",
+                "created_at": 9001,
+                "tool": {
+                  "id": "call-skill",
+                  "name": "skill_manage",
+                  "args_fields": [
+                    {
+                      "key": "action",
+                      "value": "create",
+                      "multiline": false
+                    },
+                    {
+                      "key": "name",
+                      "value": "digest",
+                      "multiline": false
+                    },
+                    {
+                      "key": "content",
+                      "value": "# Digest",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "skill",
+                  "target": "digest",
+                  "args": {
+                    "action": "create",
+                    "name": "digest",
+                    "content": "# Digest"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"staged\":true,\"pending_id\":\"pend-1\",\"gist\":\"New digest skill\",\"message\":\"Waiting for the user to approve.\"}",
+                  "result_view": {
+                    "text": "Waiting for the user to approve.",
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "Waiting for approval",
+                          "detail": "New digest skill",
+                          "status": "pending"
+                        },
+                        {
+                          "label": "Created digest",
+                          "status": "pending",
+                          "link": {
+                            "kind": "skill",
+                            "id": "digest"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-view",
+                "order_index": 2,
+                "role": "tool",
+                "created_at": 9001,
+                "tool": {
+                  "id": "call-view",
+                  "name": "skill_view",
+                  "args_fields": [
+                    {
+                      "key": "name",
+                      "value": "pdf",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "skill",
+                  "target": "pdf",
+                  "args": {
+                    "name": "pdf"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"name\":\"pdf\",\"description\":\"Read PDFs\",\"tags\":[],\"content\":\"# PDF\\n\\nUse **pdftotext**.\",\"path\":\"pdf/SKILL.md\",\"linked_files\":null,\"readiness_status\":\"setup_needed\",\"setup_needed\":true,\"setup_note\":\"Set $PDF_KEY.\"}",
+                  "result_view": {
+                    "text": "# PDF\n\nUse **pdftotext**.",
+                    "rows": {
+                      "title": "pdf",
+                      "rows": [
+                        {
+                          "label": "Read PDFs",
+                          "link": {
+                            "kind": "skill",
+                            "id": "pdf"
+                          }
+                        },
+                        {
+                          "label": "Setup needed",
+                          "detail": "Set $PDF_KEY.",
+                          "status": "warn"
+                        }
+                      ],
+                      "markdown": "# PDF\n\nUse **pdftotext**."
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-search",
+                "order_index": 3,
+                "role": "tool",
+                "created_at": 9001,
+                "tool": {
+                  "id": "call-search",
+                  "name": "session_search",
+                  "args_fields": [
+                    {
+                      "key": "query",
+                      "value": "deploy",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "session",
+                  "target": "deploy",
+                  "args": {
+                    "query": "deploy"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"mode\":\"discover\",\"query\":\"deploy\",\"detail\":\"summary\",\"results\":[{\"session_id\":\"past-1\",\"when\":\"November 16, 2026 at 09:00 AM\",\"source\":\"web\",\"model\":\"m\",\"title\":\"Deploy fix\",\"matched_role\":\"user\",\"snippet\":\"the deploy failed\"}],\"count\":1}",
+                  "result_view": {
+                    "text": "[\n  {\n    \"session_id\": \"past-1\",\n    \"when\": \"November 16, 2026 at 09:00 AM\",\n    \"source\": \"web\",\n    \"model\": \"m\",\n    \"title\": \"Deploy fix\",\n    \"matched_role\": \"user\",\n    \"snippet\": \"the deploy failed\"\n  }\n]",
+                    "rows": {
+                      "title": "deploy",
+                      "rows": [
+                        {
+                          "label": "Deploy fix",
+                          "detail": "November 16, 2026 at 09:00 AM · the deploy failed",
+                          "link": {
+                            "kind": "session",
+                            "id": "past-1"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-cron",
+                "order_index": 4,
+                "role": "tool",
+                "created_at": 9001,
+                "tool": {
+                  "id": "call-cron",
+                  "name": "cronjob_manage",
+                  "args_fields": [
+                    {
+                      "key": "action",
+                      "value": "pause",
+                      "multiline": false
+                    },
+                    {
+                      "key": "job_id",
+                      "value": "job-1",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "schedule",
+                  "target": "job-1",
+                  "args": {
+                    "action": "pause",
+                    "job_id": "job-1"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"job\":{\"job_id\":\"job-1\",\"name\":\"Morning digest\",\"schedule\":\"every day at 09:00\",\"next_run_at\":null,\"last_status\":\"ok\",\"enabled\":false,\"state\":\"paused\"}}",
+                  "result_view": {
+                    "text": "{\n  \"success\": true,\n  \"job\": {\n    \"job_id\": \"job-1\",\n    \"name\": \"Morning digest\",\n    \"schedule\": \"every day at 09:00\",\n    \"next_run_at\": null,\n    \"last_status\": \"ok\",\n    \"enabled\": false,\n    \"state\": \"paused\"\n  }\n}",
+                    "rows": {
+                      "title": "Paused",
+                      "rows": [
+                        {
+                          "label": "Morning digest",
+                          "detail": "every day at 09:00 · paused · last ok",
+                          "status": "ok",
+                          "link": {
+                            "kind": "crons",
+                            "id": "job-1"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-connect",
+                "order_index": 5,
+                "role": "tool",
+                "created_at": 9001,
+                "tool": {
+                  "id": "call-connect",
+                  "name": "manage_connections",
+                  "args_fields": [
+                    {
+                      "key": "action",
+                      "value": "connect",
+                      "multiline": false
+                    },
+                    {
+                      "key": "connectors",
+                      "value": "- github",
+                      "multiline": false
+                    }
+                  ],
+                  "kind": "connection",
+                  "target": "",
+                  "args": {
+                    "action": "connect",
+                    "connectors": [
+                      "github"
+                    ]
+                  },
+                  "preview": null,
+                  "result": "{\"targets\":[{\"name\":\"github\",\"kind\":\"connector\",\"action\":\"connect\",\"state\":\"initiated\",\"connect_url\":\"https://portal.example/authorize?code=abc\"}],\"status\":\"initiated\",\"note\":\"Show each connect_url to the user.\"}",
+                  "result_view": {
+                    "text": "{\n  \"targets\": [\n    {\n      \"name\": \"github\",\n      \"kind\": \"connector\",\n      \"action\": \"connect\",\n      \"state\": \"initiated\"\n    }\n  ],\n  \"status\": \"initiated\",\n  \"note\": \"Show each connect_url to the user.\"\n}",
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "github",
+                          "detail": "initiated",
+                          "status": "pending",
+                          "link": {
+                            "kind": "connectors"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-clarify",
+                "order_index": 6,
+                "role": "tool",
+                "created_at": 9001,
+                "tool": {
+                  "id": "call-clarify",
+                  "name": "clarify",
+                  "args_fields": [
+                    {
+                      "key": "questions",
+                      "value": "- question: Which branch?\n  choices:\n    - main\n    - dev",
+                      "multiline": true
+                    }
+                  ],
+                  "kind": "question",
+                  "target": "",
+                  "args": {
+                    "questions": [
+                      {
+                        "question": "Which branch?",
+                        "choices": [
+                          "main",
+                          "dev"
+                        ]
+                      }
+                    ]
+                  },
+                  "preview": null,
+                  "result": "{\"responses\":[{\"question\":\"Which branch?\",\"choices_offered\":[\"main\",\"dev\"],\"status\":\"answered\",\"user_response\":\"dev\"}],\"outcome\":\"answered\"}",
+                  "result_view": {
+                    "text": "{\n  \"responses\": [\n    {\n      \"question\": \"Which branch?\",\n      \"choices_offered\": [\n        \"main\",\n        \"dev\"\n      ],\n      \"status\": \"answered\",\n      \"user_response\": \"dev\"\n    }\n  ],\n  \"outcome\": \"answered\"\n}",
+                    "rows": {
+                      "rows": [
+                        {
+                          "label": "Which branch?",
+                          "detail": "dev"
+                        }
+                      ]
+                    }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              }
+            ],
+            "final_answer": "Done.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": false,
+            "has_consumed_steering": false,
+            "file_changes": [],
+            "activity_rows_total": 7,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "7b0b0466add55cdf409a40ed305787f721be86a846c92fb04b6fbdccf76e5d60"
+          },
+          "_turn_id": "rows-run",
           "_display": "row"
         }
       ]

@@ -17,6 +17,7 @@ public enum TalariaDeepLink {
     static let providerQuotaWidgetSettingsHost = "provider-quota-widget-settings"
     static let openAppHost = "open"
     static let newChatProviderHost = "new-chat-provider"
+    static let sectionHost = "section"
     static let providerQueryItem = "provider"
 
     public static func quotaSourceURL(sourceID: String, refresh: Bool = false) -> URL? {
@@ -179,6 +180,31 @@ public enum TalariaDeepLink {
 
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// TAL-2326: an app page a transcript row opens: Tasks (scheduled jobs), Skills, or Settings › Tools.
+    public enum Section: String, Sendable {
+        case tasks, skills, tools
+    }
+
+    /// TAL-2326: `talaria://section?name=<section>`.
+    public static func sectionURL(_ section: Section) -> URL? {
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = sectionHost
+        components.queryItems = [URLQueryItem(name: "name", value: section.rawValue)]
+        return components.url
+    }
+
+    public static func section(from url: URL) -> Section? {
+        guard url.scheme?.lowercased() == scheme, url.host?.lowercased() == sectionHost else { return nil }
+        return URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+            .first { $0.name == "name" }?.value.flatMap(Section.init(rawValue:))
+    }
+
+    /// Whether a link is one of this build's own app links, which the app routes itself rather than the system.
+    public static func isAppURL(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == scheme
     }
 
     /// TAL-1966: `reviewID` opens that decision review of the session's server rather than the chat.

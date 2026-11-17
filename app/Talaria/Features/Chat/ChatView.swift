@@ -2220,6 +2220,8 @@ struct ChatView: View {
             openedFileLink = link
         case .inAppBrowser(let url):
             openedWebPage = InAppSafariPage(url: url)
+        case .app(let url):
+            AppIntentRouter.shared.requestDeepLink(url)
         case .system:
             return .systemAction
         }

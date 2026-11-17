@@ -244,6 +244,17 @@ back to the session file.
   `fields`. A multimodal result (`_multimodal`) reads as its `text_summary` and a
   tool row's content list ships without its image parts: no image data reaches a
   client. A call that made media is `shows_card` and opens its worklog.
+  TAL-2326: `memory`, `skills_list`, `skill_view`, `skill_manage`,
+  `session_search`, `cronjob_manage`, `manage_connections` and an answered
+  `clarify` add `rows` (`{ title?, rows: [{ label, detail?, status?: ok | warn
+  | error | pending, link?: { kind: session | crons | connectors | skill, id? }
+  }], markdown? }`) in place of `fields`: memory changes under their store, a
+  staged memory or skill write `pending` behind a "Waiting for approval" row,
+  skills, a viewed skill's Markdown, past chats or the messages read from one,
+  scheduled jobs under what the action did, connected apps, and each question
+  with its answer. A failed call is its `error` alone. A connection's
+  `connect_url` never ships in the view, `text` included. Whole rows share the
+  4000-character budget; a row's link is never cut.
 - `args_fields` (TAL-2318): the call's redacted arguments as the same rows, one
   per top-level key in call order, each value capped at 4000 characters. A
   scalar shows inline, a nested object as indented `key: value` lines, a list as

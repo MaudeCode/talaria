@@ -1,4 +1,4 @@
-import { ApprovalAnsweredBySchema, DecisionReviewRefSchema, DisplayMediaSchema, FileExcerptSchema, OutboundDraftRefSchema, ProposalRefSchema, ResultLinksSchema, ResultPageSchema, SearchMatchesSchema, ShowBlockRefSchema, TerminalRefSchema, ToolFieldSchema, type ApprovalAnsweredBy, type FileExcerpt, type ResultLinks, type ResultPage, type SearchMatches, type ToolField, type ToolResultView } from '@maudecode/talaria-web-contracts'
+import { ApprovalAnsweredBySchema, DecisionReviewRefSchema, DisplayMediaSchema, FileExcerptSchema, OutboundDraftRefSchema, ProposalRefSchema, ResultLinksSchema, ResultPageSchema, SearchMatchesSchema, ShowBlockRefSchema, TerminalRefSchema, ToolFieldSchema, ToolRowsSchema, type ApprovalAnsweredBy, type FileExcerpt, type ResultLinks, type ResultPage, type SearchMatches, type ToolField, type ToolResultView, type ToolRows } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 /**
  * Transcript settlement after an Agent turn (the core of Python
@@ -13,7 +13,7 @@ import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
 import { toolResultMedia, type MediaProjection } from '../workspace/media-refs.js'
-import { decidedEditDiff, decisionReviewRef, outboundDraftRef, pageExcerpt, proposalRef, readFileView, resultAnalysisView, resultLinksView, resultPagesView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName, toolPresentation } from './tool-display.js'
+import { decidedEditDiff, decisionReviewRef, outboundDraftRef, pageExcerpt, proposalRef, readFileView, resultAnalysisView, resultLinksView, resultPagesView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolEditDiff, toolName, toolPresentation, toolRowsView } from './tool-display.js'
 import { sourceKind } from './source-kind.js'
 
 const TOOL_RESULT_SNIPPET_MAX = 4000
@@ -718,6 +718,8 @@ export function withoutImageData(raw: unknown): unknown {
  * TAL-2324: `links` and `pages` presented ones likewise add their `links` or `pages` section.
  * TAL-2325: `media` and `analysis` presented ones add the `media` a tool made (a failed one shows its `error` alone) or the
  * `analysis` it gave.
+ * TAL-2326: `rows` and `clarify` presented ones add their `rows` (a failed one shows its `error` alone); a connection's
+ * connect URLs leave its text too.
  */
 function uncappedResultView(input: unknown, name?: unknown, args?: unknown): ToolResultView {
   const raw = withoutImageData(input)
@@ -730,14 +732,14 @@ function uncappedResultView(input: unknown, name?: unknown, args?: unknown): Too
     if (!isEmptyView(terminal)) return terminal
   }
   const presentation = toolPresentation(name)
-  if (presentation === 'file_excerpt' || presentation === 'matches' || presentation === 'links' || presentation === 'pages' || presentation === 'media' || presentation === 'analysis') {
+  if (presentation === 'file_excerpt' || presentation === 'matches' || presentation === 'links' || presentation === 'pages' || presentation === 'media' || presentation === 'analysis' || presentation === 'rows' || presentation === 'clarify') {
     const data = typeof value === 'string' ? resultJson(value) : value
     // TAL-2325: an analysis the Agent kept as text (a multimodal result's summary) is the analysis itself.
-    const typed = isDict(data) ? typedResultView(presentation, data, args) : presentation === 'analysis' && typeof value === 'string' ? wrapped('analysis', resultAnalysisView({ analysis: value })) : undefined
+    const typed = isDict(data) ? typedResultView(presentation, data, args, name) : presentation === 'analysis' && typeof value === 'string' ? wrapped('analysis', resultAnalysisView({ analysis: value })) : undefined
     // A section joins the generic text, never its key/value rows (but media, which shows above its call's details, keeps the
     // rows that name its prompt and model); a one-line outcome (a repeat read, not found) replaces it.
-    if (typed?.file_excerpt || typed?.matches || typed?.links || typed?.pages || typed?.media || typed?.analysis !== undefined) {
-      const generic = resultView(value, 0)
+    if (typed?.file_excerpt || typed?.matches || typed?.links || typed?.pages || typed?.media || typed?.analysis !== undefined || typed?.rows) {
+      const generic = resultView(typed.rows && isDict(data) && Array.isArray(data.targets) ? { ...data, targets: (data.targets as unknown[]).map((t): unknown => (isDict(t) ? Object.fromEntries(Object.entries(t).filter(([key]) => key !== 'connect_url')) : t)) } : value, 0)
       if (!typed.media) delete generic.fields
       return { ...generic, ...typed }
     }
@@ -747,8 +749,10 @@ function uncappedResultView(input: unknown, name?: unknown, args?: unknown): Too
 }
 
 /** TAL-2323/TAL-2324: the typed section a presentation's parser reads from an object result; undefined for a shape it does not know. */
-function typedResultView(presentation: 'file_excerpt' | 'matches' | 'links' | 'pages' | 'media' | 'analysis', data: Record<string, unknown>, args: unknown): ToolResultView | undefined {
+function typedResultView(presentation: 'file_excerpt' | 'matches' | 'links' | 'pages' | 'media' | 'analysis' | 'rows' | 'clarify', data: Record<string, unknown>, args: unknown, name: unknown): ToolResultView | undefined {
   if (presentation === 'file_excerpt') return readFileView(data, args)
+  // TAL-2326: a failed call is its error on one line, as a media one is.
+  if (presentation === 'rows' || presentation === 'clarify') return data.success === false || data.error ? wrapped('error', str(data.error).trim() || undefined) : wrapped('rows', toolRowsView(name, data, args))
   if (presentation === 'analysis') return wrapped('analysis', resultAnalysisView(data))
   // A failed media call is its error on one line.
   if (presentation === 'media') return data.success === false || data.error ? wrapped('error', str(data.error).trim() || undefined) : wrapped('media', toolResultMedia(data))
@@ -760,13 +764,14 @@ const wrapped = <K extends keyof ToolResultView>(key: K, section: ToolResultView
 
 /**
  * TAL-2324: a list's rows while characters of `limit` are left, each row's text cut to what is left. A URL is never cut (a
- * cut URL would open the wrong page): a row whose URL no longer fits ends the list.
+ * cut URL would open the wrong page): a row whose URL no longer fits ends the list. TAL-2326: a row without one (a tool row,
+ * whose link is no string) counts only its text.
  */
-function cappedRows<T extends { url: string }>(rows: readonly T[], limit: number): T[] {
+function cappedRows<T extends object>(rows: readonly T[], limit: number): T[] {
   const out: T[] = []
   let left = limit
   for (const row of rows) {
-    left -= row.url.length + 1
+    left -= ('url' in row && typeof row.url === 'string' ? row.url.length : 0) + 1
     if (left <= 0) break
     const cut = { ...row }
     for (const [key, field] of Object.entries(row)) {
@@ -791,6 +796,12 @@ function cappedLinks(links: ResultLinks, limit: number): ResultLinks {
 }
 const linksChars = (links: ResultLinks | undefined): number => (links ? (links.answer?.length ?? 0) + links.items.reduce((sum, item) => sum + rowChars(item), 0) : 0)
 const pagesChars = (pages: ResultPage[] | undefined): number => (pages ?? []).reduce((sum, page) => sum + rowChars(page), 0)
+/** TAL-2326: a rows section's title, the rows that fit `limit` characters after it (a row's link is never cut) and its Markdown. */
+function cappedToolRows(rows: ToolRows, limit: number): ToolRows {
+  const title = rows.title === undefined ? undefined : toolResultSnippet(rows.title, limit)
+  return { ...(title !== undefined ? { title } : {}), rows: cappedRows(rows.rows, limit - (title?.length ?? 0)), ...(rows.markdown !== undefined ? { markdown: toolResultSnippet(rows.markdown, limit) } : {}) }
+}
+const toolRowsChars = (rows: ToolRows | undefined): number => (rows ? Math.max((rows.title?.length ?? 0) + rows.rows.reduce((sum, row) => sum + rowChars(row), 0), rows.markdown?.length ?? 0) : 0)
 
 /** TAL-2323: an excerpt's whole lines while their text fits `limit` characters, the last one cut to fit. */
 function cappedExcerpt(excerpt: FileExcerpt, limit: number): FileExcerpt {
@@ -825,7 +836,7 @@ function cappedMatches(matches: SearchMatches, limit: number): SearchMatches {
 const excerptChars = (excerpt: FileExcerpt | undefined): number => (excerpt?.lines ?? []).reduce((sum, line) => sum + line.text.length + 1, 0)
 const matchesChars = (matches: SearchMatches | undefined): number => (matches?.files ?? []).reduce((sum, file) => file.matches.reduce((chars, match) => chars + match.text.length + 1, sum + file.path.length + 1), 0)
 
-const cappedView = (view: ToolResultView, limit: number): ToolResultView => Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field, limit) : key === 'fields' ? cappedFields(field as ToolField[], limit, limit) : key === 'file_excerpt' ? cappedExcerpt(field as FileExcerpt, limit) : key === 'matches' ? cappedMatches(field as SearchMatches, limit) : key === 'links' ? cappedLinks(field as ResultLinks, limit) : key === 'pages' ? cappedPages(field as ResultPage[], limit) : field]))
+const cappedView = (view: ToolResultView, limit: number): ToolResultView => Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field, limit) : key === 'fields' ? cappedFields(field as ToolField[], limit, limit) : key === 'file_excerpt' ? cappedExcerpt(field as FileExcerpt, limit) : key === 'matches' ? cappedMatches(field as SearchMatches, limit) : key === 'links' ? cappedLinks(field as ResultLinks, limit) : key === 'pages' ? cappedPages(field as ResultPage[], limit) : key === 'rows' ? cappedToolRows(field as ToolRows, limit) : field]))
 
 /** A view the server already decided (a built scene row, or one stored with its scene): its known fields, capped. */
 export function decidedResultView(value: Record<string, unknown>): ToolResultView {
@@ -858,6 +869,8 @@ export function decidedResultView(value: Record<string, unknown>): ToolResultVie
   const media = DisplayMediaSchema.array().safeParse(value.media).data
   if (media) view.media = media
   if (typeof value.analysis === 'string') view.analysis = toolResultSnippet(value.analysis)
+  const rows = ToolRowsSchema.safeParse(value.rows).data
+  if (rows) view.rows = cappedToolRows(rows, TOOL_RESULT_SNIPPET_MAX)
   return view
 }
 
@@ -905,7 +918,7 @@ export function toolOutcome(input: unknown, toolName?: unknown, flagged = false,
   const terminal = !failed ? terminalRef(toolName, data) : undefined
   // The whole view once: capped for display, and whether any section was cut (TAL-331's whole-result offer).
   const full = uncappedResultView(raw, toolName, args)
-  const capped = Object.values(full).some((field) => typeof field === 'string' && field.length > TOOL_RESULT_SNIPPET_MAX) || [fieldChars(full.fields), excerptChars(full.file_excerpt), matchesChars(full.matches), linksChars(full.links), pagesChars(full.pages)].some((chars) => chars > TOOL_RESULT_SNIPPET_MAX) || pagesCut(full.pages)
+  const capped = Object.values(full).some((field) => typeof field === 'string' && field.length > TOOL_RESULT_SNIPPET_MAX) || [fieldChars(full.fields), excerptChars(full.file_excerpt), matchesChars(full.matches), linksChars(full.links), pagesChars(full.pages), toolRowsChars(full.rows)].some((chars) => chars > TOOL_RESULT_SNIPPET_MAX) || pagesCut(full.pages)
   return { is_error, capped, result_text: toolResultSnippet(value), result_view: { ...cappedView(full, TOOL_RESULT_SNIPPET_MAX), ...(ref ? { outbound_draft: ref } : {}), ...(review ? { decision_review: review } : {}), ...(proposal ? { proposal } : {}), ...(block ? { block } : {}), ...(terminal ? { terminal } : {}) } }
 }
 

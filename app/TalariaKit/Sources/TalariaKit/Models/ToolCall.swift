@@ -172,6 +172,42 @@ public struct ResultPage: Decodable, Equatable, Sendable {
     public let error: String?
 }
 
+/// TAL-2326: where a result row opens: a Talaria chat (`session`), the scheduled jobs page (`crons`), connected apps
+/// (`connectors`) or a skill. An unknown kind opens nothing.
+public struct ToolRowLink: Decodable, Equatable, Sendable {
+    public let kind: String
+    public let id: String?
+
+    /// The app link the row opens: the chat, the Tasks page with the scheduled jobs, Settings › Tools (where connected
+    /// apps live) or the Skills page; nil for a kind this app does not know or a chat with no id.
+    public var destinationURL: URL? {
+        switch kind {
+        case "session": id.flatMap { TalariaDeepLink.sessionURL(sessionID: $0) }
+        case "crons": TalariaDeepLink.sectionURL(.tasks)
+        case "connectors": TalariaDeepLink.sectionURL(.tools)
+        case "skill": TalariaDeepLink.sectionURL(.skills)
+        default: nil
+        }
+    }
+}
+
+/// TAL-2326: one row of a result: its label, a muted detail line, a status dot and where it opens.
+public struct ToolRow: Decodable, Equatable, Sendable {
+    public let label: String
+    public let detail: String?
+    /// `ok`, `warn`, `error` or `pending` (waiting for approval); any other value draws no dot.
+    public let status: String?
+    public let link: ToolRowLink?
+}
+
+/// TAL-2326: a memory, skill, past-chat, scheduled job, connection or clarify result as titled rows, and a viewed skill's
+/// Markdown under them.
+public struct ToolRows: Decodable, Equatable, Sendable {
+    public let title: String?
+    public let rows: [ToolRow]
+    public let markdown: String?
+}
+
 /// TAL-315: a tool result's display sections, decided on the server for every client. Shown in this order: `text`, or
 /// `stdout`, `stderr`, a labelled `error` and a labelled `exitCode` (sent only when worth showing).
 public struct ToolResultView: Decodable, Equatable, Sendable {
@@ -202,13 +238,17 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
     public let media: [TranscriptMediaReference]?
     /// TAL-2325: what an image or video analysis said, as Markdown, shown in place of `text`.
     public let analysis: String?
+    /// TAL-2326: a memory, skill, past-chat, scheduled job, connection or clarify result's rows, shown in place of `text`.
+    public let rows: ToolRows?
 
     public init(
         text: String? = nil, stdout: String? = nil, stderr: String? = nil, error: String? = nil, exitCode: Int? = nil,
         decisionReview: DecisionReviewRef? = nil, proposal: ProposalRef? = nil, block: ShowBlockRef? = nil,
         terminal: TerminalRef? = nil, fields: [ToolField]? = nil, fileExcerpt: FileExcerpt? = nil, matches: SearchMatches? = nil,
-        links: ResultLinks? = nil, pages: [ResultPage]? = nil, media: [TranscriptMediaReference]? = nil, analysis: String? = nil
+        links: ResultLinks? = nil, pages: [ResultPage]? = nil, media: [TranscriptMediaReference]? = nil, analysis: String? = nil,
+        rows: ToolRows? = nil
     ) {
+        self.rows = rows
         self.media = media
         self.analysis = analysis
         self.links = links
@@ -241,6 +281,7 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         case pages
         case media
         case analysis
+        case rows
     }
 
     public init(from decoder: Decoder) throws {
@@ -262,6 +303,7 @@ public struct ToolResultView: Decodable, Equatable, Sendable {
         // An item an App cannot read is dropped, never its neighbours.
         media = (try? container.decodeIfPresent([JSONValue].self, forKey: .media))?.map { TranscriptMediaReference.decodeLossily($0) }
         analysis = container.decodeLossyStringIfPresent(forKey: .analysis)
+        rows = DecisionReview.decode(ToolRows.self, from: try? container.decodeIfPresent(JSONValue.self, forKey: .rows))
     }
 
     /// The view a decoded JSON field holds; nil when the server sent none.

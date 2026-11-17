@@ -3,7 +3,7 @@
  * module computes for live frames and the public projection of persisted calls (`redact.ts` stamps them). Callers pass
  * redacted args, so the target never shows more than the arguments it came from.
  */
-import type { FileExcerpt, FileExcerptLine, ResultLink, ResultLinks, ResultPage, SearchMatches, SearchMatchFile, ToolEditDiff, ToolKind, ToolPresentation, ToolPresentationEntry, ToolProgress } from '@maudecode/talaria-web-contracts'
+import type { FileExcerpt, FileExcerptLine, ResultLink, ResultLinks, ResultPage, SearchMatches, SearchMatchFile, ToolEditDiff, ToolKind, ToolPresentation, ToolPresentationEntry, ToolProgress, ToolRow, ToolRows } from '@maudecode/talaria-web-contracts'
 import { DecisionReviewRefSchema, DisplayMediaSchema, FileExcerptSchema, OutboundDraftRefSchema, SearchMatchesSchema, ProposalRefSchema, ShowBlockRefSchema, TALARIA_TOOL_NAMES, TerminalRefSchema, TOOL_PRESENTATIONS, type DecisionReviewRef, type DisplayMedia, type OutboundDraftRef, type ProposalRef, type ShowBlockRef, type TerminalRef } from '@maudecode/talaria-web-contracts'
 import { posix } from 'node:path'
 import { str } from '../util.js'
@@ -95,6 +95,8 @@ const TARGET_KEYS: Partial<Record<ToolKind, string[]>> = {
   web: ['query', 'pattern', 'url', 'uri', 'session', 'code'],
   // TAL-2325: a media tool reads as its kind's phrase ("Generated an image"), never a prompt or path.
   image: [], audio: [], video: [], image_analysis: [], video_analysis: [],
+  // TAL-2326: a session search names its query, a job its name; connections and questions read as their kind's phrase.
+  session: ['query', 'session_id'], schedule: ['name', 'job_id'], connection: [], question: [],
 }
 /** TAL-2317: the Talaria tools named by what they act on; every other one is named by the tool itself. */
 const TALARIA_TARGET_KEYS: Record<string, string[]> = { deliver: ['path'], terminal_open: ['command'] }
@@ -521,4 +523,140 @@ export function toolProgress(data: Record<string, unknown>): ToolProgress {
   const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
   const percent = finite(data.percent) ? data.percent : finite(data.progress) && finite(data.total) && data.total > 0 ? (data.progress / data.total) * 100 : null
   return { percent: percent === null ? null : Math.round(Math.max(0, Math.min(100, percent))), message: typeof data.message === 'string' ? data.message.trim().slice(0, 1000) || null : null }
+}
+
+/**
+ * TAL-2326: the rows a `rows`- or `clarify`-presented tool's successful object result shows: memory changes, skills, past
+ * chats, scheduled jobs, connected apps or answered questions. The call's `args` name what a memory or skill write changed,
+ * which its result does not repeat. A connect URL never ships: a connection row opens the app's connections page.
+ * Undefined for a shape the tool does not return, which the generic rule shows.
+ */
+export function toolRowsView(name: unknown, data: Record<string, unknown>, args: unknown): ToolRows | undefined {
+  const a = isDict(args) ? args : {}
+  switch (name) {
+    case 'memory': return memoryRows(data, a)
+    case 'skills_list': return Array.isArray(data.skills) ? { title: 'Skills', rows: dicts(data.skills).map((skill) => row(str(skill.name), str(skill.description), undefined, skillLink(skill.name))) } : undefined
+    case 'skill_view': return skillViewRows(data, a)
+    case 'skill_manage': return skillManageRows(data, a)
+    case 'session_search': return sessionSearchRows(data)
+    case 'cronjob_manage': return cronRows(data, a)
+    case 'manage_connections': return connectionRows(data)
+    case 'clarify': return Array.isArray(data.responses) ? { rows: dicts(data.responses).map((r) => row(str(r.question), clarifyAnswer(r))) } : undefined
+    default: return undefined
+  }
+}
+
+const dicts = (value: unknown): Record<string, unknown>[] => (Array.isArray(value) ? value.filter(isDict) : [])
+/** A row with its optional parts only when present, its text trimmed. */
+function row(label: string, detail = '', status?: ToolRow['status'], link?: ToolRow['link']): ToolRow {
+  return { label: label.trim(), ...(detail.trim() ? { detail: detail.trim() } : {}), ...(status ? { status } : {}), ...(link ? { link } : {}) }
+}
+const skillLink = (name: unknown): ToolRow['link'] => (str(name).trim() ? { kind: 'skill', id: str(name).trim() } : undefined)
+const firstLine = (text: unknown): string => str(text).trim().split('\n')[0]!.trim()
+const joined = (...parts: string[]): string => parts.map((part) => part.trim()).filter(Boolean).join(' · ')
+const PENDING = 'Waiting for approval'
+
+/** One memory operation's row: what it added, the entry it updated (its old text the detail) or the entry it removed. */
+function memoryOpRow(op: Record<string, unknown>, n: number, data: Record<string, unknown>, single: boolean, status?: ToolRow['status']): ToolRow | undefined {
+  // A batch result keys an operation's entries by its 1-based index; a one-operation write may name them once.
+  const entry = (batch: string, one: string): string => {
+    const byIndex = data[batch]
+    return (isDict(byIndex) ? str(byIndex[String(n)]) : '') || (single ? str(data[one]) : '')
+  }
+  const action = str(op.action)
+  if (action === 'add') return row(`Added: ${str(op.content)}`, '', status)
+  if (action === 'patch' || action === 'replace') {
+    const after = entry('patched_entries_after', 'patched_entry_after') || str(op.content) || str(op.new_text)
+    const before = entry('patched_entries', 'patched_entry_before') || entry('replaced_entries', 'replaced_entry') || str(op.old_text)
+    return row(`Updated: ${after}`, before ? `Was: ${before}` : '', status)
+  }
+  if (action === 'remove') return row(`Removed: ${entry('removed_entries', 'removed_entry') || str(op.old_text)}`, '', status)
+  return undefined
+}
+
+/** A memory write's changes under its store and how full it is; a staged write waits for approval first. */
+function memoryRows(data: Record<string, unknown>, a: Record<string, unknown>): ToolRows {
+  const ops = Array.isArray(a.operations) ? dicts(a.operations) : [a]
+  const staged = data.staged === true
+  const rows = ops.flatMap((op, i) => memoryOpRow(op, i + 1, data, ops.length === 1, staged ? 'pending' : undefined) ?? [])
+  const title = joined((str(data.target) || str(a.target)) === 'user' ? 'User profile' : 'Memory', str(data.usage))
+  return { title, rows: staged ? [row(PENDING, str(data.message), 'pending'), ...rows] : rows }
+}
+
+/** A viewed skill: its description and any setup it still needs over its formatted text. */
+function skillViewRows(data: Record<string, unknown>, a: Record<string, unknown>): ToolRows | undefined {
+  const name = str(data.name) || str(a.name)
+  if (data.status === 'unchanged') return { title: name, rows: [row('Already loaded in this chat', '', 'ok', skillLink(name))] }
+  if (typeof data.content !== 'string') return undefined
+  const setup = data.setup_needed === true ? [row('Setup needed', str(data.setup_note), 'warn')] : []
+  return { title: name, rows: [row(str(data.description) || name, '', undefined, skillLink(name)), ...setup], markdown: data.content }
+}
+
+const SKILL_ACTIONS: Record<string, string> = { create: 'Created', edit: 'Edited', patch: 'Patched', delete: 'Deleted', write_file: 'Wrote', remove_file: 'Removed' }
+/** One skill write: what it did to which skill and file, then each lint finding it raised. */
+function skillWriteRows(action: string, name: string, file: string, lint: unknown, status?: ToolRow['status']): ToolRow[] {
+  return [row(`${SKILL_ACTIONS[action] ?? action} ${name}`, file, status, action === 'delete' ? undefined : skillLink(name)), ...dicts(lint).map((f) => row(str(f.message), str(f.rule), 'warn'))]
+}
+
+/** A skill write: each operation a batch applied, a single write's own, or the writes waiting for approval. */
+function skillManageRows(data: Record<string, unknown>, a: Record<string, unknown>): ToolRows | undefined {
+  const ops = Array.isArray(a.operations) ? dicts(a.operations) : [a]
+  const opRows = (status?: ToolRow['status']) => ops.flatMap((op) => skillWriteRows(str(op.action), str(op.name) || str(a.name), str(op.file_path), undefined, status))
+  if (data.staged === true) return { rows: [row(PENDING, str(data.gist) || str(data.message), 'pending'), ...opRows('pending')] }
+  if (Array.isArray(data.results)) return { rows: dicts(data.results).flatMap((r) => skillWriteRows(str(r.action), str(r.name), str(r.file_path), r.lint_warnings)) }
+  if (data.success !== true) return undefined
+  return { rows: skillWriteRows(str(a.action), str(a.name), str(a.file_path) || str(data.path), data.lint_warnings) }
+}
+
+const sessionLink = (id: unknown): ToolRow['link'] => (str(id).trim() ? { kind: 'session', id: str(id).trim() } : undefined)
+const UNTITLED = 'Untitled chat'
+/** A past-chat search: each chat it found or listed, or the messages it read from one, each opening that chat. */
+function sessionSearchRows(data: Record<string, unknown>): ToolRows | undefined {
+  const results = dicts(data.results)
+  if (data.mode === 'discover') return { ...(str(data.query).trim() ? { title: str(data.query).trim() } : {}), rows: results.map((r) => row(str(r.title) || UNTITLED, joined(str(r.when), firstLine(r.snippet)), undefined, sessionLink(r.session_id))) }
+  if (data.mode === 'browse') return { title: 'Recent chats', rows: results.map((r) => row(str(r.title) || UNTITLED, firstLine(r.preview), undefined, sessionLink(r.session_id))) }
+  if (data.mode !== 'read' && data.mode !== 'scroll') return undefined
+  const meta = isDict(data.session_meta) ? data.session_meta : {}
+  const link = sessionLink(data.session_id)
+  return { title: joined(str(meta.title) || UNTITLED, str(meta.when)), rows: dicts(data.messages).map((m) => row(firstLine(m.content) || '…', str(m.role), undefined, link)) }
+}
+
+const CRON_TITLES: Record<string, string> = { create: 'Created', list: 'Scheduled jobs', update: 'Updated', pause: 'Paused', resume: 'Resumed', remove: 'Removed', run: 'Started', cancel: 'Cancelled' }
+/** A scheduled job's row: its name, schedule, next run and last outcome, opening it on the scheduled jobs page. */
+function cronRow(job: Record<string, unknown>, exists = true): ToolRow {
+  const last = str(job.last_status).toLowerCase()
+  const next = str(job.next_run_at).trim()
+  const detail = joined(str(job.schedule), job.enabled === false || job.state === 'paused' ? 'paused' : '', next ? `next ${next.slice(0, 16).replace('T', ' ')}` : '', last ? `last ${last}` : '')
+  const status = last === 'ok' || last === 'success' ? 'ok' : last === 'error' || last === 'failed' ? 'error' : undefined
+  const id = str(job.job_id) || str(job.id)
+  return row(str(job.name) || id || 'Scheduled job', detail, status, { kind: 'crons', ...(exists && id ? { id } : {}) })
+}
+/** A scheduled-job action: the jobs it listed or the one it acted on, under what it did. */
+function cronRows(data: Record<string, unknown>, a: Record<string, unknown>): ToolRows | undefined {
+  const title = CRON_TITLES[str(a.action)] ?? 'Scheduled jobs'
+  if (Array.isArray(data.jobs)) return { title, rows: dicts(data.jobs).map((job) => cronRow(job)) }
+  if (isDict(data.removed_job)) return { title: CRON_TITLES.remove!, rows: [cronRow(data.removed_job, false)] }
+  return isDict(data.job) ? { title, rows: [cronRow(data.job)] } : undefined
+}
+
+const TARGET_STATUS: Record<string, ToolRow['status']> = { connected: 'ok', initiated: 'pending', pending: 'pending', failed: 'error', expired: 'error' }
+const CONNECTORS: ToolRow['link'] = { kind: 'connectors' }
+/** Connected apps: each app's accounts or connection state, or the account a rename named; never a connect URL. */
+function connectionRows(data: Record<string, unknown>): ToolRows | undefined {
+  if (Array.isArray(data.connectors)) {
+    return { rows: dicts(data.connectors).map((c) => {
+      const accounts = dicts(c.accounts).map((account) => str(account.alias) || str(account.label)).filter(Boolean)
+      return row(str(c.connector), c.connected === true ? accounts.join(', ') || 'Connected' : 'Not connected', c.connected === true ? 'ok' : undefined, CONNECTORS)
+    }) }
+  }
+  if (Array.isArray(data.targets)) return { rows: dicts(data.targets).map((t) => row(str(t.name), joined(str(t.alias), str(t.state).replace(/_/g, ' '), str(t.error)), TARGET_STATUS[str(t.state)], CONNECTORS)) }
+  if (isDict(data.renamed)) return { rows: [row(str(data.renamed.connector), `Renamed to ${str(data.renamed.alias) || str(data.renamed.label)}`, 'ok', CONNECTORS)] }
+  return undefined
+}
+
+/** A clarify question's answer as the user gave it, or that they skipped it or never answered. */
+function clarifyAnswer(response: Record<string, unknown>): string {
+  const answer = response.user_response
+  if (response.status === 'answered' && answer !== null && answer !== undefined) return Array.isArray(answer) ? answer.map(str).join(', ') : str(answer)
+  return response.status === 'skipped' ? 'Skipped' : 'No answer'
 }

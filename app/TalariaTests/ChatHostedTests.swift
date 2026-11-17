@@ -2229,6 +2229,68 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "tool-web-links-and-pages")
     }
 
+    /// TAL-2326: an expanded memory, past-chat, job, connection or clarify call draws its rows (never its JSON) under its own
+    /// icon and words, a viewed skill its formatted text, and a linked row opens that Talaria page through the app's router.
+    func testExpandedRowsCardsDrawTheirRowsAndOpenTheirTalariaPage() async throws {
+        func view(_ json: String) throws -> ToolResultView { try JSONDecoder().decode(ToolResultView.self, from: Data(json.utf8)) }
+        let search = ToolCall(
+            id: "rows-search", name: "session_search", preview: nil, args: nil, kind: .session, target: "deploy",
+            resultView: try view(#"{"text": "{\"results\": []}", "rows": {"title": "deploy", "rows": [{"label": "Deploy fix", "detail": "November 16 · the deploy failed", "link": {"kind": "session", "id": "past-1"}}]}}"#),
+            isCompleted: true
+        )
+        let cron = ToolCall(
+            id: "rows-cron", name: "cronjob_manage", preview: nil, args: nil, kind: .schedule, target: "job-1",
+            resultView: try view(#"{"text": "{}", "rows": {"title": "Paused", "rows": [{"label": "Morning digest", "detail": "every day at 09:00 · paused", "status": "error", "link": {"kind": "crons", "id": "job-1"}}]}}"#),
+            isCompleted: true
+        )
+        let connect = ToolCall(
+            id: "rows-connect", name: "manage_connections", preview: nil, args: nil, kind: .connection, target: "",
+            resultView: try view(#"{"text": "{}", "rows": {"rows": [{"label": "github", "detail": "initiated", "status": "pending", "link": {"kind": "connectors"}}]}}"#),
+            isCompleted: true
+        )
+        let question = ToolCall(
+            id: "rows-clarify", name: "clarify", preview: nil, args: nil, kind: .question, target: "",
+            resultView: try view(#"{"text": "{}", "rows": {"rows": [{"label": "Which branch?", "detail": "dev"}]}}"#),
+            isCompleted: true
+        )
+        let skill = ToolCall(
+            id: "rows-skill", name: "skill_view", preview: nil, args: nil, kind: .skill, target: "pdf",
+            resultView: try view(#"{"text": "PDF", "rows": {"title": "pdf", "rows": [{"label": "Setup needed", "detail": "Set $PDF_KEY.", "status": "warn"}], "markdown": "Use **pdftotext** here."}}"#),
+            isCompleted: true
+        )
+        let suite = "TalariaTests.tool-rows.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: ChatTranscriptDisplaySettings.toolCardsStartExpandedKey)
+        var opened: [URL] = []
+        let window = try hostWindow(
+            ScrollView {
+                VStack {
+                    ToolCallCardView(toolCall: search); ToolCallCardView(toolCall: cron); ToolCallCardView(toolCall: connect)
+                    ToolCallCardView(toolCall: question); ToolCallCardView(toolCall: skill)
+                }.padding()
+            }
+            .defaultAppStorage(defaults)
+            .environment(\.openURL, OpenURLAction { opened.append($0); return .handled }),
+            size: CGSize(width: 390, height: 1300)
+        )
+        let labels = { HostedAccessibility.elements(in: window).compactMap { $0.accessibilityLabel } }
+        let expected = [
+            "Searched past chats for deploy", "Deploy fix", "Managed a scheduled job", "Morning digest", "Managed connections", "github",
+            "Asked a question", "Which branch?", "dev", "Setup needed", "here",
+        ]
+        let drawn = await awaitCondition(timeout: 5) { expected.allSatisfy { label in labels().contains { $0.contains(label) } } }
+        XCTAssertTrue(drawn, "\(labels())")
+        XCTAssertFalse(labels().contains { $0.contains("**") || $0.contains("\"results\"") }, "\(labels())")
+        for (label, destination) in [("Deploy fix", TalariaDeepLink.sessionURL(sessionID: "past-1")), ("Morning digest", TalariaDeepLink.sectionURL(.tasks)), ("github", TalariaDeepLink.sectionURL(.tools))] {
+            let row = try XCTUnwrap(HostedAccessibility.elements(in: window, labelContaining: label).first, label)
+            XCTAssertTrue(row.accessibilityActivate(), label)
+            XCTAssertEqual(opened.last, destination, label)
+        }
+        XCTAssertEqual(opened.count, 3)
+        attachHostedScreenshot(window, name: "tool-rows-expanded")
+    }
+
     /// TAL-2325: a generated image shows under its call without opening it, loads through the transcript's media loader and
     /// opens the preview; an analysis shows as formatted text once the call opens.
     func testMediaCardShowsItsImageAndAnAnalysisItsText() async throws {

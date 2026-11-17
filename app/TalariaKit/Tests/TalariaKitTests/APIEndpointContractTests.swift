@@ -1190,6 +1190,52 @@ final class SharedContractTests: XCTestCase {
         }
     }
 
+    func testSharedWebSessionCarriesEachToolRowsSection() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-2326 has no such example.
+        guard let example = object["tool_rows_views"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
+        let messages = try XCTUnwrap(session.messages)
+        let answer = try XCTUnwrap(messages.first { $0.messageId == "rows-answer" })
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: answer))
+        let groups = ToolCallGroup.groups(messages: messages, messageOffset: nil)
+        for calls in [timeline.toolCalls, groups.first { $0.anchorMessageID == "rows-calls" }?.toolCalls ?? []] {
+            let byID = Dictionary(uniqueKeysWithValues: calls.map { ($0.id, $0) })
+            let memory = try XCTUnwrap(byID["call-memory"]?.resultView?.rows)
+            XCTAssertEqual(memory.title, "User profile · 4% — 88/2,200 chars")
+            XCTAssertEqual(memory.rows.map(\.label), ["Added: Prefers short replies"])
+            let staged = try XCTUnwrap(byID["call-skill"]?.resultView?.rows)
+            XCTAssertEqual(staged.rows.map(\.status), ["pending", "pending"])
+            XCTAssertEqual(staged.rows.first?.label, "Waiting for approval")
+            XCTAssertEqual(staged.rows.last?.link?.destinationURL, TalariaDeepLink.sectionURL(.skills))
+            let view = try XCTUnwrap(byID["call-view"]?.resultView?.rows)
+            XCTAssertEqual(view.markdown, "# PDF\n\nUse **pdftotext**.")
+            XCTAssertEqual(view.rows.last?.status, "warn")
+            let search = try XCTUnwrap(byID["call-search"])
+            XCTAssertEqual(search.kind, .session)
+            XCTAssertEqual(search.resultView?.rows?.rows.first?.link?.destinationURL, TalariaDeepLink.sessionURL(sessionID: "past-1"))
+            XCTAssertEqual(AssistantActivitySummary.label(for: search), "Searched past chats for deploy")
+            XCTAssertEqual(AssistantActivitySummary.icon(for: search), "bubble.left.and.bubble.right")
+            let cron = try XCTUnwrap(byID["call-cron"])
+            XCTAssertEqual(cron.kind, .schedule)
+            XCTAssertEqual(cron.resultView?.rows?.rows.first?.link?.destinationURL, TalariaDeepLink.sectionURL(.tasks))
+            XCTAssertEqual(AssistantActivitySummary.label(for: cron), "Managed a scheduled job")
+            XCTAssertEqual(AssistantActivitySummary.icon(for: cron), "calendar.badge.clock")
+            let connect = try XCTUnwrap(byID["call-connect"])
+            XCTAssertEqual(connect.kind, .connection)
+            XCTAssertEqual(connect.resultView?.rows?.rows.first?.link?.destinationURL, TalariaDeepLink.sectionURL(.tools))
+            XCTAssertEqual(AssistantActivitySummary.label(for: connect), "Managed connections")
+            XCTAssertEqual(AssistantActivitySummary.icon(for: connect), "powerplug")
+            let question = try XCTUnwrap(byID["call-clarify"])
+            XCTAssertEqual(question.kind, .question)
+            XCTAssertEqual(question.resultView?.rows?.rows.map { [$0.label, $0.detail] }, [["Which branch?", "dev"]])
+            XCTAssertEqual(AssistantActivitySummary.label(for: question), "Asked a question")
+            XCTAssertEqual(AssistantActivitySummary.icon(for: question), "questionmark.bubble")
+        }
+    }
+
     func testSharedWebSessionCarriesEachFileEditsDiff() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-448 has no such example.

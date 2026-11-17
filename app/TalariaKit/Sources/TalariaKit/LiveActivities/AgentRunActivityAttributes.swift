@@ -443,6 +443,8 @@ public enum ToolDisplayKind: String, Equatable, Sendable {
     case image, audio, video
     case imageAnalysis = "image_analysis"
     case videoAnalysis = "video_analysis"
+    /// TAL-2326: a past-chat search, a scheduled job, a connected app and a question to the user.
+    case session, schedule, connection, question
 
     /// An older server sends no kind; an unrecognized one decodes as `.unknown`.
     public init?(serverValue: String?) {

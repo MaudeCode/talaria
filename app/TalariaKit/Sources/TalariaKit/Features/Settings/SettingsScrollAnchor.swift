@@ -4,6 +4,8 @@ public enum SettingsScrollAnchor: Hashable, Sendable {
     case servers
     case providerQuotas
     case system
+    /// TAL-2326: Settings › Tools, which a connected-app row opens.
+    case tools
 
     /// The category the anchor opens; server updates live on the System page.
     public var category: SettingsCategory {
@@ -12,6 +14,7 @@ public enum SettingsScrollAnchor: Hashable, Sendable {
         case .servers: .servers
         case .system: .system
         case .providerQuotas: .providers
+        case .tools: .tools
         }
     }
 }

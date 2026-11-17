@@ -309,8 +309,9 @@ describe('Agent tool presentation table (TAL-2322)', () => {
     expect(fullToolResult(messages, 'c1')?.result_view).toEqual({ error: 'Command timed out', exit_code: 124 })
   })
 
-  it('gives every listed tool the kind its name tokens gave before the table, but a media tool its own (TAL-2325)', () => {
-    for (const [name, { kind, presentation }] of Object.entries(TOOL_PRESENTATIONS)) if (presentation !== 'media' && presentation !== 'analysis') expect([name, kind]).toEqual([name, tokenToolKind(name)])
+  it('gives every listed tool the kind its name tokens gave before the table, but a media tool (TAL-2325) or a session, schedule, connection or question tool (TAL-2326) its own', () => {
+    const own = new Set(['session', 'schedule', 'connection', 'question'])
+    for (const [name, { kind, presentation }] of Object.entries(TOOL_PRESENTATIONS)) if (presentation !== 'media' && presentation !== 'analysis' && !own.has(kind)) expect([name, kind]).toEqual([name, tokenToolKind(name)])
   })
 
   it('takes a file edit only from a diff tool, and from an unlisted write tool by its name tokens', () => {
@@ -542,5 +543,129 @@ describe('media and analysis sections (TAL-2325)', () => {
     // Without a session the URL stays as built; restamping replaces, never repeats, the id.
     expect((publicToolFrame({ name: 'image_generate', result_view: { media } }, true).result_view as ToolResultView).media).toEqual(media)
     expect((publicToolFrame({ name: 'image_generate', result_view: frame.result_view }, true, null, 'sid-1').result_view as ToolResultView).media?.[0]?.url.match(/session_id/g)).toHaveLength(1)
+  })
+})
+
+describe('memory, skills, session search, scheduled job, connection and clarify rows (TAL-2326)', () => {
+  const view = (name: string, result: Record<string, unknown>, args?: Record<string, unknown>) => toolOutcome(JSON.stringify(result), name, false, args).result_view
+
+  it('gives each tool its kind and presentation from the table', () => {
+    expect(['memory', 'skills_list', 'skill_view', 'skill_manage', 'session_search', 'cronjob_manage', 'manage_connections', 'clarify'].map((name) => [name, toolKind(name), TOOL_PRESENTATIONS[name]?.presentation])).toEqual([
+      ['memory', 'memory', 'rows'], ['skills_list', 'skill', 'rows'], ['skill_view', 'skill', 'rows'], ['skill_manage', 'skill', 'rows'],
+      ['session_search', 'session', 'rows'], ['cronjob_manage', 'schedule', 'rows'], ['manage_connections', 'connection', 'rows'], ['clarify', 'question', 'clarify'],
+    ])
+    expect(toolDisplay('session_search', { query: 'release notes' })).toMatchObject({ kind: 'session', target: 'release notes' })
+    expect(toolDisplay('cronjob_manage', { action: 'pause', job_id: 'j1' })).toMatchObject({ kind: 'schedule', target: 'j1' })
+    expect(toolDisplay('clarify', { questions: [{ question: 'Which?' }] })).toMatchObject({ kind: 'question', target: '' })
+  })
+
+  it('shows each memory change under its store, an update with its old text and a staged write waiting for approval', () => {
+    const shown = view('memory', { success: true, done: true, target: 'memory', usage: '12% — 264/2,200 chars', entry_count: 3, message: 'Applied 3 operation(s).',
+      patched_entries: { 2: 'Prefers tabs' }, patched_entries_after: { 2: 'Prefers spaces' }, removed_entries: { 3: 'Lives in Oslo' } },
+    { target: 'memory', operations: [{ action: 'add', content: 'Uses vim' }, { action: 'patch', old_text: 'tabs', content: 'spaces' }, { action: 'remove', old_text: 'Oslo' }] })
+    expect(shown.rows).toEqual({ title: 'Memory · 12% — 264/2,200 chars', rows: [
+      { label: 'Added: Uses vim' }, { label: 'Updated: Prefers spaces', detail: 'Was: Prefers tabs' }, { label: 'Removed: Lives in Oslo' },
+    ] })
+    expect(shown.fields).toBeUndefined()
+    expect(view('memory', { success: true, target: 'user', usage: '1%', patched_entry_before: 'Kim', patched_entry_after: 'Kim (they/them)' }, { action: 'patch', target: 'user', old_text: 'Kim', new_text: 'Kim (they/them)' }).rows)
+      .toEqual({ title: 'User profile · 1%', rows: [{ label: 'Updated: Kim (they/them)', detail: 'Was: Kim' }] })
+    expect(view('memory', { success: true, staged: true, pending_id: 'p1', message: 'Queued for review.' }, { target: 'memory', operations: [{ action: 'remove', old_text: 'Oslo' }] }).rows)
+      .toEqual({ title: 'Memory', rows: [{ label: 'Waiting for approval', detail: 'Queued for review.', status: 'pending' }, { label: 'Removed: Oslo', status: 'pending' }] })
+  })
+
+  it('lists skills, shows a viewed skill as its formatted text and each skill write with its lint findings', () => {
+    expect(view('skills_list', { success: true, skills: [{ name: 'pdf', description: 'Read PDFs', category: 'docs' }], categories: ['docs'], count: 1 }).rows)
+      .toEqual({ title: 'Skills', rows: [{ label: 'pdf', detail: 'Read PDFs', link: { kind: 'skill', id: 'pdf' } }] })
+    expect(view('skill_view', { success: true, name: 'pdf', description: 'Read PDFs', content: '# PDF\n\nUse **pdftotext**.', setup_needed: true, setup_note: 'Set $PDF_KEY.', readiness_status: 'setup_needed' }).rows).toEqual({
+      title: 'pdf', rows: [{ label: 'Read PDFs', link: { kind: 'skill', id: 'pdf' } }, { label: 'Setup needed', detail: 'Set $PDF_KEY.', status: 'warn' }], markdown: '# PDF\n\nUse **pdftotext**.',
+    })
+    expect(view('skill_view', { status: 'unchanged', name: 'pdf' }).rows).toEqual({ title: 'pdf', rows: [{ label: 'Already loaded in this chat', status: 'ok', link: { kind: 'skill', id: 'pdf' } }] })
+    expect(view('skill_manage', { success: true, operations_applied: 2, results: [
+      { name: 'pdf', action: 'patch', file_path: 'SKILL.md', success: true, lint_warnings: [{ severity: 'warning', rule: 'heading', message: 'Missing title' }] },
+      { name: 'old', action: 'delete', file_path: null, success: true },
+    ] }).rows).toEqual({ rows: [
+      { label: 'Patched pdf', detail: 'SKILL.md', link: { kind: 'skill', id: 'pdf' } }, { label: 'Missing title', detail: 'heading', status: 'warn' }, { label: 'Deleted old' },
+    ] })
+    expect(view('skill_manage', { success: true, message: 'Skill created.', path: '/skills/pdf' }, { action: 'create', name: 'pdf' }).rows).toEqual({ rows: [{ label: 'Created pdf', detail: '/skills/pdf', link: { kind: 'skill', id: 'pdf' } }] })
+    expect(view('skill_manage', { success: true, staged: true, pending_id: 'p2', gist: 'New pdf skill', message: 'Staged.' }, { action: 'create', name: 'pdf' }).rows)
+      .toEqual({ rows: [{ label: 'Waiting for approval', detail: 'New pdf skill', status: 'pending' }, { label: 'Created pdf', status: 'pending', link: { kind: 'skill', id: 'pdf' } }] })
+  })
+
+  it('shows a failed call as its error on one line, never rows', () => {
+    for (const name of ['memory', 'skill_view', 'session_search', 'cronjob_manage', 'manage_connections']) {
+      const shown = view(name, { success: false, error: `${name} broke` })
+      expect(shown.rows).toBeUndefined()
+      expect(shown.error).toBe(`${name} broke`)
+    }
+  })
+
+  it('shows each session search mode as chats that open in Talaria', () => {
+    const link = (id: string) => ({ kind: 'session', id })
+    expect(view('session_search', { success: true, mode: 'discover', query: 'deploy', results: [
+      { session_id: 's1', when: 'November 16, 2026 at 09:00 AM', title: 'Deploy fix', matched_role: 'user', snippet: 'the deploy failed\nsecond line', link: '@session:s1' },
+      { session_id: 's2', when: 'November 15, 2026 at 10:00 AM', title: null, snippet: '' },
+    ], count: 2 }).rows).toEqual({ title: 'deploy', rows: [
+      { label: 'Deploy fix', detail: 'November 16, 2026 at 09:00 AM · the deploy failed', link: link('s1') }, { label: 'Untitled chat', detail: 'November 15, 2026 at 10:00 AM', link: link('s2') },
+    ] })
+    expect(view('session_search', { success: true, mode: 'browse', results: [{ session_id: 's3', title: 'Groceries', last_active: 1, message_count: 4, preview: 'milk' }] }).rows)
+      .toEqual({ title: 'Recent chats', rows: [{ label: 'Groceries', detail: 'milk', link: link('s3') }] })
+    for (const mode of ['read', 'scroll']) {
+      expect(view('session_search', { success: true, mode, session_id: 's1', session_meta: { title: 'Deploy fix', when: 'November 16, 2026 at 09:00 AM' }, messages: [
+        { id: 1, role: 'user', content: 'Why did it fail?\nDetails' }, { id: 2, role: 'assistant', content: '' },
+      ] }).rows).toEqual({ title: 'Deploy fix · November 16, 2026 at 09:00 AM', rows: [
+        { label: 'Why did it fail?', detail: 'user', link: link('s1') }, { label: '…', detail: 'assistant', link: link('s1') },
+      ] })
+    }
+  })
+
+  it('shows scheduled jobs under what the action did, each opening the scheduled jobs page', () => {
+    const job = { job_id: 'j1', name: 'Digest', schedule: 'every day at 09:00', next_run_at: '2026-11-18T09:00:00-05:00', last_run_at: null, last_status: 'ok', enabled: true, state: 'scheduled' }
+    expect(view('cronjob_manage', { success: true, count: 2, jobs: [job, { ...job, job_id: 'j2', name: 'Backup', last_status: 'error', enabled: false, next_run_at: null }] }, { action: 'list' }).rows).toEqual({ title: 'Scheduled jobs', rows: [
+      { label: 'Digest', detail: 'every day at 09:00 · next 2026-11-18 09:00 · last ok', status: 'ok', link: { kind: 'crons', id: 'j1' } },
+      { label: 'Backup', detail: 'every day at 09:00 · paused · last error', status: 'error', link: { kind: 'crons', id: 'j2' } },
+    ] })
+    for (const [action, title] of [['create', 'Created'], ['update', 'Updated'], ['pause', 'Paused'], ['resume', 'Resumed'], ['run', 'Started'], ['cancel', 'Cancelled']]) {
+      expect(view('cronjob_manage', { success: true, job: { ...job, last_status: null } }, { action }).rows).toEqual({ title, rows: [{ label: 'Digest', detail: 'every day at 09:00 · next 2026-11-18 09:00', link: { kind: 'crons', id: 'j1' } }] })
+    }
+    expect(view('cronjob_manage', { success: true, message: "Cron job 'Digest' removed.", removed_job: { id: 'j1', name: 'Digest', schedule: 'every day at 09:00' } }, { action: 'remove' }).rows)
+      .toEqual({ title: 'Removed', rows: [{ label: 'Digest', detail: 'every day at 09:00', link: { kind: 'crons' } }] })
+  })
+
+  it('shows connected apps and a connect operation without its connect URL, each opening connections', () => {
+    const connectors = { kind: 'connectors' }
+    expect(view('manage_connections', { connectors: [
+      { connector: 'github', connected: true, accounts: [{ alias: 'work', label: 'kim@work', status: 'active' }, { alias: null, label: 'kim@home', status: 'active' }] },
+      { connector: 'notion', connected: false, accounts: [] },
+    ], hint: 'h' }).rows).toEqual({ rows: [{ label: 'github', detail: 'work, kim@home', status: 'ok', link: connectors }, { label: 'notion', detail: 'Not connected', link: connectors }] })
+    const connect = toolOutcome(JSON.stringify({ targets: [
+      { name: 'github', kind: 'connector', action: 'connect', state: 'initiated', alias: 'work', connect_url: 'https://portal.example/authorize?code=SECRET' },
+      { name: 'notion', kind: 'connector', action: 'connect', state: 'failed', error: 'denied' },
+    ], status: 'initiated', note: 'Show each connect_url to the user.' }), 'manage_connections')
+    expect(connect.result_view.rows).toEqual({ rows: [
+      { label: 'github', detail: 'work · initiated', status: 'pending', link: connectors }, { label: 'notion', detail: 'failed · denied', status: 'error', link: connectors },
+    ] })
+    expect(JSON.stringify(connect.result_view)).not.toContain('portal.example')
+    expect(view('manage_connections', { renamed: { connector: 'github', alias: 'personal', label: 'kim@home' }, notice: 'n' }).rows).toEqual({ rows: [{ label: 'github', detail: 'Renamed to personal', status: 'ok', link: connectors }] })
+  })
+
+  it('shows each clarify question with its answer, or that it was skipped or never answered', () => {
+    expect(view('clarify', { responses: [
+      { question: 'Which color?', choices_offered: ['red', 'blue'], status: 'answered', user_response: 'blue' },
+      { question: 'Which sizes?', choices_offered: ['S', 'M'], status: 'answered', user_response: ['S', 'M'] },
+      { question: 'Name?', choices_offered: null, status: 'skipped', user_response: null },
+      { question: 'Why?', choices_offered: null, status: 'unanswered', user_response: null },
+    ], outcome: 'answered' }).rows).toEqual({ rows: [
+      { label: 'Which color?', detail: 'blue' }, { label: 'Which sizes?', detail: 'S, M' }, { label: 'Name?', detail: 'Skipped' }, { label: 'Why?', detail: 'No answer' },
+    ] })
+  })
+
+  it('keeps rows within the result budget and a stored view as it was decided', () => {
+    const skills = Array.from({ length: 200 }, (_, i) => ({ name: `skill-${String(i)}`, description: 'x'.repeat(40) }))
+    const shown = toolOutcome(JSON.stringify({ success: true, skills }), 'skills_list')
+    expect(shown.result_view.rows).toMatchObject({ title: 'Skills', rows: expect.any(Array) as unknown })
+    expect(shown.capped).toBe(true)
+    expect(shown.result_view.rows!.rows.length).toBeLessThan(200)
+    expect(shown.result_view.rows!.rows.at(-1)!.link).toEqual({ kind: 'skill', id: expect.stringMatching(/^skill-\d+$/) as unknown })
+    expect(decidedResultView({ rows: shown.result_view.rows })).toEqual({ rows: shown.result_view.rows })
   })
 })
