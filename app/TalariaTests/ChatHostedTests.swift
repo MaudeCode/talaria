@@ -2134,6 +2134,25 @@ final class ChatHostedTests: XCTestCase {
         }
     }
 
+    /// TAL-2317: a Talaria tool's row draws the Talaria mark as a template image and reads by the tool's name, in light
+    /// and dark appearance and at an accessibility text size.
+    func testTalariaToolRowShowsTheTalariaMarkAndTheToolName() throws {
+        XCTAssertEqual(UIImage(named: AssistantActivitySummary.talariaMarkIcon)?.renderingMode, .alwaysTemplate)
+        let calls = [
+            ToolCall(id: "talaria-done", name: "profile_list", preview: nil, args: nil, kind: .talaria, target: "profile_list", isCompleted: true),
+            ToolCall(id: "talaria-running", name: "session_list", preview: nil, args: nil, kind: .talaria, target: "session_list", isCompleted: false)
+        ]
+        for (name, type, style) in [("light", DynamicTypeSize.large, UIUserInterfaceStyle.light), ("dark", .large, .dark), ("accessibility-dark", .accessibility3, .dark)] {
+            let window = try hostWindow(VStack { ForEach(calls) { ToolCallCardView(toolCall: $0) } }.padding().dynamicTypeSize(type)) { $0.userInterfaceStyle = style }
+            for label in ["Used profile_list", "Using session_list"] {
+                XCTAssertFalse(HostedAccessibility.elements(in: window, labelContaining: label).isEmpty, "\(name): \(label)")
+            }
+            attachHostedScreenshot(window, name: "talaria-tool-row-\(name)")
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
     /// TAL-1241: a running tool's glow keeps sweeping while its content is evaluated once, not every display frame.
     func testRunningToolGlowSweepsWithoutPerFrameEvaluation() throws {
         let evaluations = ChatBodyEvaluationRecorder()

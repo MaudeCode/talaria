@@ -369,3 +369,14 @@ def test_default_toolsets_save_through_the_agent_saver_and_keep_talarias_own(han
     message, _ = handshaken.call('toolsets.set_default', {**params, 'name': 'synthetic-mcp', 'enabled': True})
     assert message['error']['code'] == -32602 and 'synthetic-mcp' in message['error']['message']
     assert config_file.read_bytes() == before
+
+
+def test_own_toolsets_register_the_contract_list_of_talaria_tools() -> None:
+    """TAL-2317: the server shows these names as kind ``talaria`` from the shared contract list; a new tool joins it."""
+    from pathlib import Path
+
+    from talaria_sidecar import talaria_toolset
+
+    fixture = json.loads((Path(__file__).resolve().parents[3] / "contracts/fixtures/talaria-tool-names.json").read_text())
+    assert [schema["name"] for schema, _, _ in talaria_toolset._TOOLS] == fixture["talaria"]
+    assert [schema["name"] for schema, _, _ in harness_toolset._TOOLS] == fixture["harness"]

@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Calls to Talaria's own tools, such as listing profiles or sessions, show the Talaria mark and the tool's name instead of a generic tool icon.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

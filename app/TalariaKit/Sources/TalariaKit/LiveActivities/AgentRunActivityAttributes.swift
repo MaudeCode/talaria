@@ -438,7 +438,7 @@ public enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable, Sen
 /// The app maps it to an icon and localized verb; it never classifies tool names itself.
 /// Declared here because this file is shared with the Live Activity widget.
 public enum ToolDisplayKind: String, Equatable, Sendable {
-    case shell, read, list, search, web, write, skill, memory, delegate, unknown
+    case shell, read, list, search, web, write, skill, memory, delegate, talaria, unknown
 
     /// An older server sends no kind; an unrecognized one decodes as `.unknown`.
     public init?(serverValue: String?) {

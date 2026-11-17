@@ -4,6 +4,7 @@ import { withToolCallOutcomes } from './merge.js'
 import { diffHunks } from '../text/diff.js'
 import { decidedEditDiff, EDIT_DIFF_MAX_LINES, toolArgs, toolDisplay, toolEditDiff, toolKind, toolName, toolProgress } from './tool-display.js'
 import { publicToolFrame } from '../redact.js'
+import { TALARIA_TOOL_NAMES } from '@maudecode/talaria-web-contracts'
 
 // TAL-1537: a `~/` path expands against a stubbed home.
 vi.mock('node:os', async (importOriginal) => {
@@ -26,6 +27,12 @@ describe('toolKind', () => {
     ['merge_pull_request', 'unknown'], ['image_generate', 'unknown'], ['', 'unknown'], [undefined, 'unknown'],
   ])('%s is %s', (name, kind) => {
     expect(toolKind(name)).toBe(kind)
+  })
+
+  it('classifies every Talaria tool as talaria, and a third-party tool by its tokens (TAL-2317)', () => {
+    for (const name of TALARIA_TOOL_NAMES) expect(toolKind(name)).toBe('talaria')
+    expect(toolKind('foo_list')).toBe('list')
+    expect(toolKind('mcp_x_session_list')).toBe('list')
   })
 })
 
@@ -105,6 +112,21 @@ describe('toolDisplay', () => {
     expect(toolDisplay('delegate_task', { tasks: [{ context: 'c'.repeat(300), goal: 'late' }] }).target).toBe('')
     // The snapshot cap holds every delegate target below TOOL_TARGET_MAX, by code point.
     expect(toolDisplay('delegate_task', { goal: '😀'.repeat(300) }).target).toBe(`${'😀'.repeat(120)}...`)
+  })
+
+  it('names a Talaria tool row by the tool, live and after reload (TAL-2317)', () => {
+    expect(toolDisplay('profile_list', {})).toEqual({ kind: 'talaria', target: 'profile_list', focus_path: null })
+    // Its own arguments never stand in for the tool's name.
+    expect(toolDisplay('session_list', { query: 'auth' })).toEqual({ kind: 'talaria', target: 'session_list', focus_path: null })
+    expect(toolDisplay('workspace_add', { path: 'src/app', name: 'App' })).toEqual({ kind: 'talaria', target: 'workspace_add', focus_path: null })
+    // Tools with a specific target keep it.
+    expect(toolDisplay('deliver', { path: 'report.pdf', title: 'Report' }).target).toBe('report.pdf')
+    expect(toolDisplay('terminal_open', { command: 'npm test' }).target).toBe('npm test')
+    expect(toolDisplay('show', { kind: 'table' })).toMatchObject({ kind: 'talaria', target: 'show', shows_card: true })
+    // A reloaded call the Agent ran through its tool_call bridge classifies as the live one did.
+    const bridged = { function: { name: 'tool_call', arguments: JSON.stringify({ calls: [{ name: 'pending_list', arguments: {} }] }) } }
+    expect(publicToolFrame({ id: 'c', name: 'pending_list', args: {} }, true)).toMatchObject({ kind: 'talaria', target: 'pending_list' })
+    expect(toolDisplay(toolName(bridged), toolArgs(bridged))).toEqual({ kind: 'talaria', target: 'pending_list', focus_path: null })
   })
 
   it('leaves subagent progress on its own target (TAL-1758)', () => {

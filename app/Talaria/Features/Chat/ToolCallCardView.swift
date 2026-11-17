@@ -112,8 +112,7 @@ struct ToolCallCardView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 8) {
-            Image(systemName: statusIcon)
-                .font(.system(size: 14))
+            ToolActivityIcon(name: statusIcon)
                 .foregroundStyle(statusColor)
                 .frame(width: 16, height: 16)
 
@@ -459,5 +458,24 @@ extension EnvironmentValues {
     var chatProposalModel: ChatProposalModel? {
         get { self[ChatProposalModelKey.self] }
         set { self[ChatProposalModelKey.self] = newValue }
+    }
+}
+
+/// A tool row's icon at the shared 14 pt glyph size: an SF Symbol, or (TAL-2317) the Talaria mark for Talaria's own tools.
+struct ToolActivityIcon: View {
+    let name: String
+
+    var body: some View {
+        if name == AssistantActivitySummary.talariaMarkIcon {
+            Image(name)
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .frame(width: 14, height: 14)
+                .accessibilityHidden(true)
+        } else {
+            Image(systemName: name)
+                .font(.system(size: 14))
+        }
     }
 }
