@@ -1,3 +1,4 @@
+import MarkdownUI
 import SwiftUI
 import UIKit
 import XCTest
@@ -194,6 +195,39 @@ final class AppScreenVisualReferenceTests: XCTestCase {
     private func thumbnail(for attachment: PendingAttachment) -> some View {
         ComposerAttachmentThumbnailView(attachment: attachment, onRemove: {}, onOpen: {})
     }
+
+    /// A chat table is a reading table like Web's (TAL-2320): row separators with a stronger header rule,
+    /// no cell grid, no fills. Rendered without its horizontal `ScrollView`, which `ImageRenderer` draws empty.
+    func testChatMarkdownTableReferences() throws {
+        let variants: [(String, ColorScheme, DynamicTypeSize, CGSize)] = [
+            ("light", .light, .large, CGSize(width: 390, height: 260)),
+            ("dark", .dark, .large, CGSize(width: 390, height: 260)),
+            ("accessibility3", .light, .accessibility3, CGSize(width: 390, height: 600)),
+        ]
+        for (variant, scheme, typeSize, size) in variants {
+            try VisualReference.assertMatchesReference(
+                Markdown(Self.chatTableMarkdown)
+                    .markdownBlockStyle(\.table) { ChatMarkdownTable.readingTable($0.label) }
+                    .markdownTheme(.chat(colorScheme: scheme, isStreaming: false))
+                    .padding(16)
+                    .frame(width: size.width, height: size.height, alignment: .topLeading),
+                named: "chat-table-\(variant)",
+                size: size,
+                colorScheme: scheme,
+                dynamicTypeSize: typeSize
+            )
+        }
+    }
+
+    private static let chatTableMarkdown = """
+    | Check | Result |
+    | --- | --- |
+    | Lint | Passed |
+    | Unit tests | 412 passed |
+    | Hosted tests | Passed after the simulator pool handed out a fresh device |
+    | Visual references | Passed |
+    | Release notes | Passed |
+    """
 
     /// Decoding matches how the app builds summaries, and the relative-date
     /// label is anchored to a whole number of days before the render so it
