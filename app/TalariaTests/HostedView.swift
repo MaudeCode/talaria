@@ -135,13 +135,16 @@ enum HostedScene {
 
 /// Reads the public UIKit items SwiftUI emits, including grouped and bottom-bar actions.
 extension HostedAccessibility {
-    /// The page supplying the visible title menu, beyond sidebar and inspector navigation wrappers.
-    static func titleMenuController(in window: UIWindow) -> UIViewController? {
+    /// The page supplying the visible title menu, beyond sidebar and inspector navigation wrappers. With `filled: false`
+    /// it is the page that registers one, whatever the menu holds: SwiftUI can commit a replaced root's content a frame
+    /// before it fills that root's title and title menu (TAL-1978).
+    static func titleMenuController(in window: UIWindow, filled: Bool = true) -> UIViewController? {
         func find(_ controller: UIViewController) -> UIViewController? {
             if let navigation = controller as? UINavigationController, let top = navigation.topViewController {
                 return find(top)
             }
-            if let menu = controller.navigationItem.titleMenuProvider?([]), !menu.children.isEmpty { return controller }
+            if let provider = controller.navigationItem.titleMenuProvider,
+               !filled || provider([])?.children.isEmpty == false { return controller }
             for child in controller.children {
                 if let page = find(child) { return page }
             }

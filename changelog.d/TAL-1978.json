@@ -1,0 +1,1 @@
+{"skip": "Hosted test only: the deep-link test finds the chat page by its registered title menu in each committed layout and checks the linked title once the replacement settles; no app behavior changes."}
