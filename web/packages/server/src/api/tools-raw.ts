@@ -119,8 +119,9 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
   } catch (error) {
     ctx.deps.log(`[tts] synthesis failed: ${str((error as Error).message)}`)
     if (error instanceof SidecarError) {
+      // The sidecar names the refused engine: unknown, or not the profile's configured `tts.provider`.
       if (error.code === RPC_ERROR_CODES.invalidParams) {
-        await ctx.json({ error: `unknown TTS engine ${engine}` }, { status: 400 }); return
+        await ctx.json({ error: error.message }, { status: 400 }); return
       }
       if (error.condition !== 'tts_failed') {
         await ctx.json({ error: 'Speech synthesis is unavailable on this server', condition: error.condition }, { status: 503 }); return

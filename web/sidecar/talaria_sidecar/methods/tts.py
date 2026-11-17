@@ -17,14 +17,20 @@ MAX_AUDIO_BYTES = 8 * 1024 * 1024
 def synthesize(text: str, provider: str, speed: float | None = None) -> dict:
     from tools import tts_tool
 
+    # `tts.provider` is the Agent's only engine selector; v0.23.2 removed the ignored per-call argument.
+    config = tts_tool._load_tts_config()
+    configured = tts_tool._get_provider(config)
+    if tts_tool._get_provider({'provider': provider}) != configured:
+        raise InvalidParams(f'TTS engine {provider} is not this profile\'s configured engine {configured}')
+    provider = configured
     if (provider != 'edge' and provider not in tts_tool._BUILTIN_DISPATCH
-            and tts_tool._resolve_command_provider_config(provider, tts_tool._load_tts_config()) is None):
+            and tts_tool._resolve_command_provider_config(provider, config) is None):
         raise InvalidParams(f'unknown TTS provider {provider}')
     try:
         with tempfile.TemporaryDirectory(prefix='talaria-tts-') as directory:
             root = Path(directory).resolve()
             result = json.loads(tts_tool.text_to_speech_tool(
-                text, output_path=str(root / 'speech.mp3'), speed=speed, provider=provider))
+                text, output_path=str(root / 'speech.mp3'), speed=speed))
             if not isinstance(result, dict) or result.get('success') is not True:
                 message = result.get('error') if isinstance(result, dict) else None
                 raise ValueError(str(message or 'Agent speech generation failed'))

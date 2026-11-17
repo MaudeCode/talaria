@@ -116,7 +116,7 @@ describe('TTS validation, limits, and engines', () => {
   })
 
   it.each([
-    [new SidecarError('not registered', { code: RPC_ERROR_CODES.invalidParams, condition: 'invalid_params' }), 400, { error: 'unknown TTS engine bogus' }],
+    [new SidecarError("TTS engine bogus is not this profile's configured engine edge", { code: RPC_ERROR_CODES.invalidParams, condition: 'invalid_params' }), 400, { error: "TTS engine bogus is not this profile's configured engine edge" }],
     [new SidecarError('private provider detail', { condition: 'tts_failed' }), 502, { error: 'Text-to-speech generation failed' }],
     [new SidecarError('sidecar restarting', { condition: 'sidecar_unavailable' }), 503, { condition: 'sidecar_unavailable' }],
     [new SidecarError('stale Agent', { condition: 'agent_runtime_stale' }), 503, { condition: 'agent_runtime_stale' }],

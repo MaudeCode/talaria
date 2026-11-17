@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Read Aloud works again with Hermes Agent v0.23.2, and an engine other than the profile's configured speech provider is now refused instead of silently replaced.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
