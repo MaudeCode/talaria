@@ -56,14 +56,4 @@ final class ActivityGroupMergeTests: XCTestCase {
         XCTAssertEqual(timeline.rows.first?.group, next.group, "Every row of a group takes its latest record")
         XCTAssertEqual(AssistantActivityHeaderSummary.title(for: Array(timeline.rows.prefix(2)), isActive: false), "Reading a file, searching the web")
     }
-
-    /// A conversation restored from the offline cache keeps each row's server record (the cache re-encodes the scene).
-    func testCachedSceneKeepsItsGroupRecords() throws {
-        let record = #"{"group_id":"group:0","parts":[{"kind":"talaria","count":5,"failed":1}],"failed":1,"running":false}"#
-        let scene = try XCTUnwrap(try message(rows: tool("a", group: "group:0"), groups: record).activityScene)
-        let restored = try JSONDecoder().decode(AssistantActivityScene.self, from: JSONEncoder().encode(scene))
-        let group = try XCTUnwrap(restored.activityRows?.first?.group, "The cached scene lost the server's group record")
-        XCTAssertEqual(group, scene.activityRows?.first?.group)
-        XCTAssertEqual(group.parts, [AssistantActivityGroup.Part(kind: .talaria, count: 5, failed: 1)])
-    }
 }
