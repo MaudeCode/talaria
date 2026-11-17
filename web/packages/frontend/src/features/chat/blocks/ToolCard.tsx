@@ -304,6 +304,25 @@ function ClippedResult({ sessionId, callId, view, clipped }: { sessionId: string
 /** TAL-2338: argument or result rows as copied text, one `key: value` line each, a multi-line value under its key. */
 const fieldsText = (fields: ToolField[]): string => fields.map((field) => (field.multiline ? `${field.key}:\n${field.value}` : `${field.key}: ${field.value}`)).join('\n')
 
+/**
+ * TAL-2338: a result as the reader sees it, for Copy: the same section `ResultBody` shows (a read's lines under its path, a
+ * search's `line: text` matches under each file, links, pages, an analysis, rows, key/value rows), else its sections' text.
+ */
+function resultCopyText(view: ToolResultView | null, text: string): string {
+  const join = (parts: (string | undefined)[], separator = '\n') => parts.filter(Boolean).join(separator)
+  const excerpt = view?.file_excerpt
+  if (excerpt) {
+    const lines = excerpt.lines.map((line) => line.text).join('\n')
+    return excerpt.path ? join([excerpt.path, lines]) : join([lines, text], '\n\n')
+  }
+  if (view?.matches) return view.matches.files.map((file) => join([file.path, ...file.matches.map((match) => `${String(match.line)}: ${match.text}`)])).join('\n\n')
+  if (view?.links) return join([view.links.answer, ...view.links.items.map((item) => join([item.title, item.url, item.snippet]))], '\n\n')
+  if (view?.pages) return view.pages.map((page) => join([page.title, page.url, page.error ?? page.excerpt])).join('\n\n')
+  if (view?.analysis) return view.analysis
+  if (view?.rows) return join([view.rows.title, ...view.rows.rows.map((row) => join([row.label, row.detail], ': ')), view.rows.markdown])
+  return view?.fields?.length ? fieldsText(view.fields) : text
+}
+
 /** A detail section's label; the first section's carries the row's tools at its end (TAL-2338). */
 function SectionLabel({ label, tools }: { label: string; tools: ReactNode }) {
   return (
@@ -338,9 +357,8 @@ function ToolCardDetailBody({ call, sessionId, args, result, raw, onToggleRaw, f
   const showRaw = raw && hasRaw
   const showArgs = showRaw ? Boolean(call.rawArgs) : call.argsFields ? call.argsFields.length > 0 : Boolean(args && args !== '{}')
   const showResult = showRaw ? Boolean(call.rawResult) : Boolean(result || hasSection(call.resultView))
-  // A JSON-object result copies as the rows it shows, any other as its sections' text.
-  const shownView = full.data?.result_view ?? call.resultView
-  const shownResult = shownView?.fields?.length ? fieldsText(shownView.fields) : full.data ? resultText(full.data.result_view) : result
+  // Copy takes the result as it shows: the whole one once fetched, else the row's own.
+  const shownResult = full.data ? resultCopyText(full.data.result_view, resultText(full.data.result_view)) : resultCopyText(call.resultView, result)
   const copyText = showRaw
     ? [showArgs ? call.rawArgs : '', rawResult ?? ''].filter(Boolean).join('\n\n')
     : [showArgs ? call.argsFields ? fieldsText(call.argsFields) : args : '', showResult ? shownResult : ''].filter(Boolean).join('\n\n')

@@ -1999,6 +1999,8 @@ struct ChatView: View {
     private struct ChatMessageListView: View {
         let chat: ChatView
         let viewModel: ChatViewModel
+        /// A tool row's whole-result fetch is the screen's read (TAL-2338): leaving the chat cancels it, recycling a row does not.
+        @State private var reads = ScreenReads()
 #if DEBUG
         @Environment(\.chatBodyEvaluation) private var recordBodyEvaluation
 #endif
@@ -2147,6 +2149,8 @@ struct ChatView: View {
             .chatEnvironmentAction(\.chatFullToolResultLoader) { toolCallID in
                 { try await viewModel.fullToolResult(toolCallID: toolCallID) }
             }
+            .environment(\.chatScreenReads, reads)
+            .ownsReads(reads)
             .chatEnvironmentAction(\.chatDecisionReviewLoader) { reviewID in
                 { try await viewModel.decisionReview(id: reviewID) }
             }

@@ -1023,6 +1023,37 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertNil(HostedAccessibility.element(in: window, label: "Show full output"))
     }
 
+    /// TAL-2338: a row's whole-result fetch is the chat screen's read; leaving the screen cancels it, and the cancelled
+    /// fetch shows neither its result nor a failure.
+    func testLeavingTheChatCancelsAToolRowsFullResultFetch() async throws {
+        var tool = ToolCall(id: "cancelled-tool", name: "fixture_tool", preview: "Clipped output", args: nil,
+                            rawResult: "Clipped output", isCompleted: true, startedAt: 0)
+        tool.resultTruncated = true
+        let state = RecycledBodyFixture(tool: tool)
+        defer { state.releaseToolResult() }
+        let reads = ScreenReads()
+        let window = try hostWindow(ToolCallCardView(toolCall: tool)
+            .chatEnvironmentAction(\.chatFullToolResultLoader) { _ in { await state.toolResult() } }
+            .environment(\.chatScreenReads, reads)
+            .environment(\.chatTranscriptRowState, state.rowState))
+        if let header = HostedAccessibility.elements(in: window).first(where: { $0.accessibilityHint == "Double tap to expand details." }) {
+            HostedAccessibility.activate(header)
+        }
+        // Raw view fetches the whole result, as Show full output does.
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Show raw"))
+        let requested = await awaitCondition { state.isToolResultPending }
+        XCTAssertTrue(requested)
+        reads.cancelAll()
+        state.releaseToolResult()
+        let leaked = await awaitCondition(timeout: 2) {
+            HostedAccessibility.element(in: window, label: "Full retained tool output") != nil
+                || HostedAccessibility.element(in: window, label: "Retry") != nil
+        }
+        XCTAssertFalse(leaked, "A fetch the screen cancelled must not land in the row")
+        _ = try await requireElement(in: window, label: "Show full output")
+        XCTAssertEqual(state.toolResultCalls, 1)
+    }
+
     /// Driven by scripts/test-history-drag; ordinary hosted runs have no external gesture driver.
     func testHistoryInsertionPreservesReaderDuringNativeDrag() async throws {
         try await assertFullChatHistoryInsertion(expandDisclosure: true, boundaryTurn: true, nativeDrag: true)
@@ -2682,7 +2713,8 @@ private final class RecycledBodyFixture {
     func toolResult() async -> ToolResultResponse {
         toolResultCalls += 1
         await withCheckedContinuation { toolResultContinuation = $0 }
-        return ToolResultResponse(result: "Full retained tool output", resultView: ToolResultView(text: "Full retained tool output"))
+        return ToolResultResponse(result: "Full retained tool output", resultView: ToolResultView(text: "Full retained tool output"),
+                                  rawResult: "Full retained tool output")
     }
 
     func releaseToolResult() {

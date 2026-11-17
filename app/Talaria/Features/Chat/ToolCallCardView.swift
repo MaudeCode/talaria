@@ -6,6 +6,7 @@ struct ToolCallCardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @Environment(\.chatFullToolResultLoader) private var loadFullToolResult
+    @Environment(\.chatScreenReads) private var screenReads
     @AppStorage(ChatTranscriptDisplaySettings.toolCardsStartExpandedKey) private var startsExpanded = false
     @ChatRetainedState("tool-expansion") private var userToggledExpansion: Bool? = nil
     /// TAL-331: the whole result of a call the server clipped or capped, once the reader asked for it.
@@ -105,7 +106,7 @@ struct ToolCallCardView: View {
         let displayContent = ToolCallDisplayFormatter.content(for: shownCall)
         let copyText = isRaw
             ? [toolCall.rawArgs, rawResult].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n")
-            : displayContent.copyText
+            : ToolCallDisplayFormatter.copyText(for: shownCall)
         let tools = AnyView(rowTools(copyText: copyText, copyBlocked: isRaw && toolCall.resultTruncated && rawResult == nil))
         // The tools ride on the first section's label, or stand alone above a first section without one.
         let host: ToolsHost = isRaw
@@ -327,7 +328,7 @@ struct ToolCallCardView: View {
                     // The checkmark confirmed the other view's copy.
                     copyConfirmation.reset()
                     if showsRaw, toolCall.resultTruncated, fullResult == nil {
-                        Task { await showFullResult() }
+                        startFullResult()
                     }
                 } label: {
                     Image(systemName: "curlybraces")
@@ -405,7 +406,7 @@ struct ToolCallCardView: View {
 
     private var fullResultButton: some View {
         Button {
-            Task { await showFullResult() }
+            startFullResult()
         } label: {
             Text(isLoadingFullResult ? String(localized: "Loading…") : fullResultFailed ? String(localized: "Retry") : String(localized: "Show full output"))
                 .font(AppFont.caption(weight: .semibold))
@@ -416,16 +417,28 @@ struct ToolCallCardView: View {
         .disabled(isLoadingFullResult)
     }
 
+    /// The fetch is the chat screen's read (`ScreenReads`), so leaving the chat cancels it; outside a chat screen it runs alone.
+    private func startFullResult() {
+        guard let screenReads else {
+            Task { await showFullResult() }
+            return
+        }
+        screenReads.start("tool-result:\(toolCall.id)") { await showFullResult() }
+    }
+
     private func showFullResult() async {
         guard let loadFullToolResult, !isLoadingFullResult else { return }
         isLoadingFullResult = true
         defer { isLoadingFullResult = false }
         do {
             let result = try await loadFullToolResult(toolCall.id)()
+            guard !Task.isCancelled else { return }
             chatDisclosureToggled()
             fullResultFailed = false
             fullResult = result
         } catch {
+            // A cancelled read (the reader left the chat) is neither a result nor a failure.
+            guard !Task.isCancelled, !APIError.isCancellation(error) else { return }
             fullResultFailed = true
         }
     }
@@ -587,6 +600,11 @@ extension EnvironmentValues {
 
 /// TAL-331: fetches the whole result of a tool call the server clipped; the chat screen supplies it for its session.
 typealias ChatFullToolResultLoader = ChatEnvironmentAction<String, @MainActor () async throws -> ToolResultResponse>
+
+extension EnvironmentValues {
+    /// TAL-2338: the chat screen's button-started reads, which a tool row's whole-result fetch runs under.
+    @Entry var chatScreenReads: ScreenReads? = nil
+}
 
 struct ChatFullToolResultLoaderKey: EnvironmentKey {
     static var defaultValue: ChatFullToolResultLoader? { nil }

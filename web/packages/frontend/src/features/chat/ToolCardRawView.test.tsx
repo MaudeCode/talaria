@@ -22,8 +22,12 @@ const listRow = { row_id: 'tool:list', role: 'tool', tool: { id: 'list', name: '
 const clipped = `${'x'.repeat(4000)}...`
 const bigRow = { row_id: 'tool:big', role: 'tool', tool: { id: 'big', name: 'read_file', kind: 'read', target: 'big.txt', preview: null, args: { path: 'big.txt' }, args_fields: [{ key: 'path', value: 'big.txt', multiline: false }], raw_args: '{\n  "path": "big.txt"\n}', result: clipped, raw_result: clipped, result_view: { text: clipped }, done: true, is_error: false, duration: null, cost_usd: null, result_truncated: true, result_chars: 6000 } }
 
+// Typed sections show in place of the result's text; Copy takes what shows.
+const memoryRow = { row_id: 'tool:memory', role: 'tool', tool: { id: 'memory', name: 'memory', kind: 'memory', target: '', preview: null, args: {}, raw_result: '{\n  "success": true\n}', result_view: { text: 'Applied 1 operation(s).', rows: { title: 'User memory', rows: [{ label: 'Added', detail: 'Prefers short replies' }] } }, done: true, is_error: false, duration: null, cost_usd: null } }
+const readRow = { row_id: 'tool:read', role: 'tool', tool: { id: 'read', name: 'read_file', kind: 'read', target: 'a.ts', preview: null, args: {}, raw_result: '1|const a = 1', result_view: { text: '1|const a = 1', file_excerpt: { path: 'a.ts', language: 'typescript', start_line: 1, lines: [{ n: 1, text: 'const a = 1' }], total_lines: 1, truncated: false } }, done: true, is_error: false, duration: null, cost_usd: null } }
+
 function renderTurn() {
-  const rows = [listRow, { row_id: 'p', role: 'prose', text: 'Next.' }, bigRow].map((row, order_index) => ({ ...row, order_index }))
+  const rows = [listRow, { row_id: 'p', role: 'prose', text: 'Next.' }, bigRow, { row_id: 'q', role: 'prose', text: 'More.' }, memoryRow, readRow].map((row, order_index) => ({ ...row, order_index }))
   const message = { role: 'assistant', id: 'settled', content: '', _turn_id: 'turn', _anchor_activity_scene: { version: 'activity_scene_v1', terminal_state: 'completed', final_answer: 'Done.', expanded_by_default: true, activity_rows: rows } } as Message
   const activity = persistedActivity(groupAssistantTurns(projectMessages([message]))[0]!)
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -56,6 +60,16 @@ describe('raw view and copy on an open tool row (TAL-2338)', () => {
     fireEvent.click(button('list', 'Show formatted')!)
     expect(row('list').querySelector('[data-tool-view]')?.getAttribute('data-tool-view')).toBe('formatted')
     expect(button('list', 'Copy')).toBeDefined()
+  })
+
+  it('copies a typed result as it shows, not the text it stands in for', () => {
+    renderTurn()
+    open('memory')
+    fireEvent.click(button('memory', 'Copy')!)
+    expect(copyWithToast).toHaveBeenLastCalledWith('User memory\nAdded: Prefers short replies')
+    open('read')
+    fireEvent.click(button('read', 'Copy')!)
+    expect(copyWithToast).toHaveBeenLastCalledWith('a.ts\nconst a = 1')
   })
 
   it('fetches a clipped result whole before showing or copying its raw view', async () => {

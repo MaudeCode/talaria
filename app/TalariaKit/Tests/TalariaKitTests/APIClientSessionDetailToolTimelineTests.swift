@@ -274,7 +274,11 @@ func testTheRowCarriesTheServerRawViewAndCopiesWhatShows() throws {
     let completed = running.applyingCompletionPayload(complete)
     XCTAssertEqual(completed.rawArgs, "{\n  \"limit\": 3\n}")
     XCTAssertEqual(completed.rawResult, "{\n  \"token\": \"***\"\n}")
-    XCTAssertEqual(ToolCallDisplayFormatter.content(for: completed).copyText, "limit: 3\n\nnames:\n- a\n- b")
+    XCTAssertEqual(ToolCallDisplayFormatter.copyText(for: completed), "limit: 3\n\nnames:\n- a\n- b")
+    // A typed result copies as it shows, not the text it stands in for.
+    let memory = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"call-memory","name":"memory","result_view":{"text":"Applied 1 operation(s).","rows":{"title":"User memory","rows":[{"label":"Added","detail":"Prefers short replies"}]}}}"#.utf8))
+    let saved = ToolCall(id: "call-memory", name: "memory", preview: nil, args: nil).applyingCompletionPayload(memory)
+    XCTAssertEqual(ToolCallDisplayFormatter.copyText(for: saved), "User memory\nAdded: Prefers short replies")
 }
 
 /// TAL-1965: a `decision_review_put` result's review, from a tool frame and from a session detail.
