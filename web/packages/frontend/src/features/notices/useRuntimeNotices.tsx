@@ -9,7 +9,7 @@ import { isApiError } from '../../contracts/common'
 import type { SessionGoal, SessionNotice } from '@maudecode/talaria-web-contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import type { ComposerNotice } from '../composer/ComposerNotices'
-import { RunElapsed } from '../chat/LiveTurnView'
+import { RunElapsed } from '../chat/RunElapsed'
 
 type AgentHealth = Awaited<ReturnType<typeof api.fetchAgentHealth>>
 

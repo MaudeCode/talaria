@@ -5,7 +5,8 @@ import { Braces, ChevronRight, Copy } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon } from '../toolKind'
 import type { ApprovalAnsweredBy, BackgroundAgent, BackgroundLink, FileExcerpt, ResultLinks, ResultPage, SearchMatches, ToolApp, ToolApprovalOutcome, ToolField, ToolKind, ToolOutcome, ToolProgress, ToolResultView, ToolRow, ToolRows, ToolVerb } from '@maudecode/talaria-web-contracts'
-import { agentsSummary, statusLabel, StatusIcon } from '../../background/BackgroundWork'
+import { agentsSummary, statusLabel, StatusIcon, useBackgroundTasks } from '../../background/BackgroundWork'
+import { RunElapsed } from '../RunElapsed'
 import { requestOpenAgent } from '../../background/openAgentRequest'
 import { formatElapsed, resetTime } from '../../../i18n/units'
 import { toolText } from '../../../i18n/toolText'
@@ -58,6 +59,10 @@ export interface ToolCardData {
   approvalAnsweredBy?: ApprovalAnsweredBy | undefined
   /** TAL-1968: the call's card must stay in view, outside a folded run of calls (server field `shows_card`). */
   showsCard?: true
+  /** TAL-2340: when a running call started (epoch ms, from the server's `started_at`); its row's timer counts from it. */
+  startedAt?: number | undefined
+  /** TAL-2340: the background process the call started (server field `process_id`), whose latest output line shows under it. */
+  processId?: string | undefined
 }
 
 /** The row's label from its server display fields; an approval card (TAL-2333) labels the call it holds the same way. */
@@ -427,6 +432,13 @@ export function toolOutcomeText(outcome: ToolOutcome, locale: string): string {
   }
 }
 
+/** TAL-2340: the latest output line of the background process a call started, from its Background Work record while it runs. */
+function ProcessOutputTail({ sessionId, processId }: { sessionId: string; processId: string }) {
+  const { data } = useBackgroundTasks(sessionId)
+  const tail = data?.tasks.find((task) => task.process_id === processId)?.output_tail
+  return tail ? <div className="tool-card-output-tail" title={tail}>{tail}</div> : null
+}
+
 /** One tool invocation. Collapsed by default: verb + target; details show arguments and result preview as text. */
 export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: ToolCardData; timestamp?: string | undefined; sessionId?: string | undefined; /** Its row in a running turn, which opens as it arrives. */ arrivalKey?: string | undefined }) {
   const locale = useLocale()
@@ -453,6 +465,8 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
         {call.background && <span className="tool-card-background shrink-0 text-[11px] text-muted" data-background-status={call.background.status}>{call.background.status === 'running' || call.background.status === 'completed' ? agentsSummary(call.background.agents) : `${statusLabel(call.background.status)} · ${agentsSummary(call.background.agents)}`}</span>}
         {answeredBy && <span className="tool-card-answered-by min-w-0 max-w-[40%] shrink truncate text-[11px] text-muted" data-approval-outcome={call.approvalAnsweredBy?.outcome} title={answeredBy}>{answeredBy}</span>}
         {!call.done && <span className="tool-card-running-dot h-2 w-2 shrink-0 rounded-full bg-accent" aria-label={m.status_streaming()} />}
+        {/* TAL-2340: a running call's time so far, which its final duration replaces. */}
+        {!call.done && call.startedAt !== undefined && <span className="tool-card-elapsed shrink-0 text-[11px] tabular-nums text-muted"><RunElapsed since={call.startedAt} showSeconds /></span>}
         {call.done && call.duration !== null && <span className="shrink-0 text-[11px] tabular-nums text-muted">{call.duration.toFixed(1)}s</span>}
         {timestamp && <span className="shrink-0 text-[11px] tabular-nums text-muted">{timestamp}</span>}
       </button>
@@ -460,6 +474,7 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
       {call.resultView?.proposal && <ProposalResult key={call.resultView.proposal.proposal_id} reference={call.resultView.proposal} />}
       {call.resultView?.block && <ShowBlockResult key={call.resultView.block.block_id} reference={call.resultView.block} />}
       {call.background?.agents_detail?.length ? <DelegateAgents agents={call.background.agents_detail} sessionId={sessionId} /> : null}
+      {sessionId && call.processId && <ProcessOutputTail sessionId={sessionId} processId={call.processId} />}
       {/* TAL-2325: the images, speech or video a media tool made, in view without opening the call. */}
       {call.resultView?.media?.length ? <div className="tool-card-media px-2.5 pb-2"><MediaTiles media={call.resultView.media} sessionId={sessionId} images /></div> : null}
       {sessionId && call.resultView?.terminal && <TerminalResult key={call.resultView.terminal.terminal_id} sessionId={sessionId} reference={call.resultView.terminal} />}

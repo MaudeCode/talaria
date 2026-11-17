@@ -32,4 +32,10 @@ public struct ToolCallStatusDisplay: Equatable, Sendable {
         collapsedText = String(localized: "Running")
         detailText = String(localized: "Running")
     }
+
+    /// TAL-2340: how long a running call has gone on as of `now`, from the server's start; nil once it ends or without one.
+    public static func runningElapsed(for toolCall: ToolCall, now: Date, locale: Locale = .autoupdatingCurrent) -> String? {
+        guard !toolCall.isCompleted, toolCall.isError != true, let start = toolCall.timerStart else { return nil }
+        return ChatActiveRunStatusPresentation.elapsedText(seconds: max(0, Int(now.timeIntervalSince1970 - start)), locale: locale)
+    }
 }

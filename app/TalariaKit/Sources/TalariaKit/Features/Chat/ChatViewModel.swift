@@ -765,6 +765,10 @@ public final class ChatViewModel {
     private var backgroundReadShown = 0
     /// What the card above the composer shows: the records the server pins.
     public var pinnedBackgroundTasks: [BackgroundWorkTask] { backgroundTasks.filter(\.pinned) }
+    /// TAL-2340: each running process's latest output line by its process id, which the tool row that started it shows.
+    public var processOutputTails: [String: String] {
+        Dictionary(backgroundTasks.compactMap { task in task.processId.flatMap { id in task.outputTail.map { (id, $0) } } }, uniquingKeysWith: { _, last in last })
+    }
     /// TAL-2333: the Background tasks sheet's records: the pinned ones, and the unit a delegation row's subagent opened
     /// when the server no longer pins it (finished work).
     public func backgroundSheetTasks(focusing taskID: String?) -> [BackgroundWorkTask] {
@@ -6716,21 +6720,23 @@ public final class ChatViewModel {
         }
 
         companionFocus.follow(payload.focusPath, callID: payload.stableID)
+        var call = ToolCall(
+            id: payload.stableID ?? "live-tool-\(UUID().uuidString)",
+            name: payload.name,
+            preview: payload.preview,
+            args: payload.args,
+            argsFields: payload.argsFields,
+            rawArgs: payload.rawArgs,
+            kind: payload.kind,
+            verb: payload.verb,
+            app: payload.app,
+            target: payload.target,
+            progress: payload.progress,
+            isHidden: payload.isHidden
+        )
+        call.timerStart = payload.startedAt
         liveAssistantActivity.appendTool(
-            ToolCall(
-                id: payload.stableID ?? "live-tool-\(UUID().uuidString)",
-                name: payload.name,
-                preview: payload.preview,
-                args: payload.args,
-                argsFields: payload.argsFields,
-                rawArgs: payload.rawArgs,
-                kind: payload.kind,
-                verb: payload.verb,
-                app: payload.app,
-                target: payload.target,
-                progress: payload.progress,
-                isHidden: payload.isHidden
-            ),
+            call,
             groupID: payload.groupID,
             group: payload.group
         )
@@ -6809,7 +6815,8 @@ public final class ChatViewModel {
                     duration: payload.duration,
                     isError: payload.isError,
                     isCompleted: true,
-                    isHidden: payload.isHidden
+                    isHidden: payload.isHidden,
+                    processID: payload.processID
                 ),
                 groupID: payload.groupID,
                 group: payload.group

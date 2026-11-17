@@ -13,7 +13,7 @@ import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { str } from '../util.js'
 import { redactString } from '../redact.js'
 import { isDict, stripToolCallXml } from './merge.js'
-import { toolKind } from './tool-display.js'
+import { resultProcessId, toolKind } from './tool-display.js'
 import { isSafeSessionId } from './session.js'
 import { backgroundEventKind } from './background-events.js'
 import { MAX_WORK_COUNT } from './todo.js'
@@ -56,13 +56,14 @@ export interface SubagentReceipt { goal: string; status: Status; duration?: numb
 /** TAL-2333: a finished subagent as the Agent reported it, in `child_statuses` order. */
 export interface ChildResult { status: string; summary: string; duration: number | null }
 export interface DelegationRow { delegation_id: string; state: string; dispatched_at: number | null; completed_at: number | null; updated_at: number | null; goals: string[]; child_statuses: string[]; has_result: boolean; live_status: string | null; children?: ChildSession[] | undefined; child_results?: ChildResult[] | undefined }
-export interface ProcessRow { process_id: string; command: string; started_at: number | null; exited: boolean; exited_at: number | null; exit_code: number | null; completion_reason: string; watched: boolean }
+export interface ProcessRow { process_id: string; command: string; started_at: number | null; exited: boolean; exited_at: number | null; exit_code: number | null; completion_reason: string; watched: boolean; output_tail?: string | undefined }
 
 const RECORD_LIMIT = 200
 /** TAL-1722: sessions whose receipts stay in memory; the least recently read goes first. */
 const CACHED_SESSIONS = 64
 const RESULT_LIMIT = 64_000
 const TITLE_LIMIT = 160
+const OUTPUT_TAIL_LIMIT = 200
 const TERMINAL: ReadonlySet<Status> = new Set(['completed', 'failed', 'cancelled'])
 const LIVE: ReadonlySet<Status> = new Set(['running', 'attention', 'unknown'])
 const CHILD_DONE = new Set(['completed', 'success'])
@@ -81,6 +82,18 @@ export function settledActivityPhase(terminal: string | null | undefined): Sessi
 export function taskTitle(text: unknown): string {
   const first = str(text).split('\n').map((l) => l.trim()).find(Boolean) ?? ''
   return first.length <= TITLE_LIMIT ? first : `${first.slice(0, TITLE_LIMIT)}…`
+}
+
+/** TAL-2340: a process's latest output line as its tool row shows it: the last non-empty line, redacted, then capped. */
+export function outputTailLine(text: string | null | undefined): string | undefined {
+  const line = redactString(str(text).split(/\r\n|\r|\n/).map((l) => l.trim()).findLast(Boolean) ?? '')
+  return !line ? undefined : line.length <= OUTPUT_TAIL_LIMIT ? line : `${line.slice(0, OUTPUT_TAIL_LIMIT - 1)}…`
+}
+
+/** TAL-2340: a `process` record's Agent process id and, while it runs, its latest output line. */
+function processFields(task: BackgroundTask, processId: string, tail: string | null | undefined): Pick<BackgroundTask, 'process_id' | 'output_tail'> {
+  const line = RUNNING_LIKE.has(task.status) ? outputTailLine(tail) : undefined
+  return { process_id: processId, ...(line ? { output_tail: line } : {}) }
 }
 
 function bounded(text: string): string { return text.length <= RESULT_LIMIT ? text : `${text.slice(0, RESULT_LIMIT)}\n…(truncated)` }
@@ -387,10 +400,7 @@ export function dispatchedDelegationIds(result: unknown): string[] {
 export function startsBackgroundWork(name: unknown, result: unknown): boolean {
   const kind = toolKind(name)
   if (kind === 'delegate') return dispatchedDelegationIds(result).length > 0
-  if (kind !== 'shell') return false
-  // A native owner's `tool.complete` carries the result as its JSON text (TAL-2266).
-  if (typeof result === 'string') { try { result = JSON.parse(result) } catch { return false } }
-  return isDict(result) && str(result.session_id).startsWith('proc_')
+  return kind === 'shell' && resultProcessId(result) !== null
 }
 
 /** The link a delegation tool row shows: its units' records, one combined status, and summed subagent counts. */
@@ -457,7 +467,8 @@ export function ownerWorkRows(home: string, sid: string, work: OwnerWork, now: n
   const ref = (kind: OwnerWorkRef['kind'], native: string): OwnerWorkRef => ({ kind, id: native, epoch: work.authority_epoch })
   const processes = work.processes.map((p): OwnerWorkRow => {
     const receipt = mergeReceipt(undefined, { ...processReceipt({ process_id: p.process_id, command: p.command, started_at: p.started_at, exited: !p.running, exited_at: p.exited_at, exit_code: p.exit_code, completion_reason: p.completion_reason ?? '', watched: false }), task_id: id('process', p.process_id) }, now)
-    return { task: { ...taskView(receipt, { canStop: p.running }), result_available: p.output_tail.length > 0 }, ref: ref('process', p.process_id), tail: p.output_tail || null, resident: true }
+    const task = taskView(receipt, { canStop: p.running })
+    return { task: { ...task, result_available: p.output_tail.length > 0, ...processFields(task, p.process_id, p.output_tail) }, ref: ref('process', p.process_id), tail: p.output_tail || null, resident: true }
   })
   const subagents = work.subagents.map((a): OwnerWorkRow => {
     const running = RUNNING_STATES.has(a.status)
@@ -598,7 +609,11 @@ export class BackgroundActivity {
       await this.deps.store.update(sid, (await this.deps.store.list(sid)).filter((r) => r.kind === 'delegation' && RUNNING_LIKE.has(r.status)).map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const })), { generation })
     }
     await this.deps.store.update(sid, (await this.deps.store.list(sid)).filter((receipt) => receipt.kind === 'background_command' && receipt.status === 'unknown' && confirmed(receipt)).map((receipt) => ({ task_id: receipt.task_id, kind: receipt.kind, status: 'running' as const })), { generation })
-    const tasks = (await this.deps.store.list(sid)).map((r) => taskView(r, { unconfirmed: !agent && !confirmed(r), canStop: opts.canStop !== false && agent !== null && confirmed(r) }))
+    const tails = new Map((agent?.processes ?? []).map((p) => [p.process_id, p.output_tail]))
+    const tasks = (await this.deps.store.list(sid)).map((r) => {
+      const task = taskView(r, { unconfirmed: !agent && !confirmed(r), canStop: opts.canStop !== false && agent !== null && confirmed(r) })
+      return r.kind === 'process' ? { ...task, ...processFields(task, r.task_id, tails.get(r.task_id)) } : task
+    })
     const owner = opts.agentOnly || opts.owner === false ? null : await this.ownerWork(sid, profile)
     // Owner rows carry the owner's permissions: Web's direct-write gate never applies to work the owner controls.
     for (const { task } of owner?.rows ?? []) tasks.push(task)

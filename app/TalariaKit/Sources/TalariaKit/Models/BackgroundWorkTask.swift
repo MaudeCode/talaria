@@ -78,8 +78,12 @@ public struct BackgroundWorkTask: Decodable, Equatable, Identifiable, Sendable {
     public let canSteer: Bool
     /// TAL-2263: the delegation's subagent sessions. Empty from a server older than the field.
     public let childSessions: [ChildSession]
+    /// TAL-2340: a `process` record's Agent process id, which the tool row that started it names.
+    public let processId: String?
+    /// TAL-2340: while a `process` record runs, its latest output line (redacted, capped), which its tool row shows.
+    public let outputTail: String?
 
-    public init(taskId: String, kind: Kind, status: Status, title: String, agents: Agents? = nil, exitCode: Int? = nil, resultAvailable: Bool = false, pinned: Bool = false, dismissible: Bool = false, active: Bool = false, canStop: Bool = false, canSteer: Bool = false, childSessions: [ChildSession] = []) {
+    public init(taskId: String, kind: Kind, status: Status, title: String, agents: Agents? = nil, exitCode: Int? = nil, resultAvailable: Bool = false, pinned: Bool = false, dismissible: Bool = false, active: Bool = false, canStop: Bool = false, canSteer: Bool = false, childSessions: [ChildSession] = [], processId: String? = nil, outputTail: String? = nil) {
         self.taskId = taskId
         self.kind = kind
         self.status = status
@@ -93,10 +97,12 @@ public struct BackgroundWorkTask: Decodable, Equatable, Identifiable, Sendable {
         self.canStop = canStop
         self.canSteer = canSteer
         self.childSessions = childSessions
+        self.processId = processId
+        self.outputTail = outputTail
     }
 
     enum CodingKeys: String, CodingKey {
-        case taskId, kind, status, title, agents, exitCode, resultAvailable, pinned, dismissible, active, canStop, canSteer, childSessions
+        case taskId, kind, status, title, agents, exitCode, resultAvailable, pinned, dismissible, active, canStop, canSteer, childSessions, processId, outputTail
     }
 
     public init(from decoder: Decoder) throws {
@@ -117,6 +123,8 @@ public struct BackgroundWorkTask: Decodable, Equatable, Identifiable, Sendable {
         canStop = container.decodeLossyBoolIfPresent(forKey: .canStop) ?? false
         canSteer = container.decodeLossyBoolIfPresent(forKey: .canSteer) ?? false
         childSessions = container.decodeLossyArrayIfPresent(ChildSession.self, forKey: .childSessions) ?? []
+        processId = container.decodeLossyStringIfPresent(forKey: .processId)
+        outputTail = container.decodeLossyStringIfPresent(forKey: .outputTail).flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 

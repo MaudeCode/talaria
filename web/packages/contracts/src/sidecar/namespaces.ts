@@ -512,6 +512,8 @@ export const PROCESS_METHODS = {
       processes: z.array(z.object({
         process_id: z.string(), session_key: z.string(), command: z.string(), started_at: z.number().nullable(), exited: z.boolean(), exited_at: z.number().nullable(),
         exit_code: z.number().int().nullable(), completion_reason: z.string(), watched: z.boolean(),
+        /** TAL-2340: a running process's last non-empty output line without escape sequences, unredacted; empty once it exits (absent from an older sidecar). */
+        output_tail: z.string().optional(),
       })),
     }),
   },

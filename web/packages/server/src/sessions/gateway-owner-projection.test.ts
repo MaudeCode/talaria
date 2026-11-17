@@ -436,6 +436,20 @@ describe('canonical owner attachment', () => {
     }
   })
 
+  it('stamps a live tool start with when it arrived, and leaves a replayed one unstamped (TAL-2340)', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.replaySnapshot()
+    watch.event('tool.start', { tool_id: 'earlier', name: 'terminal', args: { command: 'npm test' } })
+    watch.replayComplete('completed')
+    watch.event('tool.start', { tool_id: 'live', name: 'terminal', args: { command: 'npm run lint' } })
+    watch.finish()
+    const frames = await watch.read
+    const start = (id: string) => frames.find((frame) => frame.event === 'tool' && (frame.data as { id: string }).id === id)?.data
+    // The owner's retained events carry no time of their own: attaching late must not restart a running call's clock.
+    expect(start('earlier')).not.toHaveProperty('started_at')
+    expect(start('live')).toMatchObject({ started_at: expect.any(Number) as unknown })
+  })
+
   it('carries native MCP progress on one tool row through completion', async () => {
     const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
     watch.event('tool.start', { tool_id: 'index-a', name: 'mcp__index', args: {} })

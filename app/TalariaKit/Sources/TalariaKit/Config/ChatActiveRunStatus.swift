@@ -151,7 +151,11 @@ public struct ChatActiveRunStatusPresentation: Equatable, Sendable {
     /// How long the run has gone on as of `now`, shown after the label in T3 Code's units (TAL-922):
     /// "42s" under a minute, "5m" under an hour, then "1h 30m". Nil when the chip shows no elapsed time.
     public func elapsedTime(now: Date, locale: Locale = .autoupdatingCurrent) -> String? {
-        guard let seconds = elapsedSeconds(now: now) else { return nil }
+        elapsedSeconds(now: now).map { Self.elapsedText(seconds: $0, locale: locale) }
+    }
+
+    /// Whole seconds in the chip's units; TAL-2340: a running tool row's timer reads the same way.
+    public static func elapsedText(seconds: Int, locale: Locale = .autoupdatingCurrent) -> String {
         guard seconds >= 60 else {
             return Duration.seconds(seconds).formatted(.units(allowed: [.seconds], width: .narrow, zeroValueUnits: .show(length: 1)).locale(locale))
         }

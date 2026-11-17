@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { RunElapsed } from '../RunElapsed'
 import { z } from 'zod'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
@@ -105,7 +106,7 @@ function countedGroup(calls: ToolCardData[]): Pick<ActivityGroup, 'parts' | 'run
 }
 
 /** `group`: the server's record of these calls (TAL-2332), which words the header; without it the calls are counted here. */
-export function Worklog({ calls, group, merged = false, status, children, sequenceKey, disclosureId = 'turn', active = false, activeLabel, expandedByDefault = false }: { calls: ToolCardData[]; group?: Pick<ActivityGroup, 'parts' | 'running' | 'failed'> | undefined; /** TAL-2332: a merged run's row, whose calls indent under it. */ merged?: boolean; status: string; children: ReactNode; sequenceKey?: string; /** A turn-level disclosure's key, one per phase of a steered turn. */ disclosureId?: string; active?: boolean; activeLabel?: string | undefined; expandedByDefault?: boolean }) {
+export function Worklog({ calls, group, merged = false, status, children, sequenceKey, disclosureId = 'turn', active = false, activeLabel, activeSince, expandedByDefault = false }: { calls: ToolCardData[]; group?: Pick<ActivityGroup, 'parts' | 'running' | 'failed'> | undefined; /** TAL-2332: a merged run's row, whose calls indent under it. */ merged?: boolean; status: string; children: ReactNode; sequenceKey?: string; /** A turn-level disclosure's key, one per phase of a steered turn. */ disclosureId?: string; active?: boolean; activeLabel?: string | undefined; /** TAL-2340: when the running call `activeLabel` names started (epoch ms). */ activeSince?: number | undefined; expandedByDefault?: boolean }) {
   const locale = useLocale()
   const nested = sequenceKey !== undefined
   const running = status === 'running'
@@ -152,6 +153,7 @@ export function Worklog({ calls, group, merged = false, status, children, sequen
           <span className="as-dot" aria-hidden="true" />
           <SwapText className="tool-call-group-label tool-worklog-label as-text" text={summary} />
           {failed > 0 && <span className="tool-call-group-duration text-error">{failed}✕</span>}
+          {activeSince !== undefined && <span className="tool-call-group-duration"><RunElapsed since={activeSince} showSeconds /></span>}
           <span ref={caret} className={cn('tool-call-group-chevron as-caret', open && 'rotate-90')}><ChevronRight size={12} aria-hidden="true" /></span>
         </button>
       )}

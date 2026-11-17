@@ -9852,6 +9852,9 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "process_id": {
+                                              "type": "string"
                                             }
                                           },
                                           "required": [
@@ -17520,6 +17523,9 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "process_id": {
+                                              "type": "string"
                                             }
                                           },
                                           "required": [
@@ -23859,6 +23865,9 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "process_id": {
+                                              "type": "string"
                                             }
                                           },
                                           "required": [
@@ -33330,6 +33339,9 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "process_id": {
+                                              "type": "string"
                                             }
                                           },
                                           "required": [
@@ -42112,6 +42124,9 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "process_id": {
+                                              "type": "string"
                                             }
                                           },
                                           "required": [
@@ -51526,6 +51541,9 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "process_id": {
+                                              "type": "string"
                                             }
                                           },
                                           "required": [
@@ -57810,6 +57828,9 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "process_id": {
+                                              "type": "string"
                                             }
                                           },
                                           "required": [
@@ -64156,6 +64177,9 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "process_id": {
+                                              "type": "string"
                                             }
                                           },
                                           "required": [
@@ -70500,6 +70524,9 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "process_id": {
+                                              "type": "string"
                                             }
                                           },
                                           "required": [
@@ -75793,6 +75820,9 @@
                                     "type": "null"
                                   }
                                 ]
+                              },
+                              "process_id": {
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -89462,6 +89492,9 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "process_id": {
+                                              "type": "string"
                                             }
                                           },
                                           "required": [
@@ -95798,6 +95831,9 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "process_id": {
+                                              "type": "string"
                                             }
                                           },
                                           "required": [
@@ -102820,6 +102856,9 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "process_id": {
+                                              "type": "string"
                                             }
                                           },
                                           "required": [
@@ -109352,6 +109391,9 @@
                                                       "type": "null"
                                                     }
                                                   ]
+                                                },
+                                                "process_id": {
+                                                  "type": "string"
                                                 }
                                               },
                                               "required": [
@@ -114448,6 +114490,14 @@
                           },
                           "active": {
                             "type": "boolean"
+                          },
+                          "process_id": {
+                            "type": "string",
+                            "description": "TAL-2340: a `process` record's Agent process id, which the tool row that started it names as `process_id`."
+                          },
+                          "output_tail": {
+                            "type": "string",
+                            "description": "TAL-2340: while a `process` record runs, its latest output line (escape sequences removed, redacted, at most 200 characters), which its tool row shows under it. Absent once it ends or before it prints."
                           }
                         },
                         "required": [
@@ -114943,6 +114993,14 @@
                         },
                         "active": {
                           "type": "boolean"
+                        },
+                        "process_id": {
+                          "type": "string",
+                          "description": "TAL-2340: a `process` record's Agent process id, which the tool row that started it names as `process_id`."
+                        },
+                        "output_tail": {
+                          "type": "string",
+                          "description": "TAL-2340: while a `process` record runs, its latest output line (escape sequences removed, redacted, at most 200 characters), which its tool row shows under it. Absent once it ends or before it prints."
                         }
                       },
                       "required": [
@@ -161025,6 +161083,9 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "process_id": {
+                                              "type": "string"
                                             }
                                           },
                                           "required": [

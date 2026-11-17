@@ -64,9 +64,11 @@ describe('native owner background work (TAL-1336)', () => {
     expect(body.owner_work).toBe('available')
     expect(body.agents_working).toBe(true)
     const byTitle = Object.fromEntries(body.tasks.map((t) => [t.title, t]))
-    expect(byTitle['npm run dev']).toMatchObject({ kind: 'process', status: 'running', can_stop: true, result_available: true, pinned: true, active: true })
+    // TAL-2340: a running process's latest output line, by its Agent process id, which its starting tool row names.
+    expect(byTitle['npm run dev']).toMatchObject({ kind: 'process', status: 'running', can_stop: true, result_available: true, pinned: true, active: true, process_id: 'proc_server', output_tail: 'listening on 5173' })
     expect(byTitle['npm run dev']!.can_steer ?? false).toBe(false)
     expect(byTitle['make build']).toMatchObject({ kind: 'process', status: 'completed', exit_code: 0, can_stop: false, active: false })
+    expect(byTitle['make build']).not.toHaveProperty('output_tail')
     expect(byTitle['Read the logs']).toMatchObject({ kind: 'delegation', status: 'running', can_stop: true, can_steer: true, result_available: true })
     // A parent rebuilt since dispatch keeps its child readable, never controllable.
     expect(byTitle['Check the tests']).toMatchObject({ kind: 'delegation', status: 'running', can_stop: false, can_steer: false, result_available: false })

@@ -482,6 +482,27 @@ def _live_delegations() -> dict[str, dict]:
     return {str(i.get("delegation_id")): i for i in items if isinstance(i, dict) and i.get("delegation_id")}
 
 
+_TAIL_SCAN = 4096
+_TAIL_LINE = 1000
+_ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])")
+
+
+def _strip_ansi(text: str) -> str:
+    try:
+        from tools.ansi_strip import strip_ansi
+    except Exception:  # noqa: BLE001 - an Agent without the helper
+        return _ANSI.sub("", text)
+    return strip_ansi(text)
+
+
+def output_tail(buffer) -> str:
+    """TAL-2340: a running process's latest output line: the last non-empty line of its rolling buffer without escape
+    sequences (a `\r` redraw counts as a line, so a progress bar shows its last frame), bounded for transfer. The server
+    redacts and caps what clients show."""
+    text = _strip_ansi(buffer[-_TAIL_SCAN:] if isinstance(buffer, str) else "")
+    return next((line.strip()[:_TAIL_LINE] for line in reversed(text.splitlines()) if line.strip()), "")
+
+
 def _owned_processes(session_ids: set[str]) -> list[dict]:
     """Notified or watched processes a WebUI session started (``session_key`` is the WebUI session id)."""
     registry = _registry()
@@ -505,6 +526,7 @@ def _owned_processes(session_ids: set[str]) -> list[dict]:
             "started_at": float(getattr(proc, "started_at", 0) or 0) or None, "exited": exited,
             "exited_at": float(getattr(proc, "exited_at", 0) or 0) or None, "exit_code": getattr(proc, "exit_code", None),
             "completion_reason": str(getattr(proc, "completion_reason", "") or ""), "watched": watched,
+            "output_tail": "" if exited else output_tail(getattr(proc, "output_buffer", "")),
         })
     return out
 

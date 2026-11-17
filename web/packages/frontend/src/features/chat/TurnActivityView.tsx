@@ -166,8 +166,10 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
       const activeLabel = active && current?.kind === 'tool'
         ? toolCardLabel(current.call, locale)
         : active && current?.kind === 'reasoning' ? current.titles?.at(-1) ?? m.voice_thinking() : undefined
+      // TAL-2340: the header that names the running call counts its time, as the call's own row does.
+      const activeSince = active && current?.kind === 'tool' && !current.call.done ? current.call.startedAt : undefined
       const group = item.groupId === undefined ? undefined : activity.groups?.[item.groupId]
-      blocks.push(run.length === 1 ? contents[0] : <Worklog key={item.key} sequenceKey={`sequence:${item.key}`} calls={run.flatMap((entry) => entry.kind === 'tool' ? [entry.call] : [])} group={group} status={status} active={active} activeLabel={activeLabel}>{contents}</Worklog>)
+      blocks.push(run.length === 1 ? contents[0] : <Worklog key={item.key} sequenceKey={`sequence:${item.key}`} calls={run.flatMap((entry) => entry.kind === 'tool' ? [entry.call] : [])} group={group} status={status} active={active} activeLabel={activeLabel} activeSince={activeSince}>{contents}</Worklog>)
     }
     return blocks
   }

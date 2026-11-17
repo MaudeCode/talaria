@@ -286,10 +286,16 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
     /// TAL-2332: the call's server activity group, and that group as it now stands.
     public var groupID: String? = nil
     public var group: AssistantActivityGroup? = nil
+    /// TAL-2340: when the server received the call's start (epoch seconds), on a `tool` frame; a running row counts from it.
+    public var startedAt: Double? = nil
+    /// TAL-2340: the background process the call started, on its completion.
+    public var processID: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case groupID = "group_id"
         case group
+        case startedAt = "started_at"
+        case processID = "process_id"
         case eventType = "event_type"
         case name
         case preview
@@ -376,6 +382,8 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         isHidden = container.decodeLossyBoolIfPresent(forKey: .isHidden) == true
         groupID = container.decodeLossyStringIfPresent(forKey: .groupID)
         group = AssistantActivityGroup(try? container.decodeIfPresent(JSONValue.self, forKey: .group))
+        startedAt = container.decodeLossyDoubleIfPresent(forKey: .startedAt)
+        processID = container.decodeLossyStringIfPresent(forKey: .processID)?.nonEmptyToolStreamID
     }
 }
 

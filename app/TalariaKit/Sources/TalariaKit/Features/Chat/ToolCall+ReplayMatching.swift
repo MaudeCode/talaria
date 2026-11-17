@@ -24,7 +24,8 @@ extension ToolCall {
             isError: payload.isError,
             isCompleted: true,
             startedAt: startedAt,
-            isHidden: payload.isHidden
+            isHidden: payload.isHidden,
+            processID: payload.processID ?? processID
         )
     }
 }

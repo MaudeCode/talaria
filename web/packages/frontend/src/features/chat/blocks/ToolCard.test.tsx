@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ToolKind, ToolResultView } from '@maudecode/talaria-web-contracts'
 import { ToolCard, toolCardLabel, type ToolCardData } from './ToolCard'
@@ -11,6 +11,9 @@ import { renderRouted } from '../../../test/router'
 vi.mock('../../workspace/openFileRequest', () => ({ requestOpenFile: vi.fn() }))
 vi.mock('../../background/openAgentRequest', () => ({ requestOpenAgent: vi.fn() }))
 import { requestOpenAgent } from '../../background/openAgentRequest'
+vi.mock(import('../../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), fetchBackgroundTasks: vi.fn() }))
+import { fetchBackgroundTasks } from '../../../api/endpoints'
+import { queryWrapper } from '../../../test/fixtures'
 
 const call: ToolCardData = { id: 'c1', name: 'terminal', kind: 'shell', target: 'make', args: {}, preview: 'flat preview', done: true, isError: false, duration: null, costUsd: null, resultView: null }
 
@@ -431,5 +434,35 @@ describe('a collapsed row\'s outcome (TAL-2335)', () => {
     expect(outcomeOf({ outcome: { key: 'job_created', tone: 'neutral' } })?.text).toBe('Scheduled')
     expect(outcomeOf({ text: 'ok' })).toBeNull()
     expect(outcomeOf({ outcome: { key: 'sent', tone: 'neutral' } }, false)).toBeNull()
+  })
+})
+
+describe('a long-running call (TAL-2340)', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  it('counts a running call up from its start each second, then shows its final duration', () => {
+    vi.useFakeTimers({ now: 1_700_000_034_000 })
+    const running = { ...call, done: false, startedAt: 1_700_000_000_000 }
+    const view = render(<ToolCard call={running} />)
+    const elapsed = () => view.container.querySelector('.tool-card-elapsed')?.textContent
+    expect(elapsed()).toBe('34s')
+    act(() => { vi.advanceTimersByTime(1000) })
+    expect(elapsed()).toBe('35s')
+    view.rerender(<ToolCard call={{ ...running, done: true, duration: 35.2 }} />)
+    expect(elapsed()).toBeUndefined()
+    expect(screen.getByText('35.2s')).toBeInTheDocument()
+  })
+
+  it('shows the latest output line of the background process the call started, from its server record', async () => {
+    const task = { kind: 'process' as const, status: 'running' as const, title: 'npm run dev', started_at: 1, updated_at: 1, completed_at: null, result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true }
+    vi.mocked(fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, pinned_count: 2, tasks: [
+      { ...task, task_id: 'proc_dev', process_id: 'proc_dev', output_tail: '✓ 41 passing · auth.spec.ts' },
+      { ...task, task_id: 'proc_quiet', process_id: 'proc_quiet' },
+    ] })
+    const row = (id: string, processId?: string) => sceneItems([{ row_id: `tool:${id}`, role: 'tool', tool: { id, name: 'terminal', kind: 'shell', target: 'npm run dev', preview: null, done: true, is_error: false, duration: 0.1, cost_usd: null, ...(processId ? { process_id: processId } : {}) } }])[0] as { call: ToolCardData }
+    // A process that has printed nothing yet, and a call that started none, show no line.
+    const view = render(<>{[row('bg', 'proc_dev'), row('quiet', 'proc_quiet'), row('fg')].map(({ call }) => <ToolCard key={call.id} call={call} sessionId="s1" />)}</>, { wrapper: queryWrapper() })
+    expect(await screen.findByText('✓ 41 passing · auth.spec.ts')).toHaveClass('tool-card-output-tail')
+    expect(view.container.querySelectorAll('.tool-card-output-tail')).toHaveLength(1)
   })
 })

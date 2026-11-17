@@ -275,6 +275,22 @@ export function toolDisplay(name: unknown, args: unknown, workspace: string | nu
   }
 }
 
+/** TAL-1305: the registry process (`proc_…`) a result names; a native owner's result is its JSON text (TAL-2266). */
+export function resultProcessId(result: unknown): string | null {
+  // A result naming no process is not parsed: every shown row passes through here (TAL-2340).
+  if (typeof result === 'string') { if (!result.includes('proc_')) return null; try { result = JSON.parse(result) } catch { return null } }
+  const id = isDict(result) ? str(result.session_id) : ''
+  return id.startsWith('proc_') ? id : null
+}
+
+/**
+ * TAL-2340: the process a `terminal` call left running in the background (asked for, or a foreground run handed off),
+ * which its row names as `process_id`.
+ */
+export function startedProcessId(name: unknown, result: unknown): string | null {
+  return name === 'terminal' ? resultProcessId(result) : null
+}
+
 /** The kind a call shows: a lookup bridge's own, else its name's. */
 const displayKind = (name: unknown): ToolKind => BRIDGES.get(str(name))?.kind ?? toolKind(name)
 

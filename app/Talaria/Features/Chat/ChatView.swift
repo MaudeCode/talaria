@@ -2151,6 +2151,7 @@ struct ChatView: View {
                 { try await viewModel.fullToolResult(toolCallID: toolCallID) }
             }
             .environment(\.chatScreenReads, reads)
+            .environment(\.chatProcessOutputTails, viewModel.processOutputTails)
             .ownsReads(reads)
             .chatEnvironmentAction(\.chatDecisionReviewLoader) { reviewID in
                 { try await viewModel.decisionReview(id: reviewID) }

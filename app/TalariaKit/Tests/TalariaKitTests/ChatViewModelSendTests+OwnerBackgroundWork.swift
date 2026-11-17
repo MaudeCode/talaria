@@ -71,6 +71,8 @@ extension ChatViewModelSendTests {
         let process = try task(viewModel, "npm run dev")
         XCTAssertEqual([process.canStop, process.canSteer], [true, false])
         XCTAssertFalse(try task(viewModel, "make build").canStop)
+        // TAL-2340: the running process's latest output line, by the process id its starting tool row names.
+        XCTAssertEqual(viewModel.processOutputTails, ["proc_server": "listening on 5173"])
 
         log.tasks = try Self.ownerWorkFixture("unsupported")
         await viewModel.refreshBackgroundTasks()

@@ -55,7 +55,10 @@ export interface LiveToolCall {
   hidden?: true | undefined
   /** TAL-2332: the server's activity group for the call; absent from an older server, which groups on the client. */
   groupId?: string | undefined
-  startedAt: number
+  /** TAL-2340: the server's `started_at` (epoch ms); absent from a replayed native-owner start, whose row shows no timer. */
+  startedAt?: number | undefined
+  /** TAL-2340: the background process the call started (server `process_id`, on its completion). */
+  processId?: string | undefined
 }
 
 export type Segment =
@@ -254,7 +257,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       const id = event.data.id
       const existing = t.tools[id]
       const progress = event.data.progress === undefined ? existing?.progress ?? null : event.data.progress
-      const call: LiveToolCall = existing ?? { id, progress, name: event.data.name ?? 'tool', kind: event.data.kind ?? 'unknown', ...(event.data.verb ? { verb: event.data.verb } : {}), ...(event.data.app ? { app: event.data.app } : {}), target: event.data.target ?? '', args: event.data.args ?? {}, ...(event.data.args_fields ? { argsFields: event.data.args_fields } : {}), ...(event.data.raw_args ? { rawArgs: event.data.raw_args } : {}), preview: event.data.preview ?? null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: event.data.timestamp ?? now, ...(event.data.shows_card ? { showsCard: true as const } : {}), ...(event.data.hidden ? { hidden: true as const } : {}), ...(event.data.group_id ? { groupId: event.data.group_id } : {}) }
+      const call: LiveToolCall = existing ?? { id, progress, name: event.data.name ?? 'tool', kind: event.data.kind ?? 'unknown', ...(event.data.verb ? { verb: event.data.verb } : {}), ...(event.data.app ? { app: event.data.app } : {}), target: event.data.target ?? '', args: event.data.args ?? {}, ...(event.data.args_fields ? { argsFields: event.data.args_fields } : {}), ...(event.data.raw_args ? { rawArgs: event.data.raw_args } : {}), preview: event.data.preview ?? null, done: false, isError: false, duration: null, costUsd: null, resultView: null, ...(event.data.started_at ? { startedAt: runStart(event.data.started_at, now, now) } : {}), ...(event.data.shows_card ? { showsCard: true as const } : {}), ...(event.data.hidden ? { hidden: true as const } : {}), ...(event.data.group_id ? { groupId: event.data.group_id } : {}) }
       const tools = { ...t.tools, [id]: existing ? { ...existing, groupId: event.data.group_id ?? existing.groupId, progress, kind: event.data.kind ?? existing.kind, verb: event.data.verb ?? existing.verb, app: event.data.app ?? existing.app, target: event.data.target ?? existing.target, args: event.data.args ?? existing.args, argsFields: event.data.args_fields ?? existing.argsFields, rawArgs: event.data.raw_args ?? existing.rawArgs, preview: event.data.preview ?? existing.preview } : call }
       const toolOrder = existing ? t.toolOrder : [...t.toolOrder, id]
       const segments = existing ? t.segments : [...t.segments, { kind: 'tool' as const, toolId: id }]
@@ -271,8 +274,8 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       if (event.data.name === 'clarify') return stamped
       const t = live()
       const id = event.data.id
-      const existing = t.tools[id] ?? { id, name: event.data.name ?? 'tool', kind: 'unknown', target: '', args: event.data.args ?? {}, preview: null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: now }
-      const call: LiveToolCall = { ...existing, progress: null, kind: event.data.kind ?? existing.kind, verb: event.data.verb ?? existing.verb, app: event.data.app ?? existing.app, target: event.data.target ?? existing.target, done: true, isError: !!event.data.is_error, preview: event.data.preview ?? existing.preview, duration: event.data.duration ?? null, costUsd: event.data.cost_usd ?? null, resultView: event.data.result_view ?? existing.resultView, args: event.data.args ?? existing.args, argsFields: event.data.args_fields ?? existing.argsFields, rawArgs: event.data.raw_args ?? existing.rawArgs, rawResult: event.data.raw_result ?? existing.rawResult, hidden: event.data.hidden, groupId: event.data.group_id ?? existing.groupId }
+      const existing = t.tools[id] ?? { id, name: event.data.name ?? 'tool', kind: 'unknown', target: '', args: event.data.args ?? {}, preview: null, done: false, isError: false, duration: null, costUsd: null, resultView: null }
+      const call: LiveToolCall = { ...existing, progress: null, kind: event.data.kind ?? existing.kind, verb: event.data.verb ?? existing.verb, app: event.data.app ?? existing.app, target: event.data.target ?? existing.target, done: true, isError: !!event.data.is_error, preview: event.data.preview ?? existing.preview, duration: event.data.duration ?? null, costUsd: event.data.cost_usd ?? null, resultView: event.data.result_view ?? existing.resultView, args: event.data.args ?? existing.args, argsFields: event.data.args_fields ?? existing.argsFields, rawArgs: event.data.raw_args ?? existing.rawArgs, rawResult: event.data.raw_result ?? existing.rawResult, hidden: event.data.hidden, groupId: event.data.group_id ?? existing.groupId, processId: event.data.process_id ?? existing.processId }
       const known = id in t.tools
       return { ...t, groups: withGroup(t.groups, event.data.group), tools: { ...t.tools, [id]: call }, toolOrder: known ? t.toolOrder : [...t.toolOrder, id], segments: known ? t.segments : [...t.segments, { kind: 'tool', toolId: id }] }
     }

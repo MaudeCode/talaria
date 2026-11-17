@@ -37,6 +37,11 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
     public var mergedCount: Int?
     /// TAL-2332: the id of the call whose merged row this call folds into.
     public var mergedInto: String?
+    /// TAL-2340: the background process the call started (server `process_id`), whose latest output line shows under it.
+    public var processID: String?
+    /// TAL-2340: the server's start of a running call (`started_at`, epoch seconds), which its row's timer counts from;
+    /// nil without one, so a row rebuilt from a scene never restarts a clock.
+    public var timerStart: Double?
 
     public init(
         id: String = "live-tool-\(UUID().uuidString)",
@@ -57,8 +62,10 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
         isError: Bool? = nil,
         isCompleted: Bool = false,
         startedAt: Double = Date().timeIntervalSince1970,
-        isHidden: Bool = false
+        isHidden: Bool = false,
+        processID: String? = nil
     ) {
+        self.processID = processID
         self.isHidden = isHidden
         self.verb = verb
         self.app = app
