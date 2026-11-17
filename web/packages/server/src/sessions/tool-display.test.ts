@@ -667,5 +667,9 @@ describe('memory, skills, session search, scheduled job, connection and clarify 
     expect(shown.result_view.rows!.rows.length).toBeLessThan(200)
     expect(shown.result_view.rows!.rows.at(-1)!.link).toEqual({ kind: 'skill', id: expect.stringMatching(/^skill-\d+$/) as unknown })
     expect(decidedResultView({ rows: shown.result_view.rows })).toEqual({ rows: shown.result_view.rows })
+    // A row whose detail spends the budget keeps its status, so the stored view still parses with its neighbours.
+    const setup = toolOutcome(JSON.stringify({ success: true, name: 'pdf', description: 'Read PDFs', content: '# PDF', setup_needed: true, setup_note: 'x'.repeat(5000) }), 'skill_view').result_view.rows!
+    expect(setup.rows.map((row) => row.status ?? null)).toEqual([null, 'warn'])
+    expect(decidedResultView({ rows: setup }).rows).toEqual(setup)
   })
 })

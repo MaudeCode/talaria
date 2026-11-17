@@ -62,7 +62,8 @@ export type InsightsTab = z.infer<typeof InsightsTabSchema>
 export const InsightsSearchSchema = z.object({ tab: InsightsTabSchema.optional().catch(undefined), days: z.number().int().min(1).max(365).optional().catch(undefined) })
 export const KanbanSearchSchema = z.object({ board: z.string().max(128).optional().catch(undefined), assignee: z.string().max(128).optional().catch(undefined), archived: z.boolean().optional().catch(undefined), task: z.string().max(128).optional().catch(undefined) })
 export const LoginSearchSchema = z.object({ next: z.string().max(2048).optional().catch(undefined) })
-export const SkillsSearchSchema = z.object({ q: z.string().max(200).optional().catch(undefined), category: z.string().max(64).optional().catch(undefined) })
+/** TAL-2326: `skill` opens that skill's detail, as a tool row's link does. */
+export const SkillsSearchSchema = z.object({ q: z.string().max(200).optional().catch(undefined), category: z.string().max(64).optional().catch(undefined), skill: z.string().max(200).optional().catch(undefined) })
 // The router parses `?msg=5` as a number; persisted message keys are integer ids, so the key accepts both and stays a string.
 export const SessionSearchSchema = z.object({ msg: z.union([z.string().max(128), z.number().transform(String)]).optional().catch(undefined) })
 

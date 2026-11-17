@@ -253,7 +253,7 @@ describe('memory, skill, session, scheduled job, connection and clarify rows (TA
       { label: 'Which branch?', detail: 'dev' },
     ] } })
     expect(result.querySelector('.tool-rows')).toHaveTextContent('deployDeploy fixNovember 16 · the deploy failedDigestevery daygithubinitiatedpdfWhich branch?dev')
-    expect(anchors(result)).toEqual([['Deploy fix', '/session/past-1'], ['Digest', '/tasks?job=job-1'], ['github', '/settings/tools?tab=connectors'], ['pdf', '/skills?q=pdf']])
+    expect(anchors(result)).toEqual([['Deploy fix', '/session/past-1'], ['Digest', '/tasks?job=job-1'], ['github', '/settings/tools?tab=connectors'], ['pdf', '/skills?skill=pdf']])
     expect(Array.from(result.querySelectorAll('.tool-row'), (row) => row.querySelector('[data-dot]')?.getAttribute('data-dot') ?? null)).toEqual([null, 'error', 'changed', null, null])
     expect(result.textContent).not.toContain('"results"')
   })

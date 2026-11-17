@@ -10,9 +10,10 @@ import { InsightsPage } from '../insights/InsightsPage'
 
 export type HubPanel = Exclude<PanelId, 'chat' | 'settings' | 'tasks' | 'groups'>
 
-const PAGES: Record<HubPanel, () => ReactNode> = {
+const PAGES: Record<HubPanel, (skill?: string) => ReactNode> = {
   kanban: () => <KanbanPage />,
-  skills: () => <SkillsPage />,
+  // TAL-2326: a skill link opens that skill.
+  skills: (skill) => <SkillsPage key={skill} initialSkill={skill} />,
   memory: () => <MemoryPage />,
   todos: () => <TodosPage />,
   decisions: () => <DecisionsPage />,
@@ -20,7 +21,7 @@ const PAGES: Record<HubPanel, () => ReactNode> = {
 }
 
 /** Hub page: the collection is the main view. */
-export function HubRoute({ panel }: { panel: HubPanel }) {
+export function HubRoute({ panel, skill }: { panel: HubPanel; skill?: string | undefined }) {
   useLocale()
-  return PAGES[panel]()
+  return PAGES[panel](skill)
 }

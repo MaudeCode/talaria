@@ -201,7 +201,7 @@ function ToolRowLabel({ row }: { row: ToolRow }) {
   if (link?.kind === 'session' && link.id) return <Link to="/session/$sessionId" params={{ sessionId: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>
   if (link?.kind === 'crons') return <Link to="/tasks" search={link.id ? { job: link.id } : {}} className={ROW_LINK} title={row.label}>{row.label}</Link>
   if (link?.kind === 'connectors') return <Link to="/settings/$section" params={{ section: 'tools' }} search={{ tab: 'connectors' }} className={ROW_LINK} title={row.label}>{row.label}</Link>
-  if (link?.kind === 'skill' && link.id) return <Link to="/skills" search={{ q: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>
+  if (link?.kind === 'skill' && link.id) return <Link to="/skills" search={{ skill: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>
   return <span className="min-w-0 truncate text-text" title={row.label}>{row.label}</span>
 }
 

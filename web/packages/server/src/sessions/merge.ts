@@ -765,7 +765,7 @@ const wrapped = <K extends keyof ToolResultView>(key: K, section: ToolResultView
 /**
  * TAL-2324: a list's rows while characters of `limit` are left, each row's text cut to what is left. A URL is never cut (a
  * cut URL would open the wrong page): a row whose URL no longer fits ends the list. TAL-2326: a row without one (a tool row,
- * whose link is no string) counts only its text.
+ * whose link is no string) counts only its text, and a row's `status` is never cut either: it is an enum, not text.
  */
 function cappedRows<T extends object>(rows: readonly T[], limit: number): T[] {
   const out: T[] = []
@@ -775,7 +775,7 @@ function cappedRows<T extends object>(rows: readonly T[], limit: number): T[] {
     if (left <= 0) break
     const cut = { ...row }
     for (const [key, field] of Object.entries(row)) {
-      if (key === 'url' || typeof field !== 'string') continue
+      if (key === 'url' || key === 'status' || typeof field !== 'string') continue
       const text = field.length > left ? toolResultSnippet(field, Math.max(left, 0)) : field
       ;(cut as Record<string, unknown>)[key] = text
       left -= text.length + 1
