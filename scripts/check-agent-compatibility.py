@@ -215,10 +215,13 @@ def verify_image(identity, sha, observations, compression, *, retained_cron):
         raise RuntimeError("Agent release tag image does not match the compatibility pin")
     name = "talaria-agent-compatibility-" + uuid.uuid4().hex[:12]
     try:
+        # The image confines Agent writes to its state root (HERMES_WRITE_SAFE_ROOT=/opt/data), and from v0.23.2 that
+        # confinement also covers ~/.ssh/config. The probe's state lives under /tmp, so the safe root moves with it.
         subprocess.run([
             "docker", "run", "--rm", "--name", name, "--network", "none", "--read-only",
             "--tmpfs", "/tmp", "--tmpfs", "/opt/data", "--entrypoint", "/opt/hermes/.venv/bin/python",
-            "-e", "HOME=/tmp/home", "-e", "HERMES_HOME=/tmp/home/hermes", "-e", "PYTHONPATH=/web/sidecar:/opt/hermes",
+            "-e", "HOME=/tmp/home", "-e", "HERMES_HOME=/tmp/home/hermes", "-e", "HERMES_WRITE_SAFE_ROOT=/tmp",
+            "-e", "PYTHONPATH=/web/sidecar:/opt/hermes",
             "-e", "TALARIA_WEB_AGENT_DIR=/opt/hermes",
             "-e", "TALARIA_AGENT_UPGRADE_PROBE=" + ("1" if retained_cron else "0"),
             "-e", "TALARIA_AGENT_SSH_EXPECTED=" + json.dumps(observations),
