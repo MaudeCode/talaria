@@ -583,14 +583,19 @@ async def probe_session_open(home, peer, desc):
             assert time.monotonic() - submitted < 25, "the submitted turn did not reach the provider"
             await asyncio.sleep(.05)
         reached = time.monotonic() - submitted
+        # The owner logs each turn it released past its OPEN_TURN_WAIT_S hold on a pending open, and the consumer holds
+        # every delivery longer than that. That record says whether the turn waited; its time to reach the provider
+        # does not, because a loaded runner spends seconds building the turn itself (TAL-2281, TAL-2344).
+        errors = home / "logs/errors.log"
+        held = [line for line in (errors.read_text().splitlines() if errors.exists() else [])
+                if f"on_session_open for {sid} still running" in line]
+        assert not held, f"the submitted turn waited on an open ({reached:.1f} s to reach the provider): {held}"
         while not (parked := await asyncio.to_thread(call, "snapshot"))["snapshot"]["prompts"]:
             assert time.monotonic() - submitted < 30, parked
             await asyncio.sleep(POLL_SECONDS)
         log.with_suffix(".slow").unlink()
         opened = await barrier(polled)
         assert opened == ["resume"], f"Web's snapshot and submit were delivered as opens: {opened} (the last is the barrier); the turn waited {reached:.1f} s"
-        # A turn held on an open takes the full bound; 1 s below it leaves room for a loaded runner.
-        assert reached < OPEN_TURN_WAIT_S - 1, f"the submitted turn waited {reached:.1f} s on an open"
 
         # The watch is the viewer opening the chat; every control alongside it is not.
         watched = time.time()
