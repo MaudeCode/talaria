@@ -19,6 +19,12 @@ name: Release set
         required: false
         default: ''
         type: string
+      checks:
+        description: release-preflight's checks output, the main CI jobs already passed on the source; a dry run
+          reuses none.
+        required: false
+        default: '{}'
+        type: string
   workflow_dispatch:
     inputs:
       request:
@@ -100,24 +106,13 @@ jobs:
         if [[ -n "$RELEASE_TAG" ]]; then options+=(--release-tag "$RELEASE_TAG"); fi
         "$RELEASE_PYTHON" releases/cli.py prepare --request "$RUNNER_TEMP/request.json" --output "$RUNNER_TEMP/release-plan" "${options[@]}"
     - name: Reuse main CI's passed suites on the release source, or run them
-      # Each changed component's suite (the App's hosted tests, Web's server and frontend suites, Relay's) is reused
-      # when a ci.yml push run on main at exactly the release source passed every job of it, whatever its other jobs
-      # did; otherwise this release runs it (TAL-2396, after TAL-1550). Nothing waits for main CI. A lookup error fails
-      # prepare: it never counts as "none".
+      # release-preflight named each component's full suite in main CI and reported which jobs already passed in its
+      # push run on exactly the release source (TAL-2396). A suite whose every job passed is reused; this release runs
+      # the others. Nothing waits for main CI.
       id: reuse
       env:
-        GH_TOKEN: ${{ github.token }}
-        SOURCE: ${{ steps.plan.outputs.source }}
-        APP: ${{ steps.plan.outputs.app_changed }}
-        WEB: ${{ steps.plan.outputs.web_changed }}
-        RELAY: ${{ steps.plan.outputs.relay_changed }}
-      run: |
-        set -euo pipefail
-        checks=()
-        [[ "$APP" != true ]] || checks+=(hosted_tests)
-        [[ "$WEB" != true ]] || checks+=(web_tests)
-        [[ "$RELAY" != true ]] || checks+=(relay_tests)
-        "$RELEASE_PYTHON" releases/main_ci.py "$SOURCE" "${checks[@]}" | tee -a "$GITHUB_OUTPUT"
+        CHECKS: ${{ inputs.checks }}
+      run: python3 releases/check_results.py reused | tee -a "$GITHUB_OUTPUT"
     - name: List the selected Web source's supported Agent releases and their shards
       # One agent-release job per release and shard (TAL-1550, TAL-1599); agent requires exactly these jobs' receipts.
       id: agents
@@ -148,7 +143,7 @@ jobs:
     - contracts
     - app-dry-build
     - app-signed-build
-    if: ${{ !cancelled() && needs.prepare.outputs.app_changed == 'true' && needs.prepare.outputs.hosted_tests == '' && needs.contracts.result
+    if: ${{ !cancelled() && needs.prepare.outputs.app_changed == 'true' && needs.prepare.outputs.hosted_tests != 'true' && needs.contracts.result
       == 'success' && (needs.app-dry-build.result == 'success' || needs.app-signed-build.result == 'success') }}
     permissions:
       contents: read
@@ -166,7 +161,7 @@ jobs:
     # source when Web ships, unless prepare found main CI's to reuse; build-gate requires one or the other (TAL-2396).
     # The Agent gate runs the sidecar suite against every supported Agent release, so this call leaves it out.
     needs: prepare
-    if: needs.prepare.outputs.web_changed == 'true' && needs.prepare.outputs.web_tests == ''
+    if: needs.prepare.outputs.web_changed == 'true' && needs.prepare.outputs.web_tests != 'true'
     uses: ./.github/workflows/web-verify.yml
     with:
       ref: ${{ needs.prepare.outputs.source }}
@@ -176,7 +171,7 @@ jobs:
   relay-tests:
     # Relay's suite on the exact release source when Relay ships, unless prepare found main CI's to reuse (TAL-2396).
     needs: prepare
-    if: needs.prepare.outputs.relay_changed == 'true' && needs.prepare.outputs.relay_tests == ''
+    if: needs.prepare.outputs.relay_changed == 'true' && needs.prepare.outputs.relay_tests != 'true'
     uses: ./.github/workflows/relay-verify.yml
     with:
       ref: ${{ needs.prepare.outputs.source }}
@@ -926,9 +921,11 @@ jobs:
       actions: read
     timeout-minutes: 20
     steps:
+    # The workflow revision's tooling holds this job's contents: write token, never the selected commit's; its full
+    # history contains the source the refs name (TAL-2396).
     - uses: actions/checkout@v7
       with:
-        ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
     - uses: ./.github/actions/release-python
     - name: Require all selected publication readbacks
       env:
@@ -988,9 +985,11 @@ jobs:
       actions: read
     timeout-minutes: 20
     steps:
+    # The workflow revision's tooling holds this job's contents: write token, never the selected commit's; its full
+    # history contains the source the refs name (TAL-2396).
     - uses: actions/checkout@v7
       with:
-        ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
     - uses: ./.github/actions/release-python
     - name: Restore verified release handoffs
       env:
@@ -1004,7 +1003,7 @@ jobs:
         "$RELEASE_PYTHON" releases/publish.py tag-components --plan "$RUNNER_TEMP/release-results/release-plan/plan.json" \
           --directory "$RUNNER_TEMP/release-results"
     - name: Tag the release
-      uses: MaudeCode/.github/actions/release-tag@08c2f55e411fda2d193638c89b3a923efdf66c0b
+      uses: MaudeCode/.github/actions/release-tag@7142f8bc63e5e63cdc7d0c4605f3a283de59624c
       with:
         tag: ${{ steps.components.outputs.release_tag }}
         sha: ${{ needs.prepare.outputs.source }}
@@ -1028,9 +1027,8 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+    # The workflow revision's tooling joins the jobs (TAL-2396).
     - uses: actions/checkout@v7
-      with:
-        ref: ${{ needs.prepare.outputs.source || github.sha }}
     - uses: ./.github/actions/release-python
     - name: Require every selected build and compatibility gate
       env:

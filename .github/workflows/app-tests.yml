@@ -23,7 +23,7 @@
 #   No outputs: the calling job's result is the suite's result.
 # Hosted mode's jobs are named "App build"/"App build started"/"App hosted tests N"/"App hosted tests"; the build artifact
 # is app-test-build. "App hosted tests" passes only once every shard passed and each class ran exactly
-# once; a release reuses main CI's (releases/main_ci.py).
+# once; a release reuses main CI's when release-preflight reports it passed.
 # Each test job boots its simulator while the build runs on another runner (TAL-380): hosted macOS allows five
 # concurrent jobs, and a simulator's first boot beside a build on one three-core runner slowed both. It polls the
 # jobs API for the build's upload from before its boot (TAL-405), and queues only once the build holds a runner

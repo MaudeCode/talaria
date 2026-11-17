@@ -86,7 +86,7 @@ class ReleaseSetTests(unittest.TestCase):
         jobs = document["jobs"]
         check = jobs["preflight"]["steps"][0]
         self.assertRegex(check["uses"], r"^MaudeCode/\.github/actions/release-preflight@[0-9a-f]{40}$")
-        self.assertEqual(check["with"], {"tag": "${{ inputs.tag }}", "sha": "${{ inputs.sha }}"})
+        self.assertEqual({key: check["with"][key] for key in ("tag", "sha")}, {"tag": "${{ inputs.tag }}", "sha": "${{ inputs.sha }}"})
         self.assertEqual(jobs["preflight"]["outputs"]["sha"], "${{ steps.%s.outputs.sha }}" % check["id"])
         for name, job in jobs.items():
             if name != "preflight":
@@ -103,14 +103,16 @@ class ReleaseSetTests(unittest.TestCase):
         # before publication leaves nothing behind.
         self.assertNotIn("main_ci", json.dumps(jobs["preflight"]))
         self.assertNotIn("git push", commands)
-        self.assertNotIn("permissions", jobs["preflight"])
+        # It only reads: the repository, and main CI's push run for the checks it already passed (TAL-2396).
+        self.assertEqual(jobs["preflight"]["permissions"], {"contents": "read", "actions": "read"})
         self.assertEqual(document["permissions"], {"contents": "read"})
         for job in jobs.values():
             self.assertNotIn("environment", job)
         self.assertEqual(jobs["release"]["uses"], "./.github/workflows/release-set.yml")
         self.assertEqual(jobs["release"]["with"], {
             "request": "${{ needs.preflight.outputs.request }}", "previous_release_set": "${{ needs.preflight.outputs.previous }}",
-            "dry_run": False, "release_tag": "${{ needs.preflight.outputs.tag }}"})
+            "dry_run": False, "release_tag": "${{ needs.preflight.outputs.tag }}",
+            "checks": "${{ needs.preflight.outputs.checks }}"})
 
     def test_main_ci_evidence_is_no_longer_required_but_still_valid(self):
         # Sets released before TAL-2396 recorded a mainCI receipt; new sets have none. Both validate.

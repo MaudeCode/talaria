@@ -90,23 +90,24 @@ No release waits for main CI (TAL-2396). Each component a release ships needs
 its own suite to have passed on the exact release source, dry runs included: the
 App's simulator-hosted unit tests (TAL-1550), Web's server suite on every
 storage backend with its frontend checks and Playwright shards, and Relay's
-suite. `prepare` looks once (`releases/main_ci.py`) for a ci.yml push run on
-`main` at exactly that SHA in which every job of that suite completed
-successfully, and records a job's URL in the summary. The suite's own jobs
-count, not the run's: a sibling that failed, or a run still going, does not stop
-the reuse. Only then is that suite's release job skipped: `app-hosted-tests`
-(`app-tests.yml` in hosted mode: the App build and four TalariaTests shards),
-`web-tests` (`web-verify.yml` without its sidecar matrix, which the Agent gate
-covers for every supported Agent release) or `relay-tests` (`relay-verify.yml`),
-each at the selected commit. Otherwise the release runs it. A suite main CI left
-out (a push that did not touch that component), a job of it that is still
-running, was skipped, failed or tested another commit, a single shard, a pull
-request's run and a run of another workflow never count, and nothing waits for
-one to finish. A lookup that errors fails `prepare` rather than counting as
-none. `build-gate` requires, for each component that ships, exactly one of reuse
-(its suite skipped) or a successful suite run. Every other check runs in the
-release itself; a new dispatch repeats them, so compatibility is always verified
-against the peers that run's plan selected.
+suite. `production-cutover.yml` names every job of those suites in main CI in
+the shared `release-preflight`'s `checks` input (`ci.yml: <job name>`), and
+preflight reports which of them already succeeded in the newest ci.yml push run
+on the commit. A job that passed counts even when a sibling failed; one that is
+running, skipped or absent does not, and nothing waits for it. Web has no single
+job for its suite, so every server and frontend job is named, and
+`test_publication.py` keeps that list equal to `web-verify.yml`'s matrices; its
+sidecar matrix is left out because the Agent gate runs it against every
+supported Agent release. `prepare` reuses a suite only when every one of its
+named jobs passed (`check_results.py reused`), which skips that suite's release
+job: `app-hosted-tests` (`app-tests.yml` in hosted mode: the App build and four
+TalariaTests shards), `web-tests` (`web-verify.yml` without the sidecar matrix)
+or `relay-tests` (`relay-verify.yml`), each at the selected commit. Otherwise
+the release runs it. A dry run of `release-set.yml` reuses nothing. `build-gate`
+requires, for each component that ships, exactly one of reuse (its suite
+skipped) or a successful suite run. Every other check runs in the release
+itself; a new dispatch repeats them, so compatibility is always verified against
+the peers that run's plan selected.
 
 `app-tests.yml` splits TalariaTests by class into four simulator jobs that
 share the one build (`app/ci/hosted-test-shard`): three fixed, measured sets of
@@ -407,7 +408,8 @@ manifest and tagged. The run, titled `Release v1.10.1`:
    tag, a version that does not come after every existing one, a `sha` that is
    not on `main` after the last release, and one whose `.github/workflows` tree
    differs from `main`'s: `GITHUB_TOKEN` could not tag it, so release a newer
-   commit;
+   commit. It also reports which named main CI jobs already passed on the
+   commit (`checks`), without waiting for any;
 2. reads the latest published release set and plans `<component>-vX.Y.Z` for the
    components whose `app/`, `web/` or `relay/` sources changed since their
    released source (`releases/autorelease.py`); unchanged ones keep their tags.
@@ -415,7 +417,9 @@ manifest and tagged. The run, titled `Release v1.10.1`:
 3. runs `release-set.yml` with the plan: every gate and build, then publication;
    `prepare` refuses a source that is not after the last release set;
 4. `publish-set` creates `release-set-<sha>`, which is not a version tag, and
-   attaches the completed manifest to it;
+   attaches the completed manifest to it. It and the `tag` job hold a
+   `contents: write` token, so they check out the workflow revision with full
+   history and run its tooling, never an older selected commit's;
 5. the `tag` job then creates the changed components' annotated tags at the
    source with their GitHub releases, and then the root `vX.Y.Z` tag with
    `release-tag`. Nothing else creates a version tag, and each step accepts what

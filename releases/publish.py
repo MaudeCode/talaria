@@ -40,7 +40,11 @@ def timed(label):
                 summary.write(f"- {line}\n")
 
 
-def authorize(plan):
+def authorize(plan, *, source_checkout=True):
+    """Production runs only from the trusted main workflow. A job that builds or verifies from the release source has it
+    checked out; the manifest and tag jobs check out the workflow revision instead, so the code that holds their
+    contents: write token is the reviewed workflow's, never an older selected commit's (TAL-2396), and that checkout
+    must contain the source."""
     if (plan.get("dryRun") is not False or os.environ.get("GITHUB_REF") != "refs/heads/main"
             or os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
             or os.environ.get("GITHUB_WORKFLOW_REF") not in {
@@ -48,8 +52,14 @@ def authorize(plan):
                 for name in ("production-cutover.yml", "recover-cutover.yml")}):
         raise ValueError("production requires the trusted main cutover workflow")
     run_url()
-    if git(ROOT, "rev-parse", "HEAD") != plan["releaseSet"]:
-        raise ValueError("production checkout differs from the approved source")
+    if source_checkout:
+        if git(ROOT, "rev-parse", "HEAD") != plan["releaseSet"]:
+            raise ValueError("production checkout differs from the approved source")
+        return
+    try:
+        git(ROOT, "merge-base", "--is-ancestor", plan["releaseSet"], "HEAD")
+    except subprocess.CalledProcessError as error:
+        raise ValueError("the workflow revision's checkout does not contain the approved source") from error
 
 
 RELEASE_KEYS = ("version", "buildNumber", "sourceRevision", "releaseSet", "contracts")
@@ -471,7 +481,7 @@ def main():
     parser.add_argument("--build-id", help="app: the TestFlight build ios-publish uploaded and read back VALID.")
     args = parser.parse_args()
     plan = load(args.plan)
-    authorize(plan)
+    authorize(plan, source_checkout=args.operation not in ("finalize", "tag-components"))
     component_name = {"relay": "relay", "bridge": "relay", "web-npm": "web", "web": "web"}.get(args.operation, "app")
     if args.operation not in ("finalize", "tag-components") and not plan["changed"][component_name]:
         raise ValueError("unchanged components must not be republished")

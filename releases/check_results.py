@@ -6,26 +6,37 @@ import json
 import os
 
 
-# Each changed component's suite: its job in this run and the prepare output naming main CI's passed run of it.
-SUITES = {"app": ("app-hosted-tests", "hosted_tests"), "web": ("web-tests", "web_tests"), "relay": ("relay-tests", "relay_tests")}
+# Each component's suite: its job in this run, the prepare output saying main CI already passed it, and the prefix of the
+# release-preflight checks that name its main CI jobs (production-cutover.yml lists them).
+SUITES = {"app": ("app-hosted-tests", "hosted_tests", "ci.yml: App / App hosted tests"),
+          "web": ("web-tests", "web_tests", "ci.yml: web / "),
+          "relay": ("relay-tests", "relay_tests", "ci.yml: relay / ")}
+
+
+def reused(checks):
+    """Whether main CI already passed each component's suite on the release source: release-preflight reported every
+    one of its named jobs passed (TAL-2396). A suite with no named job, as in a dry run, is not reused."""
+    result = {}
+    for _, output, prefix in SUITES.values():
+        passed = [ok for name, ok in checks.items() if name.startswith(prefix)]
+        result[output] = bool(passed) and all(ok is True for ok in passed)
+    return result
 
 
 def check_suite(needs, component, changed):
     """Every release that ships a component, dry runs included, needs its suite passed on the exact source (TAL-877):
-    either prepare found main CI's passed suite there and this run skipped it, or found none and this run's suite
-    succeeded (TAL-1550, TAL-2396). An unchanged component runs no suite."""
-    job, output = SUITES[component]
-    url = needs["prepare"]["outputs"].get(output, "")
+    either main CI already passed it there and this run skipped it, or this run's suite succeeded (TAL-1550, TAL-2396).
+    An unchanged component runs no suite."""
+    job, output, _ = SUITES[component]
+    reuse = needs["prepare"]["outputs"].get(output)
     suite = needs.get(job, {}).get("result")
     if not changed:
-        if url or suite != "skipped":
+        if suite != "skipped":
             raise ValueError(f"{job} must be skipped")
         return
-    if url.startswith("https://github.com/MaudeCode/talaria/actions/runs/") and suite == "skipped":
+    if (reuse, suite) in (("true", "skipped"), ("false", "success")):
         return
-    if not url and suite == "success":
-        return
-    raise ValueError(f"{job} must reuse main CI's passed suite or succeed (reused {url!r}, {job} {suite})")
+    raise ValueError(f"{job} must reuse main CI's passed suite or succeed (reused {reuse!r}, {job} {suite})")
 
 
 def check(needs, stage, dry_run):
@@ -61,7 +72,11 @@ def check(needs, stage, dry_run):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=("build", "publication"))
+    parser.add_argument("stage", choices=("reused", "build", "publication"))
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    check(json.loads(os.environ["RELEASE_NEEDS"]), args.stage, args.dry_run)
+    if args.stage == "reused":
+        for output, value in reused(json.loads(os.environ.get("CHECKS") or "{}")).items():
+            print(f"{output}={str(value).lower()}")
+    else:
+        check(json.loads(os.environ["RELEASE_NEEDS"]), args.stage, args.dry_run)
