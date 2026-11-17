@@ -166,9 +166,9 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const opening = writing.some((e) => pathOf(e) === file)
   const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? '', ...sourceArgs), enabled: !!file && active && !opening, staleTime: 5_000 })
   useEffect(() => {
-    if (!opened?.line || opened.path !== file || !content.data || revealedSeq.current === opened.seq) return
+    if (!opened?.line || opened.path !== file || !content.data || !textRef.current || revealedSeq.current === opened.seq) return
     revealedSeq.current = opened.seq
-    if (textRef.current) revealLine(textRef.current, opened.line)
+    revealLine(textRef.current, opened.line)
   }, [opened, file, content.data])
   // The saved text shows until the reread of that same file confirms it; edits typed meanwhile stay as the draft.
   const save = useResourceMutation({
@@ -241,8 +241,10 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const fileName = content.data?.name ?? listing.data?.entries.find((entry) => entry.path === file)?.name ?? file
   // An older server sends no `preview`: its replies are always text, Markdown by extension. Delete once Stable sends it.
   const kind = content.data ? (content.data.preview ?? (/\.(md|markdown)$/i.test(file ?? '') ? 'markdown' : 'text')) : undefined
-  // Markdown, CSV and HTML show their rendered form until Edit opens the text.
-  const rendered = draft === null && (kind === 'markdown' || kind === 'csv' || kind === 'html')
+  // Markdown, CSV and HTML show their rendered form until Edit opens the text; TAL-2323: a file opened at a line shows its text.
+  const atLine = opened?.line !== undefined && opened.path === file
+  const renderable = kind === 'markdown' || kind === 'csv' || kind === 'html'
+  const rendered = draft === null && !atLine && renderable
   const saving = file ? effects[contentResource(workspace, file)]?.value : undefined
   const text = draft ?? (typeof saving === 'string' ? saving : content.data?.content ?? '')
   const rawUrl = (inline?: boolean) => appUrl(api.rawFileUrl(sessionId, file ?? '', inline)).href
@@ -282,7 +284,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
               <div className="border-t border-border-subtle px-2 py-1.5 text-right text-[11px] text-muted">{formatBytes(content.data?.size)}</div>
             </div>
           )}
-          {content.data && (kind === 'text' || rendered || draft !== null) && (
+          {content.data && (kind === 'text' || renderable || draft !== null) && (
             <div className="flex min-h-0 flex-1 flex-col">
               {rendered && kind === 'markdown' && <div className="min-h-0 flex-1 overflow-auto p-3 text-[13px]"><Markdown text={text} /></div>}
               {rendered && kind === 'csv' && <CsvTable rows={content.data.table ?? []} truncated={!!content.data.table_truncated} />}

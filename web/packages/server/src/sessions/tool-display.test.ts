@@ -373,6 +373,14 @@ describe('read_file and search_files sections (TAL-2323)', () => {
     expect(JSON.stringify(shown.lines)).not.toMatch(/MIIEow|qwertyuiop/)
     expect(shown.lines.at(0)).toEqual({ n: 4, text: 'key:' })
     expect(shown.lines.at(-1)).toEqual({ n: 9, text: 'done' })
+    // A search's matches over a key are masked together, in both match encodings.
+    const keyLines = pem.split('\n').map((text, i) => ({ path: 'src/key.ts', line: i + 5, content: text }))
+    const dense = `src/key.ts\n${keyLines.map((m) => `  ${String(m.line)}: ${m.content}`).join('\n')}`
+    for (const result of [{ total_count: 4, matches: keyLines }, { total_count: 4, matches_format: 'path-grouped', matches_text: dense }]) {
+      const found = publicToolFrame({ name: 'search_files', args: { pattern: 'KEY' }, result_view: search(result) }, true, '/repo').result_view as { matches: { files: { matches: { line: number; text: string }[] }[] } }
+      expect(JSON.stringify(found.matches)).not.toMatch(/MIIEow|qwertyuiop/)
+      expect(found.matches.files[0]!.matches[0]!.line).toBe(5)
+    }
     const matches = search({ total_count: 2, matches: [{ path: '/repo/src/a.ts', line: 3, content: 'foo' }, { path: '/elsewhere/b.ts', line: 1, content: 'foo' }] })
     const located = publicToolFrame({ name: 'search_files', args: { pattern: 'foo' }, result_view: matches }, true, '/repo').result_view as { matches: { files: { path: string; focus_path?: string }[] } }
     expect(located.matches.files).toEqual([expect.objectContaining({ path: '/repo/src/a.ts', focus_path: 'src/a.ts' }), expect.not.objectContaining({ focus_path: expect.anything() as unknown })])

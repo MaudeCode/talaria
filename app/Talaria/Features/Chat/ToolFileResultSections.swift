@@ -10,17 +10,29 @@ private struct ToolFilePath: View {
     @Environment(\.chatOpenWorkspaceFile) private var openFile
 
     var body: some View {
-        if let focusPath, let openFile {
-            Button {
-                openFile(WorkspaceFileLink(path: focusPath, line: line))
-            } label: {
-                label.foregroundStyle(Color.accentColor)
+        Group {
+            if let focusPath, let openFile {
+                Button {
+                    openFile(WorkspaceFileLink(path: focusPath, line: line))
+                } label: {
+                    label.foregroundStyle(Color.accentColor)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(openLabel)
+            } else {
+                label.foregroundStyle(.primary)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(line.map { String(localized: "Open \(path) at line \($0)") } ?? String(localized: "Open \(path)"))
-        } else {
-            label.foregroundStyle(.primary)
         }
+        .contextMenu {
+            if let focusPath, let openFile {
+                Button(openLabel) { openFile(WorkspaceFileLink(path: focusPath, line: line)) }
+            }
+            Button(String(localized: "Copy file path")) { UIPasteboard.general.string = path }
+        }
+    }
+
+    private var openLabel: String {
+        line.map { String(localized: "Open \(path) at line \($0)") } ?? String(localized: "Open \(path)")
     }
 
     private var label: some View {
@@ -144,16 +156,25 @@ struct SearchMatchesSection: View {
         .font(AppFont.mono(style: .caption))
         .frame(minHeight: 24)
         .contentShape(Rectangle())
-        if let focusPath = file.focusPath, let openFile {
-            Button {
-                openFile(WorkspaceFileLink(path: focusPath, line: match.line))
-            } label: {
-                row
+        let openLabel = String(localized: "Open \(file.path) at line \(match.line)")
+        Group {
+            if let focusPath = file.focusPath, let openFile {
+                Button {
+                    openFile(WorkspaceFileLink(path: focusPath, line: match.line))
+                } label: {
+                    row
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(openLabel)
+            } else {
+                row.textSelection(.enabled)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(String(localized: "Open \(file.path) at line \(match.line)"))
-        } else {
-            row.textSelection(.enabled)
+        }
+        .contextMenu {
+            if let focusPath = file.focusPath, let openFile {
+                Button(openLabel) { openFile(WorkspaceFileLink(path: focusPath, line: match.line)) }
+            }
+            Button(String(localized: "Copy")) { UIPasteboard.general.string = match.text }
         }
     }
 }

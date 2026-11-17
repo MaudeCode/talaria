@@ -134,6 +134,12 @@ describe('read_file and search_files results (TAL-2323)', () => {
     expect(result).toHaveTextContent('More results not shown')
     await userEvent.click(screen.getByRole('button', { name: 'Open src/a.ts at line 9' }))
     expect(requestOpenFile).toHaveBeenCalledWith({ sessionId: 's1', path: 'src/a.ts', line: 9 })
+    // The same Open, and Copy, from the row's right-click menu.
+    vi.mocked(requestOpenFile).mockClear()
+    await userEvent.pointer({ keys: '[MouseRight]', target: screen.getAllByRole('button', { name: 'Open src/a.ts at line 3' })[1]! })
+    expect(Array.from(screen.getAllByRole('menuitem'), (item) => item.textContent)).toEqual(['Open src/a.ts at line 3', 'Copy'])
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Open src/a.ts at line 3' }))
+    expect(requestOpenFile).toHaveBeenCalledWith({ sessionId: 's1', path: 'src/a.ts', line: 3 })
   })
 
   it('says a search found nothing', async () => {

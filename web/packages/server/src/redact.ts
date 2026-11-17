@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { FileExcerptLineSchema, type RedactionPolicy, TurnUsageSchema } from '@maudecode/talaria-web-contracts'
+import { FileExcerptLineSchema, type RedactionPolicy, SearchMatchSchema, TurnUsageSchema } from '@maudecode/talaria-web-contracts'
 import { channel } from 'node:diagnostics_channel'
 import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
@@ -2305,9 +2305,14 @@ export function redactValue(v: unknown, enabled: boolean): unknown {
   }
   // TAL-604: a diff's `hunks` are re-parsed from its redacted text, which masks spans (a private key) that no single line shows.
   if (enabled && Array.isArray(out.hunks) && typeof out.diff === 'string') out.hunks = diffHunks(out.diff)
-  // TAL-2323: a file excerpt's lines likewise, from the file text they came from redacted whole, each keeping its number.
-  const lines = enabled && typeof out.start_line === 'number' ? FileExcerptLineSchema.array().safeParse((v as Record<string, unknown>).lines).data : undefined
-  if (lines) out.lines = gutterLines(redactText(gutterText(lines), enabled) as string)
+  // TAL-2323: a file excerpt's lines likewise, and a search's matching lines in one file, each block redacted whole as
+  // numbered text so a span (a private key) over several lines is masked, every line keeping its number.
+  const raw = v as Record<string, unknown>
+  const numbered = (lines: { n: number; text: string }[]) => gutterLines(redactText(gutterText(lines), enabled) as string)
+  const lines = enabled && typeof out.start_line === 'number' ? FileExcerptLineSchema.array().safeParse(raw.lines).data : undefined
+  if (lines) out.lines = numbered(lines)
+  const matches = enabled && typeof out.path === 'string' ? SearchMatchSchema.array().safeParse(raw.matches).data : undefined
+  if (matches) out.matches = numbered(matches.map((match) => ({ n: match.line, text: match.text }))).map((line) => ({ line: line.n, text: line.text }))
   return out
 }
 

@@ -16,6 +16,8 @@ import { SwapText } from '../../../ui/SwapText'
 import { useArrival } from '../arrival'
 import { lazy, Suspense } from 'react'
 import { requestOpenFile } from '../../workspace/openFileRequest'
+import { RowContextMenu, type RowAction } from '../../../ui/Menu'
+import { copyWithToast } from '../../../lib/clipboard'
 
 export interface ToolCardData {
   id: string
@@ -90,9 +92,18 @@ function FieldRows({ fields }: { fields: ToolField[] }) {
  */
 function FilePath({ path, focusPath, line, sessionId, className }: { path: string; focusPath?: string | undefined; line?: number | undefined; sessionId?: string | undefined; className?: string }) {
   const style = cn('min-w-0 break-all text-left font-mono text-xs', className)
-  if (!focusPath || !sessionId) return <span className={cn(style, 'text-text')}>{path}</span>
-  const label = line ? m.tool_open_file_at_line({ path, line: String(line) }) : m.show_open()
-  return <button type="button" className={cn(style, 'text-accent-text hover:underline')} title={label} aria-label={label} onClick={() => { requestOpenFile({ sessionId, path: focusPath, line }) }}>{path}</button>
+  const open = fileOpen(path, focusPath, line, sessionId)
+  const actions = [...(open ? [open] : []), { label: m.copy_file_path(), run: () => { copyWithToast(path) } }]
+  const trigger = open
+    ? <button type="button" className={cn(style, 'text-accent-text hover:underline')} title={open.label} aria-label={open.label} onClick={open.run}>{path}</button>
+    : <span className={cn(style, 'text-text')}>{path}</span>
+  return <RowContextMenu label={path} actions={actions} trigger={trigger} />
+}
+
+/** TAL-2323: a located file's Open action (at `line`), for its button and its right-click and long-press menu alike. */
+function fileOpen(path: string, focusPath: string | undefined, line: number | undefined, sessionId: string | undefined): RowAction | null {
+  if (!focusPath || !sessionId) return null
+  return { label: line ? m.tool_open_file_at_line({ path, line: String(line) }) : m.show_open(), run: () => { requestOpenFile({ sessionId, path: focusPath, line }) } }
 }
 
 /** The chat code block's body, from the renderer chunk the transcript's Markdown loads, so the layout bundle stays without Shiki. */
@@ -123,12 +134,12 @@ function MatchesResult({ matches, sessionId }: { matches: SearchMatches; session
             {file.count !== undefined && <span className={cn(LABEL, 'shrink-0 tabular-nums')}>{m.tool_match_count({ count: String(file.count) })}</span>}
           </div>
           {file.matches.map((match, j) => {
-            const focus = file.focus_path
             const row = <><span className="mr-3 inline-block min-w-[3ch] select-none text-right tabular-nums text-muted">{match.line}</span>{match.text}</>
-            const label = m.tool_open_file_at_line({ path: file.path, line: String(match.line) })
-            return focus && sessionId
-              ? <button key={j} type="button" className={cn('block w-full whitespace-pre-wrap break-words rounded px-1 text-left hover:bg-hover', MONO)} title={label} aria-label={label} onClick={() => { requestOpenFile({ sessionId, path: focus, line: match.line }) }}>{row}</button>
-              : <div key={j} className={cn('whitespace-pre-wrap break-words px-1', MONO)}>{row}</div>
+            const open = fileOpen(file.path, file.focus_path, match.line, sessionId)
+            const trigger = open
+              ? <button type="button" className={cn('block w-full whitespace-pre-wrap break-words rounded px-1 text-left hover:bg-hover', MONO)} title={open.label} aria-label={open.label} onClick={open.run}>{row}</button>
+              : <div className={cn('whitespace-pre-wrap break-words px-1', MONO)}>{row}</div>
+            return <RowContextMenu key={j} label={`${file.path}:${String(match.line)}`} actions={[...(open ? [open] : []), { label: m.copy(), run: () => { copyWithToast(match.text) } }]} trigger={trigger} />
           })}
         </div>
       ))}
