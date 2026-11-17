@@ -236,9 +236,13 @@ jobs:
 
       # The keyboard's slide-to-type introduction marked as shown (TAL-668), the notification service answering
       # (TAL-651) and a photo the tests own (TAL-633). It needs only the booted simulator, so it runs in the background
-      # while the job waits for and downloads the build, and "Wait for the simulator" collects it (TAL-1599).
+      # while the job waits for and downloads the build, and "Wait for the simulator" collects it (TAL-1599). Only the
+      # shard whose tests wait on the notification server waits for it here (TAL-2352).
       - name: Prepare the simulator
-        run: ci/background start simulator-prepare scripts/prepare-ui-simulator "${{ steps.sim.outputs.udid }}"
+        run: |
+          options=$(ci/hosted-test-shard prepare-options "${SHARD}")
+          # shellcheck disable=SC2086 # One-word options, one per line; none where the shard needs notifications.
+          ci/background start simulator-prepare scripts/prepare-ui-simulator ${options} "${{ steps.sim.outputs.udid }}"
 
       # Returns once the background poll has seen the build's upload step succeed; fails once it sees the build fail
       # or get cancelled, or if the poll stopped without a result.

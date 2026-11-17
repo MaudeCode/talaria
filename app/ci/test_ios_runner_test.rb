@@ -159,7 +159,10 @@ class TestIOSRunnerTest < Minitest::Test
       source.enum_for(:scan, /^(\s*)(?:let \w+ = |return )ChatViewModel\((.*?)\n\1\)/m).map do
         match = Regexp.last_match
         enclosing_function = source[0...match.begin(0)][/.*\bfunc .*/m].to_s.split(/\bfunc /).last.to_s
-        [File.basename(path), enclosing_function, match[2][/liveActivityManager: ([^,\n]+)/, 1]]
+        manager = match[2][/liveActivityManager: ([^,\n]+)/, 1]
+        # A one-line construction ends the argument with the call's own closing parenthesis.
+        manager = manager.delete_suffix(")") if manager && manager.count(")") > manager.count("(")
+        [File.basename(path), enclosing_function, manager]
       end
     end
 
@@ -190,8 +193,10 @@ class TestIOSRunnerTest < Minitest::Test
     # is prepared in the background while the build runs and downloads (scripts/prepare-ui-simulator: the keyboard
     # introduction, TAL-668; notifications, TAL-651; a photo, TAL-633), collected right before the tests (TAL-1599).
     boot = shard["steps"].index { |step| step["name"] == "Boot the simulator" }
-    assert_equal('ci/background start simulator-prepare scripts/prepare-ui-simulator "${{ steps.sim.outputs.udid }}"',
-                 shard["steps"][boot + 1]["run"])
+    # Only the shard whose tests wait on the notification server waits for it (ci/hosted-test-shard, TAL-2352).
+    assert_equal(['options=$(ci/hosted-test-shard prepare-options "${SHARD}")',
+                  'ci/background start simulator-prepare scripts/prepare-ui-simulator ${options} "${{ steps.sim.outputs.udid }}"'],
+                 shard["steps"][boot + 1]["run"].lines.map(&:strip).reject { |line| line.start_with?("#") })
     assert_equal(["Prepare the simulator", "Wait for the build", "Download the test build", "Wait for the simulator", "Test without building"],
                  shard["steps"][boot + 1, 5].map { |step| step["name"] })
     assert_equal("ci/background wait simulator-prepare", shard["steps"][boot + 4]["run"])

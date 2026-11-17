@@ -2,6 +2,7 @@
 """Exercise simulator preparation with disposable tools; never touches a simulator."""
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import tempfile
@@ -38,20 +39,24 @@ if os.environ.get('PREPARE_TEST_MODE') in ('photo-timeout', 'photo-error') and a
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     while True:
         time.sleep(1)
-if os.environ.get('PREPARE_TEST_MODE') == 'notification-restart':
+if os.environ.get('PREPARE_TEST_MODE') in ('notification-restart', 'notification-slow'):
     if args[1] == 'push':
         counter = state / 'notification-pushes'
         attempt = int(counter.read_text()) + 1 if counter.exists() else 1
         counter.write_text(str(attempt))
         (state / f'notification-push-{attempt}.pid').write_text(str(os.getpid()))
-        if attempt > 1:
-            print('Synthetic notification authorization failure', file=sys.stderr)
-            sys.exit(1)  # Fast unauthorized response: the notification service answered.
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        while True:
-            time.sleep(1)
+        if os.environ['PREPARE_TEST_MODE'] == 'notification-slow':
+            time.sleep(7)  # A ready server, but a starved runner's push round trip outlasts 5 s.
+        else:
+            while not (state / 'dasd-restarted').exists():
+                time.sleep(.05)  # SpringBoard's server starts once dasd restarts.
+        print('Synthetic notification authorization failure', file=sys.stderr)
+        sys.exit(1)  # Unauthorized for the uninstalled bundle: the notification server answered.
     if 'launchctl' in args:
         (state / 'notification-restart.pid').write_text(str(os.getpid()))
+        if os.environ['PREPARE_TEST_MODE'] == 'notification-slow':
+            sys.exit(0)
+        (state / 'dasd-restarted').touch()
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         while True:
             time.sleep(1)
@@ -180,8 +185,8 @@ class PreparationTests(unittest.TestCase):
                 finally:
                     self.stop_process(self.document_process, 'stream.pid', 'launch.pid', 'terminate.pid')
 
-    def test_stalled_restart_allows_next_notification_probe(self):
-        self.env['PREPARE_TEST_MODE'] = 'notification-restart'
+    def run_notification_readiness(self, mode, timeout):
+        self.env['PREPARE_TEST_MODE'] = mode
         # The deadline must not depend on another external client starting promptly on a busy runner.
         sleeper = self.bin / 'sleep'
         sleeper.write_text('#!/bin/sh\nexec python3 -c "import time; time.sleep(30)"\n')
@@ -189,24 +194,42 @@ class PreparationTests(unittest.TestCase):
         process = subprocess.Popen([str(SCRIPTS / 'ready-simulator-notifications'), 'synthetic-simulator'],
                                    env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    text=True, start_new_session=True)
+        self.addCleanup(self.stop_process, process, 'notification-push-1.pid', 'notification-restart.pid')
         started = time.monotonic()
         try:
-            try:
-                output, _ = process.communicate(timeout=13)
-            except subprocess.TimeoutExpired:
-                self.fail('A stalled dasd restart prevented the next notification readiness probe')
-            self.assertEqual(process.returncode, 0, output)
-            self.assertLess(time.monotonic() - started, 12, output)
-            self.assertEqual((self.root / 'notification-pushes').read_text(), '2')
-            self.assertIn('restart client did not finish within 5s; probing again', output)
-            self.assertIn('Synthetic notification authorization failure', output)
-            self.assertIn('simctl bootstatus synthetic-simulator -b', (self.root / 'calls').read_text())
-            for name in ('notification-push-1.pid', 'notification-restart.pid', 'notification-push-2.pid'):
-                with self.assertRaises(ProcessLookupError, msg=f'{name} survived readiness completion'):
-                    os.kill(int((self.root / name).read_text()), 0)
-            self.assertEqual(list(self.scratch.iterdir()), [], 'Notification payload leaked')
-        finally:
-            self.stop_process(process)
+            output, _ = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            output, _ = self.stop_process(process, 'notification-push-1.pid', 'notification-restart.pid')
+            pushes = (self.root / 'notification-pushes').read_text()
+            self.fail(f'The server answered, but readiness never saw it within {timeout}s ({pushes} probes): {output}')
+        return process.returncode, output, time.monotonic() - started
+
+    def assert_notification_clients_stopped(self, output):
+        self.assertIn('Synthetic notification authorization failure', output)
+        self.assertIn('simctl bootstatus synthetic-simulator -b', (self.root / 'calls').read_text())
+        for name in ('notification-push-1.pid', 'notification-restart.pid'):
+            with self.assertRaises(ProcessLookupError, msg=f'{name} survived readiness completion'):
+                os.kill(int((self.root / name).read_text()), 0)
+        self.assertEqual(list(self.scratch.iterdir()), [], 'Notification payload leaked')
+
+    def test_pending_probe_sees_the_server_a_stalled_dasd_restart_unblocked(self):
+        code, output, elapsed = self.run_notification_readiness('notification-restart', timeout=13)
+        self.assertEqual(code, 0, output)
+        self.assertLess(elapsed, 12, output)
+        # The probe that was waiting when dasd restarted is the one that answers; it is never cut short (TAL-2352).
+        self.assertEqual((self.root / 'notification-pushes').read_text(), '1')
+        self.assertIn('restart client did not finish within 5s; still waiting on the probe', output)
+        self.assert_notification_clients_stopped(output)
+
+    def test_probe_slower_than_five_seconds_still_answers(self):
+        # Hosted runners took 1 to 5 s for an answering push and a starved one longer, so a probe cut short after 5 s
+        # never saw a ready server (TAL-2352).
+        code, output, elapsed = self.run_notification_readiness('notification-slow', timeout=15)
+        self.assertEqual(code, 0, output)
+        self.assertLess(elapsed, 12, output)
+        self.assertEqual((self.root / 'notification-pushes').read_text(), '1')
+        self.assertRegex(output, r'Notification probe answered after [0-9]+s \(status 1\)')
+        self.assert_notification_clients_stopped(output)
 
     def copy_prepare_script(self, *helpers):
         repo = self.root / 'scripts'
@@ -233,40 +256,6 @@ class PreparationTests(unittest.TestCase):
         self.assertTrue((self.root / 'notification-probed').exists(), output)
         self.assertIn('documents end', output)
         self.assertEqual(list(self.scratch.iterdir()), [], 'Notification scratch files leaked')
-
-    def test_owned_simulator_recovery_repeats_readiness_once(self):
-        script = self.copy_prepare_script()
-        for name in ('ready-simulator-notifications', 'seed-simulator-photo', 'ready-simulator-documents'):
-            helper = script.with_name(name)
-            helper.write_text('#!/bin/sh\n'
-                              'if [ "${0##*/}" = ready-simulator-notifications ]; then\n'
-                              '  marker="$PREPARE_TEST_STATE/notification-attempts"\n'
-                              '  count=$(cat "$marker" 2>/dev/null || echo 0)\n'
-                              '  count=$((count + 1)); echo "$count" > "$marker"\n'
-                              '  if [ "$count" = 1 ] || [ "$PREPARE_RECOVERY_MODE" = permanent ]; then\n'
-                              '    exit "$PREPARE_NOTIFICATION_EXIT"\n'
-                              '  fi\n'
-                              'fi\n')
-            helper.chmod(0o755)
-        for ci, mode, failure, expected, attempts in [
-                ('false', 'once', 124, 124, 1),
-                ('true', 'once', 124, 0, 2),
-                ('true', 'permanent', 124, 124, 2),
-                ('true', 'once', 42, 42, 1)]:
-            with self.subTest(ci=ci, mode=mode, failure=failure):
-                (self.root / 'notification-attempts').unlink(missing_ok=True)
-                (self.root / 'calls').unlink(missing_ok=True)
-                result = subprocess.run([str(script), 'synthetic-simulator'],
-                                        env=dict(self.env, GITHUB_ACTIONS=ci, PREPARE_RECOVERY_MODE=mode,
-                                                 PREPARE_NOTIFICATION_EXIT=str(failure)),
-                                        capture_output=True, text=True, timeout=5)
-                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
-                self.assertEqual(int((self.root / 'notification-attempts').read_text()), attempts)
-                calls = (self.root / 'calls').read_text().splitlines()
-                self.assertEqual(calls.count('simctl shutdown synthetic-simulator'), attempts - 1)
-                self.assertEqual(calls.count('simctl bootstatus synthetic-simulator -b'), attempts - 1)
-                self.assertEqual(sum('defaults write' in call for call in calls), attempts)
-                self.assertEqual('documents end' in result.stdout, expected == 0)
 
     def test_photo_warmup_deadline_continues_preparation(self):
         script = self.copy_prepare_script('seed-simulator-photo')
@@ -382,20 +371,23 @@ class PreparationTests(unittest.TestCase):
             'while True: time.sleep(1)',
         ]) + '\n')
         notifications.chmod(0o755)
-        process = subprocess.Popen([str(script), 'synthetic-simulator'], env=self.env,
+        # On CI too: a reboot restarted the server's own startup on the same busy runner and never helped (TAL-2352).
+        process = subprocess.Popen([str(script), 'synthetic-simulator'], env=dict(self.env, GITHUB_ACTIONS='true'),
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    text=True, start_new_session=True)
         start = time.monotonic()
         try:
             try:
-                output, _ = process.communicate(timeout=63)
+                output, _ = process.communicate(timeout=150)
             except subprocess.TimeoutExpired:
-                self.fail('Notification preparation exceeded its 60-second wall-clock bound')
+                self.fail('Notification preparation exceeded its wall-clock bound')
+            self.assertIn("notifications timed out (90-second budget including cleanup): "
+                          "SpringBoard's notification server never answered the probe push", output)
             self.assertEqual(process.returncode, 124, output)
-            self.assertLess(time.monotonic() - start, 63, output)
-            self.assertGreaterEqual(time.monotonic() - start, 59, output)
-            self.assertRegex(output, r'notifications end elapsed=[0-9]+s')
-            self.assertIn('notifications timed out (60-second budget including cleanup)', output)
+            self.assertLess(time.monotonic() - start, 93, output)
+            self.assertGreaterEqual(time.monotonic() - start, 89, output)
+            self.assertEqual(len(re.findall(r'notifications end elapsed=[0-9]+s', output)), 1, output)
+            self.assertNotIn('simctl shutdown', (self.root / 'calls').read_text())
             self.assertNotIn('photo start', output)
             probe_pid = int((self.root / 'probe.pid').read_text())
             # An orphan can briefly be a zombie while init reaps it on Linux.
@@ -422,6 +414,8 @@ class PreparationTests(unittest.TestCase):
         for options, steps, expected, failed_step in [
                 ([], ['keyboard', 'notifications', 'photo', 'documents'], 0, ''),
                 (['--keyboard-only'], ['keyboard'], 0, ''),
+                # Hosted shards whose tests never wait on the notification server (TAL-2352).
+                (['--without-notifications'], ['keyboard', 'photo', 'documents'], 0, ''),
                 ([], ['keyboard', 'notifications'], 42, 'ready-simulator-notifications'),
                 ([], ['keyboard', 'notifications', 'photo'], 42, 'seed-simulator-photo')]:
             with self.subTest(options=options, expected=expected):

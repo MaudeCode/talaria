@@ -4,6 +4,8 @@
   ci/hosted-test-shard args SHARD     print the xcodebuild selection for SHARD (1-based), one argument per line
   ci/hosted-test-shard classes LOG    print the test classes an xcodebuild log ran, one per line
   ci/hosted-test-shard check DIR      require DIR's shard-N.txt class lists to cover every class exactly once
+  ci/hosted-test-shard prepare-options SHARD
+                                      print scripts/prepare-ui-simulator's options for SHARD, one per line
 
 The split is fixed here, so every run of a commit shards the same way. Each listed shard runs only its classes; the
 last shard runs every other class, so a new class always runs. `check` proves each run: no class ran in two shards,
@@ -30,6 +32,9 @@ SHARDS = (
     ("ChatStreamTickPerformanceTests", "RegularSplitHostedTests"),
 )
 COUNT = len(SHARDS) + 1
+# Classes whose tests await the simulator's notification server. Only a shard that runs one waits for the server in
+# preparation (TAL-2352). A new class runs in the last shard, which waits whenever one of these is unlisted.
+NOTIFICATION_CLASSES = ("NotificationAnswerTests",)
 LISTED = [name for shard in SHARDS for name in shard]
 SUITE = re.compile(r"Test Suite '([^'\r\n]+)' (started|passed|failed) at ")
 AGGREGATES = {"All tests", "Selected tests"}
@@ -41,6 +46,13 @@ def selection(shard):
     if shard < COUNT:
         return [f"-only-testing:{TARGET}/{name}" for name in SHARDS[shard - 1]]
     return [f"-only-testing:{TARGET}", *(f"-skip-testing:{TARGET}/{name}" for name in LISTED)]
+
+
+def prepare_options(shard):
+    selection(shard)  # Rejects a shard outside 1...COUNT.
+    runs = SHARDS[shard - 1] if shard < COUNT else None  # The last shard runs every unlisted class.
+    needs = any(name in runs if runs else name not in LISTED for name in NOTIFICATION_CLASSES)
+    return [] if needs else ["--without-notifications"]
 
 
 def classes(log):
@@ -89,6 +101,8 @@ def main(argv):
         print("\n".join(selection(int(value))))
     elif command == "classes":
         print("\n".join(classes(Path(value).read_text(errors="replace"))))
+    elif command == "prepare-options":
+        print("\n".join(prepare_options(int(value))))
     elif command == "check":
         ran = {int(path.stem.removeprefix("shard-")): path.read_text().split() for path in Path(value).glob("shard-*.txt")}
         seen = check(ran)
