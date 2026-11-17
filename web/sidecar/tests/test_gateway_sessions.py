@@ -962,9 +962,12 @@ def test_an_event_triggered_read_waits_for_the_restart_probe(native_owner_stub, 
     assert [kind for _, kind, _ in frames].count("restarting") == 1
 
 
-def test_a_watch_delivers_every_received_frame_when_its_own_read_loses_the_owner(native_owner_stub, monkeypatch):
-    """TAL-2344: an owner restarting when idle exits right after a turn ends. A reaction read that loses the socket must
-    not drop the turn's frames already received: the watch ends on the reader's disconnect, queued behind them."""
+@pytest.mark.parametrize("failure", [ConnectionError("disconnected"), RuntimeError("storage_unavailable")], ids=["lost", "busy"])
+def test_a_watch_delivers_every_received_frame_when_its_own_read_fails(native_owner_stub, monkeypatch, failure):
+    """A reaction read that fails must not end the watch before the frames it already received or that follow. TAL-2344:
+    an owner restarting when idle exits right after a turn ends, and the watch ends on the reader's disconnect, queued
+    behind them. TAL-2398: an owner committing a turn's settlement refuses a read that overlaps it as
+    storage_unavailable; the watch reads again later and delivers what follows (a deferred model pick's update)."""
     from contextlib import asynccontextmanager
     from types import SimpleNamespace
     from talaria_sidecar.methods import gateway_sessions as adapter
@@ -979,7 +982,7 @@ def test_a_watch_delivers_every_received_frame_when_its_own_read_loses_the_owner
         async with connect(home, endpoint) as (client, events):
             async def rpc(method, **params):
                 if method == "session.resume" and any(call[0] == "session.resume" for call in owner.calls):
-                    raise ConnectionError("disconnected")  # the owner exited while this read was in flight
+                    raise failure  # the owner exited, or was committing, while this read was in flight
                 return await client.rpc(method, **params)
             yield SimpleNamespace(rpc=rpc), events
     monkeypatch.setattr(adapter, "_connect", closing)

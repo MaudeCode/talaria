@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An open chat in Talaria Web keeps updating when a reply finishes, so a model you picked mid-reply shows as soon as it takes over.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

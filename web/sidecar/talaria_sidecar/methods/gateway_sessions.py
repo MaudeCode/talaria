@@ -38,6 +38,8 @@ _CAPABILITIES = {"durable-admission-v1", "event-replay-v1"}
 _CONTROL_REFUSALS = {"native_clarify_batch_unavailable", "owner_controls_unverified"}
 # The owner held state.db past the read budget while committing; the caller may retry.
 _STATE_BUSY, _STATE_BUSY_BUDGET = "owner_state_busy", 5.0
+# A read refused while the owner commits (its transcript kept changing under the read, or state.db stayed locked).
+_TRANSIENT_READS = {"storage_unavailable", _STATE_BUSY}
 # Queued on a watch's event queue when its call is cancelled, so the watch ends without polling the flag (TAL-1746).
 _WAKE = object()
 # An idle watch reads the transcript for another viewer's reaction at most this often; a message or reaction event
@@ -603,8 +605,13 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                     polled, stale = now, False
                     try:
                         current = await snapshot()
-                    except GatewayRPCError:
-                        raise
+                    except GatewayRPCError as exc:
+                        # A read overlapping the owner's own commit (a turn settling, a deferred pick landing) is
+                        # refused for now, not for good: the next message event or poll reads again, and the frames
+                        # that follow still reach the viewer (TAL-2398). Any other refusal ends the watch.
+                        if str(exc) not in _TRANSIENT_READS:
+                            raise
+                        continue
                     except GatewayClientError:
                         # The socket closed under this read (an owner restarting when idle exits as its turn ends).
                         # The frames received before the close are still queued, the reader's disconnect behind them:

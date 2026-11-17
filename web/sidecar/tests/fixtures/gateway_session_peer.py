@@ -343,6 +343,7 @@ async def probe_model(home, peer, desc):
             peer.release.set()
             while True:
                 frame = await asyncio.to_thread(viewer.next_message, 20)
+                assert frame.get("id") != model_watch, f"the watch ended before the pick landed: {frame}"
                 data = frame.get("params", {}).get("data", {})
                 if data.get("type") == "session.updated" and data.get("payload", {}).get("operation") == "model":
                     assert data.get("execution_generation") is None, data
