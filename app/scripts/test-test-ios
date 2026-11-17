@@ -41,6 +41,7 @@ mkdir -p "$repo/scripts" "$repo/.xcodebuildmcp" "$fake_bin" "$state"
 cp "$source_root/scripts/test-ios" "$repo/scripts/test-ios"
 cp "$source_root/scripts/load-env" "$repo/scripts/load-env"
 cp "$source_root/scripts/ios-simulator-pool" "$repo/scripts/ios-simulator-pool"
+cp "$source_root/scripts/xctest-launch" "$repo/scripts/xctest-launch"
 chmod +x "$repo/scripts/test-ios" "$repo/scripts/load-env"
 
 cat > "$repo/.xcodebuildmcp/config.yaml" <<'EOF'
@@ -111,6 +112,7 @@ for (( index = 0; index < ${#args[@]}; index++ )); do
         -only-testing:*)
             selectors+=("${args[index]}")
             [[ "${args[index]}" != *Failure* ]] || exit_status=42
+            [[ "${args[index]}" != *ConnectedLaunchFault* ]] || exit_status=65
             ;;
     esac
 done
@@ -121,6 +123,20 @@ done
 
 # Synthetic runners that never connect: ConnectsOnRelaunch connects on its second launch.
 previous_runs=$(grep -c -- "${selectors[0]:-}" "$state/runs" || true)
+# xcodebuild ends before the runner connects: a simulator-service launch fault (LaunchFaultOnce launches on its second
+# attempt), or another error.
+launch_fault="Talaria encountered an error (Failed to install or launch the test runner. (Underlying Error: The operation couldn't be completed. (Mach error -308 - (ipc/mig) server died)))"
+if [[ "${selectors[0]:-}" == *LaunchFaultAlways* || "${selectors[0]:-}" == *ExitsBeforeConnecting* ]] ||
+    [[ "${selectors[0]:-}" == *LaunchFaultOnce* && $previous_runs == 0 ]]; then
+    mkdir -p "$result_bundle"
+    printf '%s\n' "$destination|$result_bundle|${selectors[*]}|$parallel" >> "$state/runs"
+    if [[ "${selectors[0]:-}" == *ExitsBeforeConnecting* ]]; then
+        echo "xcodebuild: error: The test plan names no runnable test." >&2
+        exit 66
+    fi
+    echo "$launch_fault" >&2
+    exit 65
+fi
 if [[ "${selectors[0]:-}" == *NeverConnects* ]] || [[ "${selectors[0]:-}" == *ConnectsOnRelaunch* && $previous_runs == 0 ]]; then
     mkdir -p "$result_bundle/Staging/1_Test/Diagnostics"
     printf '%s\n' 'Connected socket 30 to testmanagerd' > "$result_bundle/Staging/1_Test/Diagnostics/Session-Transport.log"
@@ -175,6 +191,8 @@ rmdir "$lock"
 
 sleep "${TALARIA_FAKE_XCODEBUILD_SECONDS:-0.08}"
 mkdir -p "$result_bundle"
+# A test that fails after the runner connected, with the launch fault's words in its output.
+[[ "${selectors[0]:-}" != *ConnectedLaunchFault* ]] || echo "$launch_fault"
 
 while ! mkdir "$lock" 2>/dev/null; do sleep 0.01; done
 read -r active < "$state/active"
@@ -346,11 +364,31 @@ fi
     echo "A runner that never connected held the run for $(( SECONDS - started ))s." >&2
     exit 1
 }
-grep -Eq "The test runner on iOS Test [12] \([A-F-]+\) did not connect within 1s; rebooting" "$state/never-connects.log"
-grep -Eq "The test runner on iOS Test [12] \([A-F-]+\) did not connect within 1s after a reboot; stopping" "$state/never-connects.log"
+grep -Eq "The test runner on iOS Test [12] \([A-F-]+\) did not connect within 1s; recovering the simulator" "$state/never-connects.log"
+grep -Eq "The test runner on iOS Test [12] \([A-F-]+\) did not connect within 1s after recovering the simulator; stopping the run as a runner fault" "$state/never-connects.log"
 [[ $(runs_for TalariaTests/NeverConnects) == 2 ]]
 TALARIA_RUNNER_CONNECT_TIMEOUT=1 "$repo/scripts/test-ios" TalariaTests/ConnectsOnRelaunch > "$state/connects-on-relaunch.log" 2>&1
 [[ $(runs_for TalariaTests/ConnectsOnRelaunch) == 2 ]]
+
+# A launch fault before the runner connects gets one relaunch on a rebooted simulator; a second ends the run as a
+# runner fault (TAL-2277). The faulted attempt's bundle stays beside the run's. A failure after the runner connected,
+# or one that is no launch fault, keeps xcodebuild's status and never relaunches.
+for case in LaunchFaultOnce:0:2 LaunchFaultAlways:70:2 ConnectedLaunchFault:65:1 ExitsBeforeConnecting:66:1; do
+    IFS=: read -r selector expected_status expected_runs <<< "$case"
+    if "$repo/scripts/test-ios" "TalariaTests/$selector" > "$state/$selector.log" 2>&1; then
+        observed_status=0
+    else
+        observed_status=$?
+    fi
+    [[ "$observed_status" == "$expected_status" && $(runs_for "TalariaTests/$selector|") == "$expected_runs" ]] || {
+        echo "$selector returned $observed_status after $(runs_for "TalariaTests/$selector|") launch(es); expected $expected_status after $expected_runs." >&2
+        exit 1
+    }
+done
+grep -Eq "The test runner on iOS Test [12] \([A-F-]+\) failed to launch before any test ran; recovering the simulator" "$state/LaunchFaultOnce.log"
+grep -q "stopping the run as a runner fault" "$state/LaunchFaultAlways.log"
+faulted_bundle=$(grep -m1 -- 'TalariaTests/LaunchFaultOnce|' "$state/runs" | cut -d'|' -f2)
+[[ -d "${faulted_bundle%.xcresult}-launch-1.xcresult" ]]
 
 lock_file="$repo/.codex-tmp/xctest/runner.lock"
 sleep 0.01 &

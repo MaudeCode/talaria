@@ -232,7 +232,7 @@ Recognized variables:
 
 - `IOS_SIMULATOR_POOL_SIZE` — simulator count for `scripts/setup-ios-test-pool`.
 - `IOS_SIMULATOR_ID` — shared simulator selection, with `TALARIA_SIMULATOR_ID` as an alias for `scripts/test-ios`.
-- `TALARIA_RUNNER_CONNECT_TIMEOUT` — seconds `scripts/test-ios` waits for the test host to connect before rebooting the simulator for its one relaunch (default 30).
+- `TALARIA_RUNNER_CONNECT_TIMEOUT` — seconds `scripts/test-ios` waits for the test host to connect before rebooting the simulator for its one relaunch (default 30). A runner that fails to launch before any test ran gets the same relaunch, and a second fault stops the run with status 70 (`scripts/xctest-launch`, shared with the hosted CI tests).
 - `TALARIA_LIVE_CONTRACT_RESPONSES` — path to a live-response manifest for the TalariaKit live decoding test, supplied by `scripts/validate-upstream-contract` and CI, not a persistent local setting.
 - `TALARIA_DEVICE_ID` — physical iPhone selection for `scripts/run-ios-device`,
   as either the hardware UDID or the CoreDevice identifier from

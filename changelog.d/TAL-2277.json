@@ -1,0 +1,1 @@
+{"skip": "CI and test tooling only: a hosted test shard whose simulator faults before any test runs relaunches once after restarting CoreSimulator, and a second fault is reported as a runner fault; no app behavior changes."}
