@@ -181,13 +181,15 @@ it("maps the run's start, tool count and last activity into a relay-pushed Live 
     expect(updates.length).toBeGreaterThan(0);
     // Swift's default Codable Date representation is seconds since 2001-01-01.
     const swiftDate = (milliseconds: number) => milliseconds / 1_000 - 978_307_200;
+    // TAL-2336, TAL-2401: the run's current call, as this Web's publisher fixture sent it; a Web that sends none gets none.
+    const sentTool = (JSON.parse(fixture("publisher-snapshot")) as PublisherSnapshot).states[0]!.currentTool;
     for (const job of updates) {
-      expect(JSON.parse(job.request.payloadJson).aps["content-state"]).toMatchObject({
+      const contentState = JSON.parse(job.request.payloadJson).aps["content-state"] as Record<string, unknown>;
+      expect(contentState).toMatchObject({
         responseExcerpt: "", startedAt: swiftDate(runStartedAt), toolCount: 3, activityAt: swiftDate(activityAt),
         planCompleted: 2, planTotal: 5, workerCount: 3,
-        // TAL-2336: the run's current call, as the publisher fixture sent it.
-        currentTool: { kind: "shell", target: "npm test", done: false },
       });
+      expect(contentState.currentTool).toEqual(sentTool);
     }
     for (const [field, value] of [["startedAt", 1.5], ["toolCount", -1], ["toolCount", 1.5], ["activityAt", 1.5]] as const) {
       const invalid = JSON.parse(snapshot(3)) as { states: Record<string, unknown>[] };
