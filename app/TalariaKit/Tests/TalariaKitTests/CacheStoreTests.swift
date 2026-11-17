@@ -705,6 +705,25 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertEqual(newest.content, messages.last?.content)
     }
 
+    /// TAL-2394: the shared lookup scenario's reply, restored from the offline cache, keeps what the server decided:
+    /// the lookup that worked stays hidden, and each visible row keeps its group's id, counts and failures.
+    func testCachedReplyKeepsTheSharedLookupScenarioVisibilityAndGroups() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("web-session")) as? [String: Any])
+        let scenario = try XCTUnwrap(object["tool_lookup_views"] as? [String: Any])
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try XCTUnwrap(decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: scenario["session"]!)).messages)
+        let context = try makeContext(), server = URL(string: "https://lookup-cache.test")!, now = Date()
+        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: "lookups", in: context, cachedAt: now)
+        let restored = try CacheStore.cachedMessages(serverURL: server, sessionID: "lookups", in: context, now: now)
+        let group = AssistantActivityGroup(groupID: "group:0", parts: [.init(kind: .search, count: 1, failed: 1), .init(kind: .talaria, count: 1)], failed: 1)
+        let answer = try XCTUnwrap(restored.first { $0.messageId == "lookup-answer" })
+        XCTAssertEqual(answer.activityScene?.activityRows?.map(\.group), [nil, group, group])
+        // The lookup that worked stays hidden; the failed one and the call it led to show.
+        XCTAssertEqual(AssistantTurnLayout(message: answer, liveRows: [], archivedRows: []).rows.flatMap(\.toolCalls).map(\.id), ["call-search", "call-list"])
+        // The cache holds the server's scene as sent; nothing in it is decided again on restore.
+        XCTAssertEqual(answer.activityScene, messages.first { $0.messageId == "lookup-answer" }?.activityScene)
+    }
+
     func testCachedMessagesKeepReasoningTitles() throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!

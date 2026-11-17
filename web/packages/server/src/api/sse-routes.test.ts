@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
 import { JsonJournal } from '../sessions/storage/json-journal.js'
+import { FakeSidecar } from '../sidecar/fake.js'
 import type { StreamChannel, StreamSubscriber } from '../sessions/streams.js'
 
 useJsonStorage()
@@ -265,19 +266,37 @@ it.each(['journal', 'buffer'])('chat %s replay of an active run omits a settled 
   expect(windows).toContainEqual({ afterSeq: 2, maxSeq: 7 })
 })
 
-// TAL-2331: a journaled tool frame, redacted when written, takes the lookup visibility the setting decides at replay.
-it('replays a journaled lookup frame hidden or shown by the current setting, never by its stamp', async () => {
-  const s = server = await bootTestServer()
+// TAL-2331, TAL-2394: the shared lookup scenario runs live with lookups hidden. A replay re-decides `hidden` from the setting
+// in force; every other field, the group records included, replays as the live frame carried it.
+it('replays the shared lookup run with the visibility the setting decides now and every other field as sent live', async () => {
+  type Json = Record<string, unknown>
+  const scenario = (JSON.parse(fs.readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Record<string, Json>).tool_lookup_views!
+  const transcript = scenario.transcript as Json[]
+  const calls = transcript.flatMap((m) => (m.tool_calls as Json[] | undefined) ?? []).map((c) => ({ tid: String(c.id), ...(c.function as { name: string; arguments: string }) }))
+  const sidecar = new FakeSidecar()
+  sidecar.respond('chat.start', (_params, emit) => {
+    for (const c of calls) emit({ event: 'tool', data: { event_type: 'tool.started', name: c.name, args: JSON.parse(c.arguments) as Json, tid: c.tid } })
+    for (const reply of transcript.filter((m) => m.role === 'tool')) {
+      const c = calls.find((call) => call.tid === reply.tool_call_id)!
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: c.name, args: JSON.parse(c.arguments) as Json, tid: c.tid, preview: reply.content, raw_result: JSON.parse(String(reply.content)) as Json } })
+    }
+    return { status: 'completed', messages: transcript, final_response: String(transcript.at(-1)?.content), error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: { context_length: 1000 }, model: 'test-model', provider: 'test', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }
+  })
+  const s = server = await bootTestServer({ sidecar })
+  const post = (path: string, body: Json) => s.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   const sid = (await s.deps.sessionStore.newSession()).session_id
-  const writer = await s.deps.journal.writer(sid, 'lookups')
-  await writer.appendSseEvent('tool', { id: 'd', name: 'tool_describe', kind: 'read', target: 'session_list', hidden: true }, { createdAt: 1, redacted: true })
-  await writer.appendSseEvent('tool', { id: 's', name: 'tool_search', kind: 'search', target: 'deploy' }, { createdAt: 2, redacted: true })
-  await writer.appendSseEvent('done', {}, { createdAt: 3 })
-  await writer.close()
-  const hidden = async () => (await s.sse('/api/chat/stream?stream_id=lookups&after_seq=0', () => false, { timeoutMs: 2000 })).filter((f) => f.event === 'tool').map((f) => (f.data as { hidden?: boolean }).hidden ?? false)
-  expect(await hidden()).toEqual([true, true])
-  await s.get('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ show_tool_lookups: true }) })
-  expect(await hidden()).toEqual([false, false])
+  const streamId = String(((await (await post('/api/chat/start', { session_id: sid, message: transcript[0]!.content })).json()) as Json).stream_id)
+  const tools = (frames: SseFrame[]) => frames.filter((f) => f.event === 'tool' || f.event === 'tool_complete').map((f): Json => ({ event: f.event, ...(f.data as Json) }))
+  const live = tools(await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end'))
+  const pick = (frame: Json) => Object.fromEntries(Object.entries(frame).filter(([key]) => ['event', 'id', 'is_error', 'hidden', 'group_id', 'group'].includes(key)))
+  expect(live.map(pick)).toEqual(scenario.live_frames)
+  // The last live record is the group the settled reply's scene ships.
+  const answer = ((scenario.session as Json).messages as Json[]).find((m) => m.message_id === 'lookup-answer')!
+  expect(live.at(-1)?.group).toEqual(((answer._anchor_activity_scene as Json).activity_groups as Json[])[0])
+  const replay = async () => tools(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_seq=0`, (f) => f.event === 'stream_end'))
+  expect(await replay()).toEqual(live)
+  await post('/api/settings', { show_tool_lookups: true })
+  expect(await replay()).toEqual(live.map(({ hidden: _hidden, ...frame }) => frame))
 })
 
 it('per-session journal replay settles prompts only from their own run', async () => {

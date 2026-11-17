@@ -3362,20 +3362,9 @@ describe('session detail hides the Agent\'s tool lookups while Settings does (TA
   afterAll(() => s.close())
 
   const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
-  const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
-  /** A lookup that worked, one that failed, and the call the lookup led to. */
-  const transcript: Json[] = [
-    { role: 'user', content: 'List my chats about the deploy', message_id: 'lookup-user', timestamp: 9400, _turn_id: 'lookup-run' },
-    { role: 'assistant', content: '', message_id: 'lookup-calls', timestamp: 9401, _turn_id: 'lookup-run', tool_calls: [
-      call('call-describe', 'tool_describe', { names: ['session_list'] }),
-      call('call-search', 'tool_search', { queries: ['deploy history'] }),
-      call('call-list', 'session_list', { query: 'deploy' }),
-    ] },
-    { role: 'tool', tool_call_id: 'call-describe', content: JSON.stringify({ tools: [{ name: 'session_list', description: 'List chats' }] }), timestamp: 9402, _turn_id: 'lookup-run' },
-    { role: 'tool', tool_call_id: 'call-search', content: JSON.stringify({ error: 'Tool search is unavailable' }), timestamp: 9403, _turn_id: 'lookup-run' },
-    { role: 'tool', tool_call_id: 'call-list', content: JSON.stringify({ sessions: [{ title: 'Deploy notes' }] }), timestamp: 9404, _turn_id: 'lookup-run' },
-    { role: 'assistant', content: 'One chat mentions the deploy: Deploy notes.', message_id: 'lookup-answer', timestamp: 9405, _turn_id: 'lookup-run' },
-  ]
+  /** A lookup that worked, one that failed, and the call the lookup led to: the scenario the live and replay owners share (TAL-2394). */
+  const lookups = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_lookup_views as Json
+  const transcript = lookups.transcript as Json[]
 
   it('marks a lookup that worked hidden on the calls and the scene, never a failed one, until the setting shows them', async () => {
     const sid = String((await newSession(s)).session_id)
@@ -3390,7 +3379,7 @@ describe('session detail hides the Agent\'s tool lookups while Settings does (TA
       return [calls, rows].map((list) => list.map((c) => [c.id, c.is_error, c.hidden ?? false]))
     }
     const messages = await read()
-    expect(messages).toEqual((((JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_lookup_views as Json).session as Json).messages)
+    expect(messages).toEqual((lookups.session as Json).messages)
     const off = [['call-describe', false, true], ['call-search', true, false], ['call-list', false, false]]
     expect(hidden(messages)).toEqual([off, off])
     const save = (on: boolean) => s.get('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ show_tool_lookups: on }) })

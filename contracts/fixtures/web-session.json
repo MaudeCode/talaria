@@ -12100,6 +12100,170 @@
     }
   },
   "tool_lookup_views": {
+    "transcript": [
+      {
+        "role": "user",
+        "content": "List my chats about the deploy",
+        "message_id": "lookup-user",
+        "timestamp": 9400,
+        "_turn_id": "lookup-run"
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "message_id": "lookup-calls",
+        "timestamp": 9401,
+        "_turn_id": "lookup-run",
+        "tool_calls": [
+          {
+            "id": "call-describe",
+            "type": "function",
+            "function": {
+              "name": "tool_describe",
+              "arguments": "{\"names\":[\"session_list\"]}"
+            }
+          },
+          {
+            "id": "call-search",
+            "type": "function",
+            "function": {
+              "name": "tool_search",
+              "arguments": "{\"queries\":[\"deploy history\"]}"
+            }
+          },
+          {
+            "id": "call-list",
+            "type": "function",
+            "function": {
+              "name": "session_list",
+              "arguments": "{\"query\":\"deploy\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call-describe",
+        "content": "{\"tools\":[{\"name\":\"session_list\",\"description\":\"List chats\"}]}",
+        "timestamp": 9402,
+        "_turn_id": "lookup-run"
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call-search",
+        "content": "{\"error\":\"Tool search is unavailable\"}",
+        "timestamp": 9403,
+        "_turn_id": "lookup-run"
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call-list",
+        "content": "{\"sessions\":[{\"title\":\"Deploy notes\"}]}",
+        "timestamp": 9404,
+        "_turn_id": "lookup-run"
+      },
+      {
+        "role": "assistant",
+        "content": "One chat mentions the deploy: Deploy notes.",
+        "message_id": "lookup-answer",
+        "timestamp": 9405,
+        "_turn_id": "lookup-run"
+      }
+    ],
+    "live_frames": [
+      {
+        "event": "tool",
+        "id": "call-describe",
+        "hidden": true
+      },
+      {
+        "event": "tool",
+        "id": "call-search",
+        "hidden": true
+      },
+      {
+        "event": "tool",
+        "id": "call-list",
+        "group_id": "group:0",
+        "group": {
+          "group_id": "group:0",
+          "parts": [
+            {
+              "kind": "talaria",
+              "count": 1,
+              "failed": 0
+            }
+          ],
+          "failed": 0,
+          "running": true
+        }
+      },
+      {
+        "event": "tool_complete",
+        "id": "call-describe",
+        "is_error": false,
+        "hidden": true,
+        "group_id": "group:0",
+        "group": {
+          "group_id": "group:0",
+          "parts": [
+            {
+              "kind": "talaria",
+              "count": 1,
+              "failed": 0
+            }
+          ],
+          "failed": 0,
+          "running": true
+        }
+      },
+      {
+        "event": "tool_complete",
+        "id": "call-search",
+        "is_error": true,
+        "group_id": "group:0",
+        "group": {
+          "group_id": "group:0",
+          "parts": [
+            {
+              "kind": "search",
+              "count": 1,
+              "failed": 1
+            },
+            {
+              "kind": "talaria",
+              "count": 1,
+              "failed": 0
+            }
+          ],
+          "failed": 1,
+          "running": true
+        }
+      },
+      {
+        "event": "tool_complete",
+        "id": "call-list",
+        "is_error": false,
+        "group_id": "group:0",
+        "group": {
+          "group_id": "group:0",
+          "parts": [
+            {
+              "kind": "search",
+              "count": 1,
+              "failed": 1
+            },
+            {
+              "kind": "talaria",
+              "count": 1,
+              "failed": 0
+            }
+          ],
+          "failed": 1,
+          "running": false
+        }
+      }
+    ],
     "session": {
       "messages": [
         {
