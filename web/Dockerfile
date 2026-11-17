@@ -13,8 +13,9 @@ RUN npm ci --no-audit --no-fund --include=dev --workspace packages/contracts --w
     && rm -rf /root/.npm
 
 # Build the contracts and server packages natively on the build machine: compiling them (and node-pty) under
-# emulation for a foreign target is what made multi-platform releases slow (TAL-321). node-pty has no Linux
-# prebuilds, so a foreign target cross-compiles it.
+# emulation for a foreign target is what made multi-platform releases slow (TAL-321). The compile uses the build
+# machine's own packages, since TypeScript 7's tsc is a native binary (TAL-2345); the runtime tree is then installed
+# for the target. node-pty has no Linux prebuilds, so a foreign target cross-compiles it.
 FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS node-build
 ARG TARGETARCH
 WORKDIR /apptoo
@@ -23,6 +24,9 @@ RUN set -eu \
     && native=$(dpkg --print-architecture) \
     && apt-get update \
     && apt-get install -y --no-install-recommends make g++ python3 \
+    && npm ci --no-audit --no-fund --include=dev --ignore-scripts --workspace packages/contracts --workspace packages/server \
+    && npm run build --workspace packages/contracts \
+    && npm run build --workspace packages/server \
     && if [ "$TARGETARCH" != "$native" ]; then \
          case "$TARGETARCH" in \
            amd64) triple=x86_64-linux-gnu toolchain=g++-x86-64-linux-gnu npm_arch=x64 ;; \
@@ -32,10 +36,7 @@ RUN set -eu \
          apt-get install -y --no-install-recommends "$toolchain"; \
          export CC="$triple-gcc" CXX="$triple-g++" npm_config_arch="$npm_arch" npm_config_cpu="$npm_arch"; \
        fi \
-    && npm ci --no-audit --no-fund --include=dev --workspace packages/contracts --workspace packages/server \
-    && npm run build --workspace packages/contracts \
-    && npm run build --workspace packages/server \
-    && npm prune --omit=dev --no-audit --no-fund --workspace packages/contracts --workspace packages/server \
+    && npm ci --no-audit --no-fund --omit=dev --workspace packages/contracts --workspace packages/server \
     && rm -rf /root/.npm
 
 FROM ${NODE_IMAGE}
