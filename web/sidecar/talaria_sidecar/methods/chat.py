@@ -1910,8 +1910,21 @@ def _is_compression_start(lower: str) -> bool:
     return any(marker in lower for marker in _COMPRESSION_START_MARKERS)
 
 
-def _status_events(kind, text: str) -> list[str]:
-    """Events for one Agent status line: compression, provider diagnostics, and the turn's terminal error."""
+def _is_marked_compaction(kind: str, message) -> bool:
+    """TAL-2290: Agent v0.23.2+ marks real compaction progress on the producer's object (``CompactionProgressText``),
+    including a context engine's reworded lines, and ``compaction_status_kind`` reads that mark. ``str()`` drops it, so
+    this gets the original object. Releases without the classifier rely on the wording markers alone."""
+    try:
+        from agent.conversation_compression import compaction_status_kind
+    except ImportError:
+        return False
+    return compaction_status_kind(kind, message) == "compacting"
+
+
+def _status_events(kind, message) -> list[str]:
+    """Events for one Agent status line, given the Agent's own object: compression, warnings, provider diagnostics, and
+    the turn's terminal error."""
+    text = str(message or "").strip()
     lower = text.lower()
     events = ["terminal_error"] if "non-retryable error" in lower else []
     kind = str(kind or "").strip().lower()
@@ -1919,8 +1932,11 @@ def _status_events(kind, text: str) -> list[str]:
     # sends none and ends with the turn.
     if kind == "compacted":
         return ["compression_finished"]
+    # TAL-2290: explicit warn severity is a warning whatever its wording, and never a compression start.
+    if kind == "warn":
+        return events + ["warning"]
     if kind == "lifecycle":
-        if _is_compression_start(lower):
+        if _is_marked_compaction(kind, message) or _is_compression_start(lower):
             return events + ["compressing"]
         # The Agent's own compression retries ("Compressed N → M messages, retrying...") are not provider fallbacks.
         if "compress" in lower or "context reduced to" in lower:
@@ -2168,7 +2184,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
 
         def on_status(kind, message):
             text = str(message or "").strip()
-            for event in _status_events(kind, text):
+            for event in _status_events(kind, message):
                 if event == "compressing":
                     emit("compressing", {"session_id": session_id, "message": "Compressing context"})
                 elif event == "compression_finished":
