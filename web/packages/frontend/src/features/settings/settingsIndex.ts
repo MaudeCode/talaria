@@ -17,7 +17,7 @@ export type SettingScope = 'device' | 'interface' | 'profile' | 'server'
 /** TAL-2136, TAL-2138: a page under a section with its own route: Providers › Quota alerts, and Chat's sub-pages. */
 export type SettingsPage = 'quota-alerts' | ChatPage
 
-export interface SettingsIndexEntry { section: SettingsSection; tab?: ToolsTab; group: () => string; id: string; label: () => string; scope: SettingScope; shownWith?: string; /** TAL-2135: the row sits on each listed item's own page (a provider's), so a jump lands on the group that lists them. */ item?: true; /** TAL-2136, TAL-2138: the row sits on this page under its section. */ page?: SettingsPage }
+export interface SettingsIndexEntry { section: SettingsSection; tab?: ToolsTab; group: () => string; id: string; label: () => string; scope: SettingScope; shownWith?: string; /** TAL-2135: the row sits on each listed item's own page (a provider's), so a jump lands on the group that lists them. */ item?: true; /** TAL-2136, TAL-2138: the row sits on this page under its section. */ page?: SettingsPage; /** TAL-2343: the row is a toggle on this component's drawing, which counts as one row of its group (design-system §11). */ drawing?: 'composer' | 'sidebar' }
 
 type Row = readonly [id: string, label: () => string, shownWith?: string]
 const rows = (section: SettingsSection, group: () => string, scope: SettingScope, list: readonly Row[], tab?: ToolsTab): SettingsIndexEntry[] =>
@@ -25,6 +25,7 @@ const rows = (section: SettingsSection, group: () => string, scope: SettingScope
 /** TAL-2136, TAL-2138: each page's title, which the link that opens it and its rows' search results name. */
 export const PAGE_TITLE: Record<SettingsPage, () => string> = { 'quota-alerts': m.providers_quota_alerts, 'workspace-panel': m.settings_group_workspace_panel, advanced: m.settings_page_advanced }
 const onPage = (page: SettingsPage, entries: SettingsIndexEntry[]) => entries.map((entry) => ({ ...entry, page }))
+const drawn = (drawing: NonNullable<SettingsIndexEntry['drawing']>, entries: SettingsIndexEntry[]) => entries.map((entry) => ({ ...entry, drawing }))
 /** A `SettingToggle`'s default control id. */
 const key = (settingKey: string) => `settings-${settingKey}`
 
@@ -36,8 +37,8 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ...rows('appearance', m.settings_label_language, 'interface', [['settingsLanguage', m.settings_label_language]]),
   ...rows('appearance', m.settings_label_language, 'device', [['settingsRtl', m.settings_label_rtl]]),
   // TAL-2138: the composer controls are toggles on the drawing of the composer, in its order.
+  ...drawn('composer', rows('chat', m.settings_group_composer, 'interface', COMPOSER_CONTROLS.map((c) => [composerControlId(c.key), c.name] as const))),
   ...rows('chat', m.settings_group_composer, 'interface', [
-    ...COMPOSER_CONTROLS.map((c) => [composerControlId(c.key), c.name] as const),
     ['settingsSendKey', m.settings_label_send_key], ['settingsDefaultMessageMode', m.settings_label_default_message_mode],
     [key('large_text_paste_as_attachment'), m.settings_label_large_text_paste_as_attachment],
   ]),
@@ -62,10 +63,12 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
       ['settingsAutoTitleRefresh', m.settings_label_auto_title_refresh],
     ]),
   ]),
-  // TAL-2145: the sidebar's items are toggles on the drawing of the sidebar, in its order, beside its three rows.
-  ...rows('navigation', m.settings_group_sidebar, 'interface', [
+  // TAL-2145, TAL-2343: the sidebar's items are toggles on the drawing of the sidebar, in its order; its other rows follow in their own group.
+  ...drawn('sidebar', rows('navigation', m.settings_group_sidebar_items, 'interface', [
     ...SIDEBAR_DESTINATIONS.map((n) => [`settingsHiddenTab-${n.id}`, n.label] as const),
     [key('show_sidebar_feedback'), m.feedback_rail_label], [key('show_titlebar_profile'), m.settings_label_profile_switcher],
+  ])),
+  ...rows('navigation', m.settings_group_sidebar, 'interface', [
     ['settingsSidebarDensity', m.settings_label_density], ['settingsPinnedLimit', m.settings_label_pinned_shown], [key('project_quick_create_buttons'), m.settings_label_project_new_chat],
   ]),
   ...rows('navigation', m.settings_group_outside_chats, 'interface', [

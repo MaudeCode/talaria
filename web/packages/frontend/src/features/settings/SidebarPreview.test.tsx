@@ -51,7 +51,7 @@ async function renderNavigation(settings: Record<string, unknown>) {
   vi.mocked(fetchSettings).mockImplementation(() => Promise.resolve(stored))
   vi.mocked(saveSettings).mockImplementation((patch) => { stored = { ...stored, ...patch }; return Promise.resolve(stored) })
   await renderRouted(<QueryClientProvider client={qc}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><SettingsSection section="navigation" /><RealSidebar /><ChatList /></BootstrapContext.Provider></QueryClientProvider>)
-  return { sidebar: within(await screen.findByRole('region', { name: 'Sidebar' })), outside: within(screen.getByRole('region', { name: 'Chats from outside Talaria' })) }
+  return { sidebar: within(await screen.findByRole('region', { name: 'Sidebar items' })), outside: within(screen.getByRole('region', { name: 'Chats from outside Talaria' })) }
 }
 /** The server's counts of the sidebar items and outside chats shown, as every settings read and save carries them (TAL-2175). */
 const counted = (sidebar: number, outside: number) => ({ sidebar_items_shown: sidebar, sidebar_items_total: 10, outside_chats_shown: outside, outside_chats_total: 6 })

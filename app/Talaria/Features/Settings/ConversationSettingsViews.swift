@@ -82,18 +82,7 @@ struct ChatsSettingsView: View {
                 )
             }
 
-            SettingsSection(
-                title: String(localized: "Conversation"),
-                help: [
-                    String(localized: "Right-to-Left Chat Layout") + ": " + String(localized: """
-                    Lays out messages and the composer right-to-left for Arabic, Hebrew, Persian, and Urdu. Code, math, \
-                    tables, and tool output stay left-to-right. Other screens are unaffected.
-                    """),
-                    String(localized: "Git Actions") + ": " + String(localized: """
-                    Covers the git menu, composer branch picker, and the turn-end Commit & Push button and File changes recap.
-                    """)
-                ].joined(separator: "\n\n")
-            ) {
+            SettingsSection(title: String(localized: "Transcript")) {
                 SettingsToggleRow(
                     title: SettingsIndex.chatThinkingTools.title,
                     systemImage: "brain.head.profile",
@@ -135,7 +124,20 @@ struct ChatsSettingsView: View {
                     systemImage: "arrow.turn.down.left",
                     isOn: $wrapsCodeBlockLines
                 )
+            }
 
+            SettingsSection(
+                title: String(localized: "Conversation"),
+                help: [
+                    String(localized: "Right-to-Left Chat Layout") + ": " + String(localized: """
+                    Lays out messages and the composer right-to-left for Arabic, Hebrew, Persian, and Urdu. Code, math, \
+                    tables, and tool output stay left-to-right. Other screens are unaffected.
+                    """),
+                    String(localized: "Git Actions") + ": " + String(localized: """
+                    Covers the git menu, composer branch picker, and the turn-end Commit & Push button and File changes recap.
+                    """)
+                ].joined(separator: "\n\n")
+            ) {
                 SettingsPickerRow(
                     title: SettingsIndex.chatScrollButtonSide.title,
                     systemImage: "arrow.down.circle",

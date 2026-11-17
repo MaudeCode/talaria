@@ -112,6 +112,8 @@ it('matches the localized label or group title, ignoring case and surrounding sp
   expect(searchSettings('SEND WITH').map((e) => e.id)).toEqual(['settingsSendKey'])
   expect(searchSettings('voice on this').map((e) => e.id)).toEqual(['settingsTtsEngine', 'settingsTtsVoice', 'settingsTtsRate', 'settingsTtsPitch'])
   expect(searchSettings('no such setting')).toEqual([])
+  // TAL-2343: the sidebar drawing's items are found by their own group's title.
+  expect(searchSettings('sidebar items').map((e) => [e.id, e.group()])).toEqual(SETTINGS_INDEX.filter((e) => e.drawing === 'sidebar').map((e) => [e.id, 'Sidebar items']))
 })
 
 /** TAL-2138: every row Chat, Navigation and Tools showed before Chat's sub-pages, by control id; a composer control kept its switch's id on the drawing. */
