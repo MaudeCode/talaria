@@ -55,7 +55,6 @@ class NightlyTests(unittest.TestCase):
         self.assertEqual(select(self.root, [previous, docs]), {"changed": "true", "source": docs, "app": "false", "app_version": "1.21.1"})
         app = self.commit("app/Talaria/View.swift")
         self.assertEqual(select(self.root, [docs, app])["app"], "true")
-        # Nothing green after the last Nightly: the run does nothing.
         # Nothing green after the last Nightly: only Web's tag is refreshed against the recorded source.
         self.assertEqual(select(self.root, [previous]), {"changed": "false", "source": previous})
         self.assertEqual(select(self.root, []), {"changed": "false", "source": previous})

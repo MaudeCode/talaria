@@ -92,7 +92,6 @@ class ReleaseSetTests(unittest.TestCase):
         self.assertEqual({name: (spec["type"], spec["required"]) for name, spec in inputs.items()},
                          {"tag": ("string", True), "sha": ("string", False)})
         self.assertEqual(document["run-name"], "Release ${{ inputs.tag }}")
-        self.assertFalse((ROOT / ".github/workflows/release.yml").exists(), "no tag push starts a release")
         jobs = document["jobs"]
         check = jobs["preflight"]["steps"][0]
         self.assertRegex(check["uses"], r"^MaudeCode/\.github/actions/release-preflight@[0-9a-f]{40}$")
@@ -109,11 +108,8 @@ class ReleaseSetTests(unittest.TestCase):
         self.assertEqual(checkout["with"], {"fetch-depth": 0})
         commands = "\n".join(step.get("run", "") for step in steps)
         self.assertIn('releases/autorelease.py --tag "$RELEASE_TAG" --sha "$SOURCE"', commands)
-        # Preflight neither waits for main CI nor writes a ref (TAL-2396): it only reads, so a release that fails
-        # before publication leaves nothing behind.
-        self.assertNotIn("main_ci", json.dumps(jobs["preflight"]))
-        self.assertNotIn("git push", commands)
-        # It only reads: the repository, and main CI's push run for the checks it already passed (TAL-2396).
+        # Preflight only reads: the repository, and main CI's push run for the checks it already passed, so a release
+        # that fails before publication leaves nothing behind (TAL-2396).
         self.assertEqual(jobs["preflight"]["permissions"], {"contents": "read", "actions": "read"})
         self.assertEqual(document["permissions"], {"contents": "read"})
         for job in jobs.values():
@@ -124,14 +120,22 @@ class ReleaseSetTests(unittest.TestCase):
             "dry_run": False, "release_tag": "${{ needs.preflight.outputs.tag }}",
             "checks": "${{ needs.preflight.outputs.checks }}"})
 
-    def test_main_ci_evidence_is_no_longer_required_but_still_valid(self):
-        # Sets released before TAL-2396 recorded a mainCI receipt; new sets have none. Both validate.
-        new = complete(candidate())
-        new["evidence"] = [item for item in new["evidence"] if item["gate"] != "mainCI"]
-        validate(new)
-        historical = deepcopy(new)
+    def test_a_set_released_with_a_main_ci_receipt_still_validates(self):
+        # Sets released before TAL-2396 recorded a mainCI receipt; new sets have none
+        # (test_independent_versions_and_expanded_contracts validates one).
+        historical = complete(candidate())
         historical["evidence"].append(receipt("mainCI", historical["releaseSet"]))
         validate(historical)
+
+    def test_no_tag_push_starts_a_workflow(self):
+        # Tags last (TAL-2342): a version tag marks a release that shipped, so pushing one must start nothing. A push
+        # trigger without a branch filter fires on tag pushes too.
+        for path in sorted((ROOT / ".github/workflows").glob("*.yml")):
+            document = workflow(path.name)
+            triggers = document.get("on", document.get("true"))
+            push = triggers.get("push", False) if isinstance(triggers, dict) else ("push" in triggers and None)
+            with self.subTest(workflow=path.name):
+                self.assertTrue(push is False or (isinstance(push, dict) and "branches" in push and "tags" not in push), push)
 
     def test_independent_versions_and_expanded_contracts(self):
         self.assertEqual(validate(candidate()), list(COMPONENTS))

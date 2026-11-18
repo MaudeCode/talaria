@@ -139,7 +139,7 @@ class RecoveryTests(unittest.TestCase):
                     patch.object(recover, "api", side_effect=[json.dumps(metadata), json.dumps({"total_count": len(jobs), "jobs": jobs}),
                                                             "RELEASE_NEEDS: " + json.dumps(needs)]), \
                     patch.object(recover, "git"), patch.object(recover, "restore"), \
-                    patch.object(recover, "require_current_predecessor", side_effect=ValueError("superseded"), create=True) as guard:
+                    patch.object(recover, "require_current_predecessor", side_effect=ValueError("superseded")) as guard:
                 with self.assertRaisesRegex(ValueError, "superseded"):
                     recover.main()
                 guard.assert_called_once_with({"dryRun": False, "releaseSet": "c" * 40}, None)
