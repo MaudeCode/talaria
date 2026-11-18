@@ -345,7 +345,7 @@ export class SqliteJournal implements JournalBackend {
       for (const { run, summary, archived } of terminalRuns.slice(keep).reverse()) {
         if (stopped()) return result
         const rid = run.stream_id
-        if ((run.written > cutoff && !overBudget()) || named.has(rid) || this.busy(sid, rid, opts)) continue
+        if ((run.written > cutoff && !overBudget()) || named.has(rid) || this.busy(sid, rid)) continue
         if (opts.dryRun) { result.pruned += 1; result.bytes_reclaimed += run.bytes; liveRuns -= 1; liveBytes -= run.bytes; continue }
         const archive = await this.compact(sid, rid)
         if (!archive) continue
@@ -356,7 +356,7 @@ export class SqliteJournal implements JournalBackend {
         if (!current || this.closed) continue
         this.flushAll()
         const stat = this.db.get<Stat>(`${STAT_SQL} AND stream_id = ? GROUP BY stream_id`, sid, rid)
-        if (current.has(rid) || this.busy(sid, rid, opts) || stat?.rows !== run.rows || stat.written !== run.written || stat.bytes !== run.bytes || (this.archivedSeq(sid, rid) ?? 0) !== archive.previousSeq) continue
+        if (current.has(rid) || this.busy(sid, rid) || stat?.rows !== run.rows || stat.written !== run.written || stat.bytes !== run.bytes || (this.archivedSeq(sid, rid) ?? 0) !== archive.previousSeq) continue
         // The legacy fields stay as the JSON adapter writes them; `archived` carries the lookup summary.
         const stored = JSON.stringify({ ...summary, journal_pruned: true, journal_pruned_at: now, original_size: run.bytes, original_mtime: run.written, archived })
         this.db.transaction(() => {
@@ -372,8 +372,8 @@ export class SqliteJournal implements JournalBackend {
     return result
   }
 
-  private busy(sessionId: string, runId: string, opts: PruneOptions): boolean {
-    return [...this.writers].some((writer) => writer.sessionId === sessionId && writer.runId === runId) || Boolean(opts.isActive?.(`${sessionId}/${runId}`))
+  private busy(sessionId: string, runId: string): boolean {
+    return [...this.writers].some((writer) => writer.sessionId === sessionId && writer.runId === runId)
   }
 
   /**
@@ -411,7 +411,7 @@ export class SqliteJournal implements JournalBackend {
     if (total <= maxArchiveBytes) return
     for (const { session_id: sid, stream_id: rid, size } of this.db.all<{ session_id: string; stream_id: string; size: number }>('SELECT session_id, stream_id, length(rows) AS size FROM journal_archives ORDER BY archived_at, session_id, stream_id')) {
       if (total <= maxArchiveBytes || opts.signal?.aborted) return
-      if (this.hasLiveRows(sid, rid) || this.busy(sid, rid, opts) || this.prunedSummary(sid, rid)?.journal_pruned !== true) continue
+      if (this.hasLiveRows(sid, rid) || this.busy(sid, rid) || this.prunedSummary(sid, rid)?.journal_pruned !== true) continue
       if (!opts.dryRun) this.db.run('DELETE FROM journal_archives WHERE session_id = ? AND stream_id = ?', sid, rid)
       total -= size
       result.archives_removed += 1

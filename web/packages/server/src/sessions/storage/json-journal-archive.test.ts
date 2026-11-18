@@ -279,6 +279,9 @@ describe('run-journal archival', () => {
     await writeRun(journal, 'session', 'run')
     const path = journal.pathFor('session', 'run')
     const before = await journal.readRunEvents('session', 'run')
+    // A summary an earlier sweep left stays as it was: the staged one is never published over it.
+    const summary = join(journal.root(), 'session', 'run.summary.json')
+    fs.writeFileSync(summary, '{"prior":true}')
     let writer: Awaited<ReturnType<JsonJournal['writer']>> | null = null
     duringPublication(async () => {
       if (change === 'replacement') { fs.writeFileSync(`${path}.new`, fs.readFileSync(path)); fs.renameSync(`${path}.new`, path) }
@@ -291,6 +294,7 @@ describe('run-journal archival', () => {
     expect(fs.existsSync(journal.archivePathFor('session', 'run'))).toBe(false)
     expect(fs.existsSync(path)).toBe(true)
     expect(await journal.readRunEvents('session', 'run')).toEqual(before)
+    expect(fs.readFileSync(summary, 'utf8')).toBe('{"prior":true}')
     await (writer as { close(): Promise<void> } | null)?.close()
   })
 
@@ -350,6 +354,7 @@ describe('run-journal archival', () => {
     const legacy = JSON.parse(fs.readFileSync(join(journal.root(), 'session', 'run.summary.json'), 'utf8')) as Record<string, unknown>
     expect(Object.keys(legacy)).toEqual(['session_id', 'run_id', 'stream_id', 'event_count', 'last_seq', 'last_event_id', 'terminal', 'terminal_state', 'last_event', 'journal_pruned', 'journal_pruned_at', 'original_size', 'original_mtime', 'archived'])
     expect(legacy).toMatchObject({ session_id: 'session', run_id: 'run', last_seq: 3, terminal: true, journal_pruned: true, journal_pruned_at: now, original_size: size })
+    expect(legacy.original_mtime).toBeCloseTo(old, 3)
     // This release reads the archive, not the summary.
     expect((await journal.findRunSummary('run'))?.journal_pruned).toBeUndefined()
   })
@@ -380,6 +385,11 @@ describe('retention budgets and protection', () => {
     const each = fs.statSync(bytes.pathFor('bytes', 'run0')).size
     expect(await sweep(bytes, { retentionSeconds: 14 * DAY, maxBytes: each * 2 + 64 })).toMatchObject({ pruned: 2 })
     expect(live(bytes, 'bytes', 4)).toEqual([false, false, true, true])
+    // Equal mtimes keep the path that sorts last.
+    const ties = fixture()
+    for (const rid of ['a', 'b', 'c']) await writeRun(ties, 'ties', rid, { mtime: fresh })
+    expect(await sweep(ties, { retentionSeconds: 14 * DAY, maxRuns: 1 })).toMatchObject({ pruned: 2 })
+    expect(['a', 'b', 'c'].map((rid) => fs.existsSync(ties.pathFor('ties', rid)))).toEqual([false, false, true])
   })
 
   it('keeps runs the session still names, and whole sessions whose state is unreadable', async () => {

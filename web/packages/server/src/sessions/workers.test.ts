@@ -15,7 +15,7 @@ import { CompletionDrain, formatWakeupPrompt } from './completions.js'
 import { nextSessionItem, StreamRegistry, type SessionChannels } from './streams.js'
 import { HygieneTicker, rotateWebuiLog, webuiLogPaths } from '../tools/hygiene.js'
 import { configFingerprint, McpHealthProber, probeServer } from '../tools/mcp-health.js'
-import { agentHealth, forgetGatewayProbes, processStartTime, remoteGatewayBaseUrl, runtimeStatusIsFresh } from '../tools/health.js'
+import { agentHealth, forgetGatewayProbes, processStartTime, remoteGatewayBaseUrl } from '../tools/health.js'
 import { str } from '../util.js'
 import { withBackgroundUpdates, batchUpdate, recordBackgroundUpdate } from './background-updates.js'
 import { HeldWakeups } from './wakeup-pause.js'
@@ -851,8 +851,13 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
 
   it('a batch delivered after a turn is one mixed update', async () => {
     const sid = await newSid()
-    s.deps.completions.recordDeferred(sid, 'deleg_mix', '[ASYNC DELEGATION BATCH COMPLETE — deleg_mix]\nresults', { process_id: 'deleg_mix', delegation_id: 'deleg_mix', type: 'async_delegation', goal: 'Scan the logs', results: [{ status: 'failed' }] })
-    s.deps.completions.recordDeferred(sid, 'proc_mix', '[IMPORTANT: Background process proc_mix completed (exit_code=0).\nCommand: ls]', { process_id: 'proc_mix', type: 'completion', command: 'ls', exit_code: 0 })
+    // Both land while a turn runs, so the drain defers them; the turn's teardown delivers them as one batch.
+    const held = `held-${sid}`
+    s.deps.registry.registerActiveRun({ stream_id: held, session_id: sid, started_at: 0, phase: 'running', workspace: '', model: null, provider: null, ephemeral: false })
+    try {
+      await s.deps.completions.processOne({ process_id: 'deleg_mix', delegation_id: 'deleg_mix', type: 'async_delegation', origin_ui_session_id: sid, consumed: false, goal: 'Scan the logs', results: [{ status: 'failed' }] })
+      await s.deps.completions.processOne({ process_id: 'proc_mix', session_id: 'proc_mix', type: 'completion', command: 'ls', exit_code: 0, output: '', origin_ui_session_id: sid, consumed: false })
+    } finally { s.deps.registry.activeRuns.delete(held) }
     await s.deps.completions.drainDeferred(sid)
     const row = await wakeupRow(sid)
     expect(row, 'the wakeup row settled into the transcript').toBeDefined()
@@ -1166,12 +1171,21 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     const path = join(sessionDirectory(s.deps.sessionStore), '_wakeup_held.json')
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     writeFileSync(path, '{"partial": ')
-    const drain = standalone(() => ({ stream_id: 'x' }))
-    await drain.drainDeferred(sid)
-    const timers = (drain as unknown as { retryTimers: Map<string, NodeJS.Timeout> }).retryTimers
-    expect(timers.has(sid), 'an unreadable store is retried, not read as empty').toBe(true)
-    drain.stop()
-    rmSync(path)
+    const prompts: string[] = []
+    vi.useFakeTimers()
+    const drain = standalone((prompt) => { prompts.push(prompt); return { stream_id: 'x' } })
+    try {
+      await drain.drainDeferred(sid)
+      expect(prompts).toEqual([])
+      // An unreadable store is unknown, not empty: once it reads again, the recheck delivers what it holds.
+      writeFileSync(path, JSON.stringify({ [sid]: [{ process_id: `${sid}_r`, wakeup_prompt: '[IMPORTANT: rechecked]', event: { type: 'watch_disabled' } }] }))
+      await vi.advanceTimersByTimeAsync(300_000)
+      await expect.poll(() => prompts, { timeout: 10_000 }).toEqual(['[IMPORTANT: rechecked]'])
+      await expect.poll(heldIndex, { timeout: 10_000 }).not.toContain(sid)
+    } finally {
+      drain.stop()
+      vi.useRealTimers()
+    }
   })
 
   it('serializes concurrent drains so a held wakeup is delivered once', async () => {
@@ -1332,41 +1346,6 @@ describe('hygiene tick', () => {
       expect(statSync(join(dir, 'bootstrap-0.log.1')).size).toBe(2048)
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
-
-  it('prunes settled run journals past retention while keeping the newest three and live writers', async () => {
-    const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-journal-${String(process.pid)}-${String(Date.now())}`)
-    const journal = new JsonJournal(dir)
-    const now = Date.now() / 1000
-    for (let i = 0; i < 5; i += 1) {
-      const w = (await journal.writer('sess1', `run${String(i)}`))
-      await w.appendSseEvent('token', { text: 'hi' })
-      await w.appendSseEvent('done', { session: {} })
-      await w.appendSseEvent('stream_end', {})
-      await w.close()
-    }
-    const live = (await journal.writer('sess1', 'live'))
-    await live.appendSseEvent('done', { session: {} })
-    await live.appendSseEvent('stream_end', {})
-    await live.close()
-    const dryRun = await journal.pruneSettled({ now: now + 30 * 86400, retentionSeconds: 14 * 86400, keepRecent: 3, dryRun: true })
-    expect(dryRun).toMatchObject({ examined: 6, terminal: 6, pruned: 3 })
-    // Files are brand new: nothing is older than the cutoff unless the clock says so.
-    expect((await journal.pruneSettled({ now, retentionSeconds: 14 * 86400, keepRecent: 3 })).pruned).toBe(0)
-    // The oldest run still has a live writer: retention must leave it alone; the two newest are kept.
-    const activePath = journal.pathFor('sess1', 'run0')
-    const result = await journal.pruneSettled({ now: now + 30 * 86400, retentionSeconds: 14 * 86400, keepRecent: 2, isActive: (p) => p === activePath })
-    expect(result.pruned).toBe(3)
-    expect(existsSync(activePath)).toBe(true)
-    expect(existsSync(journal.pathFor('sess1', 'live'))).toBe(true)
-    const summaries = ['run0', 'run1', 'run2', 'run3', 'run4', 'live'].filter((r) => existsSync(join(dir, '_run_journal', 'sess1', `${r}.summary.json`)))
-    expect(summaries).toEqual(['run1', 'run2', 'run3'])
-    const pruned = JSON.parse(readFileSync(join(dir, '_run_journal', 'sess1', `${summaries[0] ?? ''}.summary.json`), 'utf8')) as Json
-    expect(pruned, 'the previous Stable still reads a compacted summary').toMatchObject({ journal_pruned: true, terminal: true, terminal_state: 'completed' })
-    const archived = await journal.latestRunSummary('sess1', summaries[0] ?? '')
-    expect(archived).toMatchObject({ terminal: true, terminal_state: 'completed', last_seq: 3 })
-    expect(archived.journal_pruned).toBeUndefined()
-    expect((await journal.readRunEvents('sess1', summaries[0] ?? '')).map((e) => e.event)).toEqual(['token', 'done', 'stream_end'])
-  })
 })
 
 describe('run-journal retention sweep', () => {
@@ -1525,39 +1504,35 @@ describe('run-journal retention sweep', () => {
 
   it('never compacts a journal that gains a writer or changes while the sweep yields', async () => {
     const journal = new JsonJournal(tempDir())
-    const paths = await Promise.all(['run0', 'run1', 'run2', 'run3', 'run4', 'run5'].map(async (r, i) => (await writeRun(journal, 'sess', r, { mtime: old + i }))))
-    const [activated, appended, replaced, racing, pruned] = paths as [string, string, string, string, string]
-    const active = new Set<string>()
-    // The racing journal already has a summary; rolling back restores it.
-    writeFileSync(racing.replace(/\.jsonl$/, '.summary.json'), '{"prior":true}')
-    let racingChecks = 0
+    const paths = await Promise.all(['run0', 'run1', 'run2', 'run3', 'run4'].map(async (r, i) => (await writeRun(journal, 'sess', r, { mtime: old + i }))))
+    const [activated, appended, replaced, pruned, newest] = paths as [string, string, string, string, string]
+    let writer: Awaited<ReturnType<JsonJournal['writer']>> | null = null
     let pauses = 0
-    const result = await journal.pruneSettled({
-      now: Date.now() / 1000, retentionSeconds: 14 * DAY, keepRecent: 1,
-      isActive: (p) => active.has(p) || (p === racing && (racingChecks += 1) > 1),
-      // One pause opens the session and one follows each of its six parsed journals; the last precedes compaction.
-      pause: async () => {
-        pauses += 1
-        if (pauses === 7) {
-          active.add(activated)
-          appendFileSync(appended, '\n')
-          utimesSync(appended, old, old)
-          // Rewritten in place with the same bytes and mtime: inode, size, and mtime all match, so only ctime tells it
-          // apart. Wait past the filesystem's ctime granularity first.
-          await new Promise((resolve) => setTimeout(resolve, 20))
-          writeFileSync(replaced, readFileSync(replaced))
-          utimesSync(replaced, old + 2, old + 2)
-        }
-      },
-    })
-    expect(result.pruned).toBe(1)
-    for (const p of [activated, appended, replaced, racing]) {
-      expect(existsSync(p)).toBe(true)
-      expect(existsSync(p.replace(/\.jsonl$/, '.summary.json'))).toBe(p === racing)
-    }
-    expect(readFileSync(racing.replace(/\.jsonl$/, '.summary.json'), 'utf8')).toBe('{"prior":true}')
-    expect(existsSync(pruned)).toBe(false)
-    expect(existsSync(paths[5] ?? '')).toBe(true)
+    try {
+      const result = await journal.pruneSettled({
+        now: Date.now() / 1000, retentionSeconds: 14 * DAY, keepRecent: 1,
+        // One pause opens the session and one follows each of its five parsed journals; the last precedes compaction.
+        pause: async () => {
+          pauses += 1
+          if (pauses === 6) {
+            writer = await journal.writer('sess', 'run0')
+            appendFileSync(appended, '\n')
+            utimesSync(appended, old, old)
+            // Rewritten in place with the same bytes and mtime: inode, size, and mtime all match, so only ctime tells it
+            // apart. Rewrite until the filesystem's ctime granularity records the change.
+            const ctime = statSync(replaced, { bigint: true }).ctimeNs
+            do { writeFileSync(replaced, readFileSync(replaced)); utimesSync(replaced, old + 2, old + 2) } while (statSync(replaced, { bigint: true }).ctimeNs === ctime)
+          }
+        },
+      })
+      expect(result.pruned).toBe(1)
+      for (const p of [activated, appended, replaced]) {
+        expect(existsSync(p)).toBe(true)
+        expect(existsSync(p.replace(/\.jsonl$/, '.summary.json'))).toBe(false)
+      }
+      expect(existsSync(pruned)).toBe(false)
+      expect(existsSync(newest)).toBe(true)
+    } finally { await (writer as { close(): Promise<void> } | null)?.close() }
   })
 
   it('stops during the metadata pass before parsing any journal', async () => {
@@ -1567,36 +1542,6 @@ describe('run-journal retention sweep', () => {
     // The abort lands on the next loop turn, while the sweep is listing and stat-ing the session's journals.
     const result = await journal.pruneSettled({ now: Date.now() / 1000, retentionSeconds: 14 * DAY, keepRecent: 1, signal: controller.signal, pause: () => { setImmediate(() => { controller.abort() }); return Promise.resolve() } })
     expect(result).toEqual({ examined: 6, terminal: 0, pruned: 0, bytes_reclaimed: 0, archives_removed: 0 })
-  })
-
-  it('keeps nonterminal and recent journals, writes faithful summaries, and leaves dry runs and disabled retention untouched', async () => {
-    const dir = tempDir()
-    const journal = new JsonJournal(dir)
-    const now = Date.now() / 1000
-    await writeRun(journal, 'sess', 'a', { mtime: old })
-    await writeRun(journal, 'sess', 'b', { mtime: old })
-    await writeRun(journal, 'sess', 'c', { mtime: old })
-    const live = (await writeRun(journal, 'sess', 'live', { terminal: false, mtime: old - DAY }))
-    appendFileSync(journal.pathFor('sess', 'a'), '{not json\n')
-    utimesSync(journal.pathFor('sess', 'a'), old, old)
-    await writeRun(journal, 'small', 'only', { mtime: old })
-    const before = tree(dir)
-    expect(await new JsonJournal(dir, { TALARIA_WEB_RUN_JOURNAL_RETENTION_DAYS: '0' }).pruneSettled({ now })).toEqual({ examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0, archives_removed: 0 })
-    const dry = await journal.pruneSettled({ now, keepRecent: 1, dryRun: true })
-    expect(dry).toMatchObject({ examined: 5, terminal: 3, pruned: 2 })
-    expect(tree(dir)).toEqual(before)
-    const rowsBefore = await journal.readRunEvents('sess', 'a')
-    const expected = JsonJournal.summaryFromEvents('sess', 'a', rowsBefore)
-    expect(await journal.pruneSettled({ now, keepRecent: 1 })).toMatchObject({ pruned: 2 })
-    // Equal mtimes keep the path that sorts last; the nonterminal journal and a session under the keep count stay.
-    expect(['a', 'b', 'c', 'live'].map((r) => existsSync(journal.pathFor('sess', r)))).toEqual([false, false, true, true])
-    expect(existsSync(live)).toBe(true)
-    expect(existsSync(journal.pathFor('small', 'only'))).toBe(true)
-    const summary = JSON.parse(readFileSync(join(dir, '_run_journal', 'sess', 'a.summary.json'), 'utf8')) as Json
-    expect(summary).toMatchObject({ ...expected, journal_pruned: true, journal_pruned_at: now })
-    expect(summary.original_mtime).toBeCloseTo(old, 3)
-    expect((await journal.latestRunSummary('sess', 'a'))).toMatchObject({ terminal: true, terminal_state: 'completed' })
-    expect(await journal.readRunEvents('sess', 'a'), 'the archive keeps every row, beside the malformed line').toEqual(rowsBefore)
   })
 })
 
@@ -1800,7 +1745,11 @@ describe('agent health', () => {
     expect(await probe()).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
     writeFileSync(join(dir, 'gateway.pid'), JSON.stringify({ pid: 999999999, kind: 'hermes-gateway' }))
     expect(await probe()).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
-    expect(runtimeStatusIsFresh({ gateway_state: 'running', updated_at: '2026-01-01T00:00:00' }, Date.now() / 1000)).toBe(false)
+    // A naive timestamp is refused even when it names the current local time, so the dead pid decides.
+    const clock = new Date()
+    const local = new Date(clock.getTime() - clock.getTimezoneOffset() * 60_000).toISOString().slice(0, 19)
+    writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', updated_at: local }))
+    expect(await probe()).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
   })
 })
 

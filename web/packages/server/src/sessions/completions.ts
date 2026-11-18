@@ -426,10 +426,6 @@ export class CompletionDrain {
     this.pendingEmit.set(sid, { payload, profile, timer })
   }
 
-  recordDeferred(sid: string, processId: string, prompt: string, event?: Dict): void {
-    this.defer(sid, { process_id: deliveryKey(event ?? {}, processId), wakeup_prompt: prompt, ...(event ? { event } : {}) })
-  }
-
   /** Re-deferring keeps an entry's delivery identity, so its held copy and this one stay one wakeup. */
   private defer(sid: string, entry: Deferred): void {
     if (!sid || !entry.wakeup_prompt) return
