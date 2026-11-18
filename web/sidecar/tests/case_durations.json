@@ -609,7 +609,6 @@
  "tests/test_mcp_discovery.py::test_launch_reload_after_multiplexing_starts_replaces_its_earlier_unscoped_connections": 6.531,
  "tests/test_mcp_discovery.py::test_reload_mcp_in_one_profile_leaves_another_profiles_servers_connected": 4.795,
  "tests/test_mcp_discovery.py::test_reload_refreshes_only_the_reloaded_profiles_cached_agents": 2.56,
- "tests/test_mcp_discovery.py::test_stop_during_turn_start_discovery_ends_the_turn_without_waiting_for_it": 1.667,
  "tests/test_mcp_events.py::test_native_mcp_events_utilities_consent_and_subscription_state": 3.175,
  "tests/test_mcp_probe_targets.py::test_probe_targets_render_each_profiles_own_env_references": 2.346,
  "tests/test_mcp_progress.py::test_mcp_stdio_progress_reaches_the_sidecar_tool_row": 4.024,

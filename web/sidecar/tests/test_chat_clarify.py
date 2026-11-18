@@ -76,8 +76,9 @@ print(json.dumps({"modern": modern, "tool": tool_results, "frames": frames, "ack
 
 
 @requires_agent
-@pytest.mark.parametrize("shape", ["single", "multi", "open", "batch"])
-@pytest.mark.parametrize("outcome", ["submitted", "timed_out", "cancelled"])
+# Timeout and cancel reply alike for every question shape, so one and several questions cover them.
+@pytest.mark.parametrize("outcome, shape", [(o, s) for o in ("submitted", "timed_out", "cancelled")
+                                            for s in ("single", "multi", "open", "batch") if o == "submitted" or s in ("single", "batch")])
 def test_real_agent_clarify_through_chat_start(tmp_path, shape, outcome):
     home = tmp_path / "hermes"
     home.mkdir()

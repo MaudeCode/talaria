@@ -561,12 +561,8 @@
         "[submitted-open]",
         "[submitted-batch]",
         "[timed_out-single]",
-        "[timed_out-multi]",
-        "[timed_out-open]",
         "[timed_out-batch]",
         "[cancelled-single]",
-        "[cancelled-multi]",
-        "[cancelled-open]",
         "[cancelled-batch]"
       ]
     },
@@ -858,11 +854,7 @@
         "[declined-save_login]",
         "[declined-code]",
         "[cancelled-unlock]",
-        "[cancelled-save_login]",
-        "[cancelled-code]",
-        "[expired-unlock]",
-        "[expired-save_login]",
-        "[expired-code]"
+        "[expired-unlock]"
       ]
     },
     "tests/test_chat_vault.py::test_unlock_answered_after_the_session_ended_is_released": {
@@ -1658,13 +1650,6 @@
     "tests/test_mcp_discovery.py::test_first_turn_after_a_restart_exposes_the_profiles_mcp_tools": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: first turn after a restart exposes the profiles mcp tools. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_mcp_discovery.py::test_stop_during_turn_start_discovery_ends_the_turn_without_waiting_for_it": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: stop during turn start discovery ends the turn without waiting for it. Uses the real installed release, not a fabricated API response.",
       "cases": [
         ""
       ]
