@@ -444,7 +444,7 @@ def test_a_cancelled_nous_sign_in_persists_nothing(provider, monkeypatch, tmp_pa
     if stop == "cancel":
         assert oauth.cancel(tmp_path, flow["flow_id"])["status"] == status
     elif stop == "expire":
-        oauth._FLOWS[flow["flow_id"]].expires_at = time.time() - oauth._EXPIRY_GRACE - 1
+        oauth._FLOWS[flow["flow_id"]].expires_at = 0  # past its deadline and the grace after it
         assert oauth.poll(tmp_path, flow["flow_id"])["status"] == status
     else:
         newer = start(provider, tmp_path, "nous")

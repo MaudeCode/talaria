@@ -1,0 +1,1 @@
+{"skip": "Test-only change: fixes or records as reviewed exceptions the gateway, OAuth and release sidecar tests' fixed sleeps and elapsed-time checks, and reaps the MCP events probe's servers; no app behavior changes."}

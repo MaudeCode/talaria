@@ -32,6 +32,8 @@ from talaria_sidecar.methods.mcp import events  # noqa: E402
 
 servers = {"events": {"command": "stub", "events": True}}
 from tools.mcp_tool_discovery import discover_mcp_tools  # noqa: E402
+from tools.mcp_tool_lifecycle import shutdown_mcp_servers  # noqa: E402
+from tools.mcp_tool_loop import _stop_mcp_loop  # noqa: E402
 from tools.mcp_tool_events import _route_name, _store_grant, _write_route  # noqa: E402
 from tools.registry import registry  # noqa: E402
 
@@ -106,4 +108,7 @@ with scoped_home(home):
     _write_route(tick, None)
     _write_route(paused, None)
 assert server_row(observe(now)) == fixture["revoked_subscription"]["data"], observe(now)
+# Reap the stdio stub servers discovery started, so none outlives the probe (the leak scan runs right after it exits).
+shutdown_mcp_servers()
+_stop_mcp_loop()
 print(json.dumps({"utilities": "native", "consent": asked, "states": "observed"}))
