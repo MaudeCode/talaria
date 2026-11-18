@@ -13,6 +13,16 @@ export function useJsonStorage(): void {
   afterAll(() => { if (previous === undefined) delete process.env.TALARIA_STORAGE; else process.env.TALARIA_STORAGE = previous })
 }
 
+/** The backend the run selected, read when the file loads, before any `useJsonStorage` hook replaces it. */
+const selectedStorage = process.env.TALARIA_STORAGE
+
+/** For a describe in a `useJsonStorage` file that reads no storage files: its servers use the backend the run selected. */
+export function useSelectedStorage(): void {
+  let previous: string | undefined
+  beforeAll(() => { previous = process.env.TALARIA_STORAGE; if (selectedStorage === undefined) delete process.env.TALARIA_STORAGE; else process.env.TALARIA_STORAGE = selectedStorage })
+  afterAll(() => { if (previous === undefined) delete process.env.TALARIA_STORAGE; else process.env.TALARIA_STORAGE = previous })
+}
+
 /** Direct file access is limited to tests of JSON compatibility and external edits. */
 export function sessionDirectory(store: SessionStore): string {
   if (!(store.deps.storage instanceof JsonStorage)) throw new Error('This fixture requires JSON storage')

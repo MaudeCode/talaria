@@ -72,6 +72,14 @@ describe('memory.get', () => {
     expect(disabled).toMatchObject({ memory_name: '', memory_entries: [] })
   })
 
+  it('the workspace copy wins and the parent copy is neither content nor shadowed', async () => {
+    write('both/HERMES.md', 'parent copy\n')
+    write('both/ws/HERMES.md', 'workspace copy\n')
+    const ctx = await readProjectContext(join(root, 'both', 'ws'), new GitRunner({ env: process.env }))
+    expect(ctx.content).toBe('workspace copy\n')
+    expect(ctx.shadowed).toEqual([])
+  })
+
   it('sees a workspace that became a repository after it was first read', async () => {
     write('outer/HERMES.md', 'outer context\n')
     mkdirSync(join(root, 'outer', 'ws'))

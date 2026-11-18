@@ -1,5 +1,5 @@
 import { OUTSIDE_SOURCE_SETTING_KEYS } from '@maudecode/talaria-web-contracts'
-import { useJsonStorage } from '../test/storage.js'
+import { useJsonStorage, useSelectedStorage } from '../test/storage.js'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -9,8 +9,10 @@ import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
-import { AccountUsageSnapshotSchema, ProviderQuotaSchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { AccountUsageSnapshotSchema, BootstrapSchema, ProviderQuotaSchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { bootTestServer, cookieHeader, type TestServer } from '../test/harness.js'
+import { loadStartupEnv } from '../cli/dotenv.js'
+import { OAUTH_PROVIDERS, PROVIDER_ENV_VAR, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
 import { loadEnvFile } from '../providers/env-file.js'
 import { writeEnvFile } from '../test/env-file.js'
 import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel, providerListing, uniqueQuotaSources } from '../providers/catalog.js'
@@ -24,6 +26,15 @@ const dictOf = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArr
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 const tasksFrom = (body: Json): Record<string, { reasoning: Record<string, unknown> }> => Object.fromEntries(((dictOf(body.auxiliary).tasks ?? []) as { task: string; reasoning: Record<string, unknown> }[]).map((t) => [t.task, t]))
+
+const row = (name: string, extra: Json = {}): Json => ({ name, path: '', is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0, ...extra })
+
+function profileShapedHome(profile: string): { base: string; home: string } {
+  const base = mkdtempSync(join(tmpdir(), 'talaria-iso-'))
+  const home = join(base, 'profiles', profile)
+  mkdirSync(home, { recursive: true })
+  return { base, home }
+}
 
 /** An in-memory config.yaml the fake sidecar serves and stores, keyed by profile home. */
 function fakeConfigStore(sidecar: FakeSidecar, initial: Record<string, Json> = {}): Map<string, Json> {
@@ -2312,6 +2323,287 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
   })
 })
 
+describe('OAuth provider cards and model groups', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let configs: Map<string, Json>
+  let auth: Map<string, Json>
+  let liveIds: Map<string, string[]>
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    configs = new Map()
+    auth = new Map()
+    liveIds = new Map()
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: configs.get(params.profile_home) ?? {} }))
+    sidecar.respond('providers.auth_status', (params) => ({ status: { logged_in: false, ...(auth.get(params.provider ?? '') ?? { error: 'not logged in' }) } }))
+    sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: liveIds.get(params.provider) ?? [], fallback: !liveIds.has(params.provider) }))
+    s = await bootTestServer({ sidecar })
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+  })
+  afterAll(() => s.close())
+  const ENV_KEYS = ['ANTHROPIC_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']
+  const reset = (cfg: Json = {}, env: Record<string, string | null> = {}): void => { configs.set(s.state, cfg); writeEnvFile(join(s.state, '.env'), { ...Object.fromEntries(ENV_KEYS.map((k) => [k, null])), ...env }); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
+  interface Card { id: string; has_key: boolean; is_active: boolean; key_source: string; key_source_kind: string | null; removable: boolean; auth_error: string | null; is_oauth: boolean; configurable: boolean; display_name: string; models: { id: string }[]; models_total: number }
+  const cards = async (): Promise<Card[]> => (await json(await s.get('/api/providers'))).providers as Card[]
+
+  it.each<[string, Json, Json]>([
+    ['a logged-in OAuth provider reports key_source oauth even with a config token', { logged_in: true }, { has_key: true, key_source: 'oauth' }],
+    ['a config token keeps has_key with key_source config_yaml when not logged in', { logged_in: false, error: 'token expired' }, { has_key: true, key_source: 'config_yaml', auth_error: 'token expired' }],
+  ])('%s', async (_name, status, expected) => {
+    reset({ providers: { 'openai-codex': { api_key: 'cfg-token' } } })
+    auth.set('openai-codex', status)
+    expect((await cards()).find((p) => p.id === 'openai-codex')).toMatchObject(expected)
+  })
+
+  it('every provider card carries an auth_error key', async () => {
+    reset()
+    for (const card of await cards()) expect('auth_error' in card, card.id).toBe(true)
+  })
+
+  it('the xAI OAuth card is OAuth-only with live models', async () => {
+    reset({ model: { provider: 'xai-oauth', default: 'grok-4' } })
+    auth.set('xai-oauth', { logged_in: true })
+    liveIds.set('xai-oauth', ['grok-4', 'grok-4-mini'])
+    const card = (await cards()).find((p) => p.id === 'xai-oauth')
+    expect(card).toMatchObject({ display_name: 'xAI Grok OAuth', is_oauth: true, configurable: false, key_source: 'oauth', has_key: true })
+    expect(card?.models.map((m) => m.id)).toEqual(['grok-4', 'grok-4-mini'])
+    expect(card?.models_total).toBe(2)
+  })
+
+  it('each card ships is_active, key_source_kind and a models_total that covers its list (TAL-603)', async () => {
+    reset({ model: { provider: ' XAI-OAuth ', default: 'grok-4' }, providers: { nous: { models: ['extra-model'] }, 'openai-codex': { api_key: 'cfg-token' } } }, { ANTHROPIC_API_KEY: 'sk-ant-env-file-1234' })
+    auth.set('xai-oauth', { logged_in: true })
+    auth.set('nous', { logged_in: true })
+    auth.set('openai-codex', { logged_in: false, error: 'token expired' })
+    liveIds.set('nous', ['a/one', 'b/two'])
+    const all = await cards()
+    const card = (id: string): Card | undefined => all.find((p) => p.id === id)
+    expect(all.filter((p) => p.is_active).map((p) => p.id)).toEqual(['xai-oauth'])
+    expect(card('anthropic')).toMatchObject({ is_active: false, key_source: 'env_file', key_source_kind: 'env', removable: true })
+    expect(card('xai-oauth')).toMatchObject({ key_source_kind: 'oauth', removable: false })
+    expect(card('openai-codex')).toMatchObject({ key_source: 'config_yaml', key_source_kind: 'config', removable: false })
+    expect(card('openai')).toMatchObject({ has_key: false, key_source_kind: null })
+    expect(card('nous')?.models.length).toBe(3)
+    expect(card('nous')?.models_total).toBe(3)
+  })
+
+  it('a .env key the delete clears is not removable while config.yaml also keys the provider (TAL-641)', async () => {
+    reset({ providers: { anthropic: { api_key: 'sk-ant-yaml-token-1234' } } }, { ANTHROPIC_API_KEY: 'sk-ant-env-file-1234' })
+    expect((await cards()).find((p) => p.id === 'anthropic')).toMatchObject({ has_key: true, key_source: 'env_file', removable: false })
+  })
+
+  it('a custom provider keyed through the environment reports an env key_source_kind (TAL-603)', async () => {
+    const env = s.deps.config.env
+    env.TAL603_CUSTOM_KEY = 'sk-custom-env-1234'
+    try {
+      reset({ custom_providers: [{ name: 'Env Box', base_url: 'http://127.0.0.1:9/v1', key_env: 'TAL603_CUSTOM_KEY' }, { name: 'Ref Box', base_url: 'http://127.0.0.1:9/v1', api_key: '${TAL603_CUSTOM_KEY}' }, { name: 'Yaml Box', base_url: 'http://127.0.0.1:9/v1', api_key: 'sk-custom-yaml-1234' }] })
+      const all = await cards()
+      const named = (name: string): Card | undefined => all.find((p) => p.display_name === name)
+      expect(named('Env Box')).toMatchObject({ has_key: true, key_source: 'env_var', key_source_kind: 'env' })
+      expect(named('Ref Box')).toMatchObject({ has_key: true, key_source: 'env_var', key_source_kind: 'env' })
+      expect(named('Yaml Box')).toMatchObject({ has_key: true, key_source: 'config_yaml', key_source_kind: 'config' })
+      // TAL-641: a custom provider's key is never in the profile .env, so no row offers Remove.
+      for (const name of ['Env Box', 'Ref Box', 'Yaml Box']) expect(named(name)?.removable, name).toBe(false)
+    } finally {
+      delete env.TAL603_CUSTOM_KEY
+    }
+  })
+
+  it('the model picker group for xAI OAuth uses the live ids and is the active provider', async () => {
+    reset({ model: { provider: 'xai-oauth', default: 'grok-4' } })
+    auth.set('xai-oauth', { logged_in: true })
+    liveIds.set('xai-oauth', ['grok-4', 'grok-4-mini'])
+    const body = await json(await s.get('/api/models'))
+    expect(body.active_provider).toBe('xai-oauth')
+    const group = (body.groups as { provider_id: string; provider: string; models: { id: string }[] }[]).find((g) => g.provider_id === 'xai-oauth')
+    expect(group?.provider).toBe('xAI Grok OAuth')
+    expect(group?.models.map((m) => m.id.replace(/^@xai-oauth:/, ''))).toEqual(['grok-4', 'grok-4-mini'])
+  })
+
+  it.each([['ANTHROPIC_TOKEN', 'sk-ant-oat-1234'], ['CLAUDE_CODE_OAUTH_TOKEN', 'sk-ant-oat-5678']])('%s alone surfaces the Anthropic group', async (variable, token) => {
+    reset({ model: { provider: 'openrouter', default: 'auto' } }, { [variable]: token })
+    const groups = (await json(await s.get('/api/models'))).groups as { provider_id: string; provider: string; models: unknown[] }[]
+    const anthropic = groups.find((g) => g.provider_id === 'anthropic')
+    expect(anthropic?.provider).toBe('Anthropic')
+    expect(anthropic?.models.length).toBeGreaterThan(0)
+  })
+
+  it('whitespace-only token variables do not surface Anthropic', async () => {
+    reset({ model: { provider: 'openrouter', default: 'auto' } })
+    writeEnvFile(join(s.state, '.env'), { ANTHROPIC_TOKEN: '   ', CLAUDE_CODE_OAUTH_TOKEN: ' ' })
+    s.deps.catalog.invalidate()
+    const groups = (await json(await s.get('/api/models'))).groups as { provider_id: string }[]
+    expect(groups.map((g) => g.provider_id)).not.toContain('anthropic')
+  })
+})
+
+describe('provider key detection', () => {
+  useSelectedStorage()
+  interface Provider { id: string; has_key: boolean; key_source: string; configurable: boolean; is_oauth: boolean }
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let configs: Map<string, Json>
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    configs = new Map()
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: configs.get(params.profile_home) ?? {} }))
+    sidecar.respond('config.set', (params) => { configs.set(params.profile_home, params.config); return { ok: true as const, path: join(params.profile_home, 'config.yaml') } })
+    s = await bootTestServer({ sidecar })
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+  })
+  afterAll(() => s.close())
+  const setConfig = (cfg: Json): void => { configs.set(s.state, cfg); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
+  const setEnv = (keys: Record<string, string | null>): void => { writeEnvFile(join(s.state, '.env'), keys); s.deps.catalog.invalidate() }
+  const providers = async (): Promise<Provider[]> => (await json(await s.get('/api/providers'))).providers as Provider[]
+  const provider = async (id: string): Promise<Provider | undefined> => (await providers()).find((p) => p.id === id)
+  const clearEnv = (): void => { const current = loadEnvFile(join(s.state, '.env')); setEnv(Object.fromEntries(Object.keys(current).map((k) => [k, null]))) }
+
+  it('the onboarding setup for LM Studio names the canonical variable and its alias', () => {
+    expect(SUPPORTED_PROVIDER_SETUPS.lmstudio?.env_var).toBe('LM_API_KEY')
+    expect(SUPPORTED_PROVIDER_SETUPS.lmstudio?.env_var_aliases).toContain('LMSTUDIO_API_KEY')
+  })
+
+  it('LM_API_KEY marks LM Studio as keyed and configurable', async () => {
+    setConfig({ model: { provider: 'lmstudio', default: 'gpt-4o-mini' } })
+    setEnv({ LM_API_KEY: 'lm-studio' })
+    const lm = await provider('lmstudio')
+    expect(lm).toMatchObject({ has_key: true, configurable: true })
+    expect(['env_file', 'env_var']).toContain(lm?.key_source)
+  })
+
+  it('only LM_API_KEY keys LM Studio and no other API-key provider', async () => {
+    clearEnv()
+    setEnv({ LM_API_KEY: 'lm-studio' })
+    const all = await providers()
+    expect(all.find((p) => p.id === 'lmstudio')?.has_key).toBe(true)
+    for (const p of all) if (p.id !== 'lmstudio' && !p.is_oauth && !OAUTH_PROVIDERS.has(p.id) && !p.id.startsWith('custom:')) expect(p.has_key, p.id).toBe(false)
+  })
+
+  it('providers.lmstudio.api_key in config.yaml counts as a key from config', async () => {
+    clearEnv()
+    setConfig({ model: { provider: 'lmstudio' }, providers: { lmstudio: { api_key: 'cfg-key' } } })
+    expect(await provider('lmstudio')).toMatchObject({ has_key: true, key_source: 'config_yaml' })
+  })
+
+  it('LM Studio stays listed and configurable without any key', async () => {
+    clearEnv()
+    setConfig({})
+    expect(await provider('lmstudio')).toMatchObject({ has_key: false, configurable: true })
+  })
+
+  it('the legacy LMSTUDIO_API_KEY alone still counts', async () => {
+    clearEnv()
+    setEnv({ LMSTUDIO_API_KEY: 'legacy' })
+    const lm = await provider('lmstudio')
+    expect(lm?.has_key).toBe(true)
+    expect(['env_file', 'env_var']).toContain(lm?.key_source)
+  })
+
+  it('both variables set keeps LM Studio keyed and configurable', async () => {
+    clearEnv()
+    setEnv({ LM_API_KEY: 'canonical', LMSTUDIO_API_KEY: 'legacy' })
+    expect(await provider('lmstudio')).toMatchObject({ has_key: true, configurable: true })
+  })
+
+  it('key presence honours the alias but not unrelated keys', async () => {
+    clearEnv()
+    setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
+    expect((await provider('lmstudio'))?.has_key).toBe(false)
+    setEnv({ LMSTUDIO_API_KEY: 'legacy' })
+    expect((await provider('lmstudio'))?.has_key).toBe(true)
+  })
+
+  it('XIAOMI_API_KEY keys the Xiaomi provider', async () => {
+    expect(PROVIDER_ENV_VAR.xiaomi).toBe('XIAOMI_API_KEY')
+    clearEnv()
+    setEnv({ XIAOMI_API_KEY: 'xm-1234' })
+    expect((await provider('xiaomi'))?.has_key).toBe(true)
+  })
+
+  it('the onboarding setup for Xiaomi names the variable, base URL, and MiMo model', () => {
+    const setup = SUPPORTED_PROVIDER_SETUPS.xiaomi
+    expect(setup?.env_var).toBe('XIAOMI_API_KEY')
+    expect(setup?.default_base_url).toBe('https://api.xiaomimimo.com/v1')
+    expect(JSON.stringify(setup)).toContain('mimo-v2.5-pro')
+  })
+
+  it('a Xiaomi key surfaces a Xiaomi model group in /api/models', async () => {
+    clearEnv()
+    setEnv({ XIAOMI_API_KEY: 'xm-1234' })
+    // Python forced the Agent import to fail so the static table answered; here the live id lookup fails the same way.
+    sidecar.respond('providers.model_ids', () => { throw new SidecarError('hermes_cli unavailable', { condition: 'sidecar_error' }) })
+    s.deps.catalog.invalidate()
+    const groups = (await json(await s.get('/api/models'))).groups as { provider_id: string; provider: string; models: { id: string }[] }[]
+    const xiaomi = groups.find((g) => g.provider_id === 'xiaomi')
+    expect(xiaomi, JSON.stringify(groups.map((g) => g.provider_id))).toBeDefined()
+    expect(xiaomi?.models.some((m) => m.id.includes('mimo-v2.5-pro'))).toBe(true)
+  })
+
+  // NeuralWatt has an env var but no display row, so /api/providers never lists it. Its key shows in /api/models: a keyed
+  // provider's live catalog is confirmed, an unkeyed one's stays unconfirmed.
+  const neuralwattGroup = async (): Promise<{ availability?: { status: string } } | undefined> => {
+    const lookup = sidecar.responderFor('providers.model_ids')
+    sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: params.provider === 'neuralwatt' ? ['nw-live'] : [], fallback: false }))
+    try {
+      setConfig({ providers: { neuralwatt: { base_url: 'https://nw.example/v1' } } })
+      return ((await json(await s.get('/api/models'))).groups as { provider_id: string; availability?: { status: string } }[]).find((g) => g.provider_id === 'neuralwatt')
+    } finally {
+      if (lookup) sidecar.respond('providers.model_ids', lookup)
+      setConfig({})
+    }
+  }
+
+  it('NEURALWATT_API_KEY keys the provider', async () => {
+    clearEnv()
+    setEnv({ NEURALWATT_API_KEY: 'nw-1234' })
+    expect((await neuralwattGroup())?.availability?.status).toBe('available')
+  })
+
+  it('without the variable NeuralWatt has no key', async () => {
+    clearEnv()
+    expect((await neuralwattGroup())?.availability?.status).toBe('unavailable')
+  })
+
+  it('a NeuralWatt key plus configured models yields a model group', async () => {
+    clearEnv()
+    setEnv({ NEURALWATT_API_KEY: 'nw-1234' })
+    setConfig({ providers: { neuralwatt: { models: ['nw-alpha', 'nw-beta'] } } })
+    const groups = (await json(await s.get('/api/models'))).groups as { provider_id: string; models: { id: string }[] }[]
+    const nw = groups.find((g) => g.provider_id === 'neuralwatt')
+    expect(nw, JSON.stringify(groups.map((g) => g.provider_id))).toBeDefined()
+    expect(nw?.models.length).toBeGreaterThan(0)
+    setConfig({})
+  })
+})
+
+describe('password env var lock', () => {
+  useSelectedStorage()
+  let s: TestServer
+  let cookie = ''
+  let csrf = ''
+  beforeAll(async () => {
+    s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: 'env-secret-123' } })
+    const res = await s.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'env-secret-123' }) })
+    expect(res.status).toBe(200)
+    cookie = cookieHeader(res.headers.getSetCookie(), 'hermes_session') ?? ''
+    csrf = BootstrapSchema.parse(await (await s.get('/api/bootstrap', { headers: { cookie } })).json()).csrf_token
+  })
+  afterAll(() => s.close())
+  const headers = (): Record<string, string> => ({ cookie, origin: s.base, host: s.base.replace('http://', ''), 'X-Hermes-CSRF-Token': csrf })
+
+  it('setting a password while TALARIA_WEB_PASSWORD is set answers 409 naming the variable', async () => {
+    const res = await post(s, '/api/settings', { _set_password: 'another-secret' }, headers())
+    expect(res.status).toBe(409)
+    expect(String((await json(res)).error)).toContain('TALARIA_WEB_PASSWORD')
+  })
+
+  it('clearing the password is refused the same way', async () => {
+    const res = await post(s, '/api/settings', { _clear_password: true }, headers())
+    expect(res.status).toBe(409)
+    expect(String((await json(res)).error)).toContain('TALARIA_WEB_PASSWORD')
+  })
+})
+
 async function closedPort(): Promise<number> {
   const server = createServer()
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
@@ -2742,6 +3034,179 @@ describe('isolated profile mode', () => {
     const refused = await post(s, '/api/settings', { group_discussion_max_rounds: 5 })
     expect(refused.status).toBe(409)
     expect(await json(refused)).toMatchObject({ condition: 'setting_unavailable' })
+  })
+
+  describe('isolation flag semantics', () => {
+    const opened: TestServer[] = []
+    const bases: string[] = []
+    afterAll(async () => { for (const s of opened) await s.close(); for (const b of bases) rmSync(b, { recursive: true, force: true }) })
+    const boot = async (env: Record<string, string>, profile = 'webui', rows: Json[] = [row('default', { is_default: true }), row('webui'), row('other')], extraEnv: (base: string) => Record<string, string> = () => ({})): Promise<{ s: TestServer; home: string; base: string }> => {
+      const { base, home } = profileShapedHome(profile)
+      bases.push(base)
+      Object.assign(env, extraEnv(base))
+      for (const r of rows) { mkdirSync(join(base, 'profiles', String(r.name)), { recursive: true }); writeFileSync(join(base, 'profiles', String(r.name), 'config.yaml'), '# seed\n') }
+      writeFileSync(join(home, 'config.yaml'), '# seed\n')
+      writeFileSync(join(base, 'config.yaml'), '# seed\n')
+      const sidecar = new FakeSidecar()
+      sidecar.respond('profiles.list', () => ({ profiles: rows.map((r) => ({ ...r, path: r.is_default ? base : join(base, 'profiles', String(r.name)) })) as never[] }))
+      sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: { workspace: params.profile_home } }))
+      const s = await bootTestServer({ sidecar, env: { HERMES_HOME: home, ...env } })
+      opened.push(s)
+      return { s, home, base }
+    }
+
+    it('a profiles/<name> home without the flag is not isolated', async () => {
+      const { s } = await boot({})
+      expect(s.deps.isolatedProfileMode()).toBe(false)
+    })
+
+    it('a normal named-profile launch lists every profile', async () => {
+      const { s } = await boot({})
+      const body = await json(await s.get('/api/profiles'))
+      expect((body.profiles as Json[]).map((p) => p.name)).toEqual(['default', 'webui', 'other'])
+      expect(body.single_profile_mode).toBe(false)
+    })
+
+    it('switching profiles stays allowed under a named-profile home', async () => {
+      const { s } = await boot({})
+      expect((await post(s, '/api/profile/switch', { name: 'other' })).status).toBe(200)
+    })
+
+    it('every truthy flag spelling plus the profile shape isolates', async () => {
+      for (const value of ['1', 'true', 'TRUE', 'yes', 'on']) {
+        const { s } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: value })
+        expect(s.deps.isolatedProfileMode(), value).toBe(true)
+        expect(s.deps.activeProfile()).toBe('webui')
+      }
+    })
+
+    it('the flag with a base home stays off', async () => {
+      const sidecar = new FakeSidecar()
+      const s = await bootTestServer({ sidecar, env: { TALARIA_WEB_ISOLATED_PROFILE: '1' } })
+      opened.push(s)
+      expect(s.deps.isolatedProfileMode()).toBe(false)
+    })
+
+    it('falsey flag values keep isolation off even with the profile shape', async () => {
+      for (const value of ['', '0', 'false', 'no', 'off', '  ']) {
+        const { s } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: value })
+        expect(s.deps.isolatedProfileMode(), JSON.stringify(value)).toBe(false)
+      }
+    })
+
+    it('the pinned profile .env cannot turn the startup flag off', () => {
+      const { base, home } = profileShapedHome('tenant')
+      bases.push(base)
+      mkdirSync(join(base, 'web'))
+      writeFileSync(join(home, '.env'), 'TALARIA_WEB_ISOLATED_PROFILE=0\nORDINARY_KEY=loaded\n')
+      const env: Record<string, string | undefined> = { HERMES_HOME: home, TALARIA_WEB_ISOLATED_PROFILE: '1' }
+      loadStartupEnv({ env, webRoot: join(base, 'web'), home: base })
+      expect(env.TALARIA_WEB_ISOLATED_PROFILE).toBe('1')
+      expect(env.ORDINARY_KEY).toBe('loaded')
+    })
+
+    it('HERMES_BASE_HOME alongside the pinned home keeps isolation on', async () => {
+      const { s } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'webui', undefined, (base) => ({ HERMES_BASE_HOME: base }))
+      expect(s.deps.isolatedProfileMode()).toBe(true)
+    })
+
+    it('a pinned profiles/default home stays pinned for the default name', async () => {
+      const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'default')
+      expect(s.deps.activeProfile()).toBe('default')
+      expect(s.deps.profileHome('default')).toBe(home)
+      expect(s.deps.profileHome('')).toBe(home)
+    })
+
+    it('a foreign profile name resolves to the pinned home', async () => {
+      const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' })
+      expect(s.deps.profileHome('other')).toBe(home)
+      expect(s.deps.profileHome('default')).toBe(home)
+    })
+
+    it('the isolated list carries one row whose path is the pinned home', async () => {
+      const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'default', [row('default', { is_default: true }), row('default')])
+      const profiles = (await json(await s.get('/api/profiles'))).profiles as Json[]
+      expect(profiles).toHaveLength(1)
+      expect(profiles[0]).toMatchObject({ name: 'default', path: home })
+    })
+
+    it('switching to the pinned profile passes the guard', async () => {
+      const { s } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' })
+      expect((await post(s, '/api/profile/switch', { name: 'webui' })).status).toBe(200)
+      expect((await post(s, '/api/profile/switch', { name: 'other' })).status).toBe(403)
+    })
+
+    it('switching to default in a pinned profiles/default home reads the pinned config', async () => {
+      const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'default')
+      const res = await post(s, '/api/profile/switch', { name: 'default' })
+      expect(res.status).toBe(200)
+      expect(realpathSync(String((await json(res)).default_workspace))).toBe(realpathSync(home))
+    })
+  })
+})
+
+describe('an escaped process-wide profile', () => {
+  it('refuses profile-scoped API requests instead of serving the root home, and leaves listing and switching away open', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'talaria-escaped-'))
+    const outside = mkdtempSync(join(tmpdir(), 'talaria-escape-'))
+    mkdirSync(join(base, 'profiles'), { recursive: true })
+    symlinkSync(outside, join(base, 'profiles', 'rogue'))
+    writeFileSync(join(base, 'active_profile'), 'rogue\n')
+    writeFileSync(join(base, 'config.yaml'), '# seed\n')
+    const sidecar = new FakeSidecar()
+    sidecar.respond('profiles.list', () => ({ profiles: [row('default', { is_default: true, path: base })] as never[] }))
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: {} }))
+    const s = await bootTestServer({ sidecar, env: { HERMES_HOME: base } })
+    try {
+      expect(s.deps.activeProfile()).toBe('rogue')
+      const refused = await s.get('/api/profile/active')
+      expect(refused.status).toBe(400)
+      expect(await refused.text()).toContain('outside the profiles directory')
+      expect((await s.get('/api/profiles')).status).toBe(200)
+      expect((await post(s, '/api/profile/switch', { name: 'default' })).status).toBe(200)
+      // The sidecar-wide completion drain still runs, scoped to the base home instead of failing on every tick.
+      const drained: string[] = []
+      sidecar.respond('process.drain', (params) => { drained.push(params.profile_home); return { events: [] } })
+      await s.deps.completions.drainOnce()
+      expect(drained).toEqual([base])
+    } finally {
+      await s.close()
+      rmSync(base, { recursive: true, force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('profile home routing and root aliases', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    sidecar.respond('profiles.list', () => ({ profiles: [row('default', { is_default: true }), row('ayan'), row('haku')] as never[] }))
+    s = await bootTestServer({ sidecar })
+    mkdirSync(join(s.state, 'profiles', 'ayan'), { recursive: true })
+  })
+  afterAll(() => s.close())
+
+  it('an existing profile resolves to its directory', () => {
+    expect(s.deps.profileHome('ayan')).toBe(join(s.state, 'profiles', 'ayan'))
+  })
+
+  it('a profile that does not exist yet still resolves under profiles/', () => {
+    expect(s.deps.profileHome('newprofile')).toBe(join(s.state, 'profiles', 'newprofile'))
+  })
+
+  it('an empty profile name resolves to the base home', () => {
+    expect(s.deps.profileHome('')).toBe(s.state)
+  })
+
+  it('deleting a renamed root profile is refused', async () => {
+    sidecar.respond('profiles.list', () => ({ profiles: [row('kinni', { is_default: true }), row('haku')] as never[] }))
+    s.deps.profiles.invalidate()
+    await s.deps.profiles.warmRootAliases()
+    const res = await post(s, '/api/profile/delete', { name: 'kinni' })
+    expect(res.status).toBe(400)
+    expect(String((await json(res)).error)).toContain('Cannot delete the default profile')
   })
 })
 

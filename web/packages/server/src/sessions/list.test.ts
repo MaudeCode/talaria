@@ -1,10 +1,11 @@
 import { mkdirSync, readFileSync, readdirSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { DatabaseSync } from 'node:sqlite'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { allSessions, buildSessionListPayload, sessionListResponse, type ListParams, type ListPayload, type Row, type RuntimeOverlay } from './list.js'
 import * as sessionRows from './storage/row.js'
-import { bootTestServer } from '../test/harness.js'
-import { sessionDirectory, sessionIndexPath, sessionPath, useJsonStorage } from '../test/storage.js'
+import { bootTestServer, openStateDb, type TestServer } from '../test/harness.js'
+import { sessionDirectory, sessionIndexPath, sessionPath, useJsonStorage, useSelectedStorage } from '../test/storage.js'
 import { Session } from './session.js'
 import { str } from '../util.js'
 
@@ -326,5 +327,161 @@ describe('parent snapshot lookup (TAL-1219)', () => {
       expect((await buildSessionListPayload(store, params)).sessions).toEqual(expected)
       expect(load).toHaveBeenCalledTimes(indexed && !legacy ? 0 : 2)
     } finally { vi.restoreAllMocks(); await server.close() }
+  })
+})
+
+type Json = Record<string, unknown>
+const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+
+function createStateDb(path: string): DatabaseSync {
+  const db = openStateDb(path)
+  db.exec('PRAGMA journal_mode=WAL')
+  db.exec(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, user_id TEXT, model TEXT, started_at REAL NOT NULL, message_count INTEGER DEFAULT 0, title TEXT,
+    chat_id TEXT, chat_type TEXT, thread_id TEXT, session_key TEXT, origin_chat_id TEXT, origin_user_id TEXT, platform TEXT, parent_session_id TEXT, ended_at REAL, end_reason TEXT);
+    CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT, timestamp REAL NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, timestamp)`)
+  return db
+}
+function insertSession(db: DatabaseSync, row: { id: string; source: string; started_at: number; messages?: [string, number][] }): void {
+  const messages = row.messages ?? []
+  db.prepare('INSERT INTO sessions (id, source, started_at, message_count) VALUES (?, ?, ?, ?)').run(row.id, row.source, row.started_at, messages.length)
+  for (const [role, ts] of messages) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(row.id, role, `${role} says`, ts)
+}
+
+describe('state.db session windows', () => {
+  useSelectedStorage()
+  let s: TestServer
+  let dbPath = ''
+  beforeAll(async () => {
+    s = await bootTestServer()
+    dbPath = join(s.state, 'state.db')
+    // Python gates the Cron Jobs chip on the profile having opted into projects (#5379).
+    expect((await post(s, '/api/projects/create', { name: 'User project' })).status).toBe(200)
+    const db = createStateDb(dbPath)
+    insertSession(db, { id: 'cron_old_1', source: 'cron', started_at: 10, messages: [['user', 11], ['assistant', 12]] })
+    insertSession(db, { id: 'cron_empty', source: 'cron', started_at: 20 })
+    for (let i = 0; i < 25; i += 1) insertSession(db, { id: `cli-${String(i)}`, source: 'cli', started_at: 100 + i, messages: [['user', 100 + i]] })
+    db.close()
+    await s.deps.settings.save({ show_cli_sessions: true })
+    s.deps.cliSessions.invalidate()
+  })
+  afterAll(() => s.close())
+
+  it('an older cron session outnumbered by newer CLI rows is still listed with a project', async () => {
+    const rows = (await json(await s.get('/api/sessions?show_cron_sessions=1'))).sessions as Json[]
+    const cron = rows.find((r) => r.session_id === 'cron_old_1')
+    expect(cron, JSON.stringify(rows.map((r) => r.session_id))).toBeDefined()
+    expect(cron?.source_tag).toBe('cron')
+    expect(cron?.project_id).toBeTruthy()
+  })
+
+  it('each cron id appears exactly once', async () => {
+    const rows = (await json(await s.get('/api/sessions?show_cron_sessions=1'))).sessions as Json[]
+    expect(rows.filter((r) => r.session_id === 'cron_old_1')).toHaveLength(1)
+  })
+
+  it('a message-less cron row is not surfaced', async () => {
+    const rows = (await json(await s.get('/api/sessions?show_cron_sessions=1'))).sessions as Json[]
+    expect(rows.map((r) => r.session_id)).not.toContain('cron_empty')
+  })
+
+  it('a sidecar that claims CLI but whose state.db row says webui lists as a WebUI session', async () => {
+    const db = openStateDb(dbPath)
+    insertSession(db, { id: 'stale-json', source: 'webui', started_at: 500, messages: [['user', 501]] })
+    db.close()
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.session_id = 'stale-json'
+    session.messages = [{ role: 'user', content: 'hi' }]
+    Object.assign(session, { is_cli_session: true, session_source: 'cli', raw_source: 'cli' })
+    await s.deps.sessionStore.save(session)
+    s.deps.cliSessions.invalidate()
+    const rows = (await json(await s.get('/api/sessions'))).sessions as Json[]
+    const row = rows.find((r) => r.session_id === 'stale-json')
+    expect(row, JSON.stringify(rows.map((r) => r.session_id))).toBeDefined()
+    expect(row).toMatchObject({ is_cli_session: false, session_source: 'webui' })
+  })
+})
+
+describe('sidebar automated-session counts (TAL-482)', () => {
+  useSelectedStorage()
+  let s: TestServer
+  beforeAll(async () => {
+    s = await bootTestServer()
+    const db = createStateDb(join(s.state, 'state.db'))
+    // One past the server's 200-row per-kind window, so the count has to say more exist.
+    for (let i = 0; i < 201; i += 1) insertSession(db, { id: `cron_job_${String(i)}`, source: 'cron', started_at: 1_000 + i, messages: [['user', 1_000 + i]] })
+    for (let i = 0; i < 3; i += 1) insertSession(db, { id: `hook-${String(i)}`, source: 'webhook', started_at: 2_000 + i, messages: [['user', 2_000 + i]] })
+    db.close()
+    s.deps.cliSessions.invalidate()
+  })
+  afterAll(() => s.close())
+
+  it('counts listed scheduled and webhook sessions and flags the capped kind', async () => {
+    const body = await json(await s.get('/api/sessions?show_cron_sessions=1&show_webhook_sessions=1'))
+    expect(body).toMatchObject({ scheduled_session_count: 200, scheduled_sessions_truncated: true, webhook_session_count: 3, webhook_sessions_truncated: false })
+  })
+
+  it('does not flag a kind the request hides', async () => {
+    const body = await json(await s.get('/api/sessions?show_cron_sessions=0&show_webhook_sessions=1'))
+    expect(body).toMatchObject({ scheduled_session_count: 0, scheduled_sessions_truncated: false, webhook_session_count: 3 })
+  })
+
+  it('leaves archived sessions out of the count', async () => {
+    expect((await post(s, '/api/session/archive', { session_id: 'hook-0', archived: true })).status).toBe(200)
+    s.deps.cliSessions.invalidate()
+    const body = await json(await s.get('/api/sessions?show_cron_sessions=1&show_webhook_sessions=1'))
+    expect(body).toMatchObject({ webhook_session_count: 2, webhook_sessions_truncated: false })
+  })
+})
+
+describe('server-classified session sources (TAL-310)', () => {
+  useSelectedStorage()
+  let s: TestServer
+  const platforms = ['signal', 'whatsapp', 'weixin', 'wecom_callback']
+  const rowsOf = async (path: string): Promise<Json[]> => (await json(await s.get(path))).sessions as Json[]
+  const sidecar = async (title: string, fields: Json): Promise<string> => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const stored = (await s.deps.sessionStore.get(sid))
+    stored.title = title
+    stored.messages = [{ role: 'user', content: 'kindprobe', timestamp: 3000 }, { role: 'assistant', content: 'ok', timestamp: 3001 }]
+    Object.assign(stored, fields)
+    await s.deps.sessionStore.save(stored)
+    return sid
+  }
+  beforeAll(async () => {
+    s = await bootTestServer()
+    const db = createStateDb(join(s.state, 'state.db'))
+    platforms.forEach((source, i) => { insertSession(db, { id: `chat-${source}`, source, started_at: 1_000 + i, messages: [['user', 1_000 + i], ['assistant', 1_001 + i]] }) })
+    db.close()
+    await s.deps.settings.save({ show_cli_sessions: true })
+    s.deps.cliSessions.invalidate()
+  })
+  afterAll(() => s.close())
+
+  it('files every messaging platform from the state.db scan as messaging, with its detail', async () => {
+    const rows = await rowsOf('/api/sessions')
+    for (const source of platforms) {
+      const row = rows.find((r) => r.session_id === `chat-${source}`)
+      expect(row, `${source} in ${JSON.stringify(rows.map((r) => r.session_id))}`).toMatchObject({ source_kind: 'messaging', is_messaging_session: true, session_source: 'messaging' })
+      const detail = (await json(await s.get(`/api/session?session_id=chat-${source}`))).session as Json
+      expect(detail, source).toMatchObject({ source_kind: 'messaging', is_messaging_session: true })
+    }
+  })
+
+  it('files a messaging sidecar from the session index as messaging in the list, detail and search', async () => {
+    const sid = await sidecar('Kindprobe signal', { raw_source: 'signal' })
+    const hit = (await rowsOf('/api/sessions/search?q=kindprobe')).find((r) => r.session_id === sid)
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    const row = (await rowsOf('/api/sessions')).find((r) => r.session_id === sid)
+    for (const payload of [hit, detail, row]) expect(payload).toMatchObject({ source_kind: 'messaging', is_messaging_session: true })
+  })
+
+  it('keeps a WebUI-marked session with a stale is_cli_session out of CLI', async () => {
+    const sid = await sidecar('Kindprobe stale', { session_source: 'webui', is_cli_session: true })
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    const row = (await rowsOf('/api/sessions')).find((r) => r.session_id === sid)
+    for (const payload of [detail, row]) expect(payload).toMatchObject({ source_kind: 'webui', is_messaging_session: false, is_cli_session: false })
   })
 })

@@ -1,4 +1,4 @@
-import { sessionDirectory, sessionIndexPath, sessionPath, useJsonStorage } from '../test/storage.js'
+import { sessionDirectory, sessionIndexPath, sessionPath, useJsonStorage, useSelectedStorage } from '../test/storage.js'
 import { publicToolFrame } from '../redact.js'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -734,6 +734,33 @@ describe('session lifecycle over HTTP', () => {
     expect(await json(await s.get(`/api/session/yolo?session_id=${String(b.session_id)}`))).toEqual({ yolo_enabled: false })
     expect((await post(s, '/api/session/yolo', { session_id: b.session_id, enabled: true })).status).toBe(200)
     expect(await json(await s.get(`/api/session/yolo?session_id=${String(b.session_id)}`))).toEqual({ yolo_enabled: true })
+  })
+})
+
+describe('pin cap and hidden snapshots', () => {
+  useSelectedStorage()
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+  const newChat = async (): Promise<string> => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'hello' }]
+    await s.deps.sessionStore.save(session)
+    return sid
+  }
+
+  it('a pinned hidden pre-compression snapshot does not consume pin quota', async () => {
+    const hidden = (await s.deps.sessionStore.get(await newChat()))
+    hidden.pre_compression_snapshot = true
+    hidden.pinned = true
+    await s.deps.sessionStore.save(hidden)
+    for (let i = 0; i < 3; i += 1) {
+      const res = await post(s, '/api/session/pin', { session_id: await newChat(), pinned: true })
+      expect(res.status, String(i)).toBe(200)
+    }
+    const fourth = await post(s, '/api/session/pin', { session_id: await newChat(), pinned: true })
+    expect(fourth.status).toBe(400)
   })
 })
 

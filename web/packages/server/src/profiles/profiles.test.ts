@@ -1,21 +1,16 @@
 import { initializeStore, useJsonStorage } from '../test/storage.js'
-import { JsonDocuments } from '../test/storage.js'
 /**
- * Profile regressions: isolation semantics, profile-home routing, per-profile
- * system projects, profile visibility, cross-profile crons, per-profile
- * workspaces and skills, and profile-scoped session routes.
+ * Profiles across one server: visibility, profile-home escapes, per-profile workspaces and skills, the deletion
+ * lifecycle, and profile-scoped session routes.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { SidecarError } from '../sidecar/client.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, freshCronListingsPerTest, type TestServer } from '../test/harness.js'
-import { loadStartupEnv } from '../cli/dotenv.js'
-import { ProjectStore } from '../projects.js'
-import { ProfileService, splitProviderModel } from '../profiles/profiles.js'
-import { jobForApi } from '../tools/crons.js'
+import { ProfileService, splitProviderModel } from './profiles.js'
 import { str } from '../util.js'
 import { writeEnvFile } from '../test/env-file.js'
 
@@ -34,254 +29,6 @@ type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 const row = (name: string, extra: Json = {}): Json => ({ name, path: '', is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0, ...extra })
-
-function profileShapedHome(profile: string): { base: string; home: string } {
-  const base = mkdtempSync(join(tmpdir(), 'talaria-iso-'))
-  const home = join(base, 'profiles', profile)
-  mkdirSync(home, { recursive: true })
-  return { base, home }
-}
-
-describe('isolation flag semantics', () => {
-  const opened: TestServer[] = []
-  const bases: string[] = []
-  afterAll(async () => { for (const s of opened) await s.close(); for (const b of bases) rmSync(b, { recursive: true, force: true }) })
-  const boot = async (env: Record<string, string>, profile = 'webui', rows: Json[] = [row('default', { is_default: true }), row('webui'), row('other')], extraEnv: (base: string) => Record<string, string> = () => ({})): Promise<{ s: TestServer; home: string; base: string }> => {
-    const { base, home } = profileShapedHome(profile)
-    bases.push(base)
-    Object.assign(env, extraEnv(base))
-    for (const r of rows) { mkdirSync(join(base, 'profiles', String(r.name)), { recursive: true }); writeFileSync(join(base, 'profiles', String(r.name), 'config.yaml'), '# seed\n') }
-    writeFileSync(join(home, 'config.yaml'), '# seed\n')
-    writeFileSync(join(base, 'config.yaml'), '# seed\n')
-    const sidecar = new FakeSidecar()
-    sidecar.respond('profiles.list', () => ({ profiles: rows.map((r) => ({ ...r, path: r.is_default ? base : join(base, 'profiles', String(r.name)) })) as never[] }))
-    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: { workspace: params.profile_home } }))
-    const s = await bootTestServer({ sidecar, env: { HERMES_HOME: home, ...env } })
-    opened.push(s)
-    return { s, home, base }
-  }
-
-  it('a profiles/<name> home without the flag is not isolated', async () => {
-    const { s } = await boot({})
-    expect(s.deps.isolatedProfileMode()).toBe(false)
-  })
-
-  it('a normal named-profile launch lists every profile', async () => {
-    const { s } = await boot({})
-    const body = await json(await s.get('/api/profiles'))
-    expect((body.profiles as Json[]).map((p) => p.name)).toEqual(['default', 'webui', 'other'])
-    expect(body.single_profile_mode).toBe(false)
-  })
-
-  it('switching profiles stays allowed under a named-profile home', async () => {
-    const { s } = await boot({})
-    expect((await post(s, '/api/profile/switch', { name: 'other' })).status).toBe(200)
-  })
-
-  it('every truthy flag spelling plus the profile shape isolates', async () => {
-    for (const value of ['1', 'true', 'TRUE', 'yes', 'on']) {
-      const { s } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: value })
-      expect(s.deps.isolatedProfileMode(), value).toBe(true)
-      expect(s.deps.activeProfile()).toBe('webui')
-    }
-  })
-
-  it('the flag with a base home stays off', async () => {
-    const sidecar = new FakeSidecar()
-    const s = await bootTestServer({ sidecar, env: { TALARIA_WEB_ISOLATED_PROFILE: '1' } })
-    opened.push(s)
-    expect(s.deps.isolatedProfileMode()).toBe(false)
-  })
-
-  it('falsey flag values keep isolation off even with the profile shape', async () => {
-    for (const value of ['', '0', 'false', 'no', 'off', '  ']) {
-      const { s } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: value })
-      expect(s.deps.isolatedProfileMode(), JSON.stringify(value)).toBe(false)
-    }
-  })
-
-  it('the pinned profile .env cannot turn the startup flag off', () => {
-    const { base, home } = profileShapedHome('tenant')
-    bases.push(base)
-    mkdirSync(join(base, 'web'))
-    writeFileSync(join(home, '.env'), 'TALARIA_WEB_ISOLATED_PROFILE=0\nORDINARY_KEY=loaded\n')
-    const env: Record<string, string | undefined> = { HERMES_HOME: home, TALARIA_WEB_ISOLATED_PROFILE: '1' }
-    loadStartupEnv({ env, webRoot: join(base, 'web'), home: base })
-    expect(env.TALARIA_WEB_ISOLATED_PROFILE).toBe('1')
-    expect(env.ORDINARY_KEY).toBe('loaded')
-  })
-
-  it('HERMES_BASE_HOME alongside the pinned home keeps isolation on', async () => {
-    const { s } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'webui', undefined, (base) => ({ HERMES_BASE_HOME: base }))
-    expect(s.deps.isolatedProfileMode()).toBe(true)
-  })
-
-  it('normal mode lists every profile the Agent reports', async () => {
-    const { s } = await boot({}, 'user1', [row('user1'), row('user2'), row('user3')])
-    expect(((await json(await s.get('/api/profiles'))).profiles as Json[]).map((p) => p.name)).toEqual(['user1', 'user2', 'user3'])
-  })
-
-  it('a pinned profiles/default home stays pinned for the default name', async () => {
-    const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'default')
-    expect(s.deps.activeProfile()).toBe('default')
-    expect(s.deps.profileHome('default')).toBe(home)
-    expect(s.deps.profileHome('')).toBe(home)
-  })
-
-  it('a foreign profile name resolves to the pinned home', async () => {
-    const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' })
-    expect(s.deps.profileHome('other')).toBe(home)
-    expect(s.deps.profileHome('default')).toBe(home)
-  })
-
-  it('the isolated list carries one row whose path is the pinned home', async () => {
-    const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'default', [row('default', { is_default: true }), row('default')])
-    const profiles = (await json(await s.get('/api/profiles'))).profiles as Json[]
-    expect(profiles).toHaveLength(1)
-    expect(profiles[0]).toMatchObject({ name: 'default', path: home })
-  })
-
-  it('switching to the pinned profile passes the guard', async () => {
-    const { s } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' })
-    expect((await post(s, '/api/profile/switch', { name: 'webui' })).status).toBe(200)
-    expect((await post(s, '/api/profile/switch', { name: 'other' })).status).toBe(403)
-  })
-
-  it('switching to default in a pinned profiles/default home reads the pinned config', async () => {
-    const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'default')
-    const res = await post(s, '/api/profile/switch', { name: 'default' })
-    expect(res.status).toBe(200)
-    expect(realpathSync(String((await json(res)).default_workspace))).toBe(realpathSync(home))
-  })
-})
-
-describe('an escaped process-wide profile', () => {
-  it('refuses profile-scoped API requests instead of serving the root home, and leaves listing and switching away open', async () => {
-    const base = mkdtempSync(join(tmpdir(), 'talaria-escaped-'))
-    const outside = mkdtempSync(join(tmpdir(), 'talaria-escape-'))
-    mkdirSync(join(base, 'profiles'), { recursive: true })
-    symlinkSync(outside, join(base, 'profiles', 'rogue'))
-    writeFileSync(join(base, 'active_profile'), 'rogue\n')
-    writeFileSync(join(base, 'config.yaml'), '# seed\n')
-    const sidecar = new FakeSidecar()
-    sidecar.respond('profiles.list', () => ({ profiles: [row('default', { is_default: true, path: base })] as never[] }))
-    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: {} }))
-    const s = await bootTestServer({ sidecar, env: { HERMES_HOME: base } })
-    try {
-      expect(s.deps.activeProfile()).toBe('rogue')
-      const refused = await s.get('/api/profile/active')
-      expect(refused.status).toBe(400)
-      expect(await refused.text()).toContain('outside the profiles directory')
-      expect((await s.get('/api/profiles')).status).toBe(200)
-      expect((await post(s, '/api/profile/switch', { name: 'default' })).status).toBe(200)
-      // The sidecar-wide completion drain still runs, scoped to the base home instead of failing on every tick.
-      const drained: string[] = []
-      sidecar.respond('process.drain', (params) => { drained.push(params.profile_home); return { events: [] } })
-      await s.deps.completions.drainOnce()
-      expect(drained).toEqual([base])
-    } finally {
-      await s.close()
-      rmSync(base, { recursive: true, force: true })
-      rmSync(outside, { recursive: true, force: true })
-    }
-  })
-})
-
-describe('profile home routing and root aliases', () => {
-  let s: TestServer
-  let sidecar: FakeSidecar
-  beforeAll(async () => {
-    sidecar = new FakeSidecar()
-    sidecar.respond('profiles.list', () => ({ profiles: [row('default', { is_default: true }), row('ayan'), row('haku')] as never[] }))
-    s = await bootTestServer({ sidecar })
-    mkdirSync(join(s.state, 'profiles', 'ayan'), { recursive: true })
-  })
-  afterAll(() => s.close())
-
-  it('an existing profile resolves to its directory', () => {
-    expect(s.deps.profileHome('ayan')).toBe(join(s.state, 'profiles', 'ayan'))
-  })
-
-  it('a profile that does not exist yet still resolves under profiles/', () => {
-    expect(s.deps.profileHome('newprofile')).toBe(join(s.state, 'profiles', 'newprofile'))
-  })
-
-  it('an empty profile name resolves to the base home', () => {
-    expect(s.deps.profileHome('')).toBe(s.state)
-  })
-
-  it('deleting a renamed root profile is refused', async () => {
-    sidecar.respond('profiles.list', () => ({ profiles: [row('kinni', { is_default: true }), row('haku')] as never[] }))
-    s.deps.profiles.invalidate()
-    await s.deps.profiles.warmRootAliases()
-    const res = await post(s, '/api/profile/delete', { name: 'kinni' })
-    expect(res.status).toBe(400)
-    expect(String((await json(res)).error)).toContain('Cannot delete the default profile')
-  })
-})
-
-describe('per-profile system projects', () => {
-  let dir = ''
-  let indexRows: Json[] = []
-  const store = (isRoot: (n: string) => boolean = (n) => n === 'default'): ProjectStore => new ProjectStore(new JsonDocuments(dirname(join(dir, 'projects.json'))), () => indexRows, isRoot)
-  beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'talaria-projects-')) })
-  afterAll(() => { rmSync(dir, { recursive: true, force: true }); })
-  const reset = (projects: Json[] = []): void => { writeFileSync(join(dir, 'projects.json'), JSON.stringify(projects)); indexRows = [] }
-
-  it('each profile gets its own Cron Jobs project', async () => {
-    reset()
-    const p = store()
-    const haku = (await p.ensureSystemProject('cron', 'haku'))
-    const kinni = (await p.ensureSystemProject('cron', 'kinni'))
-    expect(haku).not.toBe(kinni)
-    const rows = (await p.load()).filter((r) => r.name === 'Cron Jobs')
-    expect(rows.map((r) => r.profile).sort()).toEqual(['haku', 'kinni'])
-  })
-
-  it('repeat calls within one profile answer the same id', async () => {
-    reset()
-    const p = store()
-    expect((await p.ensureSystemProject('cron', 'haku'))).toBe((await p.ensureSystemProject('cron', 'haku')))
-    expect((await p.load())).toHaveLength(1)
-  })
-
-  it('a legacy untagged Cron Jobs row is reused and tagged with the caller', async () => {
-    reset([{ project_id: 'legacy123456', name: 'Cron Jobs', color: '#6366f1' }])
-    const p = store()
-    expect((await p.ensureSystemProject('cron', 'haku'))).toBe('legacy123456')
-    expect((await p.load({ migrate: false }))[0]).toMatchObject({ project_id: 'legacy123456', profile: 'haku' })
-  })
-
-  it('under a renamed root the default-tagged cron project is reused', async () => {
-    reset([{ project_id: 'rootcron1234', name: 'Cron Jobs', color: '#6366f1', profile: 'default' }])
-    const p = store((n) => n === 'default' || n === 'kinni')
-    expect((await p.ensureSystemProject('cron', 'kinni'))).toBe('rootcron1234')
-    expect((await p.load())).toHaveLength(1)
-  })
-
-  it('untagged projects inherit the profile of an assigned session and the backfill persists', async () => {
-    reset([{ project_id: 'proj00000001', name: 'Work', color: '#fff' }])
-    indexRows = [{ session_id: 's1', project_id: 'proj00000001', profile: 'haku' }]
-    const p = store()
-    expect((await p.load())[0]).toMatchObject({ profile: 'haku' })
-    expect((JSON.parse(readFileSync(join(dir, 'projects.json'), 'utf8')) as Json[])[0]).toMatchObject({ profile: 'haku' })
-  })
-
-  it('an orphan untagged project falls back to default', async () => {
-    reset([{ project_id: 'proj00000002', name: 'Orphan', color: '#fff' }])
-    expect((await store().load())[0]).toMatchObject({ profile: 'default' })
-  })
-
-  it('a fully tagged projects.json is not rewritten', async () => {
-    reset([{ project_id: 'proj00000003', name: 'Tagged', color: '#fff', profile: 'haku' }])
-    const before = statSync(join(dir, 'projects.json')).mtimeMs
-    await new Promise((r) => setTimeout(r, 20))
-    const p = store()
-    await p.load()
-    await p.load()
-    expect(statSync(join(dir, 'projects.json')).mtimeMs).toBe(before)
-  })
-})
 
 describe('profiles, crons, workspaces, skills, and sessions across profiles', () => {
   freshCronListingsPerTest()
@@ -315,6 +62,10 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
   })
   afterAll(() => s.close())
   const asWork = (): Record<string, string> => ({ cookie: workCookie })
+  /** The activity check a profile delete refuses on: a run, a stream, or detached profile work. */
+  const runsActive = (name: string): boolean => (s.deps.profiles as unknown as { deps: { profileRunsActive: (n: string) => boolean } }).deps.profileRunsActive(name)
+  /** A full request round trip: work the server was about to do without waiting has run by its end. */
+  const roundTrip = async (): Promise<void> => { expect((await s.get('/health')).status).toBe(200) }
 
   it('a profile the Agent marks visible:false is listed hidden', async () => {
     const profiles = (await json(await s.get('/api/profiles'))).profiles as Json[]
@@ -396,92 +147,19 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     sidecar.respond('chat.start', (params) => { homes.push(params.profile_home); throw new Error('must not start') })
     try {
       await s.deps.completions.processOne({ process_id: 'drift_1', session_id: 'drift_1', type: 'completion', command: 'make', exit_code: 0, output: 'ok', session_key: sid, origin_ui_session_id: sid, consumed: false })
-      await new Promise((r) => setTimeout(r, 200))
+      await vi.waitFor(() => { expect(s.logs.some((line) => line.includes(`wakeup retained for session ${sid}`) && line.includes('outside the profiles directory'))).toBe(true) })
       expect(homes).toEqual([])
       expect(s.deps.completions.deferredCount(sid)).toBe(1)
-      expect(s.logs.some((line) => line.includes(`wakeup retained for session ${sid}`) && line.includes('outside the profiles directory'))).toBe(true)
     } finally {
       rmSync(home, { force: true })
       rmSync(outside, { recursive: true, force: true })
     }
   })
 
-  it('foreign cron jobs are hidden by default and counted; all_profiles shows them read-only', async () => {
-    cronJobs.clear()
-    cronJobs.set(s.state, [{ id: 'd1', name: 'mine', profile: null, toast_notifications: true, monitor: '', continuity: false }])
-    cronJobs.set(join(s.state, 'profiles', 'research'), [{ id: 'r1', name: 'theirs', profile: 'research', toast_notifications: true, monitor: '', continuity: false }])
-    let body = await json(await s.get('/api/crons'))
-    expect(body).toMatchObject({ all_profiles: false, active_profile: 'default', other_profile_count: 1 })
-    expect((body.jobs as Json[]).map((j) => j.id)).toEqual(['d1'])
-    expect((body.jobs as Json[])[0]).toMatchObject({ owner_profile: 'default', read_only: false })
-    body = await json(await s.get('/api/crons?all_profiles=1'))
-    expect(body).toMatchObject({ all_profiles: true, other_profile_count: 0 })
-    expect((body.jobs as Json[]).find((j) => j.id === 'r1')).toMatchObject({ owner_profile: 'research', read_only: true })
-  })
-
-  it('root aliases resolving to one home are read once', async () => {
-    sidecar.respond('profiles.list', () => ({ profiles: [row('rootalias', { is_default: true, path: s.state }), row('default', { is_default: true, path: s.state }), row('research', { path: join(s.state, 'profiles', 'research') })] as never[] }))
-    s.deps.profiles.invalidate()
-    await s.deps.profiles.warmRootAliases()
-    const start = sidecar.calls.length
-    const body = await json(await s.get('/api/crons?all_profiles=1'))
-    const listed = sidecar.calls.slice(start).filter((c) => c.method === 'cron.list').map((c) => (c.params as Json).profile_home)
-    expect(listed.filter((h) => h === s.state)).toHaveLength(1)
-    expect((body.jobs as Json[]).filter((j) => j.id === 'd1')).toHaveLength(1)
-    sidecar.respond('profiles.list', () => ({ profiles: [row('default', { is_default: true, path: s.state }), row('work', { path: workHome }), row('research', { path: join(s.state, 'profiles', 'research') }), row('hidden', { visible: false, path: join(s.state, 'profiles', 'hidden') })] as never[] }))
-    s.deps.profiles.invalidate()
-  })
-
-  it('a hidden inactive profile is skipped even under all_profiles', async () => {
-    cronJobs.clear()
-    cronJobs.set(s.state, [{ id: 'd2', name: 'mine', profile: null, toast_notifications: true, monitor: '', continuity: false }])
-    cronJobs.set(join(s.state, 'profiles', 'hidden'), [{ id: 'h1', name: 'hidden job', profile: 'hidden', toast_notifications: true, monitor: '', continuity: false }])
-    const body = await json(await s.get('/api/crons?all_profiles=1'))
-    expect((body.jobs as Json[]).map((j) => j.id)).toEqual(['d2'])
-    expect(body.other_profile_count).toBe(0)
-  })
-
-  it('a legacy job without a profile serialises profile: null', () => {
-    const legacy = { id: 'legacy1', name: 'old', toast_notifications: true, monitor: '', continuity: false }
-    expect(jobForApi(legacy)).toMatchObject({ id: 'legacy1', profile: null })
-    expect('profile' in legacy).toBe(false)
-  })
-
-  it('creating a job with a known profile persists and returns it', async () => {
-    cronJobs.clear()
-    const res = await post(s, '/api/crons/create', { schedule: 'every 1h', prompt: 'hi', profile: 'research' })
-    expect(res.status).toBe(200)
-    expect(((await json(res)).job as Json).profile).toBe('research')
-  })
-
-  it('an unknown profile is refused before anything is created', async () => {
-    cronJobs.clear()
-    const before = sidecar.calls.filter((c) => c.method === 'cron.create').length
-    const res = await post(s, '/api/crons/create', { schedule: 'every 1h', prompt: 'hi', profile: 'missing' })
-    expect(res.status).toBe(400)
-    expect(String((await json(res)).error)).toBe('Unknown profile: missing')
-    expect(sidecar.calls.filter((c) => c.method === 'cron.create').length).toBe(before)
-  })
-
-  it('update clears the stored profile override, reports the execution store profile, and refuses an unknown one', async () => {
-    cronJobs.clear()
-    const created = (await json(await post(s, '/api/crons/create', { schedule: 'every 1h', prompt: 'hi', profile: 'research' }))).job as Json
-    let res = await post(s, '/api/crons/update', { job_id: created.id, profile: '' })
-    expect(res.status).toBe(200)
-    expect(((await json(res)).job as Json).profile).toBe('research')
-    expect(cronJobs.get(join(s.state, 'profiles', 'research'))?.[0]?.profile).toBeNull()
-    const before = sidecar.calls.filter((c) => c.method === 'cron.update').length
-    res = await post(s, '/api/crons/update', { job_id: created.id, profile: 'ghost' })
-    expect(res.status).toBe(400)
-    expect(String((await json(res)).error)).toBe('Unknown profile: ghost')
-    expect(sidecar.calls.filter((c) => c.method === 'cron.update').length).toBe(before)
-  })
-
   it('profile/active carries the resolved default workspace', async () => {
     const body = await json(await s.get('/api/profile/active'))
     expect(body).toMatchObject({ name: 'default', is_default: true })
-    expect(typeof body.default_workspace).toBe('string')
-    expect(String(body.default_workspace).length).toBeGreaterThan(0)
+    expect(realpathSync(String(body.default_workspace))).toBe(realpathSync(join(s.state, 'workspace')))
   })
 
   it('a named profile answers its own last workspace', async () => {
@@ -686,7 +364,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(String((await json(refused)).error)).toContain('while an agent is running')
     title.release()
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&after_event_id=${String(start.stream_id)}:0`, (f) => f.event === 'stream_end', { headers: { cookie } })
-    await new Promise((r) => setTimeout(r, 50))
+    await vi.waitFor(() => { expect(runsActive('titling')).toBe(false) })
     expect(await json(await post(s, '/api/profile/delete', { name: 'titling' }, asWork()))).toEqual({ ok: true, name: 'titling' })
     sidecar.respond('aux.complete', () => { throw new Error('no aux model') })
   })
@@ -748,10 +426,10 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     const order: string[] = []
     sidecar.respond('profiles.delete', () => { order.push('delete'); return { ok: true } })
     const switching = post(s, '/api/profile/switch', { name: 'wobbly' })
-    const until = Date.now() + 5000
-    while (!sidecar.calls.some((c) => c.method === 'config.get' && str((c.params as Json).profile_home).endsWith('wobbly')) && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    await vi.waitFor(() => { expect(sidecar.calls.some((c) => c.method === 'config.get' && str((c.params as Json).profile_home).endsWith('wobbly'))).toBe(true) })
     const deleting = post(s, '/api/profile/delete', { name: 'wobbly' }, asWork())
-    await new Promise((r) => setTimeout(r, 80))
+    await vi.waitFor(() => { expect(s.deps.profiles.isDeleting('wobbly')).toBe(true) })
+    await roundTrip()
     expect(order).toEqual([])
     releaseRead()
     // The delete was queued behind the switch and marked the target meanwhile: the switch re-validates before handing
@@ -779,13 +457,12 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     }))
     sidecar.respond('profiles.delete', () => { order.push('profiles.delete'); return { ok: true } })
     const write = post(s, '/api/model/set', { scope: 'main', model: '@anthropic:claude-sonnet-4-6', provider: 'anthropic' }, { cookie })
-    const until = Date.now() + 5000
-    while (!sidecar.calls.some((c) => c.method === 'config.set' && str((c.params as Json).profile_home).endsWith('fleeting')) && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    await vi.waitFor(() => { expect(sidecar.calls.some((c) => c.method === 'config.set' && str((c.params as Json).profile_home).endsWith('fleeting'))).toBe(true) })
     // The write is parked inside the sidecar; the delete must wait for it instead of removing the home underneath.
     const deletion = post(s, '/api/profile/delete', { name: 'fleeting' }, asWork())
-    await new Promise((r) => setTimeout(r, 100))
+    await vi.waitFor(() => { expect(s.deps.profiles.isDeleting('fleeting')).toBe(true) })
+    await roundTrip()
     expect(order).toEqual([])
-    expect(s.deps.profiles.isDeleting('fleeting')).toBe(true)
     finishWrite()
     expect((await write).status, await (await write).clone().text()).toBe(200)
     expect(await json(await deletion)).toEqual({ ok: true, name: 'fleeting' })
@@ -801,10 +478,9 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
     expect(cookie).toMatch(/^hermes_profile=selfie/)
     sidecar.respond('profiles.delete', () => ({ ok: true }))
-    const started = Date.now()
+    // Waiting on its own lease would hold the delete past the suite's test timeout.
     const res = await post(s, '/api/profile/delete', { name: 'selfie' }, { cookie })
     expect(res.status, await res.clone().text()).toBe(200)
-    expect(Date.now() - started).toBeLessThan(5000)
     expect(s.deps.profiles.isDeleting('selfie')).toBe(false)
     // ...and the client is moved back to `default`, so its next write cannot resurrect the deleted home.
     expect(res.headers.get('set-cookie')).toMatch(/^hermes_profile=default/)
@@ -835,10 +511,10 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     sidecar.respond('profiles.create', (params) => new Promise((resolve) => { finishCreate = () => { order.push('create'); mkdirSync(join(s.state, 'profiles', params.name), { recursive: true }); resolve({ profile: row(params.name, { path: join(s.state, 'profiles', params.name) }) as never }) } }))
     sidecar.respond('profiles.delete', (params) => { order.push('delete'); rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
     const creating = post(s, '/api/profile/create', { name: 'copy', clone_from: 'source', clone_config: true })
-    const until = Date.now() + 5000
-    while (!sidecar.calls.some((c) => c.method === 'profiles.create' && (c.params as Json).name === 'copy') && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    await vi.waitFor(() => { expect(sidecar.calls.some((c) => c.method === 'profiles.create' && (c.params as Json).name === 'copy')).toBe(true) })
     const deleting = post(s, '/api/profile/delete', { name: 'source' }, asWork())
-    await new Promise((r) => setTimeout(r, 80))
+    await vi.waitFor(() => { expect(s.deps.profiles.isDeleting('source')).toBe(true) })
+    await roundTrip()
     expect(order).toEqual([])
     finishCreate()
     expect((await creating).status, await (await creating).clone().text()).toBe(200)
@@ -864,7 +540,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     const refused = await post(s, '/api/profile/delete', { name: 'memo' }, asWork())
     expect(refused.status).toBe(409)
     commit.release()
-    await new Promise((r) => setTimeout(r, 50))
+    await vi.waitFor(() => { expect(runsActive('memo')).toBe(false) })
     expect(await json(await post(s, '/api/profile/delete', { name: 'memo' }, asWork()))).toEqual({ ok: true, name: 'memo' })
   })
 
@@ -887,7 +563,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
       finishWarm()
       sidecar.respond('stt.warm', undefined)
     }
-    await new Promise((r) => setTimeout(r, 50))
+    await vi.waitFor(() => { expect(runsActive('warmth')).toBe(false) })
     expect(await json(await post(s, '/api/profile/delete', { name: 'warmth' }, asWork()))).toEqual({ ok: true, name: 'warmth' })
   })
 
@@ -903,8 +579,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(typeof release).toBe('function')
     sidecar.respond('profiles.delete', (params) => { rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
     const deleting = post(s, '/api/profile/delete', { name: 'memo2' }, asWork())
-    await new Promise((r) => setTimeout(r, 60))
-    expect(s.deps.profiles.isDeleting('memo2')).toBe(true)
+    await vi.waitFor(() => { expect(s.deps.profiles.isDeleting('memo2')).toBe(true) })
     // ...starts a detached memory commit on its way out, then releases the lease.
     const commit = parkHandler()
     sidecar.respond('chat.commit_memory', async () => { await commit.park(); return { committed: true } })
@@ -915,7 +590,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(refused.status).toBe(409)
     expect(existsSync(join(s.state, 'profiles', 'memo2'))).toBe(true)
     commit.release()
-    await new Promise((r) => setTimeout(r, 50))
+    await vi.waitFor(() => { expect(runsActive('memo2')).toBe(false) })
     expect(await json(await post(s, '/api/profile/delete', { name: 'memo2' }, asWork()))).toEqual({ ok: true, name: 'memo2' })
   })
 
