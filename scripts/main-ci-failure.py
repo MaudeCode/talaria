@@ -306,9 +306,9 @@ ROUTES = {"runner fault": "runner fault: the CI harness owner (tooling) decides,
           "release publication": "release publication: the release recovery path owns it"}
 
 # A repair session's records on GitHub (TAL-2460). A failure it cannot repair gets an open needs-a-person issue carrying
-# `ci-repair-known: <key>`; the report lists such a failure as known, and T3 Factory, which decides when a repair starts
-# (T3F-136), reads the same marker. Only issues a collaborator opened count. Each repair commit and PR body carries the
-# run it repairs and each commit its own branch, which bind `findings` and `land` to that repair.
+# `ci-repair-known: <key>`, and the report lists such a failure as known instead of to repair. Only issues a collaborator
+# opened count. Each repair commit and PR body carries the run it repairs and each commit its own branch, which bind
+# `findings` and `land` to that repair.
 KNOWN = "ci-repair-known"
 RUN_LINE = "ci-repair-run"
 BRANCH_LINE = "ci-repair-branch"

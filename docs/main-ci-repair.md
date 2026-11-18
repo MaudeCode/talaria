@@ -112,9 +112,11 @@ python3 "$S" park --key <key> --run-id <run ID>
 
 `park` returns the open needs-a-person issue carrying `ci-repair-known: <key>`,
 or opens one. Comment on it with what you found, its owner and what resumes it.
-While it is open, `report` lists the failure as known and T3 Factory starts no
-repair for it; a person closes it once it is fixed or no longer applies. Only
-issues a collaborator opened count.
+While it is open, `report` lists the failure as known instead of to repair,
+and a run whose failures are all known has nothing to repair; a person closes
+it once it is fixed or no longer applies. Only issues a collaborator opened
+count. Name every parked failure in your closing report: T3 Factory reads that
+report to decide whether the next red run is the same failure (T3F-136).
 
 ## 4. One more round, at most
 
