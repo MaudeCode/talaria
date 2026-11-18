@@ -110,9 +110,13 @@ describe('request_secret (TAL-1969)', () => {
     await respond({ clarify_id: (await prompted()).clarify_id, decline: true })
     expect(await declined).toMatchObject({ result: { outcome: 'declined' } })
 
-    const expired = ask({ timeout_seconds: 1 })
-    await prompted()
-    expect(await expired).toMatchObject({ result: { outcome: 'timed_out' } })
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const expired = ask({ timeout_seconds: 1 })
+      await prompted()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(await expired).toMatchObject({ result: { outcome: 'timed_out' } })
+    } finally { vi.useRealTimers() }
     expect(head()).toBeNull()
 
     const stopped = ask()

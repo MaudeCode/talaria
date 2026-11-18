@@ -111,14 +111,25 @@ describe('background completion drain', () => {
     expect(s.deps.completions.deferredCount(sid)).toBe(0)
   })
 
-  it('wakes the drain when a turn starts (TAL-1395)', async () => {
+  it('drains a pending completion within the base poll once a turn starts, not after the idle back-off (TAL-1395)', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     sidecar.respond('chat.start', () => completed('ok'))
-    const wake = vi.spyOn(s.deps.completions, 'wake')
+    let pending = false
+    let drained = false
+    sidecar.respond('process.drain', () => { if (pending) drained = true; return { events: [] } })
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
     try {
+      s.deps.completions.start()
+      // Empty polls back off to one every 10 s: the last ran at 25 s and the next is due at 35 s.
+      await vi.advanceTimersByTimeAsync(30_000)
+      pending = true
       expect((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hello' }))).stream_id).toBeTruthy()
-      expect(wake).toHaveBeenCalled()
-    } finally { wake.mockRestore() }
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(drained).toBe(true)
+    } finally {
+      s.deps.completions.stop()
+      vi.useRealTimers()
+    }
   })
 
   it('requeues async delegations it cannot route and drops orphan completions', async () => {
@@ -1099,28 +1110,29 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     restarted.respond('process.recover', () => { throw new Error('unrecoverable checkpoint') })
     restarted.respond('process.drain', () => ({ events: [] }))
     restarted.respond('process.mark_consumed', () => ({ ok: true }))
+    const logged: string[] = []
     const resumed = new CompletionDrain({ documents: new JsonDocuments(s.state),
       sidecar: () => restarted, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
-      startTurn: (_session, prompt) => { prompts.push(prompt); return { stream_id: 'resumed' } }, now: () => Date.now() / 1000, log: () => undefined,
+      startTurn: (_session, prompt) => { prompts.push(prompt); return { stream_id: 'resumed' } }, now: () => Date.now() / 1000, log: (line) => { logged.push(line) },
     })
-    // A transient load failure on resume keeps the held copy.
-    const load = vi.spyOn(s.deps.sessionStore, 'get').mockImplementationOnce(() => { throw new Error('EIO') })
-    await resumed.drainOnce()
-    await new Promise((r) => setTimeout(r, 50))
-    load.mockRestore()
-    expect(prompts).toEqual([])
-    expect(heldIds(sid)).toEqual([`${sid}_2`])
-    // The failed load arms the standard timed retry; firing it now stands in for the 30 s wait.
-    const timers = (resumed as unknown as { retryTimers: Map<string, NodeJS.Timeout> }).retryTimers
-    expect(timers.has(sid), 'a retry is scheduled').toBe(true)
-    clearTimeout(timers.get(sid))
-    timers.delete(sid)
-    await resumed.drainDeferred(sid)
-    for (let i = 0; i < 50 && !prompts.length; i += 1) await new Promise((r) => setTimeout(r, 20))
-    await new Promise((r) => setTimeout(r, 50))
-    expect(prompts[0]).toContain(`Background process ${sid}_2 completed`)
-    expect(heldIds(sid)).toEqual([])
-    expect(heldIndex()).not.toContain(sid)
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      // A transient load failure on resume keeps the held copy.
+      const load = vi.spyOn(s.deps.sessionStore, 'get').mockImplementationOnce(() => { throw new Error('EIO') })
+      await resumed.drainOnce()
+      await expect.poll(() => logged, { timeout: 10_000 }).toContainEqual(expect.stringContaining(`wakeup retained for session ${sid}: session unavailable; retrying`))
+      load.mockRestore()
+      expect(prompts).toEqual([])
+      expect(heldIds(sid)).toEqual([`${sid}_2`])
+      // The failure armed the standard 30 s retry, which delivers the wakeup and releases the held copy.
+      await vi.advanceTimersByTimeAsync(30_000)
+      await expect.poll(() => prompts, { timeout: 10_000 }).toEqual([expect.stringContaining(`Background process ${sid}_2 completed`)])
+      await expect.poll(heldIndex, { timeout: 10_000 }).not.toContain(sid)
+      expect(heldIds(sid)).toEqual([])
+    } finally {
+      resumed.stop()
+      vi.useRealTimers()
+    }
   })
 
   it('does not hold a wakeup when the pause lifted during the pool lookup', async () => {
@@ -1138,12 +1150,15 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(heldIds(sid)).toEqual([])
   })
 
-  it('never overwrites a held file it cannot read', async () => {
+  it.each([
+    ['truncated JSON', '{"other": [{"process_id": "x", "wakeup_prompt": "kept"}]'],
+    ['a schema-invalid entry', JSON.stringify({ other: [{ process_id: 1, wakeup_prompt: 'kept' }] })],
+  ])('never rewrites a held file holding %s, and keeps the wakeup in memory', async (_case, stored) => {
     const path = join(sessionDirectory(s.deps.sessionStore), '_wakeup_held.json')
     const sid = await pausedSession()
-    writeFileSync(path, '{"other": [{"process_id": "x", "wakeup_prompt": "kept"}]')
+    writeFileSync(path, stored)
     await complete(sid, `${sid}_2`)
-    expect(readFileSync(path, 'utf8')).toBe('{"other": [{"process_id": "x", "wakeup_prompt": "kept"}]')
+    expect(readFileSync(path, 'utf8')).toBe(stored)
     expect(s.deps.completions.deferredCount(sid), 'the wakeup is kept in memory instead').toBe(1)
     rmSync(path)
   })
@@ -1217,17 +1232,6 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     drain.stop()
     expect(prompts).toHaveLength(1)
     expect(heldIndex()).not.toContain(sid)
-  })
-
-  it('never rewrites a held file with a malformed entry', async () => {
-    const path = join(sessionDirectory(s.deps.sessionStore), '_wakeup_held.json')
-    const sid = await pausedSession()
-    const malformed = JSON.stringify({ other: [{ process_id: 1, wakeup_prompt: 'kept' }] })
-    writeFileSync(path, malformed)
-    await complete(sid, `${sid}_2`)
-    expect(readFileSync(path, 'utf8')).toBe(malformed)
-    expect(s.deps.completions.deferredCount(sid)).toBe(1)
-    rmSync(path)
   })
 
   it('drops the held wakeups of a deleted session', async () => {

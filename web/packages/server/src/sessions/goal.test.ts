@@ -27,9 +27,10 @@ const goalFrames = (frames: SseFrame[]): [string, Json][] => frames.filter((f) =
 describe('/goal continuation after a goal turn settles (TAL-396)', () => {
   let s: TestServer
   let sidecar: FakeSidecar
+  let clock = 1_800_000_000
   beforeAll(async () => {
     sidecar = new FakeSidecar()
-    s = await bootTestServer({ sidecar })
+    s = await bootTestServer({ sidecar, now: () => clock })
   })
   afterAll(() => s.close())
   beforeEach(() => {
@@ -272,7 +273,7 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     expect(await detailGoal()).toEqual(shown({}))
 
     // Each judgement re-reads it: a counted turn, then a timed park with its reason and deadline.
-    const until = Date.now() / 1000 + 600
+    const until = clock + 600
     const decisions = [continueWith('Continue toward the goal.'), { ...inactive, status: 'active', verdict: 'wait', reason: 'CI running', message: '⏳ Goal parked' }]
     sidecar.respond('goals.evaluate', () => {
       const decision = decisions.shift()!
@@ -313,19 +314,28 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
 
   it('re-reads a timed park once its deadline passes and tells idle clients to reload the session (TAL-808)', async () => {
     const sid = await newSession()
-    const until = Date.now() / 1000 + 0.3
+    const until = clock + 60
     // The Agent's `is_waiting` lifts the barrier once its deadline passes.
-    sidecar.respond('goals.get', () => ({ goal: state, active: true, parked: Date.now() / 1000 < until ? { reason: 'CI running', until } : null, message: '' }))
-    const publish = vi.spyOn(s.deps.events, 'publish')
+    sidecar.respond('goals.get', () => ({ goal: state, active: true, parked: clock < until ? { reason: 'CI running', until } : null, message: '' }))
+    const publishEvent = s.deps.events.publish.bind(s.deps.events)
+    let announced: () => void = () => undefined
+    const publish = vi.spyOn(s.deps.events, 'publish').mockImplementation((reason, opts) => { publishEvent(reason, opts); if (reason === 'goal' && opts?.sessionId === sid) announced() })
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
     try {
       sidecar.respond('goals.command', () => ({ ok: true, action: 'status', message: 'status', goal: state }))
       expect((await post(s, '/api/goal', { session_id: sid, args: 'status' })).status).toBe(200)
       expect(publish).toHaveBeenCalledWith('goal', expect.objectContaining({ sessionId: sid }))
-      publish.mockClear()
-      await vi.waitFor(() => { expect(publish).toHaveBeenCalledWith('goal', expect.objectContaining({ sessionId: sid })) }, { timeout: 4_000 })
-      expect(calls('goals.get').length).toBeGreaterThanOrEqual(2)
+      const reread = new Promise<void>((resolve) => { announced = resolve })
+      const reads = calls('goals.get').length
+      clock = until
+      await vi.advanceTimersByTimeAsync(60_000 + 500)
+      await reread
+      expect(calls('goals.get').length).toBeGreaterThan(reads)
       expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).goal).toMatchObject({ status: 'active', parked_until: null })
-    } finally { publish.mockRestore() }
+    } finally {
+      vi.useRealTimers()
+      publish.mockRestore()
+    }
   })
 
   it('a resumed or persisted goal continues from the next user message', async () => {

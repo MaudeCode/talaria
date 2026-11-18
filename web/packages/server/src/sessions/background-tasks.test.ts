@@ -167,13 +167,17 @@ describe('background task records (TAL-372)', () => {
     const gates: (() => void)[] = []
     const sidecar = { call: () => new Promise((resolve) => { gates.push(() => { resolve({ delegations: [], processes: [] }) }) }) } as unknown as SidecarLike
     const activity = new BackgroundActivity({ store: new BackgroundTaskStore(testSessionDocuments(dir), () => 200), sidecar: () => sidecar, profileHome: () => dir, liveStream: () => false, now: () => 200, log: () => undefined })
+    const reads: Promise<unknown>[] = []
+    const snapshot = activity.snapshot.bind(activity)
+    vi.spyOn(activity, 'snapshot').mockImplementation((...args) => { const read = snapshot(...args); reads.push(read); return read })
     for (let i = 0; i < 5; i++) activity.refresh('s', null)
     activity.refresh('other', null)
     await expect.poll(() => gates.length).toBe(2)
     gates.shift()!()
     await expect.poll(() => gates.length).toBe(2)
     gates.splice(0).forEach((open) => { open() })
-    await new Promise((r) => setTimeout(r, 20))
+    // Once every released read has finished, a further read would already have asked the Agent.
+    await Promise.allSettled(reads)
     expect(gates).toHaveLength(0)
   })
 
