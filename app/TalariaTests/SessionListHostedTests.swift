@@ -899,10 +899,13 @@ final class SessionListHostedTests: XCTestCase {
         }
     }
 
-    /// Session rows keep the sidebar's zero vertical list-row insets, so each List cell hugs its row: 44 pt for a
-    /// sidebar row and 46 pt for a regular title-only row at the default text size. The List reads those insets from the
-    /// row it is handed, so wrapping a row outside them hands it the default insets and every row grows (TAL-2399).
+    /// Each session row's List cell hugs the row, which is what a swipe slides (TAL-2399): 44 pt tall for a sidebar row
+    /// and 46 pt for a regular title-only row at the default text size, and ending at a trailing bar's safe-area edge
+    /// rather than running underneath the bar. The List reads the row insets from the row it is handed, so wrapping a
+    /// row outside them hands it the default insets and every row grows; a List under the bar slides an empty stretch
+    /// in before the swipe actions.
     func testSessionRowsKeepTheSidebarListRowInsets() async throws {
+        let trailingBar = 60.0
         let server = URL(string: "https://row-insets.test")!
         let viewModel = SessionListViewModel(server: server, client: APIClient(baseURL: server))
         let sessions = [SessionSummary(sessionId: "inset-a", title: "Inset row A"), SessionSummary(sessionId: "inset-b", title: "Inset row B")]
@@ -911,6 +914,10 @@ final class SessionListHostedTests: XCTestCase {
                 SessionListRowsSection(viewModel: viewModel, sessions: sessions, emptyTitle: "", emptyDescription: nil, isSearchActive: false,
                                        searchText: "", selectedSessionID: "inset-a", actions: fixtureRowActions)
             }.environment(\.sessionRowStyle, style))
+            // The Duo's vertical bar reserves the trailing edge as safe area.
+            window.rootViewController?.additionalSafeAreaInsets.right = trailingBar
+            window.layoutIfNeeded()
+            settle()
             func cells(in view: UIView) -> [UICollectionViewCell] {
                 view.subviews.flatMap { ($0 as? UICollectionViewCell).map { [$0] } ?? cells(in: $0) }
             }
@@ -921,6 +928,8 @@ final class SessionListHostedTests: XCTestCase {
                 let cell = try XCTUnwrap(cells(in: window).first { $0.convert($0.bounds, to: window).contains(CGPoint(x: center.midX, y: center.midY)) },
                                          "\(style): no List cell holds \(title)")
                 XCTAssertEqual(cell.bounds.height, rowHeight, accuracy: 1, "\(style): \(title)'s cell must hug the row, without default list-row insets")
+                XCTAssertEqual(cell.convert(cell.bounds, to: window).maxX, window.bounds.width - trailingBar, accuracy: 1.5,
+                               "\(style): \(title)'s cell must end at the trailing bar, not run underneath it")
             }
             attachHostedScreenshot(window, name: "\(style) session rows")
             window.isHidden = true
