@@ -224,8 +224,11 @@ final class ChatHostedTests: XCTestCase {
     /// TAL-1679: the composer slides in with the chat at its measured size; it does not wait for the push to finish.
     /// TAL-1998: and loading the chat after the push does not move it.
     func testComposerShowsAtItsSettledSizeDuringThePush() async throws {
+        func mark(_ step: String) { NSLog("%@", "TAL-2543-diag \(step)") }
         let fixture = try FixtureApp(for: self)
+        mark("fixture")
         let session = try await fixture.session()
+        mark("session")
         let probe = PushProbe()
         // Reads the composer from the same push-completion callback as the chat's own observer, before SwiftUI
         // renders what the chat's report changes.
@@ -233,6 +236,7 @@ final class ChatHostedTests: XCTestCase {
             .background(NavigationAppearanceCompletionObserver { probe.atCompletion = probe.composer() })
         probe.window = try hostWindow(PushHost(destination: chat), animationsEnabled: true)
         let window = try XCTUnwrap(probe.window)
+        mark("hosted")
         var shownTops: [CGFloat] = []
         try await sampleCommittedLayouts {
             guard probe.atCompletion == nil else { return }
@@ -240,11 +244,14 @@ final class ChatHostedTests: XCTestCase {
             if current.opacity > 0 { shownTops.append(current.top) }
         } during: {
             let open = try await requireElement(in: window, label: "Open fixture chat")
+            mark("button")
             // UIKit animates a push only once the stack's root has appeared; a tap that came first pushed without a
             // transition, so no frame ever showed the composer sliding in (TAL-2543).
             await awaitDisplayUpdates(2, in: try XCTUnwrap(window.windowScene))
+            mark("display-updates")
             HostedAccessibility.activate(open)
             let finished = await awaitCondition { probe.atCompletion != nil }
+            mark("push-finished")
             XCTAssertTrue(finished, "The chat push must finish")
         }
         let pushed = try XCTUnwrap(probe.atCompletion)
@@ -255,7 +262,9 @@ final class ChatHostedTests: XCTestCase {
                       "The composer must never show at a provisional size: \(shownTops) against \(pushed.top)")
         // TAL-1998: the session load that starts once the push finishes adds the toolsets chip; the composer stays put.
         _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        mark("loaded-row")
         let settled = await awaitRenderedQuiet(in: window) { probe.composer().top }
+        mark("rendered-quiet")
         XCTAssertTrue(settled, "The loaded chat's composer must settle")
         attachHostedScreenshot(window, name: "composer-after-chat-load")
         XCTAssertEqual(probe.composer().top, pushed.top, accuracy: 0.5, "The composer moved once the chat had loaded")
