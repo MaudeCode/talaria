@@ -80,7 +80,11 @@ def env(**overrides):
 
 
 class Receiver:
-    """A local stand-in for T3's native webhook receiver: records requests and answers a scripted status list."""
+    """A local stand-in for T3's native webhook receiver: records requests and answers a scripted status list.
+
+    Like the real receiver's edge, it refuses Python's default `Python-urllib/*` User-Agent with HTTP 403 (Cloudflare
+    error 1010) before the request reaches T3: every main handoff from October to TAL-2397 was refused that way.
+    """
 
     def __init__(self, statuses):
         self.statuses, self.requests = list(statuses), []
@@ -89,6 +93,10 @@ class Receiver:
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
                 body = self.rfile.read(int(self.headers["content-length"]))
+                if (self.headers.get("user-agent") or "").startswith("Python-urllib/"):
+                    self.send_response(403)
+                    self.end_headers()
+                    return
                 receiver.requests.append(({key.lower(): value for key, value in self.headers.items()}, body))
                 self.send_response(receiver.statuses.pop(0) if receiver.statuses else 200)
                 self.end_headers()

@@ -36,6 +36,8 @@ MAX_JOBS = 20
 MAX_NAME = 200
 MAX_BODY = 16384
 ATTEMPTS = 3
+# The receiver's edge refuses Python's default `Python-urllib/*` User-Agent with HTTP 403 (Cloudflare error 1010).
+USER_AGENT = "talaria-ci-failure-handoff"
 # A launch for one incident that ends failed, cancelled or rolled back may be retried this many times in total.
 MAX_LAUNCHES = 2
 ENDED = {"failed", "cancelled", "rolled_back"}
@@ -126,7 +128,7 @@ def signature(secret, data):
 def post(url, secret, data, opener=urllib.request.urlopen, sleep=time.sleep):
     """Posts with a bounded retry; returns None or an error naming no URL or secret."""
     request = urllib.request.Request(url, data=data, method="POST", headers={
-        "content-type": "application/json", "x-hub-signature-256": signature(secret, data)})
+        "content-type": "application/json", "user-agent": USER_AGENT, "x-hub-signature-256": signature(secret, data)})
     error = None
     for attempt in range(ATTEMPTS):
         if attempt:

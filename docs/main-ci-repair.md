@@ -80,8 +80,12 @@ The `alert` job never changes the CI Gate. When it fails, its error names the ca
 
 - **Set the MAIN_CI_WEBHOOK_URL and MAIN_CI_WEBHOOK_SECRET Actions secrets**:
   setup step 3 is missing.
-- **HTTP 401/403**: the secrets disagree. Rotate the signing secret in the task
+- **HTTP 401**: the secrets disagree. Rotate the signing secret in the task
   and in `MAIN_CI_WEBHOOK_SECRET` together.
+- **HTTP 403**: the receiver's edge refused the request before T3 checked its
+  signature (Cloudflare error 1010 for a blocked User-Agent). The sender
+  identifies itself as `talaria-ci-failure-handoff`; Python's default
+  `Python-urllib/*` agent is refused.
 - **HTTP 404**: the task or its URL changed; update `MAIN_CI_WEBHOOK_URL`.
 - **HTTP 5xx, 429 or delivery failed after 3 attempts**: T3 or T3 Connect was
   unreachable. Re-run just the alert job with `gh run rerun <run ID> --job <job ID> --repo MaudeCode/talaria`.
