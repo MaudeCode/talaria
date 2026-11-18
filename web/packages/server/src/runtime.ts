@@ -1129,6 +1129,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     pinnedFetch,
     crons: new CronService({
       sidecar: () => sidecar,
+      now,
       profileHome,
       profileNames: async () => (await profiles.list('default')).map((r) => ({ name: String(r.name), visible: r.visible !== false })),
       profilesMatch,

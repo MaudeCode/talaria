@@ -943,11 +943,19 @@ describe('redactSessionData', () => {
       throw new Error(mime)
     }
 
-    // Only the exempt path sees the 4 MB image: a full scan of it takes seconds on a CI runner.
+    // Only the exempt path sees the 4 MB image: a full scan of it takes seconds on a CI runner. Its base64 padding is an
+    // `=`, so a text scan of it would report an assignment-family scan.
     const url = dataUri('image/png', image('image/png', 4 * 1024 * 1024))
-    const started = performance.now()
-    expect(imageUrl(url) === url, '4 MB PNG data URI returned byte-identical').toBe(true)
-    expect(performance.now() - started).toBeLessThan(150)
+    expect(url.endsWith('=')).toBe(true)
+    const scans: unknown[] = []
+    const onScan = (message: unknown): void => { scans.push(message) }
+    subscribe('talaria.redaction.assignment-scan', onScan)
+    try {
+      expect(imageUrl(url) === url, '4 MB PNG data URI returned byte-identical').toBe(true)
+    } finally {
+      unsubscribe('talaria.redaction.assignment-scan', onScan)
+    }
+    expect(scans).toEqual([])
     // MIME and scheme are case-insensitive; the exemption covers every raster type the composer embeds.
     for (const [mime, bytes] of [['IMAGE/PNG', image('image/png')], ['image/jpg', image('image/jpeg')], ...Object.keys(formats).map((m) => [m, image(m)] as const)] as const) {
       const raster = dataUri(mime, bytes)

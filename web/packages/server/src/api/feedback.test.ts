@@ -87,7 +87,7 @@ beforeEach(async () => {
   s = await bootTestServer({ env: { HOME: '/synthetic-home', TALARIA_WEB_TALARIA_RELAY_URL: url }, sidecar })
   vi.spyOn(s.deps.catalog, 'providers').mockResolvedValue({ providers: [{ id: 'openai', has_key: true, api_key: 'provider-secret', base_url: 'https://private.example', account_id: 'private-account' }, { id: 'disabled', has_key: false }], active_provider: 'openai', availability: { status: 'available', authoritative: true } } as never)
 })
-afterEach(async () => { vi.restoreAllMocks(); await s.close(); await new Promise<void>((resolve, reject) => { relay.close((e) => { if (e) reject(e); else resolve() }) }) })
+afterEach(async () => { vi.restoreAllMocks(); vi.useRealTimers(); await s.close(); await new Promise<void>((resolve, reject) => { relay.close((e) => { if (e) reject(e); else resolve() }) }) })
 
 it('previews exactly the bounded, redacted diagnostics attached to unsigned feedback', async () => {
   for (let i = 0; i < 12; i++) s.deps.log(`[webui] ERROR error-${i} API_KEY=sk-syntheticsecret${i} Authorization: Bearer bearer-secret-${i} /synthetic-home/private/file`)
@@ -267,7 +267,8 @@ it('limits each principal to twenty fresh request IDs per hour without blocking 
 
 it('compacts definitive snapshots and expires receipts under a synthetic clock', async () => {
   const start = Date.now()
-  const clock = vi.spyOn(Date, 'now').mockReturnValue(start)
+  // Only the Date clock: the request path and the fake Relay need real timers, and the ledger has no timer of its own.
+  vi.useFakeTimers({ now: start, toFake: ['Date'] })
   const backend = s.deps.sessionStore.deps.storage.documents
   expect((await submit()).status).toBe(200)
   let state = (await backend.get('feedback', 'state'))?.value as { entries: Record<string, unknown>[] }
@@ -279,12 +280,12 @@ it('compacts definitive snapshots and expires receipts under a synthetic clock',
   state = (await backend.get('feedback', 'state'))?.value as typeof state
   expect(state.entries).toHaveLength(2)
   expect(state.entries[1]).not.toHaveProperty('snapshot')
-  clock.mockReturnValue(start + 3601 * 1000)
+  vi.setSystemTime(start + 3601 * 1000)
   status = 202
   expect((await submit()).status).toBe(200)
   state = (await backend.get('feedback', 'state'))?.value as typeof state
   expect(state.entries).toHaveLength(2)
-  clock.mockReturnValue(start + (30 * 86400 + 3602) * 1000)
+  vi.setSystemTime(start + (30 * 86400 + 3602) * 1000)
   expect((await submit()).status).toBe(200)
   state = (await backend.get('feedback', 'state'))?.value as typeof state
   expect(state.entries).toHaveLength(1)
@@ -473,9 +474,10 @@ it('leaves an upload that stays unknown for the client to retry', async () => {
 it('expires unreferenced staged files after an hour', async () => {
   await register()
   const start = Date.now()
-  const clock = vi.spyOn(Date, 'now').mockReturnValue(start)
+  // Only the Date clock: the upload path needs real timers, and staging has no timer of its own.
+  vi.useFakeTimers({ now: start, toFake: ['Date'] })
   const stale = await staged('image/png', png())
-  clock.mockReturnValue(start + 3601 * 1000)
+  vi.setSystemTime(start + 3601 * 1000)
   const fresh = await staged('image/png', png())
   expect(stagingFiles()).toEqual([fresh])
   const index = (await s.deps.sessionStore.deps.storage.documents.get('feedback', 'attachments'))?.value as { entries: { attachmentId: string }[] }

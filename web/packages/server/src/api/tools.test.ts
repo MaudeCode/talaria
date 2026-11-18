@@ -18,6 +18,13 @@ import { homeDotenvKeys, setHomeDotenvKeys } from '../cli/dotenv.js'
 import { serverSummary } from '../tools/mcp.js'
 import { toggleName, walkSkillFiles } from '../tools/skills.js'
 import { UpdateService, type UpdateServiceDeps } from '../tools/updates.js'
+import { serializePluginSettingsSave } from '../tools/plugin-settings.js'
+
+// TAL-806: the plugin settings save chain, passed through, so a test sees a save join it.
+vi.mock('../tools/plugin-settings.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../tools/plugin-settings.js')>()
+  return { ...actual, serializePluginSettingsSave: vi.fn(actual.serializePluginSettingsSave) }
+})
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, method = 'POST', headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method, body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
@@ -1165,8 +1172,13 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       })
       const first = post(s, '/api/plugins/settings', { key: 'fake-settings', values: { limit: '7' }, secrets: { api_key: 'sk-first' } })
       await vi.waitFor(() => { expect(calls).toBe(1) })
+      const joined = vi.mocked(serializePluginSettingsSave).mock.calls.length
+      const manifestReads = () => sidecar.calls.filter((c) => c.method === 'plugins.settings').length
+      const read = manifestReads()
       const second = post(s, '/api/plugins/settings', { key: 'fake-settings', secrets: { api_key: 'sk-second' } })
-      await new Promise((resolve) => setTimeout(resolve, 150))
+      await vi.waitFor(() => { expect(vi.mocked(serializePluginSettingsSave).mock.calls.length).toBe(joined + 1) })
+      // A save starts by reading the manifest; the second one has joined the chain and has not started.
+      expect(manifestReads()).toBe(read)
       release()
       expect((await first).status).toBe(403)
       expect((await second).status).toBe(200)
@@ -1768,15 +1780,16 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     writeFileSync(join(s.state, 'gateway.pid'), JSON.stringify({ pid: process.pid }))
     writeFileSync(join(s.state, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', active_agents: 2, updated_at: new Date().toISOString() }))
     const row = async (id: unknown) => ((await json(await s.get('/api/update-notifications'))).notifications as Json[]).find((entry) => entry.id === id)
-    const until = async (check: () => Promise<boolean>) => { for (let i = 0; i < 100 && !(await check()); i += 1) await new Promise((resolve) => setTimeout(resolve, 20)) }
     try {
       const result = await json(await post(s, '/api/updates/apply', { target: 'agent', tab_id: 'tab-gateway' }))
       expect(result).toMatchObject({ ok: true, gateway_restart: 'waiting_for_idle' })
-      await until(async () => (await row(result.notification_id))?.message !== 'Waiting for running gateway tasks to finish before restarting the gateway.')
-      expect(await row(result.notification_id)).toMatchObject({
-        phase: 'waiting_for_idle', detail: message, can_dismiss: false,
-        message: 'Waiting for 2 running gateway tasks to finish before restarting the gateway.',
-        actions: [{ id: 'restart_gateway_now', label: 'Restart now', style: 'destructive', acknowledges: false }],
+      // The wait's first blocker probe records the gateway's task count.
+      await vi.waitFor(async () => {
+        expect(await row(result.notification_id)).toMatchObject({
+          phase: 'waiting_for_idle', detail: message, can_dismiss: false,
+          message: 'Waiting for 2 running gateway tasks to finish before restarting the gateway.',
+          actions: [{ id: 'restart_gateway_now', label: 'Restart now', style: 'destructive', acknowledges: false }],
+        })
       })
       expect((await post(s, `/api/update-notifications/${String(result.notification_id)}/dismiss`, { dismiss: true })).status).toBe(409)
       const again = await json(await post(s, '/api/updates/apply', { target: 'agent', tab_id: 'tab-gateway' }))
@@ -1789,8 +1802,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect((await json(await s.get('/api/update-notifications?tab_id=tab-stale'))).tab_update).toMatchObject({ id: result.notification_id, phase: 'waiting_for_idle' })
       expect(restarts).toBe(0)
       expect((await post(s, `/api/update-notifications/${String(result.notification_id)}/actions/restart_gateway_now`, { perform: true })).status).toBe(200)
-      await until(async () => (await row(result.notification_id))?.phase === 'succeeded')
-      expect(await row(result.notification_id)).toMatchObject({ phase: 'succeeded', detail: message, actions: [] })
+      await vi.waitFor(async () => { expect(await row(result.notification_id)).toMatchObject({ phase: 'succeeded', detail: message, actions: [] }) })
       expect(restarts).toBe(1)
     } finally {
       s.deps.updates.apply = originalApply
@@ -1840,17 +1852,17 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   it('TAL-1138: a native Agent update with no Web restart succeeds only once the Agent runtime answers', async () => {
     const originalApply = s.deps.updates.apply.bind(s.deps.updates)
     const row = async (id: unknown) => ((await json(await s.get('/api/update-notifications'))).notifications as Json[]).find((entry) => entry.id === id)
-    const until = async (check: () => Promise<boolean>) => { for (let i = 0; i < 250 && !(await check()); i += 1) await new Promise((resolve) => setTimeout(resolve, 20)) }
     let ready = false
-    sidecar.respond('runtime.status', () => ({ ...sidecar.describe!, compatible: ready, stale: false }))
+    let probes = 0
+    sidecar.respond('runtime.status', () => { probes += 1; return { ...sidecar.describe!, compatible: ready, stale: false } })
     try {
       s.deps.updates.apply = () => Promise.resolve({ ok: true, target: 'agent', verified_revision: 'e'.repeat(40), verified_version: 'v0.23.0', restart_scheduled: false, gateway_restart: 'resumed' })
       const result = await json(await post(s, '/api/updates/apply', { target: 'agent', tab_id: 'tab-native-now' }))
-      await new Promise((resolve) => setTimeout(resolve, 100))
+      // A second runtime probe comes only after the first one found the runtime not ready and the check polled again.
+      await vi.waitFor(() => { expect(probes).toBeGreaterThanOrEqual(2) }, { timeout: 15_000 })
       expect((await row(result.notification_id))?.phase).toBe('verifying')
       ready = true
-      await until(async () => (await row(result.notification_id))?.phase === 'succeeded')
-      expect(await row(result.notification_id)).toMatchObject({ phase: 'succeeded', presents_dialog: false, dialog_close: 'auto' })
+      await vi.waitFor(async () => { expect(await row(result.notification_id)).toMatchObject({ phase: 'succeeded', presents_dialog: false, dialog_close: 'auto' }) }, { timeout: 15_000 })
     } finally {
       s.deps.updates.apply = originalApply
       sidecar.respond('runtime.status', undefined)

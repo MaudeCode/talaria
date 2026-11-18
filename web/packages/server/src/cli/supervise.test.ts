@@ -26,14 +26,9 @@ function alive(pid: number): boolean {
   try { process.kill(pid, 0); return true } catch { return false }
 }
 
-async function until(check: () => boolean | Promise<boolean>, ms: number): Promise<boolean> {
-  const end = Date.now() + ms
-  while (Date.now() < end) {
-    if (await check()) return true
-    await new Promise((resolve) => setTimeout(resolve, 25))
-  }
-  return check()
-}
+/** Whether `check` holds within `ms`: a real worker process's own startup, exit or bind decides when. */
+const until = (check: () => boolean | Promise<boolean>, ms: number): Promise<boolean> =>
+  vi.waitFor(async () => { if (!(await check())) throw new Error('not yet') }, { timeout: ms, interval: 25 }).then(() => true, () => false)
 
 async function freePort(): Promise<number> {
   const server = createServer()

@@ -148,7 +148,8 @@ describe('readLogTail', () => {
     let settled = false
     const pending = tailOf(100).finally(() => { settled = true })
     await gate.entered
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    // The loop turns while the read is held, and a tail that did not wait for its read would have settled by then.
+    await new Promise((resolve) => { setImmediate(resolve) })
     expect(settled).toBe(false)
     gate.release()
     expect((await pending).lines).toEqual(['one', 'two'])

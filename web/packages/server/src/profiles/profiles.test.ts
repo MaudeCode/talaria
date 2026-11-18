@@ -31,7 +31,7 @@ const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 const row = (name: string, extra: Json = {}): Json => ({ name, path: '', is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0, ...extra })
 
 describe('profiles, crons, workspaces, skills, and sessions across profiles', () => {
-  freshCronListingsPerTest()
+  const cronClock = freshCronListingsPerTest()
   let s: TestServer
   let sidecar: FakeSidecar
   let configs: Map<string, Json>
@@ -51,7 +51,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     sidecar.respond('cron.update', (params) => { for (const jobs of cronJobs.values()) { const job = jobs.find((j) => j.id === params.job_id); if (job) { Object.assign(job, params.updates); return { job: job as never } } } throw new Error('missing') })
     sidecar.respond('skills.list', (params) => ({ success: true, skills: (skillRows.get(params.profile_home) ?? []).map((row) => ({ locked: false, ...row })) as never[], categories: [], count: (skillRows.get(params.profile_home) ?? []).length }))
     sidecar.respond('skills.find', (params) => { const dir = join(params.profile_home, 'skills', params.name); return { found: existsSync(dir), skill_dir: existsSync(dir) ? dir : null, skill_md: existsSync(dir) ? join(dir, 'SKILL.md') : null } })
-    s = await bootTestServer({ sidecar })
+    s = await bootTestServer({ sidecar, now: cronClock.now })
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
     workHome = join(s.state, 'profiles', 'work')
     for (const p of ['work', 'research', 'hidden']) { mkdirSync(join(s.state, 'profiles', p), { recursive: true }); writeFileSync(join(s.state, 'profiles', p, 'config.yaml'), '# seed\n') }

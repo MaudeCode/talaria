@@ -35,7 +35,7 @@ describe('project-os dashboard (TAL-266)', () => {
   const deps = (over: Partial<ProjectOsDeps> = {}): ProjectOsDeps => ({ localIo: true, lastWorkspace: root, boards: () => Promise.resolve([]), git: () => Promise.resolve(null), cwd: root, ...over })
 
   beforeEach(() => { root = realpathSync(mkdtempSync(join(tmpdir(), 'project-os-'))) })
-  afterEach(() => { rmSync(root, { recursive: true, force: true }) })
+  afterEach(() => { vi.useRealTimers(); rmSync(root, { recursive: true, force: true }) })
 
   it('is empty without local workspace I/O or a repo', async () => {
     write('repo/.ax/status/active.json', {})
@@ -84,6 +84,8 @@ describe('project-os dashboard (TAL-266)', () => {
 
   it('looks a board up with no sync fs call, rescanning only after 5 s or when the root changes', async () => {
     write('apps/web/.ax/handoff/current.json', { board: { id: 'ops' } })
+    // The scan's 5 s window reads this clock alone; a slow runner must not pass it between two lookups.
+    vi.useFakeTimers()
     vi.clearAllMocks()
     const first = await projectOsDashboard('ops', deps())
     expect(first.repo_root).toBe(join(root, 'apps', 'web'))
@@ -94,11 +96,9 @@ describe('project-os dashboard (TAL-266)', () => {
     expect(await projectOsDashboard('ops', deps())).toEqual(first)
     expect(readdir).not.toHaveBeenCalled()
 
-    const now = Date.now()
-    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 5_001)
+    vi.setSystemTime(Date.now() + 5_001)
     await projectOsDashboard('ops', deps())
     expect(readdir).toHaveBeenCalled()
-    clock.mockRestore()
 
     vi.clearAllMocks()
     utimesSync(root, new Date(), new Date(Date.now() + 5_000))

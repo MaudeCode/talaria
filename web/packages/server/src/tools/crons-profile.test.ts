@@ -305,7 +305,7 @@ const row = (name: string, extra: Json = {}): Json => ({ name, path: '', is_defa
 
 describe('cross-profile cron routes', () => {
   useJsonStorage()
-  freshCronListingsPerTest()
+  const cronClock = freshCronListingsPerTest()
   let s: TestServer
   let sidecar: FakeSidecar
   let configs: Map<string, Json>
@@ -321,7 +321,7 @@ describe('cross-profile cron routes', () => {
     sidecar.respond('cron.list', (params) => ({ jobs: (cronJobs.get(params.profile_home) ?? []) as never[] }))
     sidecar.respond('cron.create', (params) => { const job = { id: `job-${String(cronJobs.size + 1)}`, name: null, profile: null, toast_notifications: true, monitor: '', continuity: false, ...(params.job as Json) }; cronJobs.set(params.profile_home, [...(cronJobs.get(params.profile_home) ?? []), job]); return { job: job } })
     sidecar.respond('cron.update', (params) => { for (const jobs of cronJobs.values()) { const job = jobs.find((j) => j.id === params.job_id); if (job) { Object.assign(job, params.updates); return { job: job as never } } } throw new Error('missing') })
-    s = await bootTestServer({ sidecar })
+    s = await bootTestServer({ sidecar, now: cronClock.now })
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
     workHome = join(s.state, 'profiles', 'work')
     for (const p of ['work', 'research', 'hidden']) { mkdirSync(join(s.state, 'profiles', p), { recursive: true }); writeFileSync(join(s.state, 'profiles', p, 'config.yaml'), '# seed\n') }

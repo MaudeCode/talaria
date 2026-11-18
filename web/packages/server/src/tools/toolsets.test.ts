@@ -125,7 +125,8 @@ it('reads the profile default toolsets and saves them under the config.yaml lock
     await vi.waitFor(() => { expect(order).toEqual(['save:start']) })
     // Another config.yaml write for the same profile waits for the save.
     const other = s.deps.agentConfig.update(s.deps.config.hermesHome, (config) => { config.marker = true })
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    // Its read and write answer from this process's fake in microtasks, so one loop turn would finish an unheld write.
+    await new Promise((resolve) => { setImmediate(resolve) })
     expect(order).toEqual(['save:start'])
     release()
     expect(await view(await saving)).toEqual({ defaults: ['file', 'talaria'], rows: [['file', true, true], ['talaria', true, true], ['missing', false, false]] })
