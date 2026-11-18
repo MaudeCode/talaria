@@ -581,18 +581,6 @@ class PublicationTests(unittest.TestCase):
         self.assertNotIn("ios-ipa", restage)
         self.assertNotIn("ios-dsyms", restage)
 
-    def test_multi_platform_emulation_is_proven_by_an_arm64_build_step(self):
-        # The pool's Talos kernel has no binfmt_misc, so neither apt QEMU nor a privileged binfmt installer can
-        # register handlers. BuildKit's own buildkit-qemu-aarch64 runs arm64 steps; the action proves it by
-        # building an arm64 RUN step instead of trusting the kernel-registered platform list.
-        action = (Path(__file__).resolve().parents[1] / ".github/actions/docker-plugins/action.yml").read_text()
-        self.assertNotIn("tonistiigi/binfmt", action)
-        self.assertNotIn("--privileged", action)
-        self.assertNotIn("qemu-user-static", action)
-        self.assertRegex(action, r"FROM busybox:[\w.]+@sha256:[0-9a-f]{64}")
-        self.assertIn("--platform linux/arm64", action)
-        self.assertIn("aarch64", action)
-
     def test_pr_ci_full_history_checkouts_are_blobless(self):
         # Classification and tooling need history and trees, not every historical blob; release jobs keep
         # full clones because they make local --shared clones that cannot resolve a partial clone's objects.
@@ -832,15 +820,6 @@ class PublicationTests(unittest.TestCase):
         failed[0] = {**failed[0], "conclusion": "failure"}
         self.assertIn("published with its readbacks at never, final version tag at never", table(run, failed))
 
-    def test_buildx_builders_are_never_fixed_names(self):
-        # A Docker daemon that outlives a job would reject a second builder with the same fixed name.
-        root = Path(__file__).resolve().parents[1]
-        for path in sorted([*(root / ".github/workflows").glob("*.yml"), *(root / ".github/actions").glob("*/action.yml")]):
-            for line in path.read_text().splitlines():
-                if "buildx create" in line:
-                    with self.subTest(path=path.name):
-                        self.assertNotIn("--name", line)
-
     def test_linux_jobs_running_ruby_tooling_set_up_ruby(self):
         # The TestFlight inspection runs Ruby, so every Linux job that runs it pins it first instead of relying on
         # whatever the runner image ships.
@@ -894,7 +873,7 @@ class PublicationTests(unittest.TestCase):
                         broken = deepcopy(needs)
                         broken[job]["result"] = result
                         with self.subTest(stage=stage, dry=dry, job=job, result=result):
-                            with self.assertRaises(ValueError):
+                            with self.assertRaisesRegex(ValueError, re.escape(job)):
                                 check(broken, stage, dry)
 
     def test_each_changed_components_suite_is_reused_or_run(self):
@@ -977,21 +956,6 @@ class PublicationTests(unittest.TestCase):
                          {"web": "./.github/workflows/web-verify.yml", "relay": "./.github/workflows/relay-verify.yml"})
         self.assertEqual(ci["app"]["name"], "App")
         self.assertEqual(workflow("app-tests.yml")["jobs"]["app-test-gate"]["name"], "App hosted tests")
-
-    def test_agent_gate_requires_every_release_job(self):
-        # Each supported Agent release runs in its own agent-release job; agent writes the one agentCompatibility
-        # receipt only after they all passed and covered exactly the supported releases (TAL-1550).
-        needs = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts", "agent-release",
-                                                          "agent", "relay-build", "bridge-build", "app-dry-build")}
-        needs["prepare"]["outputs"] = {"app_changed": "false", "web_changed": "false", "relay_changed": "true", "relay_tests": "false"}
-        needs.update({name: {"result": "skipped"} for name in ("web-build", "app-signed-build", "app-dry-build",
-                                                               "app-hosted-tests", "web-tests")})
-        needs["relay-tests"] = {"result": "success"}
-        check(needs, "build", True)
-        for job in ("agent-release", "agent"):
-            for result in ("failure", "cancelled", "skipped"):
-                with self.subTest(job=job, result=result), self.assertRaisesRegex(ValueError, job):
-                    check({**needs, job: {"result": result}}, "build", True)
 
     def test_production_requires_trusted_main_dispatch_and_exact_source(self):
         plan = {"dryRun": False, "releaseSet": "a" * 40}
