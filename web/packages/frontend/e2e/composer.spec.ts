@@ -31,6 +31,17 @@ function hold() {
   return { gate, release }
 }
 
+/** Wheels over the transcript, then waits for the page to handle `event` (`wheel` for a gesture that should move nothing,
+ *  `scroll` for one that moves the transcript) and draw two frames, so whatever the page decided from it has rendered. */
+async function wheel(page: Page, dy: number, event: 'wheel' | 'scroll') {
+  await page.evaluate((event) => {
+    const target = event === 'scroll' ? document.getElementById('messages')! : window
+    ;(window as unknown as { handled: Promise<void> }).handled = new Promise((done) => target.addEventListener(event, () => requestAnimationFrame(() => requestAnimationFrame(() => done())), { once: true }))
+  }, event)
+  await page.mouse.wheel(0, dy)
+  await page.evaluate(() => (window as unknown as { handled: Promise<void> }).handled)
+}
+
 test('a new chat centres the composer card with the headline above it', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.composer-dock--hero')).toBeVisible()
@@ -149,8 +160,12 @@ test('opening a session paints every frame at its end', async ({ page }) => {
   expect(renderer).toBeDefined()
   const loading = hold()
   await page.route(`**/${renderer!.file}`, async (route) => { await loading.gate; await route.continue() })
+  // The session's history answers only once the opened view has drawn without it.
+  const asked = hold()
+  const answering = hold()
   await page.route('**/api/session?**', async (route) => {
-    await new Promise((r) => setTimeout(r, 200))
+    asked.release()
+    await answering.gate
     await route.fulfill({ json: { session: { session_id: 'entry', title: 'Entry', messages: transcript('entry', 25) } } })
   })
   await page.goto('/')
@@ -159,12 +174,19 @@ test('opening a session paints every frame at its end', async ({ page }) => {
     const seen: number[] = []
     history.pushState({}, '', '/session/entry')
     dispatchEvent(new PopStateEvent('popstate'))
-    const t0 = performance.now()
+    // Sampled until the last answer has rendered and ten frames in a row kept the same layout with no finite animation
+    // running, under a frame cap.
+    let still = 0, frames = 0, last = ''
     await new Promise<void>((done) => {
       const tick = () => {
         const el = document.getElementById('messages')
         if (el && document.querySelector('[data-message-key]')) seen.push(el.scrollHeight - el.scrollTop - el.clientHeight)
-        if (performance.now() - t0 < 1500) requestAnimationFrame(tick)
+        const landed = [...document.querySelectorAll('.hermes-prose p')].at(-1)?.textContent?.includes('entry answer 25.')
+        const moving = document.getAnimations().some((a) => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity)
+        const layout = `${el?.scrollHeight}:${el?.scrollTop}`
+        still = landed && !moving && layout === last ? still + 1 : 0
+        last = layout
+        if (still < 10 && ++frames < 1000) requestAnimationFrame(tick)
         else done()
       }
       requestAnimationFrame(tick)
@@ -172,10 +194,13 @@ test('opening a session paints every frame at its end', async ({ page }) => {
     return seen
   })
   try {
+    await asked.gate
+    await page.evaluate(() => new Promise((drawn) => requestAnimationFrame(() => requestAnimationFrame(drawn))))
+    answering.release()
     // Until the renderer arrives the session's history waits behind the skeleton (TAL-2410).
     await expect(page.getByText('Entry', { exact: true }).filter({ visible: true }).first()).toBeVisible()
     await expect(page.getByTestId('transcript-skeleton')).toBeVisible()
-  } finally { loading.release() }
+  } finally { answering.release(); loading.release() }
   await expect(page.locator('.hermes-prose p').last()).toContainText('entry answer 25.')
   const frames = await sampling
   expect(frames.length).toBeGreaterThan(10)
@@ -373,8 +398,7 @@ for (const { name, settings } of [{ name: 'auto-follow on', settings: {} }, { na
     const expanded = (await box(page, '#composerBox')).height
     await page.locator('#messages').hover()
     // A scroll against the end moves nothing, so the composer stays up.
-    await page.mouse.wheel(0, 400)
-    await page.waitForTimeout(300)
+    await wheel(page, 400, 'wheel')
     await expect(card).not.toHaveClass(/is-resting/)
     await page.mouse.wheel(0, -400)
     await expect(card).toHaveClass(/is-resting/)
@@ -383,27 +407,37 @@ for (const { name, settings } of [{ name: 'auto-follow on', settings: {} }, { na
     // the newest message in view.
     await page.mouse.wheel(0, 8000)
     await expect.poll(() => distance(page)).toBeLessThan(2)
+    // Sampled every frame until the card has lifted and ten frames in a row kept the same layout with no animation on the
+    // card, under a frame cap.
     await page.evaluate(() => {
-      const w = window as unknown as { gaps: number[] }
-      w.gaps = []
+      const w = window as unknown as { gaps: Promise<number[]> }
       const el = document.getElementById('messages')!
-      const t0 = performance.now()
-      const tick = () => { w.gaps.push(el.scrollHeight - el.scrollTop - el.clientHeight); if (performance.now() - t0 < 500) requestAnimationFrame(tick) }
-      requestAnimationFrame(tick)
+      const card = document.getElementById('composerBox')!
+      const gaps: number[] = []
+      let still = 0, last = ''
+      w.gaps = new Promise((done) => {
+        const tick = () => {
+          gaps.push(el.scrollHeight - el.scrollTop - el.clientHeight)
+          const layout = `${el.scrollHeight}:${el.scrollTop}:${card.offsetHeight}`
+          still = !card.classList.contains('is-resting') && card.getAnimations().length === 0 && layout === last ? still + 1 : 0
+          last = layout
+          if (still < 10 && gaps.length < 1000) requestAnimationFrame(tick)
+          else done(gaps)
+        }
+        requestAnimationFrame(tick)
+      })
     })
     await page.locator('#msg').focus()
     await expect(card).not.toHaveClass(/is-resting/)
     await expect.poll(async () => (await box(page, '#composerBox')).height).toBeGreaterThan(expanded - 2)
-    await page.waitForTimeout(600)
-    const gaps = await page.evaluate(() => (window as unknown as { gaps: number[] }).gaps)
+    const gaps = await page.evaluate(() => (window as unknown as { gaps: Promise<number[]> }).gaps)
     expect(gaps.length).toBeGreaterThan(10)
     expect(Math.max(...gaps)).toBeLessThan(2)
     // A multi-line draft stays readable: an explicit line break or a soft wrap never flattens it.
     for (const draft of ['line one\nline two', 'a long single line that wraps. '.repeat(12)]) {
       await page.locator('#msg').fill(draft)
       await page.locator('#messages').hover()
-      await page.mouse.wheel(0, -400)
-      await page.waitForTimeout(300)
+      await wheel(page, -400, 'scroll')
       await expect(card).not.toHaveClass(/is-resting/)
     }
   })

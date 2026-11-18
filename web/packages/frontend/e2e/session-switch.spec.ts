@@ -17,6 +17,20 @@ async function enter(page: Page, sid: string): Promise<void> {
   await expect(page.locator('#messages').getByText(`${sid} question`)).toBeAttached()
 }
 
+/**
+ * Two painted frames, one request round trip, then two more frames: the last render's effects have run, every request
+ * they issued has reached its route (the page issues requests in order), and the answers have rendered.
+ */
+async function settled(page: Page): Promise<void> {
+  await page.route('**/e2e-settled', (route) => route.fulfill({ status: 204 }), { times: 1 })
+  await page.evaluate(async () => {
+    const frames = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    await frames()
+    await fetch('/e2e-settled')
+    await frames()
+  })
+}
+
 /** A request held until the test releases it. */
 function hold() {
   let release!: () => void
@@ -61,7 +75,7 @@ test('a message queued in one session never sends into the next', async ({ page 
     bDone = true
     streams.get('switch-queue-b-run')!.write(`id: switch-queue-b-run:2\nevent: done\ndata: ${JSON.stringify({ session: { session_id: 'switch-queue-b', title: 'switch-queue-b', messages: transcript('switch-queue-b') }, terminal_state: 'completed' })}\n\n`)
     await expect(page.locator('.live-turn')).toHaveCount(0)
-    await page.waitForTimeout(500)
+    await settled(page)
     expect(starts).toEqual([])
     await expect(page.locator('[data-notice="queue"]')).toHaveCount(0)
   } finally {
@@ -92,7 +106,7 @@ test("a session's YOLO state is its own, however late the previous session's ans
   // B's answer is slow: until it arrives B does not show A's setting.
   held.set('switch-yolo-b', hold())
   await enter(page, 'switch-yolo-b')
-  await page.waitForTimeout(300)
+  await settled(page)
   await expect(page.locator(yoloTab)).toHaveCount(0)
   held.get('switch-yolo-b')!.release()
 
@@ -110,7 +124,7 @@ test("a session's YOLO state is its own, however late the previous session's ans
   await enter(page, 'switch-yolo-b')
   held.get('switch-yolo-a')!.release()
   await answered.get('switch-yolo-a')!.gate
-  await page.waitForTimeout(300)
+  await settled(page)
   await expect(page.locator(yoloTab)).toHaveCount(0)
   held.get('switch-yolo-b')!.release()
   await expect(page.locator(yoloTab)).toHaveCount(0)
@@ -129,6 +143,8 @@ test('leaving a session mid-compression stops it: the next session stays unlocke
     polls += 1
     return route.fulfill({ json: finished ? { status: 'done', session_id: 'switch-compress-fork' } : { status: 'running' } })
   })
+  // The job is polled on a one-second timer.
+  await page.clock.install()
   await page.goto('/session/switch-compress-a')
   await page.locator('#msg').fill('/compress')
   await page.locator('#btnSend').click()
@@ -140,7 +156,8 @@ test('leaving a session mid-compression stops it: the next session stays unlocke
   // A's compression finishes into a fork; B is not navigated to it, and A's job is no longer polled.
   finished = true
   const seen = polls
-  await page.waitForTimeout(2500)
+  await page.clock.runFor(2_500)
+  await settled(page)
   await expect(page).toHaveURL(/\/session\/switch-compress-b$/)
   expect(polls - seen).toBeLessThanOrEqual(1)
 })
@@ -167,6 +184,8 @@ test.describe('viewed-session cache', () => {
     await page.route('**/api/session/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}/${new URL(route.request().url()).search}` }))
     const initial = (feed: typeof feeds[number]) => feed.response.write(`event: initial\ndata: ${JSON.stringify({ session_id: feed.sid })}\n\n`)
     try {
+      // The cached detail goes stale on the page's clock.
+      await page.clock.install()
       await page.goto('/session/cache-a')
       await expect(page.locator('#messages').getByText('cache-a answer')).toBeVisible()
       await expect.poll(() => feeds.length).toBe(1)
@@ -178,16 +197,17 @@ test.describe('viewed-session cache', () => {
       await enter(page, 'cache-a')
       await expect.poll(() => feeds.length).toBe(3)
       initial(feeds[2]!)
-      await page.waitForTimeout(250)
+      await settled(page)
       const path = testInfo.outputPath(`cached-entry-${testInfo.project.name}.png`)
       await page.screenshot({ path })
       await testInfo.attach('Cached entry', { path, contentType: 'image/png' })
       expect(detailCalls.filter((sid) => sid === 'cache-a')).toHaveLength(beforeReturn)
       expect(feeds[2]!.knownCount).toBe('2')
-      // Make the detail stale, then exercise the browser event TanStack uses for window focus.
-      await page.waitForTimeout(5_100)
-      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
-      await page.waitForTimeout(250)
+      // Make the detail stale, then exercise the browser event TanStack uses for window focus; it listens on window, so
+      // the event bubbles there as a real one does.
+      await page.clock.runFor(5_100)
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange', { bubbles: true })))
+      await settled(page)
       expect(detailCalls.filter((sid) => sid === 'cache-a')).toHaveLength(beforeReturn)
       feeds[2]!.response.end()
       await expect.poll(() => feeds.length).toBe(4)
