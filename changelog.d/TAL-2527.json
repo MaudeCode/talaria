@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Reorganized how provider quotas load internally so their checks run faster; nothing changes in how Talaria looks or works.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

@@ -1,29 +1,28 @@
 import Foundation
 import Observation
 import UserNotifications
-import TalariaKit
 
 /// Backs the read-only Providers status screen and Insights quota section.
 /// Provider-key writes remain server-side; the only client persistence here is
 /// the sanitized app-group snapshot consumed by widgets and sidebar shortcuts.
 @MainActor
 @Observable
-final class ProvidersViewModel {
+public final class ProvidersViewModel {
     /// Server order is preserved: upstream already sorts active-first, then
     /// custom providers, then key-holders, then the rest.
-    private(set) var providers: [ProviderSummary] = []
+    public private(set) var providers: [ProviderSummary] = []
     private(set) var activeProviderID: String?
-    private(set) var isLoading = false
-    private(set) var errorMessage: String?
-    private(set) var quotaSources: [ProviderQuotaSource] = []
-    private(set) var hasStableQuotaSources = false
+    public private(set) var isLoading = false
+    public private(set) var errorMessage: String?
+    public private(set) var quotaSources: [ProviderQuotaSource] = []
+    public private(set) var hasStableQuotaSources = false
     /// True once a server list arrived; a cached snapshot alone leaves it false.
-    private(set) var hasServerQuotaSources = false
-    private(set) var isQuotaLoading = false
-    private(set) var refreshingQuotaSourceIDs: Set<String> = []
-    private(set) var quotaErrorMessage: String?
-    private(set) var quotaProfileID: String?
-    private(set) var quotaScopeID: String?
+    public private(set) var hasServerQuotaSources = false
+    public private(set) var isQuotaLoading = false
+    public private(set) var refreshingQuotaSourceIDs: Set<String> = []
+    public private(set) var quotaErrorMessage: String?
+    public private(set) var quotaProfileID: String?
+    public private(set) var quotaScopeID: String?
     private var quotaSourceGeneration: String?
 
     private let client: APIClient
@@ -49,16 +48,16 @@ final class ProvidersViewModel {
     private var lastForcedQuotaRefreshStart: ContinuousClock.Instant?
     private var lastForcedQuotaRefreshSuccess: ContinuousClock.Instant?
 
-    init(
+    /// The App builds its model through `ProvidersViewModel.app(server:)`, which passes the quota alert evaluation:
+    /// that reads the widget presentation settings, which live in the App target.
+    public init(
         server: URL,
         client: APIClient? = nil,
         quotaSnapshotStore: ProviderQuotaWidgetSnapshotStore? = nil,
         reloadQuotaWidgets: @escaping () -> Void = {
             ProviderQuotaWidgetSnapshotStore.reloadTimelines()
         },
-        evaluateQuotaAlerts: @escaping ([ProviderQuotaWidgetSource], Set<String>?) -> Void = { sources, freshIDs in
-            Task { await ProviderQuotaAlertService.evaluate(sources, freshSourceIDs: freshIDs) }
-        }
+        evaluateQuotaAlerts: @escaping ([ProviderQuotaWidgetSource], Set<String>?) -> Void = { _, _ in }
     ) {
         self.client = client ?? APIClient(baseURL: server)
         self.quotaSnapshotStore = quotaSnapshotStore ?? (client == nil ? ProviderQuotaWidgetSnapshotStore() : nil)
@@ -87,7 +86,7 @@ final class ProvidersViewModel {
         }
     }
 
-    func load() async {
+    public func load() async {
         loadGeneration += 1
         let generation = loadGeneration
 
@@ -115,7 +114,7 @@ final class ProvidersViewModel {
         isLoading = false
     }
 
-    func loadQuotas(refresh: Bool = false) async {
+    public func loadQuotas(refresh: Bool = false) async {
         quotaLoadGeneration += 1
         let generation = quotaLoadGeneration
         quotaRequestSequence += 1
@@ -142,7 +141,7 @@ final class ProvidersViewModel {
         isQuotaLoading = false
     }
 
-    func cancelLoads() {
+    public func cancelLoads() {
         loadGeneration += 1
         quotaLoadGeneration += 1
         isLoading = false
@@ -153,7 +152,7 @@ final class ProvidersViewModel {
     /// Keeps quotas fresh while the caller's task runs. Joining reconciles at once
     /// unless a forced refresh succeeded within `interval` or a load is in flight;
     /// after that, every owner waits for the shared next due time.
-    func refreshQuotasPeriodically(
+    public func refreshQuotasPeriodically(
         every interval: Duration = ProviderQuotaRefreshInterval.defaultValue.duration,
         sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) async {
@@ -176,7 +175,7 @@ final class ProvidersViewModel {
     }
 
     /// One account's refresh; a server without stable source IDs can only refresh the whole list.
-    func refreshQuotaSource(_ sourceID: String) async {
+    public func refreshQuotaSource(_ sourceID: String) async {
         if hasStableQuotaSources {
             await refreshQuota(sourceID: sourceID)
         } else {
@@ -302,14 +301,14 @@ final class ProvidersViewModel {
 
     /// The server marks the active card (TAL-603). A pre-TAL-603 server omits `is_active`; delete the
     /// exact-match fallback once every supported server ships the field.
-    func isActive(_ provider: ProviderSummary) -> Bool {
+    public func isActive(_ provider: ProviderSummary) -> Bool {
         provider.isActive ?? (provider.id != nil && provider.id == activeProviderID)
     }
 
     // MARK: - Presentation helpers (pure, testable)
 
     /// Key for the device-local Insights visibility and rename preferences.
-    static func normalizedProviderID(_ raw: String?) -> String? {
+    public static func normalizedProviderID(_ raw: String?) -> String? {
         guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
               !trimmed.isEmpty
         else {
@@ -319,7 +318,7 @@ final class ProvidersViewModel {
         return trimmed
     }
 
-    static func displayName(for provider: ProviderSummary) -> String {
+    public static func displayName(for provider: ProviderSummary) -> String {
         if let name = trimmedNonEmpty(provider.displayName) {
             return name
         }
@@ -333,7 +332,7 @@ final class ProvidersViewModel {
 
     /// Short technical badge for the server's `key_source_kind` (TAL-603); `other` shows the raw
     /// `key_source`. `nil` when the server sends no kind.
-    static func keySourceBadge(for provider: ProviderSummary) -> String? {
+    public static func keySourceBadge(for provider: ProviderSummary) -> String? {
         switch provider.keySourceKind {
         case "oauth":
             return "OAuth"
@@ -344,20 +343,20 @@ final class ProvidersViewModel {
         }
     }
 
-    static func authErrorText(for provider: ProviderSummary) -> String? {
+    public static func authErrorText(for provider: ProviderSummary) -> String? {
         trimmedNonEmpty(provider.authError)
     }
 
     /// Catalog size to advertise on the models disclosure: the server's `models_total` (TAL-603). A pre-TAL-603
     /// server (no `is_active`) can report fewer than it lists; delete that guard once every supported server ships the field.
-    static func modelCount(for provider: ProviderSummary) -> Int {
+    public static func modelCount(for provider: ProviderSummary) -> Int {
         guard provider.isActive == nil else { return provider.modelsTotal ?? 0 }
         return max(provider.modelsTotal ?? 0, provider.models?.count ?? 0)
     }
 
     /// Non-nil only when the server trimmed the model list (`models_total` exceeds
     /// the entries actually sent) — drives the "Showing X of Y models" footer.
-    static func truncatedModelInfo(for provider: ProviderSummary) -> (shown: Int, total: Int)? {
+    public static func truncatedModelInfo(for provider: ProviderSummary) -> (shown: Int, total: Int)? {
         let shown = provider.models?.count ?? 0
 
         guard let total = provider.modelsTotal, shown > 0, total > shown else {
@@ -373,20 +372,20 @@ final class ProvidersViewModel {
     }
 }
 
-enum ProviderQuotaAlertService {
-    enum Level: String, Codable {
+public enum ProviderQuotaAlertService {
+    public enum Level: String, Codable {
         case warning
         case critical
 
         var rank: Int { self == .critical ? 2 : 1 }
     }
 
-    struct Preferences: Equatable {
+    public struct Preferences: Equatable {
         var warning = ProviderQuotaAlertSettings.defaultWarningEnabled
         var critical = ProviderQuotaAlertSettings.defaultCriticalEnabled
         var criticalTimeSensitive = ProviderQuotaAlertSettings.defaultCriticalTimeSensitive
 
-        static func stored(defaults: UserDefaults) -> Preferences {
+        public static func stored(defaults: UserDefaults) -> Preferences {
             func bool(_ key: String, _ fallback: Bool) -> Bool { defaults.object(forKey: key) as? Bool ?? fallback }
             let critical = bool(ProviderQuotaAlertSettings.criticalEnabledKey, ProviderQuotaAlertSettings.defaultCriticalEnabled)
             return Preferences(
@@ -406,7 +405,7 @@ enum ProviderQuotaAlertService {
 
     /// The alerts server urgency raises: entering warning or critical, or escalating from warning to critical.
     /// `previous` holds each source's last alerted level; a source back below warning clears it.
-    static func transitions(
+    public static func transitions(
         _ urgencies: [(sourceID: String, urgency: ProviderQuotaUrgency)],
         previous: [String: String],
         preferences: Preferences
@@ -430,45 +429,7 @@ enum ProviderQuotaAlertService {
         return (alerts, states)
     }
 
-    static func evaluate(_ sources: [ProviderQuotaWidgetSource], freshSourceIDs: Set<String>?) async {
-        let defaults = UserDefaults.standard
-        guard defaults.bool(forKey: ProviderQuotaAlertSettings.isEnabledKey),
-              await notificationsAreAllowed()
-        else { return }
-
-        let appGroup = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
-        let settings = ProviderQuotaEvaluationSettings.stored(defaults: appGroup)
-        let aliasesData = appGroup.data(forKey: ProviderQuotaDisplaySettings.aliasesKey) ?? Data()
-        var previous = decodedStates(defaults.data(forKey: ProviderQuotaAlertSettings.stateKey))
-        let currentSourceIDs = Set(sources.filter { $0.status != "removed" }.map(\.sourceID))
-        previous = previous.filter { currentSourceIDs.contains($0.key) }
-
-        let fresh = sources
-            .filter { $0.status != "removed" && freshSourceIDs?.contains($0.sourceID) ?? true }
-            .map { ($0, ProviderQuotaPresentation.state(for: $0, settings: settings, at: $0.freshnessDate)) }
-        let preferences = Preferences.stored(defaults: defaults)
-        let result = transitions(fresh.map { ($0.0.sourceID, $0.1.urgency) }, previous: previous, preferences: preferences)
-        for (source, state) in fresh {
-            guard let level = result.alerts[source.sourceID] else { continue }
-            let name = ProviderQuotaDisplaySettings.displayName(
-                providerID: source.providerID,
-                fallback: source.providerLabel,
-                aliasesData: aliasesData
-            )
-            let request = Self.request(
-                level,
-                sourceID: source.sourceID,
-                name: name,
-                remaining: state.remainingPercent,
-                preferences: preferences
-            )
-            try? await UNUserNotificationCenter.current().add(request)
-        }
-
-        defaults.set(try? JSONEncoder().encode(result.states), forKey: ProviderQuotaAlertSettings.stateKey)
-    }
-
-    static func request(
+    public static func request(
         _ level: Level,
         sourceID: String,
         name: String,
@@ -492,18 +453,4 @@ enum ProviderQuotaAlertService {
             trigger: nil
         )
     }
-
-    private static func notificationsAreAllowed() async -> Bool {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        switch settings.authorizationStatus {
-        case .authorized, .provisional, .ephemeral: return true
-        default: return false
-        }
-    }
-
-    private static func decodedStates(_ data: Data?) -> [String: String] {
-        guard let data else { return [:] }
-        return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
-    }
-
 }
