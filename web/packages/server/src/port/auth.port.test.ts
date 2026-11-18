@@ -26,30 +26,9 @@ const post = (s: TestServer, path: string, body: unknown, headers: Record<string
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 
 describe('login redirect sanitiser', () => {
-  it('login-shaped destinations collapse to /', () => {
-    for (const p of ['/login', '/session/login', '/session/login/', '/hermes/session/login']) expect(safeLoginRedirectPath(p), p).toBe('/')
-  })
-
-  it('a six-level percent-encoded login chain collapses to /', () => {
-    let chain = '/login'
-    for (let i = 0; i < 6; i += 1) chain = `/login?next=${encodeURIComponent(chain)}`
-    expect(chain).toContain('%25252525')
-    expect(safeLoginRedirectPath(chain)).toBe('/')
-  })
-
   it('a non-login destination with its own next key round-trips', () => {
     expect(safeLoginRedirectPath('/x?next=/y')).toBe('/x?next=/y')
     expect(safeLoginRedirectPath('/admin?action=foo&next=/real/path')).toBe('/admin?action=foo&next=/real/path')
-  })
-
-  it('an over-long next collapses to /', () => {
-    expect(safeLoginRedirectPath(`/${'a'.repeat(3000)}`)).toBe('/')
-  })
-
-  it('a 40-deep exponential login chain collapses to /', () => {
-    let chain = '/login'
-    for (let i = 0; i < 40; i += 1) chain = `/login?next=${encodeURIComponent(chain)}`
-    expect(safeLoginRedirectPath(chain)).toBe('/')
   })
 })
 

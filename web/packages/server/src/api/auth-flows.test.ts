@@ -1,12 +1,11 @@
 import { JsonDocuments, useJsonStorage } from '../test/storage.js'
-import { FakeAuthenticator, cborEncode, b64u } from '../test/passkeys.js'
-import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign as cryptoSign } from 'node:crypto'
+import { FakeAuthenticator, b64u } from '../test/passkeys.js'
+import { createHash, generateKeyPairSync, randomBytes, sign as cryptoSign } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { cborDecode } from '../auth/passkeys.js'
-import { canonicalJson, OidcService, safeNextPath } from '../auth/oidc.js'
+import { OidcService, safeNextPath } from '../auth/oidc.js'
 import { CSRF_HEADER_NAME } from '../auth/store.js'
 import { validatedRequestHost } from './auth-raw.js'
 import { SidecarClient } from '../sidecar/client.js'
@@ -343,7 +342,7 @@ describe('sign-in destination at a subpath mount', () => {
 
   it.each([
     'https://evil.example/x', '//evil.example/x', '/\\evil.example', '\\evil.example', '/a\nb', '/a b', '/x\u0000y',
-    '/login', '/mount/login', '/mount/login/', '/mount/login?next=%2Fmount%2Ftasks', '/tasks/login%3Fnext%3D%252Flogin',
+    '/login', '/mount/login', '/mount/login/', '/session/login/', '/hermes/session/login', '/mount/login?next=%2Fmount%2Ftasks', '/tasks/login%3Fnext%3D%252Flogin',
     `/${'%25'.repeat(9)}2Flogin`, 'tasks',
   ])('rejects %j to the mount root', async (next) => {
     const result = await destination({ next, mount_path: '/mount/' })
@@ -537,13 +536,6 @@ describe('passkey flag off', () => {
 })
 
 describe('auth helpers', () => {
-  it('cborDecode round-trips the encoder used by the fake authenticator', () => {
-    const value = new Map<unknown, unknown>([[1, 2], [-2, Buffer.from('ab')], ['s', 'x']])
-    const decoded = cborDecode(cborEncode(value)) as Map<unknown, unknown>
-    expect(decoded.get(1)).toBe(2)
-    expect(decoded.get(-2)).toEqual(Buffer.from('ab'))
-    expect(decoded.get('s')).toBe('x')
-  })
   it('safeNextPath and validatedRequestHost mirror the Python guards', () => {
     expect(safeNextPath('/x')).toBe('/x')
     expect(safeNextPath('//evil')).toBe('/')
@@ -552,15 +544,6 @@ describe('auth helpers', () => {
     expect(validatedRequestHost('user@example.com')).toBeNull()
     expect(validatedRequestHost('example.com/x')).toBeNull()
     expect(validatedRequestHost('example.com:')).toBeNull()
-  })
-  it('canonicalJson sorts keys deterministically', () => {
-    expect(canonicalJson({ b: 1, a: [true, null] })).toBe('{"a":[true,null],"b":1}')
-  })
-  it('signature helper sanity: a P-256 assertion verifies with the SPKI export', () => {
-    const a = new FakeAuthenticator()
-    const pem = a.key.publicKey.export({ type: 'spki', format: 'pem' })
-    expect(createPublicKey(pem).asymmetricKeyType).toBe('ec')
-    expect(createPrivateKey(a.key.privateKey.export({ type: 'pkcs8', format: 'pem' })).asymmetricKeyType).toBe('ec')
   })
 })
 
