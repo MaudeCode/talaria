@@ -1424,6 +1424,8 @@ def _cancel_background_reviews(entries, message: str) -> list[threading.Thread]:
             agent.skip_background_review = True
         except AttributeError:  # an object without instance attributes forks no reviews
             pass
+    if not unique:
+        return []  # nothing to cancel, and a sidecar that never loaded the Agent must still shut down
     from agent.background_review import cancel_background_review_for_live_turn, prepare_background_review_run
 
     def cancel(agent) -> None:
