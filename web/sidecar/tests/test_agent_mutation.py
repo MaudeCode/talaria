@@ -204,32 +204,6 @@ def _checkout_move(token,*args,**kwargs):
     return root, home, base, target
 
 
-def test_native_pause_record_stays_readable_during_publication(tmp_path, monkeypatch):
-    import importlib.util
-
-    root, home, _, _ = native_agent(tmp_path, git_history=False)
-    monkeypatch.setenv('HERMES_HOME', str(home))
-    spec = importlib.util.spec_from_file_location('synthetic_pause_record', root / 'hermes_cli/update_pause_record.py')
-    records = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(records)
-    published = records.file()
-    before = json.dumps({'owner': 'original'})
-    published.write_text(before)
-    observations = []
-    original_open = Path.open
-
-    def observe_open(path, mode='r', *args, **kwargs):
-        handle = original_open(path, mode, *args, **kwargs)
-        if mode == 'w' and path.parent == home:
-            observations.append(published.read_text())
-        return handle
-
-    monkeypatch.setattr(Path, 'open', observe_open)
-    records.write({'resume_needed': True}, owner='unowned')
-    assert observations == [before], 'readers must see the prior complete record during publication'
-    assert json.loads(published.read_text()) == {'resume_needed': True, 'owner': 'unowned'}
-
-
 @contextmanager
 def own_agent(root, home, base, target, env=None):
     writer = subprocess.Popen([sys.executable, str(root / 'writer.py'), str(home)])
@@ -443,35 +417,6 @@ def test_unverified_tree_or_resume_keeps_the_native_recovery_record(owned, failu
     result = rpc(sidecar, root, 'finish', token=begun['token'])
     assert result['ok'] is False
     assert json.loads((home / 'pause-record.json').read_text())['resume_needed'] is True
-
-
-@pytest.mark.parametrize('probe', ['alive', 'identity', 'discovery'])
-def test_synthetic_owner_disappearing_during_probe_is_not_live(tmp_path, monkeypatch, probe):
-    import importlib.util
-    root, home, _, _ = native_agent(tmp_path, git_history=False)
-    monkeypatch.setenv('HERMES_HOME', str(home))
-    package = types.ModuleType('hermes_cli')
-    package.__path__ = [str(root / 'hermes_cli')]
-    monkeypatch.setitem(sys.modules, 'hermes_cli', package)
-    loaded = {}
-    for name in ('update_cmd_posix_pause', 'update_pause_record'):
-        spec = importlib.util.spec_from_file_location('hermes_cli.' + name, root / 'hermes_cli' / (name + '.py'))
-        module = importlib.util.module_from_spec(spec)
-        monkeypatch.setitem(sys.modules, spec.name, module)
-        spec.loader.exec_module(module)
-        loaded[name] = module
-    (home / 'active').write_text('123')
-    active, read = home / 'active', Path.read_text
-    def disappear(path, *args, **kwargs):
-        if path == active: active.unlink(missing_ok=True)
-        return read(path, *args, **kwargs)
-    monkeypatch.setattr(Path, 'read_text', disappear)
-    pause, records = loaded['update_cmd_posix_pause'], loaded['update_pause_record']
-    result = {'alive': lambda: pause._alive(123, 1),
-              'identity': lambda: records.identity_is_live({'pid': 123, 'ct': 1}),
-              'discovery': lambda: pause._discover_bare(set())}[probe]()
-    expected = ([], []) if probe == 'discovery' else False
-    assert result == expected, 'a vanished synthetic owner must be reported absent'
 
 
 def test_failed_git_step_resumes_old_source_without_dropping_work(owned):

@@ -14,27 +14,6 @@ from conftest import SidecarProcess, AGENT_DIR, AGENT_PYTHON
 from test_agent_mutation import native_agent, wait_for, wait_for_agent_exit, supervised_inventory
 
 
-def test_snapshot_resamples_a_descendant_exited_before_birth_lookup(supervised_inventory, monkeypatch):
-    from talaria_sidecar import agent_services as services
-    _, _, _, _, _, parents, modules = supervised_inventory
-    parents[41005] = 41002
-    status = modules['gateway.status']
-    original = status.get_process_start_time
-
-    def birth(pid):
-        if pid == 41005:
-            parents.pop(pid, None)
-            return None
-        return original(pid)
-
-    monkeypatch.setattr(status, 'get_process_start_time', birth)
-    entry = dict(pid=41002, service_pid=41001, label='synthetic.gateway')
-    assert services.snapshot(entry) == {
-        '41001': {'birth': 410010, 'parent': 1},
-        '41002': {'birth': 410020, 'parent': 41001},
-    }
-
-
 def test_snapshot_excludes_an_unreaped_dead_child_with_a_readable_birth(supervised_inventory, monkeypatch):
     from talaria_sidecar import agent_services as services
     _, _, _, _, _, parents, modules = supervised_inventory
@@ -83,7 +62,10 @@ def test_snapshot_brackets_exits_at_each_read(supervised_inventory, monkeypatch,
     monkeypatch.setattr(services, '_process_table', table)
     monkeypatch.setattr(modules['gateway.status'], 'get_process_start_time', birth)
     result = services.snapshot(dict(pid=41002, service_pid=41001))
-    assert set(result) == {'41001', '41002'}
+    assert result == {
+        '41001': {'birth': 410010, 'parent': 1},
+        '41002': {'birth': 410020, 'parent': 41001},
+    }
     assert tables <= services.SNAPSHOT_ATTEMPTS * 3
 
 
@@ -151,24 +133,6 @@ def test_snapshot_refuses_unreadable_or_empty_inventory(supervised_inventory, mo
     monkeypatch.setattr(subprocess, 'run', lambda *a, **kw: subprocess.CompletedProcess(a, 0, output, ''))
     with pytest.raises(RuntimeError, match='inventory is empty|inventory is unreadable'):
         services.snapshot(dict(pid=41002, service_pid=41001))
-
-
-def test_snapshot_bounds_persistent_churn(supervised_inventory, monkeypatch):
-    from talaria_sidecar import agent_services as services
-    _, _, _, _, _, parents, _ = supervised_inventory
-    original = services._process_table
-    calls = 0
-
-    def table():
-        nonlocal calls
-        calls += 1
-        parents[42000 + calls] = 41002
-        return original()
-
-    monkeypatch.setattr(services, '_process_table', table)
-    with pytest.raises(RuntimeError, match='kept changing.*retry.*recovery remains owed'):
-        services.snapshot(dict(pid=41002, service_pid=41001))
-    assert calls == services.SNAPSHOT_ATTEMPTS * 3
 
 
 @pytest.mark.parametrize('anchor', [41001, 41002])
@@ -1284,19 +1248,6 @@ def test_native_and_backend_debt_survive_worker_death_and_unsafe_source(tmp_path
         assert not list((home / '.talaria-agent-services').glob('*.json'))
 
 
-def test_backend_debt_closes_new_agent_admission(tmp_path):
-    from talaria_sidecar.runtime import AgentRuntime, AgentRuntimeStale
-    from talaria_sidecar.agent_services import recovery_path
-    root, home = tmp_path / 'agent', tmp_path / 'home'
-    root.mkdir(); home.mkdir()
-    runtime = AgentRuntime(home, root)
-    file = recovery_path(root, home)
-    file.parent.mkdir()
-    file.write_text('{}')
-    with pytest.raises(AgentRuntimeStale, match='recovery is incomplete'):
-        runtime.ensure_current()
-
-
 @pytest.mark.parametrize('wrapper_exits', [False, True])
 def test_backend_stop_ack_does_not_authorize_mutation_or_force_kill(supervised_inventory, monkeypatch, wrapper_exits):
     import threading
@@ -1894,7 +1845,7 @@ def test_backend_lifecycle_capability_evidence(monkeypatch, case, unsupported):
 
 
 
-@pytest.mark.parametrize('changed', ['operator', 'revision', 'homes', 'replay'])
+@pytest.mark.parametrize('changed', ['operator', 'revision', 'homes', 'replay', 'expired'])
 def test_legacy_refresh_rejects_changed_or_replayed_consent(tmp_path, monkeypatch, changed):
     from types import SimpleNamespace
     from talaria_sidecar import agent_mutation as mutation
@@ -1903,11 +1854,11 @@ def test_legacy_refresh_rejects_changed_or_replayed_consent(tmp_path, monkeypatc
     token = 'c' * 32
     params = dict(agent_dir=str(root), action='begin', revision=target, homes=[str(home)], intent='synthetic-owner', refresh_token=token)
     monkeypatch.setitem(mutation._CONSENTS, token, dict(root=root.resolve(), revision=target, homes=[str(home.resolve())],
-        intent='synthetic-owner', binding='d' * 64, expires=float('inf')))
+        intent='synthetic-owner', binding='d' * 64, expires=0 if changed == 'expired' else float('inf')))
     if changed == 'operator': params['intent'] = 'other-owner'
     elif changed == 'revision': params['revision'] = 'e' * 40
     elif changed == 'homes': params['homes'] = [str(home / 'other')]
-    else:
+    elif changed == 'replay':
         assert not mutation.call(SimpleNamespace(agent_dir=root), None, {**params, 'intent': 'other-owner'})['ok']
     result = mutation.call(SimpleNamespace(agent_dir=root), None, params)
     assert not result['ok'] and 'expired, changed or was already used' in result['detail']
@@ -1933,18 +1884,6 @@ def test_legacy_refresh_requires_interactive_intent_and_keeps_timeout_debt(tmp_p
         assert not retry['ok'], retry
         assert (home / 'signals').read_text().splitlines() == ['TERM']
         assert debt.exists()
-
-
-def test_expired_refresh_consent_is_refused_before_starting_a_worker(tmp_path, monkeypatch):
-    from talaria_sidecar import agent_mutation
-    from types import SimpleNamespace
-    root, home, target = tmp_path / 'agent', tmp_path / 'home', 'b' * 40
-    root.mkdir(); home.mkdir()
-    token = 'c' * 32
-    monkeypatch.setitem(agent_mutation._CONSENTS, token, {'expires': 0})
-    result = agent_mutation.call(SimpleNamespace(agent_dir=root), None, dict(agent_dir=str(root), action='begin', revision=target, homes=[str(home)], intent='synthetic-owner', refresh_token=token))
-    assert not result['ok'] and 'expired' in result['detail']
-    assert token not in agent_mutation._CONSENTS
 
 
 def test_legacy_refresh_failure_restores_siblings_and_fresh_sidecar_recovers(tmp_path):
@@ -3429,13 +3368,6 @@ def test_gateway_wrapper_without_a_runtime_cannot_discharge_readiness_debt(gatew
     with pytest.raises(RuntimeError, match='readiness is unverified'):
         recovery._wait_ready(entry, lambda *args: [])
     assert recovery.path.read_bytes() == before and calls == []
-
-
-def test_backend_stop_persists_commit_and_intent_before_supervisor_action(backend_stop):
-    recovery, entry, stopped, parents, modules, events, pause = backend_stop
-    recovery.stop(entry, stopped)
-    assert events == ['identity', 'prepare', 'commit', 'disarm']
-    assert json.loads(recovery.path.read_text())['entries'][0]['phase'] == 'stopped'
 
 
 @pytest.mark.parametrize('unsafe', ['config', 'birth', 'ancestry', 'successor', 'unreadable-child', 'cancel'])

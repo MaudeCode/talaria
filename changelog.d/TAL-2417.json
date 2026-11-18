@@ -1,0 +1,1 @@
+{"skip": "Test-only change: removes sidecar tests that repeat a keeper or only exercise their own fakes; no app behavior changes."}
