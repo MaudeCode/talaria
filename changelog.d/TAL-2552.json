@@ -1,0 +1,1 @@
+{"skip": "Test-only: the connection-operation hosted test waits for the continued reply however its text groups into elements; no app behavior changes."}

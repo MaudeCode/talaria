@@ -202,7 +202,11 @@ final class StreamHostedTests: XCTestCase {
         }
         HostedAccessibility.activate(try XCTUnwrap(approve, "Approve never enabled after typing"))
 
-        _ = try await requireElement(in: window, label: "Agent continued")
+        // The continuation joins the reply's text, so it reads alone only while nothing precedes it in the reply; on CI
+        // it rendered as "Fixture finished.Agent continued" (TAL-2552).
+        _ = try await requireElement(in: window, "The agent never continued") {
+            $0.accessibilityLabel?.hasSuffix("Agent continued") == true
+        }
         let state = UITestFixtureURLProtocol.connectionOperationState.withLock { $0 }
         XCTAssertEqual(state.answers.map { $0["action"] }, ["skip", "retry", "approve"])
         XCTAssertEqual(state.env, ["LINEAR_API_KEY": "synthetic-secret"])
