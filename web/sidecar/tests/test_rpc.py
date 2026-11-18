@@ -205,71 +205,68 @@ def test_unbuffered_input_preserves_a_large_utf8_frame_across_os_reads() -> None
 def test_a_huge_request_body_parses_on_its_worker_so_the_next_call_is_answered_first(monkeypatch) -> None:
     """A multi-MB chat.start history must not hold up a request that arrives while it parses (TAL-1228).
 
-    Decoding is real. Each call into CPython's C JSON scanner is slowed in proportion to the text it consumes and keeps
-    the GIL meanwhile, as the scanner itself does, so one decode over the whole body stalls every thread for the whole
-    parse whichever thread runs it. GC stays off: its heap-wide pauses hit every thread and would only blur the timing.
+    Decoding is real. ``gil`` stands for the interpreter lock CPython's C JSON scanner keeps for one whole call, and
+    answering also needs it. Each call over the chat.start text holds it; before its second call, the decoder parks
+    until models.list is answered. A parse that walks the body in several calls on its worker lets the answer in
+    between; one call over the whole body, or a parse on the reader, answers only after the body has decoded.
     """
-    import ctypes
-    import gc
-    import time
-    hold_gil = ctypes.PyDLL(None).usleep  # a PyDLL call never releases the GIL
     real_raw_decode = json.JSONDecoder.raw_decode
-    decoding = threading.Event()
-
-    def slow_raw_decode(self, text, idx=0):
-        if len(text) > 1_000_000:
-            decoding.set()
-        value, end = real_raw_decode(self, text, idx)
-        hold_gil(int((end - idx) * 0.025))  # 25 ns per character
-        return value, end
-
-    history = [{'role': 'tool', 'tool_call_id': f'call-{n}', 'content': [{'type': 'text', 'text': f'line {k}'} for k in range(100)]}
-               for n in range(7000)]
+    gil = threading.Lock()
+    decoding, yielded, answered, replied = threading.Event(), threading.Event(), threading.Event(), threading.Event()
+    order: list[str] = []
+    history = [{'role': 'tool', 'tool_call_id': f'call-{n}', 'content': [{'type': 'text', 'text': f'line {n}'}]} for n in range(3)]
     big = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'chat.start', 'params': {'session_id': 'synthetic', 'conversation_history': history},
                       'trace_id': '22222222-2222-4222-8222-222222222222'})
     small = json.dumps({'jsonrpc': '2.0', 'id': 2, 'method': 'models.list', 'params': {}})
-    assert len(big) > 20_000_000
-    big_line, small_line = (big + '\n').encode(), (small + '\n').encode()
-    del history, big
+
+    def gated_raw_decode(self, text, idx=0):
+        if len(text) != len(big):
+            return real_raw_decode(self, text, idx)
+        if decoding.is_set() and not yielded.is_set():
+            yielded.set()
+            answered.wait(10)  # the decoder yields here, between its first two scanner calls
+        with gil:
+            decoding.set()
+            decoded = real_raw_decode(self, text, idx)
+            order.append('scan')
+        return decoded
+
+    def models_list(ctx, params):
+        with gil:
+            return {'models': []}
+
     read_fd, write_fd = os.pipe()
     output = io.BytesIO()
-    marks: dict[str, float] = {}
-    server = RpcServer({'chat.start': lambda ctx, params: marks.setdefault('parsed', time.perf_counter()) and {'turns': len(params['conversation_history'])},
-                        'models.list': lambda ctx, params: {'models': []}}, stdin=os.fdopen(read_fd, 'rb'), stdout=output)
+    server = RpcServer({'chat.start': lambda ctx, params: {'turns': len(params['conversation_history'])}, 'models.list': models_list},
+                       stdin=os.fdopen(read_fd, 'rb'), stdout=output)
     write = server._write
 
     def observe(message):
-        if message.get('id') == 2:
-            marks['answered'] = time.perf_counter()
         write(message)
+        if message.get('id') == 2:
+            order.append('answered')
+            answered.set()
+        if len(output.getvalue().splitlines()) == 2:
+            replied.set()
 
     server._write = observe
     reader = threading.Thread(target=server.serve_forever, daemon=True)
-    monkeypatch.setattr(json.JSONDecoder, 'raw_decode', slow_raw_decode)
-    gc_enabled = gc.isenabled()
-    gc.disable()
+    monkeypatch.setattr(json.JSONDecoder, 'raw_decode', gated_raw_decode)
     try:
         reader.start()
-        began = time.perf_counter()
         with os.fdopen(write_fd, 'wb') as pipe:
-            pipe.write(big_line)
+            pipe.write((big + '\n').encode())
             pipe.flush()
-            assert decoding.wait(20)  # models.list arrives once the chat.start body is being parsed
-            pipe.write(small_line)
-        reader.join(20)
-        for _ in range(2000):
-            if len(output.getvalue().splitlines()) == 2:
-                break
-            threading.Event().wait(0.01)
+            assert decoding.wait(10)  # models.list arrives once the chat.start body is being parsed
+            pipe.write((small + '\n').encode())
+        assert replied.wait(10)
+        reader.join(10)
     finally:
-        if gc_enabled:
-            gc.enable()
         monkeypatch.undo()
     replies = {json.loads(raw)['id']: json.loads(raw) for raw in output.getvalue().splitlines()}
-    assert replies[1]['result'] == {'turns': 7000}
+    assert replies[1]['result'] == {'turns': 3}
     assert replies[2]['result'] == {'models': []}
-    answered, parsed = marks['answered'] - began, marks['parsed'] - began
-    assert answered < parsed / 2, f'models.list answered at {answered * 1000:.0f} ms; the chat.start body finished parsing at {parsed * 1000:.0f} ms'
+    assert 'scan' in order[order.index('answered') + 1:], f'models.list was answered only after the chat.start body decoded: {order}'
 
 
 def _serve_lines(lines: list[bytes], methods: dict) -> list[dict]:
@@ -297,6 +294,13 @@ def test_malformed_bodies_answer_the_standard_errors_under_the_best_known_id() -
     assert replies[3]['error']['code'] == -32600
     assert replies[4]['error']['code'] == -32600
     assert replies[5]['result'] == {'params': {'method': 'nested', 'id': 0}}
+
+
+def test_an_unknown_method_and_a_cancel_of_an_inactive_call_answer_without_a_handler() -> None:
+    lines = [b'{"jsonrpc":"2.0","id":1,"method":"nope.nothing"}', b'{"jsonrpc":"2.0","id":2,"method":"rpc.cancel","params":{"id":12345}}']
+    replies = {r['id']: r for r in _serve_lines(lines, {})}
+    assert replies[1]['error']['code'] == -32601
+    assert replies[2]['result'] == {'cancelled': False, 'reason': 'not_active'}
 
 
 def test_a_routed_chat_start_keeps_the_trace_and_session_identity_from_its_body(caplog) -> None:
@@ -343,7 +347,6 @@ def test_the_yielding_decoder_rejects_what_json_loads_rejects(line) -> None:
 def test_an_idle_loop_rarely_wakes_and_still_cancels_and_shuts_down_promptly(monkeypatch) -> None:
     """TAL-1746: the idle loop polled its input queue 10x/s; input and shutdown now both arrive on the queue."""
     import queue
-    import time
     from types import SimpleNamespace
 
     from talaria_sidecar import rpc
@@ -372,31 +375,40 @@ def test_an_idle_loop_rarely_wakes_and_still_cancels_and_shuts_down_promptly(mon
         assert SimulatedQueue.waits <= 10
         monkeypatch.undo()
 
-        cancelled_at, started = [], threading.Event()
+        class BackstopFreeQueue(queue.Queue):
+            """The loop's 1 s backstop never fires: a timed wait lasts until an item arrives. Reports the loop parking
+            again once it has taken the cancel."""
+
+            def get(self, block=True, timeout=None):
+                if cancel_taken.is_set() and self.empty():
+                    parked.set()
+                item = super().get(block)
+                if item and b'rpc.cancel' in item:
+                    cancel_taken.set()
+                return item
+
+        started, cancelled, cancel_taken, parked = threading.Event(), threading.Event(), threading.Event(), threading.Event()
 
         def slow(ctx, params):
             started.set()
-            ctx.cancel_event.wait(5)
-            cancelled_at.append(time.monotonic())
+            if ctx.cancel_event.wait(10):
+                cancelled.set()
             raise Cancelled()
 
+        monkeypatch.setattr(rpc, 'queue', SimpleNamespace(Queue=BackstopFreeQueue, Empty=queue.Empty, Full=queue.Full))
         server = RpcServer({'slow': slow}, stdin=pipe, stdout=io.BytesIO())
         result = []
         reader = threading.Thread(target=lambda: result.append(server.serve_forever()), daemon=True)
         reader.start()
         os.write(write_fd, b'{"jsonrpc":"2.0","id":1,"method":"slow"}\n')
-        assert started.wait(5)
-        sent = time.monotonic()
+        assert started.wait(10)
         os.write(write_fd, b'{"jsonrpc":"2.0","id":"c","method":"rpc.cancel","params":{"id":1}}\n')
-        deadline = time.monotonic() + 5
-        while not cancelled_at and time.monotonic() < deadline:
-            time.sleep(0.005)
-        assert cancelled_at and cancelled_at[0] - sent < 0.1
-        time.sleep(0.2)  # the loop is idle again, parked in its queue wait
-        stopping = time.monotonic()
+        assert cancelled.wait(10), 'the cancel never reached the parked loop'
+        assert parked.wait(10)  # the loop is idle again, parked in its queue wait
         server.request_shutdown(exit_code=4)
-        reader.join(1)
-        assert result == [4] and time.monotonic() - stopping < 0.1
+        reader.join(10)
+        assert not reader.is_alive(), 'shutdown must wake the parked loop without its backstop'
+        assert result == [4]
     finally:
         os.close(idle_write)
         os.close(write_fd)

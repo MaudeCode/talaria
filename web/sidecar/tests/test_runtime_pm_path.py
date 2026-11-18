@@ -1,56 +1,38 @@
 """PM tool activation at the sidecar's Agent-import boundary, without a real Agent."""
 
-import json
 import os
-import subprocess
 import sys
+import types
 
 import pytest
 
-from conftest import SIDECAR_ROOT
-
 
 @pytest.mark.parametrize("managed", [True, False])
-def test_runtime_resolves_managed_tools_before_agent_import(tmp_path, managed):
+def test_runtime_resolves_managed_tools_before_agent_import(tmp_path, monkeypatch, managed):
+    from talaria_sidecar import runtime as runtime_module
+
     agent = tmp_path / "agent"
     agent.mkdir()
-    cli = agent / "hermes_cli"
-    cli.mkdir()
-    (cli / "__init__.py").write_text("")
-    (cli / "auth.py").write_text("")
     bin_dir = tmp_path / "store" / "bin"
-    bin_dir.mkdir(parents=True)
-    for tool in ("node", "rg", "ffmpeg"):
-        binary = bin_dir / tool
-        binary.write_text(f"#!/bin/sh\nprintf 'managed-{tool}'\n")
-        binary.chmod(0o755)
     if managed:
-        pm = agent / "pm"
-        pm.mkdir()
-        (pm / "__init__.py").write_text(
+        (agent / "pm").mkdir()
+        (agent / "pm" / "__init__.py").write_text(
             "import os\n"
             f"def store_first_path(path):\n    return {str(bin_dir)!r} + os.pathsep + path\n"
         )
-    (agent / "run_agent.py").write_text(
-        "import shutil, subprocess\n"
-        "class AIAgent: pass\n"
-        + ("for name in ('node', 'rg', 'ffmpeg'):\n"
-           "    assert shutil.which(name), f'missing managed tool: {name}'\n"
-           "    assert subprocess.check_output([name], text=True) == f'managed-{name}'\n" if managed else "")
-    )
-    result = subprocess.run(
-        [sys.executable, "-c", (
-            "import json, os\nfrom pathlib import Path\n"
-            "from talaria_sidecar.runtime import AgentRuntime\n"
-            f"runtime = AgentRuntime(Path({str(tmp_path)!r}), Path({str(agent)!r}))\n"
-            "runtime.load()\nprint(json.dumps({'loaded': runtime.loaded, 'path': os.environ['PATH']}))\n"
-        )],
-        env={"HOME": str(tmp_path), "HERMES_HOME": str(tmp_path / "state"), "PATH": "",
-             "PYTHONPATH": os.pathsep.join([str(SIDECAR_ROOT), str(agent)]),
-             **({"LD_LIBRARY_PATH": os.environ["LD_LIBRARY_PATH"]} if "LD_LIBRARY_PATH" in os.environ else {})},
-        capture_output=True, text=True, timeout=15,
-    )
-    assert result.returncode == 0, result.stderr
-    outcome = json.loads(result.stdout)
-    assert outcome["loaded"] is True
-    assert outcome["path"] == (str(bin_dir) + os.pathsep if managed else "")
+    # The Agent resolves its tools while run_agent imports, so record the PATH it saw then.
+    (agent / "run_agent.py").write_text("import os\nPATH_AT_IMPORT = os.environ['PATH']\nclass AIAgent: pass\n")
+    monkeypatch.syspath_prepend(str(agent))
+    for name in ("pm", "run_agent"):
+        monkeypatch.setitem(sys.modules, name, None)  # restored, or removed, after the test
+        del sys.modules[name]
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.auth", types.ModuleType("hermes_cli.auth"))
+    monkeypatch.setattr(runtime_module, "read_agent_revision", lambda agent_dir, module_path: None)  # no git checkout here
+    monkeypatch.setenv("PATH", "/usr/bin")
+    runtime = runtime_module.AgentRuntime(tmp_path / "home", agent)
+    runtime.load()
+    assert runtime.loaded is True
+    expected = str(bin_dir) + os.pathsep + "/usr/bin" if managed else "/usr/bin"
+    assert sys.modules["run_agent"].PATH_AT_IMPORT == expected
+    assert os.environ["PATH"] == expected

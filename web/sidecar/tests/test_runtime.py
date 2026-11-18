@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import hashlib
 import json
 import pytest
@@ -388,8 +389,7 @@ def test_catalog_reads_keep_agent_recovery_admission(method):
         registry.methods[method](None, {})
 
 
-@pytest.mark.parametrize('peer_version', [54, 55, 56, 57])
-def test_handshake_rejects_pre_cost_policy_protocol(peer_version):
+def test_handshake_rejects_any_other_rpc_version():
     from types import SimpleNamespace
     from talaria_sidecar.methods import Registry
     from talaria_sidecar.methods import runtime as runtime_methods
@@ -401,7 +401,7 @@ def test_handshake_rejects_pre_cost_policy_protocol(peer_version):
     runtime_methods.register(registry)
     ctx = SimpleNamespace(server=SimpleNamespace(request_shutdown=lambda **kwargs: stopped.append(kwargs)))
     with pytest.raises(RpcError, match='version mismatch') as refusal:
-        registry.methods['runtime.handshake'](ctx, {'rpc_version': peer_version})
+        registry.methods['runtime.handshake'](ctx, {'rpc_version': SIDECAR_RPC_VERSION - 1})
     assert refusal.value.data['condition'] == 'sidecar_rpc_version_mismatch'
     assert loaded == []
     assert stopped == [{'exit_code': 3}]
@@ -421,43 +421,15 @@ def test_handshake_reports_the_pinned_agent(sidecar: SidecarProcess) -> None:
     assert result["import_error"] is None
 
 
-@requires_agent
-def test_handshake_rejects_another_rpc_version(sidecar: SidecarProcess) -> None:
-    message, _ = sidecar.call("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION + 1})
-    assert message["error"]["data"]["condition"] == "sidecar_rpc_version_mismatch"
-    assert sidecar.close() == 3
-
-
-@requires_agent
-def test_handshake_rejects_pre_receipt_delivery_protocol(sidecar: SidecarProcess) -> None:
-    message, _ = sidecar.call("runtime.handshake", {"rpc_version": 37})
-    assert "error" in message, "pre-receipt servers must not admit reconciled deliveries"
-    assert message["error"]["data"]["condition"] == "sidecar_rpc_version_mismatch"
-    assert sidecar.close() == 3
-
-
-@requires_agent
-def test_handshake_rejects_pre_selection_guard_protocol(sidecar: SidecarProcess) -> None:
-    message, _ = sidecar.call("runtime.handshake", {"rpc_version": 41})
-    assert "error" in message, "pre-guard servers must not admit the selection-warning protocol"
-    assert message["error"]["data"]["condition"] == "sidecar_rpc_version_mismatch"
-    assert sidecar.close() == 3
-
-
-@requires_agent
-def test_status_before_handshake_reports_nothing_loaded(sidecar: SidecarProcess) -> None:
-    result = sidecar.result("runtime.status")
-    assert result["compatible"] is False
-    assert result["agent_revision"] is None
-
-
-@requires_agent
-def test_unknown_method_and_cancel_of_inactive_request(handshaken: SidecarProcess) -> None:
-    message, _ = handshaken.call("nope.nothing")
-    assert message["error"]["code"] == -32601
-    assert handshaken.result("rpc.cancel", {"id": 12345}) == {"cancelled": False, "reason": "not_active"}
-    methods = handshaken.result("rpc.methods")["methods"]
-    assert "runtime.handshake" in methods
+def test_handshake_rejects_another_rpc_version(tmp_path, hermes_home) -> None:
+    # The version gate runs before any Agent import, so a missing checkout still reaches the real exit.
+    sidecar = SidecarProcess(hermes_home, python=sys.executable, agent_dir=tmp_path / "missing-agent")
+    try:
+        message, _ = sidecar.call("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION + 1})
+        assert message["error"]["data"]["condition"] == "sidecar_rpc_version_mismatch"
+    finally:
+        code = sidecar.close()
+    assert code == 3
 
 
 @requires_agent
@@ -484,18 +456,6 @@ def test_pin_file_is_immutable_shape() -> None:
     pin = read_pin()
     assert len(pin["source_revision"]) == 40
     assert pin["image"].startswith("docker.io/nousresearch/hermes-agent@sha256:")
-
-
-@requires_agent
-def test_runtime_env_edits_the_sidecar_process_environment(sidecar: SidecarProcess) -> None:
-    """Web-owned `.env` edits reach the running sidecar without a restart; names are validated."""
-    assert sidecar.result("runtime.env", {"set": {"TALARIA_TEST_KEY": "sk-synthetic"}}) == {"ok": True}
-    assert sidecar.result("chat.evict_agent", {"session_id": "none"}) == {"evicted": False}
-    assert sidecar.result("runtime.env", {"unset": ["TALARIA_TEST_KEY", "NEVER_SET"]}) == {"ok": True}
-    message, _ = sidecar.call("runtime.env", {"set": {"bad name": "x"}})
-    assert message["error"]["code"] == -32602
-    message, _ = sidecar.call("runtime.env", {"unset": "OPENAI_API_KEY"})
-    assert message["error"]["code"] == -32602
 
 
 def test_importable_agent_is_not_rejected_for_an_unpinned_or_unknown_version(tmp_path, monkeypatch) -> None:
@@ -633,12 +593,3 @@ def test_load_rejects_agent_packages_for_the_other_free_threading_abi(tmp_path, 
         else:
             raise AssertionError(f"load() accepted {site_packages} built for the other free-threading ABI")
         monkeypatch.undo()
-
-
-@requires_agent
-@pytest.mark.parametrize("rpc_version", [41, 42])
-def test_handshake_rejects_pre_scoped_usage_credentials(sidecar: SidecarProcess, rpc_version: int) -> None:
-    message, _ = sidecar.call("runtime.handshake", {"rpc_version": rpc_version})
-    assert "error" in message, "pre-scoped usage peers must not silently ignore env_vars"
-    assert message["error"]["data"]["condition"] == "sidecar_rpc_version_mismatch"
-    assert sidecar.close() == 3

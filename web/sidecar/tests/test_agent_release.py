@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import sys
 import threading
 import time
@@ -14,7 +15,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from talaria_sidecar.errors import RpcError
+from talaria_sidecar.errors import InvalidParams, RpcError
 from talaria_sidecar.methods import Registry, chat, profiles
 from talaria_sidecar.methods import runtime as runtime_methods
 from test_chat_turn import Ctx, FakeAgent, _params, _patch
@@ -90,6 +91,20 @@ def _ended(session_id: str, timeout: float = 2.0) -> list[tuple]:
 
 def _released(session_id: str) -> list[tuple]:
     return [("on_session_end", session_id, TRANSCRIPT, "/tmp/unused"), ("release_clients", session_id)]
+
+
+def _record_releases(monkeypatch) -> list[threading.Thread]:
+    """Every release thread chat starts, in order. The cache decides a release synchronously, so an empty list right
+    after an eviction proves it deferred the release."""
+    started: list[threading.Thread] = []
+    release = chat._release_agent
+
+    def record(agent, home):
+        started.append(release(agent, home))
+        return started[-1]
+
+    monkeypatch.setattr(chat, "_release_agent", record)
+    return started
 
 
 def test_lru_eviction_ends_the_memory_session_and_releases_clients(monkeypatch) -> None:
@@ -171,15 +186,32 @@ def test_a_model_switch_releases_the_replaced_agent(monkeypatch) -> None:
 
 
 def test_evict_agent_and_runtime_env_release_their_agents(monkeypatch) -> None:
+    from talaria_sidecar import home
+
     _setup(monkeypatch)
+    releases = _record_releases(monkeypatch)
     registry = _registry()
     chat.register(registry)
+    runtime_methods.register(registry)
     assert chat.start(Ctx(), _params("st-e", "evicted"))["status"] == "completed"
     assert registry.methods["chat.evict_agent"](Ctx(), {"session_id": "evicted"}) == {"evicted": True}
-    assert _ended("evicted") == _released("evicted")
+    assert len(releases) == 1
+    releases[0].join(5)
+    assert EVENTS == _released("evicted")
     assert chat.start(Ctx(), _params("st-env", "env"))["status"] == "completed"
-    assert chat.evict_all_agents() == 1
-    assert _ended("env") == _released("env")
+    for invalid in ({"set": {"bad name": "x"}}, {"unset": "OPENAI_API_KEY"}):
+        with pytest.raises(InvalidParams):
+            registry.methods["runtime.env"](Ctx(), invalid)
+    assert len(releases) == 1  # a refused edit keeps the cached agent
+    # A credential change must not leave a cached agent bound to the old value.
+    monkeypatch.setattr(home, "_LAUNCH_ENV", None)
+    monkeypatch.setenv("TALARIA_TEST_KEY", "sk-old")
+    monkeypatch.setenv("HERMES_DISABLE_LAZY_INSTALLS", "1")
+    assert registry.methods["runtime.env"](Ctx(), {"set": {"TALARIA_TEST_KEY": "sk-synthetic"}}) == {"ok": True}
+    assert os.environ["TALARIA_TEST_KEY"] == "sk-synthetic"
+    assert len(releases) == 2
+    releases[1].join(5)
+    assert EVENTS == [*_released("evicted"), *_released("env")]
 
 
 @pytest.mark.parametrize("fail_refresh", [False, True])
@@ -274,15 +306,17 @@ def test_an_agent_dropped_during_its_turn_is_released_when_the_turn_ends(monkeyp
             return super().run_conversation(**kwargs)
 
     monkeypatch.setattr(chat, "_agent_class", lambda: BlockingAgent)
+    releases = _record_releases(monkeypatch)
     worker = threading.Thread(target=chat.start, args=(Ctx(), _params("st-live", "live")))
     worker.start()
     assert started.wait(5)
     assert chat.evict_all_agents() == 1
-    time.sleep(0.2)
-    assert EVENTS == []  # the running turn still owns its memory provider and clients
+    assert releases == []  # the running turn still owns its memory provider and clients
     gate.set()
     worker.join(5)
-    assert _ended("live") == _released("live")
+    assert len(releases) == 1
+    releases[0].join(5)
+    assert EVENTS == _released("live")
 
 
 def _registry():
@@ -430,8 +464,13 @@ def test_concurrent_cancels_of_one_agent_both_settle(monkeypatch) -> None:
     _setup(monkeypatch)
     _reviews(monkeypatch)
     module = sys.modules["agent.background_review"]
+    installed, contended, hold = threading.Event(), threading.Event(), threading.Event()
+    cancels = []
 
     def cancel(agent, *, message, tool_reason):
+        cancels.append(message)
+        if len(cancels) > 1:
+            contended.set()  # the second teardown reached the slot while the first still claims it
         if (run := getattr(agent, "_background_review_run", None)) is not None:
             run.cancel_requested.set()
 
@@ -439,13 +478,33 @@ def test_concurrent_cancels_of_one_agent_both_settle(monkeypatch) -> None:
         if (run := getattr(agent, "_background_review_run", None)) is not None and not run.request_done.is_set():
             return None
         run = agent._background_review_run = types.SimpleNamespace(cancel_requested=threading.Event(), request_done=threading.Event())
-        time.sleep(0.2)  # installed, not yet returned to the claimant
+        installed.set()
+        assert hold.wait(10)  # installed, not yet returned to the claimant
         return run
+
+    class ObservedLock:
+        """The per-agent cancel lock, reporting a second teardown that waits for it."""
+
+        def __init__(self):
+            self._lock = threading.Lock()
+
+        def __enter__(self):
+            if not self._lock.acquire(blocking=False):
+                contended.set()
+                self._lock.acquire()
+            return self
+
+        def __exit__(self, *exc):
+            self._lock.release()
 
     monkeypatch.setattr(module, "cancel_background_review_for_live_turn", cancel)
     monkeypatch.setattr(module, "prepare_background_review_run", prepare)
-    agent = types.SimpleNamespace()
-    threads = chat._cancel_background_reviews([(agent, "/tmp/unused")], "first") + chat._cancel_background_reviews([(agent, "/tmp/unused")], "second")
+    agent = types.SimpleNamespace(_talaria_review_cancel_lock=ObservedLock())
+    threads = chat._cancel_background_reviews([(agent, "/tmp/unused")], "first")
+    assert installed.wait(10)
+    threads += chat._cancel_background_reviews([(agent, "/tmp/unused")], "second")
+    assert contended.wait(10)
+    hold.set()
     for thread in threads:
         thread.join(3)
     assert [thread.is_alive() for thread in threads] == [False, False]
@@ -595,6 +654,7 @@ def test_an_agent_evicted_during_a_memory_commit_is_released_after_the_commit(mo
             EVENTS.append(("commit", self.kwargs["session_id"]))
 
     monkeypatch.setattr(chat, "_agent_class", lambda: CommittingAgent)
+    releases = _record_releases(monkeypatch)
     assert chat.start(Ctx(), _params("st-commit", "commit"))["status"] == "completed"
     registry = _registry()
     chat.register(registry)
@@ -603,14 +663,12 @@ def test_an_agent_evicted_during_a_memory_commit_is_released_after_the_commit(mo
     worker.start()
     assert committing.wait(5)
     assert chat.evict_all_agents() == 1
-    time.sleep(0.2)
-    assert EVENTS == []  # the provider is not ended or shut down under the running commit
+    assert releases == []  # the provider is not ended or shut down under the running commit
     gate.set()
     worker.join(5)
     assert reply == {"committed": True}
-    deadline = time.monotonic() + 2
-    while len(EVENTS) < 3 and time.monotonic() < deadline:
-        time.sleep(0.01)
+    assert len(releases) == 1
+    releases[0].join(5)
     assert EVENTS == [("commit", "commit"), *_released("commit")]
 
 
