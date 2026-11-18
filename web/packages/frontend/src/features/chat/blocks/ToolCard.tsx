@@ -473,7 +473,7 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
         {!call.done && <span className="tool-card-running-dot h-2 w-2 shrink-0 rounded-full bg-accent" aria-label={m.status_streaming()} />}
         {/* TAL-2340: a running call's time so far, which its final duration replaces. */}
         {!call.done && call.startedAt !== undefined && <span className="tool-card-elapsed shrink-0 text-[11px] tabular-nums text-muted"><RunElapsed since={call.startedAt} showSeconds /></span>}
-        {call.done && call.duration !== null && <span className="shrink-0 text-[11px] tabular-nums text-muted">{call.duration.toFixed(1)}s</span>}
+        {call.done && call.duration !== null && <span className="shrink-0 text-[11px] tabular-nums text-muted">{formatElapsed(locale, call.duration)}</span>}
         {timestamp && <span className="shrink-0 text-[11px] tabular-nums text-muted">{timestamp}</span>}
       </button>
       {call.resultView?.decision_review && <DecisionReviewResult key={call.resultView.decision_review.review_id} reference={call.resultView.decision_review} />}

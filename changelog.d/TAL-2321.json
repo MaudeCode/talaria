@@ -1,0 +1,21 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Tool calls and replies show how long they took in whole seconds, minutes and hours, and anything under a second reads <1s instead of 0.0s.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Tool calls in the transcript show their name and icon, and their results appear as files, links, media and cards instead of raw JSON.",
+      "highlight": true,
+      "components": ["app", "web"],
+      "announcement": {
+        "title": "Clearer tool calls",
+        "description": "Tool calls show their name and icon, and results appear as files, links, media and cards instead of raw JSON.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

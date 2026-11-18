@@ -151,25 +151,36 @@ public struct ChatActiveRunStatusPresentation: Equatable, Sendable {
     /// How long the run has gone on as of `now`, shown after the label in T3 Code's units (TAL-922):
     /// "42s" under a minute, "5m" under an hour, then "1h 30m". Nil when the chip shows no elapsed time.
     public func elapsedTime(now: Date, locale: Locale = .autoupdatingCurrent) -> String? {
-        elapsedSeconds(now: now).map { Self.elapsedText(seconds: $0, locale: locale) }
+        elapsedSeconds(now: now).map { Self.elapsedText(seconds: TimeInterval($0), locale: locale) }
     }
 
-    /// Whole seconds in the chip's units; TAL-2340: a running tool row's timer reads the same way.
-    public static func elapsedText(seconds: Int, locale: Locale = .autoupdatingCurrent) -> String {
-        guard seconds >= 60 else {
-            return Duration.seconds(seconds).formatted(.units(allowed: [.seconds], width: .narrow, zeroValueUnits: .show(length: 1)).locale(locale))
+    /// TAL-2321: every elapsed time on the App in whole narrow units, rounded: "<1s" under a second, "42s", then
+    /// "5m" ("5m 3s" with `showSeconds`), then "1h 30m". The chip, a running tool row and a finished call read it.
+    public static func elapsedText(seconds: TimeInterval, showSeconds: Bool = false, locale: Locale = .autoupdatingCurrent) -> String {
+        func narrow(_ seconds: Int, _ units: Set<Duration.UnitsFormatStyle.Unit>) -> String {
+            Duration.seconds(seconds).formatted(.units(allowed: units, width: .narrow, zeroValueUnits: .show(length: 1)).locale(locale))
         }
-        let units: Set<Duration.UnitsFormatStyle.Unit> = seconds < 3_600 ? [.minutes] : [.hours, .minutes]
-        return Duration.seconds(seconds / 60 * 60).formatted(.units(allowed: units, width: .narrow, zeroValueUnits: .show(length: 1)).locale(locale))
+        guard seconds >= 1 else { return "<\(narrow(1, [.seconds]))" }
+        let whole = Int(seconds.rounded())
+        guard whole >= 60 else { return narrow(whole, [.seconds]) }
+        guard whole < 3_600 else { return narrow(whole / 60 * 60, [.hours, .minutes]) }
+        return showSeconds && whole % 60 != 0 ? narrow(whole, [.minutes, .seconds]) : narrow(whole / 60 * 60, [.minutes])
+    }
+
+    /// `elapsedText` in full words for VoiceOver: "1 minute, 23 seconds", or "less than 1 second".
+    public static func accessibilityElapsedText(seconds: TimeInterval, locale: Locale = .autoupdatingCurrent) -> String {
+        func wide(_ seconds: Int) -> String {
+            Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .wide).locale(locale))
+        }
+        guard seconds >= 1 else { return String(localized: "less than \(wide(1))") }
+        return wide(Int(seconds.rounded()))
     }
 
     /// How long the run has gone on as of `now`, read after the label: "running for 1 minute,
     /// 23 seconds". Nil when the chip shows no elapsed time.
     public func accessibilityElapsedTime(now: Date, locale: Locale = .autoupdatingCurrent) -> String? {
         guard let seconds = elapsedSeconds(now: now) else { return nil }
-        let duration = Duration.seconds(seconds)
-            .formatted(.units(allowed: [.hours, .minutes, .seconds], width: .wide).locale(locale))
-        return String(localized: "running for \(duration)")
+        return String(localized: "running for \(Self.accessibilityElapsedText(seconds: TimeInterval(seconds), locale: locale))")
     }
 
     /// Whole seconds since the run started, never negative; nil without a start.

@@ -27,7 +27,7 @@ import { speak } from '../voice/tts'
 import { ImageLightbox, type LightboxImage } from './ImageLightbox'
 import { usageDetailLines } from '../composer/chips'
 import { useLocale } from '../../i18n/useLocale'
-import { formatCompact } from '../../i18n/units'
+import { formatCompact, formatElapsed } from '../../i18n/units'
 import { landSent } from './sendMotion'
 import { revealQuestion } from './viewportAnchor'
 
@@ -317,7 +317,8 @@ export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name
   const parts = row.assistantRows ?? [row]
   const run = row.message as { _turnDuration?: number | null; _usedModel?: string | null }
   const speed = tps && typeof row.message._turnTps === 'number' ? row.message._turnTps : null
-  const meta = [typeof run._turnDuration === 'number' && run._turnDuration >= 0.5 ? `${run._turnDuration < 10 ? run._turnDuration.toFixed(1) : Math.round(run._turnDuration)}s` : null, run._usedModel || null].filter(Boolean).join(' · ')
+  const locale = useLocale()
+  const meta = [typeof run._turnDuration === 'number' ? formatElapsed(locale, run._turnDuration) : null, run._usedModel || null].filter(Boolean).join(' · ')
   const summary = (activity.summary ?? []).map(turnSummaryPartText).join(' · ')
   const ref = useRef<HTMLDivElement>(null)
   const jumpToQuestion = () => {
