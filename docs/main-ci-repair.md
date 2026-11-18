@@ -11,9 +11,10 @@ secret, scheduler or repository-administration permissions.
 
 A newer push to `main` cancels the `main` CI run it supersedes, and a cancelled
 run hands nothing to T3. The newer run tests every change since the last `main`
-run that completed (passed or failed), or every suite when none did, so the
-repair brief names that range as a compare link: the failure is in one of
-those commits (TAL-2461).
+run that completed (passed or failed), or every suite when none did. Its
+`Detect changed paths` job records that range in a `Tested range` notice, and
+the repair brief names it as a compare link: the failure is in one of those
+commits (TAL-2461).
 
 Pull requests build the App and run the package and simulator-hosted unit
 tests their diff reaches, repeating the test methods they add or change. A

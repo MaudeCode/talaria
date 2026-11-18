@@ -312,15 +312,17 @@ class TriageTests(unittest.TestCase):
         self.assertEqual((decision["action"], decision["threadId"]), ("reuse", "owner"))
         self.assertIn("PR #9", decision["message"])
 
-    def test_the_repair_names_the_commits_a_run_tested_since_the_last_completed_run(self):
+    def test_the_repair_names_the_commits_the_run_recorded_it_tested(self):
         tested = "d" * 40
-        runs = [{"id": 5, "run_number": 1974, "head_sha": NEWER, "conclusion": "cancelled"},
-                {"id": 6, "run_number": 1973, "head_sha": tested, "conclusion": "success"}]
-        message = self.triage(runs=runs)["message"]
+        # A completed run the lookup would find now, after the run tested from another commit or ran every suite.
+        runs = [{"id": 6, "run_number": 1974, "head_sha": NEWER, "conclusion": "success"}]
+        message = self.triage(runs=runs, annotations={1: [{"title": "Tested range", "message": f"since {tested}"}]})["message"]
         self.assertIn(f"https://github.com/{REPO}/compare/{tested}...{HEAD}", message)
-        cancelled_only = self.triage(runs=runs[:1])["message"]
-        self.assertIn("tested every suite", cancelled_only)
-        self.assertNotIn("/compare/", cancelled_only)
+        for notes in ([{"title": "Tested range", "message": "every suite"}], []):
+            with self.subTest(notes=notes):
+                message = self.triage(runs=runs, annotations={1: notes})["message"]
+                self.assertIn("tested every suite", message)
+                self.assertNotIn("/compare/", message)
 
 
 class SupersededRunTests(unittest.TestCase):

@@ -29,6 +29,9 @@ REPOSITORY = "MaudeCode/talaria"
 WORKFLOW = ".github/workflows/ci.yml"
 BRANCH = "main"
 GATE = "CI Gate"
+CHANGES = "Detect changed paths"
+# The notice CHANGES leaves on a main push: "since <commit>", or "every suite" (TAL-2461).
+RANGE = "Tested range"
 ALERT = "Hand the failure to T3"
 TIMEOUT_ANNOTATION = "exceeded the maximum execution time"
 TITLE = "Repair main CI"
@@ -46,7 +49,7 @@ ENDED = {"failed", "cancelled", "rolled_back"}
 FINISHED = ENDED | {"completed"}
 # The first segment of a job name routes it to the component check that reproduces it.
 COMPONENTS = {"App": "app", "App tooling": "app", "web": "web", "web-docker": "docker", "relay": "relay",
-              "Web contract probe": "contracts", "tooling": "tooling", "Detect changed paths": "tooling",
+              "Web contract probe": "contracts", "tooling": "tooling", CHANGES: "tooling",
               GATE: "tooling"}
 
 
@@ -191,10 +194,22 @@ def tested_base(runs, run_number):
     return max(done, key=lambda item: item["run_number"])["head_sha"] if done else None
 
 
+def recorded_base(github, run_id):
+    """The commit a run's path detection tested from, as its notice recorded it; None when it ran every suite or left
+    no record, so a later lookup never narrows what the run tested."""
+    for job in jobs(github, run_id):
+        if job.get("name") == CHANGES:
+            for note in annotations(github, job):
+                found = re.fullmatch(r"since ([0-9a-f]{40})", str(note.get("message", "")))
+                if note.get("title") == RANGE and found:
+                    return found.group(1)
+    return None
+
+
 def tested_range(base, head):
     """Where a main run's failure can be: the commits it tested."""
     if base is None:
-        return "No earlier main run completed, so this run tested every suite: the failure can be in any commit up to it."
+        return "This run tested every suite: the failure can be in any commit up to it."
     return (f"This run tested every change since {base}, the last main run that completed: the failure is in "
             f"https://github.com/{REPOSITORY}/compare/{base}...{head}")
 
@@ -272,7 +287,7 @@ def triage(github, run_id, threads):
              and item.get("head_sha") != head and item.get("conclusion") == "success"]
     if green:
         return {"action": "noop", "reason": f"superseded: main run {green[0]['id']} at {green[0]['head_sha']} passed"}
-    base = tested_base(runs, run.get("run_number", 0))
+    base = recorded_base(github, run_id)
     mine = [thread for thread in threads if thread.get("title") == title(head)]
     for thread in mine:
         if thread.get("status") not in ENDED:

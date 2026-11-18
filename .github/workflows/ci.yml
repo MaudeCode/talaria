@@ -96,13 +96,14 @@ jobs:
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
             # A newer push cancels this run's predecessor, so a push tests every change since the last main run that
-            # completed, not only its own; without one, every suite (TAL-2461).
+            # completed, not only its own; without one, every suite (TAL-2461). The notice records the range for the
+            # failure handoff's repair brief.
             base=$(python3 scripts/main-ci-failure.py base) || base=""
             if [[ -n "$base" ]]; then
-              echo "Tests the changes since $base, the last main run that completed." >> "$GITHUB_STEP_SUMMARY"
+              echo "::notice title=Tested range::since $base"
               python3 scripts/changed-components.py --base="$base" --head="$GITHUB_SHA" >> "$GITHUB_OUTPUT"
             else
-              echo "No earlier main run completed: every suite runs." >> "$GITHUB_STEP_SUMMARY"
+              echo "::notice title=Tested range::every suite"
               python3 scripts/changed-components.py >> "$GITHUB_OUTPUT"
             fi
           elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
