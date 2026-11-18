@@ -30,6 +30,8 @@ class TestIOSRunnerTest < Minitest::Test
     # cancelled with neither (TAL-670); XCTest's per-test limit names a hung test inside it. The steps after it have
     # short limits of their own, and the failure's result bundles upload ahead of the reports.
     assert_includes(test["run"], "-test-timeouts-enabled YES")
+    # A hung test fails in one minute, XCTest's shortest allowance, not its default ten (TAL-2544).
+    assert_includes(test["run"], "-default-test-execution-time-allowance 60")
     # Each failing test goes out as a commit status while the job runs, since its log is unreadable until it ends
     # (TAL-673); every caller grants the permission.
     assert_includes(test["run"], 'ci/report-test-failures "${XCODEBUILD_LOG}" "$(git rev-parse HEAD)" "${FAILURE_STATUS}"')
@@ -49,7 +51,10 @@ class TestIOSRunnerTest < Minitest::Test
     # A failed run keeps CoreSimulator's log beside its result bundle, for what shut a simulator down (TAL-869).
     assert_includes(test["run"], '[[ "${status}" == 0 ]] || cp "${HOME}/Library/Logs/CoreSimulator/CoreSimulator.log" CoreSimulator.log || true')
     assert_includes(shard["steps"].find { |step| step["name"] == "Upload test results on failure" }["with"]["path"], "app/CoreSimulator.log")
-    assert_equal([45, 75], [test["timeout-minutes"], shard["timeout-minutes"]])
+    # Sized from measured shard test steps of up to 19.5 minutes (a release's two shards); a focused diagnostic's many
+    # attempts keep longer limits (TAL-2544).
+    assert_equal(["${{ inputs.diagnostic && 45 || 30 }}", "${{ inputs.diagnostic && 75 || 55 }}"],
+                 [test["timeout-minutes"], shard["timeout-minutes"]])
     after = shard["steps"][(shard["steps"].index(test) + 1)..].take_while { |step| step["name"] }
     assert_equal("Upload test results on failure", after.first["name"])
     after.each { |step| assert(step["timeout-minutes"].to_i.between?(1, 10), "#{step["name"]} has no short limit") }
@@ -384,7 +389,8 @@ class TestIOSRunnerTest < Minitest::Test
     assert_match(/exit "\$\{status\}"\n\z/, test)
     # Main pushes, manual runs and labelled pull requests run the hosted tests; other pull requests only build and run
     # the package tests (TAL-1896). A labelled pull request whose plan reaches no hosted test only builds, and a pull
-    # request passes its plan's lanes; any other event, or a failed classification, runs both targets in full (TAL-2390).
+    # request or a main push passes its plan's lanes; a manual run, or a failed classification, runs both targets in full
+    # (TAL-2390, TAL-2544).
     # Without the label a pull request still runs its explicit hosted identifiers, and repeats the hosted tests it adds
     # or changes; an unlabelled full hosted target runs only those repeats (TAL-2402).
     app = workflow_jobs("ci.yml").fetch("app")

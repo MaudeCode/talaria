@@ -21,11 +21,12 @@
 #     shards_at_once: how many hosted test shards run at a time (default 4, all of them). A release passes 2 to stay
 #       within its three macOS jobs (TAL-2396).
 #     package_lane, hosted_lane: full | explicit | empty (default full), and plan: the App test plan JSON of
-#       `scripts/changed-components.py --app-plan` (default: none, both lanes full). A pull request runs only the tests
-#       its diff reaches (TAL-2390): an explicit package lane runs only its identifiers with a filter, in the package
-#       job, then named "App selected package tests", or in hosted mode's build job, then named "App build and selected
-#       package tests"; an explicit hosted lane runs only its identifiers. ci.yml passes package_tests false for an empty
-#       package lane. Main pushes, manual runs and releases pass no plan, so they always run both targets in full.
+#       `scripts/changed-components.py --app-plan` (default: none, both lanes full). A pull request or a main push runs
+#       only the tests its diff reaches (TAL-2390, TAL-2544): an explicit package lane runs only its identifiers with a
+#       filter, in the package job, then named "App selected package tests", or in hosted mode's build job, then named
+#       "App build and selected package tests"; an explicit hosted lane runs only its identifiers. ci.yml passes
+#       package_tests false for an empty package lane. Manual runs, including main's scheduled full run, and releases
+#       pass no plan, so they run both targets in full.
 #       Each lane's `repeat` lists the test methods the diff added or changed (TAL-2402). Hosted ones run in one more
 #       shard, "App repeated tests"; TalariaKit ones in their own job from the start, "App repeated package tests". Both
 #       repeat until the first failure or their fixed time budget (ci/hosted-test-shard). hosted_lane empty with a plan
@@ -343,8 +344,9 @@ jobs:
         include: ${{ fromJSON(needs.build-started.outputs.shards) }}
     runs-on: xcode-27
     # The test step's own limit ends the tests, and this one only backs it up: setup takes up to about 15 minutes
-    # before that step, and a loaded runner took 9 minutes over a single report after it (TAL-670).
-    timeout-minutes: 75
+    # before that step, and a loaded runner took 9 minutes over a single report after it (TAL-670). A focused
+    # diagnostic's many attempts keep the longer limits.
+    timeout-minutes: ${{ inputs.diagnostic && 75 || 55 }}
     permissions:
       contents: read
       # Reads this run's job list to wait for the build.
@@ -446,10 +448,12 @@ jobs:
       # The memory sampler runs for the whole step; "Report memory" stops it, summarizes it and uploads its log.
       # The step's own limit ends a stuck run inside the job's, so the steps after it still upload the result bundle
       # and the memory log and the job fails rather than being cancelled, which the failure alert sees (TAL-670).
-      # Within it, XCTest's per-test limit (10 minutes by default) fails a hung test by name, with a spindump, and the
-      # run goes on.
+      # Within it, XCTest's per-test limit fails a hung test by name, with a spindump, and the run goes on: one minute,
+      # the shortest XCTest allows and the nearest to the 30 s run-time budget, not its default ten (TAL-2544). The
+      # step's limit sits above the slowest measured shard: 10 to 13 minutes at four shards (main run 44328773116), 18
+      # to 19.5 minutes at a release's two (release run 44252691504).
       - name: Test without building
-        timeout-minutes: 45
+        timeout-minutes: ${{ inputs.diagnostic && 45 || 30 }}
         env:
           SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
           GH_TOKEN: ${{ github.token }}
@@ -510,6 +514,7 @@ jobs:
             -testRegion US \
             -collect-test-diagnostics never \
             -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 60 \
             -parallel-testing-enabled NO || status=$?
           duration_seconds=$((SECONDS - start_seconds))
           echo "### Hosted test shard ${SHARD}" >> "${GITHUB_STEP_SUMMARY}"

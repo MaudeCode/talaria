@@ -180,7 +180,8 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(self.report(run_id=run_id)["action"], "stop", run_id)
         # A pull request's run, a fork's included, is its own agent's to repair (the owner's decision, TAL-2460).
         for run in (PULL, PULL | {"head_repository": {"full_name": "someone/talaria"}},
-                    {"event": "workflow_dispatch"}, {"head_branch": "feature"}, {"path": ".github/workflows/x.yml"},
+                    {"event": "schedule"}, {"head_branch": "feature"}, {"path": ".github/workflows/x.yml"},
+                    {"event": "workflow_dispatch", "head_branch": "feature"},
                     {"head_repository": {"full_name": "someone/talaria"}}, {"repository": {"full_name": "a/b"}},
                     {"head_sha": "not-a-sha"}, RELEASE | {"head_branch": "feature"},
                     RELEASE | {"head_repository": {"full_name": "someone/talaria"}}, RELEASE | {"event": "push"}):
@@ -189,11 +190,39 @@ class ReportTests(unittest.TestCase):
 
     def test_a_later_green_main_run_supersedes_only_a_failure_no_rerun_passed(self):
         later = [{"id": 2, "run_number": 1980, "head_sha": NEWER, "conclusion": "success"}]
-        self.assertIn("superseded", self.decide(runs=later)["stop"])
+        passed = {2: (later[0], [job(10 + index, name) for index, name in enumerate(SIDECAR)])}
+        self.assertIn("superseded", self.decide(runs=later, others=passed)["stop"])
         older = [{"id": 3, "run_number": 1970, "head_sha": NEWER, "conclusion": "success"}]
-        self.assertIn("work", self.decide(runs=older))
+        self.assertIn("work", self.decide(runs=older, others=passed))
         # A green rerun of the same head is intermittent evidence, not a fix.
-        self.assertIn("work", self.decide(jobs=flaky_shard(), runs=later))
+        self.assertIn("work", self.decide(jobs=flaky_shard(), runs=later, others=passed))
+
+    def test_a_later_green_main_run_that_skipped_or_narrowed_the_failed_job_supersedes_nothing(self):
+        # A main push runs only the suites and App tests its range reaches (TAL-2461, TAL-2544): a newer green run that
+        # never ran the failed job, or ran only selected tests under another name, proves nothing about it.
+        later = [{"id": 2, "run_number": 1980, "head_sha": NEWER, "conclusion": "success"}]
+        shard = "App / App hosted tests 4"
+        for others in ([job(30, "App / App build", "skipped"), job(31, "CI Gate")],
+                       [job(30, "App / App selected hosted tests 1"), job(31, "CI Gate")],
+                       [job(30, SIDECAR[0]), job(31, "CI Gate")]):
+            with self.subTest(jobs=[item["name"] for item in others]):
+                failing = flaky_shard(passed=False) if others[0]["name"].startswith("App") else tal_1102_jobs()
+                self.assertIn("work", self.decide(jobs=failing, runs=later, others={2: (later[0], others)}))
+        full = [job(30, shard), job(31, "CI Gate")]
+        self.assertIn("superseded", self.decide(jobs=flaky_shard(passed=False), runs=later,
+                                                others={2: (later[0], full)})["stop"])
+        # A selected or repeated job's name says nothing about which tests it ran: the same name proves nothing.
+        for name in ("App / App selected hosted tests 1", "App / App selected package tests",
+                     "App / App build and selected package tests", "App / App repeated tests"):
+            with self.subTest(name=name):
+                self.assertIn("work", self.decide(jobs=flaky_shard(passed=False, shard=name), runs=later,
+                                                  others={2: (later[0], [job(30, name), job(31, "CI Gate")])}))
+
+    def test_main_s_scheduled_full_run_is_a_main_run_that_tested_every_suite(self):
+        # GitHub Scheduler dispatches CI on main daily to run every suite (TAL-2544); T3 Factory repairs it like a push.
+        decision = self.report(run={"event": "workflow_dispatch"})
+        self.assertEqual((decision["action"], decision.get("lane")), ("work", "main"), decision.get("reason"))
+        self.assertIn("tested every suite", decision["message"])
 
     def test_a_spec_s_failures_on_any_line_are_one_key(self):
         keys = set()

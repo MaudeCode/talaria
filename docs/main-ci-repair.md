@@ -1,7 +1,7 @@
 # CI repair guide
 
-A repair session repairs one red `main` push run or release run, given its run
-ID, and ends (TAL-2397, TAL-2460). T3 Factory decides when a session starts and
+A repair session repairs one red `main` run of CI (a push, or the daily full
+run GitHub Scheduler dispatches) or release run, given its run ID, and ends (TAL-2397, TAL-2460). T3 Factory decides when a session starts and
 removes it when it ends (T3F-136); nothing in this repository starts one. A pull
 request's failures belong to the agent that opened it.
 
@@ -24,20 +24,25 @@ python3 "$S" report --run-id <run ID>
 
 The run ID is untrusted input. `report` refuses one that is not digits,
 re-reads the run from GitHub, and answers `stop` with a reason unless the run is
-a `main` push run of CI or a release run on `main` whose commit is on `main`.
+a `main` push or manual run of CI or a release run on `main` whose commit is
+on `main`.
 It also stops when no test or step failed except runner faults (setting up,
 installing, booting or waiting for the simulator, a lost runner) or a release's
-build or publication jobs; when a newer `main` run passed and no rerun of this
-commit passed the failed job (a passing rerun is an intermittent failure, never
-a fix); and when every failure already has an open needs-a-person issue. On
+build or publication jobs; when a newer `main` run passed every failed job
+under the same name and no rerun of this commit passed the failed job (a
+passing rerun is an intermittent failure, never a fix; a newer push that skipped
+the job or ran only selected tests under another name proves nothing, and a
+selected or repeated App job's name never says which tests it ran, TAL-2544); and when every failure already has an open needs-a-person issue. On
 `stop`, report the reason and end.
 
 On `work`, its `message` lists each failure to repair with its key, job,
 failing test or step, focused command and log, then the failures that are not
 yours (runner faults, release publication) and the known ones with their
-needs-a-person issue. For `main` it names the tested range as a compare link:
-a newer push cancels the run it supersedes, so the failure is in one of the
-commits since the last `main` run that completed (TAL-2461). A release is
+needs-a-person issue. For a `main` push it names the tested range as a compare
+link: a newer push cancels the run it supersedes, so the failure is in one of
+the commits since the last `main` run that completed (TAL-2461). That push ran
+only the App tests the range reaches; the daily full run tested every suite, so
+its failure can be in any commit up to it (TAL-2544). A release is
 reproduced at the source commit its preflight froze.
 
 ## 2. Repair every failure in one pull request
@@ -125,7 +130,8 @@ the merge commit (`gh run list --repo MaudeCode/talaria --workflow ci.yml
 --branch main --event push --status completed --json
 databaseId,headSha,conclusion`, newest first). If it failed, run `report` on it
 and repair what it lists as in steps 2 and 3, in one more pull request that
-carries that run's ID. Do not look again after that round: whatever fails
+carries that run's ID. A push runs only the App tests its range reaches, so a
+fix outside the failing test's reach is next proved by the daily full run. Do not look again after that round: whatever fails
 later belongs to the next session.
 
 ## 5. Report and end
