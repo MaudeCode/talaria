@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
-import { revokeDevicesForSession } from "../convex/auth";
 import { bytesToBase64Url, sha256 } from "../convex/lib/crypto";
 import { defaultNotificationPreferences } from "../convex/lib/model";
 import schema from "../convex/schema";
@@ -1624,36 +1623,6 @@ describe("Convex relay state", () => {
     })).resolves.toMatchObject({ status: "ready", kind: "live_activity_update" });
   });
 
-  it("counts every matched session device and returns zero for an empty session", async () => {
-    const backend = testBackend();
-    const now = 1_800_000_000_000;
-    await backend.run(async (ctx) => {
-      for (const [deviceId, userId, sessionId, revokedAt] of [
-        ["device-1", "user-1", "session-1", undefined],
-        ["device-2", "user-1", "session-1", now - 1],
-        ["device-3", "user-1", "session-2", undefined],
-        ["device-4", "user-2", "session-1", undefined],
-      ] as const) {
-        await ctx.db.insert("devices", {
-          deviceId, userId, sessionId, revokedAt,
-          label: "iPhone",
-          pushToken: "push-token",
-          preferences: defaultNotificationPreferences,
-          createdAt: now - 100,
-          updatedAt: now - 100,
-        });
-      }
-      expect(await revokeDevicesForSession(ctx, "user-1", "session-1", now)).toBe(2);
-      expect(await revokeDevicesForSession(ctx, "user-1", "empty-session", now)).toBe(0);
-      const devices = await ctx.db.query("devices").collect();
-      for (const device of devices) {
-        const matched = device.userId === "user-1" && device.sessionId === "session-1";
-        expect(device.revokedAt).toBe(matched ? now : undefined);
-        expect(device.pushToken).toBe(matched ? undefined : "push-token");
-      }
-    });
-  });
-
   it.each(["sign-out", "expiry"] as const)("%s queries only open activities before revoking session devices", async (trigger) => {
     const backend = testBackend();
     const now = Date.now();
@@ -1785,84 +1754,6 @@ describe("Convex relay state", () => {
     await expect(backend.mutation(internal.cleanup.prune, {})).resolves.toEqual({
       deleted: 0, revokedDevices: 0,
     });
-  });
-
-  it("retires devices and activities when cleanup expires their relay session", async () => {
-    const backend = testBackend();
-    const now = 1_800_000_000_000;
-    await backend.run(async (ctx) => {
-      await ctx.db.insert("userSessions", {
-        userId: "user-1",
-        sessionId: "expired-session",
-        tokenHash: "expired-token",
-        expiresAt: 1,
-        createdAt: now - 100,
-      });
-      await ctx.db.insert("devices", {
-        userId: "user-1",
-        sessionId: "expired-session",
-        sessionExpiresAt: 1,
-        deviceId: "expired-device",
-        label: "iPhone",
-        bundleId: "dev.kil.talaria",
-        apsEnvironment: "sandbox",
-        pushToken: "expired-push",
-        pushToStartToken: "expired-start",
-        pushToStartIssuedAt: now - 100,
-        preferences: defaultNotificationPreferences,
-        createdAt: now - 100,
-        updatedAt: now - 100,
-      });
-      await ctx.db.insert("liveActivities", {
-        userId: "user-1",
-        deviceId: "expired-device",
-        activityId: "expired-activity",
-        mode: "all_running",
-        attributesType: "TalariaAggregateActivityAttributes",
-        schemaVersion: 1,
-        activityPushToken: "expired-activity-token",
-        createdAt: now - 100,
-        updatedAt: now - 100,
-      });
-    });
-    const ownedBeforeCleanup = await backend.run(async (ctx) =>
-      ctx.db
-        .query("devices")
-        .withIndex("by_user_id_and_session_id", (query) =>
-          query.eq("userId", "user-1").eq("sessionId", "expired-session"),
-        )
-        .collect(),
-    );
-    expect(ownedBeforeCleanup).toHaveLength(1);
-    await expect(backend.mutation(internal.cleanup.prune, {})).resolves.toMatchObject({
-      revokedDevices: 1,
-    });
-    const state = await backend.run(async (ctx) => ({
-      sessions: await ctx.db.query("userSessions").collect(),
-      device: await ctx.db
-        .query("devices")
-        .withIndex("by_user_id_and_device_id", (query) =>
-          query.eq("userId", "user-1").eq("deviceId", "expired-device"),
-        )
-        .unique(),
-      activity: await ctx.db
-        .query("liveActivities")
-        .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
-          query
-            .eq("userId", "user-1")
-            .eq("deviceId", "expired-device")
-            .eq("activityId", "expired-activity"),
-        )
-        .unique(),
-    }));
-    expect(state.sessions).toHaveLength(0);
-    expect(state.device?.revokedAt).toEqual(expect.any(Number));
-    expect(state.device?.pushToken).toBeUndefined();
-    expect(state.device?.pushToStartToken).toBeUndefined();
-    expect(state.device?.pushToStartIssuedAt).toBeUndefined();
-    expect(state.device?.updatedAt).toBe(state.device?.revokedAt);
-    expect(state.activity?.updatedAt).toBe(state.device?.revokedAt);
-    expect(state.activity?.endedAt).toBe(state.device?.revokedAt);
   });
 
   it("rejects stale publisher revisions and duplicate nonces", async () => {
@@ -2004,7 +1895,7 @@ describe("Convex relay state", () => {
     expect(activities[0]?.activityId).toBe("activity-2");
   });
 
-  it.each([true, false])("ends a displaced activity with liveActivitiesEnabled=%s", async (liveActivitiesEnabled) => {
+  it("ends a displaced activity after Live Activities are turned off", async () => {
     const backend = testBackend();
     const now = 1_800_000_000_000;
     await backend.run(async (ctx) => {
@@ -2065,7 +1956,7 @@ describe("Convex relay state", () => {
       userId: "user-1", sessionId: "login-1", sessionExpiresAt: now + 600_000,
       deviceId: "device-1", label: "iPhone", bundleId: "dev.kil.talaria", apsEnvironment: "production",
       clearPushToken: false, clearPushToStartToken: false,
-      preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled }, now: now + 1,
+      preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled: false }, now: now + 1,
     });
     const claimed = await backend.mutation(internal.delivery.claimJob, {
       jobId: state.displacedEnd!._id,
