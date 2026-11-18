@@ -11,6 +11,7 @@ import { str } from '../util.js'
 import { sanitizeMessagesForApi } from './merge.js'
 import { UNSETTLED_TODO_KEY } from './todo.js'
 import { Session } from './session.js'
+import { JsonJournalWriter } from './storage/json-journal.js'
 
 useJsonStorage()
 
@@ -33,6 +34,12 @@ const completed = (messages: Json[], extra: Partial<ChatResult> = {}): ChatResul
 })
 
 const eventNames = (frames: SseFrame[]): string[] => frames.map((f) => f.event)
+/** A promise the test resolves from a fake or spy, so a wait ends on the event itself under the suite's own timeout. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = () => undefined
+  const promise = new Promise<void>((r) => { resolve = r })
+  return { promise, resolve }
+}
 /** Opens a stream and resolves once its `initial` frame arrived; the route subscribes before sending it, so nothing the test does next is missed. */
 async function subscribe(s: TestServer, path: string, until: (f: SseFrame) => boolean): Promise<{ frames: Promise<SseFrame[]> }> {
   let opened: () => void = () => undefined
@@ -910,6 +917,16 @@ describe('chat turns through the sidecar', () => {
     const bufferedSid = await newSession(s)
     let release: () => void = () => undefined
     let bufferedStream = ''
+    // Resolves once the run journal holds both `tool` rows, written while redaction is off.
+    const journaled = deferred()
+    type Append = (this: JsonJournalWriter, ...args: Parameters<JsonJournalWriter['appendSseEvent']>) => ReturnType<JsonJournalWriter['appendSseEvent']>
+    const appendSseEvent: Append = Reflect.get(JsonJournalWriter.prototype, 'appendSseEvent')
+    let tools = 0
+    const append = vi.spyOn(JsonJournalWriter.prototype, 'appendSseEvent').mockImplementation(async function (this: JsonJournalWriter, ...args) {
+      const row = await appendSseEvent.apply(this, args)
+      if (args[0] === 'tool' && ++tools === 2) journaled.resolve()
+      return row
+    })
     await s.deps.settings.save({ api_redact_enabled: false })
     try {
       sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
@@ -920,9 +937,9 @@ describe('chat turns through the sidecar', () => {
         release = () => { resolve(completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Done.' }])) }
       }))
       bufferedStream = String((await json(await post(s, '/api/chat/start', { session_id: bufferedSid, message: 'run it' }))).stream_id)
-      const bufferedJournal = join(realpathSync(s.state), 'sessions', '_run_journal', bufferedSid, `${bufferedStream}.jsonl`)
-      await vi.waitFor(() => { expect(existsSync(bufferedJournal) && readFileSync(bufferedJournal, 'utf8').split('\n').filter((line) => line.includes('"event":"tool"')).length).toBe(2) })
+      await journaled.promise
     } finally {
+      append.mockRestore()
       await s.deps.settings.save({ api_redact_enabled: true })
     }
     try {
@@ -1678,13 +1695,14 @@ describe('chat turns through the sidecar', () => {
     const original = turns.deps.titleRefreshEvery
     sidecar.respond('chat.start', (params) => completed([...(params.conversation_history as Json[]), { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Here is the plan for that step.' }]))
     const held = new Map<string, () => void>()
+    const asked = new Map([['two', deferred()], ['four', deferred()]])
     const stepOf = (params: Json): string => /step (\w+)/.exec(str((params.messages as Json[])[1]?.content))?.[1] ?? ''
     sidecar.respond('aux.complete', (params) => {
       const step = stepOf(params)
       const answer = { model: 'aux', text: `Title: "Rollout step ${step}"`, usage: null }
       // The refresh prompts for exchanges 2 and 4 answer only when the test releases them.
       if (step !== 'two' && step !== 'four') return answer
-      return new Promise((resolve) => { held.set(step, () => { resolve(answer) }) })
+      return new Promise((resolve) => { held.set(step, () => { resolve(answer) }); asked.get(step)?.resolve() })
     })
     const sid = await newSession(s)
     // TAL-1840: `done` released admission, so each next message is admitted at once while the held title work runs.
@@ -1693,7 +1711,7 @@ describe('chat turns through the sidecar', () => {
       expect(res.status).toBe(200)
       return String((await json(res)).stream_id)
     }
-    const until = (step: string): Promise<void> => vi.waitFor(() => { expect(held.has(step)).toBe(true) })
+    const until = async (step: string): Promise<void> => { await asked.get(step)?.promise }
     turns.deps.titleRefreshEvery = () => 2
     try {
       await s.sse(`/api/chat/stream?stream_id=${await start('one')}`, (f) => f.event === 'stream_end')
@@ -3484,19 +3502,27 @@ describe('chat turns through the sidecar', () => {
     const sid = await newSession(s)
     const pushes: boolean[] = []
     const gates: (() => void)[] = []
-    sidecar.respond('approval.set_yolo', (params) => new Promise((resolve) => { gates.push(() => { pushes.push(params.enabled); resolve({ yolo_enabled: params.enabled, released: 0 }) }) }))
-    const locks = vi.spyOn(s.deps.turns as unknown as { withYoloLock: () => Promise<unknown> }, 'withYoloLock')
+    const mutations = [deferred(), deferred()]
+    sidecar.respond('approval.set_yolo', (params) => new Promise((resolve) => { gates.push(() => { pushes.push(params.enabled); resolve({ yolo_enabled: params.enabled, released: 0 }) }); mutations[gates.length - 1]?.resolve() }))
+    const turns = s.deps.turns as unknown as { withYoloLock: (...args: unknown[]) => Promise<unknown> }
+    const withYoloLock = turns.withYoloLock
+    const queued = deferred()
+    let lockCalls = 0
+    const locks = vi.spyOn(turns, 'withYoloLock').mockImplementation(function (this: unknown, ...args: unknown[]) {
+      if (++lockCalls === 2) queued.resolve()
+      return withYoloLock.apply(this, args)
+    })
     const enable = post(s, '/api/session/yolo', { session_id: sid, enabled: true })
-    await vi.waitFor(() => { expect(gates).toHaveLength(1) })
+    await mutations[0]!.promise
     // The enable's sidecar mutation is in flight; an opposing toggle arrives now and queues on the session's lock.
     const disable = post(s, '/api/session/yolo', { session_id: sid, enabled: false })
-    await vi.waitFor(() => { expect(locks).toHaveBeenCalledTimes(2) })
+    await queued.promise
     locks.mockRestore()
     // The disable's RPC waits for the enable's mutation + commit to settle.
     expect(gates).toHaveLength(1)
     gates[0]!()
     expect(await json(await enable)).toEqual({ ok: true, yolo_enabled: true })
-    await vi.waitFor(() => { expect(gates).toHaveLength(2) })
+    await mutations[1]!.promise
     gates[1]!()
     expect(await json(await disable)).toEqual({ ok: true, yolo_enabled: false })
     expect(pushes).toEqual([true, false])
