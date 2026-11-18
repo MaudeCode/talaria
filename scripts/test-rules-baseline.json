@@ -92,7 +92,6 @@
       "web/packages/frontend/e2e/session-entry.spec.ts": 8,
       "web/packages/frontend/e2e/session-switch.spec.ts": 7,
       "web/packages/frontend/e2e/stream-motion.spec.ts": 1,
-      "web/packages/frontend/e2e/updating-dialog.spec.ts": 2,
       "web/packages/frontend/e2e/worklog.spec.ts": 6,
       "web/packages/frontend/e2e/workspace-previews.spec.ts": 2,
       "web/packages/frontend/src/app/settings.test.tsx": 1,

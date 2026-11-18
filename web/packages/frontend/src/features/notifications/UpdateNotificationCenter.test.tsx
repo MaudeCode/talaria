@@ -104,7 +104,7 @@ describe('UpdateNotificationProvider Updating dialog (TAL-1138)', () => {
   })
 
   /** TAL-1622: the server holds the refresh notice back while the dialog shows; the tab shows it once the server sends it. */
-  it('shows no refresh toast over a Web update whose build changed mid-update, and shows it once the update fails', async () => {
+  it('shows the refresh notice the server sends as a persistent toast beside a failed Web update', async () => {
     const WEB = ['Installing', 'Restarting Talaria Web', 'Ready']
     const web = (overrides: Partial<UpdateNotification>) => record({ id: '00000000-0000-4000-8000-000000000303', target: 'webui', title: 'Talaria Web update', ...overrides })
     const refresh = record({
@@ -118,7 +118,7 @@ describe('UpdateNotificationProvider Updating dialog (TAL-1138)', () => {
     await serve([web({ active: true, steps: steps(WEB, 0) })])
     await serve([web({ phase: 'restarting', active: true, steps: steps(WEB, 1) })])
     expect(stepTexts('Talaria Web')).toEqual(WEB)
-    expect(refreshToasts()).toEqual([])
+    // Holding the notice back mid-update is the server's (update-notifications.test.ts); the client shows what it is sent.
     const failed = web({ phase: 'failed', presents_dialog: false, dialog_close: 'close', message: 'The update could not be completed.', steps: steps(WEB, 1, 'failed') })
     await serve([refresh, failed], failed)
     expect(refreshToasts()).toMatchObject([[{ title: 'Talaria Web was updated', ttl: 0, dismissible: false, actions: [{ id: 'reload', label: 'Refresh now' }] }]])

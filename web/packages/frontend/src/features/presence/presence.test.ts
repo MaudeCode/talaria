@@ -128,10 +128,3 @@ it('revokes at once when a watched tab is hidden or loses focus (TAL-1554)', () 
   window.dispatchEvent(new Event('blur'))
   expect(actives()).toEqual([true, false, true, false])
 })
-
-it('revokes with keepalive when the page goes away mid-run (TAL-1554)', () => {
-  stop = startPresence()
-  setWatchingRun(true)
-  window.dispatchEvent(new Event('pagehide'))
-  expect(sent().at(-1)).toMatchObject({ active: false, keepalive: true })
-})

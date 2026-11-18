@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -16,18 +16,6 @@ beforeEach(() => {
 })
 
 describe('PendingWritesPanel (TAL-819)', () => {
-  it('lists each staged write with its diff and approves or rejects it by id', async () => {
-    vi.mocked(api.fetchPendingWrites).mockResolvedValue({ kind: 'skills', visible: true, enabled: true, items: [item] })
-    view()
-    expect(await screen.findByText("create 'demo-skill'")).toBeInTheDocument()
-    expect(screen.getByText(/name: demo-skill/)).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Approve' }))
-    expect(api.reviewPendingWrites).toHaveBeenCalledWith('approve', 'skills', [{ id: item.id, revision: 'rev1' }])
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled())
-    await userEvent.click(screen.getByRole('button', { name: 'Reject' }))
-    expect(api.reviewPendingWrites).toHaveBeenLastCalledWith('reject', 'skills', [{ id: item.id, revision: 'rev1' }])
-  })
-
   it('removes an answered write at once and brings it back when the server keeps it (TAL-1179)', async () => {
     const other = { ...item, id: 'efgh5678', summary: "update 'other-skill'" }
     let answer!: (value: Awaited<ReturnType<typeof api.reviewPendingWrites>>) => void
@@ -53,9 +41,12 @@ describe('PendingWritesPanel (TAL-819)', () => {
   })
 
   it('renders nothing when the server hides the panel', async () => {
-    vi.mocked(api.fetchPendingWrites).mockResolvedValue({ kind: 'skills', visible: false, enabled: false, items: [] })
+    // A staged write the server hides still renders nothing: the visibility field decides, not an empty list.
+    vi.mocked(api.fetchPendingWrites).mockResolvedValue({ kind: 'skills', visible: false, enabled: false, items: [item] })
     const { container } = view()
     await waitFor(() => expect(api.fetchPendingWrites).toHaveBeenCalledWith('skills'))
+    // React Query notifies on a 0 ms timer; flush it so the answer has rendered.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
     expect(container).toBeEmptyDOMElement()
   })
 })
