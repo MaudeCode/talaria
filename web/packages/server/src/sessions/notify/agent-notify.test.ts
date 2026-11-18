@@ -30,6 +30,19 @@ describe('the notify agent tool (TAL-1970)', () => {
   }
   const settle = async (): Promise<void> => { s.deps.notifications.changed(); await s.deps.webPush.idle() }
   const opened = (sent: Push) => keys.decrypt(Buffer.from(sent.init.body as Uint8Array))
+  /**
+   * TAL-2191: spies the Web Push channel's passes and deliveries. `passed` settles once no pass runs, so the notices it
+   * queued have either started their delivery or wait behind an earlier one; `deliveredNotices` names the started ones.
+   */
+  const pushQueue = () => {
+    const channel = s.deps.webPush as unknown as { run: () => Promise<void>; deliver: (sub: unknown, row: unknown, alert: unknown) => Promise<void> }
+    const runs = vi.spyOn(channel, 'run')
+    const deliveries = vi.spyOn(channel, 'deliver')
+    return {
+      passed: async (): Promise<void> => { for (let seen = -1; seen !== runs.mock.results.length;) { seen = runs.mock.results.length; await Promise.all(runs.mock.results.map((run) => run.value as Promise<void>)) } },
+      deliveredNotices: () => deliveries.mock.calls.flatMap(([, , alert]) => (typeof alert === 'object' ? [(alert as { id: string }).id] : [])),
+    }
+  }
   /** The agent notices the Relay's next snapshot carries for the caller, and the row's deep link. */
   const relayed = async () => {
     await s.deps.relay.current()!.publishSnapshot()
@@ -79,13 +92,21 @@ describe('the notify agent tool (TAL-1970)', () => {
   })
 
   it('sends notices in the order they were accepted when the first one is slow to resolve and is retried (TAL-2191)', async () => {
-    const first = await notify({ level: 'attention' })
-    const second = await notify({ level: 'info', title: 'Second' })
     const resolve = s.deps.dnsLookup
     let lookups = 0
-    s.deps.dnsLookup = async (host) => { if (lookups++ === 0) await new Promise((done) => setTimeout(done, 50)); return resolve(host) }
+    let release!: () => void
+    const held = new Promise<void>((done) => { release = done })
+    s.deps.dnsLookup = async (host) => { if (lookups++ === 0) await held; return resolve(host) }
     push.statuses.push(503)
-    await settle()
+    const { passed, deliveredNotices } = pushQueue()
+    const first = await notify({ level: 'attention' })
+    const second = await notify({ level: 'info', title: 'Second' })
+    s.deps.notifications.changed()
+    // Every pass has queued both notices; the second has not started while the first's endpoint lookup is held.
+    await passed()
+    expect(deliveredNotices()).toEqual([first.notice_id])
+    release()
+    await s.deps.webPush.idle()
     const [early, late] = [`notify:${String(first.notice_id)}`, `notify:${String(second.notice_id)}`]
     expect(push.pushes.map((sent) => opened(sent).tag)).toEqual([early, early, late])
   })
@@ -95,21 +116,16 @@ describe('the notify agent tool (TAL-1970)', () => {
     let lookups = 0
     let release!: () => void
     const held = new Promise<void>((done) => { release = done })
-    let secondLookup!: () => void
-    const looked = new Promise<void>((done) => { secondLookup = done })
-    s.deps.dnsLookup = async (host) => {
-      lookups++
-      if (lookups === 1) await held
-      if (lookups === 2) secondLookup()
-      return resolve(host)
-    }
+    s.deps.dnsLookup = async (host) => { if (lookups++ === 0) await held; return resolve(host) }
+    const { passed, deliveredNotices } = pushQueue()
     const first = await notify({ level: 'attention' })
     s.deps.notifications.changed()
     await expect.poll(() => lookups).toBe(1)
     const second = await notify({ level: 'info', title: 'Second' })
     s.deps.notifications.changed()
-    // Unqueued, the second notice resolves its endpoint while the first is held; queued, it waits for the first.
-    await Promise.race([looked, new Promise((done) => setTimeout(done, 200))])
+    // Unqueued, the second notice's delivery starts beside the held first once its pass ends; queued, it waits for the first.
+    await passed()
+    expect(deliveredNotices()).toEqual([first.notice_id])
     release()
     await s.deps.webPush.idle()
     expect(push.pushes.map((sent) => opened(sent).tag)).toEqual([`notify:${String(first.notice_id)}`, `notify:${String(second.notice_id)}`])
@@ -181,8 +197,16 @@ describe('the notify agent tool (TAL-1970)', () => {
     const states = vi.spyOn(ActivityStates.prototype, 'states')
     try {
       const snapshots = relay.snapshots().length
+      // The publisher wakes on the change and publishes once; wait for that publish itself.
+      const publisher = s.deps.relay.current()!
+      const publishSnapshot = publisher.publishSnapshot.bind(publisher)
+      let published!: () => void
+      const publish = new Promise<void>((resolve) => { published = resolve })
+      const snapshot = vi.spyOn(publisher, 'publishSnapshot').mockImplementation(async (...args) => { await publishSnapshot(...args); published() })
       s.deps.events.publish('turn_started', { sessionId: CALLER })
-      await vi.waitFor(() => { expect(relay.snapshots().length).toBeGreaterThan(snapshots) })
+      await publish
+      snapshot.mockRestore()
+      expect(relay.snapshots().length).toBeGreaterThan(snapshots)
       await s.deps.webPush.idle()
       expect(builds).toHaveBeenCalledTimes(1)
       const rows = await Promise.all(states.mock.results.map((result) => result.value as ReturnType<ActivityStates['states']>))

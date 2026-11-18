@@ -12,6 +12,7 @@ import { sanitizeMessagesForApi } from './merge.js'
 import { UNSETTLED_TODO_KEY } from './todo.js'
 import { Session } from './session.js'
 import { JsonJournalWriter } from './storage/json-journal.js'
+import { settler } from '../test/turns.js'
 
 useJsonStorage()
 
@@ -1395,12 +1396,12 @@ describe('chat turns through the sidecar', () => {
   it('publishes malformed approval choices as none and refuses an unoffered answer before the sidecar (TAL-1414)', async () => {
     const sid = await newSession(s)
     sidecar.respond('approval.respond', () => ({ ok: true, resolved: 1, choice: 'once' }))
-    sidecar.respond('chat.start', async (params, emit) => {
+    sidecar.respond('chat.start', async (params, emit, opts) => {
       emit({ event: 'approval', data: { request_id: 'req-null', command: 'rm -rf build', session_id: sid, allowed_choices: null } })
       emit({ event: 'approval', data: { request_id: 'req-deny', command: 'rm -rf dist', session_id: sid, allowed_choices: ['deny', 'view'] } })
       emit({ event: 'approval', data: { request_id: 'req-single-use', command: 'fill card', session_id: sid, allowed_choices: ['once', 'deny'], allow_session: false, allow_permanent: false } })
-      await new Promise(() => undefined)
-      return completed([{ role: 'user', content: str(params.user_message) }])
+      await new Promise((resolve) => { opts.signal?.addEventListener('abort', resolve) })
+      return { ...completed([{ role: 'user', content: str(params.user_message) }]), status: 'cancelled' as const }
     })
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'clean up' }))
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'approval' && (f.data as Json).pending_count === 3)
@@ -1415,6 +1416,9 @@ describe('chat turns through the sidecar', () => {
     expect(relayed()).toEqual([])
     expect((await post(s, '/api/approval/respond', { session_id: sid, choice: 'deny', approval_id: 'req-deny' })).status).toBe(200)
     expect(relayed()).toEqual([expect.objectContaining({ choice: 'deny', request_id: 'req-deny' })])
+    // The held turn ends with the test, so the shared server's later tests start with no active run.
+    await s.get(`/api/chat/cancel?stream_id=${String(start.stream_id)}`)
+    await s.deps.turns.finished(String(start.stream_id))
   })
 
   it('relays the Agent\'s password-manager prompts and hands their answers only to the Agent (TAL-887)', async () => {
@@ -1768,8 +1772,13 @@ describe('chat turns through the sidecar', () => {
     expect(messages.map((m) => m._turn_id)).toEqual([streamId, streamId, streamId])
     expect(((frames.find((f) => f.event === 'cancel')?.data as Json).session as Json | undefined)?.messages).toSatisfy((rows: Json[] | undefined) => !rows || rows.every((m) => m._turn_id === streamId))
     expect(detail.active_stream_id).toBeNull()
-    expect((await post(s, '/api/chat/start', { session_id: sid, message: 'after cancel' })).status).toBe(200)
+    const after = await post(s, '/api/chat/start', { session_id: sid, message: 'after cancel' })
+    expect(after.status).toBe(200)
     expect(await json(await s.get('/api/chat/cancel?stream_id=nope'))).toEqual({ ok: true, cancelled: false, stream_id: 'nope', withdrawn_steers: [] })
+    // The admitted turn ends with the test, so the shared server's later tests start with no active run.
+    const afterStream = String((await json(after)).stream_id)
+    await s.get(`/api/chat/cancel?stream_id=${afterStream}`)
+    await s.deps.turns.finished(afterStream)
   })
 
   it('announces every started turn on the session-list stream so an open chat elsewhere can attach (TAL-434)', async () => {
@@ -2414,12 +2423,17 @@ describe('chat turns through the sidecar', () => {
     // of this run's steers is another surface's.
     sidecar.respond('chat.interrupt', () => ({ ok: true, pending_steer: 'from elsewhere\nnever applied\nalso held' }))
     let starts = 0
+    let running!: () => void
+    const agentRunning = new Promise<void>((resolve) => { running = resolve })
     sidecar.respond('chat.start', (params, _emit, opts) => new Promise((resolve) => {
       starts += 1
       opts.signal?.addEventListener('abort', () => { resolve({ ...completed([{ role: 'user', content: str(params.user_message) }]), status: 'cancelled' }) })
+      running()
     }))
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'long task' }))
     const streamId = String(start.stream_id)
+    // The steers and the Stop reach a running Agent turn; a Stop before it starts never starts it.
+    await agentRunning
     expect((await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'never applied', display_text: 'Never applied', steer_id: 'steer-x' }))).accepted).toBe(true)
     expect((await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'also held', steer_id: 'steer-y' }))).accepted).toBe(true)
     const withdrawn = [
@@ -2909,7 +2923,8 @@ describe('chat turns through the sidecar', () => {
     expect((await tasks())[String(bg.task_id)]).toMatchObject({ status: 'completed', result_available: true })
     expect(await json(await s.get(`/api/background/result?session_id=${sid}&task_id=${String(bg.task_id)}`))).toEqual({ task_id: bg.task_id, text: 'answer to it' })
 
-    // Completions settle each record once; a later report saying otherwise changes nothing.
+    // Completions settle each record once; a later report saying otherwise changes nothing. Each one wakes the session.
+    const settled = settler(s)
     sidecar.respond('process.format_notification', () => ({ text: '[IMPORTANT: delegation d-a finished]\nall fine' }))
     sidecar.respond('process.claim_delivery', () => ({ claim_id: '' }))
     await s.deps.completions.processOne({ process_id: 'd-a', delegation_id: 'd-a', type: 'async_delegation', origin_ui_session_id: sid, status: 'completed', goal: 'Check logs', consumed: false })
@@ -2940,6 +2955,8 @@ describe('chat turns through the sidecar', () => {
     // Deleting the session removes its background records with it.
     const records = join(sessionDirectory(s.deps.sessionStore), '_background', `${sid}.json`)
     expect(existsSync(records)).toBe(true)
+    // The wakeups the completions started end before the session is deleted; a running one refuses the delete.
+    await settled()
     expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
     expect(existsSync(records)).toBe(false)
     expect((await s.deps.background.receipts(sid))).toEqual([])
@@ -5047,7 +5064,10 @@ describe('chat streams, cancel, and error settlement', () => {
   const frames = (streamId: string, until: (f: SseFrame) => boolean): Promise<SseFrame[]> => s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, until)
   const terminal = (f: SseFrame): boolean => ['done', 'apperror', 'cancel'].includes(f.event)
   /** A turn that streams the given frames and then waits to be cancelled. */
+  /** The events the Agent turn emits before the Stop; `cancelTurn` stops it only once the stream has carried each. */
+  let emitted: string[] = []
   const cancellable = (emits: { event: string; data: Json }[]): void => {
+    emitted = emits.map((e) => e.event)
     sidecar.respond('chat.interrupt', () => ({ ok: true }))
     sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
       for (const e of emits) emit(e)
@@ -5056,7 +5076,8 @@ describe('chat streams, cancel, and error settlement', () => {
   }
   const cancelTurn = async (sid: string, message = 'go'): Promise<{ streamId: string; frames: SseFrame[] }> => {
     const streamId = await start(sid, message)
-    await frames(streamId, (f) => f.event !== 'initial' && f.event !== 'status')
+    const pending = [...emitted]
+    await frames(streamId, (f) => { const at = pending.indexOf(f.event); if (at >= 0) pending.splice(at, 1); return pending.length === 0 })
     expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
     const out = await frames(streamId, (f) => f.event === 'cancel')
     return { streamId, frames: out }

@@ -44,10 +44,13 @@ function seedStateDb(path: string, ids: { id: string; source: string; at: number
     chat_id TEXT, chat_type TEXT, thread_id TEXT, session_key TEXT, origin_chat_id TEXT, origin_user_id TEXT, platform TEXT, parent_session_id TEXT, ended_at REAL, end_reason TEXT);
     CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT, timestamp REAL NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, timestamp)`)
+  // One transaction: a commit per row blocks the event loop on every disk sync, seconds on a slow runner.
+  db.exec('BEGIN')
   for (const { id, source, at } of ids) {
     db.prepare('INSERT INTO sessions (id, source, started_at, title, message_count, chat_id) VALUES (?, ?, ?, ?, 2, ?)').run(id, source, at, `${id} title`, `chat-${id}`)
     for (const [role, ts] of [['user', at + 1], ['assistant', at + 2]] as const) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(id, role, 'hi', ts)
   }
+  db.exec('COMMIT')
   db.close()
 }
 
@@ -545,10 +548,10 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     const watcher = new GatewayWatcher('default', s.state, { rows: (profile) => s.deps.cliSessions.read(profile), now: () => Date.now() / 1000, log: () => undefined })
     const sub = watcher.subscribe()
     setStateDbReadDelayForTests(1500)
-    // The fingerprint read is held when the stop lands; its caller then goes on to the projection read.
+    // pollOnce posts the fingerprint read, held 1.5 s, before it returns: the stop lands while that read is in flight, and
+    // its caller then goes on to the projection read.
     const poll = watcher.pollOnce()
     setStateDbReadDelayForTests(0)
-    await new Promise((resolve) => setTimeout(resolve, 100))
     await stopStateDbWorker()
     expect(await poll).toBe(false)
     sub.close()
@@ -738,24 +741,34 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
   it('settles a Stop that lands during the starting read as a turn whose read failed', async () => {
     await seeded('web-stop', 1500)
     const begin = s.deps.sessions.beginStateDbTurn.bind(s.deps.sessions)
-    let reading = false
-    const read = vi.spyOn(s.deps.sessions, 'beginStateDbTurn').mockImplementation((session) => { reading = true; return begin(session) })
+    let entered!: () => void
+    const reading = new Promise<void>((resolve) => { entered = resolve })
+    // The turn's starting read stays in flight until the test opens it, so the Stop lands while it is pending.
+    let open!: () => void
+    const held = new Promise<void>((resolve) => { open = resolve })
+    const read = vi.spyOn(s.deps.sessions, 'beginStateDbTurn').mockImplementation(async (session) => { entered(); await held; return begin(session) })
     const settle = vi.spyOn(s.deps.sessions, 'settleStateDb')
+    const cancelled = s.deps.registry.cancelled
+    const markCancelled = cancelled.add.bind(cancelled)
+    let stopped!: () => void
+    const stop = new Promise<void>((resolve) => { stopped = resolve })
+    const mark = vi.spyOn(cancelled, 'add').mockImplementation((id) => { const out = markCancelled(id); stopped(); return out })
     try {
-      setStateDbReadDelayForTests(1500)
       const streamId = String(((await (await post('/api/chat/start', { session_id: 'web-stop', message: 'halt' })).json()) as Json).stream_id)
-      const deadline = Date.now() + 10_000
-      while (!reading && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
-      await s.get(`/api/chat/cancel?stream_id=${streamId}`)
-      setStateDbReadDelayForTests(0)
+      await reading
+      const cancel = s.get(`/api/chat/cancel?stream_id=${streamId}`)
+      await stop
+      open()
+      await cancel
       await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
       const settled = settle.mock.calls.filter(([session]) => session.session_id === 'web-stop')
       expect(settled.length).toBeGreaterThan(0)
       expect(settled.map(([, t]) => [t.startId ?? null, t.startGeneration ?? null])).toEqual(settled.map(() => [null, null]))
     } finally {
-      setStateDbReadDelayForTests(0)
+      open()
       read.mockRestore()
       settle.mockRestore()
+      mark.mockRestore()
     }
     const rows = (all: unknown[]): unknown[] => all.filter((c) => c !== '')
     const expected = ['hi', 'hi', 'CLI later', 'halt']
@@ -764,7 +777,7 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
     s.deps.sessionStore.sessions.delete('web-stop')
     expect(rows(await contents('/api/session?session_id=web-stop'))).toEqual(expected)
     expect((await s.deps.sessionStore.get('web-stop')).state_db_seen_id).toBe(maxId('web-stop'))
-  }, 30_000)
+  })
 
   it('lets a Stop that lands during the settlement read take the cancel path', async () => {
     await seeded('web-late-stop', 1600)
@@ -775,13 +788,13 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
     const settlementRead = s.deps.sessions.settlementRead.bind(s.deps.sessions)
     let release = (): void => undefined
     const held = new Promise<void>((resolve) => { release = resolve })
-    let holding = false
+    let entered!: () => void
+    const holding = new Promise<void>((resolve) => { entered = resolve })
     // The turn's settlement read is held until the Stop has settled.
-    const read = vi.spyOn(s.deps.sessions, 'settlementRead').mockImplementationOnce(async (session) => { holding = true; await held; return settlementRead(session) })
+    const read = vi.spyOn(s.deps.sessions, 'settlementRead').mockImplementationOnce(async (session) => { entered(); await held; return settlementRead(session) })
     try {
       const streamId = String(((await (await post('/api/chat/start', { session_id: 'web-late-stop', message: 'late' })).json()) as Json).stream_id)
-      const deadline = Date.now() + 10_000
-      while (!holding && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+      await holding
       await s.get(`/api/chat/cancel?stream_id=${streamId}`)
       release()
       const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
@@ -811,13 +824,13 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
     const stateDbRows = s.deps.sessions.stateDbRows.bind(s.deps.sessions)
     let release = (): void => undefined
     const held = new Promise<void>((resolve) => { release = resolve })
-    let holding = false
+    let entered!: () => void
+    const holding = new Promise<void>((resolve) => { entered = resolve })
     // The detail's transcript read is held while the turn settles.
-    const read = vi.spyOn(s.deps.sessions, 'stateDbRows').mockImplementationOnce(async (session) => { holding = true; await held; return stateDbRows(session) })
+    const read = vi.spyOn(s.deps.sessions, 'stateDbRows').mockImplementationOnce(async (session) => { entered(); await held; return stateDbRows(session) })
     try {
       const detail = contents(`/api/session?session_id=${sid}${query}`)
-      const deadline = Date.now() + 10_000
-      while (!holding && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+      await holding
       finish()
       await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
       release()

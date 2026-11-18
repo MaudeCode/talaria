@@ -7,7 +7,7 @@ import { allSessions } from './list.js'
 import { stampCompressionExhaustedRecovery } from './turn.js'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -33,6 +33,13 @@ async function newSession(s: TestServer, body: Json = {}): Promise<Json> {
   const res = await post(s, '/api/session/new', body)
   expect(res.status).toBe(200)
   return (await json(res)).session as Json
+}
+
+/** Spies the session lock for this test; the returned wait resolves once `count` callers have asked for `sid`'s lock. */
+function lockRequests(s: TestServer): (sid: string, count: number) => Promise<void> {
+  const lock = vi.spyOn(s.deps.sessionStore, 'withLock')
+  onTestFinished(() => { lock.mockRestore() })
+  return (sid, count) => vi.waitFor(() => { expect(lock.mock.calls.filter(([id]) => id === sid).length).toBeGreaterThanOrEqual(count) }, { timeout: 15_000 })
 }
 
 /** New sessions stay in memory until their first message (Python `new_session`), so persist through the store. */
@@ -187,11 +194,16 @@ describe('session lifecycle over HTTP', () => {
     // exactly one wins even when the first is parked on its session lock past the other's check.
     let releaseA: () => void = () => undefined
     const holdA = s.deps.sessionStore.withLock(sid, () => new Promise<void>((resolve) => { releaseA = resolve }))
-    await new Promise((r) => setTimeout(r, 20))
+    const queued = lockRequests(s)
+    const entered = vi.spyOn(s.deps.sessions, 'pin')
+    const transactions = vi.spyOn(s.deps.sessions as unknown as { pinUnserialized: (id: string, pinned: boolean) => Promise<unknown> }, 'pinUnserialized')
+    onTestFinished(() => { entered.mockRestore(); transactions.mockRestore() })
     const pinA = post(s, '/api/session/pin', { session_id: sid, pinned: true })
-    await new Promise((r) => setTimeout(r, 50))
+    await queued(sid, 1)
     const pinB = post(s, '/api/session/pin', { session_id: b.session_id, pinned: true })
-    await new Promise((r) => setTimeout(r, 50))
+    await vi.waitFor(() => { expect(entered).toHaveBeenCalledWith(b.session_id, true) }, { timeout: 15_000 })
+    // B queues behind A's open count-and-save; unserialized, B's own would already be running against the stale count.
+    expect(transactions.mock.calls.map(([id]) => id)).toEqual([sid])
     releaseA()
     await holdA
     const [resA, resB] = await Promise.all([pinA, pinB])
@@ -1524,8 +1536,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
     await s.get(`/api/chat/cancel?stream_id=${streamId}`)
     // The worker unwinds after the quiet Stop settled; its settlement is the one under test.
-    const deadline = Date.now() + 3000
-    while ((await s.deps.sessionStore.get(sid)).state_db_seen_id !== maxId(sid) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
+    await s.deps.turns.finished(streamId)
     expect((await served(sid)).filter((c) => c === 'background work after stop')).toEqual([])
     expect((await sent(sid)).filter((c) => c === 'background work after stop')).toEqual([])
   })
@@ -1797,8 +1808,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
     await s.get(`/api/chat/cancel?stream_id=${streamId}`)
     // The worker's late settlement installs the checkpoint as the model context.
-    const deadline = Date.now() + 5000
-    while (!(await s.deps.sessionStore.get(sid)).context_messages.some((m) => m.content === 'after stop') && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
+    await s.deps.turns.finished(streamId)
     expect((await s.deps.sessionStore.get(sid)).context_messages.some((m) => m.content === 'after stop')).toBe(true)
     const shown = await served(sid)
     expect(shown.filter((c) => c === 'after stop' || c === 'CLI during stop')).toEqual(['CLI during stop'])
@@ -3702,8 +3712,9 @@ describe('compression recovery start (TAL-257)', () => {
     const sid = await exhausted()
     let release!: () => void
     const held = s.deps.sessionStore.withLock(sid, () => new Promise<void>((resolve) => { release = resolve }))
+    const queued = lockRequests(s)
     const pending = start(sid)
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await queued(sid, 1)
     await s.deps.sessionStore.delete(sid)
     release()
     await held
@@ -3852,8 +3863,9 @@ describe('session draft deletion (TAL-1073)', () => {
     const sid = await withDraft()
     let release!: () => void
     const held = s.deps.sessionStore.withLock(sid, () => new Promise<void>((resolve) => { release = resolve }))
+    const queued = lockRequests(s)
     const cleanup = call('/api/sessions/cleanup_zero_message')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await queued(sid, 1)
     expect([existsSync(ownerPath(sid)), draftText(sid)]).toEqual([true, 'unsent synthetic text'])
     // The lock holder gives the session its first message before releasing.
     await writeMessages(s, sid, [{ role: 'user', content: 'now kept' }])
@@ -3867,10 +3879,11 @@ describe('session draft deletion (TAL-1073)', () => {
     const sid = await withDraft()
     let release!: () => void
     const held = s.deps.sessionStore.withLock(sid, () => new Promise<void>((resolve) => { release = resolve }))
+    const queued = lockRequests(s)
     const save = call('/api/session/draft', { session_id: sid, text: 'queued text', draft_version: '11' })
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await queued(sid, 1)
     const cleanup = call('/api/sessions/cleanup_zero_message')
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await queued(sid, 2)
     release()
     await held
     expect((await save)[0]).toBe(200)
