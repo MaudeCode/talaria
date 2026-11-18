@@ -132,7 +132,7 @@
       "web/packages/server/src/sessions/evict.test.ts": 1,
       "web/packages/server/src/sessions/notify/agent-notify.test.ts": 2,
       "web/packages/server/src/sessions/sessions.test.ts": 9,
-      "web/packages/server/src/sessions/state-db-worker.test.ts": 7,
+      "web/packages/server/src/sessions/state-db-worker.test.ts": 5,
       "web/packages/server/src/sessions/state-db.test.ts": 4,
       "web/packages/server/src/sessions/storage/blobs-s3.test.ts": 1,
       "web/packages/server/src/sessions/workers.test.ts": 18,
