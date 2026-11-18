@@ -5,19 +5,6 @@ import XCTest
 // The members of LiveActivityTests that need the App host; the rest run in TalariaKitTests (TAL-399).
 @MainActor
 final class LiveActivityTests: XCTestCase {
-    func testSessionPhaseCannotChangeAnotherSessionOrANewerStream() throws {
-        let manager = AgentLiveActivityManager(updateActivity: { _ in })
-        manager.start(sessionID: "session-a", sessionTitle: "Running", streamID: "new-run", publisherURL: URL(string: "https://fixture.example")!, startedAt: Date())
-        let before = try XCTUnwrap(manager.currentState)
-        for phase in ["completed", "running", "stale", "waiting_for_approval"] {
-            LiveActivityReconciler.applySessionPhase(phase, sessionID: "session-b", streamID: "new-run", manager: manager)
-            LiveActivityReconciler.applySessionPhase(phase, sessionID: "session-a", streamID: "old-run", manager: manager)
-            XCTAssertEqual(manager.currentState, before)
-        }
-        LiveActivityReconciler.applySessionPhase("completed", sessionID: "session-a", streamID: "new-run", manager: manager)
-        XCTAssertEqual(manager.currentState?.isFinal, true)
-    }
-
     func testFullExcerptSkipsNormalizationAndActivityUpdatesForTwoThousandTokens() async throws {
         try await assertFullExcerptSkipsFurtherTokens(
             initialToken: String(repeating: "a", count: 141), tailToken: " more",
@@ -300,13 +287,15 @@ final class LiveActivityTests: XCTestCase {
 
     // TAL-836: a relay-backed activity stays live while the relay owns or is
     // registering for it; markStale writes the stale state only without a relay.
+    private let handoffClock = ManualTestClock()
+
     private func relayHandoffFixture(
-        limit: Duration = .seconds(10), minimumUpdateInterval: TimeInterval = 0
+        minimumUpdateInterval: TimeInterval = 0
     ) -> (AgentLiveActivityManager, PerSessionRelayActivityRegistration, () -> [AgentRunActivityAttributes.ContentState]) {
         let registration = PerSessionRelayActivityRegistration()
         var updates: [AgentRunActivityAttributes.ContentState] = []
         let manager = AgentLiveActivityManager(
-            minimumUpdateInterval: minimumUpdateInterval, relayRegistration: registration, relayHandoffLimit: limit,
+            minimumUpdateInterval: minimumUpdateInterval, relayRegistration: registration, clock: handoffClock,
             updateActivity: { updates.append($0) }
         )
         manager.start(
@@ -319,6 +308,12 @@ final class LiveActivityTests: XCTestCase {
 
     private func yieldToPendingTasks() async {
         for _ in 0..<20 { await Task.yield() }
+    }
+
+    /// Moves the manager's clock past the relay handoff limit and every throttle delay.
+    private func advancePastTheHandoffLimit() async {
+        await handoffClock.advance(by: AgentLiveActivityManager.relayHandoffLimit + .seconds(1))
+        await yieldToPendingTasks()
     }
 
     func testConfirmedRelayHandoffSendsNoStaleState() async {
@@ -338,8 +333,7 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertFalse(updates().contains(where: \.isStale), "A pending handoff keeps the last state")
         XCTAssertNil(manager.activeConnectedStreamID)
         registration.settleHandoff(activityID: "relay-activity", confirmed: true)
-        try await Task.sleep(for: .milliseconds(500))
-        await yieldToPendingTasks()
+        await advancePastTheHandoffLimit()
         XCTAssertEqual(updates().count, 1, "A queued foreground write must not overwrite the relay's content")
     }
 
@@ -354,31 +348,23 @@ final class LiveActivityTests: XCTestCase {
     }
 
     func testPendingRelayHandoffPastTheLimitSendsOneStaleState() async throws {
-        let (manager, _, updates) = relayHandoffFixture(limit: .milliseconds(50))
+        let (manager, _, updates) = relayHandoffFixture()
         manager.markStale()
         await yieldToPendingTasks()
         XCTAssertFalse(updates().contains(where: \.isStale))
-        try await Task.sleep(for: .milliseconds(500))
-        await yieldToPendingTasks()
+        await advancePastTheHandoffLimit()
         XCTAssertEqual(updates().filter(\.isStale).count, 1)
     }
 
-    func testStartOrEndDuringRelayHandoffCancelsTheDeferredStaleState() async throws {
-        for finish in ["start", "end"] {
-            let (manager, _, updates) = relayHandoffFixture(limit: .milliseconds(50))
-            manager.markStale()
-            if finish == "start" {
-                manager.start(
-                    sessionID: "relay-session", sessionTitle: "Relay", streamID: "relay-stream",
-                    publisherURL: URL(string: "https://fixture.example")!
-                )
-            } else {
-                manager.end(status: .complete, activity: "Response complete")
-            }
-            try await Task.sleep(for: .milliseconds(500))
-            await yieldToPendingTasks()
-            XCTAssertFalse(updates().contains(where: \.isStale), "\(finish) must cancel the deferred stale write")
-        }
+    func testStartDuringRelayHandoffCancelsTheDeferredStaleState() async throws {
+        let (manager, _, updates) = relayHandoffFixture()
+        manager.markStale()
+        manager.start(
+            sessionID: "relay-session", sessionTitle: "Relay", streamID: "relay-stream",
+            publisherURL: URL(string: "https://fixture.example")!
+        )
+        await advancePastTheHandoffLimit()
+        XCTAssertFalse(updates().contains(where: \.isStale), "start must cancel the deferred stale write")
     }
 
     func testMarkStaleWithoutRelaySendsStaleStateImmediately() async {

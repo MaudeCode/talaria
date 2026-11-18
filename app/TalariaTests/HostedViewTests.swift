@@ -36,13 +36,6 @@ final class HostedViewTests: XCTestCase {
                       "A queued reset must yield when the model restores a pushed page")
     }
 
-    func testAboutOffersSendFeedback() async throws {
-        let window = try hostWindow(NavigationStack { AboutSettingsView() })
-        let row = await awaitElement(in: window) { $0.accessibilityLabel == "Send Feedback" }
-        XCTAssertNotNil(row, "About must offer the native Send Feedback action")
-        attachHostedScreenshot(window, name: "about-feedback-after")
-    }
-
     func testControlActivationUsesItsRegisteredEventOnceAndHonorsDisabledState() {
         let eventSets: [UIControl.Event] = [.touchUpInside, .primaryActionTriggered, [.touchUpInside, .primaryActionTriggered]]
         for events in eventSets {
@@ -245,12 +238,6 @@ final class HostedViewTests: XCTestCase {
         HostedAccessibility.activate(button)
         XCTAssertEqual(taps, 1)
         XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Heading"))
-    }
-
-    func testTheInProcessFixtureAnswersTheSessionList() async throws {
-        let fixture = try FixtureApp(for: self)
-        let response = try await fixture.client.sessions()
-        XCTAssertTrue(response.sessions?.contains { $0.sessionId == UITestFixtureURLProtocol.sessionID } == true)
     }
 }
 

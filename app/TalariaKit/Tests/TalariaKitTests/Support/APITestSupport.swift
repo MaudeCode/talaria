@@ -684,3 +684,61 @@ final class ManualTestClock: Clock, @unchecked Sendable {
         lock.withLock { current = target }
     }
 }
+
+/// Provider quota widget fixtures shared by TalariaKit and the hosted widget tests.
+extension XCTestCase {
+    func makeQuotaWidgetSource(
+        id: String,
+        account: String,
+        scopeID: String = "qscope_default",
+        cachedAt: Date = Date()
+    ) -> ProviderQuotaWidgetSource {
+        ProviderQuotaWidgetSource(
+            sourceID: id,
+            scopeID: scopeID,
+            scopeLabel: "Test server · default",
+            cachedAt: cachedAt,
+            providerID: "openai-codex",
+            providerLabel: "Codex",
+            accountLabel: account,
+            isActiveProvider: true,
+            status: "available",
+            plan: "Pro",
+            windows: [
+                ProviderQuotaWindow(label: "Session", usedPercent: 20, remainingPercent: 80),
+                ProviderQuotaWindow(label: "Weekly", usedPercent: 40, remainingPercent: 60),
+            ],
+            retryAfter: nil,
+            fetchedAt: "2030-03-17T12:30:00Z"
+        )
+    }
+
+    func makeQuotaRefreshCredentials(
+        now: Date = Date(),
+        refreshIntervalSeconds: Int = 300
+    ) -> ProviderQuotaWidgetRefreshCredentials {
+        ProviderQuotaWidgetRefreshCredentials(
+            serverURLString: "https://example.test",
+            serverLabel: "Test server",
+            refreshIntervalSeconds: refreshIntervalSeconds,
+            headers: [
+                ProviderQuotaWidgetRefreshHeader(name: "X-Test", value: "widget"),
+                ProviderQuotaWidgetRefreshHeader(name: "x-talaria-client", value: "forged identity"),
+            ],
+            cookies: [
+                ProviderQuotaWidgetRefreshCookie(
+                    HTTPCookie(properties: [
+                        .name: "live", .value: "value", .domain: "example.test", .path: "/",
+                        .secure: "TRUE", .expires: now.addingTimeInterval(60),
+                    ])!
+                ),
+                ProviderQuotaWidgetRefreshCookie(
+                    HTTPCookie(properties: [
+                        .name: "expired", .value: "value", .domain: "example.test", .path: "/",
+                        .secure: "TRUE", .expires: now.addingTimeInterval(-60),
+                    ])!
+                ),
+            ]
+        )
+    }
+}

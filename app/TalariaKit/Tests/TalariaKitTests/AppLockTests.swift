@@ -77,6 +77,10 @@ final class AppLockTests: XCTestCase {
     func testColdLaunchLocksOnlyWhenEnabled() async {
         XCTAssertFalse(coldLaunch(enabled: false).isLocked)
         let disabled = coldLaunch(enabled: false)
+        for phase in [ScenePhase.inactive, .background] {
+            disabled.sceneDidChange(phase, scene: window)
+            XCTAssertFalse(disabled.showsCover(in: window), "An off lock never covers a \(phase) window")
+        }
         await activate(disabled)
         XCTAssertEqual(authenticator.promptCount, 0, "An off lock never prompts")
 

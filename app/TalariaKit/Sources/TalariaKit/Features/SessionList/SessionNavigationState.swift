@@ -95,7 +95,7 @@ public struct SessionNavigationState: Equatable, Sendable {
         if let displayedSessionID, Self.normalized(secondarySessionID) == displayedSessionID { secondarySession = nil }
     }
     /// Consumed synchronously from local summaries before a launch root is displayed, including a cache miss.
-    public private(set) var launchRestoreResolved = false
+    private var launchRestoreResolved = false
     public private(set) var rootRevision = 0
     /// Changes only when a chat root is replaced or cleared.
     public private(set) var chatRootRevision = 0

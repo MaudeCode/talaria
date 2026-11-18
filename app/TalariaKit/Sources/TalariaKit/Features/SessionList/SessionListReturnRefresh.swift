@@ -9,7 +9,6 @@ public enum SessionListReturnRefresh {
     public static func run(
         from oldValue: SessionNavigationDestination?,
         to newValue: SessionNavigationDestination?,
-        suppressEmptyPlaceholders: () -> Void,
         refreshSessions: () -> Void
     ) {
         // Nothing was left behind: the first destination of a launch has no
@@ -23,17 +22,9 @@ public enum SessionListReturnRefresh {
         // sliding closed over Chats (TAL-477). Chat lists still refresh: archived can unarchive.
         if case .utility(let utility) = oldValue, !utility.listsSessions { return }
 
-        if case .newChat = oldValue {
-            // Swapping one pending new chat for another never produced a
-            // server-side session, so there is nothing newer to adopt.
-            if case .newChat = newValue { return }
-
-            // Keep this synchronous so an empty Untitled placeholder cannot flash
-            // during the navigation transition. The refresh then adopts the
-            // server's latest metadata for a new chat that has become contentful.
-            // Only a new chat can strand a placeholder, so other returns skip it.
-            suppressEmptyPlaceholders()
-        }
+        // Swapping one pending new chat for another never produced a
+        // server-side session, so there is nothing newer to adopt.
+        if case .newChat = oldValue, case .newChat = newValue { return }
 
         refreshSessions()
     }

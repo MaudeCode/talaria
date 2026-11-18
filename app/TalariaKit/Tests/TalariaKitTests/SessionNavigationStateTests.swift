@@ -71,6 +71,7 @@ final class SessionNavigationStateTests: XCTestCase {
         state.remove(sessionID: session.sessionId)
         let revision = state.openRevision
         XCTAssertNil(state.destination)
+        XCTAssertEqual(state.section, .chats)
         XCTAssertNil(state.lastSelectedSessionID)
         state.restoreAfterRemoval(previous, ifUnchangedAt: revision)
         XCTAssertEqual(state.destination, .session(session))
@@ -135,27 +136,6 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertEqual(state.lastSelectedSessionID, "session-2")
     }
 
-    func testCachedLaunchRestoreIsWidthIndependentAndConsumedOnce() {
-        for _ in ["compact", "regular"] {
-            let stored = SessionSummary(sessionId: "stored")
-            var state = SessionNavigationState(lastSelectedSessionID: "stored")
-            XCTAssertEqual(state.sessionToRestore(from: [stored]), stored)
-            XCTAssertTrue(state.launchRestoreResolved)
-            state.select(stored)
-            XCTAssertNil(state.sessionToRestore(from: [stored]))
-            XCTAssertEqual(state.destination, .session(stored))
-        }
-    }
-
-    func testRestoreClearsStoredSelectionWhenSessionNoLongerExists() {
-        var state = SessionNavigationState(lastSelectedSessionID: "missing")
-
-        let restored = state.sessionToRestore(from: [SessionSummary(sessionId: "session-1")])
-
-        XCTAssertNil(restored)
-        XCTAssertNil(state.lastSelectedSessionID)
-    }
-
     func testRestorePreservesStoredSelectionWhenSessionListIsNotAuthoritative() {
         var state = SessionNavigationState(lastSelectedSessionID: "session-1")
 
@@ -190,7 +170,6 @@ final class SessionNavigationStateTests: XCTestCase {
         let restored = state.sessionToRestore(from: [stored], pendingDeepLinkedSessionID: nil)
 
         XCTAssertNil(restored)
-        XCTAssertTrue(state.launchRestoreResolved)
     }
 
     func testRestoreProceedsWhenPendingDeepLinkIDIsBlank() {
@@ -350,26 +329,7 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertNil(state.destination)
     }
 
-    func testReturningFromContentfulNewChatSuppressesPlaceholdersThenRefreshesSessions() {
-        let route = PendingNewChatRoute()
-        var state = SessionNavigationState()
-        state.select(route)
-        state.remember(SessionSummary(sessionId: "created-session"))
-        let oldDestination = state.destination
-        state.clearDestination()
-        var events: [ReturnRefreshEvent] = []
-
-        SessionListReturnRefresh.run(
-            from: oldDestination,
-            to: state.destination,
-            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
-            refreshSessions: { events.append(.refreshedSessions) }
-        )
-
-        XCTAssertEqual(events, [.suppressedPlaceholders, .refreshedSessions])
-    }
-
-    func testReturningFromEmptyNewChatSuppressesPlaceholderThenRefreshesSessions() {
+    func testReturningFromNewChatRefreshesSessions() {
         let route = PendingNewChatRoute()
         var state = SessionNavigationState()
         state.select(route)
@@ -380,11 +340,10 @@ final class SessionNavigationStateTests: XCTestCase {
         SessionListReturnRefresh.run(
             from: oldDestination,
             to: state.destination,
-            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
             refreshSessions: { events.append(.refreshedSessions) }
         )
 
-        XCTAssertEqual(events, [.suppressedPlaceholders, .refreshedSessions])
+        XCTAssertEqual(events, [.refreshedSessions])
     }
 
     func testReplacingNewChatRouteDoesNotRefreshSessions() {
@@ -395,14 +354,13 @@ final class SessionNavigationStateTests: XCTestCase {
         SessionListReturnRefresh.run(
             from: .newChat(firstRoute),
             to: .newChat(secondRoute),
-            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
             refreshSessions: { events.append(.refreshedSessions) }
         )
 
         XCTAssertTrue(events.isEmpty)
     }
 
-    func testLeavingAnExistingSessionRefreshesWithoutSuppressingPlaceholders() {
+    func testLeavingAnExistingSessionRefreshesSessions() {
         var state = SessionNavigationState()
         state.select(SessionSummary(sessionId: "session-1"))
         let oldDestination = state.destination
@@ -412,7 +370,6 @@ final class SessionNavigationStateTests: XCTestCase {
         SessionListReturnRefresh.run(
             from: oldDestination,
             to: state.destination,
-            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
             refreshSessions: { events.append(.refreshedSessions) }
         )
 
@@ -432,7 +389,6 @@ final class SessionNavigationStateTests: XCTestCase {
         SessionListReturnRefresh.run(
             from: oldDestination,
             to: state.destination,
-            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
             refreshSessions: { events.append(.refreshedSessions) }
         )
 
@@ -448,7 +404,6 @@ final class SessionNavigationStateTests: XCTestCase {
         SessionListReturnRefresh.run(
             from: .session(SessionSummary(sessionId: "session-1")),
             to: .session(SessionSummary(sessionId: "session-2")),
-            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
             refreshSessions: { events.append(.refreshedSessions) }
         )
 
@@ -461,7 +416,6 @@ final class SessionNavigationStateTests: XCTestCase {
         SessionListReturnRefresh.run(
             from: .utility(.archived),
             to: nil,
-            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
             refreshSessions: { events.append(.refreshedSessions) }
         )
 
@@ -474,7 +428,6 @@ final class SessionNavigationStateTests: XCTestCase {
         SessionListReturnRefresh.run(
             from: nil,
             to: .session(SessionSummary(sessionId: "session-1")),
-            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
             refreshSessions: { events.append(.refreshedSessions) }
         )
 
@@ -488,32 +441,10 @@ final class SessionNavigationStateTests: XCTestCase {
         SessionListReturnRefresh.run(
             from: .session(session),
             to: .session(session),
-            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
             refreshSessions: { events.append(.refreshedSessions) }
         )
 
         XCTAssertTrue(events.isEmpty)
-    }
-
-    func testRemovingSelectedSessionClearsDestinationAndRestorationID() {
-        let session = SessionSummary(sessionId: "session-1")
-        var state = SessionNavigationState()
-        state.select(session)
-
-        state.remove(sessionID: "session-1")
-
-        XCTAssertNil(state.destination)
-        XCTAssertNil(state.lastSelectedSessionID)
-    }
-
-    func testRemovingRememberedSessionPreservesDifferentVisibleDestination() {
-        var state = SessionNavigationState(lastSelectedSessionID: "session-1")
-        state.select(SessionListUtilityDestination.tasks)
-
-        state.remove(sessionID: "session-1")
-
-        XCTAssertEqual(state.destination, .utility(.tasks))
-        XCTAssertNil(state.lastSelectedSessionID)
     }
 
     func testSettingsRoutingLeavesTheUnderlyingRootAndPagesUnchanged() {
@@ -528,15 +459,6 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertEqual(state.openRevision, revision)
         XCTAssertNil(AppSection(.settings(nil)))
         XCTAssertNil(AppSection(.providerQuotaWidgetSettings))
-    }
-
-    func testKanbanIsSelectableAsAUtilityDestination() {
-        var state = SessionNavigationState()
-
-        state.select(SessionListUtilityDestination.kanban)
-
-        XCTAssertEqual(state.destination, .utility(.kanban))
-        XCTAssertNil(state.selectedSessionID)
     }
 
     /// TAL-2327: a transcript row's Kanban card link pushes that card, on its board, above the chat it was tapped in.
@@ -555,19 +477,6 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertEqual(state.selectedItem, .kanbanCard(id: "t_1", board: "ops"))
         XCTAssertEqual(state.selectedSessionID, "chat")
         XCTAssertNil(AppSection(.kanbanCard(id: "t_1", board: nil)))
-    }
-
-    func testSidebarDestinationsReplaceTheRootAndClearInnerPages() {
-        var state = SessionNavigationState()
-        for utility: SessionListUtilityDestination in [.kanban, .archived, .webhook, .scheduled, .memory, .tasks, .skills, .insights] {
-            state.select(SessionSummary(sessionId: "chat"))
-            state.select(utility)
-            XCTAssertEqual(state.destination, .utility(utility))
-            XCTAssertEqual(state.section, AppSection(utility))
-            XCTAssertNil(state.selectedItem)
-            XCTAssertNil(state.selectedSectionSession)
-            XCTAssertNil(state.selectedSessionID)
-        }
     }
 
     func testReselectingRootDestinationAdvancesNavigationRevision() {
@@ -719,7 +628,6 @@ final class SessionNavigationStateTests: XCTestCase {
 }
 
 private enum ReturnRefreshEvent: Equatable {
-    case suppressedPlaceholders
     case refreshedSessions
 }
 
@@ -762,10 +670,13 @@ final class AppSectionLayoutTests: XCTestCase {
         ]
         for (utility, section) in expectations {
             var state = SessionNavigationState()
+            state.select(SessionSummary(sessionId: "chat"))
             state.select(utility)
             XCTAssertEqual(state.section, section)
             XCTAssertEqual(state.destination, .utility(utility))
             XCTAssertNil(state.selectedItem)
+            XCTAssertNil(state.selectedSectionSession)
+            XCTAssertNil(state.selectedSessionID)
         }
         XCTAssertEqual(SessionNavigationState().section, .chats)
     }
@@ -779,32 +690,6 @@ final class AppSectionLayoutTests: XCTestCase {
             XCTAssertNil(AppSection(.settings(anchor)))
         }
         XCTAssertNil(AppSection(.providerQuotaWidgetSettings))
-    }
-
-    func testEnteringASectionStartsAtItsRoot() {
-        var state = SessionNavigationState()
-        state.select(.memory)
-        state.selectedItem = .memory(.section(.user))
-        state.select(.skills)
-        XCTAssertNil(state.selectedItem)
-        state.select(.memory)
-        XCTAssertNil(state.selectedItem)
-    }
-
-    /// Regular → compact pushes the page the detail column showed; compact → regular shows the
-    /// pushed page beside the list.
-    func testLayoutReevaluationKeepsTheRootInnerPageAndChatRevision() {
-        var state = SessionNavigationState()
-        state.select(.memory)
-        state.selectedItem = .memory(.section(.user))
-        let before = state
-        for size in [CGSize(width: 466, height: 678), CGSize(width: 951, height: 669), CGSize(width: 669, height: 951)] {
-            _ = SidebarPresentation(isRegularWidth: size.width > 600, splitSize: size,
-                hasVerticalBar: size.width > size.height, storedChoice: true)
-            XCTAssertEqual(state, before)
-            XCTAssertEqual(state.selectedItem, .memory(.section(.user)))
-            XCTAssertEqual(state.chatRootRevision, before.chatRootRevision)
-        }
     }
 
     func testChatPushedFromASectionRemembersTheSessionAndPopsToThatRoot() {
@@ -824,22 +709,6 @@ final class AppSectionLayoutTests: XCTestCase {
             XCTAssertNil(state.selectedSectionSession)
             XCTAssertEqual(state.lastSelectedSessionID, session.sessionId)
         }
-    }
-
-    func testRemovingTheOpenChatKeepsItsListInTheSidebar() {
-        let session = SessionSummary(sessionId: "webhook-chat")
-        var state = SessionNavigationState()
-        state.select(.webhook)
-        state.pushSectionSession(session)
-        state.remove(sessionID: "webhook-chat")
-        XCTAssertEqual(state.section, .webhook)
-        XCTAssertEqual(state.destination, .utility(.webhook))
-
-        var chats = SessionNavigationState()
-        chats.select(session)
-        chats.remove(sessionID: "webhook-chat")
-        XCTAssertEqual(chats.section, .chats)
-        XCTAssertNil(chats.destination)
     }
 
     /// A section's item never outlives its root.
@@ -976,18 +845,6 @@ final class AppSectionLayoutTests: XCTestCase {
         state.closeSecondaryChat()
         state.restoreAfterRemoval(previous, ifUnchangedAt: revision)
         XCTAssertNil(state.secondarySessionID, "A newer user choice wins over a refused removal")
-    }
-
-    func testSecondChatUsesTheSidebarDrawerEvenAcrossABookFold() {
-        for divided in [false, true] {
-            let presentation = SidebarPresentation(isRegularWidth: true, splitSize: CGSize(width: 951, height: 669),
-                hasVerticalBar: false, storedChoice: true, hidesSidebarColumn: true,
-                hasVerticalDivision: divided, hasSecondaryChat: true)
-            XCTAssertFalse(presentation.showsColumn, "The arrangement owns both fold regions")
-            XCTAssertFalse(presentation.columnIsForced)
-            XCTAssertTrue(presentation.drawerEnabled, "Sidebar access must still work beside a second chat")
-            XCTAssertEqual(presentation.toggleTarget, .drawer)
-        }
     }
 
     func testRootReplacementClearsFilesReportsButModalInvalidationPreservesTheRoot() {

@@ -13,24 +13,6 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertFalse(makeTaskID(isSceneActive: false, isListVisible: false).isEnabled)
     }
 
-    /// Backgrounding, foregrounding and pushing a compact destination each change
-    /// the id, which is what restarts or tears down the `.task` that owns the loop.
-    func testTaskIDChangesWithScenePhaseVisibilityAndServer() throws {
-        let base = makeTaskID(isSceneActive: true, isListVisible: true)
-
-        XCTAssertNotEqual(base, makeTaskID(isSceneActive: false, isListVisible: true))
-        XCTAssertNotEqual(base, makeTaskID(isSceneActive: true, isListVisible: false))
-        XCTAssertNotEqual(
-            base,
-            makeTaskID(
-                isSceneActive: true,
-                isListVisible: true,
-                server: try XCTUnwrap(URL(string: "https://other.test"))
-            )
-        )
-        XCTAssertEqual(base, makeTaskID(isSceneActive: true, isListVisible: true))
-    }
-
     func testCancellingTheWaitEndsTheLoop() async {
         var refreshCount = 0
 
@@ -322,30 +304,8 @@ final class SessionListAutoRefreshTests: XCTestCase {
 
     // MARK: - Refresh queue
 
-    func testQuietReloadRunsExactlyOnce() async {
-        let queue = SessionListRefreshQueue()
-        var refreshCount = 0
-
-        await queue.run { refreshCount += 1 }
-
-        XCTAssertEqual(refreshCount, 1)
-    }
-
     /// A trigger arriving mid-reload is not discarded: the reload in flight may
     /// predate the change it is reacting to, so one follow-up runs after it.
-    func testRequestArrivingDuringAReloadRunsAsOneFollowUp() async {
-        let queue = SessionListRefreshQueue()
-        var refreshCount = 0
-
-        await queue.run {
-            refreshCount += 1
-            guard refreshCount == 1 else { return }
-            await queue.run { XCTFail("a second caller must not start its own reload") }
-        }
-
-        XCTAssertEqual(refreshCount, 2)
-    }
-
     func testRequestsArrivingDuringAReloadCoalesceIntoOneFollowUp() async {
         let queue = SessionListRefreshQueue()
         var refreshCount = 0
@@ -475,7 +435,7 @@ final class SessionListAutoRefreshTests: XCTestCase {
 
         let shown = viewModel.visibleSessions(searchText: "", selectedProjectID: nil)
         XCTAssertEqual(shown.compactMap(\.sessionId), rows.compactMap { $0["session_id"] as? String })
-        XCTAssertEqual(shown.map(\.sortTimestamp), rows.map { $0["sort_ts"] as? Double })
+        XCTAssertEqual(shown.map(\.sortTs), rows.map { $0["sort_ts"] as? Double })
     }
 
     /// The list renders rows in the order received, even when that order is not pinned-first (TAL-306).
@@ -489,12 +449,6 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertEqual(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).compactMap(\.sessionId), ["running", "old", "pinned"])
         XCTAssertEqual(viewModel.visibleSessions(searchText: "o", selectedProjectID: nil).compactMap(\.sessionId), ["old"])
         XCTAssertEqual(viewModel.visibleSessions(searchText: "n", selectedProjectID: nil).compactMap(\.sessionId), ["running", "pinned"])
-    }
-
-    func testSortTimestampFallsBackToTheFieldChainOnAnOlderServer() {
-        XCTAssertEqual(SessionSummary(lastMessageAt: 10, sortTs: 40).sortTimestamp, 40)
-        XCTAssertEqual(SessionSummary(createdAt: 30, updatedAt: 20).sortTimestamp, 20)
-        XCTAssertEqual(SessionSummary(createdAt: 30).sortTimestamp, 30)
     }
 
     // MARK: - Reconciliation and transient failure

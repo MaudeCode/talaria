@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The chat list groups scheduled and webhook chats and orders rows exactly as the server does, and a new chat appears in the list as soon as you send its first message.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

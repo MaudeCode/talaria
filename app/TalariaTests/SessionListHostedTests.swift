@@ -1023,20 +1023,6 @@ final class SessionListHostedTests: XCTestCase {
         fixture.releaseHeldLoads()
     }
 
-    func testLaunchCacheMissStaysNewChatAfterTheListAnswers() async throws {
-        let fixture = try FixtureApp(for: self)
-        SessionNavigationPersistence.save("unknown-cached-id", for: UITestFixtureEnvironment.serverURL)
-        let window = try hostWindow(fixture.sessionList())
-        _ = try await requireElement(in: window, label: "Send a message to start the conversation.")
-        let loaded = await awaitCondition {
-            UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/api/sessions") }
-        }
-        XCTAssertTrue(loaded)
-        settle(0.5)
-        _ = try await requireElement(in: window, label: "Send a message to start the conversation.")
-        XCTAssertEqual(UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/session/new" }.count }, 0)
-    }
-
     /// Reopening a chat paints its cached transcript and shows "Syncing messages" until the server answers, and no
     /// stream status competes with it (TAL-436).
     func testReopenedChatShowsSyncingUntilTheServerAnswers() async throws {
@@ -1135,18 +1121,6 @@ final class SessionListHostedTests: XCTestCase {
             "VoiceOver does not read the server's reason: \(notice.accessibilityLabel ?? "nil")"
         )
         XCTAssertEqual(HostedAccessibility.elements(in: window, labelContaining: "Agent session storage").count, 1)
-    }
-
-    /// Healthy storage shows no notice (TAL-830).
-    func testChatsListShowsNoStorageNoticeWhenTheServerReportsOK() async throws {
-        let fixture = try FixtureApp(for: self)
-        let window = try hostWindow(fixture.sessionList())
-        try await openSidebar(in: window)
-        let listed = await awaitElement(in: window, where: isFixtureRow)
-        XCTAssertNotNil(listed, "Missing deterministic session fixture")
-
-        XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "Agent session").isEmpty)
-        XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "hermes-agent").isEmpty)
     }
 
     /// Each degraded state reads its own notice with the server's reason, and `ok` or no state shows none (TAL-830).

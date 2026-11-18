@@ -1,9 +1,6 @@
 import XCTest
-import AVFoundation
-import ImageIO
 import Observation
 import SwiftData
-import UniformTypeIdentifiers
 @testable import TalariaKit
 
 
@@ -11,7 +8,7 @@ import UniformTypeIdentifiers
 extension SessionListMutationTests {
     func testSessionPresentationFiltersOncePerRowsChangeAcrossRepeatedReads() async throws {
         let rows = (0..<2_000).map { index in
-            "{\"session_id\":\"session-\(index)\",\"title\":\"Session \(index)\",\"source_kind\":\"\(index.isMultiple(of: 2) ? "cron" : "webhook")\"}"
+            "{\"session_id\":\"session-\(index)\",\"title\":\"Session \(index)\",\"source_kind\":\"\(index.isMultiple(of: 2) ? "cron" : "webhook")\",\"sidebar_group\":\"\(index.isMultiple(of: 2) ? "scheduled" : "webhook")\"}"
         }.joined(separator: ",")
         let viewModel = try makeViewModel { request in
             apiTestJSONResponse("{\"sessions\":[\(rows)]}", for: request)
@@ -38,8 +35,8 @@ extension SessionListMutationTests {
             apiTestJSONResponse("""
             {"sessions":[
               {"session_id":"ordinary","title":"Needle","project_id":"a"},
-              {"session_id":"cron","title":"Needle job","project_id":"a","source_kind":"cron"},
-              {"session_id":"hook","title":"Other","project_id":"a","source_kind":"webhook"},
+              {"session_id":"cron","title":"Needle job","project_id":"a","source_kind":"cron","sidebar_group":"scheduled"},
+              {"session_id":"hook","title":"Other","project_id":"a","source_kind":"webhook","sidebar_group":"webhook"},
               {"session_id":"other-project","title":"Needle elsewhere","project_id":"b"}
             ]}
             """, for: request)
@@ -74,7 +71,7 @@ extension SessionListMutationTests {
         let viewModel = try makeViewModel { request in
             loadCount += 1
             return apiTestJSONResponse("""
-            {"sessions":[{"session_id":"cron","title":"Job \(loadCount)","source_kind":"cron"}],
+            {"sessions":[{"session_id":"cron","title":"Job \(loadCount)","source_kind":"cron","sidebar_group":"scheduled"}],
              "scheduled_session_count":\(loadCount),"scheduled_sessions_truncated":\(loadCount > 1),
              "webhook_session_count":0,"webhook_sessions_truncated":false}
             """, for: request)
@@ -154,23 +151,6 @@ extension SessionListMutationTests {
         )
     }
 
-    func testAutomatedVisibilityHidesCronIndependently() {
-        let visibility = AutomatedSessionVisibility(showsCron: false, showsCli: true)
-        XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "cron_1", sourceKind: .cron)))
-        XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "c1", sourceKind: .cron)))
-        // CLI and normal sessions stay visible.
-        XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "cli-1", isCliSession: true)))
-        XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "normal")))
-    }
-
-    func testAutomatedVisibilityHidesCliIndependently() {
-        let visibility = AutomatedSessionVisibility(showsCron: true, showsCli: false)
-        XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "cli-1", isCliSession: true)))
-        // Cron and normal sessions stay visible.
-        XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "cron_1", sourceKind: .cron)))
-        XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "normal")))
-    }
-
     func testAutomatedVisibilityAppliesClaudeCodeChildPreferenceUnderCliParent() {
         let claudeCode = SessionSummary(
             sessionId: "claude-code",
@@ -201,13 +181,6 @@ extension SessionListMutationTests {
         )
         XCTAssertFalse(parentHidden.shows(claudeCode))
         XCTAssertFalse(parentHidden.shows(ordinaryCli))
-    }
-
-    func testAutomatedVisibilityHidesBothKinds() {
-        let visibility = AutomatedSessionVisibility(showsCron: false, showsCli: false)
-        XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "cron_1", sourceKind: .cron)))
-        XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "cli-1", isCliSession: true)))
-        XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "normal")))
     }
 
     @MainActor
@@ -242,15 +215,17 @@ extension SessionListMutationTests {
             {
               "sessions": [
                 {"session_id":"ordinary","title":"Ordinary","updated_at":50},
-                {"session_id":"cron_7","title":"Scheduled 7","updated_at":70,"source_kind":"cron"},
-                {"session_id":"cron_6","title":"Scheduled 6","updated_at":60,"source_kind":"cron"},
-                {"session_id":"cron_5","title":"Scheduled 5","updated_at":50,"source_kind":"cron"},
-                {"session_id":"cron_4","title":"Scheduled 4","updated_at":40,"source_kind":"cron"},
-                {"session_id":"cron_3","title":"Scheduled 3","updated_at":30,"source_kind":"cron"},
-                {"session_id":"cron_2","title":"Scheduled 2","updated_at":20,"source_kind":"cron"},
-                {"session_id":"cron_1","title":"Scheduled 1","updated_at":10,"source_kind":"cron"},
-                {"session_id":"cron_archived","title":"Archived scheduled","updated_at":80,"archived":true,"source_kind":"cron"}
-              ]
+                {"session_id":"cron_7","title":"Scheduled 7","updated_at":70,"source_kind":"cron","sidebar_group":"scheduled"},
+                {"session_id":"cron_6","title":"Scheduled 6","updated_at":60,"source_kind":"cron","sidebar_group":"scheduled"},
+                {"session_id":"cron_5","title":"Scheduled 5","updated_at":50,"source_kind":"cron","sidebar_group":"scheduled"},
+                {"session_id":"cron_4","title":"Scheduled 4","updated_at":40,"source_kind":"cron","sidebar_group":"scheduled"},
+                {"session_id":"cron_3","title":"Scheduled 3","updated_at":30,"source_kind":"cron","sidebar_group":"scheduled"},
+                {"session_id":"cron_2","title":"Scheduled 2","updated_at":20,"source_kind":"cron","sidebar_group":"scheduled"},
+                {"session_id":"cron_1","title":"Scheduled 1","updated_at":10,"source_kind":"cron","sidebar_group":"scheduled"},
+                {"session_id":"cron_archived","title":"Archived scheduled","updated_at":80,"archived":true,"source_kind":"cron","sidebar_group":"scheduled"}
+              ],
+              "scheduled_session_count": 7, "scheduled_sessions_truncated": false,
+              "webhook_session_count": 0, "webhook_sessions_truncated": false
             }
             """, for: request)
         }
@@ -272,16 +247,17 @@ extension SessionListMutationTests {
         XCTAssertTrue(groups.showsDisclosure(isSearchActive: false))
     }
 
-    /// The server's 200-row window would make a loaded-row count stop at 200 (TAL-482).
+    /// The server files each row under its `sidebar_group` and counts each group; its 200-row window would make a
+    /// loaded-row count stop at 200 (TAL-482).
     @MainActor
     func testScheduledSessionGroupsShowServerCountsOverLoadedRows() async throws {
         let viewModel = try makeViewModel { request in
             apiTestJSONResponse("""
             {
               "sessions": [
-                {"session_id":"cron_2","title":"Scheduled 2","updated_at":20,"source_kind":"cron"},
-                {"session_id":"cron_1","title":"Scheduled 1","updated_at":10,"source_kind":"cron"},
-                {"session_id":"hook-1","title":"Hook","updated_at":30,"source_tag":"webhook","source_kind":"webhook"}
+                {"session_id":"cron_2","title":"Scheduled 2","updated_at":20,"sidebar_group":"scheduled"},
+                {"session_id":"cron_1","title":"Scheduled 1","updated_at":10,"sidebar_group":"scheduled"},
+                {"session_id":"hook-1","title":"Hook","updated_at":30,"source_tag":"webhook","source_kind":"webhook","sidebar_group":"webhook"}
               ],
               "scheduled_session_count": 200,
               "scheduled_sessions_truncated": true,
@@ -299,6 +275,8 @@ extension SessionListMutationTests {
         XCTAssertEqual(groups.totalWebhookCount, 3)
         XCTAssertFalse(groups.webhookCountIsPartial)
         XCTAssertEqual(groups.scheduled.compactMap(\.sessionId), ["cron_2", "cron_1"])
+        XCTAssertEqual(groups.webhook.compactMap(\.sessionId), ["hook-1"])
+        XCTAssertEqual(groups.ordinary, [])
 
         let hidden = viewModel.scheduledSessionGroups(
             searchText: "",
@@ -316,13 +294,15 @@ extension SessionListMutationTests {
             {
               "sessions": [
                 {"session_id":"ordinary","title":"Needle ordinary","updated_at":5},
-                {"session_id":"cron_1","title":"Needle scheduled 1","updated_at":10,"source_kind":"cron"},
-                {"session_id":"cron_2","title":"Needle scheduled 2","updated_at":20,"source_kind":"cron"},
-                {"session_id":"cron_3","title":"Needle scheduled 3","updated_at":30,"source_kind":"cron"},
-                {"session_id":"cron_4","title":"Needle scheduled 4","updated_at":40,"source_kind":"cron"},
-                {"session_id":"cron_5","title":"Needle scheduled 5","updated_at":50,"source_kind":"cron"},
-                {"session_id":"cron_6","title":"Needle scheduled 6","updated_at":60,"source_kind":"cron"}
-              ]
+                {"session_id":"cron_1","title":"Needle scheduled 1","updated_at":10,"source_kind":"cron","sidebar_group":"scheduled"},
+                {"session_id":"cron_2","title":"Needle scheduled 2","updated_at":20,"source_kind":"cron","sidebar_group":"scheduled"},
+                {"session_id":"cron_3","title":"Needle scheduled 3","updated_at":30,"source_kind":"cron","sidebar_group":"scheduled"},
+                {"session_id":"cron_4","title":"Needle scheduled 4","updated_at":40,"source_kind":"cron","sidebar_group":"scheduled"},
+                {"session_id":"cron_5","title":"Needle scheduled 5","updated_at":50,"source_kind":"cron","sidebar_group":"scheduled"},
+                {"session_id":"cron_6","title":"Needle scheduled 6","updated_at":60,"source_kind":"cron","sidebar_group":"scheduled"}
+              ],
+              "scheduled_session_count": 6, "scheduled_sessions_truncated": false,
+              "webhook_session_count": 0, "webhook_sessions_truncated": false
             }
             """, for: request)
         }
@@ -361,9 +341,11 @@ extension SessionListMutationTests {
               "sessions": [
                 {"session_id":"ordinary-1","title":"Ordinary one","project_id":"project-1"},
                 {"session_id":"ordinary-2","title":"Ordinary two","project_id":"project-2"},
-                {"session_id":"cron_1","title":"Scheduled one","project_id":"project-1","source_kind":"cron"},
-                {"session_id":"cron_2","title":"Scheduled two","project_id":"project-2","source_kind":"cron"}
-              ]
+                {"session_id":"cron_1","title":"Scheduled one","project_id":"project-1","source_kind":"cron","sidebar_group":"scheduled"},
+                {"session_id":"cron_2","title":"Scheduled two","project_id":"project-2","source_kind":"cron","sidebar_group":"scheduled"}
+              ],
+              "scheduled_session_count": 2, "scheduled_sessions_truncated": false,
+              "webhook_session_count": 0, "webhook_sessions_truncated": false
             }
             """, for: request)
         }
@@ -389,16 +371,18 @@ extension SessionListMutationTests {
             {
               "sessions": [
                 {"session_id":"ordinary","title":"Ordinary","updated_at":50},
-                {"session_id":"cron_1","title":"Scheduled","updated_at":60,"source_kind":"cron"},
-                {"session_id":"webhook_7","title":"Webhook 7","source_tag":"webhook","updated_at":70,"source_kind":"webhook"},
-                {"session_id":"webhook_6","title":"Webhook 6","source_tag":"webhook","updated_at":60,"source_kind":"webhook"},
-                {"session_id":"webhook_5","title":"Webhook 5","source_tag":"webhook","updated_at":50,"source_kind":"webhook"},
-                {"session_id":"webhook_4","title":"Webhook 4","source_tag":"webhook","updated_at":40,"source_kind":"webhook"},
-                {"session_id":"webhook_3","title":"Webhook 3","source_tag":"webhook","updated_at":30,"source_kind":"webhook"},
-                {"session_id":"webhook_2","title":"Webhook 2","source_tag":"webhook","updated_at":20,"source_kind":"webhook"},
-                {"session_id":"webhook_1","title":"Webhook 1","session_source":"webhook","updated_at":10,"source_kind":"webhook"},
-                {"session_id":"webhook_archived","title":"Archived webhook","source_tag":"webhook","updated_at":80,"archived":true,"source_kind":"webhook"}
-              ]
+                {"session_id":"cron_1","title":"Scheduled","updated_at":60,"source_kind":"cron","sidebar_group":"scheduled"},
+                {"session_id":"webhook_7","title":"Webhook 7","source_tag":"webhook","updated_at":70,"source_kind":"webhook","sidebar_group":"webhook"},
+                {"session_id":"webhook_6","title":"Webhook 6","source_tag":"webhook","updated_at":60,"source_kind":"webhook","sidebar_group":"webhook"},
+                {"session_id":"webhook_5","title":"Webhook 5","source_tag":"webhook","updated_at":50,"source_kind":"webhook","sidebar_group":"webhook"},
+                {"session_id":"webhook_4","title":"Webhook 4","source_tag":"webhook","updated_at":40,"source_kind":"webhook","sidebar_group":"webhook"},
+                {"session_id":"webhook_3","title":"Webhook 3","source_tag":"webhook","updated_at":30,"source_kind":"webhook","sidebar_group":"webhook"},
+                {"session_id":"webhook_2","title":"Webhook 2","source_tag":"webhook","updated_at":20,"source_kind":"webhook","sidebar_group":"webhook"},
+                {"session_id":"webhook_1","title":"Webhook 1","session_source":"webhook","updated_at":10,"source_kind":"webhook","sidebar_group":"webhook"},
+                {"session_id":"webhook_archived","title":"Archived webhook","source_tag":"webhook","updated_at":80,"archived":true,"source_kind":"webhook","sidebar_group":"webhook"}
+              ],
+              "scheduled_session_count": 1, "scheduled_sessions_truncated": false,
+              "webhook_session_count": 7, "webhook_sessions_truncated": false
             }
             """, for: request)
         }
@@ -443,9 +427,11 @@ extension SessionListMutationTests {
             {
               "sessions": [
                 {"session_id":"ordinary-1","title":"Needle ordinary","project_id":"project-1"},
-                {"session_id":"webhook-1","title":"Needle webhook","source_tag":"webhook","project_id":"project-1","source_kind":"webhook"},
-                {"session_id":"webhook-2","title":"Other webhook","session_source":"webhook","project_id":"project-2","source_kind":"webhook"}
-              ]
+                {"session_id":"webhook-1","title":"Needle webhook","source_tag":"webhook","project_id":"project-1","source_kind":"webhook","sidebar_group":"webhook"},
+                {"session_id":"webhook-2","title":"Other webhook","session_source":"webhook","project_id":"project-2","source_kind":"webhook","sidebar_group":"webhook"}
+              ],
+              "scheduled_session_count": 0, "scheduled_sessions_truncated": false,
+              "webhook_session_count": 2, "webhook_sessions_truncated": false
             }
             """, for: request)
         }

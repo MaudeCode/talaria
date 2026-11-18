@@ -35,13 +35,16 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
     private var updateGeneration = 0
     private var lifecycleGeneration = 0
     private let relayRegistration: PerSessionRelayActivityRegistration
-    private let relayHandoffLimit: Duration
+    /// How long markStale keeps the last state while the relay registers the activity.
+    static let relayHandoffLimit: Duration = .seconds(10)
+    /// Times the update throttle and the relay handoff limit.
+    private let clock: any Clock<Duration>
 
     init(
         minimumUpdateInterval: TimeInterval = 1.5,
         now: @escaping () -> Date = Date.init,
         relayRegistration: PerSessionRelayActivityRegistration = PerSessionRelayActivityRegistration(),
-        relayHandoffLimit: Duration = .seconds(10),
+        clock: any Clock<Duration> = ContinuousClock(),
         updateActivity: ((AgentRunActivityAttributes.ContentState) -> Void)? = nil,
         setInterimAssistant: @escaping (String, AgentRunActivityAttributes.ContentState) -> AgentRunActivityAttributes.ContentState = {
             AgentRunActivityStateReducer.settingInterimAssistant($0, on: $1)
@@ -50,7 +53,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         self.minimumUpdateInterval = minimumUpdateInterval
         self.now = now
         self.relayRegistration = relayRegistration
-        self.relayHandoffLimit = relayHandoffLimit
+        self.clock = clock
         self.updateActivity = updateActivity
         self.setInterimAssistant = setInterimAssistant
     }
@@ -540,8 +543,10 @@ private extension AgentLiveActivityManager {
     /// times out, or no background time is granted. Any newer write cancels it.
     private func deferStaleUntilRelayHandoff(activityID: String) {
         guard deferredStaleTask == nil else { return }
-        deferredStaleTask = Task { [weak self, relayRegistration, relayHandoffLimit] in
-            let confirmed = await relayRegistration.awaitRegistration(activityID: activityID, limit: relayHandoffLimit)
+        deferredStaleTask = Task { [weak self, relayRegistration, clock] in
+            let confirmed = await relayRegistration.awaitRegistration(
+                activityID: activityID, limit: Self.relayHandoffLimit, clock: clock
+            )
             guard !Task.isCancelled else { return }
             self?.finishDeferredStale(writeStale: !confirmed)
         }
@@ -607,8 +612,8 @@ private extension AgentLiveActivityManager {
         guard pendingUpdateTask == nil else { return }
 
         let delay = max(0, minimumUpdateInterval - now.timeIntervalSince(lastSentUpdateAt!))
-        pendingUpdateTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        pendingUpdateTask = Task { [weak self, clock] in
+            try? await clock.sleep(for: .seconds(delay))
             await MainActor.run {
                 guard let self, !Task.isCancelled, let currentState = self.currentState else { return }
                 self.pendingUpdateTask = nil

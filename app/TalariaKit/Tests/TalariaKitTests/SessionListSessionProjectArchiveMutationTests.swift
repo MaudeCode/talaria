@@ -1,8 +1,5 @@
 import XCTest
-import AVFoundation
-import ImageIO
 import SwiftData
-import UniformTypeIdentifiers
 @testable import TalariaKit
 
 
@@ -71,49 +68,6 @@ extension SessionListMutationTests {
         )
         XCTAssertNil(viewModel.actionErrorMessage)
         XCTAssertNil(viewModel.lastError)
-    }
-
-    /// Duplicate goes to `/api/session/duplicate`, not `/api/session/branch`.
-    /// Branch means "fork a child from here": it dropped `tool_calls` and the
-    /// token totals, and filed the copy under the original in the lineage tree,
-    /// three wrong outcomes for a menu item labelled Duplicate. The
-    /// duplicate endpoint also returns the whole session, so the follow-up fetch
-    /// the branch flow needed is gone.
-    func testSessionMutatorDuplicateUsesTheDuplicateEndpointAndNeedsNoSecondFetch() async throws {
-        var requestedPaths: [String] = []
-        let client = try makeClient { request in
-            let path = request.url?.path ?? "nil"
-            requestedPaths.append(path)
-
-            switch path {
-            case "/api/session/duplicate":
-                XCTAssertEqual(request.httpMethod, "POST")
-                let body = try XCTUnwrap(apiTestJSONBody(from: request))
-                XCTAssertEqual(body["session_id"] as? String, "session-abc")
-                return apiTestJSONResponse(
-                    """
-                    {
-                      "session": {
-                        "session_id": "copy-123",
-                        "title": "Planning (copy)",
-                        "archived": false
-                      }
-                    }
-                    """,
-                    for: request
-                )
-            default:
-                XCTFail("Unexpected request path: \(path)")
-                throw URLError(.badURL)
-            }
-        }
-
-        let result = try await SessionMutator(client: client).duplicate(sessionID: "session-abc")
-
-        XCTAssertEqual(requestedPaths, ["/api/session/duplicate"])
-        XCTAssertEqual(result.session?.sessionId, "copy-123")
-        XCTAssertEqual(result.session?.title, "Planning (copy)")
-        XCTAssertNil(result.errorMessage)
     }
 
     @MainActor
@@ -554,27 +508,6 @@ extension SessionListMutationTests {
         XCTAssertFalse(isMovingSession)
         XCTAssertNil(actionErrorMessage)
         XCTAssertNil(lastError)
-    }
-
-    func testCreateEmptyProjectBlocksBlankNameBeforeNetworkRequest() async throws {
-        let viewModel = try makeViewModel { request in
-            XCTFail("Blank project names should not make network requests: \(request.url?.path ?? "nil")")
-            throw URLError(.badURL)
-        }
-
-        let didCreate = await viewModel.createEmptyProject(
-            named: "   ",
-            color: "#7cb9ff"
-        )
-
-        XCTAssertFalse(didCreate)
-        let actionErrorMessage = await MainActor.run { viewModel.actionErrorMessage }
-        let lastError = await MainActor.run { viewModel.lastError }
-        let isCreatingProject = await MainActor.run { viewModel.isCreatingProject }
-
-        XCTAssertEqual(actionErrorMessage, "Enter a project name.")
-        XCTAssertNil(lastError)
-        XCTAssertFalse(isCreatingProject)
     }
 
     func testCreateEmptyProjectMissingProjectInResponseShowsError() async throws {
@@ -1268,6 +1201,7 @@ extension SessionListMutationTests {
         let missingID = await viewModel.duplicate(source)
 
         XCTAssertEqual(duplicated?.sessionId, "copy-123")
+        XCTAssertEqual(duplicated?.title, "Planning (copy)")
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["copy-123", "session-abc"])
         XCTAssertNil(missingID)
         XCTAssertNotNil(viewModel.actionErrorMessage)

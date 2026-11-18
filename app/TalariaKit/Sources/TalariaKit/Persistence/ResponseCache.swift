@@ -28,6 +28,8 @@ public struct ResponseCache: Sendable {
         public static let projects = "projects"
         /// The session list's `agent_storage` alone; its rows live in `CacheStore`.
         public static let agentStorage = "agent-storage"
+        /// The session list's scheduled and webhook group counts alone, painted with the cached rows.
+        public static let automatedSessionCounts = "automated-session-counts"
         public static let models = "models"
         public static let workspaces = "workspaces"
         public static let commands = "commands"

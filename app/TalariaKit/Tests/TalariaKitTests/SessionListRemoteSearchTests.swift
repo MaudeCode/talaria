@@ -1,8 +1,5 @@
 import XCTest
-import AVFoundation
-import ImageIO
 import SwiftData
-import UniformTypeIdentifiers
 @testable import TalariaKit
 
 
@@ -119,9 +116,12 @@ extension SessionListMutationTests {
 
                 return apiTestJSONResponse("""
                 {
-                  "sessions": [{"session_id": "in-project", "title": "Budget", "project_id": "project-1", "match_type": "metadata"}],
+                  "sessions": [
+                    {"session_id": "not-loaded", "title": "Older content", "project_id": "project-1", "match_type": "content"},
+                    {"session_id": "in-project", "title": "Budget", "project_id": "project-1", "match_type": "metadata"}
+                  ],
                   "query": "needle",
-                  "count": 1,
+                  "count": 2,
                   "sidebar_filtered": true
                 }
                 """, for: request)
@@ -143,7 +143,7 @@ extension SessionListMutationTests {
         XCTAssertEqual(
             viewModel.visibleSessions(searchText: "needle", selectedProjectID: "project-1", automatedVisibility: visibility)
                 .compactMap(\.sessionId),
-            ["in-project"]
+            ["not-loaded", "in-project"]
         )
         // Another project is a different search: until it is answered, only its titles match.
         XCTAssertEqual(
@@ -154,105 +154,45 @@ extension SessionListMutationTests {
     }
 
     @MainActor
-    func testRemoteSessionSearchShowsTheServerResultWithoutTheSidebarFlag() async throws {
-        let viewModel = try makeViewModel { request in
-            switch request.url?.path {
-            case "/api/sessions":
-                return apiTestJSONResponse("""
-                {
-                  "sessions": [
-                    {"session_id": "local-title", "title": "Needle planning", "project_id": "project-1", "last_message_at": 30, "archived": false},
-                    {"session_id": "content-project", "title": "Budget", "project_id": "project-1", "last_message_at": 20, "archived": false}
-                  ]
-                }
-                """, for: request)
-            case "/api/sessions/search":
-                return apiTestJSONResponse("""
-                {
-                  "sessions": [
-                    {"session_id": "not-loaded", "title": "Older content", "project_id": "project-1", "match_type": "content"},
-                    {"session_id": "content-project", "title": "Budget", "match_type": "content"},
-                    {"session_id": "local-title", "title": "Needle planning", "match_type": "title"}
-                  ],
-                  "query": "needle",
-                  "count": 3
-                }
-                """, for: request)
-            default:
-                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
-                throw URLError(.badURL)
-            }
-        }
-
-        await viewModel.load()
-        await viewModel.searchSessions(query: "needle", selectedProjectID: "project-1", debounceNanoseconds: 0)
-
-        XCTAssertEqual(
-            viewModel.visibleSessions(searchText: "needle", selectedProjectID: "project-1").compactMap(\.sessionId),
-            ["not-loaded", "content-project", "local-title"]
-        )
-    }
-
-    @MainActor
     func testRemoteSessionSearchIgnoresStaleResultsWhenQueryChanges() async throws {
         let oldSearchStarted = expectation(description: "old search started")
-        let viewModel = try makeViewModel { request in
-            switch request.url?.path {
-            case "/api/sessions":
-                return apiTestJSONResponse("""
-                {
-                  "sessions": [
-                    {
-                      "session_id": "old-content",
-                      "title": "First result",
-                      "archived": false
-                    },
-                    {
-                      "session_id": "new-content",
-                      "title": "Second result",
-                      "archived": false
-                    }
-                  ]
-                }
-                """, for: request)
-            case "/api/sessions/search":
-                let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
-                let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
-                let searchQuery = query["q"] ?? ""
-
-                if searchQuery == "old" {
-                    oldSearchStarted.fulfill()
-                    Thread.sleep(forTimeInterval: 0.15)
-                    return apiTestJSONResponse("""
-                    {
-                      "sessions": [
-                        {"session_id": "old-content", "title": "First result", "match_type": "content"}
-                      ],
-                      "query": "old",
-                      "count": 1
-                    }
-                    """, for: request)
-                }
-
-                if searchQuery == "new" {
-                    return apiTestJSONResponse("""
-                    {
-                      "sessions": [
-                        {"session_id": "new-content", "title": "Second result", "match_type": "content", "match_preview": "second preview"}
-                      ],
-                      "query": "new",
-                      "count": 1
-                    }
-                    """, for: request)
-                }
-
-                XCTFail("Unexpected search query: \(searchQuery)")
-                throw URLError(.badURL)
+        let heldOldSearch = LockedTestValue<DeferredMockURLProtocol?>(nil)
+        let host = "stale-search-\(UUID().uuidString).test"
+        DeferredMockURLProtocol.setOnRequest({ request in
+            let components = request.request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
+            let searchQuery = components?.queryItems?.first { $0.name == "q" }?.value
+            switch (components?.path, searchQuery) {
+            case ("/api/sessions", _):
+                request.complete(withJSON: """
+                {"sessions": [
+                  {"session_id": "old-content", "title": "First result", "archived": false},
+                  {"session_id": "new-content", "title": "Second result", "archived": false}
+                ]}
+                """)
+            case ("/api/sessions/search", "old"):
+                // Held until the newer search has answered, so the stale response lands last.
+                heldOldSearch.value = request
+                oldSearchStarted.fulfill()
+            case ("/api/sessions/search", "new"):
+                request.complete(withJSON: """
+                {"sessions": [
+                  {"session_id": "new-content", "title": "Second result", "match_type": "content", "match_preview": "second preview"}
+                ], "query": "new", "count": 1}
+                """)
             default:
-                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
-                throw URLError(.badURL)
+                XCTFail("Unexpected request: \(request.request.url?.absoluteString ?? "nil")")
+                request.fail(with: URLError(.badURL))
             }
-        }
+        }, forHost: host)
+        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let server = try XCTUnwrap(URL(string: "https://\(host)"))
+        let viewModel = SessionListViewModel(
+            server: server,
+            client: APIClient(baseURL: server, session: URLSession(configuration: configuration)),
+            responseCache: makeResponseCache(server: server)
+        )
 
         await viewModel.load()
         let oldTask = Task {
@@ -261,6 +201,11 @@ extension SessionListMutationTests {
         await fulfillment(of: [oldSearchStarted], timeout: 10)
 
         await viewModel.searchSessions(query: "new", debounceNanoseconds: 0)
+        try XCTUnwrap(heldOldSearch.value).complete(withJSON: """
+        {"sessions": [
+          {"session_id": "old-content", "title": "First result", "match_type": "content"}
+        ], "query": "old", "count": 1}
+        """)
         await oldTask.value
 
         XCTAssertEqual(viewModel.remoteSearchResults?.compactMap(\.sessionId), ["new-content"])

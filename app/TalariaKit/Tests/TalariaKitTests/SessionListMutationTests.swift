@@ -1,8 +1,5 @@
 import XCTest
-import AVFoundation
-import ImageIO
 import SwiftData
-import UniformTypeIdentifiers
 @testable import TalariaKit
 
 
@@ -130,34 +127,6 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertFalse(SessionSummary(sessionId: "plain").isExternalSourceSession)
     }
 
-    /// The server has no `import_cli` route; it decides writability in `GET /api/session` and
-    /// claims a CLI session on its first send (TAL-256). The app opens external chats through
-    /// that detail and keeps its `read_only` and capability flags.
-    @MainActor
-    func testOpeningExternalSessionUsesTheDetailRouteAndItsWritability() async throws {
-        var requestedPaths: [String] = []
-        let viewModel = try makeViewModel { request in
-            requestedPaths.append(request.url?.path ?? "nil")
-            // What the server answers the removed route with; asserting no request reaches it.
-            if request.url?.path == "/api/session/import_cli" {
-                return apiTestJSONResponse(#"{"error": "not found"}"#, statusCode: 404, for: request)
-            }
-            return apiTestJSONResponse("""
-            {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "source_kind": "cli",
-              "read_only": false, "can_pin": true, "can_archive": true, "can_duplicate": true}}
-            """, for: request)
-        }
-        let row = SessionSummary(sessionId: "cli-1", isCliSession: true, sourceKind: .cli, canDuplicate: false)
-
-        let resolved = await viewModel.sessionToOpen(for: row)
-        let opened = try XCTUnwrap(resolved)
-
-        XCTAssertEqual(requestedPaths, ["/api/session"])
-        XCTAssertFalse(opened.isSessionReadOnly)
-        XCTAssertEqual(opened.canDuplicate, true)
-        XCTAssertNil(viewModel.actionErrorMessage)
-    }
-
     /// Signal and WhatsApp chats used to open without a detail load because the app's own
     /// messaging list missed them (TAL-310). Every platform the server files as messaging loads it.
     @MainActor
@@ -180,6 +149,8 @@ final class SessionListMutationTests: XCTestCase {
         }
     }
 
+    /// The server decides writability in `GET /api/session` and claims a CLI session on its first
+    /// send (TAL-256), so the app opens external chats through that detail and keeps its flags.
     @MainActor
     func testOpeningExternalRowLoadsDetailOnceAndUsesAuthoritativeMetadata() async throws {
         var requestedPaths: [String] = []
@@ -192,7 +163,8 @@ final class SessionListMutationTests: XCTestCase {
                 "title": "Detail title",
                 "is_cli_session": true,
                 "source_tag": "cli",
-                "read_only": false
+                "read_only": false,
+                "can_duplicate": true
               }
             }
             """, for: request)
@@ -204,6 +176,7 @@ final class SessionListMutationTests: XCTestCase {
             isCliSession: true,
             userMessageCount: 7,
             readOnly: true,
+            canDuplicate: false,
             matchType: "content",
             matchPreview: "why it matched"
         )
@@ -214,54 +187,13 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertEqual(requestedPaths, ["/api/session"])
         XCTAssertEqual(opened.title, "Detail title")
         XCTAssertFalse(opened.isSessionReadOnly)
+        XCTAssertEqual(opened.canDuplicate, true)
         // List-only metadata the detail payload cannot carry survives the load.
         XCTAssertEqual(opened.isStreaming, true)
         XCTAssertEqual(opened.userMessageCount, 7)
         XCTAssertEqual(opened.matchType, "content")
         XCTAssertEqual(opened.matchPreview, "why it matched")
         XCTAssertNil(viewModel.actionErrorMessage)
-    }
-
-    @MainActor
-    func testOpeningReadOnlyDetailKeepsSessionViewOnly() async throws {
-        let viewModel = try makeViewModel { request in
-            apiTestJSONResponse("""
-            {
-              "session": {
-                "session_id": "telegram-1",
-                "session_source": "messaging",
-                "raw_source": "telegram",
-                "source_kind": "messaging",
-                "read_only": true
-              }
-            }
-            """, for: request)
-        }
-        let row = SessionSummary(sessionId: "telegram-1", rawSource: "telegram", sessionSource: "messaging", sourceKind: .messaging)
-
-        let resolved = await viewModel.sessionToOpen(for: row)
-        let opened = try XCTUnwrap(resolved)
-
-        XCTAssertTrue(opened.isSessionReadOnly)
-    }
-
-    /// An authoritative writable answer replaces a stale read-only flag on the row.
-    @MainActor
-    func testWritableDetailClearsStaleReadOnlyFromTheRow() async throws {
-        let viewModel = try makeViewModel { request in
-            apiTestJSONResponse("""
-            {
-              "session": {"session_id": "cli-1", "title": "Writable now", "read_only": false}
-            }
-            """, for: request)
-        }
-        let row = SessionSummary(sessionId: "cli-1", isCliSession: true, readOnly: true)
-
-        let resolved = await viewModel.sessionToOpen(for: row)
-        let opened = try XCTUnwrap(resolved)
-
-        XCTAssertEqual(opened.readOnly, false)
-        XCTAssertFalse(opened.isSessionReadOnly)
     }
 
     /// `SessionRowActionPolicy` reads the row, not the opened destination, so a
@@ -495,17 +427,19 @@ final class SessionListMutationTests: XCTestCase {
     @MainActor
     func testCacheMissStaysNewChatWhenTheServerLaterFindsTheID() async throws {
         let context = try makeContext()
+        var paths: [String] = []
         let model = try makeViewModel { request in
-            apiTestJSONResponse(#"{"sessions":[{"session_id":"late","title":"Late"}]}"#, for: request)
+            paths.append(request.url?.path ?? "nil")
+            return apiTestJSONResponse(#"{"sessions":[{"session_id":"late","title":"Late"}]}"#, for: request)
         }
         var state = SessionNavigationState(lastSelectedSessionID: "late")
         model.paintCachedStateIfEmpty(modelContext: context)
         XCTAssertNil(state.sessionToRestore(from: model.sessions))
-        XCTAssertTrue(state.launchRestoreResolved)
         _ = await model.load(modelContext: context)
         XCTAssertNil(state.sessionToRestore(from: model.sessions))
         XCTAssertNil(state.destination)
         XCTAssertNil(state.lastSelectedSessionID)
+        XCTAssertEqual(paths, ["/api/sessions"], "A launch miss stays an idle New Chat and creates no session")
     }
 
     @MainActor

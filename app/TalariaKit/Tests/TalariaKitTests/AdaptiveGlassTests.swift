@@ -2,37 +2,9 @@ import XCTest
 @testable import TalariaKit
 
 final class AdaptiveGlassTests: XCTestCase {
-    private var suiteName: String!
-    private var defaults: UserDefaults!
-
-    override func setUp() {
-        super.setUp()
-        suiteName = "AdaptiveGlassTests-\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suiteName)
-        defaults.removePersistentDomain(forName: suiteName)
-    }
-
-    override func tearDown() {
-        defaults.removePersistentDomain(forName: suiteName)
-        defaults = nil
-        suiteName = nil
-        super.tearDown()
-    }
-
-    func testGlassPreferenceDefaultsToEnabled() {
-        XCTAssertTrue(GlassPreference.isEnabled(in: defaults))
-    }
-
-    func testGlassPreferenceReadsStoredDisabledValue() {
-        defaults.set(false, forKey: GlassPreference.isEnabledKey)
-
-        XCTAssertFalse(GlassPreference.isEnabled(in: defaults))
-    }
-
-    func testGlassPreferenceReadsStoredEnabledValue() {
-        defaults.set(true, forKey: GlassPreference.isEnabledKey)
-
-        XCTAssertTrue(GlassPreference.isEnabled(in: defaults))
+    func testGlassPreferenceDefaultsToEnabledUnderItsSyncedKey() {
+        XCTAssertTrue(GlassPreference.defaultIsEnabled)
+        XCTAssertEqual(GlassPreference.isEnabledKey, "adaptiveGlass.isEnabled")
     }
 
     func testSurfaceResolutionPrefersOpaqueWhenReduceTransparencyIsEnabled() {
