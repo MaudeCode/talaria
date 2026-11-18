@@ -19,7 +19,7 @@ while read -r _ local_sha remote_ref _; do
 done
 [ -n "$pushes_branch" ] || exit 0
 
-# The self-test creates its own repositories, which Git's hook environment would redirect to this one.
+# The router's tests create their own repositories, which Git's hook environment would redirect to this one.
 # shellcheck disable=SC2046 # One variable name per word.
 unset $(git rev-parse --local-env-vars)
 
@@ -97,5 +97,5 @@ if selected relay; then
   run_check relay pnpm typecheck
 fi
 if selected tooling; then
-  run_check . python3 scripts/changed-components.py --self-test
+  run_check . python3 scripts/test-changed-components.py
 fi
