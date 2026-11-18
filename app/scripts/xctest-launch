@@ -8,7 +8,7 @@
 #
 # Runs the tests once, appending xcodebuild's output to OUTPUT_LOG as well as stdout, and returns xcodebuild's status.
 # TALARIA_TEST_BUDGET=SECONDS bounds a repeated run (TAL-2402): once the runner connected, at least
-# TALARIA_TEST_BUDGET_AFTER tests finished (one complete attempt) and SECONDS passed, it interrupts xcodebuild and sets
+# TALARIA_TEST_BUDGET_AFTER distinct tests finished (one complete attempt) and SECONDS passed, it interrupts xcodebuild and sets
 # xctest_budget_spent=1. The interrupted attempt then reads "Testing was canceled" (ci/hosted-test-shard repeated).
 # A fault before the test runner connects, when no test can have run, gets one relaunch after `xctest_recover`; if the
 # relaunch faults too, it returns 70, a runner fault rather than a test failure. The faulted attempt's bundle moves to
@@ -75,7 +75,10 @@ xctest_watch_budget() {
     started=$(now_us)
     while kill -0 "$xcodebuild_pid" 2>/dev/null; do
         if (( $(now_us) - started >= TALARIA_TEST_BUDGET * 1000000 )); then
-            finished=$(( $({ grep -o '"_value":"testFinished"' "$stream" || true; } | wc -l) ))
+            # Distinct tests: xcodebuild runs one test's iterations back to back, so a count of finished runs reaches
+            # the planned number while later tests have not started (TAL-2535).
+            finished=$(( $({ grep '"_value":"testFinished"' "$stream" || true; } |
+                { grep -o '"identifier":{"_type":{"_name":"String"},"_value":"[^"]*"' || true; } | sort -u | wc -l) ))
             if (( finished >= ${TALARIA_TEST_BUDGET_AFTER:-1} )); then
                 echo "The ${TALARIA_TEST_BUDGET}s test budget is spent after ${finished} finished test(s); stopping the run."
                 xctest_budget_spent=1

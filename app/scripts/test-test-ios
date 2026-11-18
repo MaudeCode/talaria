@@ -180,16 +180,19 @@ if [[ "${selectors[0]:-}" == *UntilInterrupted* ]]; then
     exec python3 -c '
 import signal, sys, time
 stream, receipt = sys.argv[1:]
-finished = 0
+finished, names = 0, set()
 def stop(*_):
-    open(receipt, "w").write(f"{finished}\n")
+    open(receipt, "w").write(f"{finished} {len(names)}\n")
     sys.exit(65)
 signal.signal(signal.SIGINT, stop)
 time.sleep(2)
-for _ in range(50):
+# xcodebuild runs one test'"'"'s iterations back to back: testA finishes ten times before testB first does.
+for index in range(50):
+    name = "UntilInterrupted/testA()" if index < 10 else "UntilInterrupted/testB()"
     with open(stream, "a") as handle:
-        handle.write("{\"name\":{\"_value\":\"testFinished\"}}\n")
+        handle.write("{\"name\":{\"_value\":\"testFinished\"},\"structuredPayload\":{\"test\":{\"identifier\":{\"_type\":{\"_name\":\"String\"},\"_value\":\"" + name + "\"}}}}\n")
     finished += 1
+    names.add(name)
     time.sleep(0.2)
 ' "$result_stream" "$state/interrupted-after"
 fi
@@ -447,7 +450,15 @@ else
     [[ $? == 65 ]]
 fi
 grep -q 'The 1s test budget is spent after [1-9][0-9]* finished test(s); stopping the run.' "$state/budget.log"
-(( $(<"$state/interrupted-after") >= 1 )) || { echo "The budget interrupted the run before its first finished test." >&2; exit 1; }
+read -r _ distinct < "$state/interrupted-after"
+(( distinct >= 1 )) || { echo "The budget interrupted the run before its first finished test." >&2; exit 1; }
+# The planned tests are distinct: ten iterations of the first never stand in for the second's first attempt (TAL-2535).
+TALARIA_TEST_BUDGET=1 TALARIA_TEST_BUDGET_AFTER=2 "$repo/scripts/test-ios" TalariaTests/UntilInterrupted > "$state/budget-two.log" 2>&1 || true
+read -r total distinct < "$state/interrupted-after"
+(( distinct == 2 && total >= 11 )) || {
+    echo "The budget stopped after $total finished iteration(s) of $distinct test(s); expected both planned tests first." >&2
+    exit 1
+}
 
 lock_file="$repo/.codex-tmp/xctest/runner.lock"
 sleep 0.01 &
