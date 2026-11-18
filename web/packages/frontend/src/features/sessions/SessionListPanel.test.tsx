@@ -528,15 +528,16 @@ describe('SessionListPanel Agent storage notice (TAL-785)', () => {
     expect(await screen.findByText('state.db is damaged: database disk image is malformed.')).toBeInTheDocument()
   })
 
-  it('keeps the upgrade hint for an older hermes-agent, says unreadable storage, and shows nothing for healthy storage', async () => {
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha], agent_storage: { state: 'outdated', reason: null } } as never)
-    const { unmount } = panel()
-    expect(await screen.findByText('Upgrade hermes-agent to list Agent sessions')).toBeInTheDocument()
-    unmount()
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha], agent_storage: { state: 'unavailable', reason: 'state.db could not be read: database is locked.' } } as never)
-    const unavailable = panel()
-    expect(await screen.findByText('Agent sessions could not be read')).toBeInTheDocument()
-    unavailable.unmount()
+  it.each([
+    ['outdated', null, 'Upgrade hermes-agent to list Agent sessions'],
+    ['unavailable', 'state.db could not be read: database is locked.', 'Agent sessions could not be read'],
+  ] as const)('says %s Agent storage instead of an empty Agent history', async (state, reason, notice) => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha], agent_storage: { state, reason } } as never)
+    panel()
+    expect(await screen.findByText(notice)).toBeInTheDocument()
+  })
+
+  it('shows no storage notice for healthy Agent storage', async () => {
     vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha], agent_storage: { state: 'ok', reason: null } } as never)
     panel()
     await screen.findByText('Alpha zebra')

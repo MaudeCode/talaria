@@ -8,6 +8,8 @@ import { SpaShell } from '../../server/dist/spa.js'
 test.use({ serviceWorkers: 'block', video: process.env.TALARIA_GROUP_ROUTING_EVIDENCE || process.env.TALARIA_GROUP_REPLY_EVIDENCE ? 'on' : 'off' })
 
 const activityNotices = (page: Page) => page.locator('.msg-row[data-role=activity][data-origin=talaria]')
+/** The discussion sends the sidecar received. */
+const sends = (sidecar: FakeSidecar) => sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === 'send')
 
 test('live discussion activity shows tools, elapsed time, stalled members and the owning round', async ({ page }, info) => {
   const { fixture, server } = await discussionServer()
@@ -110,9 +112,9 @@ test('replies in a chosen thread, retaining a refused draft and clearing a confi
     await expect(chip).toHaveCount(0)
     await expect(page.locator('#msg')).toHaveValue('')
     await expect(page.getByText('Keep the same context', { exact: true })).toBeVisible()
-    const sends = sidecar.calls.flatMap((call) => call.method === 'gateway.groups' && (call.params as { operation: { action: string } }).operation.action === 'send' ? [call.params] : [])
-    expect(sends).toHaveLength(2)
-    for (const send of sends) expect(send).toMatchObject({ operation: { payload: { thread_id: 'proposal-thread' } } })
+    const sent = sends(sidecar)
+    expect(sent).toHaveLength(2)
+    for (const send of sent) expect(send.params).toMatchObject({ operation: { payload: { thread_id: 'proposal-thread' } } })
     await shot('confirmed')
     await member.getByRole('button', { name: 'Reply in thread', exact: true }).click()
     await chip.getByRole('button', { name: 'Dismiss', exact: true }).click()
@@ -173,9 +175,16 @@ test('receipt refresh clears its submitted reply before the view or stream confi
   }
 })
 
-test('the discussion list is the page, a primary nav entry, and a room opens with a way back', async ({ page }, info) => {
+/** The Discussions list on its own server; the room's link once the page has drawn it. */
+async function openDiscussionList(page: Page) {
   const { fixture, server } = await discussionServer()
-  const desktop = info.project.name === 'desktop'
+  await page.goto(`${server.base}/groups`)
+  const room = page.locator('#main [data-group-room="discussion"]').getByRole('link', { name: 'Design review', exact: true })
+  await expect(room).toBeVisible()
+  return { fixture, server, room }
+}
+
+test('the discussion list is the page: rooms with live member status, New discussion and pages', async ({ page }, info) => {
   const offsets: string[] = []
   await page.route('**/api/groups?**', async (route) => {
     const offset = new URL(route.request().url()).searchParams.get('offset') ?? '0'
@@ -187,21 +196,24 @@ test('the discussion list is the page, a primary nav entry, and a room opens wit
     if (first && offsets.length === 1) Object.assign(first, { phase: 'running', stalled: true })
     await route.fulfill({ response, json: { ...catalog, next_offset: offset === '0' ? 5 : null } })
   })
+  const { server } = await openDiscussionList(page)
   try {
-    await page.goto(`${server.base}/groups`)
-    const room = page.locator('#main [data-group-room="discussion"]').getByRole('link', { name: 'Design review', exact: true })
-    await expect(room).toBeVisible()
     await expect(page.locator('#main').getByRole('heading', { level: 1, name: 'Discussions', exact: true })).toBeVisible()
     await expect(page.locator('#main [data-group-room="discussion"] [data-group-members]')).toHaveText('Writer · Stalled, Reviewer')
     await expect(page.locator('#main [data-group-room="discussion"] [data-group-members] .text-warning')).toHaveText('Writer · Stalled')
     await expect(page.locator('#main [data-group-room="discussion"] [data-group-members]')).toHaveText('Writer, Reviewer')
     await expect(page.locator('#main .main-view-actions').getByRole('button', { name: 'New discussion', exact: true })).toBeEnabled()
-    if (!desktop) await expect(page.locator('.sidebar.mobile-open')).toHaveCount(0)
+    if (info.project.name !== 'desktop') await expect(page.locator('.sidebar.mobile-open')).toHaveCount(0)
     await page.screenshot({ path: info.outputPath('list.png') })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.locator('#main').getByRole('button', { name: 'Next page', exact: true }).click()
     await expect.poll(() => offsets).toContain('5')
-    await page.locator('#main').getByRole('button', { name: 'First page', exact: true }).click()
+  } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
+
+test('a room opens from the discussion list, and Back or the browser returns to it', async ({ page }, info) => {
+  const { server, room } = await openDiscussionList(page)
+  try {
     await room.click()
     await expect(page).toHaveURL(/\/groups\?room=discussion$/)
     await expect(page.locator('#msg')).toBeVisible()
@@ -213,7 +225,13 @@ test('the discussion list is the page, a primary nav entry, and a room opens wit
     await expect(page.locator('#msg')).toBeVisible()
     await page.goBack()
     await expect(room).toBeVisible()
-    if (desktop) {
+  } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
+
+test('Discussions is a primary nav entry: the desktop rail or More, and the phone More sheet', async ({ page }, info) => {
+  const { server, room } = await openDiscussionList(page)
+  try {
+    if (info.project.name === 'desktop') {
       const rail = page.locator('aside.sidebar [data-panel="groups"]')
       await expect(rail).toHaveAttribute('aria-current', 'page')
       await room.click()
@@ -234,8 +252,12 @@ test('the discussion list is the page, a primary nav entry, and a room opens wit
       await expect(page).toHaveURL(/\/groups$/)
       await expect(page.locator('.tabbar [data-tab="more"]')).toHaveClass(/active/)
     }
-    await page.goto(`${server.base}/groups`)
-    await expect(room).toBeVisible()
+  } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
+
+test('the discussion list says so when the Agent gateway has no discussions driver', async ({ page }) => {
+  const { fixture, server } = await openDiscussionList(page)
+  try {
     fixture.state.driver = false
     await page.reload()
     await expect(page.locator('#main').getByRole('status').filter({ hasText: 'Discussions are unavailable from the current Agent gateway.' })).toBeVisible()
@@ -243,7 +265,7 @@ test('the discussion list is the page, a primary nav entry, and a room opens wit
 })
 
 test('creates a discussion, sends once, shows member replies and reconnects after reload', async ({ page }, info) => {
-  const { sidecar, fixture, server } = await discussionServer()
+  const { sidecar, server } = await discussionServer()
   const evidence = process.env.TALARIA_GROUP_EVIDENCE
   try {
     if (evidence && process.env.TALARIA_GROUP_BASELINE_DIST) {
@@ -280,6 +302,18 @@ test('creates a discussion, sends once, shows member replies and reconnects afte
       await expect(page.locator('.app-titlebar')).toBeInViewport()
       await expect(page.locator('.tabbar')).toBeInViewport()
     }
+    await page.reload()
+    await expect(page.getByText('First member reply', { exact: true })).toBeVisible()
+    if (evidence) await page.screenshot({ path: `${evidence}/after-${info.project.name}.png` })
+    expect(sends(sidecar)).toHaveLength(1)
+  } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
+
+test('a long discussion name leaves Rename and Disband reachable', async ({ page }) => {
+  const { fixture, server } = await discussionServer()
+  try {
+    await page.goto(`${server.base}/groups?room=discussion`)
+    await expect(page.locator('#msg')).toBeVisible()
     for (const title of ['A long discussion name that must leave its actions reachable on a narrow screen', 'Architecture discussion']) {
       await page.getByRole('button', { name: 'Rename', exact: true }).click()
       await page.getByRole('textbox', { name: 'Name', exact: true }).fill(title)
@@ -287,27 +321,28 @@ test('creates a discussion, sends once, shows member replies and reconnects afte
       await expect.poll(() => fixture.state.room.name).toBe(title)
       await expect(page.getByRole('button', { name: 'Disband', exact: true })).toBeInViewport()
     }
-    await page.reload()
-    await expect(page.getByText('First member reply', { exact: true })).toBeVisible()
-    if (evidence) await page.screenshot({ path: `${evidence}/after-${info.project.name}.png` })
-    const sends = sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === 'send')
-    expect(sends).toHaveLength(1)
-    const native = sidecar.responderFor('gateway.groups')
-    if (!native) throw new Error('Native group fixture missing')
-    sidecar.respond('gateway.groups', (params, emit, options) => params.operation.action === 'send' ? { state: 'unknown', reason: 'unknown', value: null } : native(params, emit, options))
+  } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
+
+// The same unavailable notice when the gateway answers `unavailable` is owned by the draft-files test below.
+test('an unconfirmed send blocks the composer until a replaced owner clears it, leaving no run', async ({ page }) => {
+  const { sidecar, fixture, server } = await discussionServer()
+  const native = sidecar.responderFor('gateway.groups')
+  if (!native) throw new Error('Native group fixture missing')
+  sidecar.respond('gateway.groups', (params, emit, options) => params.operation.action === 'send' ? { state: 'unknown', reason: 'unknown', value: null } : native(params, emit, options))
+  try {
+    await page.goto(`${server.base}/groups?room=discussion`)
     await page.locator('#msg').fill('Unknown admission')
     await page.getByRole('button', { name: 'Send message', exact: true }).click()
     await expect(page.getByText('Execution could not be confirmed. Refresh to reconcile.', { exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Refresh', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeDisabled()
-    expect(sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === 'send')).toHaveLength(2)
+    expect(sends(sidecar)).toHaveLength(1)
     fixture.state.room.authority_epoch++
     await expect(page.getByText('Unknown admission', { exact: true })).toHaveCount(0)
     await expect(page.locator('#msg')).toHaveValue('')
     await page.locator('#msg').fill('Draft for the replacement owner')
     await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeEnabled()
-    fixture.state.driver = false
-    await expect(page.getByText('Discussions are unavailable from the current Agent gateway.', { exact: true }).last()).toBeVisible()
     expect(server.deps.registry.activeRuns.size).toBe(0)
   } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
 })
@@ -679,9 +714,9 @@ for (const timing of ['response delayed', 'unknown then committed'] as const) te
     await expect(page.getByText('Execution could not be confirmed. Refresh to reconcile.', { exact: true })).toHaveCount(0)
     await page.locator('#msg').fill('Next occurrence')
     await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeEnabled()
-    expect(sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === 'send')).toHaveLength(1)
+    expect(sends(sidecar)).toHaveLength(1)
     await page.getByRole('button', { name: 'Send message', exact: true }).click()
-    await expect.poll(() => sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === 'send').length).toBe(2)
+    await expect.poll(() => sends(sidecar).length).toBe(2)
   } finally { release.resolve(undefined); await page.goto('about:blank').catch(() => undefined); await server.close() }
 })
 

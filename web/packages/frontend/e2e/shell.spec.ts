@@ -179,12 +179,15 @@ test.describe('shell', () => {
       await settle(page)
       expect(await composerMax()).toBe(max)
     }
+  })
 
-    // A browser that only has the legacy full-width toggle boots in Full.
-    await page.evaluate(() => { localStorage.removeItem('hermes-chat-width'); localStorage.setItem('hermes-full-width-chat', 'true') })
-    await page.reload()
+  test('a browser that only has the legacy full-width toggle boots in Full', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'chat width only applies above the phone breakpoint')
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await page.addInitScript(() => { localStorage.removeItem('hermes-chat-width'); localStorage.setItem('hermes-full-width-chat', 'true') })
+    await page.goto('/')
     await settle(page)
-    expect(await composerMax()).toBe('none')
+    expect(await page.locator('.composer-box').evaluate((el) => getComputedStyle(el).maxWidth)).toBe('none')
   })
 
   test('switching the language re-translates the open settings page', async ({ page, errors }) => {

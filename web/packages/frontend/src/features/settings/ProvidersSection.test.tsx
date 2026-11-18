@@ -105,38 +105,53 @@ describe('ProvidersSection', () => {
     expect([...document.querySelectorAll('[data-settings-stats] [data-stat]')].map((s) => s.getAttribute('data-stat'))).toEqual(['connected', 'default'])
   })
 
-  it('shows a configured provider as one block with its headline window, and opens its page and back (TAL-2135)', async () => {
-    providersResponse.current = { active_provider: 'anthropic', providers: [anthropic, openrouter, { id: 'deepseek', display_name: 'DeepSeek', has_key: false, configured: false }] }
-    quotaResponse.current = { ...quotas, summary: { connected: 2, lowest: null, spend_month: 12.4, spend_currency: 'USD', default_provider_name: 'Anthropic' } }
-    const router = await renderAt()
-    await screen.findByText('Your providers')
-    const a = await waitFor(() => { const el = block('anthropic'); expect(within(el).getByRole('meter')).toBeInTheDocument(); return el })
-    expect(within(a).getByText('Default')).toBeInTheDocument()
-    expect(within(a).getByText('Key from .env · max')).toBeInTheDocument()
-    expect(within(a).getByText('68%')).toBeInTheDocument()
-    expect(within(a).getByText('left · Weekly')).toBeInTheDocument()
-    expect(within(a).getByRole('meter')).toHaveAttribute('aria-valuenow', '68')
-    expect(within(a).getByRole('meter')).toHaveAccessibleName('Weekly: 68% Remaining')
-    expect(within(a).getByText('Empty 18h early')).toHaveClass('text-warning')
-    // No button, form or disclosure: the name is the block's one control.
-    expect(within(a).queryAllByRole('button')).toEqual([])
-    expect(within(a).queryAllByRole('textbox')).toEqual([])
-    expect(a.querySelector('details')).toBeNull()
-    // OpenRouter: the month's spend against the budget, and the daily spend with today's at the right.
-    const o = await waitFor(() => { const el = block('openrouter'); expect(within(el).getByRole('img')).toBeInTheDocument(); return el })
-    expect(within(o).getByText('$12.40')).toBeInTheDocument()
-    expect(within(o).getByText(/^of \$\d+ budget$/)).toBeInTheDocument()
-    // The day the server headlines, not the client's pick of the last bar.
-    expect(within(o).getByText(/^Sep 27: \$0\.02$/)).toBeInTheDocument()
-    expect(within(o).getByRole('img')).toHaveAccessibleName(/^Daily spend, last 7 days: /)
-    expect(within(o).getByRole('table', { hidden: true })).toHaveTextContent('$0.50')
-    await userEvent.click(within(a).getByRole('link', { name: 'Anthropic' }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/settings/providers/anthropic'))
-    expect(await screen.findByRole('heading', { level: 1, name: 'Anthropic' })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Providers' }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/settings/providers'))
-    // Back returned through history, to the list entry the block was opened from.
-    expect(router.state.location.state.__TSR_index).toBe(0)
+  describe('a configured provider is one block (TAL-2135)', () => {
+    /** Settings › Providers with Anthropic (a quota source), OpenRouter (a spend history) and an unconfigured DeepSeek. */
+    const renderBlocks = async () => {
+      providersResponse.current = { active_provider: 'anthropic', providers: [anthropic, openrouter, { id: 'deepseek', display_name: 'DeepSeek', has_key: false, configured: false }] }
+      quotaResponse.current = { ...quotas, summary: { connected: 2, lowest: null, spend_month: 12.4, spend_currency: 'USD', default_provider_name: 'Anthropic' } }
+      const router = await renderAt()
+      await screen.findByText('Your providers')
+      const anthropicBlock = await waitFor(() => { const el = block('anthropic'); expect(within(el).getByRole('meter')).toBeInTheDocument(); return el })
+      return { router, anthropicBlock }
+    }
+
+    it('shows a quota provider\'s headline window, with its name as the one control', async () => {
+      const { anthropicBlock: a } = await renderBlocks()
+      expect(within(a).getByText('Default')).toBeInTheDocument()
+      expect(within(a).getByText('Key from .env · max')).toBeInTheDocument()
+      expect(within(a).getByText('68%')).toBeInTheDocument()
+      expect(within(a).getByText('left · Weekly')).toBeInTheDocument()
+      expect(within(a).getByRole('meter')).toHaveAttribute('aria-valuenow', '68')
+      expect(within(a).getByRole('meter')).toHaveAccessibleName('Weekly: 68% Remaining')
+      expect(within(a).getByText('Empty 18h early')).toHaveClass('text-warning')
+      // No button, form or disclosure: the name is the block's one control.
+      expect(within(a).queryAllByRole('button')).toEqual([])
+      expect(within(a).queryAllByRole('textbox')).toEqual([])
+      expect(a.querySelector('details')).toBeNull()
+    })
+
+    it('shows a spend provider\'s month against its budget and its daily spend, headlining the server\'s day', async () => {
+      await renderBlocks()
+      const o = await waitFor(() => { const el = block('openrouter'); expect(within(el).getByRole('img')).toBeInTheDocument(); return el })
+      expect(within(o).getByText('$12.40')).toBeInTheDocument()
+      expect(within(o).getByText(/^of \$\d+ budget$/)).toBeInTheDocument()
+      // The day the server headlines, not the client's pick of the last bar.
+      expect(within(o).getByText(/^Sep 27: \$0\.02$/)).toBeInTheDocument()
+      expect(within(o).getByRole('img')).toHaveAccessibleName(/^Daily spend, last 7 days: /)
+      expect(within(o).getByRole('table', { hidden: true })).toHaveTextContent('$0.50')
+    })
+
+    it('opens the provider page from its name, and Back returns through history to the list', async () => {
+      const { router, anthropicBlock } = await renderBlocks()
+      await userEvent.click(within(anthropicBlock).getByRole('link', { name: 'Anthropic' }))
+      await waitFor(() => expect(router.state.location.pathname).toBe('/settings/providers/anthropic'))
+      expect(await screen.findByRole('heading', { level: 1, name: 'Anthropic' })).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Providers' }))
+      await waitFor(() => expect(router.state.location.pathname).toBe('/settings/providers'))
+      // Back returned through history, to the list entry the block was opened from.
+      expect(router.state.location.state.__TSR_index).toBe(0)
+    })
   })
 
   it("headlines the source the server picks for a provider with several accounts, not the first listed (TAL-2135)", async () => {

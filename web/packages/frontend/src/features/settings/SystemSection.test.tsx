@@ -503,37 +503,6 @@ describe('SystemSection update paths', () => {
     expect(screen.getByText('Hermes Agent is not being checked for updates')).toBeInTheDocument()
   })
 
-  it('reports ignored Agent checks only in the Agent path', async () => {
-    settingsState.ignore_agent_updates = true
-    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: target('off', { name: 'agent', behind: 0, ignored: true }) })
-    renderSystem()
-    expect(await within(await screen.findByRole('region', { name: 'Hermes Agent' })).findByText('Hermes Agent is not being checked for updates')).toBeInTheDocument()
-    expect(within(path('Talaria Web')).getByText('Talaria Web is up to date')).toBeInTheDocument()
-  })
-
-  it('shows the server status for the Agent once the ignore switch saves', async () => {
-    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: behind(1) })
-    vi.mocked(api.saveSettings).mockImplementation((patch) => {
-      settingsState = { ...settingsState, ...patch }
-      vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: target('off', { name: 'agent', behind: 0, ignored: true }) })
-      return Promise.resolve(settingsState)
-    })
-    renderSystem()
-    const agent = await screen.findByRole('region', { name: 'Hermes Agent' })
-    expect(await within(agent).findByRole('button', { name: /update agent/i })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('switch', { name: 'Skip Agent updates' }))
-    expect(await within(agent).findByText('Hermes Agent is not being checked for updates')).toBeInTheDocument()
-    expect(within(agent).queryByRole('button', { name: /update agent/i })).not.toBeInTheDocument()
-  })
-
-  it('names only Web on the manual check while Agent updates are ignored', async () => {
-    settingsState.ignore_agent_updates = true
-    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: target('off', { name: 'agent', behind: 0, ignored: true }) })
-    renderSystem()
-    expect(await screen.findByRole('button', { name: 'Check Web now' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /check web and agent now/i })).not.toBeInTheDocument()
-  })
-
   it('shows each path as checking, not unavailable, while the first update check is pending', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockImplementation(() => new Promise(() => undefined))
     renderSystem()

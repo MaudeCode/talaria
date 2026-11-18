@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Page, TestInfo } from '@playwright/test'
 import { expect, openChatFilters, openProjectActions, settle, test } from './fixtures'
 
 /** The Chats filter menu selects a project and reaches its rename, recolor and delete, and creates one (TAL-565, TAL-1869). */
@@ -10,29 +10,43 @@ const serverProject = async (page: Page, id: string) => (await serverProjects(pa
 // Optimistic rows update before their writes reach the server.
 const expectServerProject = (page: Page, id: string) => expect.poll(() => serverProject(page, id))
 
-test('the filter menu selects, renames, recolors, creates and deletes projects', async ({ page }, testInfo) => {
-  const name = `Alpha ${testInfo.project.name}`
-  const created = await page.request.post('/api/projects/create', { data: { name } })
-  expect(created.ok()).toBe(true)
-  const id = ((await created.json()) as { project: { project_id: string } }).project.project_id
+const created: string[] = []
+test.afterEach(async ({ page }) => {
+  for (const id of created.splice(0)) await page.request.post('/api/projects/delete', { data: { project_id: id } })
+})
 
+/** A project of the test's own, on the chat list; `select` filters the list to it. */
+async function openWithProject(page: Page, testInfo: TestInfo, label: string, { select = true } = {}) {
+  const name = `${label} ${testInfo.project.name}`
+  const response = await page.request.post('/api/projects/create', { data: { name } })
+  expect(response.ok()).toBe(true)
+  const id = ((await response.json()) as { project: { project_id: string } }).project.project_id
+  created.push(id)
   await page.goto('/')
   await settle(page)
   const hamburger = page.locator('#btnHamburger')
   if (await hamburger.isVisible()) await hamburger.click()
+  const row = async (text: string) => (await openChatFilters(page)).getByRole('menuitemradio', { name: text, exact: true })
   const detail = page.locator('[data-chats-detail]')
-  const row = async (label: string) => (await openChatFilters(page)).getByRole('menuitemradio', { name: label, exact: true })
-  const trigger = page.getByRole('button', { name: /^Chat filters/ })
+  if (select) {
+    await (await row(name)).click()
+    await expect(detail).toHaveText(name)
+  }
+  return { name, id, row, detail, trigger: page.getByRole('button', { name: /^Chat filters/ }) }
+}
 
-  // Select: the heading names the project and the trigger says it is filtering.
+test('selecting a project names it in the heading and marks the trigger as filtering', async ({ page }, testInfo) => {
+  const { name, row, detail, trigger } = await openWithProject(page, testInfo, 'Select', { select: false })
   await expect(detail).toHaveCount(0)
   await expect(trigger).toHaveAccessibleName('Chat filters')
   await (await row(name)).click()
   await expect(detail).toHaveText(name)
   await expect(trigger).toHaveAccessibleName('Chat filters, filtered')
   await shot(page, `filtered-${testInfo.project.name}`)
+})
 
-  // Rename: the dialog saves the new name and the heading follows.
+test('Rename saves the new name and the heading follows', async ({ page }, testInfo) => {
+  const { name, id, detail } = await openWithProject(page, testInfo, 'Rename')
   const menu = await openProjectActions(page)
   await shot(page, `menu-${testInfo.project.name}`)
   await menu.getByRole('menuitem', { name: 'Rename' }).click()
@@ -42,11 +56,13 @@ test('the filter menu selects, renames, recolors, creates and deletes projects',
   await dialog.getByRole('button', { name: 'Save' }).click()
   await expect(detail).toHaveText(`${name} renamed`)
   await expectServerProject(page, id).toMatchObject({ name: `${name} renamed` })
+})
 
-  // Recolor: picking a swatch stores it, closes both menus, and the project's row shows it.
+test('a color swatch stores the color, closes both menus and marks the project row', async ({ page }, testInfo) => {
+  const { name, id, row } = await openWithProject(page, testInfo, 'Recolor')
   await (await openProjectActions(page)).getByRole('menuitemradio', { name: 'Green' }).click()
   await expect(page.getByRole('menu')).toHaveCount(0)
-  await expect((await row(`${name} renamed`)).locator('.session-project-dot')).toHaveCSS('background-color', 'rgb(80, 200, 120)')
+  await expect((await row(name)).locator('.session-project-dot')).toHaveCSS('background-color', 'rgb(80, 200, 120)')
   await page.keyboard.press('Escape')
   await expectServerProject(page, id).toMatchObject({ color: '#50c878' })
   const green = (await openProjectActions(page)).getByRole('menuitemradio', { name: 'Green' })
@@ -56,8 +72,10 @@ test('the filter menu selects, renames, recolors, creates and deletes projects',
   await shot(page, `recolored-${testInfo.project.name}`)
   await green.click()
   await expect(page.getByRole('menu')).toHaveCount(0)
+})
 
-  // Keyboard: ArrowRight opens the submenu on its first action, ArrowLeft steps back to its row.
+test('ArrowRight opens the project submenu on its first action and ArrowLeft steps back to its row', async ({ page }, testInfo) => {
+  const { trigger } = await openWithProject(page, testInfo, 'Keyboard')
   await trigger.focus()
   await page.keyboard.press('Enter')
   const filters = page.getByRole('menu', { name: /^Chat filters/ })
@@ -73,8 +91,10 @@ test('the filter menu selects, renames, recolors, creates and deletes projects',
   await expect(selected).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('menu')).toHaveCount(0)
+})
 
-  // Search: the field leaves the trigger reachable, so a search can change its own scope.
+test('the search field leaves the filter trigger reachable, so a search can change its own scope', async ({ page }, testInfo) => {
+  const { name, row, detail } = await openWithProject(page, testInfo, 'Search')
   await page.locator('#panelChat').getByRole('button', { name: 'Search', exact: true }).click()
   await expect(page.locator('#sessionSearch')).toBeFocused()
   await page.locator('#sessionSearch').fill('e')
@@ -84,29 +104,32 @@ test('the filter menu selects, renames, recolors, creates and deletes projects',
   await expect(page.locator('#sessionSearch')).toHaveValue('e')
   await page.locator('#panelChat').getByRole('button', { name: 'Close', exact: true }).click()
   await expect(page.locator('#sessionSearch')).toBeHidden()
-  await (await row(`${name} renamed`)).click()
-  await expect(detail).toHaveText(`${name} renamed`)
+  await (await row(name)).click()
+  await expect(detail).toHaveText(name)
+})
 
-  // New project: the prompt's name is listed and stored.
+test('New project lists and stores the name the prompt returns', async ({ page }, testInfo) => {
+  const { row } = await openWithProject(page, testInfo, 'Prompt', { select: false })
   const fresh = `Fresh ${testInfo.project.name}`
   page.once('dialog', (prompt) => { void prompt.accept(fresh) })
   await (await openChatFilters(page)).getByRole('menuitem', { name: 'New project' }).click()
   await expect(await row(fresh)).toBeVisible()
   await page.keyboard.press('Escape')
   await expect.poll(async () => (await serverProjects(page)).some((p) => p.name === fresh)).toBe(true)
+  created.push((await serverProjects(page)).find((p) => p.name === fresh)!.project_id)
+})
 
-  // Delete: only after confirmation; a deleted filter falls back to All.
+test('Delete asks first, and a deleted filter falls back to All', async ({ page }, testInfo) => {
+  const { name, id, row, detail, trigger } = await openWithProject(page, testInfo, 'Delete')
   await (await openProjectActions(page)).getByRole('menuitem', { name: 'Delete' }).click()
   const confirm = page.getByRole('alertdialog')
-  await expect(confirm).toContainText(`Delete project "${name} renamed"?`)
+  await expect(confirm).toContainText(`Delete project "${name}"?`)
   await shot(page, `delete-confirm-${testInfo.project.name}`)
   await confirm.getByRole('button', { name: 'Delete project' }).click()
   await expect(detail).toHaveCount(0)
   await expect(trigger).toHaveAccessibleName('Chat filters')
   await expect(await row('All')).toHaveAttribute('aria-checked', 'true')
-  await expect(page.getByRole('menuitemradio', { name: `${name} renamed`, exact: true })).toHaveCount(0)
+  await expect(page.getByRole('menuitemradio', { name, exact: true })).toHaveCount(0)
   await expect(page.getByRole('menuitem', { name: 'Selected project' })).toHaveCount(0)
   await expectServerProject(page, id).toBeUndefined()
-  const keeper = (await serverProjects(page)).find((p) => p.name === fresh)!
-  await page.request.post('/api/projects/delete', { data: { project_id: keeper.project_id } })
 })

@@ -9,120 +9,13 @@ test.use({ serviceWorkers: 'block' })
 /** A row's accessible name is its file name, then its kind and size (TAL-1606). */
 const row = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')},`)
 
-/** TAL-519: the Files page creates, renames, moves and deletes entries in a real synthetic workspace and shows the server's refusals. */
-test('the Files page creates, renames, moves and deletes workspace entries', async ({ page, errors }, testInfo) => {
-  // The test owns its workspace: the server's default one sits under /dev/shm on Linux CI, which the server refuses to browse.
-  const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'tal519-')))
-  writeFileSync(join(workspace, 'seed.txt'), '')
-  symlinkSync('seed.txt', join(workspace, 'link'))
-  expect((await page.request.post('/api/workspaces/add', { data: { path: workspace } })).ok()).toBe(true)
-  const created = (await (await page.request.post('/api/session/new', { data: { workspace } })).json()) as { session: { session_id: string } }
-  const sid = created.session.session_id
-  // Reveal and Open in VS Code launch desktop apps on the server's machine; record their requests instead.
-  const launched: { route: string; path: string }[] = []
-  for (const name of ['reveal', 'open-vscode']) {
-    await page.route(`**/api/file/${name}`, (route) => {
-      const body = route.request().postDataJSON() as { path: string }
-      launched.push({ route: name, path: body.path })
-      return route.fulfill({ json: { ok: true, path: body.path } })
-    })
-  }
-
-  await page.goto(`/session/${sid}`)
-  if (testInfo.project.name === 'mobile') await page.locator('#btnTitlebarSidePanel').click()
-  else await page.getByRole('button', { name: 'Show workspace panel' }).click()
-  await page.getByRole('tablist', { name: 'Side panel' }).getByRole('tab', { name: 'Files' }).click()
-  const tree = page.getByRole('tree', { name: 'Files' })
-  const item = (name: string) => tree.getByRole('treeitem', { name: row(name) })
-  const actions = async (name: string, action: string) => {
-    await item(name).click({ button: 'right' })
-    await page.getByRole('menu').getByRole('menuitem', { name: action }).click()
-  }
-  await expect(tree.getByRole('treeitem', { name: /^link/ })).toBeVisible()
-
-  await expect(page.getByRole('button', { name: 'New Folder' })).toBeVisible()
-  await page.getByRole('button', { name: 'New Folder' }).click()
-  await page.getByRole('textbox', { name: 'New folder name:' }).fill('docs')
-  await page.getByRole('button', { name: 'Create' }).click()
-  await expect(item('docs')).toBeVisible()
-
-  await page.getByRole('button', { name: 'New File' }).click()
-  await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('notes.txt')
-  await page.getByRole('button', { name: 'Create' }).click()
-  await expect(item('notes.txt')).toBeVisible()
-  await item('notes.txt').click()
-  await page.getByRole('textbox', { name: 'Preview' }).fill('old text')
-  await page.getByRole('button', { name: 'Save' }).click()
-  await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled()
-  await page.getByRole('button', { name: 'Back' }).click()
-
-  // A name that already exists: the dialog closes on Create, then the server's refusal shows above the tree and the
-  // entry the page showed for it goes away (TAL-1384).
-  await page.getByRole('button', { name: 'New File' }).click()
-  await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('notes.txt')
-  await page.getByRole('button', { name: 'Create' }).click()
-  await expect(page.getByRole('dialog')).toHaveCount(0)
-  await expect(page.getByRole('alert').filter({ hasText: 'File already exists' })).toBeVisible()
-  await expect(item('notes.txt')).toHaveCount(1)
-
-  await actions('notes.txt', 'Rename')
-  await page.getByRole('textbox', { name: 'New name:' }).fill('plan.txt')
-  // The row renames at once; the old path is only free to reuse when the server has answered.
-  const renamed = page.waitForResponse('**/api/file/rename')
-  await page.getByRole('button', { name: 'Save' }).click()
-  await expect(item('plan.txt')).toBeVisible()
-  await expect(item('notes.txt')).toHaveCount(0)
-  await renamed
-  // A new file at the renamed file's old path opens empty, not with the old file's cached text.
-  await page.getByRole('button', { name: 'New File' }).click()
-  await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('notes.txt')
-  await page.getByRole('button', { name: 'Create' }).click()
-  await item('notes.txt').click()
-  await expect(page.getByRole('textbox', { name: 'Preview' })).toHaveValue('')
-  await page.getByRole('button', { name: 'Back' }).click()
-
-  await item('plan.txt').dragTo(item('docs'))
-  await expect(item('plan.txt')).toHaveCount(0)
-  if (process.env.TAL519_SHOTS) {
-    await item('docs').click({ button: 'right' })
-    await page.screenshot({ path: `${process.env.TAL519_SHOTS}/menu-${testInfo.project.name}.png` })
-    await page.keyboard.press('Escape')
-  }
-  await item('docs').click()
-  await expect(item('plan.txt')).toBeVisible()
-  await page.getByRole('button', { name: 'Up one level' }).click()
-
-  await actions('docs', 'Reveal in file manager')
-  await actions('docs', 'Open in VS Code')
-  await expect.poll(() => launched).toEqual([{ route: 'reveal', path: 'docs' }, { route: 'open-vscode', path: 'docs' }])
-
-  // Delete asks first; cancelling keeps the entry.
-  await actions('docs', 'Delete')
-  const confirm = page.getByRole('alertdialog')
-  await expect(confirm).toContainText('Delete folder "docs" and all its contents?')
-  await confirm.getByRole('button', { name: 'Cancel' }).click()
-  await expect(item('docs')).toBeVisible()
-  // The server refuses to delete a symlink; the panel says so.
-  await actions('link', 'Delete')
-  await confirm.getByRole('button', { name: 'Delete' }).click()
-  await expect(page.getByRole('alert').filter({ hasText: 'Cannot delete a symlinked entry' })).toBeVisible()
-  await expect(item('link')).toBeVisible()
-  if (process.env.TAL519_SHOTS) await page.screenshot({ path: `${process.env.TAL519_SHOTS}/refusal-${testInfo.project.name}.png` })
-  await actions('docs', 'Delete')
-  await confirm.getByRole('button', { name: 'Delete' }).click()
-  await expect(item('docs')).toHaveCount(0)
-
-  await page.request.post('/api/workspaces/remove', { data: { path: workspace } })
-  rmSync(workspace, { recursive: true, force: true })
-  errors.splice(0, errors.length, ...errors.filter((e) => !/400 POST .*\/api\/file\/(create|delete)$|status of 400/.test(e)))
-})
-
-/** A synthetic workspace (the `docs` folder, `plan.txt`, `seed.txt`) open on the Files page. */
-const start = async (page: Page, projectName: string) => {
+/** A synthetic workspace (the `docs` folder, `plan.txt`, `seed.txt`, and what `seed` adds) open on the Files page. */
+const start = async (page: Page, projectName: string, seed?: (workspace: string) => void) => {
   const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'tal1935-')))
   mkdirSync(join(workspace, 'docs'))
   writeFileSync(join(workspace, 'plan.txt'), 'plan')
   writeFileSync(join(workspace, 'seed.txt'), 'seed')
+  seed?.(workspace)
   expect((await page.request.post('/api/workspaces/add', { data: { path: workspace } })).ok()).toBe(true)
   const created = (await (await page.request.post('/api/session/new', { data: { workspace } })).json()) as { session: { session_id: string } }
   await page.goto(`/session/${created.session.session_id}`)
@@ -144,6 +37,119 @@ const start = async (page: Page, projectName: string) => {
   }
   return { workspace, tree, item, newFile, finish }
 }
+
+/** TAL-519: the Files page creates, renames, moves and deletes entries in a real synthetic workspace and shows the server's refusals. */
+test.describe('the Files page', () => {
+  /** Runs `action` from the row menu of `name`. */
+  const rowAction = async (page: Page, item: (name: string) => Locator, name: string, action: string) => {
+    await item(name).click({ button: 'right' })
+    await page.getByRole('menu').getByRole('menuitem', { name: action }).click()
+  }
+  /** The server answers a refused create or delete with a 400, which the page shows as the refusal under test. */
+  const dropRefusals = (errors: string[]) => { errors.splice(0, errors.length, ...errors.filter((e) => !/400 POST .*\/api\/file\/(create|delete)$|status of 400/.test(e))) }
+
+  test('creates a folder and a file and saves the file', async ({ page }, testInfo) => {
+    const { item, finish } = await start(page, testInfo.project.name)
+    await page.getByRole('button', { name: 'New Folder' }).click()
+    await page.getByRole('textbox', { name: 'New folder name:' }).fill('drafts')
+    await page.getByRole('button', { name: 'Create' }).click()
+    await expect(item('drafts')).toBeVisible()
+    await page.getByRole('button', { name: 'New File' }).click()
+    await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('notes.txt')
+    await page.getByRole('button', { name: 'Create' }).click()
+    await expect(item('notes.txt')).toBeVisible()
+    await item('notes.txt').click()
+    await page.getByRole('textbox', { name: 'Preview' }).fill('old text')
+    await page.getByRole('button', { name: 'Save' }).click()
+    await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled()
+    await finish()
+  })
+
+  // The dialog closes on Create, then the server's refusal shows above the tree and the entry the page showed goes away (TAL-1384).
+  test('a new file whose name exists shows the server refusal and keeps one row', async ({ page, errors }, testInfo) => {
+    const { item, finish } = await start(page, testInfo.project.name)
+    await page.getByRole('button', { name: 'New File' }).click()
+    await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('plan.txt')
+    await page.getByRole('button', { name: 'Create' }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(page.getByRole('alert').filter({ hasText: 'File already exists' })).toBeVisible()
+    await expect(item('plan.txt')).toHaveCount(1)
+    dropRefusals(errors)
+    await finish()
+  })
+
+  test('renames a row at once, and a new file at the old path opens empty, not with the cached text', async ({ page }, testInfo) => {
+    const { item, finish } = await start(page, testInfo.project.name)
+    await item('plan.txt').click()
+    await expect(page.getByRole('textbox', { name: 'Preview' })).toHaveValue('plan')
+    await page.getByRole('button', { name: 'Back' }).click()
+    await rowAction(page, item, 'plan.txt', 'Rename')
+    await page.getByRole('textbox', { name: 'New name:' }).fill('final.txt')
+    // The row renames at once; the old path is only free to reuse when the server has answered.
+    const renamed = page.waitForResponse('**/api/file/rename')
+    await page.getByRole('button', { name: 'Save' }).click()
+    await expect(item('final.txt')).toBeVisible()
+    await expect(item('plan.txt')).toHaveCount(0)
+    await renamed
+    await page.getByRole('button', { name: 'New File' }).click()
+    await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('plan.txt')
+    await page.getByRole('button', { name: 'Create' }).click()
+    await item('plan.txt').click()
+    await expect(page.getByRole('textbox', { name: 'Preview' })).toHaveValue('')
+    await finish()
+  })
+
+  test('moves a file into a folder by dragging it there', async ({ page }, testInfo) => {
+    const { item, finish } = await start(page, testInfo.project.name)
+    await item('plan.txt').dragTo(item('docs'))
+    await expect(item('plan.txt')).toHaveCount(0)
+    if (process.env.TAL519_SHOTS) {
+      await item('docs').click({ button: 'right' })
+      await page.screenshot({ path: `${process.env.TAL519_SHOTS}/menu-${testInfo.project.name}.png` })
+      await page.keyboard.press('Escape')
+    }
+    await item('docs').click()
+    await expect(item('plan.txt')).toBeVisible()
+    await finish()
+  })
+
+  // Reveal and Open in VS Code launch desktop apps on the server's machine; record their requests instead.
+  test('Reveal and Open in VS Code ask the server to open the row path', async ({ page }, testInfo) => {
+    const launched: { route: string; path: string }[] = []
+    for (const name of ['reveal', 'open-vscode']) {
+      await page.route(`**/api/file/${name}`, (route) => {
+        const body = route.request().postDataJSON() as { path: string }
+        launched.push({ route: name, path: body.path })
+        return route.fulfill({ json: { ok: true, path: body.path } })
+      })
+    }
+    const { item, finish } = await start(page, testInfo.project.name)
+    await rowAction(page, item, 'docs', 'Reveal in file manager')
+    await rowAction(page, item, 'docs', 'Open in VS Code')
+    await expect.poll(() => launched).toEqual([{ route: 'reveal', path: 'docs' }, { route: 'open-vscode', path: 'docs' }])
+    await finish()
+  })
+
+  test('Delete asks first, shows the server refusal for a symlink, and removes a confirmed folder', async ({ page, errors }, testInfo) => {
+    const { item, finish } = await start(page, testInfo.project.name, (workspace) => { symlinkSync('seed.txt', join(workspace, 'link')) })
+    await expect(item('link')).toBeVisible()
+    await rowAction(page, item, 'docs', 'Delete')
+    const confirm = page.getByRole('alertdialog')
+    await expect(confirm).toContainText('Delete folder "docs" and all its contents?')
+    await confirm.getByRole('button', { name: 'Cancel' }).click()
+    await expect(item('docs')).toBeVisible()
+    await rowAction(page, item, 'link', 'Delete')
+    await confirm.getByRole('button', { name: 'Delete' }).click()
+    await expect(page.getByRole('alert').filter({ hasText: 'Cannot delete a symlinked entry' })).toBeVisible()
+    await expect(item('link')).toBeVisible()
+    if (process.env.TAL519_SHOTS) await page.screenshot({ path: `${process.env.TAL519_SHOTS}/refusal-${testInfo.project.name}.png` })
+    await rowAction(page, item, 'docs', 'Delete')
+    await confirm.getByRole('button', { name: 'Delete' }).click()
+    await expect(item('docs')).toHaveCount(0)
+    dropRefusals(errors)
+    await finish()
+  })
+})
 
 /** TAL-1935: a new file's row can be opened at once, however late the server answers the create and the reread after it. */
 test.describe('a just-created file', () => {
