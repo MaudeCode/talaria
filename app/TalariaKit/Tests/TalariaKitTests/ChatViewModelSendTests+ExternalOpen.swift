@@ -101,9 +101,10 @@ extension ChatViewModelSendTests {
 
         open.chat.suspendStreamForNavigation()
 
+        // Waited before the read's result: a read Back never cancelled also ends, at URLSession's own timeout.
+        await open.verification.waitUntilStopped("Back must cancel the shared verification read")
         let verified = await open.verify.value
         XCTAssertNil(verified)
-        XCTAssertTrue(open.verification.isStopped, "Back must cancel the shared verification read")
     }
 
     func testProfileSwitchDuringTheVerificationFencesItsResult() async throws {

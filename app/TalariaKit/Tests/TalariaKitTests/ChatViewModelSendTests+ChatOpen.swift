@@ -88,7 +88,7 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(refreshed.map(\.path), ["/api/session"])
         refreshed.forEach(Self.answerChatOpen)
         await refresh.value
-        XCTAssertTrue(prefetch.isStopped, "A refresh must cancel the prefetched request")
+        await prefetch.waitUntilStopped("A refresh must cancel the prefetched request")
 
         let load = Task { await viewModel.loadInitialMessages(modelContext: context) }
         let reload = await trips.nextRoundTrip()
@@ -108,10 +108,7 @@ extension ChatViewModelSendTests {
 
         viewModel.suspendStreamForNavigation()
 
-        for _ in 0..<200 where !prefetch.isStopped {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        XCTAssertTrue(prefetch.isStopped, "Leaving the chat must cancel the prefetched request")
+        await prefetch.waitUntilStopped("Leaving the chat must cancel the prefetched request")
     }
 
     private func makeHeldViewModel(_ trips: HeldRoundTrips) throws -> ChatViewModel {
