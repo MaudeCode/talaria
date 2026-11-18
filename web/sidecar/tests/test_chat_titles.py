@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from test_chat_turn import Ctx, FakeAgent, _params, _patch
 
 from talaria_sidecar.methods import chat
@@ -38,19 +36,17 @@ def test_modern_agent_skips_title_calls_on_new_and_cached_turns(monkeypatch):
     assert len(FakeAgent.instances) == 1
 
 
-@pytest.mark.parametrize("uninspectable", [False, True])
-def test_older_or_uninspectable_agent_keeps_existing_arguments(monkeypatch, uninspectable):
+def test_an_uninspectable_agent_keeps_existing_arguments(monkeypatch):
     _patch(monkeypatch)
     calls = []
 
-    class LegacyAgent(FakeAgent):
+    class UninspectableAgent(FakeAgent):
         def run_conversation(self, user_message, conversation_history, task_id, system_message=None):
             calls.append((user_message, conversation_history, task_id, system_message))
             return super().run_conversation()
 
-    if uninspectable:
-        LegacyAgent.run_conversation.__signature__ = "unavailable"
-    monkeypatch.setattr(chat, "_agent_class", lambda: LegacyAgent)
+    UninspectableAgent.run_conversation.__signature__ = "unavailable"
+    monkeypatch.setattr(chat, "_agent_class", lambda: UninspectableAgent)
     result = chat.start(Ctx(), {**_params("st-legacy"), "system_message": "system"})
     assert result["status"] == "completed", result
     assert calls == [("hi", [], "s1", "system")]

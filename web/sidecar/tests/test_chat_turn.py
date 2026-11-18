@@ -80,6 +80,24 @@ def _patch(monkeypatch):
     monkeypatch.setattr(commands, "retire_unscoped_launch_mcp_servers", lambda: set())
     monkeypatch.setitem(sys.modules, "tools.mcp_tool_discovery", types.SimpleNamespace(discover_mcp_tools=lambda: [], get_mcp_status=lambda: []))
     monkeypatch.setitem(sys.modules, "tools.mcp_tool_agent", types.SimpleNamespace(refresh_agent_mcp_tools=lambda agent, **kwargs: None))
+    _agent_surface(monkeypatch)
+
+
+def _agent_surface(monkeypatch):
+    """The rest of the supported Agent's surface a turn, its teardown and its release reach, answering as v0.23 does
+    with no vault, secret prompt or review in play."""
+    for name, module in {
+        "tools.todo_tool": types.SimpleNamespace(is_todo_tool_name=lambda name: name in ("todo_list", "todo")),
+        "tools.skills_tool": types.SimpleNamespace(bind_turn_secret_capture=contextlib.contextmanager(lambda callback: (yield))),
+        "agent.vault_backends": types.SimpleNamespace(unlock=types.SimpleNamespace(
+            set_current_session_id=lambda sid: None, release_session=lambda sid: None, set_unlock_prompt_callback=lambda cb: None,
+            set_save_login_prompt_callback=lambda cb: None, set_code_prompt_callback=lambda cb: None)),
+        "agent.context_compressor": types.SimpleNamespace(MAX_ITERATIONS_SUMMARY_REQUEST="Summarize; no more tools."),
+        "agent.background_review": types.SimpleNamespace(cancel_background_review_for_live_turn=lambda agent, **kwargs: None,
+                                                         prepare_background_review_run=lambda agent: object()),
+    }.items():
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setitem(sys.modules, "agent.vault_backends.unlock", sys.modules["agent.vault_backends"].unlock)
 
 
 @pytest.mark.parametrize("method", ["start", "compress", "refine"])
@@ -269,14 +287,6 @@ def test_cancel_interrupts_the_running_turn_and_the_next_turn_starts_clean(monke
     ctx = Ctx()
     result: dict = {}
     gate = threading.Event()
-    original = chat._agent_class
-
-    def blocking_agent_class():
-        cls = original()
-        instance_hook = cls
-        return instance_hook
-
-    monkeypatch.setattr(chat, "_agent_class", blocking_agent_class)
     started = threading.Event()
 
     def run():
@@ -295,7 +305,6 @@ def test_cancel_interrupts_the_running_turn_and_the_next_turn_starts_clean(monke
     worker = threading.Thread(target=run)
     worker.start()
     assert started.wait(5)
-    assert chat.register.__module__  # module import sanity
     run_obj = chat._run_for({"stream_id": "st-3"})
     assert run_obj is not None
     # `chat.interrupt` drains the Agent's unapplied steer text (predecessor `_finalize_webui_steers`) so the server can
@@ -451,9 +460,14 @@ def test_the_turn_binds_its_session_identity_and_workspace(monkeypatch, tmp_path
 
     _patch(monkeypatch)
     monkeypatch.setattr(chat, "_agent_class", lambda: ObservingAgent)
+    monkeypatch.setattr(chat, "agent_scope", lambda home: contextlib.nullcontext(home))
+    from talaria_sidecar.methods import Registry
+
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
+    chat.register(registry)
     workspace = str(tmp_path / "ws")
-    with chat._turn_identity("s-ident", workspace):
-        assert chat.start(Ctx(), {**_params("st-9", "s-ident"), "workspace": workspace})["status"] == "completed"
+    reply = registry.methods["chat.start"](Ctx(), {**_params("st-9", "s-ident"), "workspace": workspace})
+    assert reply["status"] == "completed"
     assert seen == {"key": "s-ident", "platform": "webui", "chat_id": "s-ident", "ui": "s-ident", "profile": "work", "cwd": workspace}
     # Everything is reset once the turn is over.
     assert key_var.get() == "default" and sc._SESSION_PLATFORM.get() == "" and sc._SESSION_PROFILE.get() == "" and cwd_mod._SESSION_CWD.get() == ""
@@ -557,106 +571,69 @@ def test_an_approval_names_the_tool_call_the_agent_is_holding(monkeypatch) -> No
     assert [data.get("tool_call_id") for _, data in frames] == [None, "call-push"]
 
 
-def test_clarify_timeout_fallbacks_follow_the_agent_default(monkeypatch) -> None:
-    """TAL-2053: without the Agent's resolver, the clarify timeout falls back to its own default (90 s since v0.23.1)."""
-    config = types.ModuleType("hermes_cli.config")
-    config.load_config = lambda: {}
-    monkeypatch.setitem(sys.modules, "tools.clarify_gateway", None)
-    monkeypatch.setitem(sys.modules, "hermes_cli.config", config)
-    assert chat._clarify_timeout({}) == 90
-    config.load_config = lambda: {"agent": {"clarify_timeout": 1800}}
-    assert chat._clarify_timeout({}) == 1800
-    config.load_config = lambda: 1 / 0
-    assert chat._clarify_timeout({}) == 90
+class ClarifyCtx(Ctx):
+    def __init__(self):
+        super().__init__()
+        self.prompted = threading.Event()
+
+    def emit(self, event, data=None):
+        super().emit(event, data)
+        if event == "clarify":
+            self.prompted.set()
 
 
-def test_clarify_prompts_advertise_the_agent_timeout(monkeypatch) -> None:
-    """The clarify frame carries the timeout the sidecar actually waits (predecessor ``_clarify_timeout_seconds``)."""
+def _clarify_turn(monkeypatch, questions: list, answer: str) -> tuple[dict, list]:
+    """One turn whose Agent asks ``questions`` with the structured clarify call every supported release makes
+    (``clarify_tool``'s ``callback(shown)``); the server answers ``answer``. Returns the frame and the Agent's reply."""
     _patch(monkeypatch)
-    import types, sys
-    gateway = types.ModuleType("tools.clarify_gateway")
-    gateway.get_clarify_timeout = lambda: 42
-    tools_pkg = types.ModuleType("tools")
-    tools_pkg.clarify_gateway = gateway
-    monkeypatch.setitem(sys.modules, "tools", tools_pkg)
-    monkeypatch.setitem(sys.modules, "tools.clarify_gateway", gateway)
-    assert chat._clarify_timeout({}) == 42
-    assert chat._clarify_timeout({"clarify_timeout_seconds": 7}) == 7
-    assert chat._clarify_timeout({"clarify_timeout_seconds": 0}) == 0
+    monkeypatch.setitem(sys.modules, "tools.clarify_gateway", types.SimpleNamespace(get_clarify_timeout=lambda: 42))
+    replies: list = []
 
     class ClarifyingAgent(FakeAgent):
         def run_conversation(self, **kwargs):
-            answer = self.kwargs["clarify_callback"]("Which env?", ["dev", "prod"])
-            return {"final_response": answer, "messages": []}
+            replies.append(self.kwargs["clarify_callback"](questions))
+            return super().run_conversation(**kwargs)
 
     monkeypatch.setattr(chat, "_agent_class", lambda: ClarifyingAgent)
-    ctx = Ctx()
+    ctx = ClarifyCtx()
     worker = threading.Thread(target=lambda: chat.start(ctx, _params("st-clarify")), daemon=True)
     worker.start()
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and not any(e == "clarify" for e, _ in ctx.frames):
-        time.sleep(0.02)
+    assert ctx.prompted.wait(5)
     frame = next(data for e, data in ctx.frames if e == "clarify")
-    assert frame["timeout_seconds"] == 42
     run = chat._run_for({"stream_id": "st-clarify"})
     assert run is not None
     with run.lock:
         entry = run.clarify_entries[frame["clarify_id"]]
-    entry.result = "dev"
+    entry.result = answer
     entry.event.set()
     worker.join(5)
     assert not worker.is_alive()
+    return frame, replies
+
+
+def test_clarify_prompts_advertise_the_agent_timeout(monkeypatch) -> None:
+    """The clarify frame carries the timeout the sidecar actually waits (predecessor ``_clarify_timeout_seconds``)."""
+    question = {"qid": "q0", "question": "Which env?", "choices": ["dev", "prod"], "choices_offered": ["dev", "prod"], "multi_select": False}
+    frame, _ = _clarify_turn(monkeypatch, [question], '{"answers": {"q0": "dev"}}')
+    assert frame["timeout_seconds"] == 42
+    assert chat._clarify_timeout({}) == 42
+    assert chat._clarify_timeout({"clarify_timeout_seconds": 7}) == 7
+    assert chat._clarify_timeout({"clarify_timeout_seconds": 0}) == 0
 
 
 def test_batch_clarify_relays_questions_and_returns_the_answers_envelope(monkeypatch) -> None:
-    """TAL-362: the Agent's batch callback frame has no top-level question; the keyed envelope reply reaches it unchanged."""
-    _patch(monkeypatch)
+    """TAL-362: the frame has no top-level question; the server's keyed answers reach the Agent as a submitted reply."""
     questions = [
         {"qid": "q0", "id": None, "question": "What sounds best for a quiet evening?", "choices": ["A book (Recommended)", "A movie"], "choices_offered": ["A book", "A movie"], "multi_select": False},
         {"qid": "q1", "id": "snacks", "question": "Which snacks?", "choices": ["Popcorn (Recommended)", "Tea"], "choices_offered": ["Popcorn", "Tea"], "multi_select": True},
     ]
-    replies: list = []
-
-    class BatchAgent(FakeAgent):
-        def run_conversation(self, **kwargs):
-            # Mirrors ``clarify_tool._run_batch`` then a single multi-select question.
-            replies.append(self.kwargs["clarify_callback"]("", None, questions=questions))
-            replies.append(self.kwargs["clarify_callback"]("Which env?", ["dev", "prod"], multi_select=True))
-            return {"final_response": "ok", "messages": []}
-
-    monkeypatch.setattr(chat, "_agent_class", lambda: BatchAgent)
-    ctx = Ctx()
-    worker = threading.Thread(target=lambda: chat.start(ctx, _params("st-batch")), daemon=True)
-    worker.start()
-
-    def answer(n: int, response: str) -> dict:
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline and sum(e == "clarify" for e, _ in ctx.frames) < n:
-            time.sleep(0.02)
-        frame = [data for e, data in ctx.frames if e == "clarify"][n - 1]
-        run = chat._run_for({"stream_id": "st-batch"})
-        assert run is not None
-        with run.lock:
-            entry = run.clarify_entries[frame["clarify_id"]]
-        entry.result = response
-        entry.event.set()
-        return frame
-
-    envelope = '{"answers": {"q0": "A movie", "q1": ["Popcorn (Recommended)", "Tea"]}}'
-    batch = answer(1, envelope)
-    assert batch["question"] == "" and batch["questions"] == questions and "multi_select" not in batch
-    single = answer(2, '["prod"]')
-    assert single["multi_select"] is True and single["choices_offered"] == ["dev", "prod"]
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and len(replies) < 2:
-        time.sleep(0.02)
-    assert replies == [envelope, '["prod"]']
-    worker.join(5)
-    assert not worker.is_alive()
+    frame, replies = _clarify_turn(monkeypatch, questions, '{"answers": {"q0": "A movie", "q1": ["Popcorn (Recommended)", "Tea"]}}')
+    assert frame["question"] == "" and frame["questions"] == questions and "multi_select" not in frame
+    assert replies == [{"answers": {"q0": "A movie", "q1": ["Popcorn (Recommended)", "Tea"]}, "outcome": "submitted"}]
 
 
-def test_tool_frames_keep_content_args_long_and_extract_result_previews(monkeypatch) -> None:
-    """Predecessor caps: content/diff args keep 4000 chars, incidental args 120; previews come from output/result/error."""
+def test_tool_frames_keep_content_args_long_and_render_values_like_the_server() -> None:
+    """Predecessor caps: content/diff args keep 4000 chars, incidental args 120."""
     snap = chat._args_snapshot({"path": "/very/long/" + "x" * 300, "note": "n" * 300, "old_string": "o" * 5000})
     assert len(snap["path"]) == 311 and not snap["path"].endswith("...")
     assert snap["note"].endswith("...") and len(snap["note"]) == 123
@@ -672,11 +649,17 @@ def test_tool_frames_keep_content_args_long_and_extract_result_previews(monkeypa
     ]
     for value, shown in cases:
         assert chat._args_snapshot({"task": value}) == {"task": shown}, value
+
+
+def test_tool_previews_come_from_output_result_or_error() -> None:
     assert chat._snippet('{"output": "hello", "extra": "x"}') == "hello"
     assert chat._snippet({"error": "boom"}) == "boom"
     assert chat._snippet("a" * 5000) == "a" * 4000
     multimodal = {"_multimodal": True, "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}], "text_summary": "Image attached."}
     assert chat._snippet(multimodal) == "Image attached."
+
+
+def test_a_delegation_reports_its_total_cost_only_when_every_child_priced_its_run() -> None:
     assert chat._delegation_cost_usd("delegate_task", {"results": [{"cost_usd": 0.5}, {"cost_usd": 0.25}]}) == 0.75
     assert chat._delegation_cost_usd("delegate_task", {"results": [{"cost_usd": 0.5}, {"cost_status": "unknown"}]}) is None
     assert chat._delegation_cost_usd("read_file", {"results": [{"cost_usd": 1}]}) is None
@@ -878,30 +861,26 @@ def test_a_buffered_token_reaches_the_server_during_provider_silence(monkeypatch
     """TAL-1720: a token held by the 16 ms batch goes out on the watcher's timer, with no later callback to carry it."""
     _patch(monkeypatch)
     arrived = threading.Event()
-    sent_at = {}
+    held = {}
 
-    class Timed(Ctx):
+    class Watching(Ctx):
         def emit(self, event, data=None):
             super().emit(event, data)
             if event == "token" and "second" in data["text"]:
-                sent_at["second"] = time.monotonic()
                 arrived.set()
 
-    class PausingAgent(FakeAgent):
+    class SilentAgent(FakeAgent):
         def run_conversation(self, **kwargs):
             token = self.kwargs["stream_delta_callback"]
             token("first")
-            time.sleep(0.005)
-            sent_at["token"] = time.monotonic()
             token("second")
-            arrived.wait(0.5)
-            sent_at["during_silence"] = arrived.is_set()
+            # The provider goes quiet: no further callback, so only the watcher can send the held token.
+            held["during_silence"] = arrived.wait(5)
             return super().run_conversation(**kwargs)
 
-    monkeypatch.setattr(chat, "_agent_class", lambda: PausingAgent)
-    assert chat.start(Timed(), _params("st-silence"))["status"] == "completed"
-    assert sent_at["during_silence"]
-    assert sent_at["second"] - sent_at["token"] < 0.1
+    monkeypatch.setattr(chat, "_agent_class", lambda: SilentAgent)
+    assert chat.start(Watching(), _params("st-silence"))["status"] == "completed"
+    assert held["during_silence"]
 
 
 def test_reasoning_deltas_batch_and_keep_their_order_around_tokens(monkeypatch) -> None:

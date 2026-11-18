@@ -1,13 +1,17 @@
-"""TAL-255: ``chat.compress`` drives the pinned Agent's manual ``/compress`` core with ``compress_now`` stubbed (no provider)."""
+"""TAL-255: ``chat.compress`` drives the Agent's manual ``/compress`` core with ``compress_now`` stubbed (no provider).
+
+The pinned release's own core and result types back the compatibility cases; Talaria's TTL, credential check and profile
+scoping run once against a stand-in with the same result shape."""
 
 from __future__ import annotations
 
 import ast
 import contextlib
+import dataclasses
 import importlib.util
 import inspect
 import sys
-import time
+import threading
 import types
 
 import pytest
@@ -15,8 +19,6 @@ import pytest
 from conftest import AGENT_DIR, requires_agent
 from talaria_sidecar.errors import RpcError
 from talaria_sidecar.methods import chat
-
-pytestmark = requires_agent
 
 HISTORY = [
     {"role": "user", "content": "one"},
@@ -63,15 +65,46 @@ def _finalize_signature_params() -> set[str]:
     return {a.arg for a in [*fn.args.args, *fn.args.kwonlyargs]}
 
 
+@dataclasses.dataclass
+class StandInRequest:
+    focus_topic: str | None = None
+
+
+@dataclasses.dataclass
+class StandInResult:
+    """``CompressResult``'s fields in its order; the compatibility cases use the pinned class itself."""
+    status: str
+    before_messages: list
+    after_messages: list
+    before_tokens: int
+    after_tokens: int
+    request: StandInRequest
+    lines: list = dataclasses.field(default_factory=list)
+    lock_holder: object = None
+    summary: dict | None = None
+
+
 @pytest.fixture
 def agent_env(monkeypatch):
+    """The pinned release's manual core, with ``compress_now`` bound against its real signature."""
     manual = _pinned_manual_core(monkeypatch)
-    real_compress_now = manual.compress_now
+    assert "committed" in _finalize_signature_params()
+    return _compression_env(monkeypatch, manual, inspect.signature(manual.compress_now).bind)
+
+
+@pytest.fixture
+def stand_in_env(monkeypatch):
+    """Talaria's side only: a stand-in core with ``CompressResult``'s shape."""
+    manual = types.SimpleNamespace(CompressRequest=StandInRequest, CompressResult=StandInResult)
+    return _compression_env(monkeypatch, manual, lambda *args, **kwargs: None)
+
+
+def _compression_env(monkeypatch, manual, bind):
     calls: dict = {"compress": [], "finalize": []}
     outcome = {"status": "compressed"}
 
     def compress_now(agent, history, request, **kwargs):
-        inspect.signature(real_compress_now).bind(agent, history, request, **kwargs)
+        bind(agent, history, request, **kwargs)
         calls["compress"].append({"agent": agent, "history": history, "request": request, **kwargs})
         if outcome["status"] == "lock_skipped":
             return manual.CompressResult("lock_skipped", list(history), list(history), 400, 400, request, lock_holder="cli")
@@ -83,7 +116,6 @@ def agent_env(monkeypatch):
         calls["finalize"].append(committed)
         return committed
 
-    assert "committed" in _finalize_signature_params()
     manual.compress_now = compress_now
     describe = types.ModuleType("agent.manual_compression_feedback")
     describe.describe_compression_lock_skip = lambda holder: f"⏳ Compression already in progress for this session (holder: {holder}). Please wait for it to finish."
@@ -110,6 +142,7 @@ def _params(**extra) -> dict:
     return {"profile_home": "/tmp/unused", "session_id": "s1", "model": "m", "model_provider": "p", "conversation_history": HISTORY, **extra}
 
 
+@requires_agent
 def test_compress_runs_the_shared_core_on_a_throwaway_agent_and_commits(agent_env) -> None:
     calls, _ = agent_env
     result = chat.compress(Ctx(), _params(focus_topic="  schema  ", enabled_toolsets=["memory"]))
@@ -136,20 +169,33 @@ def test_compress_runs_the_shared_core_on_a_throwaway_agent_and_commits(agent_en
     assert calls["finalize"] == [True]
     assert agent.closed and agent._end_session_on_close is False
     assert chat.finalize_compression(token, True) is False  # one shot
+    # Without a session override the throwaway agent gets the profile's toolsets, like a turn.
+    default = chat.compress(Ctx(), _params())
+    assert ThrowawayAgent.instances[-1].kwargs["enabled_toolsets"] == ["file", "web"]
+    assert chat.finalize_compression(default["commit_token"], False) is True
 
 
-def test_a_server_that_never_finalizes_has_its_compression_discarded(agent_env, monkeypatch) -> None:
-    calls, _ = agent_env
+def test_a_server_that_never_finalizes_has_its_compression_discarded(stand_in_env, monkeypatch) -> None:
+    calls, _ = stand_in_env
+    timers = []
+
+    class RecordedTimer(threading.Timer):
+        def start(self):
+            timers.append(self)
+            super().start()
+
+    monkeypatch.setattr(threading, "Timer", RecordedTimer)
     monkeypatch.setattr(chat, "_PENDING_COMPRESSION_TTL", 0.05)
     token = chat.compress(Ctx(), _params())["commit_token"]
     # No further compression runs: the token's own timer discards it.
-    deadline = time.monotonic() + 5
-    while token in chat._PENDING_COMPRESSIONS and time.monotonic() < deadline:
-        time.sleep(0.01)
+    [expiry] = timers
+    expiry.join(5)
+    assert not expiry.is_alive()
     assert token not in chat._PENDING_COMPRESSIONS
     assert calls["finalize"] == [False] and ThrowawayAgent.instances[0].closed
 
 
+@requires_agent
 def test_a_held_lock_is_reported_and_not_committed(agent_env) -> None:
     calls, outcome = agent_env
     outcome["status"] = "lock_skipped"
@@ -161,12 +207,7 @@ def test_a_held_lock_is_reported_and_not_committed(agent_env) -> None:
     assert calls["finalize"] == [False] and ThrowawayAgent.instances[0].closed
 
 
-def test_compress_without_an_override_uses_the_profile_toolsets(agent_env) -> None:
-    chat.compress(Ctx(), _params())
-    assert ThrowawayAgent.instances[0].kwargs["enabled_toolsets"] == ["file", "web"]
-
-
-def test_no_api_key_is_refused_before_an_agent_exists(agent_env, monkeypatch) -> None:
+def test_no_api_key_is_refused_before_an_agent_exists(stand_in_env, monkeypatch) -> None:
     monkeypatch.setattr(chat, "_resolve_runtime", lambda provider, model: {"provider": "p"})
     with pytest.raises(RpcError) as raised:
         chat.compress(Ctx(), _params())
@@ -175,7 +216,7 @@ def test_no_api_key_is_refused_before_an_agent_exists(agent_env, monkeypatch) ->
     assert ThrowawayAgent.instances == []
 
 
-def test_registered_method_scopes_the_profile_home(agent_env, monkeypatch) -> None:
+def test_registered_method_scopes_the_profile_home(stand_in_env, monkeypatch) -> None:
     from talaria_sidecar.methods import Registry
 
     homes = []

@@ -74,7 +74,6 @@ def test_main_model_turns_carry_service_tier_and_extra_body(tmp_path) -> None:
 
 
 @requires_agent
-@pytest.mark.skipif(AGENT_DIR is None or "def model_supports_ultrafast" not in (AGENT_DIR / "hermes_cli/models.py").read_text(), reason="GPT-6 and Ultrafast require Agent v0.21.6")
 @pytest.mark.parametrize("model,provider,tier,base_url,expected", [
     ("gpt-6-astra", "openai-codex", "ultrafast", "https://chatgpt.com/backend-api/codex", {"service_tier": "ultrafast"}),
     ("gpt-6-sol", "openai-codex", "priority", "https://chatgpt.com/backend-api/codex", {"service_tier": "priority"}),
@@ -154,14 +153,10 @@ from pathlib import Path
 from unittest.mock import patch
 sys.path.append(sys.argv[1])
 from run_agent import AIAgent
-from agent import message_metadata
-from talaria_sidecar.errors import RpcError
 from talaria_sidecar.home import scoped_home
 from talaria_sidecar.methods import chat
 
 seen = []
-refusals = []
-capable = callable(getattr(message_metadata, "data_use_requirement", None))
 
 class RecordingAgent(AIAgent):
     def __init__(self, **kwargs):
@@ -202,22 +197,10 @@ with patch("agent.process_bootstrap.OpenAI", Client), scoped_home(home):
                    {"role": "tool", "tool_call_id": "c1", "content": "private result", "data_use": [requirement]},
                    {"role": "assistant", "content": "done"}]
         turn = {**params, "stream_id": requirement, "user_message": "follow up", "conversation_history": history}
-        if capable:
-            result = chat.start(Ctx(), turn)
-            assert result["status"] == "completed", result
-            assert "Reviewing this conversation" in chat.refine({**turn, "messages": history})
-        else:
-            for method in ("start", "compress", "refine"):
-                try:
-                    if method == "refine":
-                        chat.refine({**turn, "messages": history})
-                    else:
-                        getattr(chat, method)(Ctx(), turn)
-                except RpcError as exc:
-                    refusals.append(exc.data["condition"])
-                else:
-                    raise AssertionError("legacy Agent admitted private history")
-print(json.dumps({"capable": capable, "requests": seen, "refusals": refusals}))
+        result = chat.start(Ctx(), turn)
+        assert result["status"] == "completed", result
+        assert "Reviewing this conversation" in chat.refine({**turn, "messages": history})
+print(json.dumps({"requests": seen}))
 """
 
 
@@ -229,11 +212,6 @@ def test_second_turn_connector_data_use_reaches_nous_request(tmp_path) -> None:
     assert run.returncode == 0, run.stderr[-4000:]
     observed = json.loads(run.stdout.strip().splitlines()[-1])
     requests = observed["requests"]
-    if not observed["capable"]:
-        assert len(requests) == 1
-        assert observed["refusals"] == ["agent_incompatible"] * 6
-        return
-    assert observed["refusals"] == []
     assert [request["extra_body"].get("provider") for request in requests] == [None, *[{"data_collection": "deny"}] * 2, *[{"data_collection": "deny", "zdr": True}] * 2]
     for request in requests[1:]:
         assert next(row for row in request["messages"] if row["role"] == "tool") == {"role": "tool", "tool_call_id": "c1", "content": "private result"}
@@ -246,8 +224,7 @@ from pathlib import Path
 from openai import OpenAI
 import httpx
 sys.path.append(sys.argv[1])
-from agent import auxiliary_client, message_metadata
-from talaria_sidecar.errors import RpcError
+from agent import auxiliary_client
 from talaria_sidecar.home import scoped_home
 from talaria_sidecar.methods import aux, chat
 
@@ -280,24 +257,15 @@ class NoStringFallback:
         raise AssertionError("private content reached the string-only Agent fallback")
 chat._agent_class = lambda: NoStringFallback
 home = Path(os.environ["HERMES_HOME"])
-capable = callable(getattr(message_metadata, "data_use_requirement", None))
 with scoped_home(home):
     for requirement in ("no_training", "zero_retention"):
         messages = [{"role": "user", "content": "Derived private transcript", "data_use": [requirement]}]
-        if not capable:
-            try:
-                aux.complete("title_generation", messages, main_runtime=None, max_tokens=64, temperature=None, ctx=Ctx())
-            except RpcError as exc:
-                assert exc.data["condition"] == "agent_incompatible", exc.to_json()
-            else:
-                raise AssertionError("legacy auxiliary route admitted private content")
-            continue
         for mode in ("auxiliary", "explicit", "main-fallback"):
             client.fail = mode == "main-fallback"
             result = aux.complete("title_generation", messages, main_runtime={"provider": "nous", "model": "gpt-5", "base_url": client.base_url, "api_key": client.api_key}, max_tokens=64, temperature=None, ctx=Ctx(), main_fallback=True, model="gpt-5" if mode == "explicit" else None, provider="nous")
             assert result["text"] == "Private title", result
 client.close()
-print(json.dumps({"capable": capable, "requests": requests}))
+print(json.dumps({"requests": requests}))
 """
 
 
@@ -310,9 +278,6 @@ def test_auxiliary_privacy_routes_use_real_agent_policy_without_hidden_provider_
     assert run.returncode == 0, run.stderr[-4000:]
     observed = json.loads(run.stdout.strip().splitlines()[-1])
     requests = observed["requests"]
-    if not observed["capable"]:
-        assert requests == []
-        return
     assert len(requests) == 8
     assert all(request.get("stream") is True and request["model"] != "unsafe-fallback" for request in requests)
     for index, request in enumerate(requests):

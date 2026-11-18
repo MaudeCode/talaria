@@ -66,11 +66,9 @@ def portal_tags() -> dict:
 
 
 def spoken(text: str) -> dict:
-    """TAL-906: the Agent's read-aloud script for ``text``; the text as written on an Agent without the normalizer."""
-    try:
-        from tools.tts_text_normalize import prepare_spoken_text
-    except Exception:  # noqa: BLE001
-        return {"spoken_text": text}
+    """TAL-906: the Agent's read-aloud script for ``text``."""
+    from tools.tts_text_normalize import prepare_spoken_text
+
     return {"spoken_text": prepare_spoken_text(text)}
 
 

@@ -18,24 +18,19 @@ server.run()
 """
 
 PROBE = r'''
-import contextlib, importlib.util, json, os
+import json, os
 from pathlib import Path
 from talaria_sidecar.home import scoped_home
 from talaria_sidecar.methods import chat
 from tools.registry import registry
-has_progress = importlib.util.find_spec('agent.tool_progress_relay') is not None
 class Agent:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
     def run_conversation(self, **kwargs):
         name, tid = 'mcp__progress__index', 'call-index'
         self.kwargs['tool_start_callback'](tid, name, {})
-        if has_progress:
-            from agent.tool_progress_relay import bound_tool_progress
-            binding = bound_tool_progress(self.kwargs['tool_progress_callback'], name, tid)
-        else:
-            binding = contextlib.nullcontext()
-        with binding:
+        from agent.tool_progress_relay import bound_tool_progress
+        with bound_tool_progress(self.kwargs['tool_progress_callback'], name, tid):
             result = registry.dispatch(name, {})
         assert 'indexed' in result, result
         self.kwargs['tool_complete_callback'](tid, name, {}, result)
@@ -57,7 +52,7 @@ finally:
     from tools.mcp_tool_loop import _stop_mcp_loop
     shutdown_mcp_servers()
     _stop_mcp_loop()
-print(json.dumps({'native_progress': has_progress, 'frames': ctx.frames}))
+print(json.dumps({'frames': ctx.frames}))
 '''
 
 @requires_agent
@@ -71,9 +66,6 @@ def test_mcp_stdio_progress_reaches_the_sidecar_tool_row(tmp_path):
     assert run.returncode == 0, run.stderr[-5000:] + run.stdout[-2000:]
     result = json.loads(run.stdout.strip().splitlines()[-1])
     progress = [data for event, data in result['frames'] if event == 'tool_progress']
-    if not result['native_progress']:
-        assert progress == []
-        return
     assert progress == [
         {'tool_call_id': 'call-index', 'message': 'indexing files', 'progress': 42.0, 'total': 100.0, 'percent': 42},
         {'tool_call_id': 'call-index', 'message': 'finished', 'progress': 100.0, 'total': 100.0, 'percent': 100},

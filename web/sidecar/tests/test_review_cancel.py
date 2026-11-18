@@ -21,8 +21,6 @@ def test_delete_clear_and_shutdown_cancel_the_admitted_background_review(tmp_pat
     run = subprocess.run([AGENT_PYTHON, str(probe), str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
     out = json.loads(run.stdout.strip().splitlines()[-1])
-    # The eviction returns at once; the cancel waits for the fork on its own thread.
-    assert out.pop("wedged_seconds") <= 1
     assert out == {
         "switch": [],
         "switch_review_live": True,
@@ -32,6 +30,8 @@ def test_delete_clear_and_shutdown_cancel_the_admitted_background_review(tmp_pat
         "running": [ENDED],
         "running_left": [],
         "wedged_evicted": True,
+        # The eviction returns at once; the cancel waits for the fork on its own thread.
+        "wedged_returned_first": True,
         "wedged": [ENDED],
         "wedged_left": [],
         "drained": [["sidecar shutting down", "session ended"]],

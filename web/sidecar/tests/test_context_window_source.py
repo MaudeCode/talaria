@@ -14,7 +14,7 @@ from talaria_sidecar.methods import Registry, chat, providers
 
 # Runs on the Agent interpreter with the real resolver and compressor; only its network lookups are stubbed.
 PROBE = """
-import importlib, json, os, sys
+import json, os, sys
 from pathlib import Path
 from types import SimpleNamespace
 sys.path.append(sys.argv[1])
@@ -40,7 +40,6 @@ def route(model, pin=None):
 
 with scoped_home(Path(os.environ["HERMES_HOME"])):
     print(json.dumps({
-        "has_markers": hasattr(importlib.import_module("agent.context_pin"), "agent_context_marker"),
         "live": {"pinned": live(UNKNOWN, 200000), "fallback": live(UNKNOWN), "detected": live(KNOWN)},
         "route": {"pinned": route(UNKNOWN, 200000), "fallback": route(UNKNOWN), "detected": route(KNOWN)},
     }))
@@ -54,24 +53,9 @@ def test_live_agent_and_lookup_report_the_agents_marker(tmp_path) -> None:
     run = subprocess.run([AGENT_PYTHON, "-c", PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
     out = json.loads(run.stdout.strip().splitlines()[-1])
-    # Supported releases before v0.23.0 have no markers, so a real Agent without them shows no label.
-    expected = {"pinned": "pinned", "fallback": "fallback", "detected": None} if out["has_markers"] else {"pinned": None, "fallback": None, "detected": None}
+    expected = {"pinned": "pinned", "fallback": "fallback", "detected": None}
     assert out["live"] == expected
     assert out["route"] == expected
-
-
-def test_an_agent_without_the_markers_gives_null_and_does_not_raise(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(providers, "scoped_home", lambda *a: nullcontext())
-    monkeypatch.setattr(providers, "context_length", lambda *a, **k: 256_000)
-    registry = Registry(SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
-    providers.register(registry)
-    agent = SimpleNamespace(context_compressor=SimpleNamespace(context_length=256_000))
-    # A release with the module but not the functions, then one without the module.
-    for module in (ModuleType("agent.context_pin"), None):
-        monkeypatch.setitem(sys.modules, "agent.context_pin", module)
-        reply = registry.methods["models.context_length"](None, {"profile_home": str(tmp_path), "model": "m"})
-        assert reply == {"model": "m", "context_length": 256_000, "context_window_source": None}
-        assert chat._context_length(agent) == {"context_length": 256_000, "context_window_source": None}
 
 
 def test_a_marker_that_raises_or_answers_empty_gives_null(monkeypatch) -> None:

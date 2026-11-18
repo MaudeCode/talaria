@@ -9,13 +9,12 @@ from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 
 
 PROBE = r'''
-import inspect, json, os, sys
+import json, os, sys
 sys.path.append(sys.argv[1])
 from tools.clarify_tool import clarify_tool
 from talaria_sidecar.methods import Registry, chat
 
 shape, outcome = sys.argv[2:]
-modern = "question" not in inspect.signature(clarify_tool).parameters
 questions = [{"question": "Which env?", "choices": ["dev", "prod"], "multi_select": shape == "multi"}]
 answers = {"q0": ["dev (Recommended)", "prod"] if shape == "multi" else "dev (Recommended)"}
 if shape == "open":
@@ -34,13 +33,7 @@ class Agent:
     def interrupt(self, *args, **kwargs):
         pass
     def run_conversation(self, **kwargs):
-        if modern:
-            result = clarify_tool(questions, callback=self.callback)
-        elif shape == "batch":
-            result = clarify_tool("", questions=questions, callback=self.callback)
-        else:
-            result = clarify_tool(**questions[0], callback=self.callback)
-        tool_results.append(json.loads(result))
+        tool_results.append(json.loads(clarify_tool(questions, callback=self.callback)))
         return {"final_response": "ok", "messages": []}
 
 class Ctx:
@@ -52,9 +45,8 @@ class Ctx:
         if outcome == "cancelled":
             registry.methods["chat.interrupt"](self, {"stream_id": "st-clarify"})
         elif outcome == "submitted":
-            # Exactly the reply clarifyReply emits for the advertised frame shape.
-            response = json.dumps({"answers": answers}) if data.get("questions") else (
-                json.dumps(answers["q0"]) if isinstance(answers["q0"], list) else answers["q0"])
+            # Exactly the reply clarifyReply emits for a frame that carries ``questions``.
+            response = json.dumps({"answers": answers})
             acknowledgements.append(registry.methods["clarify.respond"](self, {
                 "stream_id": "st-clarify", "clarify_id": data["clarify_id"], "response": response}))
 
@@ -70,7 +62,7 @@ result = chat.start(Ctx(), {
     "user_message": "Ask me", "model": "m", "model_provider": "p", "clarify_timeout_seconds": 1 if outcome == "timed_out" else 0,
 })
 late = registry.methods["clarify.respond"](Ctx(), {"stream_id": "st-clarify", "response": "late"})
-print(json.dumps({"modern": modern, "tool": tool_results, "frames": frames, "acks": acknowledgements,
+print(json.dumps({"tool": tool_results, "frames": frames, "acks": acknowledgements,
                   "status": result["status"], "late": late, "run_released": chat._run_for({"stream_id": "st-clarify"}) is None}))
 '''
 
@@ -95,10 +87,9 @@ def test_real_agent_clarify_through_chat_start(tmp_path, shape, outcome):
     assert prompts[0]["timeout_seconds"] == (1 if outcome == "timed_out" else 0)
     assert observed["run_released"] and observed["late"] == {"ok": False}
     assert observed["status"] == ("cancelled" if outcome == "cancelled" else "completed")
-    responses = tool.get("responses", [tool])
-    if observed["modern"]:
-        assert tool["outcome"] == outcome
-        assert len(prompts[0]["questions"]) == len(responses)
+    responses = tool["responses"]
+    assert tool["outcome"] == outcome
+    assert len(prompts[0]["questions"]) == len(responses)
     if outcome == "submitted":
         assert observed["acks"] == [{"ok": True, "clarify_id": prompts[0]["clarify_id"]}]
         expected = {"single": ["dev"], "multi": [["dev", "prod"]], "open": ["Run the tests"],
@@ -106,8 +97,5 @@ def test_real_agent_clarify_through_chat_start(tmp_path, shape, outcome):
         assert [r["user_response"] for r in responses] == expected
     else:
         assert all(r["user_response"] in (None, "", []) for r in responses), tool
-        if observed["modern"]:
-            assert all(r["status"] == "unanswered" for r in responses)
-            assert tool["notice"]
-        elif shape == "batch":
-            assert bool(tool.get("timed_out")) == (outcome == "timed_out")
+        assert all(r["status"] == "unanswered" for r in responses)
+        assert tool["notice"]

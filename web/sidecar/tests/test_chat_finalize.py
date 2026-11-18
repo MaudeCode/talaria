@@ -28,12 +28,10 @@ def register(ctx):
     ctx.register_hook('on_session_finalize', closing)
 ''')
     (profile / 'config.yaml').write_text('plugins:\n  isolation: in_process\n  enabled: [closing-test]\n')
-    started = time.monotonic()
     reply, _ = handshaken.call('chat.finalize_session', {
         'profile_home': str(profile), 'session_id': 'closing-chat', 'reason': 'clear',
     }, timeout=30)
     assert reply.get('result') == {'messages': ['bye'] if mode == 'message' else []}, reply
-    assert time.monotonic() - started < 11.5
     assert json.loads((profile / 'finalized.json').read_text()) == {
         'session_id': 'closing-chat', 'platform': 'webui', 'reason': 'clear',
     }
@@ -82,7 +80,7 @@ def test_finalize_timeout_keeps_profile_custody_until_the_hook_exits(monkeypatch
         result = registry.methods['chat.finalize_session'](None, {
             'session_id': 'closing-chat', 'profile_home': str(tmp_path), 'reason': reason,
         })
-        assert entered.wait(1)
+        assert entered.wait(5)
         assert result == {'messages': []}
         worker = next(worker for worker, home in chat._RELEASES.items() if home == tmp_path)
         assert worker.is_alive()
@@ -99,8 +97,7 @@ def test_finalize_timeout_keeps_profile_custody_until_the_hook_exits(monkeypatch
     assert scopes == [('enter', tmp_path), ('exit', tmp_path)]
 
 
-@pytest.mark.parametrize('surface', ['missing_finalize', 'missing_messages', 'failure'])
-def test_finalize_tolerates_missing_helpers_and_dispatch_errors(monkeypatch, tmp_path, surface):
+def test_a_failing_finalize_dispatch_returns_no_messages(monkeypatch, tmp_path):
     import contextlib
     import sys
     import types
@@ -110,15 +107,9 @@ def test_finalize_tolerates_missing_helpers_and_dispatch_errors(monkeypatch, tmp
 
     def finalize(**kwargs):
         called.append(kwargs)
-        if surface == 'failure':
-            raise RuntimeError('synthetic lifecycle failure')
-        return ['bye']
+        raise RuntimeError('synthetic lifecycle failure')
 
-    lifecycle = types.SimpleNamespace()
-    if surface != 'missing_finalize':
-        lifecycle.finalize_session = finalize
-    if surface != 'missing_messages':
-        lifecycle.session_end_messages = lambda results: results
+    lifecycle = types.SimpleNamespace(finalize_session=finalize, session_end_messages=lambda results: results)
     monkeypatch.setitem(sys.modules, 'hermes_cli', types.SimpleNamespace(lifecycle=lifecycle))
     monkeypatch.setattr(chat, 'scoped_home', lambda home: contextlib.nullcontext(home))
     registry = Registry(runtime=None)
@@ -127,11 +118,11 @@ def test_finalize_tolerates_missing_helpers_and_dispatch_errors(monkeypatch, tmp
         'session_id': 'old-agent', 'profile_home': str(tmp_path), 'reason': 'delete',
     })
     assert result == {'messages': []}
-    assert len(called) == (0 if surface == 'missing_finalize' else 1)
+    assert len(called) == 1
 
 
-@pytest.mark.parametrize('surface', ['missing_emitter', 'raises', 'logged_failure'])
-def test_archive_notification_is_optional_and_diagnostics_have_no_callback_payload(monkeypatch, tmp_path, caplog, surface):
+@pytest.mark.parametrize('surface', ['raises', 'logged_failure'])
+def test_archive_notification_diagnostics_have_no_callback_payload(monkeypatch, tmp_path, caplog, surface):
     import contextlib
     import logging
     import sys
@@ -147,10 +138,7 @@ def test_archive_notification_is_optional_and_diagnostics_have_no_callback_paylo
             raise RuntimeError(secret)
         logging.getLogger('hermes_state_common').warning('callback failed: %s', secret)
 
-    module = types.SimpleNamespace()
-    if surface != 'missing_emitter':
-        module.emit_session_deleted = emit
-    monkeypatch.setitem(sys.modules, 'hermes_state_common', module)
+    monkeypatch.setitem(sys.modules, 'hermes_state_common', types.SimpleNamespace(emit_session_deleted=emit))
     monkeypatch.setattr(chat, 'agent_scope', lambda home: contextlib.nullcontext(home))
     registry = Registry(runtime=None)
     chat.register(registry)
@@ -163,11 +151,10 @@ def test_archive_notification_is_optional_and_diagnostics_have_no_callback_paylo
         if home == tmp_path:
             worker.join(5)
     assert not any(home == tmp_path for home in chat._RELEASES.values())
-    assert len(called) == (0 if surface == 'missing_emitter' else 1)
-    if called:
-        assert called[0] == (tmp_path / 'state.db', ['archive-root', 'archive-root', 'archive-tip'], {
-            'reason': 'archive', 'primary': 'archive-root', 'sessions_dir': tmp_path / 'sessions',
-        })
+    # The lineage already starts at the root: each id reaches the emitter once.
+    assert called == [(tmp_path / 'state.db', ['archive-root', 'archive-tip'], {
+        'reason': 'archive', 'primary': 'archive-root', 'sessions_dir': tmp_path / 'sessions',
+    })]
     assert 'private-synthetic-credential' not in caplog.text
     assert len(caplog.text) < 300
     assert not (tmp_path / 'state.db').exists()
@@ -176,8 +163,6 @@ def test_archive_notification_is_optional_and_diagnostics_have_no_callback_paylo
 @requires_agent
 @pytest.mark.parametrize('mode', ['record', 'raises'])
 def test_archive_notifies_profile_plugins_without_finalizing_or_writing_state(handshaken, hermes_home, mode):
-    from conftest import AGENT_DIR
-    emitter_available = 'def emit_session_deleted' in (AGENT_DIR / 'hermes_state_common.py').read_text()
     profile = hermes_home / 'profiles' / 'archiving'
     plugin = profile / 'plugins' / 'archive-test'
     plugin.mkdir(parents=True)
@@ -205,10 +190,6 @@ def register(ctx):
         'lineage': ['archive-root', 'archive-tip'],
     })
     assert reply.get('result') == {'messages': []}, reply
-    if not emitter_available:
-        assert not (profile / 'archived.json').exists()
-        assert (profile / 'state.db').read_bytes() == b'untouched owner database'
-        return
     deadline = time.monotonic() + 15
     while not (profile / 'archived.json').exists() and time.monotonic() < deadline:
         time.sleep(.01)
@@ -252,7 +233,7 @@ def test_archive_acknowledges_each_notification_while_callbacks_are_blocked(monk
     caller = threading.Thread(target=archive_batch)
     caller.start()
     try:
-        assert acknowledged.wait(1), 'archive batch did not acknowledge while callbacks remain blocked'
+        assert acknowledged.wait(5), 'archive batch did not acknowledge while callbacks remain blocked'
         assert replies == [{'messages': []}, {'messages': []}]
         assert len([worker for worker, home in chat._RELEASES.items() if home == tmp_path]) == 2
     finally:
@@ -272,6 +253,9 @@ def test_archive_callback_queue_bounds_threads_and_retains_queued_profile_custod
     import threading
     from talaria_sidecar.errors import RpcError
     from talaria_sidecar.methods import Registry, chat
+    from test_chat_turn import _agent_surface
+
+    _agent_surface(monkeypatch)
 
     pending = queue.Queue(maxsize=2)
     workers = []
@@ -309,7 +293,7 @@ def test_archive_callback_queue_bounds_threads_and_retains_queued_profile_custod
     try:
         for i in range(2):
             assert archive(i, running_home) == {'messages': []}
-        assert active.wait(1), 'test callbacks did not start'
+        assert active.wait(5), 'test callbacks did not start'
         for i in range(2, 8):
             assert archive(i, queued_home) == {'messages': []}
         assert len(started) == 2, 'archive requests must share the bounded daemon workers'

@@ -170,33 +170,13 @@ def test_an_auto_compressed_turn_returns_pruned_context_and_its_estimate(tmp_pat
 
 
 # TAL-891: tool payloads put ``exit_code`` / ``error`` / ``success`` after ``output``, so the cap cut the outcome away
-# and a failed call read like a success on the next turn. ``LEGACY`` is the pre-fix cap: successful and non-JSON
-# results must stay byte-identical to it on an Agent without ``agent.compression_marker`` (``legacy`` mode).
-# TAL-827: an Agent with it gets its elision marker, which its dispatch guard rejects in a durable write.
+# and a failed call read like a success on the next turn.
+# TAL-827: the cut carries the Agent's elision marker, which its dispatch guard rejects in a durable write.
 OUTCOME_PROBE = """
-import json, re, sys
+import json, sys
 sys.path.append(sys.argv[1])
-if sys.argv[2] == "legacy":
-    sys.modules["agent.compression_marker"] = None
-    MARKER_RE = re.compile("^$")
-else:
-    from agent.compression_marker import _COMPRESSION_MARKER_RE as MARKER_RE
+from agent.compression_marker import _COMPRESSION_MARKER_RE as MARKER_RE
 from talaria_sidecar.methods import chat
-
-LEGACY_PREFIX = "[Talaria context budget: omitted "
-
-def legacy(text, tokens, keep_tokens):
-    suffix = f" (~{tokens} rough tokens) from this tool result; the full output remains in the visible transcript.]"
-    if keep_tokens < chat._TAIL_TOOL_MIN_SNIPPET_TOKENS:
-        return f"{LEGACY_PREFIX}{len(text)} chars{suffix}"
-    room = keep_tokens - chat._rough_tokens(f"{LEGACY_PREFIX}{len(text)} of {len(text)} chars{suffix}") - 1
-    snippet = text[: len(text) * room // tokens]
-    while snippet and chat._rough_tokens(snippet) > room:
-        snippet = snippet[: len(snippet) * 3 // 4]
-    snippet = snippet.rstrip()
-    if not snippet:
-        return f"{LEGACY_PREFIX}{len(text)} chars{suffix}"
-    return f"{snippet}\\n\\n{LEGACY_PREFIX}{len(text) - len(snippet)} of {len(text)} chars{suffix}"
 
 OUTPUT = "cc -c build.c: warning: unused variable\\n" * 2000
 payloads = {
@@ -219,7 +199,6 @@ for name, text in texts.items():
         out[f"{name}/{keep}"] = {
             "tail": capped[-160:],
             "fits": chat._rough_tokens(capped) <= keep,
-            "legacy": capped == legacy(text, tokens, keep),
             "marker": bool(MARKER_RE.search(capped)),
             "head": len(capped.partition("\\u27eaHERMES-CONTEXT-COMPRESSION:")[0]) if keep == 2000 else 0,
             "prefix": text.startswith(capped.partition("\\u27eaHERMES-CONTEXT-COMPRESSION:")[0]),
@@ -228,18 +207,19 @@ print(json.dumps(out))
 """
 
 
-def outcome_probe(tmp_path, mode: str) -> dict:
-    root = tmp_path / ".hermes"
+@pytest.fixture(scope="module")
+def outcome(tmp_path_factory) -> dict:
+    """One capped-result probe on the Agent interpreter, read by both cap contracts below."""
+    root = tmp_path_factory.mktemp("outcome") / ".hermes"
     root.mkdir()
-    run = subprocess.run([AGENT_PYTHON, "-c", OUTCOME_PROBE, str(AGENT_DIR), mode], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    run = subprocess.run([AGENT_PYTHON, "-c", OUTCOME_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
     return json.loads(run.stdout.strip().splitlines()[-1])
 
 
 @requires_agent
-@pytest.mark.parametrize("mode", ["agent", "legacy"])
-def test_a_capped_tool_result_keeps_its_failure_outcome(tmp_path, mode) -> None:
-    out = outcome_probe(tmp_path, mode)
+def test_a_capped_tool_result_keeps_its_failure_outcome(outcome) -> None:
+    out = outcome
     for keep in (2000, 100):
         # Both the head-kept and the note-only branch end on the outcome the cut removed.
         assert out[f"exit/{keep}"]["tail"].endswith("visible transcript. FAILED: exit 2]")
@@ -250,20 +230,17 @@ def test_a_capped_tool_result_keeps_its_failure_outcome(tmp_path, mode) -> None:
         for name in ("killed", "success", "plain", "dense"):
             # A process the agent killed exits non-zero by design; like successes and plain text it gets no outcome.
             assert out[f"{name}/{keep}"]["tail"].endswith("the full output remains in the visible transcript.]"), (name, keep)
-            if mode == "legacy":
-                # An Agent without the shared marker keeps today's note byte for byte.
-                assert out[f"{name}/{keep}"]["legacy"], (name, keep, out[f"{name}/{keep}"]["tail"])
     # The outcome counts against the remaining budget.
     assert all(out[f"{name}/2000"]["fits"] for name in ("exit", "exit_camel", "error", "unsuccessful", "killed", "success", "plain", "dense"))
 
 
 @requires_agent
-def test_a_capped_tool_result_uses_the_agents_elision_marker(tmp_path) -> None:
-    out = outcome_probe(tmp_path, "agent")
+def test_a_capped_tool_result_uses_the_agents_elision_marker(outcome) -> None:
+    out = outcome
     for name, case in out.items():
         # The Agent's dispatch guard matches the cut, which follows a kept head of the original text.
         assert case["marker"] and case["prefix"], (name, case["tail"])
-        assert not case["legacy"] and "omitted " not in case["tail"], (name, case["tail"])
+        assert "omitted " not in case["tail"], (name, case["tail"])
     # The head still spends the remaining budget (TAL-539): most of 2000 rough tokens, not just the note.
     assert all(case["head"] > 4000 for name, case in out.items() if name.endswith("/2000") and name != "dense/2000")
     assert out["dense/2000"]["head"] > 1500
@@ -276,10 +253,7 @@ from pathlib import Path
 from types import SimpleNamespace
 sys.path.append(sys.argv[1])
 from agent.context_compressor import ContextCompressor, _summarize_tool_result, _skill_pruned_marker
-try:
-    from agent.context_compressor_tail import _lean_recovery_stub
-except ImportError:
-    from agent.context_compressor import _lean_recovery_stub
+from agent.context_compressor_tail import _lean_recovery_stub
 from agent.skill_commands import _build_skill_message
 from tools.skills_tool import skill_view
 from talaria_sidecar.methods import chat
@@ -324,9 +298,6 @@ slash = _build_skill_message(json.loads(loaded["small-skill"]), home / "skills/s
 assert slash and "UNIQUE_SKILL_INSTRUCTION" in slash
 cases["slash"] = [{"role": "user", "content": slash}]
 cases["fits"] = cases["small"]
-if sys.argv[2] == "legacy":
-    import agent.context_compressor as cc
-    del cc._skill_pruned_marker
 out = {}
 for label, prefix in cases.items():
     messages = [{"role": "user", "content": "Continue the task."}] + copy.deepcopy(prefix)
@@ -338,7 +309,7 @@ for label, prefix in cases.items():
     compressor = ContextCompressor("m", config_context_length=100000, quiet_mode=True, provider="p")
     compressor.tail_token_budget = 512 if label != "fits" else 4096
     compressor.threshold_tokens = 2048 if label != "fits" else 100000
-    if sys.argv[2] in ("legacy", "no_prune"):
+    if sys.argv[2] == "no_prune":
         compressor._prune_old_tool_results = lambda messages, **kwargs: (messages, 0)
     context, estimate = chat._post_compression_context(SimpleNamespace(context_compressor=compressor), messages, "System")
     repeated, _ = chat._post_compression_context(SimpleNamespace(context_compressor=compressor), context, "System")
@@ -348,7 +319,7 @@ print(json.dumps(out))
 
 
 @requires_agent
-@pytest.mark.parametrize("mode", ["agent", "legacy", "no_prune"])
+@pytest.mark.parametrize("mode", ["agent", "no_prune"])
 def test_post_compression_context_keeps_skill_reload_pointers(tmp_path, mode) -> None:
     root = tmp_path / ".hermes"
     root.mkdir()

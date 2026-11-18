@@ -6,9 +6,10 @@ from __future__ import annotations
 import io
 import json
 import pathlib
-import subprocess
 
-from conftest import AGENT_DIR, AGENT_PYTHON, OneToolCallModel, SidecarProcess, isolated_env, requires_agent, serve_model
+from conftest import OneToolCallModel, SidecarProcess, requires_agent, serve_model
+from talaria_sidecar.methods import chat
+from test_chat_turn import Ctx, FakeAgent, _params, _patch
 
 
 class _ReadFile(OneToolCallModel):
@@ -66,41 +67,18 @@ def test_a_turn_loads_the_local_workspace_subdirectory_hint_and_a_workspace_chan
             proc.close()
 
 
-# Runs on the Agent interpreter: a stand-in AIAgent from before the ``cwd`` kwarg; passing it would raise TypeError.
-NO_CWD_PROBE = """
-import os, sys
-from pathlib import Path
-sys.path.append(sys.argv[1])
-from talaria_sidecar.home import scoped_home
-from talaria_sidecar.methods import chat
+def test_an_agent_without_the_cwd_kwarg_is_built_as_before(monkeypatch, tmp_path: pathlib.Path) -> None:
+    """``_supported`` passes a constructor only the kwargs it declares: ``cwd`` would raise TypeError here."""
+    _patch(monkeypatch)
 
-class OlderAgent:
-    def __init__(self, model=None, provider=None, base_url=None, api_key=None, platform=None, quiet_mode=None, enabled_toolsets=None,
-                 disabled_toolsets=None, session_id=None, stream_delta_callback=None, reasoning_callback=None, tool_progress_callback=None,
-                 clarify_callback=None):
-        pass
+    class NamedParameterAgent(FakeAgent):
+        def __init__(self, model=None, provider=None, base_url=None, api_key=None, platform=None, quiet_mode=None, enabled_toolsets=None,
+                     disabled_toolsets=None, session_id=None, stream_delta_callback=None, reasoning_callback=None, tool_progress_callback=None,
+                     clarify_callback=None):
+            super().__init__(model=model, session_id=session_id)
 
-    def run_conversation(self, **kwargs):
-        return {"final_response": "ok", "messages": []}
-
-class Ctx:
-    cancelled = False
-
-    def emit(self, event, data=None):
-        pass
-
-chat._agent_class = lambda: OlderAgent
-chat._resolve_runtime = lambda provider, model: {"model": "m", "provider": "p"}
-home = Path(os.environ["HERMES_HOME"])
-params = {"profile_home": str(home), "session_id": "s", "stream_id": "st", "user_message": "hi", "model": "m", "model_provider": "p", "enabled_toolsets": ["file"], "workspace": sys.argv[2], "workspace_local": True}
-with scoped_home(home):
-    result = chat.start(Ctx(), params)
-assert result["status"] == "completed", result
-"""
-
-
-@requires_agent
-def test_an_agent_without_the_cwd_kwarg_is_built_as_before(hermes_home: pathlib.Path) -> None:
-    workspace = _project(hermes_home.parent, "alpha", "ALPHA-AREA-RULE")
-    run = subprocess.run([AGENT_PYTHON, "-c", NO_CWD_PROBE, str(AGENT_DIR), str(workspace)], env=isolated_env(hermes_home), capture_output=True, text=True, timeout=120)
-    assert run.returncode == 0, run.stderr[-4000:]
+    monkeypatch.setattr(chat, "_agent_class", lambda: NamedParameterAgent)
+    workspace = _project(tmp_path, "alpha", "ALPHA-AREA-RULE")
+    params = {**_params("st-no-cwd"), "profile_home": str(tmp_path), "workspace": str(workspace), "workspace_local": True}
+    assert chat.start(Ctx(), params)["status"] == "completed"
+    assert FakeAgent.instances[0].kwargs == {"model": "m", "session_id": "s1"}

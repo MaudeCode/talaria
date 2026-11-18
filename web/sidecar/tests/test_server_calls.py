@@ -40,6 +40,7 @@ class Peer:
         self.server = RpcServer({}, stdin=os.fdopen(to_sidecar_r, "rb"), stdout=os.fdopen(from_sidecar_w, "wb"))
         self.answer = answer
         self.requests: list[dict] = []
+        self.arrived = threading.Semaphore(0)
         self.reader = threading.Thread(target=self.server.serve_forever, daemon=True)
         threading.Thread(target=self._read, daemon=True).start()
         self.reader.start()
@@ -49,6 +50,7 @@ class Peer:
             for line in out:
                 message = json.loads(line)
                 self.requests.append(message)
+                self.arrived.release()
                 reply = self.answer(message) if self.answer else None
                 if reply is not None:
                     self.reply({"jsonrpc": "2.0", "id": message["id"], **reply})
@@ -105,14 +107,17 @@ def test_a_server_error_reaches_the_caller_with_its_condition(peer) -> None:
 
 
 def test_an_unanswered_call_times_out_and_a_late_reply_is_ignored(peer) -> None:
-    p = peer()
-    started = time.monotonic()
+    answers = iter([None, {"result": {"second": True}}])
+    p = peer(lambda message: next(answers))
     with pytest.raises(RpcError) as raised:
         rpc.call_server("server.session_list", {"caller_session_id": "x"}, timeout=0.2)
     assert raised.value.data["condition"] == "timeout"
-    assert time.monotonic() - started < 2
     assert p.server._server_calls == {}
-    p.reply({"jsonrpc": "2.0", "id": p.requests[0]["id"], "result": {}})
+    p.reply({"jsonrpc": "2.0", "id": p.requests[0]["id"], "result": {"late": True}})
+    # The late reply settles nothing and is never answered as a request: the channel serves the next call as before.
+    assert rpc.call_server("server.session_list", {"caller_session_id": "x"}) == {"second": True}
+    assert p.reader.is_alive()
+    assert [message.get("method") for message in p.requests] == ["server.session_list"] * 2
 
 
 @pytest.mark.parametrize("how", ["shutdown", "stdin_closed"])
@@ -129,17 +134,15 @@ def test_closing_the_channel_fails_every_pending_call(peer, how) -> None:
     callers = [threading.Thread(target=waiting_call) for _ in range(2)]
     for caller in callers:
         caller.start()
-    deadline = time.monotonic() + 5
-    while len(p.requests) < 2 and time.monotonic() < deadline:
-        time.sleep(0.01)
-    started = time.monotonic()
+    for _ in callers:
+        assert p.arrived.acquire(timeout=5)
     if how == "shutdown":
         p.server.request_shutdown()
     else:
         os.close(p.to_sidecar)
     for caller in callers:
         caller.join(5)
-    assert time.monotonic() - started < 5
+    assert not any(caller.is_alive() for caller in callers)
     assert [exc.data["condition"] for exc in outcomes] == ["server_unavailable"] * 2
     with pytest.raises(RpcError) as raised:
         p.server.call_server("server.session_list", {"caller_session_id": "x"})
@@ -335,19 +338,31 @@ def test_session_update_sends_only_the_fields_given(monkeypatch) -> None:
     ]
 
 
-@pytest.mark.parametrize(("tool", "method", "index"), [
-    ("decision_review_put", "server.decision_review_put", 0),
-    ("decision_review_put", "server.decision_review_put", 1),
-    ("decision_review_read", "server.decision_review_read", 0),
-    ("decision_review_record", "server.decision_review_record", 0),
-])
-def test_harness_decision_tools_forward_their_call_and_return_the_server_result_unchanged(monkeypatch, tool, method, index) -> None:
-    """TAL-1963: each decision tool sends the calling Web session and its arguments to its ``server.decision_*`` method."""
+DECISION_REFUSAL = ("item retention has 1 choices; each item has 2 to 4", "choices_count")
+HARNESS_FORWARDS = [
+    *(pytest.param(tool, method, DECISION_FIXTURES[method][index], DECISION_REFUSAL, None, id=f"{tool}-{index}") for tool, method, index in (
+        ("decision_review_put", "server.decision_review_put", 0),
+        ("decision_review_put", "server.decision_review_put", 1),
+        ("decision_review_read", "server.decision_review_read", 0),
+        ("decision_review_record", "server.decision_review_record", 0),
+    )),
+    # TAL-1970: title, body and level; a missing body is refused before any call.
+    *(pytest.param("notify", "server.notify", recorded, ("title is 81 characters; at most 80", "title_too_long"), ("body", "body is required"), id=f"notify-{name}")
+      for name, recorded in zip(("sent", "rate_limited"), NOTIFY_FIXTURES["server.notify"], strict=True)),
+    # TAL-1971: path and title; a missing path is refused before any call.
+    *(pytest.param("deliver", "server.deliver", recorded, ("../secret.txt is outside this session's workspace", "outside_workspace"), ("path", "path is required"), id=f"deliver-{name}")
+      for name, recorded in zip(("titled_pdf", "untitled_download"), DELIVER_FIXTURES["server.deliver"], strict=True)),
+]
+
+
+@pytest.mark.parametrize(("tool", "method", "recorded", "refusal", "missing"), HARNESS_FORWARDS)
+def test_harness_simple_tools_forward_their_call_and_return_the_server_result_unchanged(monkeypatch, tool, method, recorded, refusal, missing) -> None:
+    """TAL-1963, TAL-1970, TAL-1971: each tool sends the calling Web session and its arguments to its ``server.*`` method
+    and returns the server's JSON, or its refusal, as sent."""
     from types import SimpleNamespace
 
     from talaria_sidecar.methods import chat
 
-    recorded = DECISION_FIXTURES[method][index]
     handler = getattr(harness_toolset, tool)
     monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id=recorded["params"]["caller_session_id"], agent=SimpleNamespace(session_id="20261108_130000_tip")))
     sent: list[tuple[str, dict]] = []
@@ -358,12 +373,18 @@ def test_harness_decision_tools_forward_their_call_and_return_the_server_result_
     assert validate(sent[0][1], SCHEMAS[method]["params"]) == []
     assert validate(recorded["result"], SCHEMAS[method]["result"]) == []
 
+    message, condition = refusal
+
     def refuse(m, params, timeout=None):
-        raise RpcError("item retention has 1 choices; each item has 2 to 4", condition="choices_count")
+        raise RpcError(message, condition=condition)
 
     monkeypatch.setattr(rpc, "call_server", refuse)
-    assert json.loads(handler(args, session_id="20261108_130000_tip")) == {"error": "item retention has 1 choices; each item has 2 to 4", "condition": "choices_count"}
+    assert json.loads(handler(args, session_id="20261108_130000_tip")) == {"error": message, "condition": condition}
     assert json.loads(handler(args))["condition"] == "caller_unknown"
+    if missing is not None:
+        field, refused = missing
+        partial = {key: value for key, value in args.items() if key != field}
+        assert json.loads(handler(partial, session_id="20261108_130000_tip")) == {"error": refused, "condition": "invalid_params"}
     assert len(sent) == 1
 
 
@@ -531,54 +552,6 @@ def test_harness_proposals_and_secret_requests_outlast_the_agent_clarify_default
     harness_toolset.request_secret({"env_name": "FOO_API_KEY", "purpose": "the Foo API"}, session_id="20261109_090000_tip")
     assert [(m, params["timeout_seconds"]) for m, params, _ in sent] == [("server.proposal_put", prompt), ("server.secret_request", prompt)]
     assert sent[1][2] == deadline
-
-
-@pytest.mark.parametrize("recorded", NOTIFY_FIXTURES["server.notify"], ids=["sent", "rate_limited"])
-def test_harness_notify_forwards_its_call_and_returns_the_server_result_unchanged(monkeypatch, recorded) -> None:
-    """TAL-1970: ``notify`` sends the title, body and level to ``server.notify`` and returns its JSON as the server sent it."""
-    from types import SimpleNamespace
-
-    from talaria_sidecar.methods import chat
-
-    monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id=recorded["params"]["caller_session_id"], agent=SimpleNamespace(session_id="20261109_090000_tip")))
-    sent: list[tuple[str, dict]] = []
-    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params)) or recorded["result"])
-    args = {key: value for key, value in recorded["params"].items() if key != "caller_session_id"}
-    assert json.loads(harness_toolset.notify(args, session_id="20261109_090000_tip")) == recorded["result"]
-    assert sent == [("server.notify", recorded["params"])]
-    assert validate(sent[0][1], SCHEMAS["server.notify"]["params"]) == []
-    assert validate(recorded["result"], SCHEMAS["server.notify"]["result"]) == []
-
-    def refuse(m, params, timeout=None):
-        raise RpcError("title is 81 characters; at most 80", condition="title_too_long")
-
-    monkeypatch.setattr(rpc, "call_server", refuse)
-    assert json.loads(harness_toolset.notify(args, session_id="20261109_090000_tip")) == {"error": "title is 81 characters; at most 80", "condition": "title_too_long"}
-    assert json.loads(harness_toolset.notify({"title": args["title"]}, session_id="20261109_090000_tip")) == {"error": "body is required", "condition": "invalid_params"}
-
-
-@pytest.mark.parametrize("recorded", DELIVER_FIXTURES["server.deliver"], ids=["titled_pdf", "untitled_download"])
-def test_harness_deliver_forwards_its_call_and_returns_the_server_result_unchanged(monkeypatch, recorded) -> None:
-    """TAL-1971: ``deliver`` sends the path and title to ``server.deliver`` and returns its JSON as the server sent it."""
-    from types import SimpleNamespace
-
-    from talaria_sidecar.methods import chat
-
-    monkeypatch.setitem(chat._RUNS, "stream-1", SimpleNamespace(session_id=recorded["params"]["caller_session_id"], agent=SimpleNamespace(session_id="20261109_090000_tip")))
-    sent: list[tuple[str, dict]] = []
-    monkeypatch.setattr(rpc, "call_server", lambda m, params, timeout=None: sent.append((m, params)) or recorded["result"])
-    args = {key: value for key, value in recorded["params"].items() if key != "caller_session_id"}
-    assert json.loads(harness_toolset.deliver(args, session_id="20261109_090000_tip")) == recorded["result"]
-    assert sent == [("server.deliver", recorded["params"])]
-    assert validate(sent[0][1], SCHEMAS["server.deliver"]["params"]) == []
-    assert validate(recorded["result"], SCHEMAS["server.deliver"]["result"]) == []
-
-    def refuse(m, params, timeout=None):
-        raise RpcError("../secret.txt is outside this session's workspace", condition="outside_workspace")
-
-    monkeypatch.setattr(rpc, "call_server", refuse)
-    assert json.loads(harness_toolset.deliver(args, session_id="20261109_090000_tip")) == {"error": "../secret.txt is outside this session's workspace", "condition": "outside_workspace"}
-    assert json.loads(harness_toolset.deliver({}, session_id="20261109_090000_tip")) == {"error": "path is required", "condition": "invalid_params"}
 
 
 @pytest.mark.parametrize(

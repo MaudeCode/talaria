@@ -10,7 +10,7 @@ import pytest
 
 from talaria_sidecar.methods import chat
 from talaria_sidecar.methods import config as config_methods
-from test_chat_turn import Ctx, FakeAgent, _params
+from test_chat_turn import Ctx, FakeAgent, _agent_surface, _params
 
 
 def _stub_turn(monkeypatch, tmp_path, cfg, session_id):
@@ -33,6 +33,7 @@ def _stub_turn(monkeypatch, tmp_path, cfg, session_id):
         module = types.ModuleType(name)
         module.__dict__.update(attrs)
         monkeypatch.setitem(sys.modules, name, module)
+    _agent_surface(monkeypatch)
     monkeypatch.setattr(chat, '_resolve_runtime', lambda *args: {'model': 'm', 'provider': 'p'})
     monkeypatch.setattr(chat, '_discover_mcp_tools', lambda run: None)
     FakeAgent.instances.clear()
