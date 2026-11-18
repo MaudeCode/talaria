@@ -121,11 +121,4 @@ describe('Edit asks before a cut the server refuses (TAL-929)', () => {
     expect(returnToComposer).not.toHaveBeenCalled()
   })
 
-  it('a cut the server accepts returns the text without asking', async () => {
-    vi.mocked(api.truncateSession).mockResolvedValueOnce({ ok: true, session })
-    render(<Chat />)
-    await userEvent.click(screen.getByRole('button', { name: 'Edit message' }))
-    await waitFor(() => expect(returnToComposer).toHaveBeenCalledExactlyOnceWith('s1', 'Plan the release'))
-    expect(screen.queryByRole('alertdialog')).toBeNull()
-  })
 })

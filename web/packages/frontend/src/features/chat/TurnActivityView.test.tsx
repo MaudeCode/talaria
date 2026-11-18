@@ -483,7 +483,10 @@ describe('turn worklog presentation', () => {
     if (mode === 'compact_worklog') fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
     expect(view.container.querySelector('[data-activity-steering]')).toHaveTextContent('Stop after the next sleep')
     expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(0)
-    if (mode === 'hide_all_activity') expect(view.container.querySelectorAll('[data-tool-id]')).toHaveLength(0)
+    if (mode === 'hide_all_activity') {
+      expect(view.container.querySelectorAll('[data-tool-id]')).toHaveLength(0)
+      expect(screen.getByText('Done.')).toBeVisible()
+    }
   })
 
   it('keeps a consumed steer visible as a user message between Worked phases after the turn settles', () => {

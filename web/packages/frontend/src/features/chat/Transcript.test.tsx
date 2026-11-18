@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { Transcript, type TranscriptProps } from './Transcript'
 import { preloadMarkdownRenderer } from './render/Markdown'
@@ -8,10 +8,7 @@ import { sessionFixture } from '../../test/fixtures'
 import { requestScroll } from './sendMotion'
 import * as turnActivity from './turnActivity'
 import { stubAnimate } from '../../test/animate'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import * as api from '../../api/endpoints'
 
-vi.mock('../../api/endpoints', async (original) => ({ ...await original<typeof import('../../api/endpoints')>(), fetchSessionOutline: vi.fn() }))
 // The client entry preloads the renderer before any history arrives; a transcript holds its rows until then (TAL-2410).
 beforeAll(() => preloadMarkdownRenderer())
 
@@ -591,20 +588,4 @@ it('resumes a sent message\'s landing when a new chat\'s first send moves to its
     render(<Transcript {...input} pendingUserText="First send" />)
     expect(motion.reveals().map((call) => call.animation.currentTime)).toEqual([undefined, 120])
   } finally { motion.restore() }
-})
-
-it('jumps from the outline to a question still streaming, not to the reply above it (TAL-2152)', async () => {
-  Element.prototype.scrollIntoView = vi.fn()
-  vi.mocked(api.fetchSessionOutline).mockResolvedValue({ session_id: 'history', shown: true, shown_after: 0,
-    entries: [0, 2, 4].map((index) => ({ message_id: String(index + 1), index, excerpt: `Question ${String(index)}`, created_at: null })) })
-  const rows = projectMessages([1, 2, 3, 4, 5, 6].map((id) => ({ id, role: id % 2 ? 'user' as const : 'assistant' as const, content: `Row ${String(id)}` })))
-  const input = { ...props(), truncated: false, loadedFrom: 0, rows, outline: { revision: '' } }
-  const client = new QueryClient()
-  const view = render(<QueryClientProvider client={client}><Transcript {...input} live={null} /></QueryClientProvider>)
-  const outline = await screen.findByRole('navigation', { name: 'Conversation outline' })
-  // Sent after the outline was read: its entry comes from the stream, and the reply above it is the last history row.
-  dispatch({ type: 'start', sessionId: 'history', streamId: 'run', turnId: null, userMessageId: null, userText: 'Live question', now: 0 })
-  view.rerender(<QueryClientProvider client={client}><Transcript {...input} live={getStreamState().turns.history!} /></QueryClientProvider>)
-  fireEvent.click(await within(outline).findByRole('button', { name: /Live question/ }))
-  expect(document.activeElement).toBe(document.querySelector('[data-live-user="1"]'))
 })

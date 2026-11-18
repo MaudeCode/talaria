@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { initialStreamState, isTerminal, liveText, parseSeq, streamReducer, type StreamState } from './reducer'
+import { initialStreamState, isTerminal, liveText, streamReducer, type StreamState } from './reducer'
 import { parseChatEvent } from '../contracts/sse'
 import { sessionFixture } from '../test/fixtures'
 
@@ -238,9 +238,13 @@ describe('stream reducer: idempotency and ownership', () => {
     expect(s.turns[SID]!.lastSeq).toBe(3)
   })
   it('does not treat cursors from another stream as sequence numbers', () => {
-    expect(parseSeq('other:5', STREAM)).toBeNull()
-    expect(parseSeq(`${STREAM}:7`, STREAM)).toBe(7)
-    expect(parseSeq('', STREAM)).toBeNull()
+    let s = started()
+    s = ev(s, 'token', { text: 'a' }, { id: `${STREAM}:7` })
+    // A lower number under another stream's cursor, or no cursor at all, is not a replay of this stream.
+    s = ev(s, 'token', { text: 'b' }, { id: 'other:5' })
+    s = ev(s, 'token', { text: 'c' })
+    expect(liveText(s.turns[SID]!)).toBe('abc')
+    expect(s.turns[SID]!.lastSeq).toBe(7)
   })
   it('ignores events from a stream that does not own the turn', () => {
     let s = started()

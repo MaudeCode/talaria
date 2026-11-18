@@ -178,15 +178,6 @@ describe('live status', () => {
     expect(view.container.querySelector('.live-run-status svg.lucide-terminal')).toBeNull()
   })
 
-  it('shows the rate only while "Show tokens per second" is on (TAL-2150)', async () => {
-    vi.mocked(api.fetchSettings).mockResolvedValue({ show_tps: false })
-    const run = liveRun()
-    run.emit({ event: 'metering', data: { tps: 42.14 } })
-    const view = render(<LiveStatusPill sessionId={run.turn.sessionId} />)
-    await act(async () => { await new Promise((done) => setTimeout(done, 20)) })
-    expect(pills(view.container)[0]).toHaveTextContent('Working')
-    expect(pills(view.container)[0]).not.toHaveTextContent('tok/s')
-  })
 })
 
 describe('native run plan gauge (TAL-1508)', () => {

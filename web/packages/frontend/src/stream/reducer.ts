@@ -187,7 +187,7 @@ function newTurn(sessionId: string, streamId: string, now: number, serverStarted
 }
 
 /** `stream:seq` cursors are opaque to clients except for duplicate detection within the same stream. */
-export function parseSeq(lastEventId: string, streamId: string): number | null {
+function parseSeq(lastEventId: string, streamId: string): number | null {
   if (!lastEventId) return null
   const idx = lastEventId.lastIndexOf(':')
   if (idx <= 0) return null

@@ -462,15 +462,6 @@ for (const name of ['explicitFinal', 'steering', 'activeSteering'] as const) {
   })
 }
 
-test('final-only mode retains recovered user steering', async ({ page }) => {
-  await page.route('**/api/settings', (route) => route.fulfill({ json: { chat_activity_display_mode: 'hide_all_activity' } }))
-  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'steer-hidden', title: 'Steering', messages: [sceneCases.steering] } } }))
-  await page.goto('/session/steer-hidden')
-  await expect(page.locator('[data-activity-steering]')).toContainText('Stop after the next sleep')
-  await expect(page.locator('[data-tool-id]')).toHaveCount(0)
-  await expect(page.getByText('Done.', { exact: true })).toBeVisible()
-})
-
 test('transcript loading sheen uses stepped timing in the built cascade', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   const gate = Promise.withResolvers<undefined>()
