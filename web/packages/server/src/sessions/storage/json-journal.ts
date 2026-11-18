@@ -5,9 +5,10 @@ import { access, lstat, open, readdir, readFile, stat, type FileHandle } from 'n
 import { setImmediate as nextTurn } from 'node:timers/promises'
 import { atomicWriteTextAsync, writeFully, writeFullyAsync } from '../../fs/atomic.js'
 import { dirname, join } from 'node:path'
+import { RELAY_CLOSE_EVENTS } from '@maudecode/talaria-web-contracts'
 
 
-import { LIVE_SNAPSHOT_MAX_BYTES, LIVE_SNAPSHOT_MAX_ROWS, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS, RUN_SUMMARY_TAIL_BYTES, SESSION_REPLAY_MAX_BYTES, SESSION_REPLAY_MAX_ROWS, staleInterruptedEvent, retentionPolicy, RUN_JOURNAL_DIR_NAME, SSE_RELAY_CLOSE_EVENTS, validateId, parseRunJournalEventId, journalEvent, selectAuthoritativeTerminalEvent, summaryFromEvents, summaryFromTail, archivedSummary, type JournalEvent, type RunSummary, type PruneOptions, type PruneResult } from '../journal.js'
+import { LIVE_SNAPSHOT_MAX_BYTES, LIVE_SNAPSHOT_MAX_ROWS, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS, RUN_SUMMARY_TAIL_BYTES, SESSION_REPLAY_MAX_BYTES, SESSION_REPLAY_MAX_ROWS, staleInterruptedEvent, retentionPolicy, RUN_JOURNAL_DIR_NAME, validateId, parseRunJournalEventId, journalEvent, selectAuthoritativeTerminalEvent, summaryFromEvents, summaryFromTail, archivedSummary, type JournalEvent, type RunSummary, type PruneOptions, type PruneResult } from '../journal.js'
 import type { JournalBackend, JournalEventMeta, JournalInput, SessionJournalReplay } from './backend.js'
 import { ARCHIVE_DIR, ARCHIVE_SUFFIX, JournalArchiveError, JournalReadLimit, NOFOLLOW, StagedFile, fsyncDir, logicalBytes, runLines, stageArchive } from './json-journal-archive.js'
 const SAFE_ID_RE = /^[A-Za-z0-9_.-]+$/
@@ -815,7 +816,7 @@ export class JsonJournalWriter {
     if (this.fsyncMode === 'eager' || event.terminal) this.syncs = this.syncs.then(() => new Promise((resolve) => { fsync(fd, () => { resolve() }) }))
     // Every frame waits for earlier fsyncs, so appends settle (and callers publish) in append order.
     const settled = this.syncs
-    if (SSE_RELAY_CLOSE_EVENTS.has(name)) this.closeHandle()
+    if (RELAY_CLOSE_EVENTS.has(name)) this.closeHandle()
     await settled
     return event
   }

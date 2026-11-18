@@ -8,7 +8,7 @@ import { reasoningProjection } from '../sessions/reasoning-display.js'
  * `_handle_session_events_stream`, `_handle_session_run_journal_stream_for_session`).
  */
 import type { RequestContext } from '../http/context.js'
-import { parseRunJournalEventId, PromptReplayFilter, runRowsAfter, SSE_RELAY_CLOSE_EVENTS, type JournalEvent, type RunJournal, type RunSummary } from '../sessions/journal.js'
+import { parseRunJournalEventId, PromptReplayFilter, runRowsAfter, type JournalEvent, type RunJournal, type RunSummary } from '../sessions/journal.js'
 import type { SessionJournalReplay } from '../sessions/storage/backend.js'
 import { nextItem, nextSessionItem, type StreamSubscriber } from '../sessions/streams.js'
 import { nextPendingItem, pendingForViewer } from '../sessions/pending.js'
@@ -17,7 +17,7 @@ import type { Session } from '../sessions/session.js'
 import { withSessionWireFlags } from '../sessions/list.js'
 import type { GatewayWatcher } from '../sessions/gateway-watcher.js'
 import type { SessionsChangedEvent } from '../sessions/events.js'
-import type { WebAudioCompletion } from '@maudecode/talaria-web-contracts'
+import { RELAY_CLOSE_EVENTS, type WebAudioCompletion } from '@maudecode/talaria-web-contracts'
 import { filterAsync, str } from '../util.js'
 import { outsideSourcesShown } from '../settings.js'
 import { resolveStreamOwner, streamRunSummary, streamVisibleToRequest } from './session-visibility.js'
@@ -290,7 +290,7 @@ async function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: s
       lastSeq = entry.seq
       if (!(await prompts.visible(entry))) continue
       sse.event(entry.event || 'message', (await publicJournalPayload(ctx, entry, legacy)), entry.event_id)
-      if (SSE_RELAY_CLOSE_EVENTS.has(entry.event)) terminal = true
+      if (RELAY_CLOSE_EVENTS.has(entry.event)) terminal = true
     }
   } finally {
     await legacy.close()
@@ -370,12 +370,12 @@ async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubsc
       const seq = sameRunSeq(eventId, streamId)
       if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, replayCutoffSeq, async (gap, summary) => { await replayRunJournal(ctx, sse, streamId, summary, gap.afterSeq, { maxSeq: gap.maxSeq, includeStale: false }) }))) return
       if (replayCutoffSeq !== null && seq !== null && seq <= replayCutoffSeq) {
-        if (SSE_RELAY_CLOSE_EVENTS.has(event)) return
+        if (RELAY_CLOSE_EVENTS.has(event)) return
         continue
       }
       if (!(await buffered.visible(event, data, seq))) continue
       sse.event(event, publicFramePayload(ctx, event, data, redacted), eventId)
-      if (SSE_RELAY_CLOSE_EVENTS.has(event)) return
+      if (RELAY_CLOSE_EVENTS.has(event)) return
     }
   } finally {
     await buffered.close()
@@ -749,7 +749,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
       if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, cutoff, async (gap) => { await emitReplay(ctx.deps.journal.iterRunEvents(sessionId, streamId, gap), streamId, null, new PromptReplayFilter((prompt) => ctx.deps.journal.iterRunEvents(sessionId, streamId, { afterSeq: prompt.seq, maxSeq: gap.maxSeq }), streamId)); }))) return
       // A lease that cut the backfill short must not send this later frame: its id would skip what the backfill left out.
       if (!(await sse.ready())) return
-      const terminal = SSE_RELAY_CLOSE_EVENTS.has(event)
+      const terminal = RELAY_CLOSE_EVENTS.has(event)
       const alreadySent = (cutoff !== null && seq !== null && seq <= cutoff) || (eventId !== null && sent.has(eventId))
       if (alreadySent) { if (terminal) return; continue }
       if (!(await buffered.visible(event, data, seq))) continue
