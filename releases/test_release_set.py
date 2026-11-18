@@ -120,6 +120,25 @@ class ReleaseSetTests(unittest.TestCase):
             "dry_run": False, "release_tag": "${{ needs.preflight.outputs.tag }}",
             "checks": "${{ needs.preflight.outputs.checks }}"})
 
+    def test_release_holds_workflow_changes_until_it_ends(self):
+        # RELEASES.md rule 6 (TAL-2516): the release freezes open pull requests that change a workflow file, thaws them
+        # however it ends, and CI sets each pull request's own status. All three name this release workflow, whose file
+        # is not the action's default release.yml, or the freeze never sees a release running.
+        release = workflow("production-cutover.yml")["jobs"]
+        ci = workflow("ci.yml")["jobs"]
+        steps = {"start": release["freeze"], "end": release["thaw"], "pull-request": ci["release-freeze"]}
+        for mode, job in steps.items():
+            with self.subTest(mode=mode):
+                (step,) = job["steps"]
+                self.assertRegex(step["uses"], r"^MaudeCode/\.github/actions/release-freeze@[0-9a-f]{40}$")
+                self.assertEqual(step["with"], {"mode": mode, "workflow": "production-cutover.yml"})
+                self.assertEqual(job["permissions"], {"statuses": "write", "pull-requests": "read", "actions": "read"})
+        self.assertEqual(release["freeze"]["needs"], "preflight")
+        self.assertEqual(release["thaw"]["if"], "always()")
+        self.assertEqual(set(release["thaw"]["needs"]), set(release) - {"thaw"})
+        # The status is the block: the job is no suite the release reuses and CI Gate does not wait on it.
+        self.assertNotIn("release-freeze", ci["gate"]["needs"])
+
     def test_a_set_released_with_a_main_ci_receipt_still_validates(self):
         # Sets released before TAL-2396 recorded a mainCI receipt; new sets have none
         # (test_independent_versions_and_expanded_contracts validates one).

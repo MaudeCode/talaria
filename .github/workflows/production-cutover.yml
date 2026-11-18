@@ -114,6 +114,18 @@ jobs:
             echo "- Component tags, created after publication: $(printf '%s' "$result" | jq -r '.request.tags | to_entries | map(.value) | join(", ")')"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # Holds workflow changes while the release runs (TAL-2516, RELEASES.md rule 6): fails the release-freeze commit
+  # status on every open pull request that changes a workflow file, since one merged now would make GitHub refuse the
+  # release's tag writes. The thaw job passes it again however the release ends.
+  freeze:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: { statuses: write, pull-requests: read, actions: read }
+    steps:
+      - uses: MaudeCode/.github/actions/release-freeze@e3a3f4a5a3ee052259af8b7260234b7af12167ed
+        with: { mode: start, workflow: production-cutover.yml }
+
   release:
     needs: preflight
     permissions:
@@ -131,3 +143,13 @@ jobs:
       dry_run: false
       release_tag: ${{ needs.preflight.outputs.tag }}
       checks: ${{ needs.preflight.outputs.checks }}
+
+  thaw:
+    needs: [preflight, freeze, release]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: { statuses: write, pull-requests: read, actions: read }
+    steps:
+      - uses: MaudeCode/.github/actions/release-freeze@e3a3f4a5a3ee052259af8b7260234b7af12167ed
+        with: { mode: end, workflow: production-cutover.yml }

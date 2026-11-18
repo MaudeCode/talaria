@@ -445,6 +445,17 @@ prints the exact command that pushes that ref at the frozen commit; run it from 
 clone, then re-run the failed jobs. Nothing retries it or uses another
 credential, and an existing ref is reused only when it names the same commit.
 
+The `release-freeze` commit status keeps that from happening (TAL-2516,
+`RELEASES.md` rule 6). The release's `freeze` job, right after preflight, sets
+it to failure on every open pull request that changes a file under
+`.github/workflows/`; its last job, `thaw`, sets it back to success however the
+release ended, unless another release is still running. CI's `Set the
+release-freeze status` job sets it on each pull request push: failure while a
+release runs and the pull request changes a workflow file, success otherwise.
+It is not a suite, so `CI Gate` and the release's reuse of CI jobs ignore it.
+A red `release-freeze` means a release is running: wait for it to finish. The
+status turns green by itself; nothing needs pushing or re-running.
+
 The plan's request has this shape; `release-set.yml` dry runs take the same:
 
 ```json
