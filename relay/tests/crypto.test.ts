@@ -12,7 +12,7 @@ beforeAll(() => {
 });
 
 describe("publisher signatures", () => {
-  it("binds an Ed25519 signature to the exact method, path, timestamp, nonce, and body", async () => {
+  it("verifies an Ed25519 signature over the canonical request and refuses a changed body", async () => {
     const keys = (await webcrypto.subtle.generateKey("Ed25519", true, [
       "sign",
       "verify",

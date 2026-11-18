@@ -1,9 +1,10 @@
 import workpoolTest from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
 import { generateKeyPairSync, verify } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
+import type { Id } from "../convex/_generated/dataModel";
 import {
   classifyApnsFailure,
   makeProviderToken,
@@ -12,10 +13,12 @@ import {
 } from "../convex/lib/apnsTransport.node";
 import { defaultNotificationPreferences } from "../convex/lib/model";
 import schema from "../convex/schema";
+import { type Backend, now, publish, runScheduledRecomputes, seed, snapshotState } from "./relayFixture";
 
 const modules = import.meta.glob("../convex/**/*.ts");
 
-const http2 = vi.hoisted(() => ({ requests: [] as Record<string, string>[] }));
+// What the fake APNs answers; each test starts from a 200.
+const http2 = vi.hoisted(() => ({ requests: [] as Record<string, string>[], reply: { status: 200, reason: undefined as string | undefined } }));
 
 vi.mock("node:http2", async () => {
   const { EventEmitter } = await import("node:events");
@@ -34,7 +37,8 @@ vi.mock("node:http2", async () => {
             destroy() {},
             end() {
               queueMicrotask(() => {
-                stream.emit("response", { ":status": 200, "apns-id": "apns-id" });
+                stream.emit("response", { ":status": http2.reply.status, "apns-id": "apns-id" });
+                if (http2.reply.reason) stream.emit("data", JSON.stringify({ reason: http2.reply.reason }));
                 stream.emit("end");
               });
             },
@@ -43,6 +47,17 @@ vi.mock("node:http2", async () => {
         },
       }),
   };
+});
+
+// Fake timers hold convex-test's scheduler and the APNs workpool, so a queued job never runs behind a test's back.
+beforeEach(() => {
+  vi.useFakeTimers({ now });
+  http2.requests.length = 0;
+  http2.reply = { status: 200, reason: undefined };
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 describe("APNs transport", () => {
@@ -168,15 +183,111 @@ describe("APNs transport", () => {
     for (const id of collapseIds) expect(Buffer.byteLength(id!)).toBeLessThanOrEqual(64);
   });
 
-  it("retries transient failures and invalidates only permanent token failures", () => {
-    expect(classifyApnsFailure({ status: 500 })).toEqual({ retry: true, invalidateToken: false });
-    expect(classifyApnsFailure({ status: 410, reason: "Unregistered" })).toEqual({
-      retry: false,
-      invalidateToken: true,
+  it.each([
+    [{ status: 500 }, { retry: true, invalidateToken: false }],
+    [{ status: 429, reason: "TooManyRequests" }, { retry: true, invalidateToken: false }],
+    // No :status header: the connection failed before APNs answered.
+    [{ status: 0 }, { retry: true, invalidateToken: false }],
+    [{ status: 410, reason: "Unregistered" }, { retry: false, invalidateToken: true }],
+    [{ status: 400, reason: "BadDeviceToken" }, { retry: false, invalidateToken: true }],
+    [{ status: 400, reason: "DeviceTokenNotForTopic" }, { retry: false, invalidateToken: true }],
+    [{ status: 400, reason: "PayloadTooLarge" }, { retry: false, invalidateToken: false }],
+    [{ status: 403, reason: "InvalidProviderToken" }, { retry: false, invalidateToken: false }],
+  ] as const)("classifies APNs %o as %o", (response, expected) => {
+    expect(classifyApnsFailure(response)).toEqual(expected);
+  });
+});
+
+describe("apns.sendJob", () => {
+  beforeEach(() => {
+    const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    vi.stubEnv("APNS_TEAM_ID", "TEAM123");
+    vi.stubEnv("APNS_KEY_ID", "KEY123");
+    vi.stubEnv("APNS_PRIVATE_KEY", privateKey.export({ type: "pkcs8", format: "pem" }).toString());
+  });
+
+  // A queued job of each kind, produced by Relay's own publish and recompute.
+  async function queuedJob(kind: "notification" | "live_activity_start" | "live_activity_update") {
+    const backend = await seed({
+      ...(kind === "notification" ? { pushToken: "push-token" } : {}),
+      ...(kind === "live_activity_start" ? { pushToStartToken: "start-token" } : {}),
+      activity: kind === "live_activity_update",
     });
-    expect(classifyApnsFailure({ status: 403, reason: "InvalidProviderToken" })).toEqual({
-      retry: false,
-      invalidateToken: false,
-    });
+    if (kind === "notification") {
+      await backend.mutation(internal.publishers.acceptSnapshot, {
+        ...publish, nonce: "n1", receivedAt: now + 1, snapshotId: "s1",
+        states: [snapshotState("session-1", 2, "waiting_for_approval"), snapshotState("session-2", 1, "running")],
+      });
+      await runScheduledRecomputes(backend);
+    } else {
+      await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    }
+    const job = (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect())).find((row) => row.kind === kind);
+    expect(job?.status).toBe("queued");
+    return { backend, job: job! };
+  }
+
+  const read = (backend: Backend, jobId: Id<"deliveryJobs">) => backend.run(async (ctx) => ({
+    job: await ctx.db.get(jobId),
+    device: (await ctx.db.query("devices").collect())[0]!,
+    activity: (await ctx.db.query("liveActivities").collect())[0],
+  }));
+
+  it("marks the job delivered with the APNs id when APNs accepts it", async () => {
+    const { backend, job } = await queuedJob("notification");
+
+    await expect(backend.action(internal.apns.sendJob, { jobId: job._id }))
+      .resolves.toEqual({ outcome: "delivered", status: 200, apnsId: "apns-id" });
+    expect((await read(backend, job._id)).job).toMatchObject({ status: "done", apnsStatus: 200, apnsId: "apns-id" });
+  });
+
+  it("throws on a transient failure so the workpool retries, keeping the token", async () => {
+    const { backend, job } = await queuedJob("notification");
+    http2.reply = { status: 500, reason: "InternalServerError" };
+
+    await expect(backend.action(internal.apns.sendJob, { jobId: job._id })).rejects.toThrow("APNs 500: InternalServerError");
+    const after = await read(backend, job._id);
+    expect(after.job?.status).toBe("running");
+    expect(after.device.pushToken).toBe("push-token");
+  });
+
+  it("ends the job without retrying or touching the token on a permanent provider failure", async () => {
+    const { backend, job } = await queuedJob("notification");
+    http2.reply = { status: 403, reason: "InvalidProviderToken" };
+
+    await expect(backend.action(internal.apns.sendJob, { jobId: job._id }))
+      .resolves.toMatchObject({ outcome: "permanent_failure", status: 403 });
+    const after = await read(backend, job._id);
+    expect(after.job).toMatchObject({ status: "dead", apnsStatus: 403, lastError: "InvalidProviderToken" });
+    expect(after.device.pushToken).toBe("push-token");
+  });
+
+  it.each([
+    ["notification", (state: Awaited<ReturnType<typeof read>>) => expect(state.device.pushToken).toBeUndefined()],
+    ["live_activity_start", (state: Awaited<ReturnType<typeof read>>) => expect(state.device.pushToStartToken).toBeUndefined()],
+    ["live_activity_update", (state: Awaited<ReturnType<typeof read>>) => expect(state.activity?.endedAt).toBe(now)],
+  ] as const)("retires the token a %s job used when APNs says it is unregistered", async (kind, retired) => {
+    const { backend, job } = await queuedJob(kind);
+    http2.reply = { status: 410, reason: "Unregistered" };
+
+    await expect(backend.action(internal.apns.sendJob, { jobId: job._id }))
+      .resolves.toMatchObject({ outcome: "permanent_failure", status: 410 });
+    const after = await read(backend, job._id);
+    expect(after.job?.status).toBe("dead");
+    retired(after);
+  });
+
+  it("reuses the provider token for 45 minutes, then signs a new one", async () => {
+    const { backend, job } = await queuedJob("notification");
+    http2.reply = { status: 500, reason: "InternalServerError" };
+    const send = async () => {
+      await expect(backend.action(internal.apns.sendJob, { jobId: job._id })).rejects.toThrow("APNs 500");
+      return http2.requests.at(-1)!.authorization;
+    };
+
+    const first = await send();
+    expect(await send()).toBe(first);
+    vi.setSystemTime(now + 45 * 60_000);
+    expect(await send()).not.toBe(first);
   });
 });
