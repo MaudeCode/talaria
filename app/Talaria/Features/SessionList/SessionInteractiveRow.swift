@@ -16,8 +16,7 @@ struct SessionListRow: View {
 
     var body: some View {
         row.equatable()
-            // The List's own row background shows the row sliding as one shape, with its actions right behind it.
-            .sidebarListRow(paintsBackground: false)
+            .sidebarListRow()
             .id(row.session.id)
             .transition(SessionListMotion.sessionRowTransition(reduceMotion: reduceMotion))
             .swipeActions(edge: .leading, allowsFullSwipe: false) {
@@ -102,7 +101,7 @@ struct SessionInteractiveRow: View, Equatable {
         #endif
         draggableRowContent
             // While picking chats the checkmarks carry selection, so the open chat stops reading as selected.
-            .sidebarRow(isSelected: !state.isSelectingSessions && state.isOpen, isListRow: false)
+            .sidebarRow(isSelected: !state.isSelectingSessions && state.isOpen, isListRow: false, revealsSwipe: !state.isSelectingSessions)
             .contextMenu { contextMenuContent(includesSelection: canEnterSelection) }
             .accessibilityActions {
                 rowMenu(placement: .menu).openBesideButton

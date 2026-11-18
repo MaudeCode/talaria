@@ -163,16 +163,10 @@ struct SessionArchiveUndoToast: View {
 }
 
 extension View {
-    /// A row without its own background keeps the List's, which the system draws as the row's shape while the row
-    /// slides open to its swipe actions (TAL-2399).
-    @ViewBuilder
-    func sessionsScreenListRow(insets: EdgeInsets = EdgeInsets(), paintsBackground: Bool = true) -> some View {
-        let row = listRowInsets(insets).listRowSeparator(.hidden)
-        if paintsBackground {
-            row.listRowBackground(Color(.systemBackground))
-        } else {
-            row
-        }
+    func sessionsScreenListRow(insets: EdgeInsets = EdgeInsets()) -> some View {
+        listRowInsets(insets)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color(.systemBackground))
     }
 
 }

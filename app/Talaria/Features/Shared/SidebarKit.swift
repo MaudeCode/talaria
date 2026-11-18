@@ -183,22 +183,52 @@ extension View {
     }
 
     /// A `SidebarList` row's List insets, hidden separator and background.
-    func sidebarListRow(paintsBackground: Bool = true) -> some View {
-        sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12), paintsBackground: paintsBackground)
+    func sidebarListRow() -> some View {
+        sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
     }
 
-    /// The shared selection chrome and VoiceOver trait, with optional List-specific insets.
+    /// The shared selection chrome and VoiceOver trait, with optional List-specific insets. A row with swipe actions
+    /// passes `revealsSwipe` to show the same shape in grey while it slides open (TAL-2399).
     @ViewBuilder
-    func sidebarRow(isSelected: Bool, isListRow: Bool = true) -> some View {
-        let row = background(
-            isSelected ? Color.accentColor.opacity(0.12) : Color.clear,
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-        )
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    func sidebarRow(isSelected: Bool, isListRow: Bool = true, revealsSwipe: Bool = false) -> some View {
+        let row = modifier(SidebarRowHighlight(isSelected: isSelected, revealsSwipe: revealsSwipe))
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
         if isListRow {
             row.sidebarListRow()
         } else {
             row
         }
+    }
+}
+
+/// The sidebar's selection shape. A swiped row shows it in grey, since the system's own swipe shape cannot take the
+/// selection's corners and insets; the row knows it is swiped when its content slides from where it rests.
+private struct SidebarRowHighlight: ViewModifier {
+    let isSelected: Bool
+    let revealsSwipe: Bool
+    @State private var resting: CGRect?
+    @State private var isSwiped = false
+
+    func body(content: Content) -> some View {
+        if revealsSwipe {
+            highlighted(content)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .scrollView) } action: { frame in
+                    // A new width is a new layout (rotation, a bar appearing), never a swipe; a swipe can move the width by
+                    // a fraction of a point.
+                    if abs((resting?.width ?? -1) - frame.width) > 1 { resting = frame }
+                    isSwiped = abs(frame.minX - (resting?.minX ?? frame.minX)) > 0.5
+                }
+        } else {
+            highlighted(content)
+        }
+    }
+
+    private func highlighted(_ content: Content) -> some View {
+        content.background(fill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var fill: Color {
+        if isSelected { return Color.accentColor.opacity(0.12) }
+        return isSwiped ? Color(.secondarySystemFill) : .clear
     }
 }
