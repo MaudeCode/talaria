@@ -1,28 +1,16 @@
+import os
 import XCTest
 @testable import TalariaKit
 
 final class ContractReadinessTests: APIClientTestCase {
     @MainActor
-    func testBlueprintCatalogLoadsWithEditorCatalogs() async throws {
-        var requested: [String] = []
-        let lock = NSLock()
-        let client = makeClient { request in
-            lock.withLock { requested.append(request.url!.path) }
-            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, Data("{}".utf8))
-        }
-        let catalogs = CronJobEditorCatalogs(client: client, includesBlueprints: true)
-        await catalogs.load()
-        XCTAssertTrue(requested.contains("/api/cron/blueprints"), "The task editor must load the Agent blueprint catalog")
-        await catalogs.load()
-        XCTAssertEqual(requested.filter { $0 == "/api/cron/blueprints" }.count, 2, "Retries keep the create-only catalog option")
-    }
-
-    @MainActor
     func testBlueprintPickFillAndEditorDraftUseServerFields() async throws {
+        let catalogLoads = OSAllocatedUnfairLock(initialState: 0)
         let client = makeClient { request in
             let json: String
             if request.url!.path == "/api/cron/blueprints" {
                 XCTAssertEqual(request.httpMethod, "GET")
+                catalogLoads.withLock { $0 += 1 }
                 json = #"{"blueprints":[{"key":"team:brief","title":"Team brief","description":"A digest","category":"daily","source":"plugin","plugin":"team","schedule_label":"Daily","slots":[{"name":"topic","type":"text","label":"Topic","default":null,"options":[],"optional":false,"strict":true,"help":""}],"future":true}]}"#
             } else if request.url!.path == "/api/cron/blueprints/fill" {
                 XCTAssertEqual(request.httpMethod, "POST")
@@ -37,6 +25,8 @@ final class ContractReadinessTests: APIClientTestCase {
         }
         let catalogs = CronJobEditorCatalogs(client: client, includesBlueprints: true)
         await catalogs.load()
+        await catalogs.load()
+        XCTAssertEqual(catalogLoads.withLock { $0 }, 2, "Retries keep the create-only catalog option")
         let blueprint = try XCTUnwrap(catalogs.blueprints.first)
         XCTAssertEqual(blueprint.plugin, "team")
         XCTAssertEqual(blueprint.scheduleLabel, "Daily")
@@ -308,7 +298,6 @@ final class ContractReadinessTests: APIClientTestCase {
             ),
             .init(name: "auxiliary reasoning Auto preview", endpoint: .reasoning(model: "", provider: "auto", auxiliaryTask: "vision"),
                   path: "/api/reasoning", query: ["auxiliary_task": "vision", "model": "", "provider": "auto"]),
-            .init(name: "reasoning save", endpoint: .reasoning(), path: "/api/reasoning"),
             .init(name: "personalities", endpoint: .personalities, path: "/api/personalities"),
             .init(name: "set personality", endpoint: .setPersonality, path: "/api/personality/set"),
             .init(name: "profiles", endpoint: .profiles, path: "/api/profiles"),
@@ -398,6 +387,10 @@ final class ContractReadinessTests: APIClientTestCase {
                 query: ["name": "swiftui-ui-patterns", "file": "references/navigation.md"]
             ),
             .init(name: "upload", endpoint: .upload, path: "/api/upload"),
+            .init(name: "export html", endpoint: .exportSession(sessionID: "abc 123", format: .html), path: "/api/session/export",
+                  query: ["session_id": "abc 123", "format": "html"]),
+            .init(name: "export json", endpoint: .exportSession(sessionID: "abc-123", format: .json), path: "/api/session/export",
+                  query: ["session_id": "abc-123", "format": "json"]),
             .init(name: "transcribe capability", endpoint: .transcribeCapability, path: "/api/transcribe/capability"),
             .init(name: "transcribe warm", endpoint: .transcribeWarm, path: "/api/transcribe/warm")
         ]
@@ -420,21 +413,27 @@ final class ContractReadinessTests: APIClientTestCase {
             XCTAssertNil(request.value(forHTTPHeaderField: "Origin"))
             XCTAssertNil(request.value(forHTTPHeaderField: "Referer"))
             XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+            let json = try JSONSerialization.jsonObject(with: try XCTUnwrap(apiTestBodyData(from: request))) as? [String: Any]
+            XCTAssertEqual(json?["session_id"] as? String, "abc123")
+            XCTAssertEqual(json?["pinned"] as? Bool, false)
+            XCTAssertNil(json?["sessionId"])
 
             return apiTestJSONResponse("""
             {
               "ok": true,
               "session": {
                 "session_id": "abc123",
-                "pinned": true
+                "pinned": false
               }
             }
             """, for: request)
         }
 
-        let response = try await client.pinSession(id: "abc123", pinned: true)
+        let response = try await client.pinSession(id: "abc123", pinned: false)
 
         XCTAssertEqual(response.ok, true)
+        XCTAssertEqual(response.session?.sessionId, "abc123")
+        XCTAssertEqual(response.session?.pinned, false)
     }
 
     func testMultipartPostRequestsOmitBrowserCSRFHeaders() async throws {

@@ -58,69 +58,25 @@ final class ComposerVoiceDraftComposerTests: XCTestCase {
         )
     }
 
-    func testVoiceInputPreflightRejectsZeroSampleRate() {
-        XCTAssertThrowsError(
-            try ComposerVoiceInputPreflight.validate(sampleRate: 0, channelCount: 1)
-        ) { error in
-            XCTAssertEqual(error as? ComposerVoiceInputError, .invalidInputFormat)
+    func testVoiceInputPreflightRejectsOutOfRangeFormats() {
+        let rates = ComposerVoiceInputPreflight.validSampleRateRange
+        let channels = ComposerVoiceInputPreflight.validChannelCountRange
+        let invalid: [(sampleRate: Double, channelCount: AVAudioChannelCount)] = [
+            (0, 1),
+            (.infinity, 1),
+            (rates.lowerBound - 1, 1),
+            (rates.upperBound + 1, 1),
+            (44_100, 0),
+            (44_100, channels.upperBound + 1)
+        ]
+        for format in invalid {
+            XCTAssertThrowsError(
+                try ComposerVoiceInputPreflight.validate(sampleRate: format.sampleRate, channelCount: format.channelCount),
+                "\(format)"
+            ) { error in
+                XCTAssertEqual(error as? ComposerVoiceInputError, .invalidInputFormat)
+            }
         }
-    }
-
-    func testVoiceInputPreflightRejectsInfiniteSampleRate() {
-        XCTAssertThrowsError(
-            try ComposerVoiceInputPreflight.validate(sampleRate: .infinity, channelCount: 1)
-        ) { error in
-            XCTAssertEqual(error as? ComposerVoiceInputError, .invalidInputFormat)
-        }
-    }
-
-    func testVoiceInputPreflightRejectsTooLowSampleRate() {
-        XCTAssertThrowsError(
-            try ComposerVoiceInputPreflight.validate(
-                sampleRate: ComposerVoiceInputPreflight.validSampleRateRange.lowerBound - 1,
-                channelCount: 1
-            )
-        ) { error in
-            XCTAssertEqual(error as? ComposerVoiceInputError, .invalidInputFormat)
-        }
-    }
-
-    func testVoiceInputPreflightRejectsTooHighSampleRate() {
-        XCTAssertThrowsError(
-            try ComposerVoiceInputPreflight.validate(
-                sampleRate: ComposerVoiceInputPreflight.validSampleRateRange.upperBound + 1,
-                channelCount: 1
-            )
-        ) { error in
-            XCTAssertEqual(error as? ComposerVoiceInputError, .invalidInputFormat)
-        }
-    }
-
-    func testVoiceInputPreflightRejectsZeroChannelCount() {
-        XCTAssertThrowsError(
-            try ComposerVoiceInputPreflight.validate(sampleRate: 44_100, channelCount: 0)
-        ) { error in
-            XCTAssertEqual(error as? ComposerVoiceInputError, .invalidInputFormat)
-        }
-    }
-
-    func testVoiceInputPreflightRejectsTooHighChannelCount() {
-        XCTAssertThrowsError(
-            try ComposerVoiceInputPreflight.validate(
-                sampleRate: 44_100,
-                channelCount: ComposerVoiceInputPreflight.validChannelCountRange.upperBound + 1
-            )
-        ) { error in
-            XCTAssertEqual(error as? ComposerVoiceInputError, .invalidInputFormat)
-        }
-    }
-
-    func testVoiceInputStartPolicyAllowsActiveAppState() {
-        XCTAssertTrue(ComposerVoiceInputStartPolicy.canStart(appIsActive: true))
-    }
-
-    func testVoiceInputStartPolicyRejectsInactiveAppState() {
-        XCTAssertFalse(ComposerVoiceInputStartPolicy.canStart(appIsActive: false))
     }
 
     func testVoiceInputStartPolicyRejectsMissingAudioInput() {

@@ -84,24 +84,12 @@ final class SourceFileHighlighterTests: XCTestCase {
         XCTAssertNil(SourceFileNavigation.clampedTargetLine(3, lineCount: 0))
     }
 
-    // The engines emit UIKit attributes on iOS and AppKit attributes on macOS, where these tests run.
+    // The engines emit AppKit attributes on macOS, where these tests run.
     private func hasColour(_ line: SourceLine) -> Bool {
-        line.segments.contains { segment in
-            #if os(iOS)
-            segment.runs.contains { $0.uiKit.foregroundColor != nil }
-            #else
-            segment.runs.contains { $0.appKit.foregroundColor != nil }
-            #endif
-        }
+        line.segments.contains { segment in segment.runs.contains { $0.appKit.foregroundColor != nil } }
     }
 
     private func hasFont(_ line: SourceLine) -> Bool {
-        line.segments.contains { segment in
-            #if os(iOS)
-            segment.runs.contains { $0.uiKit.font != nil }
-            #else
-            segment.runs.contains { $0.appKit.font != nil }
-            #endif
-        }
+        line.segments.contains { segment in segment.runs.contains { $0.appKit.font != nil } }
     }
 }

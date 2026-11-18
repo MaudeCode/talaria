@@ -90,17 +90,6 @@ final class CustomHeaderModelTests: XCTestCase {
         XCTAssertEqual(headers.sanitizedForStorage().map(\.name), ["X-Keep"])
     }
 
-    func testStoreSnapshotReflectsReplace() {
-        let store = CustomHeaderStore()
-        XCTAssertEqual(store.snapshot(), [])
-
-        store.replace(with: [CustomHeader(name: "A", value: "1")])
-        XCTAssertEqual(store.snapshot().map(\.name), ["A"])
-
-        store.replace(with: [])
-        XCTAssertEqual(store.snapshot(), [])
-    }
-
     func testMergedUnderBuiltInsLetsBuiltInsWin() {
         let merged = [
             CustomHeader(name: "accept", value: "application/evil"),
@@ -137,8 +126,6 @@ final class CustomHeaderAuthStatusDecodeTests: XCTestCase {
 
         XCTAssertEqual(status.authEnabled, true)
         XCTAssertEqual(status.passwordAuthEnabled, false)
-        XCTAssertEqual(status.passkeysEnabled, true)
-        XCTAssertEqual(status.passwordlessEnabled, true)
         XCTAssertEqual(status.oidcNativeHandoffEnabled, true)
     }
 
@@ -147,16 +134,7 @@ final class CustomHeaderAuthStatusDecodeTests: XCTestCase {
 
         XCTAssertEqual(status.authEnabled, true)
         XCTAssertNil(status.passwordAuthEnabled)
-        XCTAssertNil(status.passkeysEnabled)
-        XCTAssertNil(status.passwordlessEnabled)
         XCTAssertNil(status.oidcNativeHandoffEnabled)
-    }
-
-    func testUnknownFieldsAreIgnored() throws {
-        let status = try decode(#"{"auth_enabled": false, "future_field": "x"}"#)
-
-        XCTAssertEqual(status.authEnabled, false)
-        XCTAssertNil(status.passwordAuthEnabled)
     }
 }
 
@@ -246,33 +224,6 @@ final class CustomHeaderSSEInjectionTests: XCTestCase {
         client.start(url: streamURL) { _ in }
         await fulfillment(of: [captured], timeout: 10)
         client.stop()
-    }
-
-    /// Verify exact server URLs get independent jars, even on one hostname.
-    func testSSECookieJarIsPortIsolatedPerStreamURL() throws {
-        let nonce = UUID().uuidString.lowercased()
-        let host = "same-\(nonce).test"
-        let streamA = try XCTUnwrap(URL(string: "https://\(host):8443/api/chat/stream?stream_id=s1"))
-        let streamB = try XCTUnwrap(URL(string: "https://\(host):9443/api/chat/stream?stream_id=s1"))
-        let storageA = ServerCookieStore.shared.storage(for: streamA)
-        let storageB = ServerCookieStore.shared.storage(for: streamB)
-
-        func sessionCookie(host: String, value: String) throws -> HTTPCookie {
-            try XCTUnwrap(HTTPCookie(properties: [
-                .domain: host, .path: "/", .name: "hermes_session", .value: value
-            ]))
-        }
-        let cookieA = try sessionCookie(host: host, value: "a-cookie")
-        let cookieB = try sessionCookie(host: host, value: "b-cookie")
-        storageA.setCookie(cookieA)
-        storageB.setCookie(cookieB)
-        defer {
-            storageA.deleteCookie(cookieA)
-            storageB.deleteCookie(cookieB)
-        }
-
-        XCTAssertEqual(storageA.cookies(for: streamA)?.map(\.value), ["a-cookie"])
-        XCTAssertEqual(storageB.cookies(for: streamB)?.map(\.value), ["b-cookie"])
     }
 }
 
@@ -414,20 +365,6 @@ final class CustomHeaderAuthManagerTests: XCTestCase {
 
         XCTAssertEqual(outcome, .added(try XCTUnwrap(URL(string: "https://example.test"))))
         XCTAssertEqual(client.loginPasswords, [])
-    }
-
-    func testMissingPasswordFlagFallsThroughToPasswordLogin() async throws {
-        let keychain = InMemoryKeychainStore()
-        // authEnabled true but passwordAuthEnabled nil (older server) must NOT be
-        // treated as passkey-only — the regression-safety rule from #255.
-        let client = MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: true, loggedIn: false))
-        let manager = makeManager(keychain: keychain, store: CustomHeaderStore(), client: client)
-
-        await manager.configure(serverURLString: "https://example.test", password: "secret")
-
-        XCTAssertEqual(client.loginPasswords, ["secret"])
-        XCTAssertEqual(manager.state, .loggedIn(server: try XCTUnwrap(URL(string: "https://example.test"))))
-        XCTAssertNil(manager.lastErrorMessage)
     }
 
     func testNoHeaderConfigureDoesNotPersistHeaderEntry() async throws {

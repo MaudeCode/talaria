@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Profiles, personalities and commands without a name no longer flicker or lose their selection when a list refreshes.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

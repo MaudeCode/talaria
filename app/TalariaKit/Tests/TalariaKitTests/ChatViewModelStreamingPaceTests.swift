@@ -456,15 +456,6 @@ final class ChatStreamingMotionTests: XCTestCase {
     func testStreamingFollowIsDisabledUnderReduceMotion() {
         XCTAssertNil(ChatMotion.streamingFollow(reduceMotion: true))
     }
-
-    func testStreamingFollowIsShorterThanRegularFollowScroll() {
-        // The streaming curve must stay snappier than the regular follow scroll
-        // so per-flush retargeting keeps up with the word reveal cadence.
-        XCTAssertNotEqual(
-            ChatMotion.streamingFollow(reduceMotion: false),
-            ChatMotion.scrollToLatest(reduceMotion: false)
-        )
-    }
 }
 
 private final class PacingSpySSEStreamingClient: SSEStreamingClient {

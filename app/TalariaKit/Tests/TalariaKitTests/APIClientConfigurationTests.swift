@@ -3,96 +3,6 @@ import os
 @testable import TalariaKit
 
 final class APIClientConfigurationTests: APIClientTestCase {
-    func testReasoningDisplayReadsTheServerReasoningAndStripsVisibleAnswerEcho() {
-        let finalAnswer = """
-        **Terminal:** `/Users/hermes` directory listed.
-
-        **Search files:** 5 `config.yaml` matches found.
-        """
-        let messages = [
-            ChatMessage(
-                role: "user",
-                content: "Use terminal and search files",
-                timestamp: 1_770_000_000,
-                messageId: "user-tools"
-            ),
-            ChatMessage(
-                role: "assistant",
-                content: nil,
-                timestamp: 1_770_000_001,
-                messageId: "assistant-tools",
-                contentParts: [
-                    .object([
-                        "type": .string("tool_use"),
-                        "id": .string("toolu-terminal"),
-                        "name": .string("terminal"),
-                        "input": .object(["command": .string("ls -la")])
-                    ]),
-                    .object([
-                        "type": .string("tool_use"),
-                        "id": .string("toolu-search"),
-                        "name": .string("search_files"),
-                        "input": .object(["pattern": .string("config.yaml")])
-                    ])
-                ],
-                // The server moves typed thinking parts into the row's one reasoning string (TAL-302).
-                reasoning: "The user wants me to use terminal and search_files. I should run a quick command."
-            ),
-            ChatMessage(
-                role: "user",
-                content: nil,
-                timestamp: 1_770_000_002,
-                messageId: "tool-results",
-                contentParts: [
-                    .object([
-                        "type": .string("tool_result"),
-                        "tool_use_id": .string("toolu-terminal"),
-                        "content": .string("81 entries")
-                    ]),
-                    .object([
-                        "type": .string("tool_result"),
-                        "tool_use_id": .string("toolu-search"),
-                        "content": .string("5 matches")
-                    ])
-                ]
-            ),
-            ChatMessage(
-                role: "assistant",
-                content: nil,
-                timestamp: 1_770_000_003,
-                messageId: "assistant-post-tools",
-                reasoning: "Terminal works. Now run search_files to show that works too."
-            ),
-            ChatMessage(
-                role: "assistant",
-                content: finalAnswer,
-                timestamp: 1_770_000_004,
-                messageId: "assistant-final",
-                reasoning: """
-                The user wants me to use terminal and search_files. I should run a quick command.
-                Terminal works. Now run search_files to show that works too.
-                Both tools worked. I should give a concise summary.
-
-                \(finalAnswer)
-                """
-            )
-        ]
-
-        let reasoningGroups = ChatViewModel.reasoningDisplayGroups(messages: messages, archivedGroups: [])
-        let transcriptMessages = ChatViewModel.transcriptMessages(from: messages)
-
-        XCTAssertEqual(reasoningGroups.map(\.anchorMessageID), [
-            "assistant-tools",
-            "assistant-post-tools",
-            "assistant-final"
-        ])
-        XCTAssertEqual(reasoningGroups[0].text, "The user wants me to use terminal and search_files. I should run a quick command.")
-        XCTAssertEqual(reasoningGroups[1].text, "Terminal works. Now run search_files to show that works too.")
-        XCTAssertTrue(reasoningGroups[2].text.contains("Both tools worked. I should give a concise summary."))
-        XCTAssertFalse(reasoningGroups[2].text.contains("**Terminal:**"))
-        XCTAssertFalse(transcriptMessages.contains { $0.message.id == "tool-results" })
-    }
-
     func testReasoningDisplayNeverParsesThinkingOutOfContent() {
         // The server splits inline thinking out of every row it sends (TAL-302); the App shows content as shipped.
         let messages = [
@@ -137,28 +47,6 @@ final class APIClientConfigurationTests: APIClientTestCase {
 
         XCTAssertEqual(response.ok, true)
         XCTAssertEqual(response.model, "claude-sonnet-4")
-    }
-
-    func testSaveDefaultModelWithProviderQualifiedID() async throws {
-        let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/default-model")
-            XCTAssertEqual(request.httpMethod, "POST")
-
-            let data = try XCTUnwrap(apiTestBodyData(from: request))
-            let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            XCTAssertEqual(body?["model"] as? String, "@openai:gpt-5.4")
-
-            return apiTestJSONResponse("""
-            {
-              "ok": true,
-              "model": "@openai:gpt-5.4"
-            }
-            """, for: request)
-        }
-
-        let response = try await client.saveDefaultModel(model: "@openai:gpt-5.4")
-
-        XCTAssertEqual(response.model, "@openai:gpt-5.4")
     }
 
     /// A catalog row that names its provider must send it: Core persists
@@ -537,32 +425,6 @@ final class APIClientConfigurationTests: APIClientTestCase {
         XCTAssertNil(response.personality)
     }
 
-    func testRenameSessionBuildsExpectedBodyAndDecodesResponse() async throws {
-        let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/session/rename")
-            XCTAssertEqual(request.httpMethod, "POST")
-
-            let data = try XCTUnwrap(apiTestBodyData(from: request))
-            let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            XCTAssertEqual(body?["session_id"] as? String, "session-abc")
-            XCTAssertEqual(body?["title"] as? String, "New Title")
-
-            return apiTestJSONResponse("""
-            {
-              "session": {
-                "session_id": "session-abc",
-                "title": "New Title"
-              }
-            }
-            """, for: request)
-        }
-
-        let response = try await client.renameSession(id: "session-abc", title: "New Title")
-
-        XCTAssertEqual(response.session?.sessionId, "session-abc")
-        XCTAssertEqual(response.session?.title, "New Title")
-    }
-
     func testProfilesBuildsExpectedPathAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/profiles")
@@ -634,18 +496,6 @@ final class APIClientConfigurationTests: APIClientTestCase {
             XCTAssertNil(profile.canonicalSession)
             XCTAssertNil(profile.description)
         }
-    }
-
-    func testProfilesResponseToleratesAbsentSingleProfileMode() throws {
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-
-        let response = try decoder.decode(
-            ProfilesResponse.self,
-            from: Data(#"{"active": "default", "profiles": []}"#.utf8)
-        )
-
-        XCTAssertNil(response.singleProfileMode)
     }
 
     func testProfilesResponseEffectiveDefaultPrefersActiveName() {

@@ -496,8 +496,8 @@ public final class ChatViewModel {
     public var localAttachmentPreviews: [String: [String: Data]] { attachmentCoordinator.localAttachmentPreviews }
     /// The one notice above the composer (TAL-1001); a new one replaces it.
     public private(set) var currentNotice: ChatNotice?
-    /// How long a notice of each kind stays; tests shorten it.
-    @ObservationIgnored var noticeLifetime: (SessionNotice.Level) -> Duration = { $0.noticeLifetime }
+    /// Times each notice's level lifetime; tests drive it by hand.
+    @ObservationIgnored var noticeClock: any Clock<Duration> = ContinuousClock()
     @ObservationIgnored private var noticeDismissTask: Task<Void, Never>?
     @ObservationIgnored private var serverCommands: [UUID: Task<String, Error>] = [:]
     /// The Agent's active notices for the session, oldest first (TAL-831): the server's list, from the session and the
@@ -5175,9 +5175,9 @@ extension ChatViewModel {
             currentNotice = ChatNotice(id: UUID(), text: trimmed, level: level)
         }
         noticeDismissTask?.cancel()
-        let lifetime = noticeLifetime(level)
+        let clock = noticeClock
         noticeDismissTask = Task { [weak self] in
-            try? await Task.sleep(for: lifetime)
+            try? await clock.sleep(for: level.noticeLifetime)
             guard !Task.isCancelled else { return }
             self?.dismissNotice()
         }

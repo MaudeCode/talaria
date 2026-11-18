@@ -1,3 +1,4 @@
+import os
 import XCTest
 @testable import TalariaKit
 
@@ -27,7 +28,9 @@ final class ScreenLoadStateTests: APIClientTestCase {
     // MARK: - Agent panel empty states (TasksView "No Tasks", SkillsView "No Skills", …)
 
     func testTasksWithNoJobsShowTheEmptyState() async {
+        let requested = OSAllocatedUnfairLock(initialState: [String]())
         let client = makeClient { request in
+            requested.withLock { $0.append(request.url?.path ?? "") }
             switch request.url?.path {
             case "/api/crons": return apiTestJSONResponse(#"{"jobs":[]}"#, for: request)
             case "/api/crons/status": return apiTestJSONResponse(#"{"running":{}}"#, for: request)
@@ -38,7 +41,8 @@ final class ScreenLoadStateTests: APIClientTestCase {
 
         await model.load()
 
-        // TasksView: not loading, no error, no jobs -> "No Tasks".
+        // TasksView: not loading, no error, no jobs -> "No Tasks", after the load read the server's empty list.
+        XCTAssertTrue(requested.withLock { $0 }.contains("/api/crons"))
         XCTAssertFalse(model.isLoading)
         XCTAssertNil(model.errorMessage)
         XCTAssertTrue(model.jobs.isEmpty)

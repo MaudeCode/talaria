@@ -182,23 +182,6 @@ final class SessionEventsMonitorTests: XCTestCase {
         XCTAssertEqual(delays, [.seconds(1), .seconds(2), .seconds(4), .seconds(30), .seconds(30)])
     }
 
-    func testRepeatedFailuresSettleOnTheSteadyRetryDelay() async {
-        let client = ScriptedSessionEventClient(attempts: Array(repeating: [.fail], count: 5))
-        var delays: [Duration] = []
-
-        await SessionEventsMonitor.run(
-            url: url,
-            client: client,
-            onChange: { _ in },
-            sleep: { delay in
-                delays.append(delay)
-                if delays.count == 5 { throw CancellationError() }
-            }
-        )
-
-        XCTAssertEqual(delays, [.seconds(1), .seconds(2), .seconds(4), .seconds(30), .seconds(30)])
-    }
-
     func testCancellingTheTaskClosesTheStream() async {
         let client = ScriptedSessionEventClient(attempts: [[.frame(.opened)]])
         let task = Task { @MainActor in

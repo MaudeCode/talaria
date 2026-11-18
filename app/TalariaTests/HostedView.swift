@@ -461,6 +461,28 @@ extension XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(seconds))
     }
 
+    /// Renders `window` and runs the main-actor work it queued until `current()` has stayed unchanged for three hops,
+    /// without waiting on a clock. Work a render queues can itself yield before it counts, so one hop is not enough; each
+    /// hop also lets SwiftUI commit and start the tasks it queued. Reports whether the work went quiet within 50 hops.
+    @MainActor
+    func awaitRenderedQuiet<Value: Equatable>(in window: UIWindow, _ current: () -> Value) async -> Bool {
+        window.layoutIfNeeded()
+        let quietHops = 3
+        var counted = current()
+        var unchanged = 0
+        // One run-loop pass commits SwiftUI's pending transaction; async code cannot run the loop directly.
+        let runLoopPass = { RunLoop.current.run(until: Date()) }
+        for _ in 0..<50 where unchanged < quietHops {
+            runLoopPass()
+            await Task.yield()
+            window.layoutIfNeeded()
+            let now = current()
+            unchanged = now == counted ? unchanged + 1 : 0
+            counted = now
+        }
+        return unchanged >= quietHops
+    }
+
     /// Pumps the run loop until `condition` holds or `timeout` passes, and reports whether it held. Network-driven
     /// screens use it to wait for the in-process fixture's answers.
     @MainActor

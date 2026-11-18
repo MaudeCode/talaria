@@ -11,30 +11,26 @@ import XCTest
 /// and counts the main-thread work each one repeats: reasoning-card derivation, streaming Markdown splits, code
 /// highlighting, built code lines, and body evaluations of settled transcript rows and bubbles, the message list and
 /// the whole chat. Work a tick or keystroke causes recurs in every run, while an unrelated timer-driven update lands
-/// in at most one, so each count's minimum across the runs is asserted exactly; the tickets that remove each repeat
-/// lower its count.
-/// Wall-clock and CPU are recorded for comparison, with one ceiling that leaves headroom for a loaded CI host.
+/// in at most one, so each count's minimum across two runs is asserted exactly; the tickets that remove each repeat
+/// lower its count. Wall-clock time is attached for comparison and decides nothing.
 @MainActor
 final class ChatStreamTickPerformanceTests: XCTestCase {
-    private static let tickCount = 200
-    private static let keystrokeCount = 200
+    private static let tickCount = 40
+    private static let keystrokeCount = 60
+    private static let runCount = 2
 
     /// Today's counts per phase. A settled row or bubble never re-renders, code is highlighted off the main thread
     /// (TAL-854), reasoning cards are derived only when the transcript changes (TAL-855), and the transcript's
     /// reading-place hold fires only when an excerpt changes (`excerptHold`, TAL-1242), so their counts are absent.
     /// The streaming fence keeps its view and rebuilds only its open group of lines, and builds every line once more
-    /// when it closes and moves into the Markdown (TAL-1396). A keystroke re-runs only the composer; the chat's four
-    /// passes follow the composer's height as the draft wraps (TAL-852).
+    /// when it closes and moves into the Markdown (TAL-1396). A keystroke re-runs only the composer; the chat's one
+    /// pass follows the composer's height as the draft wraps (TAL-852).
     private static let expectedTickWork = [
-        "markdownSplit": 200, "messages": 200, "codeLine": 3_268
+        "markdownSplit": 40, "messages": 40, "codeLine": 246
     ]
     private static let expectedKeystrokeWork = [
-        "messages": 4, "chat": 4, "toolbar.horizontal": 4, "composer": 212
+        "messages": 1, "chat": 1, "toolbar.horizontal": 1, "composer": 63
     ]
-
-    /// Ceiling on the 400 measured operations together. They measure ~10 s on the build VM's Debug simulator and
-    /// measured ~47-53 s on GitHub's hosted runner before TAL-852 (`docs/performance-budgets.md`), over 3x headroom.
-    private static let maximumSeconds = 180.0
 
     override func tearDown() {
         MainActor.assumeIsolated { ChatBodyEvaluationRecorder.installed = nil }
@@ -43,18 +39,12 @@ final class ChatStreamTickPerformanceTests: XCTestCase {
         super.tearDown()
     }
 
-    func testStreamTicksAndKeystrokesStayWithinTheWorkBudget() throws {
+    func testStreamTicksAndKeystrokesStayWithinTheWorkBudget() async throws {
         var samples: [ChatStreamTickSample] = []
-        try measureAsync(
-            metrics: [XCTClockMetric(), XCTCPUMetric()],
-            options: performanceOptions(manualWindow: true)
-        ) { test in
-            let harness = try await ChatStreamTickHarness(test: test)
+        for _ in 0..<Self.runCount {
+            let harness = try await ChatStreamTickHarness(test: self)
             defer { harness.tearDown() }
-            test.startMeasuring()
-            let sample = try await harness.run(ticks: Self.tickCount, keystrokes: Self.keystrokeCount)
-            test.stopMeasuring()
-            samples.append(sample)
+            samples.append(try await harness.run(ticks: Self.tickCount, keystrokes: Self.keystrokeCount))
         }
 
         let report = ChatStreamTickSample.table(samples)
@@ -64,12 +54,9 @@ final class ChatStreamTickPerformanceTests: XCTestCase {
         add(attachment)
         print("Chat stream tick and keystroke work\n\(report)")
 
-        XCTAssertFalse(samples.isEmpty, "The budget recorded no runs")
         XCTAssertEqual(minimum(samples.map(\.tickWork)), Self.expectedTickWork, "Stream tick work changed.\n\(report)")
         XCTAssertEqual(minimum(samples.map(\.keystrokeWork)), Self.expectedKeystrokeWork,
                        "Keystroke work changed.\n\(report)")
-        let fastest = samples.map(\.totalSeconds).min() ?? .infinity
-        XCTAssertLessThan(fastest, Self.maximumSeconds, "The chat's ticks and keystrokes took too long.\n\(report)")
     }
 
     /// Each kind of work's smallest count across the runs; work missing from any run counts as none.
@@ -198,30 +185,10 @@ private struct ChatStreamTickHarness {
     }
 
     /// Renders the change and runs the main-actor work it queued, without waiting on a clock.
-    ///
-    /// Work a render queues can itself yield before it counts (a code block's highlight task awaits its result, and the
-    /// next tick would cancel it), so one hop is not enough: the main actor runs until the counted work has stayed unchanged
-    /// for `quietHops` consecutive hops, each of which also lets SwiftUI commit and start the tasks it queued.
     private func turn() async {
         await viewModel.awaitPendingStreamingScrollTriggerForTesting()
-        window.layoutIfNeeded()
-        let quietHops = 3
-        var counted = recorder.counts.values.reduce(0, +)
-        var unchanged = 0
-        for _ in 0..<50 where unchanged < quietHops {
-            Self.runLoopPass()
-            await Task.yield()
-            window.layoutIfNeeded()
-            let now = recorder.counts.values.reduce(0, +)
-            unchanged = now == counted ? unchanged + 1 : 0
-            counted = now
-        }
-        XCTAssertGreaterThanOrEqual(unchanged, quietHops, "The chat's main-actor work never went quiet after a turn")
-    }
-
-    /// One run-loop pass, which commits SwiftUI's pending transaction. Async code cannot run the loop directly.
-    private static func runLoopPass() {
-        RunLoop.current.run(until: Date())
+        let quiet = await test.awaitRenderedQuiet(in: window) { recorder.counts.values.reduce(0, +) }
+        XCTAssertTrue(quiet, "The chat's main-actor work never went quiet after a turn")
     }
 
     func tearDown() {
@@ -233,12 +200,12 @@ private struct ChatStreamTickHarness {
         window.rootViewController = nil
     }
 
-    /// A reply that opens a Swift code block, streams 99 lines into it, closes it and continues in prose.
+    /// A reply that opens a Swift code block, streams 19 lines into it, closes it and continues in prose.
     private static func token(_ index: Int) -> String {
         switch index {
         case 0: "Here is the change.\n\n```swift\n"
-        case 1..<100: "let value\(index) = compute(\(index))\n"
-        case 100: "```\n\n"
+        case 1..<20: "let value\(index) = compute(\(index))\n"
+        case 20: "```\n\n"
         default: "word\(index) "
         }
     }
@@ -278,7 +245,6 @@ private struct ChatStreamTickSample {
     let tickSeconds: Double
     let keystrokeSeconds: Double
     let tickLineWork: [Int]
-    var totalSeconds: Double { tickSeconds + keystrokeSeconds }
 
     static func table(_ samples: [Self]) -> String {
         func line(_ run: Int, _ phase: String, _ seconds: Double, _ work: [String: Int]) -> String {

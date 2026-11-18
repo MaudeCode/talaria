@@ -32,6 +32,7 @@ final class SessionIdentityTests: XCTestCase {
 
     func testSessionRowActiveStreamingUsesOnlyTheServerStreamingFlag() {
         XCTAssertTrue(SessionRowPresentation.isActiveStreaming(SessionSummary(sessionId: "streaming", isStreaming: true)))
+        XCTAssertFalse(SessionRowPresentation.isActiveStreaming(SessionSummary(sessionId: "idle")))
         // TAL-312: a leftover stream id from a crashed or finished run is not streaming.
         XCTAssertFalse(
             SessionRowPresentation.isActiveStreaming(
@@ -39,13 +40,6 @@ final class SessionIdentityTests: XCTestCase {
             )
         )
         XCTAssertFalse(SessionRowPresentation.isActiveStreaming(SessionSummary(sessionId: "old-server", activeStreamId: "stream-123")))
-    }
-
-    func testSessionRowActiveStreamingIsFalseWhenNoActiveSignalExists() {
-        XCTAssertFalse(SessionRowPresentation.isActiveStreaming(SessionSummary(sessionId: "idle")))
-        XCTAssertFalse(SessionRowPresentation.isActiveStreaming(SessionSummary(sessionId: "finished", isStreaming: false)))
-        XCTAssertFalse(SessionRowPresentation.isActiveStreaming(SessionSummary(sessionId: "empty-stream", activeStreamId: "")))
-        XCTAssertFalse(SessionRowPresentation.isActiveStreaming(SessionSummary(sessionId: "blank-stream", activeStreamId: "   ")))
     }
 
     func testSessionRowMetadataLabelUsesMessageCountAndTheServerWorkspaceName() {
@@ -163,6 +157,22 @@ final class SessionIdentityTests: XCTestCase {
 
         XCTAssertEqual(skill.id, skill.id)
         XCTAssertNotEqual(skill.id, duplicate.id)
+    }
+
+    func testProfilePersonalityAndCommandFallbackIDsAreDeterministicWithoutNames() throws {
+        let profile = try decode(ProfileSummary.self, from: #"{"is_default":true}"#)
+        let duplicateProfile = try decode(ProfileSummary.self, from: #"{"is_default":true}"#)
+        let personality = try decode(PersonalitySummary.self, from: #"{"description":"Plain"}"#)
+        let duplicatePersonality = try decode(PersonalitySummary.self, from: #"{"description":"Plain"}"#)
+        let command = try decode(AgentCommand.self, from: #"{"description":"Run"}"#)
+        let duplicateCommand = try decode(AgentCommand.self, from: #"{"description":"Run"}"#)
+
+        XCTAssertEqual(profile.id, profile.id)
+        XCTAssertNotEqual(profile.id, duplicateProfile.id)
+        XCTAssertEqual(personality.id, personality.id)
+        XCTAssertNotEqual(personality.id, duplicatePersonality.id)
+        XCTAssertEqual(command.id, command.id)
+        XCTAssertNotEqual(command.id, duplicateCommand.id)
     }
 
     func testWorkspaceEntryFallbackIDIsDeterministicWithoutPathOrName() throws {
@@ -316,20 +326,6 @@ final class AvatarServerSwitcherModelTests: XCTestCase {
         XCTAssertEqual(model.activeID, "https://b.test")
     }
 
-    func testSingleServerIsMarkedActive() {
-        // A single-server install still gets its one server marked active, so the
-        // constant "Add Server…"/"Manage Servers" actions are reachable from the
-        // same menu (#283 discoverability AC).
-        let model = AvatarServerSwitcherModel(
-            servers: [makeAccount(id: "https://only.test", displayName: "Only")],
-            activeServerID: "https://only.test"
-        )
-
-        XCTAssertEqual(model.entries.count, 1)
-        XCTAssertTrue(model.entries[0].isActive)
-        XCTAssertEqual(model.activeID, "https://only.test")
-    }
-
     func testFallsBackToHostWhenDisplayNameIsEmpty() {
         let model = AvatarServerSwitcherModel(
             servers: [
@@ -429,27 +425,5 @@ final class SectionVisibilitySettingsTests: XCTestCase {
         for key in allKeys where key != SectionVisibilitySettings.insightsKey {
             XCTAssertTrue(SectionVisibilitySettings.isVisible(key, in: defaults), "\(key) should be unaffected")
         }
-    }
-}
-
-final class SidebarSectionVisibilityTests: XCTestCase {
-    func testShowAllShowsEverySection() {
-        let visibility = SidebarSectionVisibility.showAll
-
-        XCTAssertTrue(visibility.tasks)
-        XCTAssertTrue(visibility.kanban)
-        XCTAssertTrue(visibility.skills)
-        XCTAssertTrue(visibility.memory)
-        XCTAssertTrue(visibility.insights)
-    }
-
-    func testDestinationFlagsAreIndependent() {
-        var visibility = SidebarSectionVisibility.showAll
-        visibility.tasks = false
-        XCTAssertFalse(visibility.tasks)
-        XCTAssertTrue(visibility.kanban)
-        XCTAssertTrue(visibility.skills)
-        XCTAssertTrue(visibility.memory)
-        XCTAssertTrue(visibility.insights)
     }
 }

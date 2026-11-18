@@ -76,17 +76,13 @@ final class SlashCommandExecutorTests: XCTestCase {
     }
 
     func testParseUnknownCommand() {
-        let parsed = SlashCommandExecutor.parse("/unknown")
-        XCTAssertNil(parsed?.command)
-        XCTAssertEqual(parsed?.name, "unknown")
-        XCTAssertEqual(parsed?.args, "")
-    }
-
-    func testParseResumeAsUnknownCommandName() {
-        let parsed = SlashCommandExecutor.parse("/resume")
-        XCTAssertNil(parsed?.command)
-        XCTAssertEqual(parsed?.name, "resume")
-        XCTAssertEqual(parsed?.args, "")
+        // `resume` is server-run only; without a catalog it has no built-in command.
+        for name in ["unknown", "resume"] {
+            let parsed = SlashCommandExecutor.parse("/\(name)")
+            XCTAssertNil(parsed?.command)
+            XCTAssertEqual(parsed?.name, name)
+            XCTAssertEqual(parsed?.args, "")
+        }
     }
 
     func testParseCommandsWithoutArgs() {

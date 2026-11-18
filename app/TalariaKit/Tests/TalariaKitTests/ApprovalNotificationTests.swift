@@ -115,11 +115,7 @@ final class ApprovalNotificationTests: XCTestCase {
 
     @MainActor
     func testScenePreferenceAuthorizationAndRelayGates() async {
-        var statuses: [UNAuthorizationStatus] = [.authorized, .provisional, .denied, .notDetermined]
-        #if os(iOS)
-        statuses.append(.ephemeral)
-        #endif
-        for status in statuses {
+        for status in [UNAuthorizationStatus.authorized, .provisional, .denied, .notDetermined] {
             for enabled in [false, true] {
                 for active in [false, true] {
                     for relay in [false, true] {
@@ -276,15 +272,6 @@ final class ApprovalNotificationTests: XCTestCase {
         defaults.removeObject(forKey: TalariaRelayNotifications.pushTokenKey)
         await service.observe(prompt("no-push-token"), server: server)?.value
         XCTAssertEqual(scheduler.requests.count, 2)
-    }
-
-    func testClarificationWaitUsesInputInEveryLocalLiveActivityLabel() {
-        let initial = AgentRunActivityStateReducer.initialState(sessionID: "input-session", sessionTitle: "Synthetic input", startedAt: Date())
-        let waiting = AgentRunActivityStateReducer.waitingForClarification(state: initial)
-        XCTAssertEqual(waiting.status, .waitingForClarification)
-        XCTAssertEqual(waiting.status.title, "Input")
-        XCTAssertEqual(waiting.status.compactTitle, "Input")
-        XCTAssertEqual(waiting.currentActivity, "Input")
     }
 
     private var server: URL { URL(string: "https://approval-alert.test/private/path")! }

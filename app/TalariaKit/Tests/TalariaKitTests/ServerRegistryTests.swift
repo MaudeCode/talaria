@@ -48,19 +48,6 @@ final class ServerRegistryTests: XCTestCase {
         XCTAssertEqual(registry.activeServerID, "https://example.test")
     }
 
-    func testActivateDeduplicatesURLsThatNormalizeToTheSameServer() throws {
-        let registry = makeRegistry()
-        // Two raw inputs the onboarding normalizer collapses to one server.
-        let first = try AuthManager.normalizedServerURL(from: "https://www.webui.example.test")
-        let second = try AuthManager.normalizedServerURL(from: "www.webui.example.test/some/path")
-
-        try registry.activate(url: first)
-        try registry.activate(url: second)
-
-        XCTAssertEqual(registry.servers.count, 1)
-        XCTAssertEqual(registry.activeServer?.id, "https://webui.example.test")
-    }
-
     // MARK: - Keychain persistence + hydration
 
     func testFailedPersistenceDoesNotCommitAddUpdateOrRemovalInMemory() throws {

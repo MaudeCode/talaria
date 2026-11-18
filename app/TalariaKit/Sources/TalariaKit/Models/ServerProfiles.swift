@@ -54,10 +54,15 @@ extension PersonalitiesResponse {
 }
 
 public struct PersonalitySummary: Decodable, Equatable, Hashable, Identifiable, Sendable {
-    public var id: String { name ?? UUID().uuidString }
+    private let fallbackIdentity = DecodedIdentityToken()
+    public var id: String { name ?? fallbackIdentity.value }
 
     public let name: String?
     public let description: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case name, description
+    }
 }
 
 public struct PersonalitySetResponse: Decodable, Equatable, Sendable {
@@ -122,7 +127,8 @@ public struct ProfileSwitchResponse: Decodable, Equatable, Sendable {
 }
 
 public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Sendable {
-    public var id: String { name ?? path ?? UUID().uuidString }
+    private let fallbackIdentity = DecodedIdentityToken()
+    public var id: String { name ?? path ?? fallbackIdentity.value }
 
     public let name: String?
     public let path: String?

@@ -21,35 +21,6 @@ final class APIClientSessionMutationTests: APIClientTestCase {
         }
     }
 
-    func testPostRequestsEncodeSnakeCaseBody() async throws {
-        let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/session/pin")
-            XCTAssertEqual(request.httpMethod, "POST")
-
-            let body = try XCTUnwrap(apiTestBodyData(from: request))
-            let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
-            XCTAssertEqual(json?["session_id"] as? String, "abc123")
-            XCTAssertEqual(json?["pinned"] as? Bool, false)
-            XCTAssertNil(json?["sessionId"])
-
-            return apiTestJSONResponse("""
-            {
-              "ok": true,
-              "session": {
-                "session_id": "abc123",
-                "pinned": false
-              }
-            }
-            """, for: request)
-        }
-
-        let response = try await client.pinSession(id: "abc123", pinned: false)
-
-        XCTAssertEqual(response.ok, true)
-        XCTAssertEqual(response.session?.sessionId, "abc123")
-        XCTAssertEqual(response.session?.pinned, false)
-    }
-
     func testBranchSessionBuildsExpectedBodyAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/branch")
@@ -403,33 +374,6 @@ final class APIClientSessionMutationTests: APIClientTestCase {
         XCTAssertEqual(response.session?.archived, true)
     }
 
-    func testUnarchiveSessionBuildsExpectedBodyAndDecodesResponse() async throws {
-        let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/session/archive")
-            XCTAssertEqual(request.httpMethod, "POST")
-
-            let body = try XCTUnwrap(apiTestBodyData(from: request))
-            let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
-            XCTAssertEqual(json?["session_id"] as? String, "abc123")
-            XCTAssertEqual(json?["archived"] as? Bool, false)
-
-            return apiTestJSONResponse("""
-            {
-              "ok": true,
-              "session": {
-                "session_id": "abc123",
-                "archived": false
-              }
-            }
-            """, for: request)
-        }
-
-        let response = try await client.archiveSession(id: "abc123", archived: false)
-
-        XCTAssertEqual(response.ok, true)
-        XCTAssertEqual(response.session?.archived, false)
-    }
-
     func testTruncateSessionBuildsExpectedBodyAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/truncate")
@@ -503,5 +447,31 @@ final class APIClientSessionMutationTests: APIClientTestCase {
         XCTAssertEqual(bodies.count, 2)
         XCTAssertEqual(bodies.first?["project_id"] as? String, "project-1")
         XCTAssertEqual(bodies.last.map { Set($0.keys) }, ["workspace"])
+    }
+
+    func testRenameSessionBuildsExpectedBodyAndDecodesResponse() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/session/rename")
+            XCTAssertEqual(request.httpMethod, "POST")
+
+            let data = try XCTUnwrap(apiTestBodyData(from: request))
+            let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            XCTAssertEqual(body?["session_id"] as? String, "session-abc")
+            XCTAssertEqual(body?["title"] as? String, "New Title")
+
+            return apiTestJSONResponse("""
+            {
+              "session": {
+                "session_id": "session-abc",
+                "title": "New Title"
+              }
+            }
+            """, for: request)
+        }
+
+        let response = try await client.renameSession(id: "session-abc", title: "New Title")
+
+        XCTAssertEqual(response.session?.sessionId, "session-abc")
+        XCTAssertEqual(response.session?.title, "New Title")
     }
 }

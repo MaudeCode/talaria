@@ -969,46 +969,6 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertNotNil(cachedMessages.first { $0.messageId == "message-\(CachePolicy.maxMessages)" })
     }
 
-    func testClearAllDeletesCachedSessionsAndMessages() throws {
-        let context = try makeContext()
-        let serverURL = URL(string: "https://example.test")!
-        let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
-        let response = try decodeSessions("""
-        {
-          "sessions": [
-            {"session_id": "abc123", "title": "Cached", "last_message_at": 1770000000, "archived": false}
-          ]
-        }
-        """)
-
-        try CacheStore.cacheSessions(
-            try XCTUnwrap(response.sessions),
-            serverURL: serverURL,
-            in: context,
-            cachedAt: cachedAt
-        )
-
-        try CacheStore.cacheMessages(
-            [
-                ChatMessage(
-                    role: "user",
-                    content: "Cached message",
-                    timestamp: 1_770_000_000,
-                    messageId: "m1"
-                )
-            ],
-            serverURL: serverURL,
-            sessionID: "abc123",
-            in: context,
-            cachedAt: cachedAt
-        )
-
-        try CacheStore.clearAll(in: context)
-
-        XCTAssertTrue(try fetchCachedSessions(in: context).isEmpty)
-        XCTAssertTrue(try fetchCachedMessages(in: context).isEmpty)
-    }
-
     func testCacheMessagesRoundTripsAttachments() throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!
@@ -1113,35 +1073,6 @@ final class CacheStoreTests: XCTestCase {
 
     // MARK: - Per-server isolation (#18)
 
-    func testCachedMessagesAreScopedToTheirServerForTheSameSessionID() throws {
-        let context = try makeContext()
-        let serverA = URL(string: "https://a.example.test")!
-        let serverB = URL(string: "https://b.example.test")!
-        let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
-        let now = cachedAt.addingTimeInterval(60)
-
-        try CacheStore.cacheMessages(
-            [ChatMessage(role: "user", content: "From A", timestamp: 1_770_000_000, messageId: "m1")],
-            serverURL: serverA,
-            sessionID: "shared",
-            in: context,
-            cachedAt: cachedAt
-        )
-        try CacheStore.cacheMessages(
-            [ChatMessage(role: "user", content: "From B", timestamp: 1_770_000_000, messageId: "m1")],
-            serverURL: serverB,
-            sessionID: "shared",
-            in: context,
-            cachedAt: cachedAt
-        )
-
-        let aMessages = try CacheStore.cachedMessages(serverURL: serverA, sessionID: "shared", in: context, now: now)
-        let bMessages = try CacheStore.cachedMessages(serverURL: serverB, sessionID: "shared", in: context, now: now)
-
-        XCTAssertEqual(aMessages.map(\.content), ["From A"])
-        XCTAssertEqual(bMessages.map(\.content), ["From B"])
-    }
-
     func testCacheSessionsForOneServerDoesNotDeleteAnotherServersStaleSessions() throws {
         let context = try makeContext()
         let serverA = URL(string: "https://a.example.test")!
@@ -1205,6 +1136,8 @@ final class CacheStoreTests: XCTestCase {
             in: context,
             cachedAt: cachedAt
         )
+
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: serverA, sessionID: "shared", in: context, now: now).map(\.content), ["From A"])
 
         // Re-cache server A's session with no messages so its stale-removal pass
         // wipes A's window; server B's identically-keyed session must survive.

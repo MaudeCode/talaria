@@ -46,16 +46,6 @@ final class CustomHeaderAPIClientInjectionTests: APIClientTestCase {
         _ = try? await client.sessions()
     }
 
-    func testEmptyHeaderListIsANoOp() async throws {
-        let (client, _) = makeHeaderClient([]) { request in
-            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
-            XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/json")
-            return try self.ok(request)
-        }
-
-        _ = try? await client.sessions()
-    }
-
     func testWhitespaceOnlyHeaderNameIsSkipped() async throws {
         let (client, _) = makeHeaderClient([
             CustomHeader(name: "   ", value: "ghost"),

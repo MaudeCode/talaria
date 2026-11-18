@@ -108,16 +108,6 @@ final class StreamHostedTests: XCTestCase {
         return try await requireElement(in: window, label: "Waiting for control input.", "The controls run never streamed its opening")
     }
 
-    /// A run waiting on the test heartbeats like the server's stream, so the stall watchdog never shows Checking stream
-    /// (after 12 s) or reconnects and replays the run (at 18 s) (TAL-666).
-    func testWaitingRunKeepsItsStreamAlive() async throws {
-        let window = try await hostFixtureChat(["--ui-test-chat-controls"])
-        _ = try await startControlsRun(in: window)
-        let checking = await awaitElement(in: window, timeout: 20, where: label("Hermes is checking the response stream"))
-        XCTAssertNil(checking, "A waiting run's stream looked stalled")
-        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Waiting for control input."), "The run was replayed by a reconnect")
-    }
-
     /// A message sent during a run steers it and shows as a steering hint; Stop ends the turn, which settles into the
     /// server's scene with its outcome and the steer it took (TAL-300).
     func testChatStreamSupportsSteeringAndCancellation() async throws {

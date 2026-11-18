@@ -259,4 +259,40 @@ final class ChatAttachmentPreviewViewModelTests: APIClientTestCase {
     private static func imageData() -> Data? {
         TestImages.pngData(width: 4, height: 4)
     }
+
+    func testChatAttachmentPreviewItemInfersImageMessageAttachment() {
+        let item = ChatAttachmentPreviewItem(
+            message: MessageAttachment(
+                name: nil,
+                path: "/tmp/workspace/photo.PNG",
+                mime: nil,
+                size: 128,
+                isImage: nil
+            ),
+            localData: Data([0x01])
+        )
+
+        XCTAssertEqual(item.displayName, "photo.PNG")
+        XCTAssertEqual(item.displayPath, "/tmp/workspace/photo.PNG")
+        XCTAssertTrue(item.inferredIsImage)
+        XCTAssertFalse(item.isKnownUnsupportedBinary)
+    }
+
+    func testChatAttachmentPreviewItemUsesPendingFileMetadata() {
+        let item = ChatAttachmentPreviewItem(
+            pending: PendingAttachment(
+                name: "report.pdf",
+                path: "/tmp/workspace/report.pdf",
+                mime: "application/pdf",
+                size: 2_048,
+                isImage: false,
+                thumbnailData: nil
+            )
+        )
+
+        XCTAssertEqual(item.displayName, "report.pdf")
+        XCTAssertEqual(item.displayPath, "/tmp/workspace/report.pdf")
+        XCTAssertFalse(item.inferredIsImage)
+        XCTAssertTrue(item.isKnownUnsupportedBinary)
+    }
 }

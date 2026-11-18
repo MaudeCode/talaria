@@ -161,46 +161,70 @@ final class StatusChipGroupTests: XCTestCase {
         }
     }
 
-    func testZeroOneTwoThreeAndQueueUpdatesKeepTheStatusAlive() throws {
+    func testSegmentCountChangesKeepTheTickingStatusBesideTheQueue() throws {
         let model = Model()
         let window = try hostWindow(Entries(model: model), animationsEnabled: true)
         XCTAssertFalse(HostedAccessibility.labels(in: window).contains("2 queued"))
         for count in [1, 2, 3, 1, 2, 3] {
             model.count = count
-            settle(0.3)
+            XCTAssertTrue(waitUntil { self.statusSharesTheQueueRow(in: window, queue: count > 1 ? "2 queued" : nil, goal: count > 2) },
+                          "\(count) segments never settled")
             let status = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Fixture is working on the response"))
             XCTAssertFalse(status.accessibilityTraits.contains(.button))
             XCTAssertEqual(model.appearances, 1, "Changing the segment count remounted the ticking status")
             if count > 1 {
-                let queue = try XCTUnwrap(HostedAccessibility.element(in: window, label: "2 queued"))
-                XCTAssertEqual(status.accessibilityFrame.midY, queue.accessibilityFrame.midY, accuracy: 1)
-                HostedAccessibility.activate(queue)
+                HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.element(in: window, label: "2 queued")))
             }
-            XCTAssertEqual(HostedAccessibility.labels(in: window).contains("Goal"), count > 2)
         }
         XCTAssertEqual(model.queueOpens, 4)
-        model.count = 1
-        settle(0.05)
+    }
+
+    func testRemovingAndReaddingASegmentMidAnimationKeepsTheStatusMounted() throws {
+        let model = Model()
         model.count = 3
-        settle(0.3)
+        let window = try hostWindow(Entries(model: model), animationsEnabled: true)
+        model.count = 1
+        XCTAssertTrue(waitUntil { !HostedAccessibility.labels(in: window).contains("Goal") })
+        // The segments animate for 0.2 s; the re-add lands while the removal is still animating.
+        model.count = 3
+        XCTAssertTrue(waitUntil { self.statusSharesTheQueueRow(in: window, queue: "2 queued", goal: true) })
         XCTAssertEqual(model.appearances, 1, "Removal and re-add during animation remounted the status")
+    }
+
+    func testQueueAndCompressionUpdatesKeepTheQueueUntilItEmpties() throws {
+        let model = Model()
+        model.count = 3
+        let window = try hostWindow(Entries(model: model), animationsEnabled: true)
         model.queueCount = 12
-        settle()
-        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "12 queued"))
+        XCTAssertTrue(waitUntil { self.statusSharesTheQueueRow(in: window, queue: "12 queued", goal: true) })
         model.compression = true
         model.count = 2
-        settle()
-        let compression = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Fixture is compressing the context"))
-        let queue = try XCTUnwrap(HostedAccessibility.element(in: window, label: "12 queued"))
-        XCTAssertEqual(compression.accessibilityFrame.midY, queue.accessibilityFrame.midY, accuracy: 1)
+        XCTAssertTrue(waitUntil {
+            self.statusSharesTheQueueRow(in: window, status: "Fixture is compressing the context", queue: "12 queued", goal: false)
+        })
         XCTAssertEqual(model.appearances, 1)
         model.runVisible = false
-        settle(0.3)
-        XCTAssertNil(HostedAccessibility.element(in: window, label: "Fixture is compressing the context"))
-        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "12 queued"), "Ending the run hid the queue")
+        XCTAssertTrue(waitUntil {
+            let labels = HostedAccessibility.labels(in: window)
+            return !labels.contains("Fixture is compressing the context") && labels.contains("12 queued")
+        }, "Ending the run hid the queue")
         model.count = 0
-        settle(0.3)
-        XCTAssertFalse(HostedAccessibility.labels(in: window).contains("12 queued"))
+        XCTAssertTrue(waitUntil { !HostedAccessibility.labels(in: window).contains("12 queued") })
+    }
+
+    /// The settled end state: the run status shows, the queue (when named) sits on its row, and Goal shows only when asked.
+    private func statusSharesTheQueueRow(
+        in window: UIWindow,
+        status statusLabel: String = "Fixture is working on the response",
+        queue queueLabel: String?,
+        goal: Bool
+    ) -> Bool {
+        guard let status = HostedAccessibility.element(in: window, label: statusLabel),
+              HostedAccessibility.labels(in: window).contains("Goal") == goal
+        else { return false }
+        guard let queueLabel else { return !HostedAccessibility.labels(in: window).contains { $0.hasSuffix(" queued") } }
+        guard let queue = HostedAccessibility.element(in: window, label: queueLabel) else { return false }
+        return abs(status.accessibilityFrame.midY - queue.accessibilityFrame.midY) <= 1
     }
 
     func testNarrowAndAccessibilityLayoutsPreserveIndependentControls() throws {

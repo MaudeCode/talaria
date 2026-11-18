@@ -168,6 +168,16 @@ func testContentPartsPreserveTextToolTextOrderAndOutputText() async throws {
     XCTAssertEqual(timeline.rows.map(\.kind), ["prose", "tools", "prose"])
     XCTAssertEqual(timeline.rows.compactMap(\.text), ["Before tool.", "It is 18C and sunny."])
     XCTAssertEqual(timeline.toolCalls.first?.id, "call-1")
+
+    // A tool part first keeps both parts, and only the text becomes the content.
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    let toolFirst = try decoder.decode(ChatMessage.self, from: Data(#"""
+    {"role":"assistant","content":[{"type":"tool_use","id":"toolu-1","name":"search_files","input":{"pattern":"*.md"}},
+      {"type":"text","text":"File search finished."}]}
+    """#.utf8))
+    XCTAssertEqual(toolFirst.content, "File search finished.")
+    XCTAssertEqual(toolFirst.contentParts?.count, 2)
 }
 
 func testContentPartsEndingInToolDoNotHideTrailingWorkAsFinalProse() throws {

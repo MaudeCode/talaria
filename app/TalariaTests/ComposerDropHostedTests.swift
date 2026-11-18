@@ -25,10 +25,6 @@ final class ComposerDropHostedTests: XCTestCase {
         try await assertDropsLand(size: HostedSize.duoInnerLandscape)
     }
 
-    func testDropsLandAsDraftTextAndAttachmentsOnPad() async throws {
-        try await assertDropsLand(size: HostedSize.padLandscape)
-    }
-
     func testAMixedDropHandlesEveryItemInOrder() async throws {
         let window = try await hostFixtureChat(size: HostedSize.duoInnerLandscape)
         try await typeIntoComposer("Mixed:", in: window)

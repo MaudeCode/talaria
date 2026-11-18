@@ -2,34 +2,6 @@ import XCTest
 @testable import TalariaKit
 
 final class CacheFallbackPolicyTests: XCTestCase {
-    func testUsesCacheForConnectivityErrors() {
-        let codes: [URLError.Code] = [
-            .notConnectedToInternet,
-            .networkConnectionLost,
-            .cannotConnectToHost,
-            .dnsLookupFailed,
-            .cannotFindHost,
-            .dataNotAllowed,
-            .timedOut
-        ]
-
-        for code in codes {
-            XCTAssertTrue(
-                CacheFallbackPolicy.shouldUseCache(for: APIError.network(underlying: URLError(code))),
-                "\(code) should use cache fallback"
-            )
-        }
-    }
-
-    func testUsesCacheForTransientUnavailableHTTPStatuses() {
-        for statusCode in [408, 502, 503, 504] {
-            XCTAssertTrue(
-                CacheFallbackPolicy.shouldUseCache(for: APIError.http(statusCode: statusCode, body: nil)),
-                "HTTP \(statusCode) should use cache fallback"
-            )
-        }
-    }
-
     func testDoesNotUseCacheForServerApplicationErrors() {
         let cases: [(name: String, error: Error)] = [
             ("invalid server URL", APIError.invalidServerURL),
@@ -43,6 +15,7 @@ final class CacheFallbackPolicyTests: XCTestCase {
             ("cancelled", APIError.network(underlying: URLError(.cancelled))),
             ("bad URL", APIError.network(underlying: URLError(.badURL))),
             ("certificate", APIError.network(underlying: URLError(.secureConnectionFailed))),
+            ("raw bad URL", URLError(.badURL)),
             ("plain cancellation", CancellationError())
         ]
 
@@ -66,17 +39,14 @@ final class CacheFallbackPolicyTests: XCTestCase {
             (APIError.network(underlying: URLError(.networkConnectionLost)), .connectionInterrupted),
             (APIError.network(underlying: URLError(.timedOut)), .connectionInterrupted),
             (URLError(.networkConnectionLost), .connectionInterrupted),
+            (URLError(.timedOut), .connectionInterrupted),
         ] + [408, 502, 503, 504].map { (APIError.http(statusCode: $0, body: nil), .serverUnavailable) }
 
         for testCase in cases {
             XCTAssertEqual(CacheFallbackPolicy.reason(for: testCase.error), testCase.reason, "\(testCase.error)")
+            XCTAssertTrue(CacheFallbackPolicy.shouldUseCache(for: testCase.error), "\(testCase.error)")
         }
         XCTAssertNil(CacheFallbackPolicy.reason(for: APIError.http(statusCode: 500, body: nil)))
         XCTAssertNil(CacheFallbackPolicy.reason(for: APIError.network(underlying: URLError(.cancelled))))
-    }
-
-    func testRawURLErrorUsesSameConnectivityRules() {
-        XCTAssertTrue(CacheFallbackPolicy.shouldUseCache(for: URLError(.timedOut)))
-        XCTAssertFalse(CacheFallbackPolicy.shouldUseCache(for: URLError(.badURL)))
     }
 }

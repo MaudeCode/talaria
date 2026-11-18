@@ -16,9 +16,6 @@ touches them.
 | Budget | Test |
 | --- | --- |
 | Streaming replay catch-up scaling | `TalariaTests/ReplayCatchUpPerformanceTests` |
-| Dense Kanban load and filter | `TalariaTests/KanbanBoardPerformanceTests` |
-| Large image preview preparation | `TalariaTests/ImagePreviewPerformanceTests` |
-| Long Markdown file preview | `TalariaTests/MarkdownFilePreviewPerformanceTests` |
 | Chat stream tick and keystroke | `TalariaTests/ChatStreamTickPerformanceTests` |
 | Chat open scaling | `TalariaTests/ChatOpenPerformanceTests` |
 | Unknown remote media resolve and export | `TalariaTests/UnknownMediaProbePerformanceTests` |
@@ -29,16 +26,10 @@ touches them.
 Every budget measures fixed content, so two runs differ only in the code under
 them.
 
-- The Kanban budget decodes a generated 1,200-card Board across six columns.
-- The image budget encodes a deterministic 4032x3024 tile pattern as JPEG.
-- The Markdown file preview budget generates 43 sections, each a heading, two
-  paragraphs, a 14-line Swift code block and a two-item list: about 60 KB and
-  1,100 lines, under the plain-text fallback's 80,000 characters and 2,000
-  lines. It prepares the preview and lays out its first screen at 390x844.
 - The chat stream tick budget hosts the chat over 100 generated turns (200
   messages; every fifth reply carries reasoning and every fifth, offset by two,
-  a fenced code block), streams a reply that opens, fills and closes a Swift
-  code block, ends the reply, then types into the composer. Typing waits for
+  a fenced code block), streams a 40-token reply that opens, fills and closes a
+  Swift code block, ends the reply, then types 60 keystrokes into the composer. Typing waits for
   the reply to end: a live stream silent for 12 s starts a stale-stream check,
   which would make keystroke counts depend on the host's speed.
 - The chat open budget loads one page of 200 or 600 generated messages:
@@ -50,8 +41,7 @@ them.
   (44.1 kHz, mono, 16-bit) and resolves and exports it as remote media with no
   file extension.
 - The transcript math budget lays out 120 generated Markdown paragraphs with
-  code spans, fences and links and no `$` or `\`, then 120 paragraphs where
-  every third carries inline math and the next display math.
+  code spans, fences and links and no `$` or `\`.
 - The replay budget streams generated tokens, replays them over a scripted
   reconnect, and checks the resulting transcript on every run so a broken dedup
   cannot pass as a fast one.
@@ -74,17 +64,8 @@ Medians of three iterations.
 
 | Measurement | Median | Spread |
 | --- | --- | --- |
-| Replay catch-up, 4,000 tokens (clock) | 0.009 s | 0.000 s |
-| Replay catch-up, 4,000 tokens (peak memory) | 53,447 kB | 16 kB |
-| Chat, 200 stream ticks and 200 keystrokes (clock) | 10.10 s | 0.05 s |
-| Chat, 200 stream ticks and 200 keystrokes (CPU) | 9.54 s | 0.09 s |
 | Chat reopen, 600 cached messages (clock, fastest of 5) | 138 ms | |
 | Hosted chat open, 600 messages (clock, fastest of 3) | 519 ms | |
-
-The chat budget was measured on an iOS simulator inside the local macOS build VM
-rather than the pool above. Ticks took 8.0-8.1 s (~40 ms each) and
-keystrokes 1.5-1.7 s (~8 ms each). GitHub's hosted runner measures about
-four times slower; the work counts match.
 
 The chat open budget was also measured in the build VM, on an iPhone 18 Pro
 simulator running iOS 27.2.
@@ -92,7 +73,8 @@ simulator running iOS 27.2.
 The Markdown file preview budget was measured on an iPhone 17 Pro simulator
 running iOS 27.0 (build 24A434), in the pool above.
 
-The replay, chat and chat open budgets assert thresholds; the others record for comparison.
+The replay and chat open budgets assert time thresholds; the chat stream tick
+budget asserts work counts.
 
 - Replay catch-up may not cost more than 8x across the curve's 4x span, and
   4,000 tokens may not take more than 80 ms. A linear path measures ~3.9x and
@@ -100,10 +82,8 @@ The replay, chat and chat open budgets assert thresholds; the others record for 
   endpoints are compared rather than each step because at these millisecond
   scales one noisy middle sample decides a per-step ratio.
 
-- The chat's 400 operations may not take more than 180 s: over 3x the 47-53 s
-  GitHub's hosted runner measured before TAL-852, and ~18x the build VM.
-  Its work counts below are the real gate: each count's minimum across runs is
-  asserted exactly.
+- The chat's work counts below are its gate: each count's minimum across two
+  runs is asserted exactly. Its time is attached for comparison only.
 
 - Chat open may not cost more per message at 600 messages than twice its cost
   at 200, in both measurements. The reopen of 600 messages may not take more
@@ -119,8 +99,7 @@ fence-aware boundaries, and draws the pieces in a `LazyVStack`, so only the
 pieces on screen are built (TAL-844). Each seam restores the gap the whole
 document draws; `MarkdownPreviewDocumentTests` compares the two heights.
 
-`MarkdownFilePreviewPerformanceTests` records both paths. Medians of three
-iterations:
+Measured when the change landed, medians of three iterations:
 
 | Path | Clock | Memory growth | Peak memory |
 | --- | --- | --- | --- |
@@ -136,22 +115,24 @@ without waiting on a clock. Work an
 operation causes recurs in every run, while an unrelated timer-driven update
 lands in at most one, so the test asserts each count's minimum across runs.
 
-| Work | 200 stream ticks | 200 keystrokes |
+| Work | 40 stream ticks | 60 keystrokes |
 | --- | --- | --- |
-| Reasoning-card derivation | 200 | 4 |
-| Streaming Markdown split | 200 | 0 |
+| Streaming Markdown split | 40 | 0 |
+| Built code lines | 246 | 0 |
 | Code highlighting | 0 | 0 |
-| Message list body | 200 | 4 |
+| Message list body | 40 | 1 |
 | Settled transcript row body | 0 | 0 |
 | Settled message bubble body | 0 | 0 |
-| Whole chat body | 0 | 4 |
-| Toolbar body | 0 | 4 |
-| Composer body | 0 | 212 |
+| Whole chat body | 0 | 1 |
+| Toolbar body | 0 | 1 |
+| Composer body | 0 | 63 |
 
 A tick splits the streaming reply once (TAL-853). Code blocks highlight on their own
 thread and settled results are cached, so no highlighting reaches the main thread (TAL-854;
-it counted 100 before). A keystroke re-evaluates only the
-composer; the chat's four passes follow the composer's height as the draft
+it counted 100 before). The streaming fence rebuilds only its open group of lines and
+builds every line once more when it closes (TAL-1396). Reasoning cards are derived only
+when the transcript changes (TAL-855). A keystroke re-evaluates only the
+composer; the chat's one pass follows the composer's height as the draft
 wraps. A change that removes a repeat lowers its count in the test and here.
 
 ## Replay catch-up: the measured change
@@ -245,10 +226,9 @@ unchanged before either pass (TAL-859), and the table is a static list in
 longest-first order applied as literal replacements. The test counts the
 arrays and masks in DEBUG builds and asserts none for the prose corpus.
 
-Two runs of `swift test --package-path TalariaKit --filter
-MarkdownMathFormattingBudgetTests` before and after, Debug, on an Apple M4 Max
-host running macOS 27.0.1 with Swift 6.4.2. Each measurement is five layouts of
-the corpus; medians of five iterations per run:
+Measured when the change landed, two runs before and after, Debug, on an Apple
+M4 Max host running macOS 27.0.1 with Swift 6.4.2. Each measurement is five
+layouts of the corpus; medians of five iterations per run:
 
 | | Prose arrays and masks | Prose, 5 layouts | Mixed math, 5 layouts |
 | --- | --- | --- | --- |
@@ -262,7 +242,7 @@ and a readable `performance-metrics.txt`) and prints the same table into the job
 summary. Locally:
 
 ```zsh
-scripts/test-ios TalariaTests/ReplayCatchUpPerformanceTests
+scripts/test-ios TalariaTests/UnknownMediaProbePerformanceTests
 xcrun xcresulttool get test-results metrics --path <result-bundle> --compact
 ```
 

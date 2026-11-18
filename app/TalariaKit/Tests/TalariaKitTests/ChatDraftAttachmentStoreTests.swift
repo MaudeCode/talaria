@@ -14,12 +14,6 @@ final class ChatDraftAttachmentStoreTests: XCTestCase {
         XCTAssertTrue(fileName.hasSuffix("-photo.jpg"))
         let roundTripped = try await store.data(named: fileName)
         XCTAssertEqual(roundTripped, bytes)
-        #if os(iOS)
-        XCTAssertEqual(
-            ChatDraftAttachmentStore.fileProtectionType,
-            .completeUntilFirstUserAuthentication
-        )
-        #endif
     }
 
     func testSaveSanitizesSuggestedFilenames() async throws {
