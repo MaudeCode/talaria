@@ -258,33 +258,48 @@ describe("feedback operator queue", () => {
     }, "wrong-token")).status).toBe(401);
   });
 
-  it("lists pending reports oldest first and acknowledges delivery idempotently", async () => {
-    const { submit, signedSubmit, operator } = await relay();
+  // Three reports a second apart: unverified, verified (signed by the publisher), unverified.
+  async function threeReports() {
+    const queue = await relay();
     const ids: string[] = [];
-    for (const send of [submit, signedSubmit, submit]) {
+    for (const send of [queue.submit, queue.signedSubmit, queue.submit]) {
       const response = await send(report({ installId: uuid() }));
       ids.push(((await response.json()) as { reportId: string }).reportId);
       clock += 1_000;
     }
     const pending = async (query = "") => {
-      const response = await operator(`/v1/feedback/pending${query}`);
+      const response = await queue.operator(`/v1/feedback/pending${query}`);
       expect(response.status).toBe(200);
       return ((await response.json()) as { reports: { reportId: string; tier: string; publisherId?: string; createdAt: number; payload: unknown }[] }).reports;
     };
+    const ack = (reportId: string, body: unknown) => queue.operator(`/v1/feedback/${reportId}/ack`, {
+      method: "POST", body: JSON.stringify(body),
+    });
+    return { ...queue, ids, pending, ack };
+  }
+
+  it("lists pending reports oldest first with their tier, publisher and payload", async () => {
+    const { ids, pending } = await threeReports();
     const all = await pending();
     expect(all.map((entry) => entry.reportId)).toEqual(ids);
     expect(all[0]).toMatchObject({ tier: "unverified", createdAt: start });
     expect(all[0]?.publisherId).toBeUndefined();
     expect(all[1]).toMatchObject({ tier: "verified", publisherId: "https://feedback.example", createdAt: start + 1_000 });
     expect(all[2]?.payload).toMatchObject({ title: fixture.title, kind: fixture.kind });
-    expect((await pending("?limit=2")).map((entry) => entry.reportId)).toEqual(ids.slice(0, 2));
-    for (const limit of ["0", "51", "abc", "1.5"]) {
-      expect((await operator(`/v1/feedback/pending?limit=${limit}`)).status).toBe(400);
-    }
+  });
 
-    const ack = (reportId: string, body: unknown) => operator(`/v1/feedback/${reportId}/ack`, {
-      method: "POST", body: JSON.stringify(body),
-    });
+  it("returns at most the requested number of pending reports", async () => {
+    const { ids, pending } = await threeReports();
+    expect((await pending("?limit=2")).map((entry) => entry.reportId)).toEqual(ids.slice(0, 2));
+  });
+
+  it.each(["0", "51", "abc", "1.5"])("refuses a pending limit of %s", async (limit) => {
+    const { operator } = await relay();
+    expect((await operator(`/v1/feedback/pending?limit=${limit}`)).status).toBe(400);
+  });
+
+  it("acknowledges delivery idempotently, refuses another ticket key, and drops the report from the queue", async () => {
+    const { ids, pending, ack } = await threeReports();
     const delivered = await ack(ids[0]!, { ticketKey: "TAL-9001" });
     expect(delivered.status).toBe(200);
     expect(await delivered.json()).toEqual({ reportId: ids[0], ticketKey: "TAL-9001", status: "delivered" });
@@ -292,11 +307,18 @@ describe("feedback operator queue", () => {
     const conflict = await ack(ids[0]!, { ticketKey: "TAL-9002" });
     expect(conflict.status).toBe(409);
     expect(await conflict.json()).toEqual({ error: "ticket_key_conflict" });
-    expect((await ack("unknown-report", { ticketKey: "TAL-9001" })).status).toBe(404);
-    for (const invalid of [{}, { ticketKey: "not a key" }, { ticketKey: "TAL-1", extra: true }]) {
-      expect((await ack(ids[1]!, invalid)).status).toBe(400);
-    }
     expect((await pending()).map((entry) => entry.reportId)).toEqual(ids.slice(1));
+  });
+
+  it("refuses an acknowledgement for an unknown report", async () => {
+    const { ack } = await threeReports();
+    expect((await ack("unknown-report", { ticketKey: "TAL-9001" })).status).toBe(404);
+  });
+
+  it.each([{}, { ticketKey: "not a key" }, { ticketKey: "TAL-1", extra: true }])("refuses a malformed acknowledgement %o", async (invalid) => {
+    const { ids, ack, pending } = await threeReports();
+    expect((await ack(ids[1]!, invalid)).status).toBe(400);
+    expect((await pending()).map((entry) => entry.reportId)).toEqual(ids);
   });
 
   it("signals only pending report IDs, and only to the operator token", async () => {

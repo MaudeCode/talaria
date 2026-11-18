@@ -2,7 +2,7 @@ import workpoolTest from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
 import { webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
 import { bytesToBase64Url, sha256 } from "../convex/lib/crypto";
@@ -149,32 +149,41 @@ it("accepts only the bounded session-started fields for the publisher's own prof
 
 // TAL-868, TAL-874: the run's start times the activity; its tool count and last activity replace the lock screen's
 // empty excerpt, which Relay never has.
-it("maps the run's start, tool count and last activity into a relay-pushed Live Activity", async () => {
-  let clock = now;
-  const spy = vi.spyOn(Date, "now").mockImplementation(() => clock);
-  try {
+describe("relay-pushed Live Activity run fields", () => {
+  const runStartedAt = now - 60_000;
+  const activityAt = now - 20_000;
+  // The loaded Web's publisher snapshot carrying this run's fields, at a given revision.
+  const runSnapshot = (revision: number) => {
+    const body = JSON.parse(fixture("publisher-snapshot")) as { snapshotId: string; states: Record<string, unknown>[] };
+    body.snapshotId = `contract-snapshot-${String(revision)}`;
+    body.states = body.states.map((state) => ({
+      ...state, startedAt: runStartedAt, revision: now + revision, eventId: `snapshot:${String(now + revision)}:contract-session`,
+      updatedAt: Date.now(), toolCount: 3, activityAt, planCompleted: 2, planTotal: 5, workerCount: 3,
+    }));
+    return body;
+  };
+  // A snapshot whose first state carries the given fields; the publisher must refuse it.
+  const refused = async (fields: Record<string, unknown>) => {
+    const { signedPut } = await relayWithPublisher();
+    const body = runSnapshot(3);
+    Object.assign(body.states[0]!, fields);
+    return (await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(body))).status;
+  };
+  beforeEach(() => { vi.useFakeTimers({ now }); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("maps the run's start, tool count and last activity into a relay-pushed Live Activity", async () => {
     const { backend, signedPut } = await relayWithPublisher();
-    const runStartedAt = now - 60_000;
-    const activityAt = now - 20_000;
-    const snapshot = (revision: number) => {
-      const body = JSON.parse(fixture("publisher-snapshot")) as { snapshotId: string; states: Record<string, unknown>[] };
-      body.snapshotId = `contract-snapshot-${String(revision)}`;
-      body.states = body.states.map((state) => ({
-        ...state, startedAt: runStartedAt, revision: now + revision, eventId: `snapshot:${String(now + revision)}:contract-session`,
-        updatedAt: clock, toolCount: 3, activityAt, planCompleted: 2, planTotal: 5, workerCount: 3,
-      }));
-      return JSON.stringify(body);
-    };
-    expect((await signedPut(publisherPath("prf_default", "snapshot"), snapshot(1))).status).toBe(200);
+    expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(runSnapshot(1)))).status).toBe(200);
     // The phone registers its activity (or reconnects) well after the run began.
-    clock = now + 30_000;
+    vi.setSystemTime(now + 30_000);
     const headers = { authorization: "Bearer contract-session-token", "x-talaria-device-id": "contract-device", "content-type": "application/json" };
     const registration = await backend.fetch("/v1/devices/contract-device/live-activities/contract-activity", {
       method: "PUT", headers, body: fixture("app-registration"),
     });
     expect(registration.status).toBe(200);
-    clock = now + 60_000;
-    expect((await signedPut(publisherPath("prf_default", "snapshot"), snapshot(2))).status).toBe(200);
+    vi.setSystemTime(now + 60_000);
+    expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(runSnapshot(2)))).status).toBe(200);
     await backend.mutation(internal.delivery.recompute, { userId: "contract-user" });
     const jobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
     const updates = jobs.filter((job) => job.kind === "live_activity_update" && job.activityId === "contract-activity");
@@ -191,35 +200,32 @@ it("maps the run's start, tool count and last activity into a relay-pushed Live 
       });
       expect(contentState.currentTool).toEqual(sentTool);
     }
-    for (const [field, value] of [["startedAt", 1.5], ["toolCount", -1], ["toolCount", 1.5], ["activityAt", 1.5]] as const) {
-      const invalid = JSON.parse(snapshot(3)) as { states: Record<string, unknown>[] };
-      invalid.states[0]![field] = value;
-      expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(invalid))).status).toBe(400);
-    }
-    // TAL-2336: the current call's words and texts are bounded, and it carries no field Relay does not know.
-    const call = { kind: "shell", target: "npm test", done: false };
-    for (const currentTool of [
-      null, "npm test", { ...call, kind: "Shell" }, { ...call, target: "t".repeat(65) }, { ...call, done: "false" }, { ...call, failed: false },
-      { ...call, verb: "x".repeat(33) }, { ...call, app: { name: "" } }, { ...call, app: { name: "Slack", logo_url: null } },
-      { ...call, outcome: { key: "exit", tone: "loud" } }, { ...call, outcome: { key: "exit", tone: "error", count: 1.5 } },
-      { ...call, outcome: { key: "failed", tone: "error", value: "v".repeat(65) } }, { ...call, args: { command: "npm test" } },
-    ]) {
-      const invalid = JSON.parse(snapshot(3)) as { states: Record<string, unknown>[] };
-      invalid.states[0]!.currentTool = currentTool;
-      expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(invalid))).status, JSON.stringify(currentTool)).toBe(400);
-    }
-    // TAL-1422: a plan's counts travel together, stay within its total, and every count is bounded.
-    for (const fields of [
-      { planCompleted: undefined }, { planTotal: undefined }, { planCompleted: 6 }, { planTotal: 10_000, planCompleted: 0 },
-      { workerCount: 10_000 }, { workerCount: -1 }, { workerCount: 1.5 }, { planCompleted: "2" },
-    ]) {
-      const invalid = JSON.parse(snapshot(3)) as { states: Record<string, unknown>[] };
-      Object.assign(invalid.states[0]!, fields);
-      expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(invalid))).status, JSON.stringify(fields)).toBe(400);
-    }
-  } finally {
-    spy.mockRestore();
-  }
+  });
+
+  it.each([
+    { startedAt: 1.5 }, { toolCount: -1 }, { toolCount: 1.5 }, { activityAt: 1.5 },
+  ])("refuses a run field that is not a whole count or time: %o", async (fields) => {
+    expect(await refused(fields)).toBe(400);
+  });
+
+  // TAL-2336: the current call's words and texts are bounded, and it carries no field Relay does not know.
+  const call = { kind: "shell", target: "npm test", done: false };
+  it.each([
+    null, "npm test", { ...call, kind: "Shell" }, { ...call, target: "t".repeat(65) }, { ...call, done: "false" }, { ...call, failed: false },
+    { ...call, verb: "x".repeat(33) }, { ...call, app: { name: "" } }, { ...call, app: { name: "Slack", logo_url: null } },
+    { ...call, outcome: { key: "exit", tone: "loud" } }, { ...call, outcome: { key: "exit", tone: "error", count: 1.5 } },
+    { ...call, outcome: { key: "failed", tone: "error", value: "v".repeat(65) } }, { ...call, args: { command: "npm test" } },
+  ])("refuses an out-of-bound or unknown current call: %j", async (currentTool) => {
+    expect(await refused({ currentTool })).toBe(400);
+  });
+
+  // TAL-1422: a plan's counts travel together, stay within its total, and every count is bounded.
+  it.each([
+    { planCompleted: undefined }, { planTotal: undefined }, { planCompleted: 6 }, { planTotal: 10_000, planCompleted: 0 },
+    { workerCount: 10_000 }, { workerCount: -1 }, { workerCount: 1.5 }, { planCompleted: "2" },
+  ])("refuses plan and worker counts that do not travel together or exceed their bounds: %j", async (fields) => {
+    expect(await refused(fields)).toBe(400);
+  });
 });
 
 // TAL-1422: plan and worker counts reach only their own session's activity, a repeat of unchanged counts pushes nothing,
