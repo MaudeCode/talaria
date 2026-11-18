@@ -798,14 +798,23 @@ async def probe_batch_unavailable(home, peer, desc):
         sidecar.close()
 
 
-async def probe_restart(home, peer, desc, proc):
+async def probe_restart(home, peer, desc, proc, env):
     """``hermes gateway restart`` waits for a turn parked on an approval; Web answers it, then the restart completes.
 
     An owner shipping ``gateway/restart_when_idle.py`` restarts when idle: it stays ready and keeps admitting work until
-    nothing is live. An older one drains at once, refusing new work while the parked turn stays answerable."""
+    nothing is live, and the input Web sends meanwhile runs exactly once across the restart. An older one drains at once,
+    refusing new work while the parked turn stays answerable."""
     import signal
     from hermes_cli.gateway_runtime import discover_gateway_endpoint
     when_idle = (agent / "gateway/restart_when_idle.py").exists()
+
+    async def until(read, done):
+        """The owner's record once ``done`` holds it, read again under the probe's shared 30 s ceiling."""
+        deadline = time.monotonic() + 30
+        while not done(value := await read()):
+            assert time.monotonic() < deadline, value
+            await asyncio.sleep(POLL_SECONDS)
+        return value
     sidecar = SidecarProcess(home)
     viewer = SidecarProcess(home)
     try:
@@ -813,13 +822,7 @@ async def probe_restart(home, peer, desc, proc):
             created = await rpc(native, "session.create", request_id="restart-create", source="cli", toolsets=["terminal"])
             sid = created["result"]["session_id"]
             await rpc(native, "prompt.submit", session_id=sid, submission_id="restart-input", text="Run fixture control")
-            deadline = time.monotonic() + 30
-            while True:
-                pending = await rpc(native, "session.resume", session_id=sid)
-                if pending["result"]["prompts"]:
-                    break
-                assert time.monotonic() < deadline, pending
-                await asyncio.sleep(POLL_SECONDS)
+            pending = await until(lambda: rpc(native, "session.resume", session_id=sid), lambda read: read["result"]["prompts"])
             prompt = pending["result"]["prompts"][0]
         params = {"profile_home": str(home), "session_id": sid}
         # Web's watch was opened before the wait, as the server's is while the turn runs.
@@ -842,10 +845,8 @@ async def probe_restart(home, peer, desc, proc):
         if when_idle:
             from gateway.status import read_runtime_status
             # The owner publishes the waiting restart, and the work holding it, only in its runtime status.
-            deadline = time.monotonic() + 30
-            while not ((status := read_runtime_status(home / "gateway_state.json")) or {}).get("restart_requested"):
-                assert time.monotonic() < deadline, status
-                await asyncio.sleep(.05)
+            status = await until(lambda: asyncio.to_thread(read_runtime_status, home / "gateway_state.json"),
+                                 lambda read: (read or {}).get("restart_requested"))
             assert status["active_work"], status
             # Discovery stays ready on the same owner, so Web keeps sending through it.
             found = discover_gateway_endpoint(home)
@@ -867,10 +868,7 @@ async def probe_restart(home, peer, desc, proc):
             assert followup["state"] == "attached" and followup["receipt"]["admission_id"], followup
             assert proc.poll() is None, "the owner exited while its turn was parked"
         else:
-            deadline = time.monotonic() + 30
-            while (found := discover_gateway_endpoint(home)).reason_code != "restart_wait":
-                assert time.monotonic() < deadline, found
-                await asyncio.sleep(.05)
+            await until(lambda: asyncio.to_thread(discover_gateway_endpoint, home), lambda found: found.reason_code == "restart_wait")
             # The watch learns the transition itself, so the server can stop sending without another read.
             while True:
                 try:
@@ -892,7 +890,9 @@ async def probe_restart(home, peer, desc, proc):
                 assert (refused["state"], refused["reason"]) == ("refused", "gateway_restarting"), refused
         answered = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "approval",
             "prompt_id": prompt["prompt_id"], "execution_generation": prompt["execution_generation"], "choice": "once"})
-        assert answered["state"] == "attached", answered
+        # The answer lets the parked turn end, and with it the restart's wait: the owner can exit before the sidecar reads
+        # its reply, an unknown outcome. The owner's record below says the answer landed once.
+        assert answered["state"] == "attached" or (answered["state"], answered["reason"]) == ("unavailable", "owner_connection_lost"), answered
         # The restart waited only for that work: the owner now exits on its own.
         await asyncio.to_thread(proc.wait, 60)
         # The watch opened before the wait observed the settlement and the turn's end until the owner exited.
@@ -904,16 +904,29 @@ async def probe_restart(home, peer, desc, proc):
         assert seen.index("approval.settled") < seen.index("message.complete"), seen
         import sqlite3
         from contextlib import closing
-        with closing(sqlite3.connect((home / "state.db").as_uri() + "?mode=ro", uri=True)) as db:
-            contents = [row[0] for row in db.execute("SELECT content FROM messages WHERE session_id=? ORDER BY id", (sid,))]
+
+        def record():
+            with closing(sqlite3.connect((home / "state.db").as_uri() + "?mode=ro", uri=True)) as db:
+                return ([row[0] for row in db.execute("SELECT content FROM messages WHERE session_id=? ORDER BY id", (sid,))],
+                        db.execute("SELECT status, outcome FROM session_admissions WHERE target_session_id=? AND request_id=?",
+                                   (sid, "restart-submit")).fetchone())
+        contents, admitted = record()
         assert "APPROVAL_FINISHED" in contents, contents
         assert not (home / "owned-removal").exists()
         if when_idle:
-            # Nothing announced a restart to the watch, and the admitted follow-up ran to its end before the exit.
+            # Nothing announced a restart to the watch.
             assert "restarting" not in events, events
-            assert "ADMITTED_WHILE_RESTARTING" in json.dumps(peer.requests[count:]), peer.requests[count:]
+            # The owner can see idle between the parked turn's settlement and its drain claiming the follow-up; the
+            # follow-up then stays queued in its durable FIFO for the next owner (NousResearch/hermes-agent#157165).
+            # Either way the watch delivered every turn the owner's record says ended before the exit (TAL-2344).
+            assert admitted in {("terminal", "completed"), ("queued", None)}, admitted
+            assert seen.count("message.complete") == 1 + (admitted[0] == "terminal"), (admitted, seen)
+            # The supervisor relaunches the owner, which runs a follow-up still queued: it ran once across the restart.
+            with daemon(agent, home, env, barrier=False):
+                await until(lambda: asyncio.to_thread(record), lambda read: read[1] == ("terminal", "completed"))
+            contents = record()[0]
+            assert sum("ADMITTED_WHILE_RESTARTING" in json.dumps(body) for body in peer.requests[count:]) == 1, peer.requests[count:]
             assert contents[contents.index("ADMITTED_WHILE_RESTARTING") + 1:].count("APPROVAL_FINISHED") == 1, contents
-            assert seen.count("message.complete") == 2, seen
         else:
             assert "MUST_NOT_RUN" not in json.dumps(peer.requests[count:]), peer.requests[count:]
     finally:
@@ -1386,7 +1399,7 @@ def run_on_owner(mode, home, peer, desc, proc, env):
     if mode == "detail":
         return probe_detail(home, peer, desc)
     if mode == "restart":
-        return probe_restart(home, peer, desc, proc)
+        return probe_restart(home, peer, desc, proc, env)
     if mode == "model":
         return probe_model(home, peer, desc)
     if mode == "voice-stop":
