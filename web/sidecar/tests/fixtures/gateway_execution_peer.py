@@ -237,7 +237,6 @@ def natives(ids, workspace, owners):
 def probe_controls(home: Path, workspace: Path, witness: Path, peer, env):
     """Positive controls: the ordinary owner reads the profile; ignore_config drops only its config."""
     owner, audit, ids = Owner(home, workspace, peer), Witness(witness / "audit.jsonl"), {}
-    call = owner.call
     try:
         with daemons((home, env)) as [(_, desc)]:
             probed = owner.sidecar.result("gateway.create", {"profile_home": str(home), "probe": True})
