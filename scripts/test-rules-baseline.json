@@ -35,10 +35,7 @@
       "app/TalariaTests/FixtureApp.swift": 4,
       "app/TalariaTests/HostedViewTests.swift": 2,
       "app/TalariaTests/SessionListHostedTests.swift": 1,
-      "app/TalariaTests/TranscriptHostedTests.swift": 6,
-      "web/packages/server/src/app.test.ts": 1,
-      "web/packages/server/src/sessions/chat.test.ts": 1,
-      "web/packages/server/src/sessions/compress.test.ts": 1
+      "app/TalariaTests/TranscriptHostedTests.swift": 6
     }
   },
   "exceptions": [
@@ -293,6 +290,24 @@
       "file": "web/sidecar/tests/test_turn_lease_busy.py",
       "count": 1,
       "reason": "The synthetic wedged tool ignores its interrupt and polls for the test's release flag under a 120 s ceiling."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/packages/server/src/app.test.ts",
+      "count": 1,
+      "reason": "The config.get fake answers after 50 ms to stand in for a real RPC; app.ts awaits the profile config read for every /api/ request before its gates, so the test passes at any delay (checked at 1 ms and 500 ms) and fails once that await is removed."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/packages/server/src/sessions/chat.test.ts",
+      "count": 1,
+      "reason": "The settleCommand fake answers after 150 ms to stand in for a slow record write; turn.ts awaits opts.onDone before it publishes stream_end, so the test passes at any delay (checked at 1 ms and 500 ms) and fails once that await is removed."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/packages/server/src/sessions/compress.test.ts",
+      "count": 1,
+      "reason": "The chat.evict_agent fake answers after 20 ms to stand in for a slow sidecar; service.ts awaits the eviction before it finalizes the compression, so the test passes at any delay (checked at 1 ms and 500 ms) and fails once that await is removed."
     }
   ]
 }
