@@ -109,9 +109,7 @@ final class DuoFoldHostedTests: XCTestCase {
         XCTAssertNil(HostedAccessibility.splitViewController(under: window.rootViewController))
         XCTAssertEqual(navigation.viewControllers.count, 1, "New Chat must be the compact root")
         XCTAssertNil(HostedAccessibility.titleMenuController(in: window))
-        let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
-        XCTAssertTrue(held, "The compact root must change before the archive response")
-        folding.fixture.releaseHeldLoads()
+        await releaseHeldRequest(of: folding.fixture)
     }
 
     private func chatRequests() -> [String] {

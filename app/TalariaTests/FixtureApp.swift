@@ -324,6 +324,15 @@ extension XCTestCase {
         return condition()
     }
 
+    /// Answers the held request once it has reached the fixture. An optimistic write changes the screen first and
+    /// URLSession starts its request after, and a release lands only on loads already held (TAL-2547).
+    @MainActor
+    func releaseHeldRequest(of fixture: FixtureApp, file: StaticString = #filePath, line: UInt = #line) async {
+        let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
+        XCTAssertTrue(held, "The request never reached the fixture", file: file, line: line)
+        fixture.releaseHeldLoads()
+    }
+
     /// Waits until no transcript row has realized for 500 ms and returns the settled count, or nil if rows kept
     /// realizing. Lazy layout can shift the mounted window once more after startup, especially on CI (TAL-1544).
     @MainActor
