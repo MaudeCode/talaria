@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pathlib
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -56,44 +56,65 @@ def test_a_recalled_plugin_the_agent_refuses_is_a_failed_switch_not_an_error(age
     assert agent["calls"] == [("set", "team-notes", True)]
 
 
-@requires_agent
-def test_the_agent_turns_a_synthetic_plugin_on_and_off(tmp_path: pathlib.Path) -> None:
-    home = tmp_path / "home" / ".hermes"
-    for name, kind in (("team-notes", "standalone"), ("solo-backend", "exclusive")):
-        path = home / "plugins" / name
-        path.mkdir(parents=True)
-        (path / "plugin.yaml").write_text(f"name: {name}\nversion: 0.0.1\ndescription: Synthetic probe\nkind: {kind}\n")
-        (path / "__init__.py").write_text("def register(ctx):\n    pass\n")
-    sidecar = SidecarProcess(home)
+@pytest.fixture
+def synthetic(tmp_path: pathlib.Path):
+    """Starts a real sidecar over a profile with a standalone and an exclusive synthetic plugin, whose config already
+    enables the named plugins. Each real switch runs the Agent's admission transaction, which builds a whole
+    environment, so each test makes one switch (TAL-2493)."""
+    sidecars = []
 
-    def listed() -> dict:
-        rows = sidecar.result("plugins.list", {"profile_home": str(home), "selected_providers": {}})
-        assert validate(rows, load_schema("plugins.list")) == []
-        return {row["key"]: row for row in rows["plugins"]}
+    def start(*enabled: str) -> SimpleNamespace:
+        home = tmp_path / "home" / ".hermes"
+        for name, kind in (("team-notes", "standalone"), ("solo-backend", "exclusive")):
+            path = home / "plugins" / name
+            path.mkdir(parents=True)
+            (path / "plugin.yaml").write_text(f"name: {name}\nversion: 0.0.1\ndescription: Synthetic probe\nkind: {kind}\n")
+            (path / "__init__.py").write_text("def register(ctx):\n    pass\n")
+        if enabled:
+            (home / "config.yaml").write_text(f"plugins:\n  enabled: {list(enabled)}\n")
+        sidecar = SidecarProcess(home)
+        sidecars.append(sidecar)
 
-    def set_enabled(key: str, enabled: bool) -> dict:
-        result = sidecar.result("plugins.set_enabled", {"profile_home": str(home), "key": key, "enabled": enabled})
-        assert validate(result, load_schema("plugins.set_enabled")) == []
-        return result
+        def listed() -> dict:
+            rows = sidecar.result("plugins.list", {"profile_home": str(home), "selected_providers": {}})
+            assert validate(rows, load_schema("plugins.list")) == []
+            return {row["key"]: row for row in rows["plugins"]}
 
-    try:
-        rows = listed()
-        assert rows["team-notes"]["enabled"] is False
-        assert rows["team-notes"]["can_toggle"] is True
-        assert (rows["solo-backend"]["kind"], rows["solo-backend"]["can_toggle"]) == ("exclusive", False)
+        def set_enabled(key: str, enabled: bool) -> dict:
+            result = sidecar.result("plugins.set_enabled", {"profile_home": str(home), "key": key, "enabled": enabled})
+            assert validate(result, load_schema("plugins.set_enabled")) == []
+            return result
 
-        on = set_enabled("team-notes", True)
-        assert on["supported"] is True and on["ok"] is True and on["name"] == "team-notes" and on["unchanged"] is False
-        assert listed()["team-notes"]["enabled"] is True
-        assert set_enabled("team-notes", True)["unchanged"] is True
+        return SimpleNamespace(home=home, sidecar=sidecar, listed=listed, set_enabled=set_enabled)
 
-        off = set_enabled("team-notes", False)
-        assert off == {"supported": True, "ok": True, "name": "team-notes", "unchanged": False, "restart_required": True}
-        assert listed()["team-notes"]["enabled"] is False
-
-        unknown = set_enabled("no-such-plugin", True)
-        assert unknown["supported"] is True and unknown["ok"] is False and "no-such-plugin" in unknown["error"]
-        message, _ = sidecar.call("plugins.set_enabled", {"profile_home": str(home), "key": "team-notes", "enabled": "yes"})
-        assert message["error"]["code"] == -32602
-    finally:
+    yield start
+    for sidecar in sidecars:
         sidecar.close()
+
+
+@requires_agent
+def test_the_agent_turns_a_synthetic_plugin_on(synthetic) -> None:
+    profile = synthetic()
+    rows = profile.listed()
+    assert rows["team-notes"]["enabled"] is False
+    assert rows["team-notes"]["can_toggle"] is True
+    assert (rows["solo-backend"]["kind"], rows["solo-backend"]["can_toggle"]) == ("exclusive", False)
+
+    on = profile.set_enabled("team-notes", True)
+    assert on["supported"] is True and on["ok"] is True and on["name"] == "team-notes" and on["unchanged"] is False
+    assert profile.listed()["team-notes"]["enabled"] is True
+    assert profile.set_enabled("team-notes", True)["unchanged"] is True
+
+    unknown = profile.set_enabled("no-such-plugin", True)
+    assert unknown["supported"] is True and unknown["ok"] is False and "no-such-plugin" in unknown["error"]
+    message, _ = profile.sidecar.call("plugins.set_enabled", {"profile_home": str(profile.home), "key": "team-notes", "enabled": "yes"})
+    assert message["error"]["code"] == -32602
+
+
+@requires_agent
+def test_the_agent_turns_a_synthetic_plugin_off(synthetic) -> None:
+    profile = synthetic("team-notes")
+    assert profile.listed()["team-notes"]["enabled"] is True
+    off = profile.set_enabled("team-notes", False)
+    assert off == {"supported": True, "ok": True, "name": "team-notes", "unchanged": False, "restart_required": True}
+    assert profile.listed()["team-notes"]["enabled"] is False

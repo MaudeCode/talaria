@@ -3,8 +3,11 @@
 A sitecustomize audit hook in every owner/worker interpreter records opens under the sentinel
 roots, imports of sentinel modules and process launches. The worker's records prove what safe
 mode never touched; the provider's requests and the witness files are the positive controls.
+
+Usage: gateway_execution_peer.py SCENARIO, one of SCENARIOS, each on its own disposable owner (TAL-2493).
 """
 import asyncio
+from contextlib import ExitStack, contextmanager
 import io
 from http.server import ThreadingHTTPServer
 import json
@@ -19,7 +22,7 @@ agent = Path(os.environ["TALARIA_WEB_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
 from peer_phases import POLL_SECONDS, Phases, report_modes
 
-EXECUTION_MODES = ["normal", "ignore_config", "safe"]
+SCENARIOS = ["controls", "restart", "safe", "safe-error"]
 from local_recovery_probe import Model, child_env, daemon as owner_daemon, rpc, websocket
 from conftest import SidecarProcess
 
@@ -195,50 +198,123 @@ def receipt_policy(home: Path, sid: str) -> dict:
     return {key: policy[key] for key in ("safe_mode", "ignore_user_config")}
 
 
-def probe(root: Path, home: Path, alpha: Path, workspace: Path, witness: Path, peer, env, alpha_env):
-    sidecar = SidecarProcess(home)
-    audit = Witness(witness / "audit.jsonl")
-    ids = {}
+@contextmanager
+def daemons(*owners):
+    """One disposable owner per (home, env), started in order."""
+    with ExitStack() as stack:
+        yield [stack.enter_context(daemon(agent, home, env, barrier=False)) for home, env in owners]
 
-    def create(mode, request_id, target=home, **extra):
-        return sidecar.result("gateway.create", {"profile_home": str(target), "request_id": request_id, "execution_mode": mode,
-            "cwd": str(workspace), "model": "owner-fixture", "provider": "custom", "base_url": peer.url, **extra})
 
-    def call(action, sid, target=home, **params):
-        return sidecar.result("gateway.session", {"profile_home": str(target), "session_id": sid, "action": action, **params})
+class Owner:
+    """The sidecar calls both scenarios make against one disposable owner home."""
 
-    def turn(sid, text, target=home):
-        submitted = call("submit", sid, target, request_id="turn-" + text, text=text)
+    def __init__(self, home: Path, workspace: Path, peer):
+        self.home, self.workspace, self.peer = home, workspace, peer
+        self.sidecar = SidecarProcess(home)
+
+    def create(self, mode, request_id, **extra):
+        return self.sidecar.result("gateway.create", {"profile_home": str(self.home), "request_id": request_id, "execution_mode": mode,
+            "cwd": str(self.workspace), "model": "owner-fixture", "provider": "custom", "base_url": self.peer.url, **extra})
+
+    def call(self, action, sid, target=None, **params):
+        return self.sidecar.result("gateway.session", {"profile_home": str(target or self.home), "session_id": sid, "action": action, **params})
+
+    def turn(self, sid, text, target=None):
+        submitted = self.call("submit", sid, target, request_id="turn-" + text, text=text)
         assert submitted["receipt"], submitted
-        return settle(lambda action, s: call(action, s, target), sid)
+        return settle(lambda action, s: self.call(action, s, target), sid)
 
+
+def natives(ids, workspace, owners):
+    async def create():
+        for name, target, desc in owners:
+            async with websocket(target, desc) as native:
+                created = await rpc(native, "session.create", request_id="positive-" + name, source="cli", cwd=str(workspace))
+                ids[name] = created["result"]["session_id"]
+    asyncio.run(create())
+
+
+def probe_controls(home: Path, workspace: Path, witness: Path, peer, env):
+    """Positive controls: the ordinary owner reads the profile; ignore_config drops only its config."""
+    owner, audit, ids = Owner(home, workspace, peer), Witness(witness / "audit.jsonl"), {}
+    call = owner.call
     try:
-        with daemon(agent, home, env, barrier=False) as (_, desc), daemon(agent, alpha, alpha_env, barrier=False) as (_, alpha_desc):
-            probed = sidecar.result("gateway.create", {"profile_home": str(home), "probe": True})
+        with daemons((home, env)) as [(_, desc)]:
+            probed = owner.sidecar.result("gateway.create", {"profile_home": str(home), "probe": True})
             assert probed == {"state": "attached", "reason": None, "snapshot": None, "receipt": None}, probed
-
-            async def natives():
-                for name, target, desc_ in (("normal", home, desc), ("alpha", alpha, alpha_desc)):
-                    async with websocket(target, desc_) as native:
-                        created = await rpc(native, "session.create", request_id="positive-" + name, source="cli", cwd=str(workspace))
-                        ids[name] = created["result"]["session_id"]
-            asyncio.run(natives())
+            natives(ids, workspace, [("normal", home, desc)])
             audit.take()
-
-            # Positive controls: the ordinary owner reads the profile; config-only drops only the profile config.
-            turn(ids["normal"], "NORMAL_CONTROL")
+            owner.turn(ids["normal"], "NORMAL_CONTROL")
             assert sentinels_in(request_for(peer, "NORMAL_CONTROL")) == set(SENTINELS), request_for(peer, "NORMAL_CONTROL")
             assert (witness / "plugin-imported").exists()
-            config_only = create("ignore_config", "diagnostic-config")
+            config_only = owner.create("ignore_config", "diagnostic-config")
             assert config_only["state"] == "attached", config_only
             ids["config"] = config_only["snapshot"]["session_id"]
-            turn(ids["config"], "CONFIG_ONLY_CONTROL")
+            owner.turn(ids["config"], "CONFIG_ONLY_CONTROL")
             assert sentinels_in(request_for(peer, "CONFIG_ONLY_CONTROL")) == set(SENTINELS) - {"CONFIG_SENTINEL"}
             config_events = audit.take()
             assert any(path.endswith("SOUL.md") for path in worker_opened(config_events)), config_events
             assert not any(path.endswith(("config.yaml", ".env")) for path in worker_opened(config_events)), config_events
+        print(json.dumps({"scenario": "controls", "sessions": ids, "provider_requests": len(peer.requests)}))
+    finally:
+        peer.release.set()
+        owner.sidecar.close()
 
-            # Safe: a fresh private worker with no profile reads, imports or MCP launches.
+
+def probe_restart(home: Path, workspace: Path, witness: Path, peer, env):
+    """Each diagnostic session's frozen policy across an owner restart."""
+    owner, audit, ids = Owner(home, workspace, peer), Witness(witness / "audit.jsonl"), {}
+    call = owner.call
+    try:
+        with daemons((home, env)):
+            for name, mode in (("config", "ignore_config"), ("safe", "safe")):
+                created = owner.create(mode, "diagnostic-" + name)
+                assert created["state"] == "attached" and created["snapshot"]["messages"] == [], created
+                ids[name] = created["snapshot"]["session_id"]
+
+        # The frozen policy survives an owner restart. v0.22.1 binds DEFAULT_CONFIG's voice.record_key
+        # as a launch-only secret, so a restarted owner refuses a bypass turn before any worker starts
+        # (launch_credentials_unavailable). Either way nothing runs under a weaker policy.
+        with daemons((home, env)):
+            for name, text, expected in (("safe", "SAFE_AFTER_RESTART", set()),
+                                         ("config", "CONFIG_AFTER_RESTART", set(SENTINELS) - {"CONFIG_SENTINEL"})):
+                assert receipt_policy(home, ids[name]) == {"safe_mode": name == "safe", "ignore_user_config": True}
+                submitted = call("submit", ids[name], request_id="restart-" + name, text=text)
+                assert submitted["receipt"], submitted
+                end = time.monotonic() + 60
+                while True:
+                    current = call("snapshot", ids[name])
+                    pending = current["snapshot"]["pending"]
+                    if not current["snapshot"]["running"] and all(p["status"] in {"unknown", "terminal"} for p in pending):
+                        break
+                    assert time.monotonic() < end, current
+                    time.sleep(POLL_SECONDS)
+                if request_for(peer, text):
+                    assert sentinels_in(request_for(peer, text)) == expected, request_for(peer, text)
+                else:
+                    assert [p["status"] for p in pending] == ["unknown"], pending
+                    discarded = call("discard", ids[name], admission_id=pending[0]["admission_id"],
+                                     execution_generation=pending[0]["execution_generation"])
+                    assert discarded["state"] == "attached", discarded
+                    settle(call, ids[name])
+            events = audit.take()
+            gone({e["pid"] for e in events if e["worker"]})
+            assert not any(path.endswith(("config.yaml", ".env")) for path in worker_opened(events)), events
+        print(json.dumps({"scenario": "restart", "sessions": ids, "provider_requests": len(peer.requests)}))
+    finally:
+        peer.release.set()
+        owner.sidecar.close()
+
+
+def probe_safe(home: Path, alpha: Path, workspace: Path, witness: Path, peer, env, alpha_env):
+    """Safe: a fresh private worker with no profile reads, imports or MCP launches, beside ordinary sessions on the same
+    owner and a sibling profile, keeping its policy across cancel and interrupt."""
+    owner, audit, ids = Owner(home, workspace, peer), Witness(witness / "audit.jsonl"), {}
+    call, create, turn = owner.call, owner.create, owner.turn
+    try:
+        with daemons((home, env), (alpha, alpha_env)) as [(_, desc), (_, alpha_desc)]:
+            natives(ids, workspace, [("normal", home, desc), ("alpha", alpha, alpha_desc)])
+            audit.take()
             safe = create("safe", "diagnostic-safe")
             assert safe["state"] == "attached" and safe["snapshot"]["messages"] == [], safe
             ids["safe"] = safe["snapshot"]["session_id"]
@@ -273,50 +349,35 @@ def probe(root: Path, home: Path, alpha: Path, workspace: Path, witness: Path, p
             assert worker_reads(events) == [], worker_reads(events)
             assert not request_for(peer, "NEVER_RUN_CANCELLED")
             assert sentinels_in(request_for(peer, "BLOCK_STARTED")) == set(), request_for(peer, "BLOCK_STARTED")
+        released(home)
+        print(json.dumps({"scenario": "safe", "sessions": ids, "provider_requests": len(peer.requests)}))
+    finally:
+        peer.release.set()
+        owner.sidecar.close()
 
-            # Error cleanup keeps the policy: the next turn is still safe.
-            peer.blocked.clear()
-            failed = turn(ids["safe"], "FAIL_PROVIDER")
+
+def probe_safe_error(home: Path, workspace: Path, witness: Path, peer, env):
+    """Error cleanup keeps the policy: the turn after a provider failure is still safe."""
+    owner, audit = Owner(home, workspace, peer), Witness(witness / "audit.jsonl")
+    turn = owner.turn
+    try:
+        with daemons((home, env)):
+            safe = owner.create("safe", "diagnostic-safe")
+            assert safe["state"] == "attached" and safe["snapshot"]["messages"] == [], safe
+            sid = safe["snapshot"]["session_id"]
+            audit.take()
+            failed = turn(sid, "FAIL_PROVIDER")
             assert failed["snapshot"]["pending"] == [], failed
-            turn(ids["safe"], "SAFE_AFTER_ERROR")
+            turn(sid, "SAFE_AFTER_ERROR")
             assert sentinels_in(request_for(peer, "SAFE_AFTER_ERROR")) == set()
             events = audit.take()
             gone({e["pid"] for e in events if e["worker"]})
             assert worker_reads(events) == [], worker_reads(events)
         released(home)
-
-        # The frozen policy survives an owner restart. v0.22.1 binds DEFAULT_CONFIG's voice.record_key
-        # as a launch-only secret, so a restarted owner refuses a bypass turn before any worker starts
-        # (launch_credentials_unavailable). Either way nothing runs under a weaker policy.
-        with daemon(agent, home, env, barrier=False):
-            for name, text, expected in (("safe", "SAFE_AFTER_RESTART", set()),
-                                         ("config", "CONFIG_AFTER_RESTART", set(SENTINELS) - {"CONFIG_SENTINEL"})):
-                assert receipt_policy(home, ids[name]) == {"safe_mode": name == "safe", "ignore_user_config": True}
-                submitted = call("submit", ids[name], request_id="restart-" + name, text=text)
-                assert submitted["receipt"], submitted
-                end = time.monotonic() + 60
-                while True:
-                    current = call("snapshot", ids[name])
-                    pending = current["snapshot"]["pending"]
-                    if not current["snapshot"]["running"] and all(p["status"] in {"unknown", "terminal"} for p in pending):
-                        break
-                    assert time.monotonic() < end, current
-                    time.sleep(POLL_SECONDS)
-                if request_for(peer, text):
-                    assert sentinels_in(request_for(peer, text)) == expected, request_for(peer, text)
-                else:
-                    assert [p["status"] for p in pending] == ["unknown"], pending
-                    discarded = call("discard", ids[name], admission_id=pending[0]["admission_id"],
-                                     execution_generation=pending[0]["execution_generation"])
-                    assert discarded["state"] == "attached", discarded
-                    settle(call, ids[name])
-            events = audit.take()
-            gone({e["pid"] for e in events if e["worker"]})
-            assert not any(path.endswith(("config.yaml", ".env")) for path in worker_opened(events)), events
-        print(json.dumps({"modes": EXECUTION_MODES, "sessions": ids, "provider_requests": len(peer.requests)}))
+        print(json.dumps({"scenario": "safe-error", "session": sid, "provider_requests": len(peer.requests)}))
     finally:
         peer.release.set()
-        sidecar.close()
+        owner.sidecar.close()
 
 
 def main():
@@ -341,13 +402,18 @@ def main():
                AWS_EC2_METADATA_DISABLED="true", TALARIA_WITNESS_LOG=str(witness / "audit.jsonl"),
                TALARIA_WITNESS_ROOTS=os.pathsep.join([str(home), str(workspace)]))
     alpha_env = dict(env, HERMES_HOME=str(alpha), OPENAI_API_KEY="alpha-only")
+    [scenario] = sys.argv[1:]
+    assert scenario in SCENARIOS, scenario
     ran = []
     try:
-        with PHASES.probe("execution"):
-            probe(root, home, alpha, workspace, witness, peer, env, alpha_env)
-        ran = EXECUTION_MODES
+        with PHASES.probe(scenario):
+            if scenario == "safe":
+                probe_safe(home, alpha, workspace, witness, peer, env, alpha_env)
+            else:
+                {"controls": probe_controls, "restart": probe_restart, "safe-error": probe_safe_error}[scenario](home, workspace, witness, peer, env)
+        ran = [scenario]
     finally:
-        report_modes(ran, {}, None if ran else "execution")
+        report_modes(ran, {}, None if ran else scenario)
         peer.release.set()
         peer.shutdown()
         peer.server_close()

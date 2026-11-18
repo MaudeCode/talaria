@@ -273,7 +273,7 @@
     {
       "rule": "clock-sleep",
       "file": "web/sidecar/tests/fixtures/gateway_session_peer.py",
-      "count": 20,
+      "count": 18,
       "reason": "Poll intervals inside the probes' ceiling-bounded waits on the owner's snapshot, prompts, opens log and state.db admissions."
     },
     {

@@ -1,7 +1,10 @@
 """Canonical owner attachment never creates an independent Agent or starts a daemon."""
 from pathlib import Path
 import json
+import queue
 import subprocess
+import threading
+import time
 
 import pytest
 
@@ -26,31 +29,75 @@ def test_stopped_owner_is_an_explicit_refusal_without_starting(tmp_path):
     assert not (home / "gateway.pid").exists()
 
 
-def run_owner_peer(request, tmp_path, script, modes, timeout=200):
-    """One peer run on a real disposable owner. Its report must account for every requested mode: a mode this release
-    does not support is reported as skipped, and one the peer dropped fails here. The JUnit report keeps what each run
-    did and where its time went, so a passing CI run shows them too."""
-    env = isolated_env(tmp_path / "hermes", TALARIA_WEB_AGENT_DIR=str(AGENT_DIR), TALARIA_WEB_PYTHON=str(AGENT_PYTHON),
-                       PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
-    try:
-        result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures" / script), *modes],
-                                env=env, capture_output=True, text=True, timeout=timeout, check=False)
-    except subprocess.TimeoutExpired as expired:
-        pytest.fail(f"peer outlived {timeout} s; the last MODE line names the one it was running:\n{expired.stdout}\n{expired.stderr}")
-    report = next((json.loads(line.removeprefix("MODES ")) for line in result.stdout.splitlines() if line.startswith("MODES ")), {})
+def peer_env(tmp_path):
+    return isolated_env(tmp_path / "hermes", TALARIA_WEB_AGENT_DIR=str(AGENT_DIR), TALARIA_WEB_PYTHON=str(AGENT_PYTHON),
+                        PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
+
+
+def account_for(request, modes, output, failed):
+    """A peer's report must account for every requested mode: a mode this release does not support is reported as
+    skipped, and one the peer dropped fails here. The JUnit report keeps what each run did and where its time went, so
+    a passing CI run shows them too."""
+    report = next((json.loads(line.removeprefix("MODES ")) for line in output.splitlines() if line.startswith("MODES ")), {})
     request.node.user_properties.extend(("peer_" + line.split(" ", 1)[0].lower(), line.split(" ", 1)[1])
-                                        for line in (result.stdout + result.stderr).splitlines() if line.startswith(("MODES ", "PHASES ")))
-    assert result.returncode == 0, f"failed mode: {report.get('failed')}\n{result.stdout}{result.stderr}"
+                                        for line in output.splitlines() if line.startswith(("MODES ", "PHASES ")))
+    assert not failed, f"failed mode: {report.get('failed')}\n{output}"
     assert sorted(report["ran"] + list(report["skipped"])) == sorted(modes), report
     if not report["ran"]:
         pytest.skip("; ".join(sorted(set(report["skipped"].values()))))
 
 
+def run_owner_peer(request, tmp_path, script, modes, timeout=200):
+    """One peer run on a real disposable owner."""
+    try:
+        result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures" / script), *modes],
+                                env=peer_env(tmp_path), capture_output=True, text=True, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired as expired:
+        pytest.fail(f"peer outlived {timeout} s; the last MODE line names the one it was running:\n{expired.stdout}\n{expired.stderr}")
+    account_for(request, modes, result.stdout + result.stderr, result.returncode != 0)
+
+
+@pytest.fixture(scope="module")
+def shared_owner(tmp_path_factory):
+    """One served owner for every mode that needs no owner state of its own, so the modes run as separate tests yet
+    repeat neither its boot nor its first-turn warmup (TAL-1780, TAL-2493). Each mode runs on its own sessions."""
+    peer = subprocess.Popen([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_session_peer.py"), "--serve"],
+                            env=peer_env(tmp_path_factory.mktemp("shared-owner")), stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    lines = queue.Queue()
+    threading.Thread(target=lambda: [*map(lines.put, peer.stdout), lines.put(None)], daemon=True).start()
+
+    def run(request, mode, timeout=200):
+        assert peer.poll() is None, f"the shared owner exited with {peer.returncode}"
+        peer.stdin.write(mode + "\n")
+        peer.stdin.flush()
+        output, deadline = [], time.monotonic() + timeout
+        while not output or not output[-1].startswith("MODES "):
+            try:
+                line = lines.get(timeout=max(0, deadline - time.monotonic()))
+            except queue.Empty:
+                peer.kill()
+                pytest.fail(f"{mode} outlived {timeout} s on the shared owner:\n{''.join(output)}")
+            assert line is not None, f"the shared owner exited during {mode}:\n{''.join(output)}"
+            output.append(line)
+        account_for(request, [mode], "".join(output), json.loads(output[-1].removeprefix("MODES "))["failed"] is not None)
+
+    try:
+        yield run
+    finally:
+        peer.stdin.close()
+        try:
+            peer.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            peer.kill()
+            peer.wait()
+
+
 @requires_agent
-def test_real_native_owner_shared_admission_and_detach(request, tmp_path):
-    # Compatible modes share one owner, so they repeat neither its boot nor its first-turn warmup (TAL-1780).
-    run_owner_peer(request, tmp_path, "gateway_session_peer.py",
-                   ["shared", "batch", "approval", "approval-tell", "clarify", "detail", "queued-controls", "model", "voice-stop", "connections", "work"], timeout=400)
+@pytest.mark.parametrize("mode", ["shared", "reactions", "batch", "approval", "approval-tell", "clarify", "detail", "queued-controls",
+                                  "model", "voice-stop", "connections", "work"])
+def test_real_native_owner_shared_admission_and_detach(request, shared_owner, mode):
+    shared_owner(request, mode)
 
 
 @requires_agent
@@ -77,8 +124,9 @@ def test_diagnostic_creation_refuses_without_starting(tmp_path):
 
 
 @requires_agent
-def test_real_owner_diagnostic_execution_modes(request, tmp_path):
-    run_owner_peer(request, tmp_path, "gateway_execution_peer.py", ["normal", "ignore_config", "safe"], timeout=600)
+@pytest.mark.parametrize("scenario", ["controls", "restart", "safe", "safe-error"])
+def test_real_owner_diagnostic_execution_modes(request, tmp_path, scenario):
+    run_owner_peer(request, tmp_path, "gateway_execution_peer.py", [scenario])
 
 
 @pytest.mark.parametrize("owner_lacks,probe,outcome", [

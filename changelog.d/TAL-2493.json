@@ -1,0 +1,1 @@
+{"skip": "Test-only: splits and speeds up sidecar compatibility tests that ran over the per-test run-time budget; no app behavior changes."}
