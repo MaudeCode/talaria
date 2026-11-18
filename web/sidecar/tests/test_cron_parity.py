@@ -34,7 +34,6 @@ def test_create_keeps_monitor_fields_and_update_clears_profile(handshaken: Sidec
     ({}, "openrouter", "profile-model"),
     ({"model": "caller-model"}, "openrouter", "caller-model"),
     ({"provider": "caller-provider"}, "caller-provider", "profile-model"),
-    ({"model": "", "provider": ""}, "openrouter", "profile-model"),
     ({"model": " ", "provider": "\t"}, "openrouter", "profile-model"),
 ])
 def test_create_pins_execution_profile_model(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path, overrides: dict, expected_provider: str, expected_model: str) -> None:
@@ -159,22 +158,21 @@ def _unpinned_job(sidecar: SidecarProcess, home: pathlib.Path, profile: str) -> 
 
 
 @requires_agent
-@pytest.mark.parametrize("store", ["root", "beta"])
-def test_update_pins_the_store_profiles_own_main_model(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path, store: str) -> None:
+def test_update_pins_the_store_profiles_own_main_model(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    # The root pin is owned by test_profile_scope_is_restored_after_a_refused_update.
     _pin_profile(hermes_home, "root", expand=False)
     beta = tmp_path / "profiles" / "beta"
     _pin_profile(beta, "beta", expand=False)
-    home = hermes_home if store == "root" else beta
-    job_id = _unpinned_job(handshaken, home, store)
-    pinned = handshaken.result("cron.update", {"profile_home": str(home), "job_id": job_id, "updates": {"pinned": True}})["job"]
-    assert (pinned["provider"], pinned["model"]) == ("openrouter", f"{store}-fixture-model"), pinned
+    job_id = _unpinned_job(handshaken, beta, "beta")
+    pinned = handshaken.result("cron.update", {"profile_home": str(beta), "job_id": job_id, "updates": {"pinned": True}})["job"]
+    assert (pinned["provider"], pinned["model"]) == ("openrouter", "beta-fixture-model"), pinned
     # A fresh read from the store, not the update's echo.
-    stored = handshaken.result("cron.get", {"profile_home": str(home), "job_id": job_id})["job"]
-    assert (stored["provider"], stored["model"]) == ("openrouter", f"{store}-fixture-model"), stored
+    stored = handshaken.result("cron.get", {"profile_home": str(beta), "job_id": job_id})["job"]
+    assert (stored["provider"], stored["model"]) == ("openrouter", "beta-fixture-model"), stored
     # Unpinning releases both; an explicit model in the same update wins over the profile's main model.
-    released = handshaken.result("cron.update", {"profile_home": str(home), "job_id": job_id, "updates": {"pinned": False}})["job"]
+    released = handshaken.result("cron.update", {"profile_home": str(beta), "job_id": job_id, "updates": {"pinned": False}})["job"]
     assert (released["provider"], released["model"]) == (None, None), released
-    explicit =handshaken.result("cron.update", {"profile_home": str(home), "job_id": job_id, "updates": {
+    explicit =handshaken.result("cron.update", {"profile_home": str(beta), "job_id": job_id, "updates": {
         "pinned": True, "model": "caller-model", "provider": "caller-provider"}})["job"]
     assert (explicit["provider"], explicit["model"]) == ("caller-provider", "caller-model"), explicit
 

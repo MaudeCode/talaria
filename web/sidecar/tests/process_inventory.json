@@ -531,16 +531,9 @@
         ""
       ]
     },
-    "tests/test_background_list.py::test_a_finished_units_children_are_linked_by_their_parent_and_goal": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a finished units children are linked by their parent and goal. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
     "tests/test_background_list.py::test_an_image_tasks_child_is_linked_by_the_goal_inside_its_stored_message": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an image tasks child is linked by the goal inside its stored message. Uses the real installed release, not a fabricated API response.",
+      "reason": "Supported-Agent API compatibility: an image tasks child is linked by the goal inside its stored message, and only by its own parent session. Uses the real installed release, not a fabricated API response.",
       "cases": [
         ""
       ]
@@ -1092,6 +1085,43 @@
         "[host]"
       ]
     },
+    "tests/test_cron_child_exit.py::test_a_child_that_exits_without_a_result_fails_the_run_before_its_deadline": {
+      "layer": "process",
+      "reason": "A real spawn child exits with code 3 before putting a result; only a dead OS process gives the exit code the run reports and turns is_alive() false long before the run deadline. The process layer's leak scan proves the dead child was reaped.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_fire_claim.py::test_a_worker_that_ignores_terminate_is_killed_before_the_run_ends": {
+      "layer": "process",
+      "reason": "A real spawn worker ignores SIGTERM; only a real process shows _stop escalating to SIGKILL and the lost-claim run returning only after the worker is gone.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_fire_claim.py::test_stopping_a_run_ends_the_processes_its_worker_started": {
+      "layer": "process",
+      "reason": "The worker's setsid process group and killpg must reach a real grandchild the worker started; process-group signal delivery needs real processes.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_recovery.py::test_all_stop_exits_wait_for_cooperative_terminal_result": {
+      "layer": "process",
+      "reason": "Each stop exit sets a multiprocessing Event that a real spawn child reads across the process boundary before it returns its cooperative terminal result through the result pipe.",
+      "cases": [
+        "[cancelled]",
+        "[timeout]",
+        "[claim_lost]"
+      ]
+    },
+    "tests/test_cron_recovery.py::test_a_settlement_deadline_is_unverified_and_retains_the_execution": {
+      "layer": "process",
+      "reason": "An unresponsive real spawn child is still running at the settlement deadline; the run turns Unverified and stops it, and the process layer's leak scan proves the child does not outlive the run.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_cron_health.py::test_list_reports_an_unwritable_store_only_when_probed": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: list reports an unwritable store only when probed. Uses the real installed release, not a fabricated API response.",
@@ -1149,13 +1179,6 @@
         "[agent]"
       ]
     },
-    "tests/test_cron_owner.py::test_workers_finds_long_interpreter_commands_at_narrow_terminal_width": {
-      "layer": "process",
-      "reason": "Actual ps command width must preserve the full command of an independently running worker.",
-      "cases": [
-        ""
-      ]
-    },
     "tests/test_cron_owner.py::test_lost_submitter_recovers_same_admission_without_another_run": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: lost submitter recovers same admission without another run. Uses the real installed release, not a fabricated API response.",
@@ -1185,9 +1208,7 @@
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: schedule mutations cannot remove a manual execution recovery barrier. Uses the real installed release, not a fabricated API response.",
       "cases": [
-        "[cron.resume-extra0]",
-        "[cron.update-extra1]",
-        "[cron.delete-extra2]"
+        ""
       ]
     },
     "tests/test_cron_parity.py::test_create_keeps_monitor_fields_and_update_clears_profile": {
@@ -1211,8 +1232,7 @@
         "[overrides0-openrouter-profile-model]",
         "[overrides1-openrouter-caller-model]",
         "[overrides2-caller-provider-profile-model]",
-        "[overrides3-openrouter-profile-model]",
-        "[overrides4-openrouter-profile-model]"
+        "[overrides3-openrouter-profile-model]"
       ]
     },
     "tests/test_cron_parity.py::test_explicit_model_and_provider_skip_profile_resolution": {
@@ -1247,8 +1267,7 @@
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: update pins the store profile's own main model through the Agent's real pin helper. Uses the real installed release, not a fabricated API response.",
       "cases": [
-        "[root]",
-        "[beta]"
+        ""
       ]
     },
     "tests/test_cron_parity.py::test_concurrent_pins_never_read_another_profiles_runtime": {
@@ -2568,6 +2587,13 @@
       "cases": [
         "[subprocess]",
         "[os-system]"
+      ]
+    },
+    "tests/test_suite_runner.py::test_policy_rejects_a_multiprocessing_child_in_a_fast_case": {
+      "layer": "process",
+      "reason": "A real pytest worker must see the _posixsubprocess.fork_exec launch of a real multiprocessing spawn child under the fast-layer guard; only the actual harness and interpreter audit events show it.",
+      "cases": [
+        ""
       ]
     },
     "tests/test_suite_runner.py::test_policy_allows_boundary_fakes_without_an_agent": {

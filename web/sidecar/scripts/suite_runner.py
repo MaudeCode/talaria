@@ -106,6 +106,14 @@ def pytest_configure(config):
                     or len(entry['cases']) != len(set(entry['cases']))):
                 raise ValueError(f'invalid process inventory family: {family}')
     sys.addaudithook(_audit_launch)
+    if sys.version_info < (3, 14):
+        # multiprocessing's spawn starts its child through _posixsubprocess.fork_exec, which audits itself only from 3.14.
+        import _posixsubprocess
+        fork_exec = _posixsubprocess.fork_exec
+        def audited_fork_exec(*args):
+            sys.audit('_posixsubprocess.fork_exec', args[1], args[0], args[5])
+            return fork_exec(*args)
+        _posixsubprocess.fork_exec = audited_fork_exec
     def final_policy_check():
         if _violations:
             try:
@@ -116,7 +124,7 @@ def pytest_configure(config):
 
 
 def _audit_launch(event, args):
-    if event not in ('subprocess.Popen', 'os.fork', 'os.forkpty', 'os.posix_spawn', 'os.exec',
+    if event not in ('subprocess.Popen', '_posixsubprocess.fork_exec', 'os.fork', 'os.forkpty', 'os.posix_spawn', 'os.exec',
                      'os.system', 'os.startfile', 'os.startfile/2', 'socket.connect', 'socket.bind',
                      'socket.getaddrinfo', 'socket.gethostbyname', 'socket.gethostbyname_ex',
                      'socket.gethostbyaddr', 'socket.getnameinfo', 'socket.sendto', 'socket.sendmsg'):

@@ -59,6 +59,16 @@ def test_policy_rejects_an_unclassified_process_launch(project, api):
     assert 'unclassified process launch' in result.stdout
 
 
+def test_policy_rejects_a_multiprocessing_child_in_a_fast_case(project):
+    # Spawn starts its child through _posixsubprocess.fork_exec, past subprocess.Popen and os.fork.
+    (project / 'tests/test_spawn.py').write_text(
+        "import multiprocessing\ndef test_spawn():\n"
+        " child = multiprocessing.get_context('spawn').Process(target=print)\n child.start()\n child.join()\n")
+    result = run(project, 1)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert 'unclassified process launch' in result.stdout
+
+
 def test_policy_allows_boundary_fakes_without_an_agent(project):
     (project / 'tests/test_fake.py').write_text(
         "import subprocess\nfrom unittest.mock import patch\ndef test_fake():\n"

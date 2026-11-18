@@ -23,13 +23,6 @@ class _Ctx:
         pass
 
 
-def _answer_late(job, execution_home, result_queue):
-    import time as _time
-
-    _time.sleep(15)
-    result_queue.put(("ok", (True, "output", "response", None)))
-
-
 def _ignore_terminate(job, execution_home, result_queue):
     import os as _os
     import signal as _signal
@@ -49,10 +42,6 @@ def _spawn_grandchild(job, execution_home, result_queue):
     with open(job["pid_file"], "w", encoding="utf-8") as handle:
         handle.write(str(child.pid))
     _time.sleep(60)
-
-
-def _answer_now(job, execution_home, result_queue):
-    result_queue.put(("ok", (True, "output", "response", None)))
 
 
 def _stub_jobs(monkeypatch, *, owns: bool = True, heartbeat=lambda job_id, *, expected_owner: True, claim=None, record=None) -> dict:
@@ -116,29 +105,13 @@ def test_run_now_executes_the_claimed_record(monkeypatch, tmp_path) -> None:
     assert "owner-1" in args
 
 
-def test_a_run_that_loses_its_claim_stops_before_side_effects(monkeypatch, tmp_path) -> None:
-    calls = _stub_jobs(monkeypatch, heartbeat=lambda job_id, *, expected_owner: False)
-    monkeypatch.setattr(cron, "_child_main", _answer_late)
-    monkeypatch.setattr(cron, "_CLAIM_HEARTBEAT_SECONDS", 0.0)
-    monkeypatch.setattr(cron, "_CLAIM_MISS_CONFIRM_SECONDS", 0.0, raising=False)
-    monkeypatch.setitem(cron._RUNNING, "job-1", time.time())
-    started = time.monotonic()
-    outcome = cron.run_tracked({"id": "job-1", "name": "Job"}, tmp_path, None, _Ctx(), "owner-1")
-    assert "claim" in str(outcome.get("error")), outcome
-    assert outcome["status"] == "failed" and outcome["success"] is False
-    assert calls["saved"] == []
-    assert all(owner == "owner-1" for _, _, owner in calls["marked"]), calls["marked"]
-    assert time.monotonic() - started < 10.0
-    assert "job-1" not in cron._RUNNING
-
-
 def test_completion_is_fenced_by_the_claim_owner(monkeypatch, tmp_path) -> None:
     calls = _stub_jobs(monkeypatch, owns=False)
-    monkeypatch.setattr(cron, "_child_main", _answer_now)
+    monkeypatch.setattr(cron, "_run_in_child", lambda *args, **kwargs: (True, "output", "response", None))
     outcome = cron.run_tracked({"id": "job-1", "name": "Job"}, tmp_path, None, _Ctx(), "owner-1")
     assert "claim" in str(outcome.get("error")), outcome
     assert calls["saved"] == []
-    assert all(owner == "owner-1" for _, _, owner in calls["marked"]), calls["marked"]
+    assert calls["marked"] == [("job-1", False, "owner-1")]
 
 
 def test_a_worker_that_ignores_terminate_is_killed_before_the_run_ends(monkeypatch, tmp_path) -> None:
@@ -150,14 +123,20 @@ def test_a_worker_that_ignores_terminate_is_killed_before_the_run_ends(monkeypat
             time.sleep(0.05)
         return False
 
-    _stub_jobs(monkeypatch, heartbeat=lost_once_the_worker_ignores_terminate)
+    calls = _stub_jobs(monkeypatch, heartbeat=lost_once_the_worker_ignores_terminate)
     monkeypatch.setattr(cron, "_child_main", _ignore_terminate)
     monkeypatch.setattr(cron, "_CLAIM_HEARTBEAT_SECONDS", 0.0)
     monkeypatch.setattr(cron, "_CLAIM_MISS_CONFIRM_SECONDS", 0.0)
+    monkeypatch.setitem(cron._RUNNING, "job-1", time.time())
     outcome = cron.run_tracked({"id": "job-1", "name": "Job", "pid_file": str(pid_file)}, tmp_path, None, _Ctx(), "owner-1")
     pid = int(pid_file.read_text(encoding="utf-8"))
     try:
         assert "claim" in str(outcome.get("error")), outcome
+        # A lost claim stops before any side effect and records the failure only under its own owner.
+        assert outcome["status"] == "failed" and outcome["success"] is False
+        assert calls["saved"] == []
+        assert calls["marked"] == [("job-1", False, "owner-1")]
+        assert "job-1" not in cron._RUNNING
         alive = True
         try:
             os.kill(pid, 0)

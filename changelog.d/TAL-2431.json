@@ -1,0 +1,1 @@
+{"skip": "Test-only change: classifies the sidecar cron tests that start real children, guards the fast layer against multiprocessing launches and trims repeated cron and process cases; no app behavior changes."}
