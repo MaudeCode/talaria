@@ -1184,7 +1184,7 @@ def _command(argv, root, timeout, stopped, custody, *, cooperative=False):
 def main():
     for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"):
         os.environ.pop(key, None)
-    if len(sys.argv) > 2 and sys.argv[1] in {'--recover-current', '--resume', '--resume-leased', '--select-resume'}:
+    if len(sys.argv) > 2 and sys.argv[1] in {'--recover-current', '--resume-leased', '--select-resume'}:
         try:
             _native_source_repair(Path(sys.argv[2]).resolve())
             if sys.argv[1] == '--select-resume':
@@ -1220,11 +1220,11 @@ def main():
             finally:
                 lock.release()
             return
-        if sys.argv[1] in {"--resume", "--resume-leased"}:
+        if sys.argv[1] == "--resume-leased":
             with contextlib.redirect_stdout(sys.stderr):
                 if len(sys.argv) > 4 and sys.argv[4]:
                     _verify_recovery_environment(Path(sys.argv[2]).resolve(), sys.argv[4])
-                reply = _resume_worker(Path(sys.argv[2]).resolve(), stopped if sys.argv[1] == "--resume-leased" else None, sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None)
+                reply = _resume_worker(Path(sys.argv[2]).resolve(), stopped, sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None)
             send(reply)
             return
         with contextlib.redirect_stdout(sys.stderr):

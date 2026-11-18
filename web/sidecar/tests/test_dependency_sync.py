@@ -1,10 +1,11 @@
 """Dependency repair stays available when new Agent code cannot import."""
 import json
 import sys
+import time
 
 import pytest
 
-from conftest import SidecarProcess, assert_matches
+from conftest import SidecarProcess, assert_matches, process_snapshot
 from talaria_sidecar import SIDECAR_RPC_VERSION
 
 
@@ -67,12 +68,15 @@ while True:
     return agent, home
 
 
-def _wait_for_file(path):
-    import time
+def _wait(done, failure):
     deadline = time.monotonic() + 5
-    while not path.exists() and time.monotonic() < deadline:
+    while not done() and time.monotonic() < deadline:
         time.sleep(0.02)
-    assert path.exists(), f'writer never created {path.name}'
+    assert done(), failure
+
+
+def _wait_for_file(path):
+    _wait(path.exists, f'writer never created {path.name}')
 
 
 def _clean_writers(agent):
@@ -86,15 +90,18 @@ def _clean_writers(agent):
 
 @pytest.mark.parametrize('stop', ['cancel', 'shutdown', 'eof', 'kill'])
 def test_dependency_sync_writer_stops_with_its_rpc_owner(tmp_path, stop):
-    import time
-
     agent, home = _looping_agent(tmp_path)
     proc = SidecarProcess(home, agent_dir=agent, python=sys.executable)
     try:
         request = proc.request('runtime.sync_dependencies', {'agent_dir': str(agent)})
-        # Each writer records its pid before its first append; stopping in that gap leaves no file to measure.
+        # Each writer records its pid before its first append, so a write proves a complete pid file.
         for name in ('writes', 'child-writes'):
             _wait_for_file(agent / name)
+        writers = {int((agent / name).read_text()) for name in ('writer.pid', 'grandchild.pid')}
+        # A zombie or reused PID lists other args, so a matching row is a writer still running.
+        running = lambda: {(pid, args) for pid, _, _, args in process_snapshot() if pid in writers}
+        started = running()
+        assert len(started) == 2, started
         if stop == 'cancel':
             proc.request('rpc.cancel', {'id': request})
         elif stop == 'shutdown':
@@ -103,10 +110,7 @@ def test_dependency_sync_writer_stops_with_its_rpc_owner(tmp_path, stop):
             proc.proc.stdin.close()
         else:
             proc.proc.kill()
-        time.sleep(1)
-        before = [(agent / name).stat().st_size for name in ('writes', 'child-writes')]
-        time.sleep(0.3)
-        assert [(agent / name).stat().st_size for name in ('writes', 'child-writes')] == before, 'dependency writer outlived its RPC owner'
+        _wait(lambda: not started & running(), 'dependency writer outlived its RPC owner')
     finally:
         _clean_writers(agent)
         proc.close()
