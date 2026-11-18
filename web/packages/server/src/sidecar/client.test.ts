@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { EventEmitter, getEventListeners } from 'node:events'
 import { PassThrough, Writable } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { SIDECAR_RPC_VERSION } from '@maudecode/talaria-web-contracts'
 import { SidecarClient, SidecarError, sidecarSpawnEnv } from './client.js'
 import { redactText } from '../redact.js'
 import { launchSidecar } from './discover.js'
@@ -108,6 +109,21 @@ describe('SidecarClient version mismatch', () => {
     expect((await client.call('config.get', { profile_home: dir, config_path })).config).toEqual({})
   })
 
+  it('an already-aborted signal is refused before anything is written to the sidecar', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-abort-'))
+    const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+    // Answers the handshake from the fixture and echoes every request method on stderr so the test can prove nothing was sent.
+    const script = `const fs=require('fs');const fixture=process.argv[1];require('readline').createInterface({input:process.stdin}).on('line',(line)=>{const req=JSON.parse(line);process.stderr.write('seen '+req.method+'\\n');if(req.method==='runtime.handshake'){const result=JSON.parse(fs.readFileSync(fixture,'utf8'))['runtime.handshake'][0].result;process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result})+'\\n')}})`
+    const logs: string[] = []
+    client = new SidecarClient({ python: process.execPath, command: [process.execPath, '-e', script, fixture], agentDir: '', sidecarDir: dir, hermesHome: dir, log: (l) => logs.push(l), backoffMs: [20], handshakeTimeoutMs: 5_000 })
+    await client.start()
+    const controller = new AbortController()
+    controller.abort()
+    await expect(client.call('runtime.ensure_current', {}, { signal: controller.signal })).rejects.toMatchObject({ condition: 'cancelled' })
+    await new Promise((r) => setTimeout(r, 100))
+    expect(logs.filter((l) => l.includes('seen runtime.ensure_current'))).toEqual([])
+  })
+
   it('a delayed runtime status cannot replace a newer readiness verdict', async () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-status-'))
     const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
@@ -204,6 +220,13 @@ describe('SidecarClient version mismatch', () => {
 })
 
 describe('FakeSidecar', () => {
+  it('answers from fixtures and validates shapes', async () => {
+    const fake = new FakeSidecar()
+    const describe = await fake.call('runtime.handshake', { rpc_version: SIDECAR_RPC_VERSION })
+    expect(describe.rpc_version).toBe(SIDECAR_RPC_VERSION)
+    expect(fake.calls).toEqual([{ method: 'runtime.handshake', params: { rpc_version: SIDECAR_RPC_VERSION } }])
+  })
+
   it('rejects a responder result that violates the contract', async () => {
     const fake = new FakeSidecar()
     fake.respond('runtime.ensure_current', () => ({ current: true, agent_revision: 42 as unknown as string }))
