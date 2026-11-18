@@ -154,14 +154,19 @@ describe('the shared session action owner (TAL-1119)', () => {
   })
 
   it('shows a refused move and restores the server project', async () => {
-    vi.mocked(api.moveSession).mockRejectedValueOnce(new Error('no such project'))
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.moveSession).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
     const { refresh } = await setup()
     await openAction('old', 'Move to project')
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('combobox'))
     await userEvent.click(await screen.findByRole('option', { name: 'Proj' }))
     await refresh(regrouped())
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
+    // The row shows the chosen project while the move is held, and drops it when the server refuses.
+    await waitFor(() => expect(rowLink('old').querySelector('.session-project-dot')?.getAttribute('title')).toBe('Proj'))
+    await act(async () => { refuse(new Error('no such project')); await Promise.resolve() })
     await waitFor(() => expect(toast).toHaveBeenCalledWith('no such project', 4000, 'error'))
+    await waitFor(() => expect(rowLink('old').querySelector('.session-project-dot')).toBeNull())
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 

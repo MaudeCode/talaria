@@ -29,7 +29,7 @@ const { useTranscript } = await import('./useTranscript')
 const { liveText } = await import('../../stream/reducer')
 const { resetStreamStoreForTests } = await import('../../stream/store')
 const { resetConnectionsForTests, configureStream, attachToStream, teardown, teardownAll } = await import('../../stream/connection')
-const { useSessionListStream } = await import('../sessions/SessionListPanel')
+const { useSessionListStream } = await import('../sessions/useSessionListStream')
 
 it.each(['before', 'after'] as const)('keeps the terminal window without a detail fetch when the sidebar arrives %s done', async (order) => {
   const feeds = await import('../../api/sse')

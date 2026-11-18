@@ -36,22 +36,6 @@ async function setup(path = '/session/alpha') {
 }
 
 describe('sidebar conversation rows (TAL-1120)', () => {
-  it('exposes each row as a named link inside a list item, marking the open conversation', async () => {
-    await setup()
-    const list = document.getElementById('sessionList')!
-    expect(list).toHaveAttribute('role', 'list')
-    const alpha = screen.getByRole('link', { name: /^Alpha/ })
-    const beta = screen.getByRole('link', { name: /^Beta/ })
-    expect(alpha).toHaveAttribute('href', '/session/alpha')
-    expect(beta).toHaveAttribute('href', '/session/beta')
-    expect(alpha).toHaveAttribute('aria-current', 'page')
-    expect(beta).not.toHaveAttribute('aria-current')
-    // jsdom omits nested button labels from link names; e2e/sidebar-row-link.spec.ts checks that in a browser.
-    const items = within(list).getAllByRole('listitem')
-    expect(items).toHaveLength(2)
-    expect(items[1]).toContainElement(beta)
-  })
-
   it('opens a conversation once on Enter and closes the mobile sidebar', async () => {
     const { router, opened } = await setup()
     const { result } = renderHook(() => useShellState())

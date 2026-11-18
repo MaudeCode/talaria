@@ -31,8 +31,9 @@ const framesOfToggle = (page: Page) => page.evaluate(async () => {
     return shown
   }
   document.getElementById('btnSidebarEdgeToggle')!.click()
-  const start = performance.now()
-  while (performance.now() - start < 500) {
+  // Sample every frame until no transition runs in the column; the frame cap only stops a runaway loop.
+  const moving = () => aside.getAnimations({ subtree: true }).some((animation) => animation.playState === 'running')
+  for (let frame = 0; frame < 2 || (moving() && frame < 600); frame++) {
     await new Promise(requestAnimationFrame)
     const panel = document.querySelector('.sidebar-panel')
     const handle = aside.querySelector('.resize-handle')

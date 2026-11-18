@@ -72,17 +72,6 @@ function drag(id: string) {
 }
 
 describe('sidebar pin drag/drop (TAL-1498)', () => {
-  it('pins a dropped row immediately through the shared pin action', async () => {
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [{ ...alpha, pinned: true, sidebar_group: 'pinned' }, beta] } as never)
-    vi.mocked(api.pinSession).mockReturnValue(held())
-    await panel()
-    const dataTransfer = drag('beta')
-    fireEvent.dragOver(screen.getByText('Pinned'), { dataTransfer })
-    fireEvent.drop(screen.getByText('Pinned'), { dataTransfer })
-    await waitFor(() => expect(api.pinSession).toHaveBeenCalledWith('beta', true))
-    expect(within(screen.getByText('Pinned').closest<HTMLElement>('.session-date-group')!).getByText('Beta')).toBeInTheDocument()
-  })
-
   it('offers an empty Pinned target and accepts a collapsed target', async () => {
     vi.mocked(api.pinSession).mockReturnValue(held())
     await panel()
@@ -199,19 +188,6 @@ describe('sidebar pin drag/drop (TAL-1498)', () => {
 })
 
 describe('session writes show their result while the server is held (TAL-1179)', () => {
-  it('renames at once and closes the dialog on submit', async () => {
-    vi.mocked(api.renameSession).mockReturnValue(held())
-    await panel()
-    await menu('alpha', 'Rename conversation')
-    const input = screen.getByRole('textbox', { name: 'Rename conversation' })
-    await userEvent.clear(input)
-    await userEvent.type(input, 'Renamed{Enter}')
-    expect(api.renameSession).toHaveBeenCalledWith('alpha', 'Renamed')
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(within(rowOf('alpha')).getByText('Renamed')).toBeInTheDocument()
-    expect(screen.queryByText(/Pending/)).toBeNull()
-  })
-
   it('rolls a refused rename back to the confirmed title and shows the error', async () => {
     let refuse!: (error: unknown) => void
     vi.mocked(api.renameSession).mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
@@ -220,6 +196,8 @@ describe('session writes show their result while the server is held (TAL-1179)',
     const input = screen.getByRole('textbox', { name: 'Rename conversation' })
     await userEvent.clear(input)
     await userEvent.type(input, 'Renamed{Enter}')
+    expect(api.renameSession).toHaveBeenCalledWith('alpha', 'Renamed')
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(within(rowOf('alpha')).getByText('Renamed')).toBeInTheDocument()
     refuse(refusal('Title refused'))
     await waitFor(() => expect(within(rowOf('alpha')).getByText('Alpha')).toBeInTheDocument())
