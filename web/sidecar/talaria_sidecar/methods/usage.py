@@ -4,11 +4,9 @@ state, and the key-based balance endpoints (TAL-548). Pool keys never leave the 
 from __future__ import annotations
 
 import dataclasses
-import functools
 import hashlib
 import hmac
 import http.client
-import inspect
 import json
 import logging
 import math
@@ -170,7 +168,7 @@ def pool(provider: str, *, api_key: str | None = None) -> list[dict]:
 def limits(providers: list[dict]) -> dict[str, dict]:
     """TAL-807: the Agent's ``CredentialPool.limit_state`` per pooled provider, ISO-dated, as its ``model.options`` attaches
     ``limit``: ``account`` when every live entry is benched, else ``models`` for the given models no usable entry can serve
-    yet. A provider without a persisted pool, an unreadable pool, or an Agent before v0.21.6 says nothing."""
+    yet. A provider without a persisted pool or an unreadable pool says nothing."""
     try:
         from agent.credential_pool import load_pool
         from hermes_cli.auth import read_credential_pool
@@ -187,8 +185,7 @@ def limits(providers: list[dict]) -> dict[str, dict]:
         if slug not in pooled:
             continue
         try:
-            limit_state = getattr(load_pool(slug), "limit_state", None)
-            state = limit_state([str(m) for m in row.get("models") or []]) if callable(limit_state) else None
+            state = load_pool(slug).limit_state([str(m) for m in row.get("models") or []])
         except Exception:  # noqa: BLE001 - one unreadable pool must not hide the others
             log.debug("limit_state(%r) failed", slug, exc_info=True)
             continue
@@ -324,28 +321,6 @@ def balance(provider: str, *, credential_id: str | None, api_key: str | None, en
     return {**result, **parsed, "status": "ok"} if parsed is not None else result
 
 
-_ANTHROPIC_WINDOWS = (("five_hour", "Current session"), ("seven_day", "Current week"), ("seven_day_opus", "Opus week"), ("seven_day_sonnet", "Sonnet week"))
-
-
-def _anthropic_usage(token: str):
-    """The Agent's Anthropic account-usage read for one given token. An Agent before v0.21.6 reads only the ambient token,
-    so a pool account would otherwise report the active account's limits."""
-    # ponytail: mirrors agent.account_usage._fetch_anthropic_account_usage on the Agent's own helpers; TAL-351 drops it
-    # once v0.21.6 is the oldest supported Agent.
-    from agent import account_usage as agent_usage
-
-    if not agent_usage._is_oauth_token(token):
-        return agent_usage._snapshot("anthropic", "oauth_usage_api", [], [], unavailable_reason="Anthropic account limits are only available for OAuth-backed Claude accounts.")
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json", "Content-Type": "application/json",
-               "anthropic-beta": "oauth-2025-04-20", "User-Agent": "claude-code/2.1.0"}
-    payload = agent_usage._get_json("https://api.anthropic.com/api/oauth/usage", headers, timeout=15.0)
-    windows = agent_usage._usage_windows(payload, _ANTHROPIC_WINDOWS, "utilization", "resets_at", fraction=True)
-    extra = payload.get("extra_usage") or {}
-    used, limit = extra.get("used_credits"), extra.get("monthly_limit")
-    details = [f"Extra usage: {used:.2f} / {limit:.2f} {extra.get('currency') or 'USD'}"] if extra.get("is_enabled") and agent_usage._is_num(used) and agent_usage._is_num(limit) else []
-    return agent_usage._snapshot("anthropic", "oauth_usage_api", windows, details)
-
-
 # The Agent's Codex window order and labels (`agent.account_usage._codex_window_labels`): a published duration names the
 # window, else its position does.
 _CODEX_WINDOWS = (("primary_window", "Session"), ("secondary_window", "Weekly"))
@@ -378,16 +353,6 @@ def _backfill_codex_durations(windows: list[dict], raw: Any) -> None:
     for window, (label, seconds) in zip(windows, counterparts):
         if _duration(window.get("limit_window_seconds")) is None and seconds is not None and str(window.get("label") or "").strip().lower() == label.lower():
             window["limit_window_seconds"] = seconds
-
-
-@functools.cache
-def _reads_read_only(fetch) -> bool:
-    """Agent v0.21.6+: ``fetch_account_usage(read_only=, identity_id=)`` reads one pool account without refreshing or
-    rotating its credential, and every fetcher honours the explicit key. TAL-351 drops the check with the mirror."""
-    try:
-        return {"read_only", "identity_id"} <= inspect.signature(fetch).parameters.keys()
-    except (TypeError, ValueError):
-        return False
 
 
 def _own_plugin(provider: str) -> bool:
@@ -428,13 +393,11 @@ def account(provider: str, *, base_url: str | None, api_key: str | None, credent
         # TAL-2187: any other provider reads through its plugin's own hook, and only this profile's plugin answers.
         return {"provider": provider, "available": False, "unavailable_reason": f"{provider} is not an enabled provider plugin in this profile.", "windows": [], "details": []}
     try:
-        if entry is not None and _reads_read_only(fetch_account_usage):
+        if entry is not None:
             # A display read never repairs the account: a rejected key reads as unavailable, never as a credential refresh.
             from agent.account_usage_cache import _identity_id_for
 
             snapshot = fetch_account_usage(provider, base_url=base_url, api_key=api_key, read_only=True, identity_id=_identity_id_for(provider, entry))
-        elif entry is not None and provider == "anthropic":
-            snapshot = _anthropic_usage(api_key)
         else:
             snapshot = fetch_account_usage(provider, base_url=base_url, api_key=api_key)
     except Exception as exc:  # noqa: BLE001

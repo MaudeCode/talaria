@@ -31,7 +31,6 @@ SIDECAR_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIDECAR_ROOT))
 
 from talaria_sidecar.errors import RpcError  # noqa: E402
-from talaria_sidecar.methods.providers import parse_switch_args  # noqa: E402
 from talaria_sidecar.rpc import RpcServer  # noqa: E402
 
 FIXTURES = SIDECAR_ROOT.parent / "packages" / "contracts" / "fixtures" / "sidecar"
@@ -40,6 +39,10 @@ APPROVAL_COMMAND = "printf talaria-contract"
 # ponytail: one fixture turn at a time; use per-session events for concurrent probe turns.
 _APPROVAL_ANSWERED = threading.Event()
 _CLARIFICATION_ANSWERED = threading.Event()
+
+
+def _bare_model_id(args: str) -> dict:
+    return {"target": args.strip(), "provider": None, "reset": False, "reasoning": None, "errors": [], "unsupported_flags": []}
 
 
 def _substitutions() -> list[tuple[str, str]]:
@@ -155,8 +158,9 @@ def build_methods() -> dict:
     methods["goals.evaluate"] = lambda ctx, params: {"status": None, "should_continue": False, "continuation_prompt": None, "verdict": "inactive", "reason": "no active goal", "message": ""}
     # TAL-906: a recorded text gets the Agent's recorded script; any other text is spoken as written.
     methods["text.spoken"] = lambda ctx, params: spoken.get(str(params.get("text") or ""), {"spoken_text": str(params.get("text") or "")})
-    # TAL-1814: recorded arguments get the Agent's recorded answer; any others read as a bare model id, as with no parser.
-    methods["models.parse_switch_args"] = lambda ctx, params: switch_args.get(str(params.get("args") or "")) or parse_switch_args(str(params.get("args") or ""))
+    # TAL-1814: recorded arguments get the Agent's recorded answer; the replay has no Agent parser, so any others read as
+    # a bare model id.
+    methods["models.parse_switch_args"] = lambda ctx, params: switch_args.get(str(params.get("args") or "")) or _bare_model_id(str(params.get("args") or ""))
     methods["worktree.create"] = _worktree_create
     methods["runtime.shutdown"] = _shutdown
     return methods

@@ -464,37 +464,30 @@
         ""
       ]
     },
-    "tests/test_aux_funnel.py::test_a_title_call_reaches_the_auxiliary_plugin_hooks": {
+    "tests/test_aux_funnel.py::test_a_title_call_reaches_the_plugin_hooks_with_the_custom_provider_extra_body": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a title call reaches the auxiliary plugin hooks. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_aux_funnel.py::test_a_title_call_carries_the_custom_provider_extra_body": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a title call carries the custom provider extra body. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's call_llm funnel must carry a Talaria title call through its pre_auxiliary_call and post_auxiliary_call plugin hooks, stream its tokens back and put the custom provider's extra_body in the request a test-owned loopback endpoint records. A real sidecar loads a synthetic hook plugin from a disposable home; a fake funnel cannot show which hooks and body fields the release applies.",
       "cases": [
         ""
       ]
     },
     "tests/test_aux_funnel.py::test_a_title_cancelled_while_queued_for_the_task_permit_never_reaches_the_provider": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a title cancelled while queued for the task permit never reaches the provider. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's per-task permit semaphore and aux_interrupt_protection must drop a call cancelled while it waits for the permit, so it never reaches the provider. The Agent interpreter holds the release's real permit so the call is known to queue, and a test-owned loopback endpoint records any request; the fast twin in test_aux_fallback fakes both seams.",
       "cases": [
         ""
       ]
     },
     "tests/test_aux_tasks.py::test_slots_follow_the_agent_with_plugin_tasks_per_profile": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: slots follow the agent with plugin tasks per profile. Uses the real installed release, not a fabricated API response.",
+      "reason": "aux.tasks must follow the installed Agent's _AUX_TASKS order, per-profile register_auxiliary_task plugins, _get_auxiliary_task_config inheritance (under the allow_task_override grant v0.23.2 requires) and _aux_task_takes_reasoning, then survive a config.set round trip. Synthetic plugins in disposable homes on a real sidecar; a fake registry cannot show each release's resolution.",
       "cases": [
         ""
       ]
     },
     "tests/test_aux_tasks.py::test_delegation_row_follows_the_top_level_section": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the picker's delegation row follows the top-level delegation section. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent picker's delegation row (_DELEGATION_TASK_KEY with _delegation_cfg_as_task) must read the top-level delegation section, never auxiliary.delegation, and list last; real sidecar over a disposable config.",
       "cases": [
         ""
       ]
@@ -955,21 +948,21 @@
     },
     "tests/test_config_write.py::test_config_set_preserves_comments_quotes_order_and_removals": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: config set preserves comments quotes order and removals. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's YAML parser and atomic_config_replace writer must keep comments, quoting, key order and removals through config.get and config.set on a real sidecar; only the release's own round-trip writer shows what it preserves.",
       "cases": [
         ""
       ]
     },
     "tests/test_config_write.py::test_config_set_round_trips_backslash_corpus": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: config set round trips backslash corpus. Uses the real installed release, not a fabricated API response.",
+      "reason": "Backslash and control-character values must survive config.set and config.get byte for byte through the installed Agent's YAML writer and parser on a real sidecar, across the line widths where the writer folds; a fake serializer would not reproduce its escaping.",
       "cases": [
         ""
       ]
     },
     "tests/test_config_write.py::test_config_fallback_round_trips_backslash_corpus": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: config fallback round trips backslash corpus. Uses the real installed release, not a fabricated API response.",
+      "reason": "The same backslash corpus through Talaria's safe_dump fallback, run in the Agent interpreter with the Agent writer import refused, must read back unchanged through the installed release's YAML parser.",
       "cases": [
         ""
       ]
@@ -1318,28 +1311,28 @@
     },
     "tests/test_env_write.py::test_env_write_waits_for_a_concurrent_agent_write": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: env write waits for a concurrent agent write. Uses the real installed release, not a fabricated API response.",
+      "reason": "Real cross-process lock exclusion: config.env_write in the Agent interpreter must wait on the .env.lock a paused Agent save_env_value holds (observed asking for it while the Agent holds it), so neither key is dropped. Two real processes and the release's own flock helper.",
       "cases": [
         ""
       ]
     },
     "tests/test_env_write.py::test_env_write_keeps_comments_and_order_and_ends_owner_only": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: env write keeps comments and order and ends owner only. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's .env line helpers (_read_env_lines, _env_line_defines_key, _write_env_lines) must keep comments and order, end the file 0600 and leave refused values unwritten through config.env_write on a real sidecar.",
       "cases": [
         ""
       ]
     },
     "tests/test_env_write.py::test_env_write_refuses_an_administrator_managed_key_before_writing": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: env write refuses an administrator managed key before writing. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's administrator-managed .env refusal (HERMES_MANAGED_DIR) must refuse config.env_write before any key is written, through a real sidecar launched with that environment.",
       "cases": [
         ""
       ]
     },
     "tests/test_env_write.py::test_env_write_never_publishes_into_the_process_environment": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: env write never publishes into the process environment. Uses the real installed release, not a fabricated API response.",
+      "reason": "In the Agent interpreter, config.env_write must never place a key in os.environ at any point of the write, observed through the release's own invalidate_env_cache; a fake config module cannot show what the real writer publishes.",
       "cases": [
         ""
       ]
@@ -1712,14 +1705,14 @@
     },
     "tests/test_model_selection.py::test_real_agent_parser_answers_model_arguments": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: real /model argument parser. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's parse_model_switch_args (hermes_cli.model_switch) must map /model arguments (reset, --provider, --reasoning, an unsupported --global) to the models.parse_switch_args fields, run in the Agent interpreter.",
       "cases": [
         ""
       ]
     },
     "tests/test_model_selection.py::test_real_selection_guards_and_read_only_context": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: real selection guards and read only context. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's model selection guards and usage anchor must produce data-policy, context-cache and cost warnings for synthetic routes, and a session's context tokens must come only from its own profile's state.db opened read-only. Agent interpreter, local pricing, no provider traffic.",
       "cases": [
         ""
       ]
@@ -2246,85 +2239,58 @@
         ""
       ]
     },
-    "tests/test_state_db_delete_guard.py::test_legacy_agent_refuses_retained_runtime_history": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: legacy agent refuses retained runtime history. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        "[cli-root]",
-        "[cli-tip]",
-        "[worker-child]",
-        "[worker-only-parent]",
-        "[reset]",
-        "[compressed]",
-        "[empty]",
-        "[multiple]",
-        "[malformed]"
-      ]
-    },
-    "tests/test_state_db_delete_guard.py::test_legacy_deletion_keeps_mismatched_marker_history_separate": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: legacy deletion keeps mismatched marker history separate. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        "[cli-_branched_from]",
-        "[cli-_delegate_from]",
-        "[cli-_reset_from]",
-        "[subagent-_branched_from]",
-        "[subagent-_delegate_from]",
-        "[subagent-_reset_from]"
-      ]
-    },
     "tests/test_state_db_delete_guard.py::test_a_live_turn_lease_or_compression_lock_refuses_the_delete": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a live turn lease or compression lock refuses the delete. Uses the real installed release, not a fabricated API response.",
+      "reason": "Turn leases and compression locks another Agent process writes through the installed SessionDB, including a delegate child's lease, must refuse state_db.delete_cli_session through a real sidecar with nothing removed (the release's _guarded_ids).",
       "cases": [
         ""
       ]
     },
     "tests/test_state_db_delete_guard.py::test_an_expired_guard_is_reclaimed_and_the_delete_proceeds": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an expired guard is reclaimed and the delete proceeds. Uses the real installed release, not a fabricated API response.",
+      "reason": "Expired turn leases and compression locks written by the installed SessionDB must be reclaimed by its guard so the delete proceeds through a real sidecar, taking the delegate child with its parent.",
       "cases": [
         ""
       ]
     },
     "tests/test_state_db_delete_guard.py::test_the_lineage_is_resolved_and_guarded_inside_the_delete_transaction": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the lineage is resolved and guarded inside the delete transaction. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's canonical delete targets must take a compression tip the caller never named inside the delete transaction, refuse while its real compression lock is live and delete it with the root once the lock expires; real sidecar.",
       "cases": [
         ""
       ]
     },
     "tests/test_state_db_delete_guard.py::test_the_delete_removes_every_segment_of_a_long_compression_lineage": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the delete removes every segment of a long compression lineage. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's canonical delete targets must take all 30 segments of a long compression lineage (TAL-893) in one real-sidecar delete over Agent-written rows.",
       "cases": [
         ""
       ]
     },
     "tests/test_state_db_delete_guard.py::test_the_delete_removes_the_legacy_session_transcript": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the delete removes the legacy session transcript. Uses the real installed release, not a fabricated API response.",
+      "reason": "A real-sidecar delete over the installed Agent's retirement must remove the session_<id>.json snapshot and finish a pending cleanup manifest left by an earlier delete, keeping other sessions' files (TAL-892).",
       "cases": [
         ""
       ]
     },
     "tests/test_state_db_delete_guard.py::test_the_legacy_name_of_a_live_prefixed_session_is_its_own_transcript": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the legacy name of a live prefixed session is its own transcript. Uses the real installed release, not a fabricated API response.",
+      "reason": "Deleting <id> through a real sidecar must keep session_<id>.json while a live session named session_<id> in the installed Agent's state.db owns it.",
       "cases": [
         ""
       ]
     },
     "tests/test_state_db_delete_guard.py::test_terminal_ledger_retirement_cleans_files_and_fences_retries": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: terminal ledger retirement cleans files and fences retries. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's runtime ledger retirement (hermes_state_mutation_retirement) must purge a settled admission's private prompt files and receipts and fence a later retry or late write of the deleted session, driven through a real sidecar (TAL-1034).",
       "cases": [
         ""
       ]
     },
     "tests/test_state_db_delete_guard.py::test_live_ledger_obligations_refuse_the_entire_delete": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: live ledger obligations refuse the entire delete. Uses the real installed release, not a fabricated API response.",
+      "reason": "Each live obligation state the installed Agent's runtime ledger defines (queued, started, unknown admission; registered, running, unknown worker) must refuse the entire delete as active_turn through a real sidecar.",
       "cases": [
         "[queued]",
         "[started]",
@@ -2336,7 +2302,7 @@
     },
     "tests/test_state_db_delete_guard.py::test_canonical_compression_targets_include_delegates_and_preserve_forks": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: canonical compression targets include delegates and preserve forks. Uses the real installed release, not a fabricated API response.",
+      "reason": "From the root or the tip, the installed Agent's delete_targets must take compression delegates while keeping branch and reset forks and another profile's same-named session; real sidecar over Agent-written rows.",
       "cases": [
         "[root]",
         "[tip]"
@@ -2344,7 +2310,7 @@
     },
     "tests/test_state_db_delete_guard.py::test_receipt_backed_reset_conversation_deletes_from_either_end": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: receipt backed reset conversation deletes from either end. Uses the real installed release, not a fabricated API response.",
+      "reason": "A receipt-backed local reset conversation committed by the installed Agent's gateway lineage helpers must delete from its root or its reset tip, with its routing entries and local policy receipts (TAL-1035); real sidecar.",
       "cases": [
         "[False]",
         "[True]"
@@ -2352,7 +2318,7 @@
     },
     "tests/test_state_db_delete_guard.py::test_runtime_delete_cleanup_failure_recovers_after_restart": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: runtime delete cleanup failure recovers after restart. Uses the real installed release, not a fabricated API response.",
+      "reason": "A manifest, artifact or media cleanup failure injected after the installed Agent's retirement commit must leave work the next delete completes after a restart; state_db runs in the Agent interpreter over the real retirement.",
       "cases": [
         "[manifest]",
         "[artifact]",
@@ -2361,14 +2327,14 @@
     },
     "tests/test_state_db_delete_guard.py::test_terminal_worker_receipts_keep_only_the_closing_result": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: terminal worker receipts keep only the closing result. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's retirement transaction must compact a deleted session's terminal worker receipts to the closing result when state_db.delete_cli_session runs in the Agent interpreter.",
       "cases": [
         ""
       ]
     },
     "tests/test_state_db_delete_guard.py::test_the_delete_fires_the_profile_on_session_delete_hook_once": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the delete fires the profile's on_session_delete plugin hook once. Uses the real installed release and a real profile plugin, not a fabricated API response.",
+      "reason": "The installed Agent's emit_session_deleted must fire a real profile plugin's on_session_delete once for the whole deleted chain after the commit, and a raising hook must not fail the delete (TAL-1262); real sidecar.",
       "cases": [
         "[record]",
         "[raises]"
@@ -2376,7 +2342,7 @@
     },
     "tests/test_state_db_local_lineage.py::test_reset_target_plan_matches_server_fixture": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: reset target plan matches server fixture. Uses the real installed release, not a fabricated API response.",
+      "reason": "The server's recorded local-reset snapshots must give the installed Agent's delete_targets the same canonical set the server plans, and state_db.delete_cli_session must refuse an unreadable, branched or foreign receipt and a held compression lock before it deletes the whole conversation. Agent interpreter over the shared fixture.",
       "cases": [
         "[reset]",
         "[compressed]",
@@ -2386,14 +2352,14 @@
     },
     "tests/test_state_db_prompt_refresh.py::test_each_request_advances_the_epoch_on_an_agent_that_has_it": {
       "layer": "compatibility",
-      "reason": "Real installed SessionDB records the refresh epoch on releases that ship it and is left untouched on the supported release without it, which a boundary fake cannot prove. Disposable state.db, no network.",
+      "reason": "The installed SessionDB.request_prompt_refresh must advance the profile-wide refresh epoch in state_meta on each state_db.request_prompt_refresh through a real sidecar, and a profile without state.db must not get one (TAL-1821).",
       "cases": [
         ""
       ]
     },
     "tests/test_state_db_title.py::test_a_manual_rename_replaces_a_generated_title": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a manual rename replaces a generated title. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed SessionDB title provenance must let a manual rename replace a generated title, keep it against later generated titles and yield to an explicit regeneration through state_db.sync_title on a real sidecar (TAL-574).",
       "cases": [
         ""
       ]
@@ -2430,7 +2396,7 @@
     },
     "tests/test_stt_capability.py::test_capability_matches_agent_provider": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: capability matches agent provider. Uses the real installed release, not a fabricated API response.",
+      "reason": "stt.capability must agree with the installed Agent's _get_provider and its check_voice_requirements bar for built-in, command, unknown and auto-detected providers; the auto row takes its expected provider from the release itself. Real sidecar, no network.",
       "cases": [
         "[stt:\\n  provider: local_command\\n-expected0]",
         "[stt:\\n  provider: deepinfra\\n-expected1]",
@@ -2441,50 +2407,35 @@
     },
     "tests/test_stt_stream.py::test_capability_reports_streaming_only_when_enabled": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: capability reports streaming only when enabled. Uses the real installed release, not a fabricated API response.",
+      "reason": "A synthetic streaming STT plugin registered with the installed Agent must make stt.capability report streaming exactly while stt.streaming is on, through the release's streaming_available; real sidecar.",
       "cases": [
         ""
       ]
     },
     "tests/test_stt_stream.py::test_stream_relays_partials_then_returns_the_sessions_final": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: stream relays partials then returns the sessions final. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's open_streaming_session must relay a synthetic plugin's partials as stream frames, feed it host-resampled 16 kHz audio and return its final through a real sidecar, releasing the stream id with the call (TAL-802).",
       "cases": [
         ""
       ]
     },
     "tests/test_stt_stream.py::test_stream_final_drops_a_silence_hallucination": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: stream final drops a silence hallucination. Uses the real installed release, not a fabricated API response.",
+      "reason": "A live final from the installed Agent's streaming session must pass through its is_whisper_hallucination filter (TAL-917); real sidecar with a synthetic plugin.",
       "cases": [
         ""
       ]
     },
-    "tests/test_stt_stream.py::test_cancel_closes_the_session_without_finalizing": {
+    "tests/test_stt_stream.py::test_stream_refuses_when_streaming_is_off": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: cancel closes the session without finalizing. Uses the real installed release, not a fabricated API response.",
+      "reason": "With stt.streaming off, the installed Agent's streaming_available must make stt.stream refuse with stt_stream_unavailable before a synthetic plugin opens any session; real sidecar.",
       "cases": [
         ""
-      ]
-    },
-    "tests/test_stt_stream.py::test_cancel_during_a_slow_finalize_cancels_the_session": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: cancel during a slow finalize cancels the session. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_stt_stream.py::test_stream_refuses_when_streaming_is_off_or_the_rate_is_invalid": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: stream refuses when streaming is off or the rate is invalid. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        "[16000]",
-        "[7999]"
       ]
     },
     "tests/test_stt_transcribe.py::test_transcribe_drops_silence_hallucinations_and_keeps_speech": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: transcribe drops silence hallucinations and keeps speech. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's transcribe_audio and is_whisper_hallucination must drop invented silence phrases and keep speech from a synthetic STT plugin through stt.transcribe on a real sidecar (TAL-917).",
       "cases": [
         ""
       ]
@@ -2680,35 +2631,35 @@
     },
     "tests/test_usage_balance.py::test_a_pool_account_usage_read_never_refreshes_its_credential": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a pool account usage read never refreshes its credential. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's fetch_account_usage(read_only=True, identity_id=...) must report a Codex 401 without refreshing or rotating the pool credential, and read Anthropic usage with the account's own key into that account's cache slot (TAL-824). Agent interpreter over an httpx MockTransport.",
       "cases": [
         ""
       ]
     },
     "tests/test_usage_balance.py::test_pool_lists_each_account_with_its_local_state": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: pool lists each account with its local state. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's credential pool must yield each account's local state (available, exhausted with its retry time, dead) and treat a seeded gh CLI token as ambient through usage.pool and usage.pool_providers on a real sidecar over a synthetic auth.json.",
       "cases": [
         ""
       ]
     },
     "tests/test_usage_balance.py::test_usage_credentials_follow_real_agent_profile_secret_sources": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: usage credentials follow real agent profile secret sources. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's per-profile secret sources (a synthetic vault plugin in each profile) must resolve each profile's own key for usage.balance, usage.pool and usage.pool_providers, never the launch environment's, in the Agent interpreter (TAL-932).",
       "cases": [
         ""
       ]
     },
     "tests/test_usage_limits.py::test_an_exhausted_sole_entry_limits_the_account_until_its_reset": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an exhausted sole entry limits the account until its reset. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's CredentialPool.limit_state must bench the account until an exhausted sole entry's reset, through usage.limits on a real sidecar over a synthetic auth.json pool (TAL-807).",
       "cases": [
         ""
       ]
     },
     "tests/test_usage_limits.py::test_a_model_cooldown_limits_only_that_model_and_an_expired_one_disappears": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a model cooldown limits only that model and an expired one disappears. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's per-model cooldowns in CredentialPool.limit_state must limit only the cooled-down model and drop expired cooldowns and resets, through usage.limits on a real sidecar.",
       "cases": [
         ""
       ]
@@ -2952,14 +2903,14 @@
     },
     "tests/test_oauth_tls.py::test_the_sign_in_client_trusts_an_exported_ca_bundle_on_top_of_the_agents_platform_store": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the sign-in HTTP client trusts an exported CA bundle on top of the Agent's platform store. Builds the client with the real installed release's agent.ssl_verify and truststore, not a fabricated resolver.",
+      "reason": "The sign-in HTTP client built with the installed Agent's agent.ssl_verify must trust an SSL_CERT_FILE CA on top of the platform store, proved by a TLS handshake with a loopback server that CA signed, in the Agent interpreter (TAL-1263).",
       "cases": [
         ""
       ]
     },
     "tests/test_oauth_tls.py::test_a_sign_in_survives_a_deleted_certifi_bundle": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a sign-in survives a deleted certifi bundle. Exercises the real installed release's certifi rotation recovery and its own xAI discovery request, not a fabricated resolver.",
+      "reason": "After the certifi bundle is deleted under a running interpreter, the installed Agent's rotation recovery must let the sign-in client and its own xAI discovery request build their TLS context again; Agent interpreter, requests answered in-process.",
       "cases": [
         "[client]",
         "[xai]"
@@ -3007,7 +2958,7 @@
         ""
       ]
     },
-    "tests/test_config_write.py::test_native_delegation_settings_and_lossless_routes": {
+    "tests/test_delegation_settings.py::test_native_delegation_settings_and_lossless_routes": {
       "layer": "compatibility",
       "reason": "Real installed Agent delegation registry, backend selection, native route keys/parsers and managed refusal in a disposable interpreter. Synthetic registered providers never execute; socket connections are forbidden. Boundary fakes cannot establish native API compatibility.",
       "cases": [
@@ -3028,7 +2979,7 @@
     },
     "tests/test_usage_balance.py::test_a_loopback_quota_read_still_parses_and_bounds_failures": {
       "layer": "process",
-      "reason": "A test-owned loopback HTTP server proves real-socket parsing plus bounded unavailable results for malformed, oversized, truncated, slow and non-HTTP quota answers with a synthetic key, plus a refusal body read under the same deadline. Stubbed responses cannot raise the real http.client protocol and timeout errors.",
+      "reason": "A test-owned loopback HTTP server proves real-socket parsing plus unavailable results for malformed, oversized, truncated, stalled and non-HTTP quota answers, and a refusal body read under the same socket deadline; stalled answers stay held until the read has returned. Stubbed responses cannot raise the real http.client protocol and timeout errors.",
       "cases": [""]
     },
     "tests/test_plugin_providers.py::test_a_plugin_usage_hook_is_declared_and_read_only_in_its_own_profile": {

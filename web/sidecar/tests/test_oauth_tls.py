@@ -31,7 +31,4 @@ def test_the_sign_in_client_trusts_an_exported_ca_bundle_on_top_of_the_agents_pl
 
 @pytest.mark.parametrize("entry", ["client", "xai"])
 def test_a_sign_in_survives_a_deleted_certifi_bundle(tmp_path, entry):
-    result = probe(tmp_path, "rotated", entry)
-    if not result["recovers"]:
-        pytest.skip("the Agent's certifi rotation recovery first shipped in v0.22.3")
-    assert result == {"recovers": True, "built": True}
+    assert probe(tmp_path, "rotated", entry) == {"recovers": True, "built": True}

@@ -1,0 +1,1 @@
+{"skip": "Sidecar tests and Agent-compatibility shims that no supported Agent release reaches; no app behavior changes."}

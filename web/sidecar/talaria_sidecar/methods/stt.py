@@ -52,34 +52,22 @@ def streaming_available() -> bool:
 def dictation(transcript: str) -> dict:
     """The transcript, emptied with ``filtered`` when it is a phrase Whisper invents on silent audio (TAL-917).
 
-    The Agent's ``transcribe_recording`` filter, without its voice-mode tagging. An Agent without it keeps the text."""
+    The Agent's ``transcribe_recording`` filter, without its voice-mode tagging."""
+    from tools.voice_mode_transcript import is_whisper_hallucination
+
     transcript = transcript.strip()
-    try:
-        from tools.voice_mode_transcript import is_whisper_hallucination
-    except ImportError:
-        return {"transcript": transcript, "filtered": False}
     if transcript and is_whisper_hallucination(transcript):
         return {"transcript": "", "filtered": True}
     return {"transcript": transcript, "filtered": False}
 
 
-def _agent_warmer():
-    """The Agent's ``warm_stt_provider``, or None on an Agent without ``tools.stt_lease``."""
-    try:
-        from tools.stt_lease import warm_stt_provider
-    except ImportError:
-        return None
-    return warm_stt_provider
-
-
 def warm() -> dict:
     """Pre-load the profile's local engine so the next ``stt.transcribe`` starts hot (TAL-916); a no-op for remote providers.
 
-    Blocking: a first use downloads and loads the model. The Agent's warmer never raises."""
-    warmer = _agent_warmer()
-    if warmer is None:
-        return {"provider": capability()[1], "warmed": False, "action": "unsupported"}
-    result = warmer()
+    Blocking: a first use downloads and loads the model. The Agent's warmer (``tools.stt_lease``) never raises."""
+    from tools.stt_lease import warm_stt_provider
+
+    result = warm_stt_provider()
     out = {"provider": str(result.get("provider") or "none"), "warmed": bool(result.get("warmed")), "action": str(result.get("action") or "noop")}
     if result.get("error"):
         out["error"] = str(result["error"])
@@ -190,7 +178,7 @@ def register(registry) -> None:
             available, provider = capability()
             streaming = available and streaming_available()
         # Only the local engine has anything resident to load; the Agent's warmer no-ops every other provider.
-        warm_supported = bool(available) and provider == "local" and _agent_warmer() is not None
+        warm_supported = bool(available) and provider == "local"
         return {"available": bool(available), "provider": provider, "streaming": bool(streaming), "warm_supported": warm_supported}
 
     @registry.method("stt.warm")

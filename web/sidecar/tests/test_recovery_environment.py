@@ -199,7 +199,7 @@ def stop_worker(timeout=None):
  global alive
  alive = False
 """)
-    (root / 'hermes_cli/models.py').write_text("def provider_model_ids(provider,**kw): return ['synthetic-model']\n")
+    (root / 'hermes_cli/models.py').write_text("class CuratedFallbackModels(list): pass\ndef provider_model_ids(provider,**kw): return ['synthetic-model']\n")
     (root / 'providers.py').write_text('def get_provider_profile(provider): return None\n')
     (root / 'agent').mkdir()
     (root / 'agent/__init__.py').write_text('')

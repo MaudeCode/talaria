@@ -4,7 +4,6 @@ balance endpoints with stubbed HTTP, from a pool account's key or the server-res
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import http.server
 import io
 import json
@@ -148,16 +147,6 @@ def test_balance_numbers_keep_the_largest_finite_values(monkeypatch):
     assert _assert_finite_wire(result)["quota"]["usage"] == sys.float_info.max
 
 
-def test_http_errors_carry_the_status_and_failures_read_as_unavailable(monkeypatch):
-    _stub_http(monkeypatch, status=401)
-    result = _read("deepseek")
-    assert (result["status"], result["http_status"]) == ("http_error", 401)
-    _stub_http(monkeypatch, b"not json")
-    assert _read("openrouter")["status"] == "unavailable"
-    _stub_http(monkeypatch, b"{" + b" " * (256 * 1024) + b"}")
-    assert _read("openrouter")["status"] == "unavailable"
-
-
 def test_an_expired_key_refusal_carries_only_its_allowlisted_code(monkeypatch):
     """TAL-2188: a 401's bounded JSON body names a recognised provider code; nothing else in it leaves the sidecar."""
     secret = "sk-synthetic-expired-key"
@@ -207,46 +196,6 @@ def test_pool_rows_say_which_account_holds_the_configured_key(monkeypatch):
     assert "sk-" not in json.dumps(rows)
 
 
-def test_each_anthropic_pool_account_reads_its_own_limits(monkeypatch):
-    """An Agent whose fetcher has no ``read_only`` reads only the ambient Anthropic token; a pool account's usage is read
-    with its own."""
-    entries = [types.SimpleNamespace(id="work", label="work@example.test", runtime_api_key="sk-ant-oat-work"),
-               types.SimpleNamespace(id="home", label="home@example.test", runtime_api_key="sk-ant-oat-home")]
-    monkeypatch.setattr(usage, "_pool", lambda provider: (None, entries))
-    used = {"Bearer sk-ant-oat-work": 0.25, "Bearer sk-ant-oat-home": 0.9}
-
-    @dataclasses.dataclass(frozen=True)
-    class Snapshot:
-        provider: str
-        source: str
-        windows: tuple
-        details: tuple
-        unavailable_reason: str | None = None
-
-        @property
-        def available(self):
-            return bool(self.windows) and not self.unavailable_reason
-
-    agent_usage = types.ModuleType("agent.account_usage")
-    agent_usage.fetch_account_usage = lambda provider, base_url=None, api_key=None: Snapshot(provider, "ambient", ({"label": "Current session", "used_percent": 1.0},), ())
-    agent_usage._is_oauth_token = lambda token: token.startswith("sk-ant-oat")
-    agent_usage._is_num = lambda value: isinstance(value, (int, float))
-    agent_usage._get_json = lambda url, headers, *, timeout: {"five_hour": {"utilization": used[headers["Authorization"]]}}
-    agent_usage._usage_windows = lambda payload, mapping, used_key, reset_key, *, fraction: [
-        {"label": label, "used_percent": payload[key][used_key] * 100} for key, label in mapping if key in payload]
-    agent_usage._snapshot = lambda provider, source, windows, details, **kw: Snapshot(provider, source, tuple(windows), tuple(details), **kw)
-    monkeypatch.setitem(sys.modules, "agent", types.ModuleType("agent"))
-    monkeypatch.setitem(sys.modules, "agent.account_usage", agent_usage)
-
-    work = usage.account("anthropic", base_url=None, api_key=None, credential_id="work")
-    home = usage.account("anthropic", base_url=None, api_key=None, credential_id="home")
-    assert [w["used_percent"] for w in work["windows"]] == [25.0]
-    assert [w["used_percent"] for w in home["windows"]] == [90.0]
-    assert work["available"] is True and work["source"] == "oauth_usage_api"
-    # Without a pool account the Agent's own fetcher still answers.
-    assert usage.account("anthropic", base_url=None, api_key=None)["source"] == "ambient"
-
-
 # Runs on the Agent interpreter: the pinned Agent's real fetchers over a stubbed HTTP transport, a pool whose refresh
 # path records instead of rotating, and stand-in pool entries.
 READ_ONLY_PROBE = """
@@ -256,7 +205,7 @@ import httpx
 from agent import account_usage_cache, credential_pool
 from talaria_sidecar.methods import usage
 
-requests, refreshes, mirrored = [], [], []
+requests, refreshes = [], []
 
 def answer(request):
     requests.append((request.url.host, request.headers["Authorization"]))
@@ -276,18 +225,15 @@ credential_pool.load_pool = lambda provider: Pool()
 entries = {"openai-codex": types.SimpleNamespace(id="benched", label="Benched", runtime_api_key="codex-benched", base_url="https://chatgpt.com/backend-api/codex"),
            "anthropic": types.SimpleNamespace(id="work", label="Work", runtime_api_key="sk-ant-oat01-work")}
 usage._pool = lambda provider: (None, [entries[provider]])
-mirror = usage._anthropic_usage
-usage._anthropic_usage = lambda token: mirrored.append(token) or mirror(token)
 
 codex = usage.account("openai-codex", base_url=None, api_key=None, credential_id="benched")
 anthropic = usage.account("anthropic", base_url=None, api_key=None, credential_id="work")
 slot = account_usage_cache.cached_account_usage("anthropic", identity_id=account_usage_cache._identity_id_for("anthropic", entries["anthropic"]))
-print(json.dumps({"codex": codex, "anthropic": anthropic, "requests": requests, "refreshes": refreshes, "mirrored": mirrored,
+print(json.dumps({"codex": codex, "anthropic": anthropic, "requests": requests, "refreshes": refreshes,
                   "account_slot": slot is not None, "provider_slot": account_usage_cache.cached_account_usage("anthropic") is not None}))
 """
 
 
-@pytest.mark.skipif(AGENT_DIR is None or "read_only: bool = False" not in (AGENT_DIR / "agent/account_usage.py").read_text(), reason="read-only usage reads require Agent v0.21.6")
 @requires_agent
 def test_a_pool_account_usage_read_never_refreshes_its_credential(tmp_path):
     """TAL-824: a pool account's usage read is read-only. A Codex 401 is reported, never repaired by refreshing or rotating
@@ -300,7 +246,6 @@ def test_a_pool_account_usage_read_never_refreshes_its_credential(tmp_path):
     assert seen["refreshes"] == [], seen
     assert seen["codex"] is None, seen
     assert seen["requests"] == [["chatgpt.com", "Bearer codex-benched"], ["api.anthropic.com", "Bearer sk-ant-oat01-work"]], seen
-    assert seen["mirrored"] == [], seen
     assert seen["anthropic"]["available"] is True and [w["used_percent"] for w in seen["anthropic"]["windows"]] == [25.0], seen
     # The read lands in that account's usage slot, never the provider-wide gauge.
     assert (seen["account_slot"], seen["provider_slot"]) == (True, False), seen
@@ -531,31 +476,41 @@ def test_a_loopback_quota_read_still_parses_and_bounds_failures(monkeypatch):
     def not_http(h):
         h.wfile.write(b"NOT HTTP AT ALL\r\n\r\n")
 
-    def stalled_refusal(h):
+    class Stall:
+        """Holds the connection open after ``head`` until the test releases it, so the read can only return by its deadline."""
+
+        def __init__(self, head=lambda h: None):
+            self.head, self.release, self.answered = head, threading.Event(), threading.Event()
+
+        def __call__(self, h):
+            self.head(h)
+            self.release.wait(10)  # the test's ceiling, never its verdict: the read returns while this is held
+            self.answered.set()
+
+    def refusal_head(h):
         h.send_response(401)
         h.send_header("Content-Length", str(len(expired)))
         h.end_headers()
         h.wfile.flush()
-        time.sleep(1.5)
 
     answers = {
         "ok": lambda h: _send(h, 200, body),
         "malformed": lambda h: _send(h, 200, b"not json"),
         "oversized": lambda h: _send(h, 200, b"{" + b" " * (256 * 1024) + b"}"),
         "truncated": truncated,
-        "slow": lambda h: time.sleep(1.5),
+        "slow": Stall(),
         "not_http": not_http,
         "expired": lambda h: _send(h, 401, expired, {"Content-Type": "application/json"}),
-        "stalled_refusal": stalled_refusal,
+        "stalled_refusal": Stall(refusal_head),
     }
     refusals = {"expired": ("http_error", 401, "api_key_expired"), "stalled_refusal": ("http_error", 401, None)}
     for name, respond in answers.items():
         with _loopback(respond) as (base, _):
             monkeypatch.setitem(usage._BALANCE_URLS, "openrouter", f"{base}/key")
-            started = time.monotonic()
             result = _read("openrouter", api_key="sk-synthetic-bounds")
-            elapsed = time.monotonic() - started
-        assert elapsed < 1.2, name
+            if isinstance(respond, Stall):
+                assert not respond.answered.is_set(), f"{name}: the read waited for the stalled server instead of its deadline"
+                respond.release.set()
         assert "sk-synthetic" not in json.dumps(result), name
         if name in refusals:
             assert (result["status"], result["http_status"], result["error_code"]) == refusals[name], name

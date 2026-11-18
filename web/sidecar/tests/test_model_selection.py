@@ -1,12 +1,9 @@
 """The installed Agent's real guard registry with synthetic routes and local pricing, never provider traffic."""
 import json
 import subprocess
-import sys
 import textwrap
-from types import ModuleType
 
 from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, isolated_env, requires_agent
-from talaria_sidecar.methods import providers
 
 
 @requires_agent
@@ -171,8 +168,3 @@ def test_real_agent_parser_answers_model_arguments(tmp_path):
     env['PYTHONPATH'] = f'{SIDECAR_ROOT}:{AGENT_DIR}'
     run = subprocess.run([AGENT_PYTHON, '-c', script], env=env, capture_output=True, text=True, timeout=60)
     assert run.returncode == 0, run.stderr
-
-
-def test_an_agent_without_the_parser_reads_the_whole_string_as_a_model_id(monkeypatch):
-    monkeypatch.setitem(sys.modules, 'hermes_cli.model_switch', ModuleType('hermes_cli.model_switch'))
-    assert providers.parse_switch_args(' some/model ') == dict(target='some/model', provider=None, reset=False, reasoning=None, errors=[], unsupported_flags=[])

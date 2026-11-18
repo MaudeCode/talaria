@@ -51,25 +51,15 @@ def test_warm_passes_the_agent_error_through(monkeypatch, tmp_path) -> None:
     assert result == {"provider": "local", "warmed": False, "action": "error", "error": "faster-whisper not installed"}
 
 
-def test_warm_without_the_agent_lease_module_reports_not_warmed(monkeypatch, tmp_path) -> None:
-    monkeypatch.setitem(sys.modules, "tools.stt_lease", None)
-    monkeypatch.setattr(stt, "capability", lambda: (True, "openai"))
-    result = _call(_methods(monkeypatch, []), "stt.warm", tmp_path)
-    assert result == {"provider": "openai", "warmed": False, "action": "unsupported"}
-
-
 def test_capability_reports_warm_only_for_the_local_engine_the_agent_can_warm(monkeypatch, tmp_path) -> None:
     def warm_supported(available: bool, provider: str) -> bool | None:
         monkeypatch.setattr(stt, "capability", lambda: (available, provider))
         return (_call(methods, "stt.capability", tmp_path) or {}).get("warm_supported")
 
     monkeypatch.setattr(stt, "streaming_available", lambda: False)
-    _install_lease(monkeypatch, lambda: {})
     methods = _methods(monkeypatch, [])
     assert warm_supported(True, "local") is True
     # Remote and command providers keep nothing resident: the Agent's warmer would no-op.
     assert warm_supported(True, "openai") is False
     assert warm_supported(True, "local_command") is False
     assert warm_supported(False, "local") is False
-    monkeypatch.setitem(sys.modules, "tools.stt_lease", None)
-    assert warm_supported(True, "local") is False

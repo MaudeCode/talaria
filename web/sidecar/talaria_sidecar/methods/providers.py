@@ -447,14 +447,10 @@ def model_ids(provider_id: str, *, force_refresh: bool) -> tuple[list[str], bool
         return [], False
     try:
         ids = models.provider_model_ids(provider_id, force_refresh=force_refresh)
-    except TypeError:
-        ids = models.provider_model_ids(provider_id)
     except Exception:  # noqa: BLE001
         log.debug("provider_model_ids(%r) failed", provider_id, exc_info=True)
         ids = []
-    # Agents before the marker never flag a fallback.
-    curated = getattr(models, "CuratedFallbackModels", None)
-    fallback = isinstance(curated, type) and isinstance(ids, curated)
+    fallback = isinstance(ids, models.CuratedFallbackModels)
     ids = [str(m) for m in (ids or []) if m]
     if ids:
         return ids, fallback
@@ -462,22 +458,6 @@ def model_ids(provider_id: str, *, force_refresh: bool) -> tuple[list[str], bool
         return _plugin_catalog(provider_id)
     except RpcError:
         return [], False
-
-
-def _with_subscription_ids(plan: dict) -> dict:
-    """Agents before v0.22.6 omit ``subscription_model_ids``; the pricing cache their payload just read has the same mark."""
-    if isinstance(plan.get("subscription_model_ids"), list):
-        return plan
-    try:
-        from hermes_cli.models import _is_subscription_billed
-        from hermes_cli.models_pricing import get_pricing_for_provider
-
-        pricing = get_pricing_for_provider("nous", cached_only=True) or {}
-        ids = sorted(mid for mid, row in pricing.items() if _is_subscription_billed(row))
-    except Exception:  # noqa: BLE001 - the mark only decides a display tag
-        log.debug("subscription-billed models unavailable", exc_info=True)
-        ids = []
-    return {**plan, "subscription_model_ids": ids}
 
 
 def model_allowance_snapshot(provider_id: str, *, force_refresh: bool) -> dict:
@@ -497,7 +477,7 @@ def model_allowance_snapshot(provider_id: str, *, force_refresh: bool) -> dict:
         fresh = nous_picker_usage() if isinstance(plan, dict) else None
         return {
             "metadata_status": "pending" if pending else "stale" if plan and fresh is None else "current",
-            "plan_usage": _with_subscription_ids(plan) if isinstance(plan, dict) else None,
+            "plan_usage": plan if isinstance(plan, dict) else None,
             "usage_levels": {mid: level for mid, level in (row.get("usage_levels") or {}).items()
                              if isinstance(mid, str) and level in ("free", "low", "medium", "top_tier")},
             "unavailable_model_ids": [mid for mid in row.get("unavailable_models", []) if isinstance(mid, str)] if not pending else [],
@@ -710,11 +690,9 @@ def selection_warnings(home: Path, params: dict) -> dict:
 
 
 def parse_switch_args(args: str) -> dict:
-    """The Agent's one `/model` parser (TAL-1814). An Agent without it reads the whole string as a model id."""
-    try:
-        from hermes_cli.model_switch import parse_model_switch_args
-    except ImportError:
-        return {"target": args.strip(), "provider": None, "reset": False, "reasoning": None, "errors": [], "unsupported_flags": []}
+    """The Agent's one `/model` parser (TAL-1814)."""
+    from hermes_cli.model_switch import parse_model_switch_args
+
     request = parse_model_switch_args(args)
     flags = (("--global", request.is_global), ("--once", request.is_once))
     return {

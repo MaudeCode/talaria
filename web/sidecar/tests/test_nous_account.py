@@ -12,7 +12,6 @@ def native(monkeypatch, tmp_path):
     api = SimpleNamespace()
     api.status = {"state": "claimed", "account_email": "unmasked@example.test", "connectors_kind": "moved",
                   "moved_toolkits": ["calendar"], "dropped_toolkits": ["gmail"]}
-    api.record = {"profiles": [str(tmp_path)], "destination": "user-1"}
     api.subject = "user-1"
     api.broken = False
     package = ModuleType("hermes_cli")
@@ -22,11 +21,6 @@ def native(monkeypatch, tmp_path):
             raise OSError("secret exception")
         return api.status.copy()
     handoff.handoff_status = status
-    handoff._status_of = lambda record: status()
-    handoff._load = lambda path: {"records": {"record": api.record}}
-    handoff._records_path = lambda: tmp_path / "native-records"
-    handoff._home_key = lambda: str(tmp_path)
-    handoff._account_bound_to = lambda record: None if record["destination"] != api.subject else {"access_token": "secret"}
     # Native generates its own copy from the safe fields we give it; arbitrary raw lines are ignored.
     handoff.wire_status = lambda safe: {**safe, "lines": [f"{safe['state']} {safe['account_email']} {','.join(safe['moved_toolkits'])}"]}
     auth = ModuleType("hermes_cli.auth")
@@ -44,16 +38,8 @@ def native(monkeypatch, tmp_path):
     return api
 
 
-def unfence(native):
-    """Agent 0.22.6 shape: no destination binding or per-record status helper; retries follow the profile's account."""
-    del native.handoff._account_bound_to, native.handoff._status_of
-
-
-@pytest.mark.parametrize("fenced", [True, False], ids=["destination-bound", "profile-bound"])
 @pytest.mark.parametrize("state", ["claimed", "idle", "retrying", "pending", "paused", "failed", "gone", "future"])
-def test_projection_is_allowlisted_and_auth_success_does_not_imply_handoff_success(native, tmp_path, state, fenced):
-    if not fenced:
-        unfence(native)
+def test_projection_is_allowlisted_and_auth_success_does_not_imply_handoff_success(native, tmp_path, state):
     native.status.update(state=state, anon_token="secret", access_token="secret", lines=["secret"], error="secret")
     native.status["moved_toolkits"] += ["https://evil.test", "SECRET=secret", "calendar"]
     result = nous_account.read(tmp_path)
@@ -77,15 +63,8 @@ def test_failed_read_keeps_only_the_current_accounts_confirmed_view(native, tmp_
     assert confirmed["lines"][0] not in other["lines"]
 
 
-def test_old_terminal_result_never_exposes_another_accounts_apps(native, tmp_path):
-    native.subject = "another-user"
-    result = nous_account.read(tmp_path)
-    assert result["state"] == "paused" and result["moved"] == [] and result["reconnect"] == []
-
-
 @pytest.mark.parametrize("unproven", ["other-account", "result-without-email", "token-without-email"])
 def test_profile_bound_result_another_account_received_is_not_shown(native, tmp_path, unproven):
-    unfence(native)
     native.status["account_email"] = "Unmasked@Example.TEST"
     assert nous_account.read(tmp_path)["moved"] == ["calendar"]
     if unproven == "other-account":
@@ -105,13 +84,6 @@ def test_account_change_during_read_discards_the_response(native, tmp_path):
         return native.status
     native.handoff.handoff_status = replaced
     assert nous_account.read(tmp_path) is None
-
-
-def test_no_apps_and_unknown_connector_outcomes_do_not_invent_apps(native, tmp_path):
-    native.status.update(connectors_kind="none", moved_toolkits=[], dropped_toolkits=[])
-    assert nous_account.read(tmp_path)["reconnect"] == []
-    native.status.update(state="future", moved_toolkits=["calendar"])
-    assert nous_account.read(tmp_path)["moved"] == []
 
 
 def test_profile_identity_is_part_of_the_display_fence(native, tmp_path):

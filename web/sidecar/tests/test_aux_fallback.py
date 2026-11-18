@@ -56,8 +56,7 @@ def _patch(monkeypatch, factory):
 MESSAGES = [{"role": "system", "content": "sys"}, {"role": "user", "content": "diff"}]
 
 
-@pytest.mark.parametrize("task", ["compression", "title_generation"])
-def test_unconfigured_auxiliary_falls_back_to_the_main_model(monkeypatch, task) -> None:
+def test_unconfigured_auxiliary_falls_back_to_the_main_model(monkeypatch) -> None:
     seen = {}
 
     def factory(task, *, main_runtime=None):
@@ -65,7 +64,7 @@ def test_unconfigured_auxiliary_falls_back_to_the_main_model(monkeypatch, task) 
         return None, None
 
     _patch(monkeypatch, factory)
-    result = aux.complete(task, MESSAGES, main_runtime={"model": "claude-x", "provider": "anthropic"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
+    result = aux.complete("title_generation", MESSAGES, main_runtime={"model": "claude-x", "provider": "anthropic"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
     assert result == {"model": "claude-x", "text": "feat: main model answer", "usage": None, "finish_reason": None}
     # The auxiliary client saw the fully resolved main runtime, not just the hint.
     assert seen["main_runtime"]["api_key"] == "sk-main" and seen["main_runtime"]["model"] == "claude-x"
@@ -83,8 +82,7 @@ def test_without_fallback_the_unconfigured_error_is_kept(monkeypatch) -> None:
     assert FakeAgent.calls == []
 
 
-@pytest.mark.parametrize("task", ["compression", "title_generation"])
-def test_a_failing_auxiliary_call_falls_back_to_the_main_model(monkeypatch, task) -> None:
+def test_a_failing_auxiliary_call_falls_back_to_the_main_model(monkeypatch) -> None:
     class Broken:
         class chat:
             class completions:
@@ -93,7 +91,7 @@ def test_a_failing_auxiliary_call_falls_back_to_the_main_model(monkeypatch, task
                     raise RuntimeError("aux endpoint down")
 
     _patch(monkeypatch, lambda task, *, main_runtime=None: (Broken(), "aux-model"))
-    result = aux.complete(task, MESSAGES, main_runtime={"model": "m", "provider": "p"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
+    result = aux.complete("title_generation", MESSAGES, main_runtime={"model": "m", "provider": "p"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
     assert result["text"] == "feat: main model answer" and len(FakeAgent.calls) == 1
 
 
@@ -120,12 +118,11 @@ class RecordingMemoryAgent:
         self.closed = True
 
 
-@pytest.mark.parametrize("task", ["compression", "title_generation"])
-def test_main_model_fallback_skips_memory_and_closes_the_agent(monkeypatch, task) -> None:
+def test_main_model_fallback_skips_memory_and_closes_the_agent(monkeypatch) -> None:
     RecordingMemoryAgent.instances.clear()
     _patch(monkeypatch, lambda task, *, main_runtime=None: (None, None))
     monkeypatch.setattr(chat, "_agent_class", lambda: RecordingMemoryAgent)
-    result = aux.complete(task, [{"role": "user", "content": "diff with sk-secret"}], main_runtime={"model": "m", "provider": "p"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
+    result = aux.complete("title_generation", [{"role": "user", "content": "diff with sk-secret"}], main_runtime={"model": "m", "provider": "p"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
     assert result["text"] == "feat: answer"
     (agent,) = RecordingMemoryAgent.instances
     assert not agent.synced, f"the diff reached long-term memory: {agent.synced}"
