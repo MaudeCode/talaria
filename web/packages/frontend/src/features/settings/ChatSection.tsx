@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowUpDown, ChevronsUpDown, CornerDownLeft, FileText, Hash, List, ListTree, Loader, PanelRight, ScanSearch, SlidersHorizontal, Type } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpDown, ChevronsUpDown, CornerDownLeft, FileText, Hash, List, ListTree, Loader, PanelRight, SlidersHorizontal, Type, Wrench } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { ChatPage } from '../../contracts/url'
 import { modifierKey } from '../../ui/Keys'
@@ -13,7 +13,7 @@ const FIELDS = ['auto_title_refresh_available']
 
 /**
  * TAL-1691, TAL-2075, TAL-2076, TAL-2138: Settings › Chat, the composer drawn with its controls, how the composer sends,
- * and how the transcript shows and scrolls. Rarely changed rows sit on its two sub-pages. TAL-2160: profile limits are on
+ * and how the transcript shows and scrolls. Rarely changed rows sit on its sub-pages. TAL-2160: profile limits are on
  * Models and Group discussion limits on System.
  */
 export function ChatSection() {
@@ -40,7 +40,6 @@ export function ChatSection() {
           { value: 'hide_all_activity', label: m.settings_option_hide_all_activity() },
         ]} />
         <Toggle icon={ChevronsUpDown} label={m.settings_label_worklog_details_expanded_default()} settingKey="worklog_details_expanded_default" />
-        <Toggle icon={ScanSearch} label={m.settings_label_show_tool_lookups()} settingKey="show_tool_lookups" />
         <Toggle icon={Type} label={m.settings_label_render_user_markdown()} hint={m.settings_desc_render_user_markdown()} settingKey="render_user_markdown" />
         <Toggle icon={Hash} label={m.settings_label_token_usage()} settingKey="show_token_usage" fallback />
         <Toggle icon={ArrowDownToLine} label={m.settings_label_auto_scroll_follow()} hint={m.settings_desc_auto_scroll_follow()} settingKey="auto_scroll_follow" fallback />
@@ -49,6 +48,8 @@ export function ChatSection() {
       </SettingsGroup>
       <SettingsGroup id="more" title={m.settings_group_more()}>
         <SettingLink icon={PanelRight} label={m.settings_group_workspace_panel()} detail={m.settings_subpage_rows({ n: rows('workspace-panel') })} link={{ to: '/settings/chat/$page', params: { page: 'workspace-panel' } }} />
+        {/* TAL-2341: the switches for how tool calls show, on their own page so the Transcript group stays short. */}
+        <SettingLink icon={Wrench} label={m.settings_page_tool_calls()} detail={m.settings_subpage_rows({ n: rows('tool-calls') })} link={{ to: '/settings/chat/$page', params: { page: 'tool-calls' } }} />
         <SettingLink icon={SlidersHorizontal} label={m.settings_page_advanced()} detail={m.settings_subpage_rows({ n: rows('advanced') })} link={{ to: '/settings/chat/$page', params: { page: 'advanced' } }} />
       </SettingsGroup>
     </div>
@@ -75,6 +76,20 @@ export function ChatSubPage({ page }: { page: ChatPage }) {
         <SettingsGroup id="terminal" title={m.terminal_title()}>
           <Toggle label={m.settings_label_terminal_auto_expand()} settingKey="terminal_auto_expand_on_output" />
           <Toggle label={m.settings_label_terminal_screen_reader()} hint={m.settings_desc_terminal_screen_reader()} settingKey="screen_reader_mode" />
+        </SettingsGroup>
+      </> : page === 'tool-calls' ? <>
+        {/* TAL-2341: the server applies each switch to the transcript; the Live Activity's sits in Notifications. */}
+        <SettingsGroup id="tool-rows" title={m.settings_group_tool_rows()}>
+          <Toggle label={m.settings_label_formatted_tool_results()} settingKey="formatted_tool_results" fallback />
+          <Toggle label={m.settings_label_inline_tool_media()} settingKey="inline_tool_media" fallback />
+          <Toggle label={m.settings_label_tool_row_outcomes()} settingKey="tool_row_outcomes" fallback />
+          <Toggle label={m.settings_label_merge_repeated_tool_calls()} settingKey="merge_repeated_tool_calls" fallback />
+          <Toggle label={m.settings_label_live_tool_progress()} settingKey="live_tool_progress" fallback />
+          <Toggle label={m.settings_label_show_tool_lookups()} settingKey="show_tool_lookups" />
+        </SettingsGroup>
+        <SettingsGroup id="around-chat" title={m.settings_group_around_chat()}>
+          <Toggle label={m.settings_label_status_chip_current_action()} settingKey="status_chip_current_action" fallback />
+          <Toggle label={m.settings_label_turn_summary()} settingKey="turn_summary" fallback />
         </SettingsGroup>
       </> : <>
         <SettingsGroup id="transcript-advanced" title={m.settings_group_transcript()}>

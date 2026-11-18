@@ -6,7 +6,7 @@ extension ToolCall {
     }
 
     func applyingCompletionPayload(_ payload: ToolStreamEvent) -> ToolCall {
-        ToolCall(
+        var call = ToolCall(
             id: id,
             name: payload.name ?? name,
             preview: payload.preview ?? preview,
@@ -27,6 +27,8 @@ extension ToolCall {
             isHidden: payload.isHidden,
             processID: payload.processID ?? processID
         )
+        call.displayFlags = payload.displayFlags
+        return call
     }
 }
 

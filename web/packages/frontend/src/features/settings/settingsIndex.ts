@@ -23,7 +23,7 @@ type Row = readonly [id: string, label: () => string, shownWith?: string]
 const rows = (section: SettingsSection, group: () => string, scope: SettingScope, list: readonly Row[], tab?: ToolsTab): SettingsIndexEntry[] =>
   list.map(([id, label, shownWith]) => ({ section, group, id, label, scope, ...(tab ? { tab } : {}), ...(shownWith ? { shownWith } : {}) }))
 /** TAL-2136, TAL-2138: each page's title, which the link that opens it and its rows' search results name. */
-export const PAGE_TITLE: Record<SettingsPage, () => string> = { 'quota-alerts': m.providers_quota_alerts, 'workspace-panel': m.settings_group_workspace_panel, advanced: m.settings_page_advanced }
+export const PAGE_TITLE: Record<SettingsPage, () => string> = { 'quota-alerts': m.providers_quota_alerts, 'workspace-panel': m.settings_group_workspace_panel, 'tool-calls': m.settings_page_tool_calls, advanced: m.settings_page_advanced }
 const onPage = (page: SettingsPage, entries: SettingsIndexEntry[]) => entries.map((entry) => ({ ...entry, page }))
 const drawn = (drawing: NonNullable<SettingsIndexEntry['drawing']>, entries: SettingsIndexEntry[]) => entries.map((entry) => ({ ...entry, drawing }))
 /** A `SettingToggle`'s default control id. */
@@ -44,7 +44,6 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ]),
   ...rows('chat', m.settings_group_transcript, 'interface', [
     ['settingsChatActivityDisplayMode', m.settings_label_chat_activity_display_mode], [key('worklog_details_expanded_default'), m.settings_label_worklog_details_expanded_default],
-    [key('show_tool_lookups'), m.settings_label_show_tool_lookups],
     [key('render_user_markdown'), m.settings_label_render_user_markdown], [key('show_token_usage'), m.settings_label_token_usage],
     [key('auto_scroll_follow'), m.settings_label_auto_scroll_follow], [key('show_conversation_outline'), m.settings_label_conversation_outline],
     [key('session_jump_buttons'), m.settings_label_session_jump_buttons],
@@ -55,6 +54,15 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
       [key('new_chat_on_workspace_switch'), m.settings_label_new_chat_on_workspace_switch],
     ]),
     ...rows('chat', m.terminal_title, 'interface', [[key('terminal_auto_expand_on_output'), m.settings_label_terminal_auto_expand], [key('screen_reader_mode'), m.settings_label_terminal_screen_reader]]),
+  ]),
+  // TAL-2341: how tool calls show, which the server applies.
+  ...onPage('tool-calls', [
+    ...rows('chat', m.settings_group_tool_rows, 'interface', [
+      [key('formatted_tool_results'), m.settings_label_formatted_tool_results], [key('inline_tool_media'), m.settings_label_inline_tool_media],
+      [key('tool_row_outcomes'), m.settings_label_tool_row_outcomes], [key('merge_repeated_tool_calls'), m.settings_label_merge_repeated_tool_calls],
+      [key('live_tool_progress'), m.settings_label_live_tool_progress], [key('show_tool_lookups'), m.settings_label_show_tool_lookups],
+    ]),
+    ...rows('chat', m.settings_group_around_chat, 'interface', [[key('status_chip_current_action'), m.settings_label_status_chip_current_action], [key('turn_summary'), m.settings_label_turn_summary]]),
   ]),
   ...onPage('advanced', [
     ...rows('chat', m.settings_group_transcript, 'interface', [
@@ -81,6 +89,8 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
   ...rows('notifications', m.settings_group_while_open, 'interface', [
     [key('notifications_enabled'), m.settings_label_notifications], [key('sound_enabled'), m.settings_label_sound],
   ]),
+  // TAL-2341: whether Live Activities and push alerts name the current call.
+  ...rows('notifications', m.settings_group_live_activities, 'interface', [[key('live_activity_current_tool'), m.settings_label_live_activity_current_tool]]),
   ...rows('notifications', m.settings_group_reply_finishes, 'device', [
     ['completionSound', m.settings_audio_sound], ['completionVolume', m.settings_audio_volume], ['completionFile', m.settings_audio_file, 'completionSound'], ['completionQuiet', m.settings_audio_quiet],
     ['completionStart', m.settings_audio_start, 'completionQuiet'], ['completionEnd', m.settings_audio_end, 'completionQuiet'], ['completionQuietSound', m.settings_audio_quiet_sound, 'completionQuiet'],

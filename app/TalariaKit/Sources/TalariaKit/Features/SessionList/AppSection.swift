@@ -159,6 +159,8 @@ public enum SettingsPane: Hashable, Sendable {
     case providerQuotaWidget
     case sidebarQuotas
     case widgetProfiles
+    /// TAL-2341: Settings › Chats › Tool Calls.
+    case toolCalls
     case category(SettingsCategory)
 
     public var category: SettingsCategory {
@@ -166,6 +168,7 @@ public enum SettingsPane: Hashable, Sendable {
         case .category(let category): category
         case .indexed(let anchor): anchor.category
         case .sidebarQuotas: .navigation
+        case .toolCalls: .chats
         case .providerQuotaWidget, .widgetProfiles: .liveActivitiesAndWidgets
         case .userProfile: .appearance
         case .appleAccount: .servers

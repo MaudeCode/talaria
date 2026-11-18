@@ -2240,6 +2240,11 @@
                               ],
                               "additionalProperties": false
                             }
+                          },
+                          "activity_unnamed": {
+                            "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on.",
+                            "type": "boolean",
+                            "const": true
                           }
                         },
                         "required": [

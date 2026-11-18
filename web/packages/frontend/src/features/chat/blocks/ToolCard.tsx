@@ -59,6 +59,10 @@ export interface ToolCardData {
   approvalAnsweredBy?: ApprovalAnsweredBy | undefined
   /** TAL-1968: the call's card must stay in view, outside a folded run of calls (server field `shows_card`). */
   showsCard?: true
+  /** TAL-2341: the open row starts in its raw view (server `opens_raw`, the `formatted_tool_results` switch off). */
+  opensRaw?: true | undefined
+  /** TAL-2341: the call's media shows only in the open row (server `media_in_details`, the `inline_tool_media` switch off). */
+  mediaInDetails?: true | undefined
   /** TAL-2340: when a running call started (epoch ms, from the server's `started_at`); its row's timer counts from it. */
   startedAt?: number | undefined
   /** TAL-2340: the background process the call started (server field `process_id`), whose latest output line shows under it. */
@@ -444,8 +448,8 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
   const locale = useLocale()
   const arrival = useArrival(arrivalKey)
   const [open, toggle] = useDisclosure(`tool:${call.id}`, false)
-  // TAL-2338: whether the open row shows the server's raw view; formatted until the reader asks.
-  const [raw, setRaw] = useState(false)
+  // TAL-2338: whether the open row shows the server's raw view; formatted until the reader asks (TAL-2341: raw while the server says so).
+  const [raw, setRaw] = useState(call.opensRaw === true)
   const kind = call.kind
   const label = toolCardLabel(call, locale)
   const args = pretty(call.args)
@@ -475,8 +479,8 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
       {call.resultView?.block && <ShowBlockResult key={call.resultView.block.block_id} reference={call.resultView.block} />}
       {call.background?.agents_detail?.length ? <DelegateAgents agents={call.background.agents_detail} sessionId={sessionId} /> : null}
       {sessionId && call.processId && <ProcessOutputTail sessionId={sessionId} processId={call.processId} />}
-      {/* TAL-2325: the images, speech or video a media tool made, in view without opening the call. */}
-      {call.resultView?.media?.length ? <div className="tool-card-media px-2.5 pb-2"><MediaTiles media={call.resultView.media} sessionId={sessionId} images /></div> : null}
+      {/* TAL-2325: the images, speech or video a media tool made, in view without opening the call (TAL-2341: only open, while the server says so). */}
+      {call.resultView?.media?.length && (open || !call.mediaInDetails) ? <div className="tool-card-media px-2.5 pb-2"><MediaTiles media={call.resultView.media} sessionId={sessionId} images /></div> : null}
       {sessionId && call.resultView?.terminal && <TerminalResult key={call.resultView.terminal.terminal_id} sessionId={sessionId} reference={call.resultView.terminal} />}
       {sessionId && call.resultView?.outbound_draft && <OutboundDraftResult key={JSON.stringify([sessionId, call.id, call.resultView.outbound_draft])} sessionId={sessionId} callId={call.id} reference={call.resultView.outbound_draft} />}
       {open && <ToolCardDetail call={call} sessionId={sessionId} args={args} result={result} raw={raw} onToggleRaw={() => { setRaw(!raw) }} />}

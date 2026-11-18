@@ -42,7 +42,7 @@ import { UpdateNotificationStore } from './tools/update-notifications.js'
 import { appendContinuation, continueChat, UPDATE_CONTINUATION_PROMPT, UPDATE_CONTINUATION_SOURCE, type ContinuationRun } from './tools/update-continuation.js'
 import { RESTART_EXIT_CODE, RUN_SETTLE_MS } from './cli/supervise.js'
 import { displayBotName, pyBool, SettingsStore } from './settings.js'
-import { readToolLookupsShown } from './sessions/tool-display.js'
+import { DISPLAY_SETTING_DEFAULTS, readDisplaySettings } from './sessions/display-settings.js'
 import { AssetCache, SpaShell } from './spa.js'
 import { StartupGate } from './startup.js'
 import { SessionNotFound, SessionStore } from './sessions/store.js'
@@ -151,8 +151,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const show = new ShowBlocks(storage.documents, () => deps, now)
   const secrets = new SecretRequests(storage.documents, () => deps, now)
   const settings = new SettingsStore({ documents: storage.documents, env, stateDir: config.stateDir, defaultWorkspace: config.defaultWorkspace, botName: config.botName, log })
-  // TAL-2331: every projected tool call reads `show_tool_lookups` as it leaves the server.
-  readToolLookupsShown(() => { try { return pyBool(settings.peekValue('show_tool_lookups')) } catch { return false } })
+  // TAL-2331, TAL-2341: everything the server sends reads the Tool calls switches as it leaves the server.
+  readDisplaySettings(settings, (key) => {
+    try { const value = settings.peekValue(key); return value === undefined || value === null ? DISPLAY_SETTING_DEFAULTS[key] : pyBool(value) } catch { return DISPLAY_SETTING_DEFAULTS[key] }
+  })
   await settings.load()
   const passkeys = new PasskeyStore(storage.documents, now)
   // Resolved below once the sidecar-backed config store exists; the auth store reads it lazily.

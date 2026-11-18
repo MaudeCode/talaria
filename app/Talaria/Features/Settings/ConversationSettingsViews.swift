@@ -124,6 +124,8 @@ struct ChatsSettingsView: View {
                     systemImage: "arrow.turn.down.left",
                     isOn: $wrapsCodeBlockLines
                 )
+
+                ToolCallsSettingsLink()
             }
 
             SettingsSection(
@@ -173,5 +175,32 @@ struct ChatsSettingsView: View {
                 )
             }
         }
+    }
+}
+
+/// TAL-2341: the Transcript row that opens Tool Calls and counts its rows; absent until the server sends any.
+private struct ToolCallsSettingsLink: View {
+    @Environment(ServerSettingsStore.self) private var store: ServerSettingsStore?
+
+    var body: some View {
+        if let count = store?.settings?.toolCallSettings.count, count > 0 {
+            NavigationLink(value: SettingsPane.toolCalls) {
+                SettingsAccessoryRow(title: SettingsIndex.chatToolCalls.title, value: count.formatted(), systemImage: "wrench.adjustable")
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+/// TAL-2341: Settings › Chats › Tool Calls, the server's switches for how tool calls show.
+struct ToolCallsSettingsView: View {
+    @Environment(ServerSettingsStore.self) private var store: ServerSettingsStore?
+
+    var body: some View {
+        SettingsPage(title: SettingsIndex.chatToolCalls.title, indexPage: .toolCalls) {
+            ServerSettingsSections(page: .toolCalls)
+            if let error = store?.errorMessage { SettingsErrorFootnote(SettingsErrorText(error)) }
+        }
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

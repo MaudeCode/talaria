@@ -2,9 +2,10 @@ import { homedir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { decidedResultView, toolOutcome, toolResultSnippet, toolResultView, withToolCallOutcomes } from './merge.js'
 import { diffHunks } from '../text/diff.js'
-import { appTitle, decidedEditDiff, EDIT_DIFF_MAX_LINES, readToolLookupsShown, rememberConnectorLogos, tokenToolKind, toolArgs, toolDisplay, toolEditDiff, toolKind, toolName, toolProgress } from './tool-display.js'
+import { appTitle, decidedEditDiff, EDIT_DIFF_MAX_LINES, rememberConnectorLogos, tokenToolKind, toolArgs, toolDisplay, toolEditDiff, toolKind, toolName, toolProgress } from './tool-display.js'
+import { stubDisplaySettings } from './display-settings.js'
 import { fullToolResult } from './anchor.js'
-import { publicToolFrame } from '../redact.js'
+import { approvalTool, publicToolFrame } from '../redact.js'
 import { TALARIA_TOOL_NAMES, TOOL_PRESENTATIONS, type ToolResultView } from '@maudecode/talaria-web-contracts'
 
 // TAL-1537: a `~/` path expands against a stubbed home.
@@ -190,13 +191,22 @@ describe('hidden tool lookups (TAL-2331)', () => {
 
   // Session detail (calls and scene rows) and the setting's round trip: sessions.test.ts, on the shared fixture.
   it('hides a lookup live and persisted while the setting is off, never a failed lookup or another call', () => {
-    readToolLookupsShown(() => false)
+    stubDisplaySettings({})
     expect(publicToolFrame(lookup, true).hidden).toBe(true)
     expect(publicToolFrame({ ...lookup, is_error: true }, true)).not.toHaveProperty('hidden')
     expect(publicToolFrame({ name: 'read_file', id: 'r', args: { path: 'a' } }, true)).not.toHaveProperty('hidden')
-    readToolLookupsShown(() => true)
+    stubDisplaySettings({ show_tool_lookups: true })
     expect(publicToolFrame(lookup, true)).not.toHaveProperty('hidden')
-    readToolLookupsShown(() => false)
+    stubDisplaySettings({})
+  })
+
+  // Every other switch, live and after reload: sessions.test.ts, sse-routes.test.ts, chat.test.ts and relay.test.ts.
+  it('marks the call an approval holds unnamed while the Live Activity switch is off (TAL-2341)', () => {
+    const held = { name: 'terminal', id: 't', args: { command: 'npm test' } }
+    expect(approvalTool(held, true, null)).not.toHaveProperty('activity_unnamed')
+    stubDisplaySettings({ live_activity_current_tool: false })
+    expect(approvalTool(held, true, null)).toMatchObject({ kind: 'shell', target: 'npm test', activity_unnamed: true })
+    stubDisplaySettings({})
   })
 })
 

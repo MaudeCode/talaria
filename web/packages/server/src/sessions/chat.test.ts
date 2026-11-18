@@ -3383,6 +3383,11 @@ describe('chat turns through the sidecar', () => {
       { phase: 'working' },
       null,
     ])
+    // TAL-2341: with the status switch off a replay names no call.
+    await post(s, '/api/settings', { status_chip_current_action: false })
+    const replayed = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&after_seq=0`, (f) => f.event === 'stream_end')
+    await post(s, '/api/settings', { status_chip_current_action: true })
+    expect(replayed.filter((f) => f.event === 'run_status').map((f) => (f.data as Json).status)).toEqual([...Array<Json>(5).fill({ phase: 'working' }), null])
   })
 
   it.each([['once', 'allowed'], ['session', 'allowed'], ['always', 'allowed'], ['deny', 'denied']])('tells the turn which tool row an approval answered with %s unlocked: %s (TAL-1783)', async (choice, outcome) => {

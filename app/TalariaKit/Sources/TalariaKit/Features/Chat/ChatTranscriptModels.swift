@@ -158,6 +158,7 @@ public struct AssistantTurnLayout: Equatable, Sendable {
         merged.editDiff = live.editDiff ?? call.editDiff
         merged.progress = live.progress
         merged.isHidden = live.isHidden
+        merged.displayFlags = live.displayFlags
         return merged
     }
 }
@@ -602,6 +603,7 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
                 )
                 // TAL-2340: a running call keeps the server's start its timer counts from.
                 enriched.timerStart = toolCall.timerStart ?? resolved.timerStart
+                enriched.displayFlags = toolCall.displayFlags
                 toolCalls[toolIndex] = enriched
             }
             rows[rowIndex].content = .tools(toolCalls)
@@ -781,6 +783,7 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
         )
         call.background = Self.backgroundLink(object["background"])
         call.resultTruncated = Self.bool(object["result_truncated"]) == true
+        call.displayFlags = ToolDisplayFlags(object)
         return call
     }
 
@@ -815,7 +818,7 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
             ?? Self.object(object["input"])
             ?? Self.arguments(Self.string(function?["arguments"]))
         let isError = Self.bool(object["is_error"]) ?? Self.bool(object["error"])
-        return ToolCall(
+        var call = ToolCall(
             id: id,
             name: name,
             preview: preview,
@@ -835,6 +838,8 @@ public struct AssistantActivityTimeline: Equatable, Sendable {
             isCompleted: status == "completed" || Self.bool(object["done"]) == true,
             isHidden: Self.bool(object["hidden"]) == true
         )
+        call.displayFlags = ToolDisplayFlags(object)
+        return call
     }
 
     private static func string(_ value: JSONValue?) -> String? {

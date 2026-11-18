@@ -286,6 +286,23 @@ func testTheRowCarriesTheServerRawViewAndCopiesWhatShows() throws {
     XCTAssertEqual(ToolCallDisplayFormatter.copyText(for: written), "--- a/a.txt\n+++ b/a.txt\n@@ -0,0 +1 @@\n+abc")
 }
 
+/// TAL-2341: the server's Tool calls switches ride a call from its live frames and from a settled scene row; a call without
+/// them (the switch on, or an older server) opens formatted with its media in view.
+func testTheRowCarriesTheServerDisplayFlags() throws {
+    let complete = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"call-image","name":"image_generate","opens_raw":true,"media_in_details":true}"#.utf8))
+    let running = ToolCall(id: "call-image", name: "image_generate", preview: nil, args: nil)
+    XCTAssertEqual(running.applyingCompletionPayload(complete).displayFlags, ToolDisplayFlags(opensRaw: true, mediaInDetails: true))
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    let row = #"{"row_id":"tool:r","order_index":0,"role":"tool","tool":{"id":"r","name":"read_file","preview":null,"done":true,"is_error":false,"duration":null,"cost_usd":null,"opens_raw":true}}"#
+    let message = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"assistant","content":"Done.","message_id":"m","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"Done.","activity_rows":[\#(row)]}}"#.utf8))
+    let settled = AssistantTurnLayout(message: message, liveRows: [], archivedRows: []).rows.flatMap(\.toolCalls)
+    XCTAssertEqual(settled.map(\.displayFlags), [ToolDisplayFlags(opensRaw: true)])
+    XCTAssertEqual(ToolCall(id: "plain", name: "read_file", preview: nil, args: nil).applyingCompletionPayload(
+        try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"plain","name":"read_file"}"#.utf8))
+    ).displayFlags, ToolDisplayFlags())
+}
+
 /// TAL-1965: a `decision_review_put` result's review, from a tool frame and from a session detail.
 func testTheReviewReferenceDecodesFromAToolResultAndASessionDetail() throws {
     let ref = try DecisionReviewModelTests.fixture("ref")

@@ -782,8 +782,11 @@ public final class ChatStreamCoordinator {
                 markProgress()
             }
         case .toolStarted(let payload):
-            // TAL-2336: a call the transcript leaves out (TAL-2331 `hidden`) is named nowhere else either.
-            if !payload.isHidden {
+            // TAL-2336: a call the transcript leaves out (TAL-2331 `hidden`) is named nowhere else either. TAL-2341: with the
+            // activity's current call switched off (`activity_unnamed`), the activity says the run is working, naming no call.
+            if payload.activityUnnamed {
+                liveActivityManager?.update(.promptSettled)
+            } else if !payload.isHidden {
                 let tool = AgentRunActivityTool(payload, done: false)
                 if let id = payload.stableID { runningActivityTools.append((id, tool)) }
                 liveActivityManager?.update(.toolStarted(tool))
@@ -796,7 +799,7 @@ public final class ChatStreamCoordinator {
                 markProgress()
             }
         case .toolCompleted(let payload):
-            if !payload.isHidden { liveActivityManager?.update(completedActivityTool(payload)) }
+            if !payload.isHidden, !payload.activityUnnamed { liveActivityManager?.update(completedActivityTool(payload)) }
             if delegate?.streamCoordinatorCompleteToolCall(payload) == true {
                 markProgress()
             }
@@ -825,7 +828,11 @@ public final class ChatStreamCoordinator {
             // An empty update is the settled prompt (`approval_cleared`); the run goes on. Allow sits beside the server's
             // `action_text` only (TAL-1469).
             liveActivityManager?.update(
-                update.pending.map { .waitingForApproval(headID: $0.headId, text: $0.actionText, tool: $0.tool.map(AgentRunActivityTool.held)) } ?? .promptSettled
+                update.pending.map { pending in
+                    // TAL-2341: a held call the server leaves unnamed (`activity_unnamed`) is not named here either.
+                    .waitingForApproval(headID: pending.headId, text: pending.actionText,
+                                        tool: pending.tool.flatMap { $0.displayFlags.activityUnnamed ? nil : AgentRunActivityTool.held($0) })
+                } ?? .promptSettled
             )
             delegate?.streamCoordinatorApplyApprovalUpdate(update)
             markProgress()

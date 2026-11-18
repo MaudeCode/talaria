@@ -20,6 +20,15 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
     case chatResponseTimestamps = "settings-chat-response-timestamps"
     case chatResponseSpeed = "settings-chat-response-speed"
     case chatWrapCodeBlockLines = "settings-chat-wrap-code-block-lines"
+    case chatToolCalls = "settings-chat-tool-calls"
+    case toolCallsFormattedResults = "settings-tool-calls-formatted-results"
+    case toolCallsMedia = "settings-tool-calls-media"
+    case toolCallsOutcomes = "settings-tool-calls-outcomes"
+    case toolCallsMergeRepeated = "settings-tool-calls-merge-repeated"
+    case toolCallsLiveProgress = "settings-tool-calls-live-progress"
+    case toolCallsShowLookups = "settings-tool-calls-show-lookups"
+    case toolCallsStatusCurrentAction = "settings-tool-calls-status-current-action"
+    case toolCallsTurnSummary = "settings-tool-calls-turn-summary"
     case chatScrollButtonSide = "settings-chat-scroll-button-side"
     case chatRightToLeftChatLayout = "settings-chat-right-to-left-chat-layout"
     case chatFilesButton = "settings-chat-files-button"
@@ -57,7 +66,6 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
     case modelsMaxTokens = "settings-chat-max-tokens"
     case modelsPrepareCompressionAhead = "settings-chat-compression-ahead"
     case systemRefreshTitlesEvery = "settings-chat-title-refresh"
-    case systemShowToolLookups = "settings-system-show-tool-lookups"
     case systemActivityCallDetails = "settings-system-activity-call-details"
     case providersManageProviders = "settings-providers-providers"
     case toolsAgentApprovals = "settings-tools-agent-approvals"
@@ -87,6 +95,7 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
     case serversSignOutOfThisServer = "settings-servers-sign-out-of-this-server"
     case liveActivitiesAndWidgetsDisplay = "settings-liveActivitiesAndWidgets-display"
     case liveActivitiesAndWidgetsLiveActivityExcerpts = "settings-liveActivitiesAndWidgets-live-activity-excerpts"
+    case liveActivitiesAndWidgetsCurrentCall = "settings-liveActivitiesAndWidgets-current-call"
     case liveActivitiesAndWidgetsProviderQuotas = "settings-liveActivitiesAndWidgets-provider-quotas"
     case siriAndShortcutsOpenTalariaSettings = "settings-siriAndShortcuts-open-talaria-settings"
     case dataAndStorageClearOfflineCache = "settings-dataAndStorage-clear-offline-cache"
@@ -157,7 +166,8 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
     case appleAccountDisconnect = "settings-disconnect-relay"
     case appleAccountDeleteSyncedData = "settings-icloud-sync-delete"
 
-    public enum Scope: Sendable { case device, synced, profile, server }
+    /// `interface` is the server's `settings.json`: how Talaria looks and behaves, for every client of that server.
+    public enum Scope: Sendable { case device, synced, interface, profile, server }
 
     public var id: String { rawValue }
     public var category: SettingsCategory { definition.category }
@@ -174,6 +184,8 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
     public var scope: Scope { definition.scope }
     public var page: SettingsPane {
         switch self {
+        case .toolCallsFormattedResults, .toolCallsMedia, .toolCallsOutcomes, .toolCallsMergeRepeated, .toolCallsLiveProgress, .toolCallsShowLookups,
+             .toolCallsStatusCurrentAction, .toolCallsTurnSummary: .toolCalls
         case .sidebarQuotasDetail, .sidebarQuotasProviderIcon, .sidebarQuotasQuotaRail, .sidebarQuotasPaceMarker, .sidebarQuotasColorByState: .sidebarQuotas
         case .widgetColor, .widgetCustomColor, .widgetWeight, .widgetAutomaticColor, .widgetShowPaceMarker, .widgetProviderIcon, .widgetIconStyle, .widgetStatus, .widgetReset, .widgetLockScreenProviderIcon, .widgetResetTime, .widgetQuotaWindow, .widgetPaceFooter, .widgetTrackColor, .widgetCustomTrackColor, .widgetTrackOpacity, .widgetBackground, .widgetCustomBackgroundColor, .widgetBackgroundOpacity, .widgetTap, .widgetHealthy, .widgetWarning, .widgetCritical, .widgetStale, .widgetUnavailable: .providerQuotaWidget
         case .widgetCustomHealthyColor, .widgetCustomWarningColor, .widgetCustomCriticalColor, .widgetCustomStaleColor, .widgetCustomUnavailableColor: .providerQuotaWidget
@@ -234,6 +246,15 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
         case .chatResponseTimestamps: .init(category: .chats, section: "Transcript", title: "Response Timestamps", scope: .synced)
         case .chatResponseSpeed: .init(category: .chats, section: "Transcript", title: "Response Speed", scope: .synced)
         case .chatWrapCodeBlockLines: .init(category: .chats, section: "Transcript", title: "Wrap Code Block Lines", scope: .synced)
+        case .chatToolCalls: .init(category: .chats, section: "Transcript", title: "Tool Calls", scope: .interface)
+        case .toolCallsFormattedResults: .init(category: .chats, section: "Tool Rows", title: "Formatted Results", scope: .interface)
+        case .toolCallsMedia: .init(category: .chats, section: "Tool Rows", title: "Media in Tool Rows", scope: .interface)
+        case .toolCallsOutcomes: .init(category: .chats, section: "Tool Rows", title: "Outcomes", scope: .interface)
+        case .toolCallsMergeRepeated: .init(category: .chats, section: "Tool Rows", title: "Merge Repeated Calls", scope: .interface)
+        case .toolCallsLiveProgress: .init(category: .chats, section: "Tool Rows", title: "Live Progress", scope: .interface)
+        case .toolCallsShowLookups: .init(category: .chats, section: "Tool Rows", title: "Show Tool Lookups", scope: .interface)
+        case .toolCallsStatusCurrentAction: .init(category: .chats, section: "Around the Chat", title: "Current Action in Status", scope: .interface)
+        case .toolCallsTurnSummary: .init(category: .chats, section: "Around the Chat", title: "Turn Summary", scope: .interface)
         case .chatScrollButtonSide: .init(category: .chats, section: "Conversation", title: "Scroll Button Side", scope: .synced)
         case .chatRightToLeftChatLayout: .init(category: .chats, section: "Conversation", title: "Right-to-Left Chat Layout", scope: .synced)
         case .chatFilesButton: .init(category: .chats, section: "Conversation", title: "Files Button", scope: .synced)
@@ -271,7 +292,6 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
         case .modelsMaxTokens: .init(category: .models, section: "Limits", title: "Max Tokens", scope: .profile)
         case .modelsPrepareCompressionAhead: .init(category: .models, section: "Limits", title: "Prepare Compression Ahead", scope: .profile)
         case .systemRefreshTitlesEvery: .init(category: .system, section: "System", title: "Refresh Titles Every", scope: .server)
-        case .systemShowToolLookups: .init(category: .system, section: "System", title: "Show Tool Lookups", scope: .server)
         case .systemActivityCallDetails: .init(category: .system, section: "System", title: "Tool Call Details in Live Activities and Alerts", scope: .server)
         case .providersManageProviders: .init(category: .providers, section: "Providers", title: "Providers", scope: .profile)
         case .toolsAgentApprovals: .init(category: .tools, section: "Approvals", title: "Agents can approve other chats' commands", scope: .profile)
@@ -301,6 +321,7 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
         case .serversSignOutOfThisServer: .init(category: .servers, section: "Server Access", title: "Sign Out of This Server", scope: .device)
         case .liveActivitiesAndWidgetsDisplay: .init(category: .liveActivitiesAndWidgets, section: "Live Activities", title: "Display", scope: .synced)
         case .liveActivitiesAndWidgetsLiveActivityExcerpts: .init(category: .liveActivitiesAndWidgets, section: "Live Activities", title: "Live Activity Excerpts", scope: .synced)
+        case .liveActivitiesAndWidgetsCurrentCall: .init(category: .liveActivitiesAndWidgets, section: "Live Activities", title: "Current Call", scope: .interface)
         case .liveActivitiesAndWidgetsProviderQuotas: .init(category: .liveActivitiesAndWidgets, section: "Widgets", title: "Provider Quotas", scope: .device)
         case .siriAndShortcutsOpenTalariaSettings: .init(category: .siriAndShortcuts, section: "Siri & Shortcuts", title: "Open Talaria Settings", scope: .device)
         case .dataAndStorageClearOfflineCache: .init(category: .dataAndStorage, section: "Offline Data", title: "Clear Offline Cache", scope: .device)
@@ -368,6 +389,22 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
         case .appleAccountDisconnect: .init(category: .servers, section: "Manage", title: "Disconnect", scope: .device)
         case .appleAccountDeleteSyncedData: .init(category: .servers, section: "Manage", title: "Delete Synced Data…", scope: .synced)
         case .appleAccountSyncNow: .init(category: .servers, section: "iCloud Sync", title: "Sync Now", scope: .device)
+        }
+    }
+}
+
+extension ToolCallSetting {
+    /// TAL-2341: its row on Settings › Chats › Tool Calls.
+    public var index: SettingsIndex {
+        switch self {
+        case .formattedToolResults: .toolCallsFormattedResults
+        case .inlineToolMedia: .toolCallsMedia
+        case .toolRowOutcomes: .toolCallsOutcomes
+        case .mergeRepeatedToolCalls: .toolCallsMergeRepeated
+        case .liveToolProgress: .toolCallsLiveProgress
+        case .showToolLookups: .toolCallsShowLookups
+        case .statusChipCurrentAction: .toolCallsStatusCurrentAction
+        case .turnSummary: .toolCallsTurnSummary
         }
     }
 }

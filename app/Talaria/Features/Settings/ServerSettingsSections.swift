@@ -21,7 +21,8 @@ struct ServerSettingsScope<Content: View>: View {
 
 /// Extends SettingsSection and its shared control rows for the server-owned preferences.
 struct ServerSettingsSections: View {
-    enum Page { case tools, limits, titles, updates }
+    /// `titles` and `liveActivity` are rows inside another page's section; the rest bring their own sections.
+    enum Page { case tools, limits, titles, updates, toolCalls, liveActivity }
     let page: Page
     @Environment(ServerSettingsStore.self) private var store: ServerSettingsStore?
     @Environment(\.settingsScrollAnchor) private var scrollAnchor
@@ -67,15 +68,25 @@ struct ServerSettingsSections: View {
                         Text("20").tag("20")
                     }
                 }
-                // TAL-2331: off, the server leaves the Agent's tool lookups out of the transcript.
-                if let value = settings.showToolLookups {
-                    toggle(SettingsIndex.systemShowToolLookups.titleResource, "text.magnifyingglass", \.showToolLookups, value,
-                           SettingsIndex.systemShowToolLookups.id, store.setShowToolLookups)
-                }
                 // TAL-2336: off, Live Activities and push alerts name a call only by its kind.
                 if let value = settings.activityCallDetails {
                     toggle(SettingsIndex.systemActivityCallDetails.titleResource, "iphone", \.activityCallDetails, value,
                            SettingsIndex.systemActivityCallDetails.id, store.setActivityCallDetails)
+                }
+            case .toolCalls:
+                // TAL-2341: the switches the server applies to transcripts, split by what they affect.
+                toolCallsSection(String(localized: "Tool Rows"), settings, [
+                    (.formattedToolResults, "text.alignleft"), (.inlineToolMedia, "photo"), (.toolRowOutcomes, "checkmark.circle"),
+                    (.mergeRepeatedToolCalls, "square.stack"), (.liveToolProgress, "timer"), (.showToolLookups, "text.magnifyingglass")
+                ])
+                toolCallsSection(String(localized: "Around the Chat"), settings, [
+                    (.statusChipCurrentAction, "ellipsis.bubble"), (.turnSummary, "text.badge.checkmark")
+                ])
+            case .liveActivity:
+                // TAL-2341: off, Live Activities and push alerts name no call.
+                if let value = settings.liveActivityCurrentTool {
+                    toggle(SettingsIndex.liveActivitiesAndWidgetsCurrentCall.titleResource, "wrench.and.screwdriver", \.liveActivityCurrentTool, value,
+                           SettingsIndex.liveActivitiesAndWidgetsCurrentCall.id, store.setLiveActivityCurrentTool)
                 }
             case .updates:
                 if settings.checkForUpdates != nil || settings.autoApplyUpdates != nil || settings.summarizeUpdatesAutomatically != nil
@@ -128,8 +139,10 @@ struct ServerSettingsSections: View {
         }
         if let entry = requestedUnavailableSetting {
             let row = SettingsInfoRow(title: entry.title, value: String(localized: "Not Available on This Server"))
-            if case .titles = page { row }
-            else { SettingsSection(title: entry.section) { row } }
+            switch page {
+            case .titles, .liveActivity: row
+            default: SettingsSection(title: entry.section) { row }
+            }
         }
     }
 
@@ -137,12 +150,15 @@ struct ServerSettingsSections: View {
         guard let entry = scrollAnchor?.entry else { return nil }
         let settings = store?.settings
         let available: Bool
+        if case .toolCalls = page, let setting = ToolCallSetting.allCases.first(where: { $0.index == entry }) {
+            return settings?.toolCallSettings[setting] == nil ? entry : nil
+        }
         switch (page, entry) {
         case (.tools, .toolsAgentApprovals): available = settings?.agentApprovals != nil
         case (.limits, .modelsMaxTokens): available = settings?.hasMaxTokens == true
         case (.limits, .modelsPrepareCompressionAhead): available = settings?.compressionPrepareAhead != nil
         case (.titles, .systemRefreshTitlesEvery): available = settings?.autoTitleRefreshEvery != nil
-        case (.titles, .systemShowToolLookups): available = settings?.showToolLookups != nil
+        case (.liveActivity, .liveActivitiesAndWidgetsCurrentCall): available = settings?.liveActivityCurrentTool != nil
         case (.titles, .systemActivityCallDetails): available = settings?.activityCallDetails != nil
         case (.updates, .systemCheckForUpdates): available = settings?.checkForUpdates != nil
         case (.updates, .systemApplyWebUpdatesAutomatically): available = settings?.autoApplyUpdates != nil
@@ -154,6 +170,19 @@ struct ServerSettingsSections: View {
         default: return nil
         }
         return available ? nil : entry
+    }
+
+    @ViewBuilder
+    private func toolCallsSection(_ title: String, _ settings: SettingsResponse, _ rows: [(setting: ToolCallSetting, icon: String)]) -> some View {
+        let shown = rows.filter { settings.toolCallSettings[$0.setting] != nil }
+        if let store, !shown.isEmpty {
+            SettingsSection(title: title) {
+                ForEach(shown, id: \.setting) { row in
+                    toggle(row.setting.index.titleResource, row.icon, \.toolCallSettings[row.setting], settings.toolCallSettings[row.setting] ?? false,
+                           row.setting.index.id) { store.setToolCallSetting(row.setting, $0) }
+                }
+            }
+        }
     }
 
     private func toggle(_ title: LocalizedStringResource, _ icon: String, _ path: KeyPath<SettingsResponse, Bool?>,

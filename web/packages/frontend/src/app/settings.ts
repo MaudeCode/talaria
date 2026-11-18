@@ -101,8 +101,11 @@ export function useSaveSettings() {
 
 /** The settings the server's chat list reads: one switch per outside source and the messaging sub-option (TAL-2159), and the density that decides whether rows carry `meta` (TAL-2153). */
 const SESSION_LIST_SETTINGS = new Set<string>([...OUTSIDE_SOURCE_SETTING_KEYS, 'show_previous_messaging_sessions', 'sidebar_density'])
-/** The settings the server's transcript reads: the Worklog default (TAL-2149) and whether tool lookups are `hidden` (TAL-2331). */
-const SESSION_DETAIL_SETTINGS = new Set<string>(['worklog_details_expanded_default', 'show_tool_lookups'])
+/** The settings the server's transcript reads: the Worklog default (TAL-2149) and the Tool calls switches (TAL-2331, TAL-2341). */
+const SESSION_DETAIL_SETTINGS = new Set<string>([
+  'worklog_details_expanded_default', 'show_tool_lookups', 'formatted_tool_results', 'inline_tool_media', 'tool_row_outcomes', 'merge_repeated_tool_calls',
+  'live_tool_progress', 'status_chip_current_action', 'turn_summary',
+])
 
 // Module scope: React Compiler cannot lower its try/finally, so it stays outside the hook.
 async function writeSettings(qc: QueryClient, patch: Record<string, unknown>) {

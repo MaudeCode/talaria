@@ -1,6 +1,7 @@
 import type { ActivityGroup, ToolKind } from '@maudecode/talaria-web-contracts'
 import type { SceneRow } from './anchor.js'
 import { hiddenLookup, toolDisplay, toolGrouping } from './tool-display.js'
+import { displaySetting } from './display-settings.js'
 
 /**
  * TAL-2332: the server's one activity-grouping rule, for settled scenes and live frames alike. Reasoning and tool rows run
@@ -66,7 +67,8 @@ export function withActivityGroups(rows: readonly SceneRow[]): { rows: SceneRow[
     phase.push(counted)
     if (card) open = null
   }
-  mergeRuns(out)
+  // TAL-2341: with `merge_repeated_tool_calls` off every call keeps its own row.
+  if (displaySetting('merge_repeated_tool_calls')) mergeRuns(out)
   return { rows: out, groups: [...calls].map(([id, list]) => groupRecord(id, list)), finalPhase: groupRecord(`phase:${String(phases)}`, phase) }
 }
 

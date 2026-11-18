@@ -14,6 +14,7 @@ public enum AgentLiveActivityEvent: Equatable, Sendable {
     case waitingForApproval(headID: String?, text: String?, tool: AgentRunActivityTool? = nil)
     case waitingForClarification
     /// The pending approval or clarification settled, here or in another client, and the run goes on.
+    /// TAL-2341: also a call started that the activity does not name (`activity_unnamed`); either way it reads "Working".
     case promptSettled
     /// TAL-1422: the server's plan progress for the run of `sessionID` (`todo_state.plan_progress`).
     case planProgress(completed: Int, total: Int, sessionID: String)

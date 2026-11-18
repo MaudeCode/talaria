@@ -12,6 +12,7 @@ import type { ServerConfig } from './config.js'
 import { fixCredentialPermissions, warnForwardedForWithoutProxy, warnTrustedHeaderWithoutProxy, warnUnauthenticatedBind } from './startup.js'
 import { stopStateDbWorker } from './sessions/state-db.js'
 import { closeTranscribeStreams } from './api/transcribe-stream.js'
+import { releaseDisplaySettings } from './sessions/display-settings.js'
 import { RUN_DRAIN_MS, RUN_SETTLE_MS, watchRetirement } from './cli/supervise.js'
 import type { DrainOptions } from './sessions/turn.js'
 
@@ -107,6 +108,8 @@ export async function startServer(app: App, config: ServerConfig, opts: StartSer
         log(`[webui] shutdown: ${step} failed: ${(error as Error).message}`)
       }
     }
+    // TAL-2341: the Tool calls switches go back to the server booted before this one (a test process runs several).
+    releaseDisplaySettings(app.deps.settings)
     await settle('prompt queues', () => app.deps.promptQueues.close())
     await settle('groups', () => app.deps.groups.close())
     app.deps.updates.stopAutoApply()

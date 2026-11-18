@@ -28,6 +28,8 @@ struct RelayLiveActivitySettingsSection: View {
                 systemImage: "lock",
                 isOn: $showsLiveActivityResponseExcerpts
             )
+
+            ServerSettingsSections(page: .liveActivity)
         }
         .onChange(of: modeRawValue) {
             Task {
