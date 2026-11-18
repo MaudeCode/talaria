@@ -28,6 +28,9 @@ class RoutingTests(unittest.TestCase):
     def test_path_classes(self):
         cases = [
             (["changelog.d/TAL-123.json"], set()),
+            # A documentation image selects nothing; a shipped icon reaches every Web build.
+            (["web/docs/pr-media/tal-346/after-desktop.png"], set()),
+            (["web/icon.png"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
             # The live-fixture test runs only in the contracts step, so editing it must select contracts.
             (["app/TalariaTests/APIClientSessionListTests.swift"], {"app", "contracts"}),
             (["app/TalariaKit/Tests/TalariaKitTests/APIClientSessionListTests.swift"], {"app", "contracts"}),
@@ -164,7 +167,6 @@ class RoutingTests(unittest.TestCase):
             ([".github/actions/setup-xcode/action.yml"], {"app", "tooling"}),
             ([".github/actions/setup-bash/action.yml"], {"app", "app_tooling", "tooling"}),
             ([".github/actions/app-package-tests/action.yml"], {"app", "contracts", "tooling"}),
-            (["app/ci/build-for-testing", "app/ci/package-coverage"], {"app", "tooling"}),
             (["app/ci/build-for-testing", "app/ci/check-swift-warnings", "app/ci/wait-for-job", "app/ci/gh-api-poll"], {"app", "tooling"}),
             (["app/ci/package-coverage"], {"app", "tooling"}),
             (["app/ci/wait_for_job_test.sh"], {"tooling"}),
@@ -216,115 +218,6 @@ class RoutingTests(unittest.TestCase):
                 full_suite.add(path)
         # These checkout controls affect every component. New unknown paths must be reviewed and classified.
         self.assertEqual(full_suite, {".gitattributes", ".gitignore"})
-
-    def test_documentation_image_selects_no_suites(self):
-        self.assertEqual(routing.affected(["web/docs/pr-media/tal-346/after-desktop.png"]), set())
-        self.assertEqual(routing.affected(["web/icon.png"]), {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"})
-
-    def test_real_diffs_include_renames_and_full_push_range(self):
-        with tempfile.TemporaryDirectory(prefix="talaria-ci-routing-") as temporary:
-            root = Path(temporary)
-            env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
-
-            def git(*args):
-                return subprocess.check_output(["git", "-c", "user.name=Synthetic", "-c", "user.email=test@example.invalid",
-                    "-c", "commit.gpgsign=false", *args], cwd=root, env=env, text=True, stderr=subprocess.PIPE).strip()
-
-            def commit(name):
-                git("add", ".")
-                git("commit", "-m", name)
-                return git("rev-parse", "HEAD")
-
-            def classify(base, head, *options):
-                result = subprocess.run([os.sys.executable, str(SCRIPT), f"--base={base}", f"--head={head}", *options],
-                                        cwd=root, env=env, text=True, capture_output=True, check=True)
-                flags = dict(line.split("=", 1) for line in result.stdout.splitlines())
-                self.assertEqual(set(flags), ALL)
-                self.assertLessEqual(set(flags.values()), {"true", "false"})
-                return {key for key, value in flags.items() if value == "true"}
-
-            git("init", "-b", "main")
-            (root / "web/sidecar/tests").mkdir(parents=True)
-            (root / "web/sidecar/tests/test_synthetic.py").write_text("print('synthetic')\n")
-            base = commit("base")
-            (root / "web/packages/frontend").mkdir(parents=True)
-            git("mv", "web/sidecar/tests/test_synthetic.py", "web/packages/frontend/moved.py")
-            moved = commit("move backend file into frontend")
-            self.assertEqual(classify(base, moved), {"web_sidecar", "web_frontend"})
-            odd = root / "web/packages/frontend/name\napp=false\n.tsx"
-            odd.write_text("synthetic")
-            head = commit("frontend change")
-            self.assertEqual(classify(moved, head), {"web_frontend"})
-            self.assertEqual(classify(base, head), {"web_sidecar", "web_frontend"})
-            git("update-ref", "refs/remotes/origin/main", moved)
-            # A parent change merged since the event's base SHA must not make
-            # the child PR rerun the parent's component checks.
-            self.assertEqual(classify("refs/remotes/origin/main", head, "--merge-base"), {"web_frontend"})
-            git("checkout", "-b", "diverged", base)
-            (root / "app").mkdir()
-            (root / "app/README.md").write_text("docs")
-            other = commit("base branch advanced")
-            self.assertEqual(classify(other, head, "--merge-base"), {"web_sidecar", "web_frontend"})
-            self.assertEqual(classify(head, head), ALL)
-            self.assertEqual(classify("0" * 40, head), ALL)
-            self.assertEqual(classify("--output=should-not-exist", head), ALL)
-            self.assertFalse((root / "should-not-exist").exists())
-
-            # A new unknown workflow can run anything, but a deleted one can no longer run.
-            (root / ".github/workflows").mkdir(parents=True)
-            (root / ".github/workflows/retired.yml").write_text("on: workflow_dispatch\n")
-            before_workflow = git("rev-parse", "HEAD")
-            with_workflow = commit("add a workflow")
-            self.assertEqual(classify(before_workflow, with_workflow), ALL)
-            git("rm", ".github/workflows/retired.yml")
-            without_workflow = commit("delete the workflow")
-            self.assertEqual(classify(with_workflow, without_workflow), {"tooling"})
-
-            workflow = root / ".github/workflows/ci.yml"
-            workflow.parent.mkdir(parents=True, exist_ok=True)
-            original_workflow = ("name: CI\non: push\njobs:\n  changes:\n    runs-on: ubuntu-latest\n"
-                                 "  app-tooling:\n    runs-on: macos-latest\n    steps:\n      - run: old-check\n"
-                                 "  app:\n    uses: ./.github/workflows/app-tests.yml\n")
-            workflow.write_text(original_workflow)
-            workflow_base = commit("fixture CI workflow")
-            workflow.write_text(original_workflow.replace("old-check", "catalog-check"))
-            tooling_head = commit("change only App tooling job")
-            self.assertEqual(classify(workflow_base, tooling_head), {"app_tooling", "tooling"})
-            workflow.write_text(workflow.read_text().replace("on: push", "on: pull_request"))
-            trigger_head = commit("change workflow trigger too")
-            self.assertEqual(classify(workflow_base, trigger_head), routing.WORKFLOWS["ci.yml"])
-            workflow.write_text(original_workflow.replace("app-tooling:", "renamed-tooling:"))
-            renamed_head = commit("rename App tooling job")
-            self.assertEqual(classify(workflow_base, renamed_head), routing.WORKFLOWS["ci.yml"])
-            last_job = original_workflow[:original_workflow.index("  app:\n")]
-            workflow.write_text(last_job + "permissions:\n  contents: read\n")
-            permissions_base = commit("App tooling is last before a global workflow key")
-            workflow.write_text(last_job + "permissions:\n  contents: write\n")
-            permissions_head = commit("change global workflow permissions")
-            self.assertEqual(classify(permissions_base, permissions_head), routing.WORKFLOWS["ci.yml"])
-
-            (root / "scripts").mkdir()
-            (root / "scripts/new-unknown-tool.py").write_text("unknown shared tooling\n")
-            unknown = commit("unknown shared tool")
-            self.assertEqual(classify(other, unknown), ALL)
-
-            def check_diff(*options):
-                return subprocess.run([os.sys.executable, str(SCRIPT), "--check-diff", *options],
-                                      cwd=root, env=env, text=True, capture_output=True)
-
-            self.assertEqual(check_diff("--base", base, "--head", other).returncode, 0)
-            self.assertEqual(check_diff().returncode, 0)
-            (root / "app/README.md").write_text("docs with trailing spaces  \n")
-            bad = commit("committed whitespace error")
-            self.assertNotEqual(check_diff().returncode, 0)
-            (root / "README.md").write_text("unrelated clean change\n")
-            final = commit("later clean commit")
-            self.assertEqual(git("status", "--porcelain"), "")
-            self.assertEqual(check_diff("--base", bad, "--head", final).returncode, 0)
-            result = check_diff("--base", other, "--head", final)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("trailing whitespace", result.stdout)
-            self.assertNotEqual(check_diff("--base", "missing-ref").returncode, 0)
 
     def test_experimental_publishes_every_web_artifact_input(self):
         """TAL-1986: release fragments and the What's New stamp change the packed artifact without selecting a web_*
@@ -604,6 +497,122 @@ final class MathTests: XCTestCase {
 
 CONTRACT_PROOF = ["TalariaKitTests/APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied",
                   "TalariaKitTests/SharedContractTests"]
+
+
+class RealDiffTests(unittest.TestCase):
+    """Routing over real Git history in a disposable repository."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="talaria-ci-routing-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        self.git("init", "-b", "main")
+
+    def git(self, *args):
+        return subprocess.check_output(["git", "-c", "user.name=Synthetic", "-c", "user.email=test@example.invalid",
+            "-c", "commit.gpgsign=false", *args], cwd=self.root, env=self.env, text=True, stderr=subprocess.PIPE).strip()
+
+    def write(self, path, text):
+        (self.root / path).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / path).write_text(text)
+
+    def commit(self, name):
+        self.git("add", ".")
+        self.git("commit", "-m", name)
+        return self.git("rev-parse", "HEAD")
+
+    def classify(self, base, head, *options):
+        result = subprocess.run([os.sys.executable, str(SCRIPT), f"--base={base}", f"--head={head}", *options],
+                                cwd=self.root, env=self.env, text=True, capture_output=True, check=True)
+        flags = dict(line.split("=", 1) for line in result.stdout.splitlines())
+        self.assertEqual(set(flags), ALL)
+        self.assertLessEqual(set(flags.values()), {"true", "false"})
+        return {key for key, value in flags.items() if value == "true"}
+
+    def check_diff(self, *options):
+        return subprocess.run([os.sys.executable, str(SCRIPT), "--check-diff", *options],
+                              cwd=self.root, env=self.env, text=True, capture_output=True)
+
+    def test_diffs_include_renames_and_the_full_push_range(self):
+        self.write("web/sidecar/tests/test_synthetic.py", "print('synthetic')\n")
+        base = self.commit("base")
+        (self.root / "web/packages/frontend").mkdir(parents=True)
+        self.git("mv", "web/sidecar/tests/test_synthetic.py", "web/packages/frontend/moved.py")
+        moved = self.commit("move backend file into frontend")
+        self.assertEqual(self.classify(base, moved), {"web_sidecar", "web_frontend"})
+        self.write("web/packages/frontend/name\napp=false\n.tsx", "synthetic")
+        head = self.commit("frontend change")
+        self.assertEqual(self.classify(moved, head), {"web_frontend"})
+        self.assertEqual(self.classify(base, head), {"web_sidecar", "web_frontend"})
+        self.git("update-ref", "refs/remotes/origin/main", moved)
+        # A parent change merged since the event's base SHA must not make
+        # the child PR rerun the parent's component checks.
+        self.assertEqual(self.classify("refs/remotes/origin/main", head, "--merge-base"), {"web_frontend"})
+        self.git("checkout", "-b", "diverged", base)
+        self.write("app/README.md", "docs")
+        other = self.commit("base branch advanced")
+        self.assertEqual(self.classify(other, head, "--merge-base"), {"web_sidecar", "web_frontend"})
+        self.assertEqual(self.classify(head, head), ALL)
+        self.assertEqual(self.classify("0" * 40, head), ALL)
+        self.assertEqual(self.classify("--output=should-not-exist", head), ALL)
+        self.assertFalse((self.root / "should-not-exist").exists())
+        self.write("scripts/new-unknown-tool.py", "unknown shared tooling\n")
+        unknown = self.commit("unknown shared tool")
+        self.assertEqual(self.classify(other, unknown), ALL)
+
+    def test_a_new_workflow_runs_everything_and_a_deleted_one_only_tooling(self):
+        # A new unknown workflow can run anything, but a deleted one can no longer run.
+        self.write("README.md", "base\n")
+        before_workflow = self.commit("base")
+        self.write(".github/workflows/retired.yml", "on: workflow_dispatch\n")
+        with_workflow = self.commit("add a workflow")
+        self.assertEqual(self.classify(before_workflow, with_workflow), ALL)
+        self.git("rm", ".github/workflows/retired.yml")
+        without_workflow = self.commit("delete the workflow")
+        self.assertEqual(self.classify(with_workflow, without_workflow), {"tooling"})
+
+    def test_a_change_to_only_the_ci_app_tooling_job_selects_app_tooling(self):
+        original = ("name: CI\non: push\njobs:\n  changes:\n    runs-on: ubuntu-latest\n"
+                    "  app-tooling:\n    runs-on: macos-latest\n    steps:\n      - run: old-check\n"
+                    "  app:\n    uses: ./.github/workflows/app-tests.yml\n")
+        workflow = ".github/workflows/ci.yml"
+        self.write(workflow, original)
+        workflow_base = self.commit("fixture CI workflow")
+        self.write(workflow, original.replace("old-check", "catalog-check"))
+        tooling_head = self.commit("change only App tooling job")
+        self.assertEqual(self.classify(workflow_base, tooling_head), {"app_tooling", "tooling"})
+        self.write(workflow, original.replace("old-check", "catalog-check").replace("on: push", "on: pull_request"))
+        trigger_head = self.commit("change workflow trigger too")
+        self.assertEqual(self.classify(workflow_base, trigger_head), routing.WORKFLOWS["ci.yml"])
+        self.write(workflow, original.replace("app-tooling:", "renamed-tooling:"))
+        renamed_head = self.commit("rename App tooling job")
+        self.assertEqual(self.classify(workflow_base, renamed_head), routing.WORKFLOWS["ci.yml"])
+        last_job = original[:original.index("  app:\n")]
+        self.write(workflow, last_job + "permissions:\n  contents: read\n")
+        permissions_base = self.commit("App tooling is last before a global workflow key")
+        self.write(workflow, last_job + "permissions:\n  contents: write\n")
+        permissions_head = self.commit("change global workflow permissions")
+        self.assertEqual(self.classify(permissions_base, permissions_head), routing.WORKFLOWS["ci.yml"])
+
+    def test_check_diff_rejects_whitespace_errors_in_the_checked_range(self):
+        self.write("README.md", "base\n")
+        base = self.commit("base")
+        self.write("app/README.md", "docs")
+        other = self.commit("clean change")
+        self.assertEqual(self.check_diff("--base", base, "--head", other).returncode, 0)
+        self.assertEqual(self.check_diff().returncode, 0)
+        self.write("app/README.md", "docs with trailing spaces  \n")
+        bad = self.commit("committed whitespace error")
+        self.assertNotEqual(self.check_diff().returncode, 0)
+        self.write("README.md", "unrelated clean change\n")
+        final = self.commit("later clean commit")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertEqual(self.check_diff("--base", bad, "--head", final).returncode, 0)
+        result = self.check_diff("--base", other, "--head", final)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("trailing whitespace", result.stdout)
+        self.assertNotEqual(self.check_diff("--base", "missing-ref").returncode, 0)
 
 
 class AppPlanTests(unittest.TestCase):

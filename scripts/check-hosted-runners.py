@@ -150,15 +150,13 @@ def unpinned_images(text):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=ROOT, help="repository root to check")
-    args = parser.parse_args()
-    found = violations(args.root) + image_violations(args.root)
+    argparse.ArgumentParser(description=__doc__).parse_args()
+    found = violations() + image_violations()
     for violation in found:
         print(violation, file=sys.stderr)
     if found:
         return 1
-    print(f"Hosted runners only, pinned third-party actions, no NAS credentials: all {len(workflows(args.root))} workflows; "
+    print(f"Hosted runners only, pinned third-party actions, no NAS credentials: all {len(workflows(ROOT))} workflows; "
           f"digest-pinned images and no piped installs: {', '.join(IMAGE_SCRIPTS)}.")
     return 0
 
