@@ -5,14 +5,14 @@ import { sessionDirectory, sessionPath } from '../test/storage.js'
 import { createHash, createPublicKey, verify as cryptoVerify } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
 import { fakeRelay, type Captured, type FakeRelay } from '../test/notifications.js'
 import { StreamRegistry } from './streams.js'
 import * as atomic from '../fs/atomic.js'
-import { loadRelayConfig, saveRelayConfig, PRESENCE_FENCE_SECONDS, PRESENCE_LEASE_SECONDS, PRESENCE_MAX_LEASES, PresenceLeases, RelayPairingError, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
+import { loadRelayConfig, saveRelayConfig, PRESENCE_FENCE_SECONDS, PRESENCE_LEASE_SECONDS, PRESENCE_MAX_LEASES, PresenceLeases, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
 
 useJsonStorage()
 
@@ -30,9 +30,13 @@ it('projects a live Web completion without pairing and keeps terminal failures q
     expect(event).toMatchObject({ reason: 'web_completion', web_audio: [{ eligible: true, profile: 'default', identity: expect.any(String) as string, scope: expect.any(String) as string,
       notification: { title: 'Release', body: 'Shipped with ghp_ab...6789', url: `/session/${session.session_id}`, tag: session.session_id } }] })
     sub.close()
+    const later = await server.deps.sessionStore.newSession()
+    server.deps.registry.registerActiveRun({ stream_id: 'later-run', session_id: later.session_id, started_at: 2, phase: 'running', workspace: '', model: null, provider: null, ephemeral: false })
     const failed = server.deps.events.subscribe()
     server.deps.notifications.noteTerminal('audio-run', 'failed')
-    expect(await failed.next(AbortSignal.timeout(30))).toBeNull()
+    server.deps.notifications.noteTerminal('later-run', 'completed')
+    // A failed terminal projects nothing, so the later run's completion is the first event to arrive.
+    expect(await failed.next(AbortSignal.timeout(1500))).toMatchObject({ reason: 'web_completion', web_audio: [{ notification: { tag: later.session_id } }] })
     failed.close()
   } finally { await server.close() }
 })
@@ -55,12 +59,16 @@ function verifySigned(relay: FakeRelay, call: Captured, path: string): void {
 describe('Talaria relay pairing and publishing', () => {
   let s: TestServer
   let relay: FakeRelay
-  beforeAll(async () => {
+  beforeEach(async () => {
     s = await bootTestServer()
     relay = fakeRelay()
     s.deps.fetch = relay.fetch
   })
-  afterAll(() => { s.deps.relay.stop(); return s.close() })
+  afterEach(() => { s.deps.relay.stop(); return s.close() })
+  /** Pairs this test's server with its own fake relay as the default profile. */
+  const paired = async (): Promise<void> => {
+    expect((await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-1' })).status).toBe(200)
+  }
 
   it('rejects untrusted relays and malformed fields before touching the network', async () => {
     expect((await post(s, '/api/talaria/relay/pair', { relay_url: 'https://evil.example', publisher_id: 'https://pub.example', publisher_invitation: 'inv' })).status).toBe(400)
@@ -90,11 +98,13 @@ describe('Talaria relay pairing and publishing', () => {
   })
 
   it('re-pairing to a different relay or publisher answers 409', async () => {
+    await paired()
     const res = await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://other.example', publisher_invitation: 'x' })
     expect(res.status).toBe(409)
   })
 
   it('publishes active runs, pending prompts, and terminal phases for the enrolled profile', async () => {
+    await paired()
     const sid = String(((await json(await post(s, '/api/session/new', { title: 'Relay run' }))).session as Json).session_id)
     const before = relay.snapshots().length
     s.deps.registry.activeRuns.set('stream-a', { stream_id: 'stream-a', session_id: sid, started_at: 1, phase: 'agent_starting', workspace: s.state, model: null, provider: null, ephemeral: false })
@@ -132,7 +142,7 @@ describe('Talaria relay pairing and publishing', () => {
   })
 
   it('names the approval queue head with an opaque id that holds across snapshots and changes with the head (TAL-59)', async () => {
-    if (!s.deps.relay.current()) await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-heads' })
+    await paired()
     const sid = String(((await json(await post(s, '/api/session/new', { title: 'Private approval title' }))).session as Json).session_id)
     s.deps.registry.activeRuns.set('stream-heads', { stream_id: 'stream-heads', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
     const publisher = s.deps.relay.current()!
@@ -169,7 +179,7 @@ describe('Talaria relay pairing and publishing', () => {
   })
 
   it('names the question queue head the way it names approvals, and gives Allow only the whole text it approves (TAL-1469)', async () => {
-    if (!s.deps.relay.current()) await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-inputs' })
+    await paired()
     const sid = String(((await json(await post(s, '/api/session/new', { title: 'Private question title' }))).session as Json).session_id)
     s.deps.registry.activeRuns.set('stream-inputs', { stream_id: 'stream-inputs', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
     const publisher = s.deps.relay.current()!
@@ -213,7 +223,7 @@ describe('Talaria relay pairing and publishing', () => {
   })
 
   it('names the session\'s newest decision review by creation and its title (TAL-1966)', async () => {
-    if (!s.deps.relay.current()) await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-decisions' })
+    await paired()
     const sid = String(((await json(await post(s, '/api/session/new', { title: 'Decision session' }))).session as Json).session_id)
     s.deps.registry.activeRuns.set('stream-decisions', { stream_id: 'stream-decisions', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
     const publisher = s.deps.relay.current()!
@@ -237,7 +247,7 @@ describe('Talaria relay pairing and publishing', () => {
   })
 
   it('keeps the session activity running after its parent reply completes while a background command runs (TAL-1520)', async () => {
-    if (!s.deps.relay.current()) await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-background' })
+    await paired()
     const sid = String(((await json(await post(s, '/api/session/new', { title: 'Background liveness' }))).session as Json).session_id)
     const publisher = s.deps.relay.current()!
     s.deps.registry.activeRuns.set('parent-bg', { stream_id: 'parent-bg', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
@@ -256,7 +266,7 @@ describe('Talaria relay pairing and publishing', () => {
   })
 
   it('publishes a finished turn with the origin of its run, so the relay can mute background completions (TAL-873)', async () => {
-    if (!s.deps.relay.current()) await post(s, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-origin' })
+    await paired()
     const publisher = s.deps.relay.current()!
     const published = async (origin: 'user' | 'background' | undefined): Promise<Json> => {
       const sid = String(((await json(await post(s, '/api/session/new', { title: `Origin ${String(origin)}` }))).session as Json).session_id)
@@ -272,6 +282,7 @@ describe('Talaria relay pairing and publishing', () => {
   })
 
   it('acknowledges a viewed session on the relay after the snapshot carrying its terminal state', async () => {
+    await paired()
     const sid = String(((await json(await post(s, '/api/session/new', { title: 'Viewed run' }))).session as Json).session_id)
     const profileId = (await loadRelayConfig(new JsonDocuments(s.state)))!.profiles.default!.profile_id
     s.deps.registry.activeRuns.set('stream-v', { stream_id: 'stream-v', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
@@ -295,6 +306,7 @@ describe('Talaria relay pairing and publishing', () => {
   })
 
   it('clears a deleted session\'s finished runs on the relay once, and an orphan left by an earlier deletion on first lookup', async () => {
+    await paired()
     const profileId = (await loadRelayConfig(new JsonDocuments(s.state)))!.profiles.default!.profile_id
     const viewedPath = (sid: string): string => `/v1/publishers/${encodeURIComponent('https://pub.example')}/profiles/${profileId}/sessions/${sid}/viewed`
     const viewsOf = (sid: string): Captured[] => relay.views().filter((c) => c.url.endsWith(viewedPath(sid)))
@@ -397,6 +409,7 @@ describe('Talaria relay pairing and publishing', () => {
   })
 
   it('enrolls another profile with a signed request on the existing key', async () => {
+    await paired()
     const config = (await loadRelayConfig(new JsonDocuments(s.state)))!
     const before = relay.calls.length
     await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-2' }, 'default', false)
@@ -407,6 +420,7 @@ describe('Talaria relay pairing and publishing', () => {
   })
 
   it('surfaces relay rejections as 409/502 without persisting a broken registration', async () => {
+    await paired()
     relay.snapshotStatus = 503
     const before = (await loadRelayConfig(new JsonDocuments(s.state)))!
     await expect(s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-3' }, 'default', true)).rejects.toMatchObject({ status: 502 })
@@ -839,12 +853,11 @@ describe('relay publisher failure handling', () => {
     }
   })
 
-  it('validatedOrigin and RelayPairingError mirror the Python guards', () => {
+  it('validatedOrigin keeps a bare HTTPS origin and refuses plain HTTP, credentials and paths', () => {
     expect(validatedOrigin('https://a.example/')).toBe('https://a.example')
     expect(() => validatedOrigin('http://a.example', true)).toThrow('HTTPS origin')
     expect(() => validatedOrigin('https://u:p@a.example')).toThrow()
     expect(() => validatedOrigin('https://a.example/x')).toThrow()
-    expect(new RelayPairingError('m', 409).status).toBe(409)
   })
 })
 

@@ -35,7 +35,7 @@ const missing = (error: unknown): boolean => ['ENOENT', 'ENOTDIR'].includes(str(
  * (`AgentConfig.path`, which honours `HERMES_CONFIG_PATH`) and `.env` by stat. Throws when any of them cannot be read:
  * unknown credential state is never a change.
  */
-export function credentialStateFingerprint(profileHome: string, configPath = join(profileHome, 'config.yaml')): string {
+function credentialStateFingerprint(profileHome: string, configPath = join(profileHome, 'config.yaml')): string {
   const stamp = (path: string): string => { try { const st = statSync(path, { bigint: true }); return `${String(st.mtimeNs)}:${String(st.size)}` } catch (error) { if (missing(error)) return 'missing'; throw error } }
   let text: string | null = null
   try { text = readFileSync(join(profileHome, 'auth.json'), 'utf8') } catch (error) { if (!missing(error)) throw error }

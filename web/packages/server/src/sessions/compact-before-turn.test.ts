@@ -45,12 +45,13 @@ const events = (frames: SseFrame[]): string[] => frames.map((f) => f.event)
 describe('compaction before the next turn', () => {
   let s: TestServer
   let sidecar: FakeSidecar
+  let clock = 1_800_000_000
   /** `conversation_history` of every `chat.start`, and the number of `chat.compress` calls. */
   let turns: unknown[][] = []
   let compressCalls = 0
   beforeAll(async () => {
     sidecar = new FakeSidecar()
-    s = await bootTestServer({ sidecar })
+    s = await bootTestServer({ sidecar, now: () => clock })
   })
   afterAll(() => s.close())
   beforeEach(() => {
@@ -203,7 +204,7 @@ describe('compaction before the next turn', () => {
   it("keeps the session's place in the list when an automatic job installs its result", async () => {
     const sid = await seeded(OVER)
     const before = (await s.deps.sessionStore.get(sid)).updated_at
-    await new Promise((r) => setTimeout(r, 20))
+    clock += 60
     expect(await s.deps.sessions.ensureCompacted(sid)).toBe(true)
     const stored = (await s.deps.sessionStore.get(sid))
     expect(contents(stored.context_messages)).toEqual(['one', 'four'])
@@ -384,6 +385,7 @@ describe('idle compaction ahead of the next turn', () => {
     const before = (await s.deps.sessionStore.get(sid))
     const { updated_at: updatedAt } = before
     await s.deps.sessionStore.deps.drafts.write(sid, { text: 'unsent draft', files: [] })
+    clock += 60
     await tick()
     await settled(sid)
     expect(compressCalls).toBe(1)

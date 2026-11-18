@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { TRANSCRIPT_WINDOW, type SidecarParams, type SidecarResultInput } from '@maudecode/talaria-web-contracts'
+import type { SidecarParams, SidecarResultInput } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer } from '../test/harness.js'
 import { walkSkillFiles } from '../tools/skills.js'
@@ -121,7 +121,6 @@ it('sends the complete 120-row transcript window in done', async () => {
     const { stream_id: streamId } = await start.json() as { stream_id: string }
     const frames = await server.sse(`/api/chat/stream?stream_id=${streamId}&after_seq=0`, (f) => f.event === 'done')
     const done = frames.find((f) => f.event === 'done')!.data as { session: { messages: unknown[]; _messages_offset: number; message_count: number } }
-    expect(TRANSCRIPT_WINDOW).toBe(120)
     expect(done.session.messages).toHaveLength(120)
     expect(done.session._messages_offset).toBe(12)
     expect(done.session.message_count).toBe(132)

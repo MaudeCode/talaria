@@ -4219,18 +4219,23 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     }
   })
 
-  it('does not borrow the old profile catalog for a retagged goal kickoff', async () => {
-    useConfig('openai-codex', 'gpt-5.5')
-    mkdirSync(join(s.state, 'profiles', 'other'), { recursive: true })
-    writeFileSync(join(s.state, 'profiles', 'other', 'config.yaml'), '# other\n')
+  it('repairs a retagged goal kickoff against the new profile catalog, never the old one', async () => {
+    const otherHome = join(s.state, 'profiles', 'other')
+    mkdirSync(otherHome, { recursive: true })
+    writeFileSync(join(otherHome, 'config.yaml'), '# other\n')
+    const configOf = (provider: string, model: string): Json => ({ model: { provider, default: model, api_key: 'sk-test-key-123456' }, providers: {} })
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: p.profile_home === otherHome ? configOf('anthropic', 'claude-sonnet-4') : configOf('openai-codex', 'gpt-5.5') }))
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
     sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
     sidecar.respond('goals.command', (params) => ({ ok: true, action: 'set', message: `Goal set: ${params.args}`, goal: null, kickoff_prompt: params.args }))
     const sid = await sessionWith('gemini-3.1-pro-preview', null)
-    s.deps.catalog.invalidate()
-    await s.deps.catalog.warmModelOptions(s.state)
+    await s.deps.catalog.warmSessionModelRepair(s.state)
+    await s.deps.catalog.warmSessionModelRepair(otherHome)
     const started = await json(await post(s, '/api/goal', { session_id: sid, args: 'ship it', profile: 'other' }))
-    expect(started.effective_model).toBeUndefined()
+    expect(started).toMatchObject({ effective_model: 'claude-sonnet-4', effective_model_provider: 'anthropic' })
     await vi.waitFor(() => { expect(s.deps.registry.liveIds.has(String(started.stream_id))).toBe(false) })
+    expect(seen).toMatchObject({ model: 'claude-sonnet-4', model_provider: 'anthropic' })
   })
 
   it('trusts a provider again once config.yaml lists its models after a failed live lookup', async () => {
