@@ -368,7 +368,6 @@ export class PostgresJournal implements JournalBackend {
         if (stopped()) return result
         const rid = run.stream_id
         if ((run.written > cutoff && !overBudget()) || named.has(rid) || this.busy(sid, rid)) continue
-        if (opts.dryRun) { result.pruned += 1; result.bytes_reclaimed += run.bytes; liveRuns -= 1; liveBytes -= run.bytes; continue }
         const archive = await this.compact(sid, rid)
         if (!archive) continue
         liveRuns -= 1
@@ -438,8 +437,7 @@ export class PostgresJournal implements JournalBackend {
     for (const { session_id: sid, stream_id: rid, size } of await this.db.rows<{ session_id: string; stream_id: string; size: number }>(`SELECT session_id, stream_id, octet_length(rows) AS size FROM ${this.s}journal_archives ORDER BY archived_at, session_id COLLATE "C", stream_id COLLATE "C"`)) {
       if (total <= maxArchiveBytes || opts.signal?.aborted) return
       if (this.busy(sid, rid) || (await this.prunedSummary(sid, rid))?.journal_pruned !== true) continue
-      if (!opts.dryRun && !await this.db.run(`DELETE FROM ${this.s}journal_archives WHERE session_id = $1 AND stream_id = $2 AND NOT EXISTS (SELECT 1 FROM ${this.s}journal_rows WHERE session_id = $1 AND stream_id = $2)`, sid, rid)) continue
-      if (opts.dryRun && await this.db.row(`SELECT 1 FROM ${this.s}journal_rows WHERE session_id = $1 AND stream_id = $2 LIMIT 1`, sid, rid)) continue
+      if (!await this.db.run(`DELETE FROM ${this.s}journal_archives WHERE session_id = $1 AND stream_id = $2 AND NOT EXISTS (SELECT 1 FROM ${this.s}journal_rows WHERE session_id = $1 AND stream_id = $2)`, sid, rid)) continue
       total -= size
       result.archives_removed += 1
     }

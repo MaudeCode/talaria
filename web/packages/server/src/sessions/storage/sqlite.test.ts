@@ -4,14 +4,16 @@ import { join } from 'node:path'
 import { DatabaseSync, StatementSync } from 'node:sqlite'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Message } from '../session.js'
+import { gunzipSync } from 'node:zlib'
+import { keepRecent } from '../../test/storage.js'
 import { runDocumentBackendConformance, runJournalBackendConformance, runSessionBackendConformance } from './conformance.js'
 import { sessionSearchTerms } from './search-text.js'
 import { SESSION_SQL, SqliteStorage } from './sqlite.js'
 import { SCHEMA_VERSION } from './sqlite-db.js'
 
-function fixture() {
+function fixture(env = keepRecent(0)) {
   const dir = mkdtempSync(join(tmpdir(), 'talaria-sqlite-'))
-  const storage = new SqliteStorage({ path: join(dir, 'talaria.db'), sessionDir: join(dir, 'sessions'), env: { TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT: '0' }, stampingSince: () => 0 })
+  const storage = new SqliteStorage({ path: join(dir, 'talaria.db'), sessionDir: join(dir, 'sessions'), env, stampingSince: () => 0 })
   const db = storage.db.db
   const exec = db.exec.bind(db)
   let failCommit = false
@@ -22,7 +24,27 @@ function fixture() {
 
 runSessionBackendConformance('SQLite', () => { const test = fixture(); return { storage: test.storage, failNextWrite: test.failNextWrite, cleanup: () => { rmSync(test.dir, { recursive: true, force: true }) } } })
 runDocumentBackendConformance('SQLite', () => { const test = fixture(); return { backend: test.storage.documents, failNextWrite: test.failNextWrite, cleanup: test.cleanup } })
-runJournalBackendConformance('SQLite', () => { const test = fixture(); return { backend: test.storage.journals, cleanup: test.cleanup } })
+runJournalBackendConformance('SQLite', (env = keepRecent(0)) => {
+  const test = fixture(env)
+  const reopened: SqliteStorage[] = []
+  const db = test.storage.db.db
+  const blob = (sid: string, rid: string) => db.prepare('SELECT rows FROM journal_archives WHERE session_id = ? AND stream_id = ?').get(sid, rid) as { rows: Uint8Array } | undefined
+  return {
+    backend: test.storage.journals,
+    cleanup: async () => { for (const storage of reopened) await storage.close(); await test.cleanup() },
+    reopen: () => { const next = new SqliteStorage({ path: join(test.dir, 'talaria.db'), sessionDir: join(test.dir, 'sessions'), env, stampingSince: () => 0 }); reopened.push(next); return next.journals },
+    store: {
+      age: (sid, rid, at) => { db.prepare('UPDATE journal_rows SET written_at = ? WHERE session_id = ? AND stream_id = ?').run(at, sid, rid) },
+      live: (sid, rid) => Promise.resolve(Boolean(db.prepare('SELECT 1 FROM journal_rows WHERE session_id = ? AND stream_id = ?').get(sid, rid))),
+      liveBytes: (sid, rid) => Promise.resolve(Buffer.from((db.prepare('SELECT row FROM journal_rows WHERE session_id = ? AND stream_id = ? ORDER BY seq').all(sid, rid) as { row: string }[]).map(({ row }) => `${row}\n`).join(''))),
+      archive: (sid, rid) => { const found = blob(sid, rid); return Promise.resolve(found ? gunzipSync(found.rows) : null) },
+      archiveSize: (sid, rid) => Promise.resolve(blob(sid, rid)!.rows.length),
+      ageArchive: (sid, rid, at) => { db.prepare('UPDATE journal_archives SET archived_at = ? WHERE session_id = ? AND stream_id = ?').run(at, sid, rid) },
+      dropSummary: (sid, rid) => { db.prepare('DELETE FROM journal_summaries WHERE session_id = ? AND stream_id = ?').run(sid, rid) },
+      understateArchive: (sid, rid) => { db.prepare('UPDATE journal_archives SET bytes = 1 WHERE session_id = ? AND stream_id = ?').run(sid, rid) },
+    },
+  }
+})
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const cleanup of cleanups.splice(0)) await cleanup() })

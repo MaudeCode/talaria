@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS, summaryFromTail } from '../journal.js'
 import { JsonJournal } from './json-journal.js'
 import { bootTestServer, type TestServer } from '../../test/harness.js'
-import { jsonJournal, useJsonStorage } from '../../test/storage.js'
+import { jsonJournal, keepRecent, useJsonStorage } from '../../test/storage.js'
 
 vi.mock('node:fs', async (original) => {
   const real = await original<typeof fs>()
@@ -19,7 +19,7 @@ vi.mock('node:fs/promises', async (original) => {
 
 const journals: JsonJournal[] = []
 function fixture(): JsonJournal {
-  const journal = new JsonJournal(fs.mkdtempSync(join(tmpdir(), 'talaria-journal-lookup-')))
+  const journal = new JsonJournal(fs.mkdtempSync(join(tmpdir(), 'talaria-journal-lookup-')), keepRecent(0))
   journals.push(journal)
   return journal
 }
@@ -218,7 +218,7 @@ it('rediscovers disappeared, moved and recreated runs', async () => {
 
 /** Summary-only history, as releases before archival pruned it: the events are gone and only the summary remains. */
 async function legacyPrune(journal: JsonJournal, sid: string): Promise<void> {
-  expect((await journal.pruneSettled({ now: Date.now() / 1000 + 10, retentionSeconds: 1, keepRecent: 0 })).pruned).toBe(1)
+  expect((await journal.pruneSettled({ now: Date.now() / 1000 + 10, retentionSeconds: 1 })).pruned).toBe(1)
   fs.rmSync(join(journal.root(), sid, '_archive'), { recursive: true })
 }
 

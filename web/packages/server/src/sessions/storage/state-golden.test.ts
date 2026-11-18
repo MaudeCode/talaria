@@ -1,6 +1,6 @@
 import { createECDH, createPrivateKey, createPublicKey } from 'node:crypto'
 import { FakeAuthenticator } from '../../test/passkeys.js'
-import { testSessionDocuments } from '../../test/storage.js'
+import { keepRecent, testSessionDocuments } from '../../test/storage.js'
 import { JsonJournal, JsonJournalWriter } from './json-journal.js'
 import { JsonDocuments } from '../../test/storage.js'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync } from 'node:fs'
@@ -29,7 +29,7 @@ it('preserves main JSON bytes for every document namespace and run-journal compa
   const workspace = join(state, 'workspace')
   mkdirSync(sessions)
   mkdirSync(workspace)
-  vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
+  vi.useFakeTimers({ now: 1_000_000 })
   try {
     const drafts = new DraftStore(testSessionDocuments(sessions))
     await drafts.write('session', { text: 'draft', files: ['image.png'] }, '1000')
@@ -72,7 +72,7 @@ it('preserves main JSON bytes for every document namespace and run-journal compa
     await extensions.writeState({ disabled_extensions: ['sample'], sidecar_proxy_consents: {} })
     await extensions.writeInstallManifest({ version: 1, installed: {} })
     await recoveryStampingSince(new JsonDocuments(state))
-    const journal = new JsonJournal(sessions)
+    const journal = new JsonJournal(sessions, keepRecent(0))
     const writer = new JsonJournalWriter(journal, 'session', 'stream', 'terminal-only', () => 1000)
     await writer.appendSseEvent('token', { text: 'hello' })
     await writer.appendSseEvent('done', { terminal_state: 'completed' })
@@ -80,7 +80,7 @@ it('preserves main JSON bytes for every document namespace and run-journal compa
     const journalPath = join(sessions, '_run_journal/session/stream.jsonl')
     const journalBytes = readFileSync(journalPath, 'utf8')
     utimesSync(journalPath, 1000, 1000)
-    await journal.pruneSettled({ now: 2000, retentionSeconds: 1, keepRecent: 0 })
+    await journal.pruneSettled({ now: 2000, retentionSeconds: 1 })
     const settingsBytes = readFileSync(join(state, 'settings.json'), 'utf8')
     expect((JSON.parse(settingsBytes) as { default_workspace: string }).default_workspace).toBe(workspace)
     const files: Record<string, string> = {}
@@ -89,5 +89,5 @@ it('preserves main JSON bytes for every document namespace and run-journal compa
     // An archive is recorded by its content, which must repeat the journal byte for byte (gzip bytes vary with zlib).
     expect(files['sessions/_run_journal/session/_archive/stream.jsonl.gz']).toBe(journalBytes)
     expect({ files, journalBytes }).toMatchSnapshot()
-  } finally { vi.restoreAllMocks(); rmSync(state, { recursive: true, force: true }) }
+  } finally { vi.useRealTimers(); rmSync(state, { recursive: true, force: true }) }
 })

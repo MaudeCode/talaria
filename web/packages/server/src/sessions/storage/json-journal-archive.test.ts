@@ -8,6 +8,7 @@ import { retentionPolicy, type JournalEvent, type RunSummary } from '../journal.
 import { sessionRunReferences } from '../../tools/hygiene.js'
 import { JournalArchiveError, JsonJournal, JsonJournalWriter } from './json-journal.js'
 import { StagedFile } from './json-journal-archive.js'
+import { keepRecent } from '../../test/storage.js'
 
 vi.mock('node:fs', async (original) => {
   const real = await original<typeof fs>()
@@ -27,7 +28,7 @@ const dirs: string[] = []
 const journals: JsonJournal[] = []
 const fixture = (dir = fs.mkdtempSync(join(tmpdir(), 'talaria-archive-'))): JsonJournal => {
   if (!dirs.includes(dir)) dirs.push(dir)
-  const journal = new JsonJournal(dir)
+  const journal = new JsonJournal(dir, keepRecent(0))
   journals.push(journal)
   return journal
 }
@@ -70,32 +71,10 @@ async function observe(journal: JsonJournal, sid: string, rid: string) {
   }
 }
 
-const sweep = (journal: JsonJournal, opts: Parameters<JsonJournal['pruneSettled']>[0] = {}) => journal.pruneSettled({ now: Date.now() / 1000, retentionSeconds: 14 * DAY, keepRecent: 0, maxRuns: 0, maxBytes: 0, ...opts })
+const sweep = (journal: JsonJournal, opts: Parameters<JsonJournal['pruneSettled']>[0] = {}) => journal.pruneSettled({ now: Date.now() / 1000, retentionSeconds: 14 * DAY, maxRuns: 0, maxBytes: 0, ...opts })
 const tempFiles = (journal: JsonJournal, sid: string): string[] => [join(journal.root(), sid), join(journal.root(), sid, '_archive')].flatMap((dir) => { try { return fs.readdirSync(dir).filter((n) => n.endsWith('.tmp')) } catch { return [] } })
 
 describe('run-journal archival', () => {
-  it.each([
-    ['age', {}],
-    ['count', { retentionSeconds: 365 * DAY, maxRuns: 1 }],
-    ['bytes', { retentionSeconds: 365 * DAY, maxBytes: 8192 }],
-  ] as const)('a run archived by %s replays identically, before and after a cold restart', async (_reason, opts) => {
-    const journal = fixture()
-    await writeRun(journal, 'session', 'run', { text: UNICODE })
-    await writeRun(journal, 'session', 'next', { mtime: Date.now() / 1000, text: 'x'.repeat(2048) })
-    const original = fs.readFileSync(journal.pathFor('session', 'run'))
-    const before = await observe(journal, 'session', 'run')
-    expect(before.rows.map((e) => e.event_id)).toEqual(['run:1', 'run:2', 'run:3'])
-    expect(before.replay.status).toBe('ok')
-    expect(await sweep(journal, opts)).toMatchObject({ pruned: 1, bytes_reclaimed: original.length })
-    expect(fs.existsSync(journal.pathFor('session', 'run'))).toBe(false)
-    expect(fs.existsSync(journal.pathFor('session', 'next')), 'only the due run is archived').toBe(true)
-    expect(zlib.gunzipSync(fs.readFileSync(journal.archivePathFor('session', 'run'))).equals(original), 'the archive repeats the journal byte for byte').toBe(true)
-    expect(await observe(journal, 'session', 'run')).toEqual(before)
-    expect((await journal.readRunEvents('session', 'run'))[0]?.payload).toEqual({ text: UNICODE })
-    expect(await observe(fixture(journal.sessionDir), 'session', 'run'), 'a restarted server reads the same run').toEqual(before)
-    expect(tempFiles(journal, 'session')).toEqual([])
-  })
-
   it('keeps torn trailing bytes and the replay status they produce', async () => {
     const journal = fixture()
     await writeRun(journal, 'session', 'run')
@@ -240,16 +219,6 @@ describe('run-journal archival', () => {
     expect((await journal.readSessionRunEvents('session', 'run:1')).status).toBe('replay_malformed')
   })
 
-  it('stops a session replay at its byte budget before assembling an archived row', async () => {
-    const journal = fixture()
-    await writeRun(journal, 'session', 'run', { text: 'x'.repeat(6 * 1024 * 1024) })
-    await sweep(journal)
-    const concat = vi.spyOn(Buffer, 'concat')
-    expect((await journal.readSessionRunEvents('session', 'run:1')).status).toBe('replay_limit_bytes')
-    const largest = Math.max(0, ...concat.mock.results.map((r) => (r.value as Buffer).length))
-    expect(largest, 'no buffer past the 4 MiB replay budget').toBeLessThanOrEqual(4 * 1024 * 1024)
-  })
-
   it('never reads a run as empty while retention archives it', async () => {
     const journal = fixture()
     await writeRun(journal, 'session', 'run')
@@ -364,64 +333,13 @@ describe('retention budgets and protection', () => {
   const runs = async (journal: JsonJournal, sid: string, count: number, opts: { mtime?: number } = {}): Promise<void> => {
     for (let i = 0; i < count; i += 1) await writeRun(journal, sid, `run${String(i)}`, { mtime: (opts.mtime ?? old) + i })
   }
-  const live = (journal: JsonJournal, sid: string, count: number): boolean[] => [...Array(count).keys()].map((i) => fs.existsSync(journal.pathFor(sid, `run${String(i)}`)))
 
-  it('archives the oldest runs past a soft budget, above the keep-recent floor', async () => {
-    const journal = fixture()
-    const fresh = Date.now() / 1000 - 60
-    await runs(journal, 'count', 6, { mtime: fresh })
-    await writeRun(journal, 'count', 'open', { terminal: false, mtime: fresh - 10 })
-    expect(await sweep(journal, { retentionSeconds: 14 * DAY, maxRuns: 4, keepRecent: 1 })).toMatchObject({ pruned: 3 })
-    expect(live(journal, 'count', 6), 'the oldest settled runs go first').toEqual([false, false, false, true, true, true])
-    expect(fs.existsSync(journal.pathFor('count', 'open')), 'a nonterminal run is never archived').toBe(true)
-    // The keep-recent floor wins over the budget, which stays soft.
-    const floor = fixture()
-    await runs(floor, 'floor', 5, { mtime: fresh })
-    expect(await sweep(floor, { retentionSeconds: 14 * DAY, maxRuns: 1, keepRecent: 3 })).toMatchObject({ pruned: 2 })
-    expect(live(floor, 'floor', 5)).toEqual([false, false, true, true, true])
-    // Bytes: archive until the session's live bytes fit.
-    const bytes = fixture()
-    await runs(bytes, 'bytes', 4, { mtime: fresh })
-    const each = fs.statSync(bytes.pathFor('bytes', 'run0')).size
-    expect(await sweep(bytes, { retentionSeconds: 14 * DAY, maxBytes: each * 2 + 64 })).toMatchObject({ pruned: 2 })
-    expect(live(bytes, 'bytes', 4)).toEqual([false, false, true, true])
-    // Equal mtimes keep the path that sorts last.
-    const ties = fixture()
-    for (const rid of ['a', 'b', 'c']) await writeRun(ties, 'ties', rid, { mtime: fresh })
-    expect(await sweep(ties, { retentionSeconds: 14 * DAY, maxRuns: 1 })).toMatchObject({ pruned: 2 })
-    expect(['a', 'b', 'c'].map((rid) => fs.existsSync(ties.pathFor('ties', rid)))).toEqual([false, false, true])
-  })
-
-  it('keeps runs the session still names, and whole sessions whose state is unreadable', async () => {
-    const journal = fixture()
-    await runs(journal, 'named', 3)
-    await runs(journal, 'unreadable', 2)
-    await runs(journal, 'throws', 2)
-    const protectedRuns = (sid: string): Promise<Set<string> | null> => {
-      if (sid === 'throws') return Promise.reject(new Error('EIO'))
-      return Promise.resolve(sid === 'unreadable' ? null : new Set(['run1']))
-    }
-    expect(await sweep(journal, { protectedRuns })).toMatchObject({ pruned: 2 })
-    expect(live(journal, 'named', 3)).toEqual([false, true, false])
-    expect(live(journal, 'unreadable', 2)).toEqual([true, true])
-    expect(live(journal, 'throws', 2)).toEqual([true, true])
-    // A run the session starts naming after publication keeps its live journal beside the archive.
-    const late = fixture()
-    await runs(late, 'late', 1)
-    let calls = 0
-    expect(await sweep(late, { protectedRuns: () => Promise.resolve(new Set(++calls > 1 ? ['run0'] : [])) })).toMatchObject({ pruned: 0 })
-    expect(fs.existsSync(late.archivePathFor('late', 'run0'))).toBe(true)
-    expect(fs.existsSync(late.pathFor('late', 'run0'))).toBe(true)
-    expect((await late.readRunEvents('late', 'run0')).length).toBe(3)
-  })
-
-  it('leaves files untouched on a dry run or with retention disabled', async () => {
+  it('leaves files untouched with retention disabled', async () => {
     const dir = fs.mkdtempSync(join(tmpdir(), 'talaria-archive-'))
     const journal = fixture(dir)
     await runs(journal, 'session', 5)
     const before = fs.readdirSync(dir, { recursive: true }).sort()
-    expect(await sweep(journal, { dryRun: true, maxRuns: 2 })).toMatchObject({ pruned: 5 })
-    expect(await fixture(dir).pruneSettled({ now: Date.now() / 1000, retentionSeconds: 0, maxRuns: 1 })).toMatchObject({ pruned: 0 })
+    expect(await journal.pruneSettled({ now: Date.now() / 1000, retentionSeconds: 0, maxRuns: 1 })).toMatchObject({ pruned: 0 })
     expect(await new JsonJournal(dir, { TALARIA_WEB_RUN_JOURNAL_RETENTION_DAYS: '0' }).pruneSettled()).toMatchObject({ pruned: 0 })
     expect(fs.readdirSync(dir, { recursive: true }).sort()).toEqual(before)
   })
@@ -435,42 +353,13 @@ describe('retention budgets and protection', () => {
       const { JsonJournal: Unsafe } = await import('./json-journal.js')
       const dir = fs.mkdtempSync(join(tmpdir(), 'talaria-archive-'))
       dirs.push(dir)
-      const journal = new Unsafe(dir)
+      const journal = new Unsafe(dir, keepRecent(0))
       await writeRun(journal, 'session', 'run')
-      expect(await journal.pruneSettled({ now: Date.now() / 1000, retentionSeconds: 1, keepRecent: 0 })).toMatchObject({ pruned: 0 })
+      expect(await journal.pruneSettled({ now: Date.now() / 1000, retentionSeconds: 1 })).toMatchObject({ pruned: 0 })
       expect(fs.existsSync(journal.pathFor('session', 'run'))).toBe(true)
       expect((await journal.readRunEvents('session', 'run')).length).toBe(3)
       await journal.close()
     } finally { vi.doUnmock('node:fs'); vi.resetModules() }
-  })
-
-  it('removes the oldest archives past the instance archive budget, keeping their summaries', async () => {
-    const journal = fixture()
-    for (const [i, sid] of ['a', 'b', 'c', 'd', 'e'].entries()) {
-      await writeRun(journal, sid, 'run', { text: `${sid} `.repeat(4000) })
-      await sweep(journal)
-      // Archives are published in order a..e; set their ages explicitly so the order is deterministic.
-      fs.utimesSync(journal.archivePathFor(sid, 'run'), old + i, old + i)
-    }
-    const size = (sid: string): number => fs.statSync(journal.archivePathFor(sid, 'run')).size
-    // `b` gained a live continuation, which still needs its archived prefix; `c` lost its summary.
-    const writer = await journal.writer('b', 'run')
-    await writer.appendSseEvent('token', { text: 'continuation' })
-    await writer.close()
-    fs.rmSync(join(journal.root(), 'c', 'run.summary.json'))
-    const budget = size('d') + size('e')
-    const before = fs.readdirSync(journal.sessionDir, { recursive: true }).sort()
-    expect(await sweep(journal, { retentionSeconds: 365 * DAY, maxArchiveBytes: budget, dryRun: true })).toMatchObject({ archives_removed: 3 })
-    expect(fs.readdirSync(journal.sessionDir, { recursive: true }).sort(), 'a dry run removes nothing').toEqual(before)
-    expect(await sweep(journal, { retentionSeconds: 365 * DAY, maxArchiveBytes: 0 }), 'zero turns the budget off').toMatchObject({ archives_removed: 0 })
-    expect(await sweep(journal, { retentionSeconds: 365 * DAY, maxArchiveBytes: budget })).toMatchObject({ archives_removed: 3 })
-    expect(['a', 'b', 'c', 'd', 'e'].map((sid) => fs.existsSync(journal.archivePathFor(sid, 'run')))).toEqual([false, true, true, false, false])
-    // The removed run reads as pruned history: its summary stays and replay honestly reports it unavailable.
-    expect(await journal.findRunSummary('run')).toBeTruthy()
-    expect(await journal.latestRunSummary('a', 'run')).toMatchObject({ journal_pruned: true, terminal: true, last_seq: 3 })
-    expect(await journal.readRunEvents('a', 'run')).toEqual([])
-    expect((await journal.readSessionRunEvents('a', 'run:1')).status).toBe('cursor_pruned')
-    expect((await journal.readRunEvents('b', 'run')).map((e) => e.seq)).toEqual([1, 2, 3, 4])
   })
 
   it('reads its caps once from the server environment, disabling any it cannot parse', () => {

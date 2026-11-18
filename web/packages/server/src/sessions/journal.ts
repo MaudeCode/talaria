@@ -43,7 +43,6 @@ export interface RunSummary {
 export interface PruneOptions {
   now?: number
   retentionSeconds?: number
-  keepRecent?: number
   /** Soft per-session live journal budgets; 0 disables each. */
   maxRuns?: number
   maxBytes?: number
@@ -54,7 +53,6 @@ export interface PruneOptions {
    * recovery path; null when that state cannot be read, which leaves the whole session live.
    */
   protectedRuns?: (sessionId: string) => Promise<ReadonlySet<string> | null>
-  dryRun?: boolean
   signal?: AbortSignal
   pause?: () => Promise<unknown>
 }
@@ -185,7 +183,7 @@ export function pruneRetention(env: Record<string, string | undefined>, opts: Pr
   const policy = retentionPolicy(env)
   const retention = opts.retentionSeconds ?? policy.retentionSeconds
   const now = opts.now ?? Date.now() / 1000
-  return { retention, keep: opts.keepRecent ?? policy.keepRecent, maxRuns: opts.maxRuns ?? policy.maxRuns, maxBytes: opts.maxBytes ?? policy.maxBytes, maxArchiveBytes: opts.maxArchiveBytes ?? policy.maxArchiveBytes, now, cutoff: now - retention }
+  return { retention, keep: policy.keepRecent, maxRuns: opts.maxRuns ?? policy.maxRuns, maxBytes: opts.maxBytes ?? policy.maxBytes, maxArchiveBytes: opts.maxArchiveBytes ?? policy.maxArchiveBytes, now, cutoff: now - retention }
 }
 
 /** Session journal replay bounds: a reconnect never parses more than this in one request. */

@@ -695,7 +695,7 @@ function messagingSessionIdentity(row: Row, raw: string, identity: Map<string, G
 }
 
 /** Python `_keep_latest_messaging_session_per_source`. */
-export function keepLatestMessagingSessionPerSource(rows: Row[], opts: { showPrevious: boolean; identity: Map<string, GatewayIdentity>; isPreCompressionSnapshotId: (sid: string) => boolean }): Row[] {
+function keepLatestMessagingSessionPerSource(rows: Row[], opts: { showPrevious: boolean; identity: Map<string, GatewayIdentity>; isPreCompressionSnapshotId: (sid: string) => boolean }): Row[] {
   if (opts.showPrevious) return [...rows].sort((a, b) => sessionSortTimestamp(b) - sessionSortTimestamp(a))
   const isPreCompressionContinuation = (row: Row): boolean => { const parent = first(row.parent_session_id); return Boolean(parent && opts.isPreCompressionSnapshotId(parent)) }
   const activeIds = new Set([...opts.identity.keys()].filter(Boolean))

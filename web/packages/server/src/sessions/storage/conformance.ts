@@ -3,6 +3,7 @@ import { Session, type Message } from '../session.js'
 import { ShareStore } from '../shares.js'
 import { RevisionConflict, type StorageBackend } from './backend.js'
 import { sessionSearchMatches, sessionSearchMessageText, sessionSearchTerms } from './search-text.js'
+import { keepRecent } from '../../test/storage.js'
 
 export interface SessionBackendFixture {
   storage: StorageBackend
@@ -243,14 +244,40 @@ export function runDocumentBackendConformance(name: string, make: () => Document
 
 export interface JournalBackendFixture {
   backend: import('./backend.js').JournalBackend
+  /** Backend-specific reads and edits of a run's stored form, for the archival cases. */
+  store: JournalStoreProbe
+  /** A second backend over the same storage, as a restarted server opens it. */
+  reopen(): import('./backend.js').JournalBackend | Promise<import('./backend.js').JournalBackend>
   cleanup(): void | Promise<void>
 }
 
-export function runJournalBackendConformance(name: string, make: () => JournalBackendFixture | Promise<JournalBackendFixture>): void {
+export interface JournalStoreProbe {
+  /** Dates the run's live rows (seconds), as if last written then. */
+  age(sid: string, rid: string, at: number): void | Promise<void>
+  /** Whether the run still has live rows. */
+  live(sid: string, rid: string): Promise<boolean>
+  /** The run's live rows as archival compacts them: newline-terminated, byte for byte. */
+  liveBytes(sid: string, rid: string): Promise<Buffer>
+  /** The run's archive inflated, or null when it has none. */
+  archive(sid: string, rid: string): Promise<Buffer | null>
+  /** The archive's stored (compressed) size. */
+  archiveSize(sid: string, rid: string): Promise<number>
+  /** Dates the archive (seconds), which orders the archive budget's removals. */
+  ageArchive(sid: string, rid: string, at: number): void | Promise<void>
+  /** Removes the summary stored with the run's archive. */
+  dropSummary(sid: string, rid: string): void | Promise<void>
+  /** Understates the archive's recorded size so a replay reaches the archive instead of refusing up front; a no-op where none is recorded. */
+  understateArchive(sid: string, rid: string): void | Promise<void>
+}
+
+export function runJournalBackendConformance(name: string, make: (env?: Record<string, string>) => JournalBackendFixture | Promise<JournalBackendFixture>): void {
   describe(`${name} journal backend conformance`, () => {
     let fixture: JournalBackendFixture
+    const extra: JournalBackendFixture[] = []
     beforeEach(async () => { fixture = await make() })
-    afterEach(async () => { await fixture.backend.close(); await fixture.cleanup() })
+    afterEach(async () => { for (const f of [fixture, ...extra.splice(0)]) { await f.backend.close(); await f.cleanup() } })
+    /** Another fixture with its own storage and environment, cleaned up with the test. */
+    const another = async (env?: Record<string, string>): Promise<JournalBackendFixture> => { const f = await make(env); extra.push(f); return f }
     const rows = async (from = 1): Promise<import('../journal.js').JournalEvent[]> => {
       const result: import('../journal.js').JournalEvent[] = []
       for await (const row of fixture.backend.read('session', 'stream', from)) result.push(row)
@@ -308,6 +335,142 @@ export function runJournalBackendConformance(name: string, make: () => JournalBa
       expect(await backend.summary('session', 'stream')).toBeNull()
       expect(await rows()).toEqual([])
       expect(await backend.streams('session')).toEqual([])
+    })
+
+    const DAY = 86400
+    const old = Date.now() / 1000 - 30 * DAY
+    /** Large Unicode text with the raw separators a line splitter other than `\n` would break on. */
+    const UNICODE = `🌲 é 中文 \u0085     `.repeat(12_000)
+    const writeRun = async (f: JournalBackendFixture, sid: string, rid: string, opts: { at?: number; terminal?: boolean; text?: string } = {}): Promise<void> => {
+      const writer = await f.backend.writer(sid, rid)
+      await writer.appendSseEvent('token', { text: opts.text ?? 'hi' })
+      await writer.appendSseEvent('tool', { name: 'read', tid: 't1' })
+      if (opts.terminal ?? true) await writer.appendSseEvent('done', { session_id: sid })
+      await writer.close()
+      await f.store.age(sid, rid, opts.at ?? old)
+    }
+    const runs = async (f: JournalBackendFixture, sid: string, count: number, at = old): Promise<void> => {
+      for (let i = 0; i < count; i += 1) await writeRun(f, sid, `run${String(i)}`, { at: at + i })
+    }
+    const live = (f: JournalBackendFixture, sid: string, count: number): Promise<boolean[]> => Promise.all([...Array(count).keys()].map((i) => f.store.live(sid, `run${String(i)}`)))
+    const sweep = (backend: import('./backend.js').JournalBackend, opts: import('../journal.js').PruneOptions = {}) => backend.pruneSettled({ now: Date.now() / 1000, retentionSeconds: 14 * DAY, maxRuns: 0, maxBytes: 0, ...opts })
+    /** Everything a reader observes about a run and its session. */
+    const observe = async (backend: import('./backend.js').JournalBackend, sid: string, rid: string) => {
+      const { path: _path, ...found } = { ...(await backend.findRunSummary(rid)) }
+      const replay = await backend.readSessionRunEvents(sid, `${rid}:1`)
+      return {
+        rows: await backend.readRunEvents(sid, rid),
+        after: await backend.readRunEvents(sid, rid, { afterSeq: 1, maxSeq: 2 }),
+        tail: await backend.readRunEventTail(sid, rid, 1024, 2),
+        found,
+        latest: await backend.latestRunSummary(sid, rid),
+        replay: { status: replay.status, events: replay.events },
+        missing: (await backend.readSessionRunEvents(sid, `${rid}:99`)).status,
+        streams: await backend.streams(sid),
+      }
+    }
+
+    it.each([
+      ['age', {}],
+      ['count', { retentionSeconds: 365 * DAY, maxRuns: 1 }],
+      ['bytes', { retentionSeconds: 365 * DAY, maxBytes: 8192 }],
+    ] as const)('a run archived by %s replays identically, before and after a restart', async (_reason, opts) => {
+      const { backend, store } = fixture
+      await writeRun(fixture, 'session', 'run', { text: UNICODE })
+      await writeRun(fixture, 'session', 'next', { at: Date.now() / 1000, text: 'x'.repeat(2048) })
+      const original = await store.liveBytes('session', 'run')
+      const before = await observe(backend, 'session', 'run')
+      expect(before.rows.map((e) => e.event_id)).toEqual(['run:1', 'run:2', 'run:3'])
+      expect(before.replay.status).toBe('ok')
+      expect(await sweep(backend, opts)).toMatchObject({ pruned: 1, bytes_reclaimed: original.length })
+      expect(await store.live('session', 'run')).toBe(false)
+      expect(await store.live('session', 'next'), 'only the due run is archived').toBe(true)
+      expect((await store.archive('session', 'run'))?.equals(original), 'the archive repeats the live rows byte for byte').toBe(true)
+      expect(await observe(backend, 'session', 'run')).toEqual(before)
+      expect(await observe(await fixture.reopen(), 'session', 'run'), 'a restarted server reads the same run').toEqual(before)
+    })
+
+    it('stops a session replay at its byte budget before assembling an archived row', async () => {
+      await writeRun(fixture, 'session', 'run', { text: 'x'.repeat(6 * 1024 * 1024) })
+      await sweep(fixture.backend)
+      await fixture.store.understateArchive('session', 'run')
+      const concat = vi.spyOn(Buffer, 'concat')
+      try {
+        expect((await fixture.backend.readSessionRunEvents('session', 'run:1')).status).toBe('replay_limit_bytes')
+        const largest = Math.max(0, ...concat.mock.results.map((r) => (r.value as Buffer).length))
+        expect(largest, 'no buffer past the 4 MiB replay budget').toBeLessThanOrEqual(4 * 1024 * 1024)
+      } finally { concat.mockRestore() }
+    })
+
+    it('archives the oldest runs past a soft budget, above the keep-recent floor', async () => {
+      const fresh = Date.now() / 1000 - 60
+      const one = await another(keepRecent(1))
+      await runs(one, 'count', 6, fresh)
+      await writeRun(one, 'count', 'open', { terminal: false, at: fresh - 10 })
+      expect(await sweep(one.backend, { maxRuns: 4 })).toMatchObject({ pruned: 3 })
+      expect(await live(one, 'count', 6), 'the oldest settled runs go first').toEqual([false, false, false, true, true, true])
+      expect(await one.store.live('count', 'open'), 'a nonterminal run is never archived').toBe(true)
+      // The keep-recent floor wins over the budget, which stays soft.
+      const three = await another(keepRecent(3))
+      await runs(three, 'floor', 5, fresh)
+      expect(await sweep(three.backend, { maxRuns: 1 })).toMatchObject({ pruned: 2 })
+      expect(await live(three, 'floor', 5)).toEqual([false, false, true, true, true])
+      // Bytes: archive until the session's live bytes fit.
+      await runs(fixture, 'bytes', 4, fresh)
+      const each = (await fixture.store.liveBytes('bytes', 'run0')).length
+      expect(await sweep(fixture.backend, { maxBytes: each * 2 + 64 })).toMatchObject({ pruned: 2 })
+      expect(await live(fixture, 'bytes', 4)).toEqual([false, false, true, true])
+      // Equal ages keep the run that sorts last.
+      const ties = await another()
+      for (const rid of ['a', 'b', 'c']) await writeRun(ties, 'ties', rid, { at: fresh })
+      expect(await sweep(ties.backend, { maxRuns: 1 })).toMatchObject({ pruned: 2 })
+      expect(await Promise.all(['a', 'b', 'c'].map((rid) => ties.store.live('ties', rid)))).toEqual([false, false, true])
+    })
+
+    it('keeps runs the session still names, and whole sessions whose state is unreadable', async () => {
+      await runs(fixture, 'named', 3)
+      await runs(fixture, 'unreadable', 2)
+      await runs(fixture, 'throws', 2)
+      const protectedRuns = (sid: string): Promise<Set<string> | null> => {
+        if (sid === 'throws') return Promise.reject(new Error('EIO'))
+        return Promise.resolve(sid === 'unreadable' ? null : new Set(['run1']))
+      }
+      expect(await sweep(fixture.backend, { protectedRuns })).toMatchObject({ pruned: 2 })
+      expect(await live(fixture, 'named', 3)).toEqual([false, true, false])
+      expect(await live(fixture, 'unreadable', 2)).toEqual([true, true])
+      expect(await live(fixture, 'throws', 2)).toEqual([true, true])
+      // A run the session starts naming while it is archived stays live.
+      const late = await another()
+      await runs(late, 'late', 1)
+      let calls = 0
+      expect(await sweep(late.backend, { protectedRuns: () => Promise.resolve(new Set(++calls > 1 ? ['run0'] : [])) })).toMatchObject({ pruned: 0 })
+      expect(await late.store.live('late', 'run0')).toBe(true)
+      expect((await late.backend.readRunEvents('late', 'run0')).length).toBe(3)
+    })
+
+    it('removes the oldest archives past the instance archive budget, keeping their summaries', async () => {
+      const { backend, store } = fixture
+      const sessions = ['a', 'b', 'c', 'd', 'e']
+      for (const [i, sid] of sessions.entries()) {
+        await writeRun(fixture, sid, 'run', { text: `${sid} `.repeat(4000) })
+        await sweep(backend)
+        await store.ageArchive(sid, 'run', old + i)
+      }
+      // `b` gained a live continuation, which still needs its archived prefix; `c` lost its summary.
+      const writer = await backend.writer('b', 'run')
+      await writer.appendSseEvent('token', { text: 'continuation' })
+      await writer.close()
+      await store.dropSummary('c', 'run')
+      const budget = await store.archiveSize('d', 'run') + await store.archiveSize('e', 'run')
+      const year = { retentionSeconds: 365 * DAY }
+      expect(await sweep(backend, { ...year, maxArchiveBytes: 0 }), 'zero turns the budget off').toMatchObject({ archives_removed: 0 })
+      expect(await sweep(backend, { ...year, maxArchiveBytes: budget })).toMatchObject({ archives_removed: 3 })
+      expect(await Promise.all(sessions.map(async (sid) => (await store.archive(sid, 'run')) !== null))).toEqual([false, true, true, false, false])
+      // The removed run reads as pruned history: its summary stays and replay honestly reports it unavailable.
+      expect(await backend.latestRunSummary('a', 'run')).toMatchObject({ journal_pruned: true, terminal: true, last_seq: 3 })
+      expect(await backend.readRunEvents('a', 'run')).toEqual([])
+      expect((await backend.readSessionRunEvents('a', 'run:1')).status).toBe('cursor_pruned')
+      expect((await backend.readRunEvents('b', 'run')).map((e) => e.seq)).toEqual([1, 2, 3, 4])
     })
   })
 }

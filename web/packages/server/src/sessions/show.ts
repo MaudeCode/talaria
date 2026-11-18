@@ -104,6 +104,9 @@ export function showFrame(key: Buffer, blockId: string, now = Date.now()): { fra
 export class ShowBlocks {
   constructor(private readonly documents: DocumentBackend, private readonly deps: () => AppDeps, private readonly now: () => number) {}
 
+  /** The injected clock (seconds) in the milliseconds grants are signed and checked with. */
+  private nowMs(): number { return Math.round(this.now() * 1000) }
+
   private profileName(profile: string | null | undefined): string {
     const name = profile || 'default'
     return this.deps().isRootProfile(name) ? 'default' : name
@@ -126,7 +129,7 @@ export class ShowBlocks {
     }
     if (block.kind !== 'html') return block
     const { body: _body, ...rest } = block
-    return { ...rest, ...showFrame(this.deps().auth.signingKey(), block.block_id) }
+    return { ...rest, ...showFrame(this.deps().auth.signingKey(), block.block_id, this.nowMs()) }
   }
 
   /**
@@ -246,7 +249,7 @@ export class ShowBlocks {
 
   /** The HTML behind a frame grant, or null when the grant is forged or expired or its block is gone. */
   async frame(segment: string): Promise<string | null> {
-    const id = assetGrantValue(this.deps().auth.signingKey(), GRANT_NAMESPACE, segment)
+    const id = assetGrantValue(this.deps().auth.signingKey(), GRANT_NAMESPACE, segment, this.nowMs())
     const stored = id ? await this.load(id) : null
     return stored?.kind === 'html' ? stored.body : null
   }

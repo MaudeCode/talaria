@@ -409,7 +409,7 @@ export class JsonJournal implements JournalBackend {
   async pruneSettled(opts: PruneOptions = {}): Promise<PruneResult> {
     const result: PruneResult = { examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0, archives_removed: 0 }
     const retention = opts.retentionSeconds ?? this.policy.retentionSeconds
-    const keep = opts.keepRecent ?? this.policy.keepRecent
+    const keep = this.policy.keepRecent
     const maxRuns = opts.maxRuns ?? this.policy.maxRuns
     const maxBytes = opts.maxBytes ?? this.policy.maxBytes
     const maxArchiveBytes = opts.maxArchiveBytes ?? this.policy.maxArchiveBytes
@@ -482,15 +482,10 @@ export class JsonJournal implements JournalBackend {
         }
         if (!archivable()) continue
         const size = Number(st.size)
-        if (!opts.dryRun) {
-          // The legacy fields stay as the previous Stable reads them; `archived` carries this release's lookup summary.
-          const legacy = JSON.stringify({ ...summary, journal_pruned: true, journal_pruned_at: now, original_size: size, original_mtime: mtime, archived })
-          if (!(await this.publishRun(sid, rid, st, legacy, archivable, opts.signal))) continue
-          published.push({ rid, size, archivable })
-        } else {
-          result.pruned += 1
-          result.bytes_reclaimed += size
-        }
+        // The legacy fields stay as the previous Stable reads them; `archived` carries this release's lookup summary.
+        const legacy = JSON.stringify({ ...summary, journal_pruned: true, journal_pruned_at: now, original_size: size, original_mtime: mtime, archived })
+        if (!(await this.publishRun(sid, rid, st, legacy, archivable, opts.signal))) continue
+        published.push({ rid, size, archivable })
         liveRuns -= 1
         liveBytes -= size
       }
@@ -542,7 +537,7 @@ export class JsonJournal implements JournalBackend {
       // No await separates these checks from the unlink.
       if (existsSync(live) || [...this.writers].some((writer) => writer.path === live) || this.loadPrunedSummary(live)?.journal_pruned !== true) continue
       try { if (!sameFile(lstatSync(path, { bigint: true }), st)) continue } catch { continue }
-      if (!opts.dryRun) { try { unlinkSync(path) } catch { continue } }
+      try { unlinkSync(path) } catch { continue }
       total -= Number(st.size)
       result.archives_removed += 1
     }

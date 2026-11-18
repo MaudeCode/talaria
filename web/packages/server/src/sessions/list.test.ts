@@ -98,7 +98,6 @@ describe('canonical session-list order (TAL-306)', () => {
     const { stored, live_stream_ids: live, sessions } = fixture.session_list
     const rows = listed(stored, live)
     // Pinned beats a streaming unpinned row; a pending prompt counts as active; a created_at-only row sorts by it.
-    expect(rows.map((r) => [r.session_id, r.sort_ts])).toEqual(sessions.map((r) => [r.session_id, r.sort_ts]))
     expect(rows).toEqual(sessions)
   })
 
@@ -112,7 +111,6 @@ describe('nested subagent rows (TAL-1151)', () => {
   it('ships each row\'s sidebar parent link as the shared fixture records it', () => {
     const { stored, sessions } = fixture.nested_session_list
     expect(listed(stored, [])).toEqual(sessions)
-    expect(sessions.map((r) => [r.session_id, r.sidebar_parent_session_id])).toEqual([['tal1151-parent', null], ['tal1151-child', 'tal1151-parent'], ['tal1151-orphan', null]])
   })
 })
 
@@ -223,6 +221,15 @@ describe('one switch per outside source (TAL-2159)', () => {
     expect(await listed({}, { agent: chats, showPrevious: false })).toEqual(['tg-new', 'tg-other', 'web'])
     expect(await listed({}, { agent: chats, showPrevious: true })).toEqual(['tg-new', 'tg-old', 'tg-other', 'web'])
     for (const showPrevious of [false, true]) expect(await listed({ showMessagingSessions: false }, { agent: chats, showPrevious })).toEqual(['web'])
+  })
+
+  it.each([
+    'feishu', 'dingtalk', 'bluebubbles', 'qqbot', 'yuanbao', 'whatsapp_cloud', 'imsg', 'photon',
+    'google_chat', 'simplex', 'buzz', 'raft', 'ntfy', 'a2a', 'homeassistant',
+  ])('keeps one %s chat per contact, all of them with previous chats shown (TAL-939, TAL-945)', async (source) => {
+    const chats = [agent('old', source, 20, { session_source: 'messaging', chat_id: 'same' }), agent('new', source, 21, { session_source: 'messaging', chat_id: 'same' }), agent('other', source, 20, { session_source: 'messaging', chat_id: 'different' })]
+    expect(await listed({}, { agent: chats, showPrevious: false })).toEqual(['new', 'other', 'web'])
+    expect(await listed({}, { agent: chats, showPrevious: true })).toEqual(['new', 'old', 'other', 'web'])
   })
 })
 

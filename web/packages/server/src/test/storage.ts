@@ -50,3 +50,6 @@ import { profileIdentity } from '../sessions/relay.js'
 export async function testProfileIdentity(home: string): Promise<string> { return (await profileIdentity({ documents: new JsonDocuments(join(home, 'webui'), () => home), profileHome: () => home }, 'default')) }
 
 export function testSessionDocuments(directory: string): JsonDocuments { return new JsonDocuments(directory, undefined, directory) }
+
+/** A server environment whose run-journal sweep keeps the `count` newest settled runs live (`TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT`). */
+export const keepRecent = (count: number): Record<string, string> => ({ TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT: String(count) })

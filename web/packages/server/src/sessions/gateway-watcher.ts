@@ -30,7 +30,7 @@ export interface GatewaySubscriber {
 
 interface Queue { items: (GatewaySessionsEvent | null)[]; wake: (() => void) | null; ended: boolean }
 
-export function snapshotHash(sessions: Dict[]): string {
+function snapshotHash(sessions: Dict[]): string {
   // The public row shaper fixes field order and defaults before comparison.
   const key = JSON.stringify([...sessions].sort((a, b) => {
     const aId = str(a.session_id), bId = str(b.session_id)

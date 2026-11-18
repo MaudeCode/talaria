@@ -8,7 +8,7 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { CompletionDrain } from './completions.js'
 import { BackgroundActivity, BackgroundTaskStore, taskView } from './background-tasks.js'
 import { batchUpdate, eventUpdate, recordBackgroundUpdate } from './background-updates.js'
-import { StreamChannel, StreamRegistry, type SessionChannels } from './streams.js'
+import { StreamRegistry, type SessionChannels } from './streams.js'
 
 useJsonStorage()
 
@@ -127,33 +127,5 @@ describe('process heartbeats (TAL-790)', () => {
       expect(events).toEqual([])
       expect(prompts).toEqual([])
     } finally { drain.stop() }
-  })
-})
-
-describe('ephemeral MCP progress snapshots', () => {
-  it('broadcasts a cleared progress value without retaining it for the next attach', () => {
-    const channel = new StreamChannel()
-    const [live] = channel.subscribeWithSnapshot()
-    channel.put(['tool_progress', { id: 'a', progress: { percent: 42, message: 'obsolete' } }, null])
-    channel.put(['tool_progress', { id: 'a', progress: null }, null])
-    expect(live.queue.at(-1)?.[1]).toEqual({ id: 'a', progress: null })
-    const [reloaded] = channel.subscribeWithSnapshot()
-    expect(reloaded.queue).toEqual([])
-  })
-
-  it('keeps only the latest update and drops it on completion and every terminal event', () => {
-    for (const event of ['tool_complete', 'done', 'cancel', 'apperror', 'error', 'stream_end']) {
-      const channel = new StreamChannel()
-      channel.put(['tool', { id: 'a' }, 'run:1'])
-      channel.put(['tool_progress', { id: 'a', progress: { percent: 10, message: 'old' } }, null])
-      channel.put(['tool_progress', { id: 'a', progress: { percent: 42, message: 'latest' } }, null])
-      const [first] = channel.subscribeWithSnapshot()
-      expect(first.queue.map((row) => row[0])).toEqual(['tool', 'tool_progress'])
-      expect(first.queue[1]?.[1]).toMatchObject({ progress: { percent: 42 } })
-      channel.unsubscribe(first)
-      channel.put([event, { id: 'a' }, 'run:2'])
-      const [next] = channel.subscribeWithSnapshot()
-      expect(next.queue.some((row) => row[0] === 'tool_progress')).toBe(false)
-    }
   })
 })

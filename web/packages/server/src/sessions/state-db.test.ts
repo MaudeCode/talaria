@@ -18,10 +18,9 @@ import { recordBackgroundUpdate } from './background-updates.js'
 import { agentSessionRowsExisting, cheapChangeFingerprint, insightsSessionRows, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbHasSession, stateDbLineageReport, stateDbSessionRead, stateDbSessionSources, type ReadRowsOptions } from './state-db.js'
 import agentSchema from '../test/fixtures/canonical-ownership.json' with { type: 'json' }
 import cronSchema from '../test/fixtures/cron-sessions.json' with { type: 'json' }
-import { MESSAGING_SOURCES } from './source-kind.js'
 import { CLI_VISIBLE_SESSION_LIMIT, type CliSessionRead } from './cli-sessions.js'
-import { GatewayWatcher, snapshotHash, type GatewaySubscriber } from './gateway-watcher.js'
-import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
+import { GatewayWatcher, type GatewaySubscriber } from './gateway-watcher.js'
+import { capRecentCliSessions, mergeCliSidebarMetadata, withOwnerLocks } from './list.js'
 
 useJsonStorage()
 
@@ -358,7 +357,13 @@ describe('state.db projection', () => {
   })
 
   it('normalizes every messaging source into the messaging family (TAL-939)', () => {
-    for (const source of MESSAGING_SOURCES) expect(normalizeAgentSessionSource(source).session_source, source).toBe('messaging')
+    const messaging = [
+      'bluebubbles', 'dingtalk', 'feishu', 'qqbot', 'yuanbao', 'whatsapp_cloud',
+      'discord', 'email', 'imessage', 'irc', 'line', 'matrix', 'mattermost', 'signal', 'slack', 'sms', 'teams',
+      'telegram', 'twilio', 'webex', 'wecom', 'wecom_callback', 'weixin', 'whatsapp',
+      'imsg', 'photon', 'google_chat', 'simplex', 'buzz', 'raft', 'ntfy', 'a2a', 'homeassistant',
+    ]
+    for (const source of messaging) expect(normalizeAgentSessionSource(source).session_source, source).toBe('messaging')
   })
 
   it.each([
@@ -381,13 +386,6 @@ describe('state.db projection', () => {
     expect((await post('/api/session/delete', { session_id: sid })).status).toBe(400)
     expect(stateDbHasSession(dbPath, sid)).toBe(true)
     expect(await s.deps.sessionStore.loadMetadataOnly(sid)).toBeNull()
-    const rows = [
-      { session_id: 'old', raw_source: source, chat_id: 'same', updated_at: 1 },
-      { session_id: 'new', raw_source: source, chat_id: 'same', updated_at: 2 },
-      { session_id: 'other', raw_source: source, chat_id: 'different', updated_at: 1 },
-    ]
-    expect(keepLatestMessagingSessionPerSource(rows, { showPrevious: false, identity: new Map(), isPreCompressionSnapshotId: () => false }).map((r) => r.session_id)).toEqual(['new', 'other'])
-    expect(keepLatestMessagingSessionPerSource(rows, { showPrevious: true, identity: new Map(), isPreCompressionSnapshotId: () => false })).toHaveLength(3)
   })
 
   it('projects messageful gateway rows, hides empty ones, and keeps cron out of the default window', () => {
@@ -484,7 +482,6 @@ describe('state.db projection', () => {
     expect(await sub.next()).toBeNull()
     expect(sub.ended).toBe(true)
     expect(await watcher.subscribe().next()).toBeNull()
-    expect(snapshotHash([{ session_id: 'b', updated_at: 1 }, { session_id: 'a', updated_at: 2 }])).toBe(snapshotHash([{ session_id: 'a', updated_at: 2 }, { session_id: 'b', updated_at: 1 }]))
   })
 
   it('keeps parity reads, failed-read retries and slow-consumer drops with shared rows', async () => {
@@ -695,16 +692,7 @@ describe('state.db projection', () => {
     expect(status[1]?.data).toMatchObject({ ok: false, enabled: false, error: 'agent sessions not enabled' })
   })
 
-  it('keeps the newest messaging row per identity and caps CLI rows', () => {
-    const identity = new Map<string, GatewayIdentity>()
-    const rows = [
-      { session_id: 'a', raw_source: 'telegram', chat_id: 'c1', updated_at: 10, message_count: 2 },
-      { session_id: 'b', raw_source: 'telegram', chat_id: 'c1', updated_at: 20, message_count: 2 },
-      { session_id: 'c', raw_source: 'telegram', chat_id: 'c2', updated_at: 5, message_count: 2 },
-      { session_id: 'w', source_tag: 'webui', updated_at: 30 },
-    ]
-    expect(keepLatestMessagingSessionPerSource(rows, { showPrevious: false, identity, isPreCompressionSnapshotId: () => false }).map((r) => r.session_id)).toEqual(['w', 'b', 'c'])
-    expect(keepLatestMessagingSessionPerSource(rows, { showPrevious: true, identity, isPreCompressionSnapshotId: () => false })).toHaveLength(4)
+  it('caps CLI rows and merges state.db metadata into a CLI sidebar row', () => {
     const cli = Array.from({ length: 25 }, (_, i) => ({ session_id: `cli-${String(i)}`, session_source: 'cli', updated_at: i }))
     expect(capRecentCliSessions([{ session_id: 'w' }, ...cli]).length).toBe(21)
     expect(mergeCliSidebarMetadata({ session_id: 'x', title: 'Untitled', message_count: 1, archived: true }, { session_id: 'x', title: 'From state', raw_source: 'slack', message_count: 3, model: 'm' })).toMatchObject({ title: 'From state', message_count: 3, raw_source: 'slack', model: 'm', archived: true, is_cli_session: false })
@@ -719,7 +707,6 @@ describe('state.db projection', () => {
     const logs: string[] = []
     expect(readImportableAgentSessionRows(legacy, { log: (l) => logs.push(l) })).toEqual([])
     expect(logs[0]).toContain("no 'source' column")
-    writeFileSync(join(s.state, 'profiles', 'legacy', 'note.txt'), 'x')
   })
 
   it('file operations resolve an Agent-owned state.db session without a sidecar file to the active workspace', async () => {

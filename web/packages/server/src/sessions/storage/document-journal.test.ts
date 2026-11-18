@@ -1,23 +1,47 @@
 import * as fs from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { gunzipSync } from 'node:zlib'
 import { expect, it, vi } from 'vitest'
 import { JsonStorage } from './json.js'
+import { JsonJournal } from './json-journal.js'
 import { runDocumentBackendConformance, runJournalBackendConformance } from './conformance.js'
+import { keepRecent } from '../../test/storage.js'
 
 vi.mock('node:fs', async (original) => ({ ...await original<typeof fs>(), renameSync: vi.fn((await original<typeof fs>()).renameSync), fsync: vi.fn((await original<typeof fs>()).fsync) }))
 
-function fixture() {
+function fixture(env = keepRecent(0)) {
   const stateDir = fs.mkdtempSync(join(tmpdir(), 'talaria-state-conformance-'))
-  const storage = new JsonStorage({ directory: join(stateDir, 'sessions'), stateDir, now: () => Date.now() / 1000, stampingSince: () => 0, env: { TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT: '0' } })
-  return { storage, cleanup: async () => { await storage.close(); fs.rmSync(stateDir, { recursive: true, force: true }) } }
+  const storage = new JsonStorage({ directory: join(stateDir, 'sessions'), stateDir, now: () => Date.now() / 1000, stampingSince: () => 0, env })
+  const reopened: JsonJournal[] = []
+  return { storage, env, reopened, cleanup: async () => { for (const journal of reopened) await journal.close(); await storage.close(); fs.rmSync(stateDir, { recursive: true, force: true }) } }
 }
 
 runDocumentBackendConformance('JSON', () => {
   const test = fixture()
   return { backend: test.storage.documents, cleanup: test.cleanup, failNextWrite: () => { vi.mocked(fs.renameSync).mockImplementationOnce(() => { throw new Error('injected publication failure') }) } }
 })
-runJournalBackendConformance('JSON', () => { const test = fixture(); return { backend: test.storage.journals, cleanup: test.cleanup } })
+runJournalBackendConformance('JSON', (env) => {
+  const test = fixture(env)
+  const journal = test.storage.journals
+  const archive = (sid: string, rid: string): string => journal.archivePathFor(sid, rid)
+  return {
+    backend: journal,
+    cleanup: test.cleanup,
+    reopen: () => { const next = new JsonJournal(journal.sessionDir, test.env); test.reopened.push(next); return next },
+    store: {
+      age: (sid, rid, at) => { fs.utimesSync(journal.pathFor(sid, rid), at, at) },
+      live: (sid, rid) => Promise.resolve(fs.existsSync(journal.pathFor(sid, rid))),
+      liveBytes: (sid, rid) => Promise.resolve(fs.readFileSync(journal.pathFor(sid, rid))),
+      archive: (sid, rid) => Promise.resolve(fs.existsSync(archive(sid, rid)) ? gunzipSync(fs.readFileSync(archive(sid, rid))) : null),
+      archiveSize: (sid, rid) => Promise.resolve(fs.statSync(archive(sid, rid)).size),
+      ageArchive: (sid, rid, at) => { fs.utimesSync(archive(sid, rid), at, at) },
+      dropSummary: (sid, rid) => { fs.rmSync(join(journal.root(), sid, `${rid}.summary.json`)) },
+      // A replay sizes an archive from its compressed file, so it always reaches the inflation.
+      understateArchive: () => undefined,
+    },
+  }
+})
 
 it.each(['eager', 'terminal-only'] as const)('fsyncs terminal rows before acknowledging them in %s mode', async (durability) => {
   const test = fixture()

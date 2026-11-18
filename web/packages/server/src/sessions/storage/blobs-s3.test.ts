@@ -24,7 +24,10 @@ vi.mock('node:crypto', async (original) => {
   }
 })
 
-/** An in-memory bucket behind `S3Client.send`, counting HEAD requests and how many are in flight at once. */
+/**
+ * An in-memory bucket behind `S3Client.send`, counting HEAD requests and how many are in flight at once. HEADs wait at a
+ * gate that opens once eight are in flight, so the peak is the adapter's concurrency limit, never a scheduling accident.
+ */
 function fakeS3(): { client: S3Client; heads: string[]; maxInFlight: () => number } {
   const objects = new Map<string, { body: Buffer; etag: string }>()
   const uploads = new Map<string, Buffer[]>()
@@ -32,6 +35,8 @@ function fakeS3(): { client: S3Client; heads: string[]; maxInFlight: () => numbe
   let inFlight = 0
   let maxInFlight = 0
   let etags = 0
+  let open!: () => void
+  const gate = new Promise<void>((resolve) => { open = resolve })
   const store = (key: string, body: Buffer): { ETag: string } => {
     const etag = `etag-${String(++etags)}`
     objects.set(key, { body, etag })
@@ -46,7 +51,8 @@ function fakeS3(): { client: S3Client; heads: string[]; maxInFlight: () => numbe
       heads.push(command.input.Key!)
       inFlight += 1
       maxInFlight = Math.max(maxInFlight, inFlight)
-      await new Promise((resolve) => setTimeout(resolve, 5))
+      if (inFlight === 8) open()
+      await gate
       inFlight -= 1
       const found = objects.get(command.input.Key!)
       if (!found) throw Object.assign(new Error('NotFound'), { name: 'NotFound' })
