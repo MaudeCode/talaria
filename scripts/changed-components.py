@@ -214,13 +214,13 @@ def path_suites(path):
         # The sidecar's pytest harness runs only the sidecar suite, here and in the release's Agent gate (TAL-1599).
         if local in ("sidecar/scripts/suite_runner.py", "sidecar/scripts/test.sh"):
             return {"web_sidecar", "tooling"}
+        # Server unit tests stay out of the build that Playwright and the contracts probe run (tsconfig.build.json).
+        if local.startswith("packages/server/src/") and local.endswith(".test.ts"):
+            return {"web_server"}
         # The sidecar RPC surface and the server are one consumer of the shared contracts; the Playwright suite drives
         # the real Node server from the frontend job, so server changes run it too.
         if local.startswith(("sidecar/", *SIDECAR_SERVER_INPUTS)):
             return {"web_server", "web_frontend", "web_sidecar", "contracts"}
-        # Server unit tests stay out of the build that Playwright and the contracts probe run (tsconfig.build.json).
-        if local.startswith("packages/server/src/") and local.endswith(".test.ts"):
-            return {"web_server"}
         if local.startswith("packages/server/"):
             return {"web_server", "web_frontend", "contracts"}
         # Only the contracts/server and frontend lint steps read the shared lint config.
