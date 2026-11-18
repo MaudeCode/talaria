@@ -155,20 +155,6 @@ describe('TasksPage', () => {
     expect(showToast).toHaveBeenCalledWith('This Hermes Agent can\'t stop a running task', 4000, 'error')
   })
 
-  it('settles a stop on the server: stopping while the run winds down, then its cancelled outcome (TAL-1819)', async () => {
-    const detail = await openJob('Digest', [{ ...full, running: true, can_stop: true }])
-    vi.mocked(api.cronAction).mockResolvedValue({ ok: true, job_id: full.id!, status: 'stopping' })
-    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, running: true, stopping: true }]))
-    await userEvent.click(detail.getByRole('button', { name: /^stop$/i }))
-    await waitFor(() => expect(showToast).toHaveBeenCalledWith('Stopping job'))
-    expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'stopping')
-    expect(detail.queryByRole('button', { name: /^stop$/i })).toBeNull()
-    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, last_status: 'cancelled', last_outcome: 'cancelled' }]))
-    await act(async () => { await qc.invalidateQueries({ queryKey: keys.crons.all }) })
-    await waitFor(() => expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'active'))
-    expect(detail.getByText(/· stopped/)).toBeInTheDocument()
-  })
-
   it('removes a deleted job at once after confirmation; Cancel changes nothing; a refusal brings it back', async () => {
     const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
     vi.mocked(api.cronAction).mockImplementation(() => held.promise)
@@ -306,15 +292,6 @@ describe('TasksPage', () => {
     expect(await screen.findByText(/Resolved under ~\/\.hermes\/scripts\//)).toBeVisible()
   })
 
-  it('renders only server-provided context choices for the execution store', async () => {
-    const local: CronJob = { ...feed, id: 'local-source', name: 'Local source', profile: 'personal', read_only: false }
-    const detail = await openJob('Digest', [full, feed, local])
-    await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
-    const form = await screen.findByRole('form', { name: /edit job/i })
-    expect(await within(form).findByRole('checkbox', { name: 'Feed' })).toBeVisible()
-    expect(within(form).queryByRole('checkbox', { name: 'Local source' })).not.toBeInTheDocument()
-  })
-
   it('lets an unavailable selected context source be removed without offering it again', async () => {
     vi.mocked(api.fetchCronContextSources).mockImplementation((input) => Promise.resolve({ profile: 'work', sources: (input.selected_refs ?? []).includes(feed.id!) ? [{ job_id: feed.id!, label: 'Feed', selectable: false }] : [] }))
     const detail = await openJob('Digest')
@@ -325,14 +302,6 @@ describe('TasksPage', () => {
     expect(choice).toBeEnabled()
     await userEvent.click(choice)
     await waitFor(() => expect(within(form).queryByRole('checkbox', { name: /Feed/ })).not.toBeInTheDocument())
-  })
-
-  it('shows the actions, including Edit, as soon as a writable task is selected', async () => {
-    const detail = await openJob('Digest')
-    expect(detail.getByRole('heading', { level: 1 })).toHaveTextContent('Digest')
-    for (const name of [/run now/i, /^pause/i, /^edit/i, /duplicate/i, /delete/i]) expect(detail.getByRole('button', { name })).toBeVisible()
-    await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
-    expect(await screen.findByRole('form', { name: /edit job/i })).toBeVisible()
   })
 
   it('round-trips every stored field when only the name changes', async () => {

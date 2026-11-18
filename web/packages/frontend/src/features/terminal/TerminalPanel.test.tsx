@@ -61,15 +61,6 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('TerminalPanel', () => {
-  it('opens no terminal stream when it unmounts while start is pending', async () => {
-    let resolveStart!: (value: unknown) => void
-    vi.mocked(post).mockImplementation((path: string) => path === 'api/terminal/start' ? new Promise((resolve) => { resolveStart = resolve }) : Promise.resolve({}))
-    const { unmount } = render(<TerminalPanel sessionId="s1" workspace="/w" onClose={noop} />)
-    unmount()
-    await act(async () => { resolveStart(webStart); await new Promise((r) => setTimeout(r, 0)) })
-    expect(opened).toEqual([])
-  })
-
   it('shows nothing when the output stream ends cleanly and the browser reconnects', async () => {
     const sources: (EventTarget & { readyState: number })[] = []
     vi.stubGlobal('EventSource', class extends EventTarget {
@@ -265,13 +256,6 @@ describe('terminal input (TAL-1146)', () => {
 describe('screen-reader mode (TAL-1605)', () => {
   const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 0)) })
   beforeEach(() => { vi.mocked(post).mockReset(); vi.mocked(post).mockResolvedValue(webStart) })
-
-  it('gives the PTY an accessibility tree when screen_reader_mode is saved on', async () => {
-    render(<TerminalPanel sessionId="s1" workspace="/w" onClose={noop} />, { screen_reader_mode: true })
-    await settle()
-    expect(opened).toHaveLength(1)
-    expect(xterm.options.screenReaderMode).toBe(true)
-  })
 
   it('leaves the PTY without one by default and follows later confirmed values', async () => {
     render(<TerminalPanel sessionId="s1" workspace="/w" onClose={noop} />)

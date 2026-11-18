@@ -79,6 +79,7 @@ test('renders a Meshy model inline and in the gallery through authenticated asse
     await figure.getByRole('button', { name: 'Formats and next steps' }).click()
     await expect(figure.getByText('GLB saved')).toBeVisible()
     await expect(figure.getByRole('button', { name: 'Save FBX' })).toBeVisible()
+    await expect(figure.getByRole('button', { name: 'Convert to STL · 1 credit', exact: true })).toBeVisible()
     await shot('inline-details')
     await figure.getByRole('button', { name: 'Remesh · 5 credits' }).click()
     await expect(page.locator('#msg')).toHaveValue(/remesh it with meshy_remesh \(5 credits\)/)
