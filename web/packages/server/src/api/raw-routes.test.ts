@@ -39,12 +39,13 @@ describe('raw byte routes', () => {
     for (const d of outsideDirs) rmSync(d, { recursive: true, force: true })
   })
 
-  it('serves raw workspace files with ETag, ranges, and download/inline dispositions', async () => {
+  it('serves raw workspace files uncached and unvalidated, with ranges and download/inline dispositions', async () => {
     let res = await s.get(`/api/file/raw?session_id=${sid}&path=photo.png`)
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('image/png')
     expect(res.headers.get('content-disposition')).toContain('inline; filename="photo.png"')
     expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(res.headers.get('etag')).toBeNull()
     expect(res.headers.get('accept-ranges')).toBe('bytes')
     expect(Buffer.from(await res.arrayBuffer())).toHaveLength(10)
 
@@ -89,13 +90,12 @@ describe('raw byte routes', () => {
     expect((await s.get('/api/file/raw?path=photo.png')).status).toBe(400)
   })
 
-  it('a file past the ETag snapshot cap streams its bytes and ranges without buffering the whole file', async () => {
+  it('serves a multi-megabyte file whole, by range, and by HEAD', async () => {
     const big = Buffer.alloc(3 * 1024 * 1024, 7)
     writeFileSync(join(ws, 'big.bin'), big)
     let res = await s.get(`/api/file/raw?session_id=${sid}&path=big.bin`)
     expect(res.status).toBe(200)
     expect(res.headers.get('content-length')).toBe(String(big.length))
-    expect(res.headers.get('etag')).toBeNull()
     expect(Buffer.from(await res.arrayBuffer()).equals(big)).toBe(true)
     res = await s.get(`/api/file/raw?session_id=${sid}&path=big.bin`, { headers: { range: 'bytes=1048576-1048579' } })
     expect(res.status).toBe(206)

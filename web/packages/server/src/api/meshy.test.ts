@@ -12,7 +12,7 @@ const REVISION = 'c16e967d798d8dd3b1827a62673c18627f31e0ed'
 const THUMB = 'https://assets.meshy.ai/tasks/thumb.png?Expires=1&Signature=s'
 
 /** A synthetic binary glTF: one JSON chunk and one BIN chunk. */
-export function glb(json: Record<string, unknown> = { asset: { version: '2.0' }, buffers: [{ byteLength: 4 }] }): Buffer {
+function glb(json: Record<string, unknown> = { asset: { version: '2.0' }, buffers: [{ byteLength: 4 }] }): Buffer {
   let chunk = Buffer.from(JSON.stringify(json))
   if (chunk.length % 4) chunk = Buffer.concat([chunk, Buffer.alloc(4 - (chunk.length % 4), 0x20)])
   const bin = Buffer.alloc(4)

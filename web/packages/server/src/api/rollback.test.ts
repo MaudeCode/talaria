@@ -148,10 +148,13 @@ describe('workspace checkpoints through the Agent (TAL-913)', () => {
       inFlight -= 1
       return { stat: '', diff: DIFF }
     })
+    // The admission check runs in the same tick that queues an operation on the profile store.
+    const admitted = vi.spyOn(s.deps.rollback.deps, 'activeRunInProfile')
     const first = s.get(`/api/rollback/diff?workspace=${encodeURIComponent(ws)}&checkpoint=${HASH}`)
     await vi.waitFor(() => { expect(sidecar.calls).toHaveLength(1) })
     const next = s.get(`/api/rollback/diff?workspace=${encodeURIComponent(realpathSync(second))}&checkpoint=${HASH}`)
-    await new Promise((r) => setTimeout(r, 50))
+    await vi.waitFor(() => { expect(admitted).toHaveBeenCalledTimes(2) })
+    admitted.mockRestore()
     // The second waits for the first instead of reaching the shared store alongside it.
     expect(sidecar.calls).toHaveLength(1)
     release()

@@ -134,9 +134,12 @@ it('expires static grants and keeps their profile scope separate from API ids', 
   expect(await plugins.agentAssetGrant(grant, 'dist/index.html')).not.toBeNull()
   expect(await plugins.agentAssetGrant(grant, 'dist/index.html', undefined, { ...scope, home: scope.home + '/profiles/other' })).toBeNull()
   expect(await plugins.agentAssetGrant(grant, 'dist/index.html', undefined, { ...scope, owner: 'other-owner' })).toBeNull()
-  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 3 * 3_600_000)
-  try { expect(await plugins.agentAssetGrant(grant, 'dist/index.html')).toBeNull() }
-  finally { clock.mockRestore() }
+  // The expired check answers before any sidecar call, so no server timer runs while the clock is fake.
+  vi.useFakeTimers({ now: Date.now() })
+  try {
+    vi.setSystemTime(Date.now() + 3 * 3_600_000)
+    expect(await plugins.agentAssetGrant(grant, 'dist/index.html')).toBeNull()
+  } finally { vi.useRealTimers() }
 })
 
 it.each([false, true])('revokes source and destination grants and a delayed response through a profile switch, password=%s', async (authenticated) => {

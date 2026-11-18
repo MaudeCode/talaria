@@ -193,7 +193,6 @@ it('stops successors when a call reports usage beyond its reservation', async ()
 it('keeps refused, provider-error and unknown outcomes explicit', async () => {
   const sidecar = new FakeSidecar()
   let call = 0
-  sidecar.respond('skills.replay_plan', () => plan())
   sidecar.respond('skills.replay_case', (params) => {
     call += 1
     if (call === 1) throw new SidecarError('Saved case changed; replay refused', { code: -32602, condition: 'invalid_params' })

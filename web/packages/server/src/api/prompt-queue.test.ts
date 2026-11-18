@@ -47,10 +47,10 @@ async function setup() {
 }
 const read = async () => (await server!.deps.promptQueues.list()).runs[0]!
 /** Holds fake turns open so a card stays `running` across the 2 s reconcile timer; returns the release. */
-function holdTurns(sidecar: FakeSidecar) {
+function holdTurns(sidecar: FakeSidecar, started: string[] = []) {
   let release!: () => void
   const gate = new Promise<void>((resolve) => { release = resolve })
-  sidecar.respond('chat.start', async (params) => { await gate; return completed(params) })
+  sidecar.respond('chat.start', async (params) => { started.push(params.session_id); await gate; return completed(params) })
   return release
 }
 async function act(run: PromptQueueRun, action: string) {
@@ -307,13 +307,17 @@ it('runs a queue with its creator\'s person authority once person isolation is o
 
 it('runs queues as before on a server without sign-in, even with person isolation set (TAL-48)', async () => {
   const sidecar = new FakeSidecar()
-  sidecar.respond('chat.start', completed)
+  const started: string[] = []
   server = await bootTestServer({ sidecar, env: { TALARIA_WEB_PERSON_ISOLATION: '1' } })
+  const releaseTurn = holdTurns(sidecar, started)
   const sessions = await Promise.all([0, 1].map(() => server!.deps.sessionStore.newSession({ profile: 'default' })))
   const created = await post('/api/prompt-queues', { request_id: 'no-auth', cards: sessions.map((s, i) => ({ session_id: s.session_id, project_id: null, text: `Prompt ${i}` })) })
   expect(created.status).toBe(200)
   const run = await created.json() as PromptQueueRun
   const current = await act(run, 'start')
-  expect(current.phase).not.toBe('refused')
-  expect(current.cards[0]!.status).not.toBe('refused')
+  expect(current.phase).toBe('running')
+  expect(current.cards[0]!.status).toBe('running')
+  await vi.waitFor(() => { expect(started).toEqual([sessions[0]!.session_id]) })
+  releaseTurn()
+  await server.deps.turns.finished(current.cards[0]!.stream_id!)
 })

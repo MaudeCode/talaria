@@ -89,11 +89,11 @@ describe('local STT warm-up (TAL-916)', () => {
       return await done
     })
     try {
+      // The route calls the fake before it answers, and a give-up settles in microtasks before the response arrives.
       await warm(s)
-      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(workers).toBe(1)
       // A record start after the client-side give-up must not stack a second load onto the one still running.
       await warm(s)
-      await new Promise((resolve) => setTimeout(resolve, 20))
       expect(workers).toBe(1)
     } finally {
       finish()

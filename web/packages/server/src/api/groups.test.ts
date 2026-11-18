@@ -51,26 +51,41 @@ it('refuses replies outside the room log before writing and accepts threads beyo
   expect(sends()[0]?.params).toMatchObject({ operation: { payload: { thread_id: 'earlier-thread' } } })
 })
 
-it('projects ordered attributed replies, current member phases and native task fences', async () => {
-  const { state, append, members } = await setup()
+/** A working review: a prompt and two member replies (the first threaded); member one queued, member two awaiting a native approval at generation 3. */
+async function reviewRoom() {
+  const fixture = await setup()
+  const { state, append, members } = fixture
   append('message.user', 'Review this')
   const reply = append('message.member', 'One', members[0]); append('message.member', 'Two', members[1])
   Object.assign(reply.payload, { thread_id: 'existing-thread' })
   state.driver_status.working = true
   state.driver_status.member_activity = [{ member_id: 'one', status: 'queued' }, { member_id: 'two', status: 'running' }]
   state.driver_status.pending_actions = [{ kind: 'approval', member_id: 'two', task_id: 'task', execution_generation: 3, request_id: 'approval', approval: { command: 'synthetic-command', choices: ['once', 'deny'] } }]
-  const view = await read()
+  return { ...fixture, view: await read() }
+}
+
+it('projects ordered replies attributed to their members, with their threads', async () => {
+  const { view } = await reviewRoom()
   expect(view.rows.map((r) => [r.index, r.author, r.message.content])).toEqual([[1, '', 'Review this'], [2, 'Writer', 'One'], [3, 'Reviewer', 'Two']])
   expect(view.rows).toMatchObject([{ thread_id: null }, { thread_id: 'existing-thread' }, { thread_id: null }])
+})
+
+it('projects each member\'s current phase, and unknown once a working Agent stops reporting activity', async () => {
+  const { state, view } = await reviewRoom()
   expect(view.room?.members.map((m) => m.phase)).toEqual(['queued', 'approval'])
   expect(view.room).toMatchObject({ round: null, members: [{ tool: null, started_at: null, stalled: false }, { tool: null, started_at: null, stalled: false }] })
+  state.driver_status.pending_actions = []
+  Reflect.deleteProperty(state.driver_status, 'member_activity')
+  expect((await read()).room?.members.map((m) => m.phase)).toEqual(['unknown', 'unknown'])
+})
+
+it('accepts an approval only for the native task\'s current execution generation, once', async () => {
+  const { view } = await reviewRoom()
   const stale = await post(view.room!.identity, { action: 'approve', room_id: 'discussion', member_id: 'two', task_id: 'task', execution_generation: 2, request_id: 'approval', choice: 'once' })
   expect(stale.status).toBe(409)
   const accepted = await post(view.room!.identity, { action: 'approve', room_id: 'discussion', member_id: 'two', task_id: 'task', execution_generation: 3, request_id: 'approval', choice: 'once' })
   expect(await accepted.json()).toMatchObject({ outcome: 'confirmed' })
   expect((await post(view.room!.identity, { action: 'approve', room_id: 'discussion', member_id: 'two', task_id: 'task', execution_generation: 3, request_id: 'approval', choice: 'once' })).status).toBe(409)
-  Reflect.deleteProperty(state.driver_status, 'member_activity')
-  expect((await read()).room?.members.map((m) => m.phase)).toEqual(['unknown', 'unknown'])
 })
 
 it('projects live member tools and elapsed origins, with stall detection on the server clock', async () => {
@@ -280,48 +295,61 @@ it('keeps stored settings text the display masks when a save leaves that text un
 const continues = (sidecar: FakeSidecar) => sidecar.calls.flatMap((c) => c.method === 'gateway.groups' ? [(c.params as { operation: { action: string } }).operation] : []).filter((o) => o.action === 'continue')
 const pausedRows = (view: GroupView) => view.rows.filter((r) => r.message._notice_kind?.startsWith('paused_')).map((r) => [r.message.message_id, r.message._notice_kind])
 
-it('projects a capped discussion as a notice and a paused entry until Continue, Stop or a newer message in its thread clears it (Agent v0.23.0)', async () => {
-  const { discussion, activity, continued, gateway } = await setup()
-  const first = discussion('First', 'thread-1')
-  const cap = activity(first, 'thread-1').event_id
-  let view = await read()
+/** A discussion in thread-1 that reached its round cap: one paused entry with five Continues left. */
+async function cappedRoom() {
+  const fixture = await setup()
+  const first = fixture.discussion('First', 'thread-1')
+  return { ...fixture, first, cap: fixture.activity(first, 'thread-1').event_id }
+}
+
+it('projects a capped discussion as a notice and a paused entry, which a message in another thread leaves paused (Agent v0.23.0)', async () => {
+  const { discussion, first, cap } = await cappedRoom()
+  const view = await read()
   expect(pausedRows(view)).toEqual([[cap, 'paused_max_rounds']])
   expect(view.paused).toEqual([{ discussion_event_id: first, event_id: cap, cap: 'max_rounds', continues_left: 5, continue_state: 'offered', excerpt: null }])
-
   // Web opens a new thread per send, so a later message elsewhere leaves the older discussion paused.
   discussion('Other', 'thread-2')
   expect((await read()).paused.map((p) => p.discussion_event_id)).toEqual([first])
+})
 
+it('clears a pause on Continue, and a second cap shows the spent Continue (Agent v0.23.0)', async () => {
+  const { activity, continued, first } = await cappedRoom()
   continued(first, 'thread-1')
-  view = await read()
+  let view = await read()
   expect(view.paused).toEqual([])
   expect(pausedRows(view)).toEqual([])
-
-  // Capped again: the Continue is spent and the budget shows it.
   const second = activity(first, 'thread-1', 'max_messages').event_id
   view = await read()
   expect(view.paused).toEqual([{ discussion_event_id: first, event_id: second, cap: 'max_messages', continues_left: 4, continue_state: 'offered', excerpt: null }])
   expect(pausedRows(view)).toEqual([[second, 'paused_max_messages']])
+})
 
+it('clears a pause once a newer message arrives in its thread (Agent v0.23.0)', async () => {
+  const { discussion } = await cappedRoom()
   discussion('Follow up', 'thread-1')
   expect((await read()).paused).toEqual([])
+})
 
-  // A newer message already superseded this discussion, so its late cap is no pause: the Agent is working on the newer one.
+it('projects no pause for a late cap on a discussion a newer message already superseded (Agent v0.23.0)', async () => {
+  const { discussion, activity } = await setup()
+  // The Agent is working on the newer message, so the older discussion's cap is no pause.
   const superseded = discussion('Superseded', 'thread-2')
   discussion('Newer', 'thread-2')
   activity(superseded, 'thread-2')
   expect((await read()).paused).toEqual([])
+})
 
+it('fences a cap noted before a Stop, keeps a later discussion\'s pause, and clears it on the next Stop (Agent v0.23.0)', async () => {
+  const { discussion, activity, gateway } = await setup()
   const fenced = discussion('Fenced', 'thread-3')
   gateway('room.stop_requested', { cancel_id: 'stop' })
   // A cap noted from a snapshot older than the Stop stays fenced; a discussion after the Stop is unaffected.
   activity(fenced, 'thread-3')
   const after = discussion('After stop', 'thread-4')
   const afterCap = activity(after, 'thread-4').event_id
-  view = await read()
+  const view = await read()
   expect(view.paused.map((p) => p.discussion_event_id)).toEqual([after])
   expect(pausedRows(view)).toEqual([[afterCap, 'paused_max_rounds']])
-
   gateway('room.stop_requested', { cancel_id: 'stop-2' })
   expect((await read()).paused).toEqual([])
 })

@@ -323,10 +323,18 @@ describe('TAL-1507: native scheduled connector sign-in offers', () => {
     expect(other.offer_id).not.toBe(own.offer_id)
   })
 
-  it.each(['no app', 'welcome trial', 'signed in', 'opted out', 'older Agent', 'unavailable'])('does not invent eligibility for %s', async (scenario) => {
-    status = { available: !['older Agent', 'unavailable'].includes(scenario), eligible: false, guest_id: null, due_in: null, claimed: false }
+  // Each row is one field short of a claimable due offer for the same guest.
+  it.each([
+    ['an ineligible guest', { available: true, eligible: false }],
+    ['an unavailable Agent', { available: false, eligible: true }],
+  ])('does not invent eligibility for %s', async (_scenario, result) => {
+    status = { ...result, guest_id: 'guest-due', due_in: 0, claimed: false }
     const before = claims
+    const claimCalls = (): number => sidecar.calls.filter((call) => call.method === 'connectors.offer.claim').length
+    const asked = claimCalls()
     expect((await json(await s.get('/api/connectors'))).sign_in_offer).toMatchObject({ due: false, visible: false, actions: [] })
     expect(claims).toBe(before)
+    // The server decides from the status alone; it never asks the Agent to claim an offer it cannot show.
+    expect(claimCalls()).toBe(asked)
   })
 })
