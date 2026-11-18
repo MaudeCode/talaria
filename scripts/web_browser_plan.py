@@ -9,8 +9,8 @@ it. Only two kinds of change narrow, and only when no file in the frontend packa
 - A Vitest test file (vitest.config.ts `include`) needs no browser job: Playwright and the bundle never load it.
 
 Any other path that selects web_frontend (application code, e2e helpers, fixtures, global setup, Playwright and Vite
-config, lockfiles, contracts, server code, the browser workflow and its scripts), an import the scan cannot resolve, or a
-path with a control character runs every shard. Main pushes and manual runs never ask for a plan and run every shard.
+config, lockfiles, contracts, server code, the browser workflow and its scripts), a computed import() or require() in
+e2e/ or the Playwright config, an unreadable source file, or a path with a control character runs every shard. Main pushes and manual runs never ask for a plan and run every shard.
 
 scripts/check-web-browser runs a `specs` plan with `--spec=PATH` arguments. It turns them into anchored, escaped
 Playwright file filters with `filters` and, after the run, requires `receipts`: test cases from every selected file on
