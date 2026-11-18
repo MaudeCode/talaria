@@ -1,0 +1,1 @@
+{"skip": "Test-only: the stream tick budget holds the text fade open so a wall-clock block absorption cannot land in its measured ticks; no app behavior changes."}

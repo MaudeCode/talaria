@@ -12,7 +12,10 @@ import XCTest
 /// highlighting, built code lines, and body evaluations of settled transcript rows and bubbles, the message list and
 /// the whole chat. Work a tick or keystroke causes recurs in every run, while an unrelated timer-driven update lands
 /// in at most one, so each count's minimum across two runs is asserted exactly; the tickets that remove each repeat
-/// lower its count. Wall-clock time is attached for comparison and decides nothing.
+/// lower its count. Wall-clock time is attached for comparison and decides nothing. The streamed text's fade window
+/// absorbs a finished block into the solid head once its fade has run for a wall-clock delay, which landed inside the
+/// measured ticks only on a slow host, so the harness holds the fade open for the whole test (TAL-2534). That also holds
+/// off the fade clock's pause, which waits on the same fade duration, so neither wall-clock event lands while measuring.
 @MainActor
 final class ChatStreamTickPerformanceTests: XCTestCase {
     private static let tickCount = 40
@@ -33,6 +36,7 @@ final class ChatStreamTickPerformanceTests: XCTestCase {
     ]
 
     override func tearDown() {
+        StreamingTextFadeLab.shared.reset()
         MainActor.assumeIsolated { ChatBodyEvaluationRecorder.installed = nil }
         MockURLProtocol.requestHandler = nil
         ChatViewModel.resetActiveStreamSnapshotsForTesting()
@@ -79,8 +83,11 @@ private struct ChatStreamTickHarness {
     private let test: XCTestCase
 
     private static let transcriptMessageCount = 200
+    /// A fade far longer than the test, so no streamed block's absorption delay elapses while it measures.
+    private static let heldFadeDuration: TimeInterval = 3_600
 
     init(test: XCTestCase) async throws {
+        StreamingTextFadeLab.shared.fadeDuration = Self.heldFadeDuration
         let fixture = try FixtureApp(for: test)
         let stream = ScriptedSSEStreamingClient()
         let summary = SessionSummary(sessionId: "session-budget", title: "Stream tick budget")
