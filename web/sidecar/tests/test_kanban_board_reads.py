@@ -41,7 +41,7 @@ def board(monkeypatch):
     monkeypatch.setattr(kanban, "_kb", lambda: kb)
     monkeypatch.setattr(kanban, "_board", lambda params: None)
     monkeypatch.setattr(kanban, "_conn", lambda board=None: conn)
-    monkeypatch.setattr(kanban, "_workflow", lambda: kanban._Workflow((("ready", "Ready"), ("running", "Running")), None))
+    monkeypatch.setattr(kanban, "_workflow", lambda: kanban._Workflow((("ready", "Ready"), ("running", "Running")), {}))
     return statements
 
 

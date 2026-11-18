@@ -7,15 +7,7 @@ import pathlib
 import subprocess
 import time
 
-import pytest
-
 from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, ledger_row, requires_agent
-
-# Agent 0.21.6 added the store probe and the live-owner ledger check; older Agents report neither.
-HAS_STORE_PROBE = AGENT_DIR is not None and (AGENT_DIR / "cron" / "store_health.py").is_file()
-HAS_LEDGER = AGENT_DIR is not None and (AGENT_DIR / "cron" / "executions.py").is_file() and "def live_inflight_execution" in (AGENT_DIR / "cron" / "executions.py").read_text()
-requires_ledger = pytest.mark.skipif(not HAS_LEDGER, reason="the executions ledger's live-owner check requires Agent v0.21.6")
-requires_cancel = pytest.mark.skipif(AGENT_DIR is None or not (AGENT_DIR / "cron" / "cancellation.py").is_file(), reason="on-demand run cancellation requires Agent v0.22.6")
 
 
 def _create(sidecar: SidecarProcess, home: pathlib.Path) -> str:
@@ -33,9 +25,6 @@ def test_list_reports_an_unwritable_store_only_when_probed(handshaken: SidecarPr
     degraded = handshaken.result("cron.list", {"profile_home": str(hermes_home), "probe_store": True})
     unprobed = handshaken.result("cron.list", {"profile_home": str(hermes_home)})
     assert "store_health" not in unprobed
-    if not HAS_STORE_PROBE:
-        assert degraded.get("store_health", "missing") is None, degraded
-        return
     health = degraded.get("store_health") or {}
     assert "EACCES" in str(health.get("error")), degraded
     assert str(cron_dir.resolve()) in str(health.get("fix")), health
@@ -52,7 +41,6 @@ sys.stdin.read()
 
 
 @requires_agent
-@requires_ledger
 def test_a_live_owner_reads_running_and_refuses_run_now(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
     job_id = _create(handshaken, hermes_home)
     params = {"profile_home": str(hermes_home)}
@@ -108,7 +96,6 @@ scheduler.run_one_job(claimed)
 
 
 @requires_agent
-@requires_cancel
 def test_stopping_a_gateway_claimed_run_ends_it_and_books_cancelled(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
     ready = tmp_path / "script-started"
     job_id = _script_job(handshaken, hermes_home, _held_script(ready))
@@ -131,7 +118,6 @@ def test_stopping_a_gateway_claimed_run_ends_it_and_books_cancelled(handshaken: 
 
 
 @requires_agent
-@requires_cancel
 def test_stopping_a_manual_script_run_ends_it_and_books_cancelled(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
     ready = tmp_path / "script-started"
     job_id = _script_job(handshaken, hermes_home, _held_script(ready))
@@ -149,7 +135,6 @@ def test_stopping_a_manual_script_run_ends_it_and_books_cancelled(handshaken: Si
 
 
 @requires_agent
-@requires_ledger
 def test_run_now_refuses_when_the_ledger_is_unreadable(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
     job_id = _script_job(handshaken, hermes_home, "print('ran')\n")
     (hermes_home / "cron" / "executions.db").write_text("not a database", encoding="utf-8")

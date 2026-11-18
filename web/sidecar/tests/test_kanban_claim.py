@@ -1,4 +1,4 @@
-"""Claim liveness on an Agent without ``kanban_db._claim_is_live`` (Agent 0.21.3), against stand-in Agent modules."""
+"""Claim liveness and the dispatcher fence around Agent writes, against stand-in Agent modules."""
 
 from __future__ import annotations
 
@@ -20,57 +20,14 @@ class Row(dict):
 
 
 @pytest.fixture
-def older_agent(monkeypatch):
-    """An Agent kanban module without ``_claim_is_live``, plus a dispatcher whose PID check the test controls."""
+def agent_kanban(monkeypatch):
+    """A stand-in for the Agent's ``hermes_cli.kanban_db``."""
     package = types.ModuleType("hermes_cli")
     package.__path__ = []
     monkeypatch.setitem(sys.modules, "hermes_cli", package)
     kb = types.ModuleType("hermes_cli.kanban_db")
-    kb._host_prefix = lambda: "here:"  # the Agent's claim locks are "<host>:<pid>"
     monkeypatch.setitem(sys.modules, "hermes_cli.kanban_db", kb)
-    dispatch = types.ModuleType("hermes_cli.kanban_db_dispatch")
-    monkeypatch.setitem(sys.modules, "hermes_cli.kanban_db_dispatch", dispatch)
-    return dispatch
-
-
-def test_a_dead_worker_releases_its_claim(older_agent) -> None:
-    checked = []
-    older_agent._pid_alive = lambda pid: checked.append(pid) or False
-    assert kanban._row_claim_live(Row(RUNNING)) is False
-    assert checked == [4242]
-
-
-def test_a_live_worker_keeps_its_claim(older_agent) -> None:
-    older_agent._pid_alive = lambda pid: True
-    assert kanban._row_claim_live(Row(RUNNING)) is True
-
-
-def test_another_hosts_claim_is_never_probed_locally(older_agent) -> None:
-    checked = []
-    older_agent._pid_alive = lambda pid: checked.append(pid) or False
-    assert kanban._row_claim_live(Row({**RUNNING, "claim_lock": "elsewhere:4242"})) is True
-    assert checked == []
-
-
-def test_unknown_liveness_counts_as_live(older_agent) -> None:
-    assert kanban._row_claim_live(Row(RUNNING)) is True  # no _pid_alive either
-
-    def broken(pid):
-        raise OSError("ps unavailable")
-
-    older_agent._pid_alive = broken
-    assert kanban._row_claim_live(Row(RUNNING)) is True
-
-    older_agent._pid_alive = lambda pid: False
-    del sys.modules["hermes_cli.kanban_db"]._host_prefix  # a claim whose host cannot be attributed
-    assert kanban._row_claim_live(Row(RUNNING)) is True
-
-
-def test_an_unclaimed_or_idle_task_is_never_live(older_agent) -> None:
-    older_agent._pid_alive = lambda pid: True
-    assert kanban._row_claim_live(Row({**RUNNING, "claim_lock": None})) is False
-    assert kanban._row_claim_live(Row({**RUNNING, "worker_pid": None})) is False
-    assert kanban._row_claim_live(Row({**RUNNING, "status": "todo"})) is False
+    return kb
 
 
 def _fence_db():
@@ -82,10 +39,9 @@ def _fence_db():
 
 
 @pytest.mark.parametrize("outcome", ["refused", "raised"])
-def test_a_failed_agent_write_releases_the_dispatcher_fence(older_agent, monkeypatch, outcome) -> None:
+def test_a_failed_agent_write_releases_the_dispatcher_fence(agent_kanban, outcome) -> None:
     conn = _fence_db()
-    kb = sys.modules["hermes_cli.kanban_db"]
-    kb.write_txn = lambda c: contextlib.nullcontext()
+    agent_kanban.write_txn = lambda c: contextlib.nullcontext()
     held = []
 
     def write():
@@ -103,13 +59,13 @@ def test_a_failed_agent_write_releases_the_dispatcher_fence(older_agent, monkeyp
     assert conn.execute("SELECT claim_lock FROM tasks").fetchone()[0] is None
 
 
-def test_a_failing_agent_liveness_helper_keeps_the_claim(older_agent) -> None:
-    """Only a missing helper takes the 0.21.3 PID fallback; an error from the Agent's own helper stays live."""
+def test_a_failing_agent_liveness_helper_keeps_the_claim(agent_kanban) -> None:
+    """An error from the Agent's own helper is unknown liveness: a claimed running task stays live."""
 
     def undecided(claim):
         raise RuntimeError("liveness unknown")
 
-    sys.modules["hermes_cli.kanban_db"]._claim_is_live = undecided
-    older_agent._pid_alive = lambda pid: pytest.fail("a present helper's error must not fall back to the local PID probe")
+    agent_kanban._claim_is_live = undecided
     assert kanban._row_claim_live(Row(RUNNING)) is True
     assert kanban._row_claim_live(Row({**RUNNING, "claim_lock": None})) is False
+    assert kanban._row_claim_live(Row({**RUNNING, "status": "todo"})) is False

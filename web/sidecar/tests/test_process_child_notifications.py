@@ -3,8 +3,6 @@
 import json
 import pathlib
 import subprocess
-import sys
-from types import ModuleType
 
 import pytest
 
@@ -35,16 +33,6 @@ print(json.dumps({name: _event_row(evt).get("child_process") for name, evt in js
     events = {name: evt for name, (evt, _) in EVENTS.items()}
     out = subprocess.run([AGENT_PYTHON, "-c", code, str(AGENT_DIR), str(SIDECAR_DIR), json.dumps(events)], env=isolated_env(hermes_home), capture_output=True, text=True, check=True).stdout
     assert json.loads(out.splitlines()[-1]) == {name: child for name, (_, child) in EVENTS.items()}
-
-
-@pytest.mark.parametrize("name", EVENTS)
-def test_older_agents_apply_the_same_rule(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
-    # Agents before 0.21.7 have no is_child_process_notification.
-    monkeypatch.setitem(sys.modules, "tools", ModuleType("tools"))
-    monkeypatch.setitem(sys.modules, "tools.process_registry_notifications", ModuleType("tools.process_registry_notifications"))
-    monkeypatch.setattr(process, "_registry", lambda: None)
-    evt, child = EVENTS[name]
-    assert process._event_row(evt).get("child_process") is child
 
 
 def test_requeue_drops_the_classification(monkeypatch: pytest.MonkeyPatch) -> None:

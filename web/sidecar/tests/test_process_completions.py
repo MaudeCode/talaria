@@ -29,12 +29,6 @@ def test_startup_replay_matches_only_the_same_transcript_delivery(monkeypatch, t
     assert process.claim_delivery(live, 'webui') == (None if different_field else '')
 
 
-@pytest.fixture
-def modern_agent(hermes_home):
-    if _agent(hermes_home, "from tools.process_registry import process_registry; print(callable(getattr(process_registry, 'restore_completions', None)))") != "True":
-        pytest.skip("Agent restores only its launch ledger at import; no explicit replay/sweep API")
-
-
 SEED_CODE = """
 event = {'type': 'async_delegation', 'delegation_id': sys.argv[2], 'session_key': sys.argv[3],
          'origin_ui_session_id': sys.argv[3], 'status': 'completed', 'dispatched_at': time.time()}
@@ -87,7 +81,7 @@ def test_launch_ledger_replays_once_and_a_claimed_completion_is_not_offered_agai
 
 @requires_agent
 @pytest.mark.parametrize("inactive", [False, True])
-def test_named_ledger_replays_once_even_when_the_launch_profile_is_the_only_drained_home(hermes_home, modern_agent, inactive):
+def test_named_ledger_replays_once_even_when_the_launch_profile_is_the_only_drained_home(hermes_home, inactive):
     named = hermes_home / "profiles" / "work"
     named.mkdir(parents=True)
     _seed(hermes_home, "deleg_launch", "web-launch")
@@ -171,7 +165,7 @@ finally:
 
 
 @requires_agent
-def test_drain_sweeps_dead_owners_in_every_served_home_but_not_live_or_claimed_rows(hermes_home, modern_agent):
+def test_drain_sweeps_dead_owners_in_every_served_home_but_not_live_or_claimed_rows(hermes_home):
     result = json.loads(_agent(hermes_home, f"SEED_CODE = {SEED_CODE!r}\n" + ORPHAN_PROBE))
     assert sorted((e["process_id"], e["origin_ui_session_id"]) for e in result["events"]) == [
         ("dead-launch", "web-launch"), ("dead-named", "web-named"),
@@ -181,7 +175,7 @@ def test_drain_sweeps_dead_owners_in_every_served_home_but_not_live_or_claimed_r
 
 
 @requires_agent
-def test_failed_named_replay_retries_without_blocking_launch_or_live_events(hermes_home, modern_agent):
+def test_failed_named_replay_retries_without_blocking_launch_or_live_events(hermes_home):
     named = hermes_home / "profiles" / "work"
     named.mkdir(parents=True)
     _seed(hermes_home, "deleg_launch", "web-launch")

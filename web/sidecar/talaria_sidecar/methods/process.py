@@ -31,12 +31,8 @@ def _registry():
 
 def _is_child_process(row: dict) -> bool:
     """TAL-933: a subagent's own process notice, which the server surfaces only when the owning profile opts in."""
-    try:
-        from tools.process_registry_notifications import is_child_process_notification
-    except Exception:  # noqa: BLE001 - before Agent 0.21.7, the same rule inline
-        if row.get("type") in ("async_delegation", "async_delegation_work_closeout"):
-            return False
-        return str(row.get("owner_task_id") or row.get("task_id") or "").startswith("sa-")
+    from tools.process_registry_notifications import is_child_process_notification
+
     return bool(is_child_process_notification(row))
 
 
@@ -68,15 +64,9 @@ _RECOVERED: dict[str, object] = {}
 _RECOVERED_LOCK = threading.Lock()
 
 
-def _reports_recovered_exits(registry) -> bool:
-    """Agent 0.21.6 (hermes-agent 7550800d) closes or prunes a recovered session whose PID is gone without queuing a
-    completion, since it never collected an exit status. Talaria still wakes the session with an unknown exit code."""
-    return callable(getattr(registry, "_detached_host_fate", None)) and callable(getattr(registry, "_publish_finished", None))
-
-
 def track_recovered(registry) -> None:
-    if not _reports_recovered_exits(registry):
-        return
+    """The Agent closes or prunes a recovered session whose PID is gone without queuing a completion, since it never
+    collected an exit status. Talaria still wakes the session with an unknown exit code."""
     try:
         with registry._lock:
             detached = [s for s in registry._running.values() if getattr(s, "detached", False)]
@@ -136,12 +126,9 @@ def _completion_homes() -> list[Path]:
 def _restore_and_sweep_completions(registry) -> None:
     from tools import async_delegation
 
-    restore = getattr(registry, "restore_completions", None)
-    if not callable(restore):
-        return  # Older Agents already restore at registry import and have no orphan sweep.
     # The Agent binds the launch home itself, even when the first drain is in a named profile.
-    restore()
-    interval = float(getattr(async_delegation, "ORPHAN_SWEEP_INTERVAL_S", 0) or 0)
+    registry.restore_completions()
+    interval = float(async_delegation.ORPHAN_SWEEP_INTERVAL_S)
     for home in _completion_homes():
         if time.monotonic() - _LAST_COMPLETION_SWEEP.get(home, -float("inf")) < interval:
             continue
@@ -150,9 +137,7 @@ def _restore_and_sweep_completions(registry) -> None:
                 if _is_named_profile(home) and home not in _RESTORED_COMPLETION_HOMES:
                     async_delegation.restore_undelivered_completions(registry.completion_queue)
                     _RESTORED_COMPLETION_HOMES.add(home)
-                sweep = getattr(async_delegation, "maybe_sweep_orphaned_completions", None)
-                if callable(sweep):
-                    sweep(registry.completion_queue)
+                async_delegation.maybe_sweep_orphaned_completions(registry.completion_queue)
             # Taken after the Agent stamped its own sweep, so the next entry never lands inside its interval.
             _LAST_COMPLETION_SWEEP[home] = time.monotonic()
         except Exception:  # noqa: BLE001 - retry this home without blocking other profiles or queued events
@@ -311,13 +296,10 @@ def consumed_ids(process_ids: list[str]) -> list[str]:
 
 
 def _delivery_api():
-    """The Agent's durable delivery ledger (``tools.async_delegation``), or None on an Agent without it."""
-    try:
-        from tools import async_delegation
-    except Exception:  # noqa: BLE001
-        return None
-    names = ("claim_event_delivery", "complete_event_delivery", "release_event_delivery")
-    return async_delegation if all(callable(getattr(async_delegation, n, None)) for n in names) else None
+    """The Agent's durable delivery ledger (``tools.async_delegation``)."""
+    from tools import async_delegation
+
+    return async_delegation
 
 
 def _ledger_event(evt: dict) -> dict:
@@ -328,11 +310,8 @@ def claim_delivery(evt: dict, consumer: str) -> str | None:
     """Claim a durable delegation completion before delivering it (TAL-459).
 
     ``None``: another consumer holds it, or the ledger already delivered or dropped it, so do not deliver.
-    ``""``: nothing durable to acknowledge (interim notice, legacy event, or an Agent without the ledger)."""
-    api = _delivery_api()
-    if api is None:
-        return ""
-    claim_id = api.claim_event_delivery(_ledger_event(evt), consumer)
+    ``""``: nothing durable to acknowledge (interim notice or legacy event)."""
+    claim_id = _delivery_api().claim_event_delivery(_ledger_event(evt), consumer)
     if claim_id is None and consumer == "webui" and evt.get("origin_ui_session_id"):
         from hermes_constants import get_hermes_home
         home = Path(get_hermes_home()).resolve()
@@ -346,32 +325,29 @@ def claim_delivery(evt: dict, consumer: str) -> str | None:
 
 
 def complete_delivery(evt: dict, claim_id: str) -> bool:
-    api = _delivery_api()
-    if api is None or not claim_id:
+    if not claim_id:
         return False
-    api.complete_event_delivery(_ledger_event(evt), claim_id)
+    _delivery_api().complete_event_delivery(_ledger_event(evt), claim_id)
     return True
 
 
 def release_delivery(evt: dict, claim_id: str) -> bool:
-    api = _delivery_api()
-    if api is None or not claim_id:
+    if not claim_id:
         return False
-    api.release_event_delivery(_ledger_event(evt), claim_id)
+    _delivery_api().release_event_delivery(_ledger_event(evt), claim_id)
     return True
 
 
 def defer_delivery(evt: dict, claim_id: str) -> bool:
     """Hand back a claim the target never admitted (its session was busy) without spending a delivery attempt;
     the Agent drops a row for good after its attempt budget, so a busy session must not burn it."""
-    api = _delivery_api()
-    if api is None or not claim_id:
+    if not claim_id:
         return False
-    defer = getattr(api, "defer_completion_delivery", None)
-    if not callable(defer) or evt.get("type") != "async_delegation" or not evt.get("delegation_id"):
+    api = _delivery_api()
+    if evt.get("type") != "async_delegation" or not evt.get("delegation_id"):
         api.release_event_delivery(_ledger_event(evt), claim_id)
         return True
-    defer(str(evt["delegation_id"]), claim_id)
+    api.defer_completion_delivery(str(evt["delegation_id"]), claim_id)
     return True
 
 
@@ -380,9 +356,6 @@ def format_notification(evt: dict) -> str:
         try:
             from tools import process_registry
 
-            # Older formatters fall through unknown events to an exit notification.
-            if evt.get("type") == "heartbeat" and not callable(getattr(getattr(process_registry, "ProcessRegistry", None), "_emit_heartbeat", None)):
-                return ""
             return process_registry.format_process_notification(evt) or ""
         except Exception:  # noqa: BLE001
             return ""
@@ -484,22 +457,15 @@ def _live_delegations() -> dict[str, dict]:
 
 _TAIL_SCAN = 4096
 _TAIL_LINE = 1000
-_ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])")
-
-
-def _strip_ansi(text: str) -> str:
-    try:
-        from tools.ansi_strip import strip_ansi
-    except Exception:  # noqa: BLE001 - an Agent without the helper
-        return _ANSI.sub("", text)
-    return strip_ansi(text)
 
 
 def output_tail(buffer) -> str:
     """TAL-2340: a running process's latest output line: the last non-empty line of its rolling buffer without escape
     sequences (a `\r` redraw counts as a line, so a progress bar shows its last frame), bounded for transfer. The server
     redacts and caps what clients show."""
-    text = _strip_ansi(buffer[-_TAIL_SCAN:] if isinstance(buffer, str) else "")
+    from tools.ansi_strip import strip_ansi
+
+    text = strip_ansi(buffer[-_TAIL_SCAN:] if isinstance(buffer, str) else "")
     return next((line.strip()[:_TAIL_LINE] for line in reversed(text.splitlines()) if line.strip()), "")
 
 
@@ -586,18 +552,9 @@ def _goal_text(content) -> str:
     if not isinstance(content, str):
         return ""
     if content.startswith(_CONTENT_JSON_PREFIX):
-        try:
-            from hermes_state import SessionDB
-            decode = getattr(SessionDB, "_decode_content", None)
-        except ImportError:
-            decode = None
-        if callable(decode):
-            content = decode(content)
-        else:
-            try:
-                content = json.loads(content[len(_CONTENT_JSON_PREFIX):])
-            except ValueError:
-                pass  # Legacy malformed marker rows remain literal text, as in the Agent.
+        from hermes_state import SessionDB
+
+        content = SessionDB._decode_content(content)
     if isinstance(content, list):
         texts = [p.get("text") for p in content if isinstance(p, dict) and p.get("type") == "text"]
         return str(texts[0]) if texts and texts[0] else ""
@@ -838,9 +795,7 @@ def register(registry_) -> None:
             claim = claim_delivery(evt, consumer)
             result = {"claim_id": claim}
             if claim is None:
-                api = _delivery_api()
-                lookup = getattr(api, "get_durable_delegation", None)
-                row = lookup(str(evt.get("delegation_id") or "")) if callable(lookup) else None
+                row = _delivery_api().get_durable_delegation(str(evt.get("delegation_id") or ""))
                 if row and row.get("delivery_state") == "pending":
                     result["retryable"] = True
             return result

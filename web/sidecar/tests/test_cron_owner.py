@@ -18,18 +18,11 @@ import pytest
 
 from conftest import AGENT_DIR, AGENT_PYTHON, OneToolCallModel, SidecarProcess, isolated_env, ledger_row, requires_agent
 
-canonical_agent = pytest.mark.skipif(
-    AGENT_DIR is None or not (AGENT_DIR / "cron/scheduler_authority.py").exists(),
-    reason="Agent predates canonical cron ownership",
-)
-# v0.22.6 books a manual run as an extra fire: no repeat spent and the schedule kept (upstream PR #146113).
-EXTRA_FIRE = AGENT_DIR is not None and (AGENT_DIR / "cron/extra_fire.py").exists()
-
 
 def assert_manual_run_booked(stored, before):
-    assert stored["repeat"]["completed"] == (0 if EXTRA_FIRE else 1), stored
-    if EXTRA_FIRE:
-        assert stored["next_run_at"] == before["next_run_at"], (stored, before)
+    # The Agent books a manual run as an extra fire: no repeat spent and the schedule kept (upstream PR #146113).
+    assert stored["repeat"]["completed"] == 0, stored
+    assert stored["next_run_at"] == before["next_run_at"], (stored, before)
 
 
 def wait_for(read, timeout=60):
@@ -191,7 +184,6 @@ def admissions(home):
 
 
 @requires_agent
-@canonical_agent
 def test_started_cancel_waits_for_exact_owner_terminal_before_releasing_run(owner):
     home, model, sidecar, job = owner
     model.terminal_release.unlink()
@@ -238,7 +230,6 @@ AGENT_CANCEL = "import sys; from cron.cancellation import cancel_run; assert can
 
 
 @requires_agent
-@canonical_agent
 @pytest.mark.parametrize("via", ["web", "agent"])
 def test_stopped_manual_run_books_cancelled_without_a_failure_notice(owner, via):
     home, model, sidecar, job = owner
@@ -284,7 +275,6 @@ def workers(sidecar):
 
 
 @requires_agent
-@canonical_agent
 @pytest.mark.parametrize("restart_sidecar,remove_job", [(False, False), (True, False), (True, True)])
 def test_lost_submitter_recovers_same_admission_without_another_run(owner, restart_sidecar, remove_job):
     home, model, sidecar, job = owner
@@ -338,7 +328,6 @@ def test_lost_submitter_recovers_same_admission_without_another_run(owner, resta
 
 
 @requires_agent
-@canonical_agent
 def test_owner_disconnect_and_restart_leave_unknown_guarded_without_resubmission(owner):
     home, model, sidecar, job = owner
     params = {"profile_home": str(home), "job_id": job["id"]}
@@ -346,7 +335,6 @@ def test_owner_disconnect_and_restart_leave_unknown_guarded_without_resubmission
     assert model.started.wait(60), sidecar.stderr_lines[-20:]
     [original] = admissions(home)
     record_path = home / "cron/manual_runs" / (job["id"] + ".json")
-    identity = json.loads(record_path.read_text())["execution_id"]
     model.gateway.kill()
     model.gateway.wait(timeout=10)
     reply = wait_for(lambda: (message if message.get("id") == request else None) if (message := sidecar.next_message(timeout=60)) else None)
@@ -370,22 +358,15 @@ def test_owner_disconnect_and_restart_leave_unknown_guarded_without_resubmission
     [after] = admissions(home)
     assert after["admission_id"] == original["admission_id"], after
     assert len(model.requests) == 1
-    if (AGENT_DIR / "gateway/session_unattended_unknown.py").exists():
-        # v0.22.3 settles the lost turn as interrupted; Web books it once, like the Agent's own scheduler.
-        assert (after["status"], after["outcome"]) == ("terminal", "interrupted"), after
-        assert retry.get("result", {}).get("success") is False, retry
-        assert not record_path.exists()
-        stored = sidecar.result("cron.get", params)["job"]
-        assert stored["state"] == "scheduled" and stored["last_error"] == "interrupted", stored
-    else:
-        assert retry.get("error", {}).get("data", {}).get("condition") == "cron_execution_unverified", retry
-        assert json.loads(record_path.read_text())["execution_id"] == identity
-        assert after["status"] == "unknown", after
-        assert sidecar.result("cron.output", params)["outputs"] == []
+    # The Agent settles the lost turn as interrupted; Web books it once, like the Agent's own scheduler.
+    assert (after["status"], after["outcome"]) == ("terminal", "interrupted"), after
+    assert retry.get("result", {}).get("success") is False, retry
+    assert not record_path.exists()
+    stored = sidecar.result("cron.get", params)["job"]
+    assert stored["state"] == "scheduled" and stored["last_error"] == "interrupted", stored
 
 
 @requires_agent
-@canonical_agent
 @pytest.mark.parametrize("state", ["scheduled", "paused", "disabled"])
 def test_successful_manual_run_books_once_and_preserves_operator_schedule_state(owner, state):
     home, model, sidecar, job = owner
@@ -411,7 +392,6 @@ def test_successful_manual_run_books_once_and_preserves_operator_schedule_state(
 
 
 @requires_agent
-@canonical_agent
 def test_schedule_mutations_cannot_remove_a_manual_execution_recovery_barrier(owner):
     home, model, sidecar, job = owner
     params = {"profile_home": str(home), "job_id": job["id"]}

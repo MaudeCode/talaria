@@ -51,8 +51,6 @@ def test_create_pins_execution_profile_model(handshaken: SidecarProcess, hermes_
     assert stored[0]["provider"] == expected_provider
     assert stored[0]["model"] == expected_model
     assert stored[0]["profile"] == "research"
-    # The pin replaces any model snapshot; Agent 0.21.3 still stores its snapshot keys, empty for a pinned job.
-    assert not any(value for key, value in stored[0].items() if key.endswith("_snapshot")), stored[0]
     assert handshaken.result("cron.list", {"profile_home": str(hermes_home)})["jobs"] == []
 
 
@@ -89,10 +87,7 @@ import json, sys
 sys.path.insert(0, sys.argv[1])
 from cron.jobs import get_job, update_job
 from cron import scheduler
-try:
-    from cron.scheduler_tick import tick
-except ImportError:  # Agent 0.21.3 keeps its scheduled tick in cron.scheduler
-    from cron.scheduler import tick
+from cron.scheduler_tick import tick
 from agent.secret_scope import get_secret
 original_run = scheduler.run_job
 def observe_scope(job, **kwargs):
@@ -132,7 +127,7 @@ def test_a_failed_profile_snapshot_leaves_no_orphan_job(handshaken: SidecarProce
 
 @requires_agent
 def test_delivery_options_list_messaging_platforms(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
-    # Agent 0.22.3 moved messaging platforms out of _KNOWN_DELIVERY_PLATFORMS into plugin registry entries.
+    # Messaging platforms come from the Agent's plugin registry entries, not _KNOWN_DELIVERY_PLATFORMS.
     platforms = [p["value"] for p in handshaken.result("cron.delivery_options", {"profile_home": str(hermes_home)})["platforms"]]
     assert platforms[:2] == ["local", "origin"] and platforms[2:] == sorted(platforms[2:])
     assert {"telegram", "discord", "slack", "matrix"} <= set(platforms), platforms
