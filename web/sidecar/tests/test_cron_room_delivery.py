@@ -1,39 +1,16 @@
-"""Room choices require the installed Agent's delivery parser, never a version guess."""
+"""Room delivery posts through the installed Agent, and delivery labels come from each profile's platform registry."""
 from types import SimpleNamespace
 import contextlib
 import subprocess
-
-import pytest
 
 from talaria_sidecar.methods import cron
 from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 
 
-@pytest.mark.parametrize('supported', [False, True])
-def test_room_support_requires_the_delivery_parser(monkeypatch, tmp_path, supported):
-    module = SimpleNamespace(_KNOWN_DELIVERY_PLATFORMS={'telegram'})
-    if supported:
-        module.parse_room_deliver_token = lambda token: token
-    monkeypatch.setattr(cron.importlib, 'import_module', lambda name: module)
-    methods = {}
-
-    class Registry:
-        def method(self, name, **kwargs):
-            return lambda fn: methods.setdefault(name, fn)
-
-    cron.register(Registry())
-    result = methods['cron.delivery_options'](None, {'profile_home': str(tmp_path)})
-    assert result['room_delivery_supported'] is supported
-    assert [p['value'] for p in result['platforms']] == ['local', 'origin', 'telegram']
-
-
 @requires_agent
 def test_real_agent_room_delivery_posts_one_scheduled_message(handshaken, hermes_home):
-    supported = (AGENT_DIR / 'cron/scheduler_delivery_room.py').exists()
     options = handshaken.result('cron.delivery_options', {'profile_home': str(hermes_home)})
-    assert options['room_delivery_supported'] is supported
-    if not supported:
-        return
+    assert options['room_delivery_supported'] is True
     code = """
 import sys
 sys.path.insert(0, sys.argv[1])
@@ -76,8 +53,6 @@ def _delivery_options(monkeypatch, plugins_by_home, labels_by_home):
 
     def import_module(name):
         if name == 'gateway.platform_registry':
-            if labels_by_home is None:
-                raise ImportError(name)
             return SimpleNamespace(platform_registry=SimpleNamespace(get=get))
         return scheduler
 
@@ -112,8 +87,3 @@ def test_delivery_labels_come_from_each_profiles_platform_registry(monkeypatch, 
         {'value': 'telegram', 'label': 'Telegram'},
     ]
     assert [(p['value'], p['label']) for p in options(home)[2:]] == [('teams', 'Teams Personal'), ('telegram', 'Telegram')]
-
-
-def test_delivery_labels_fall_back_to_capitalized_names_without_a_registry(monkeypatch, tmp_path):
-    options = _delivery_options(monkeypatch, {str(tmp_path): ['teams']}, None)
-    assert [(p['value'], p['label']) for p in options(tmp_path)[2:]] == [('teams', 'Teams'), ('telegram', 'Telegram')]

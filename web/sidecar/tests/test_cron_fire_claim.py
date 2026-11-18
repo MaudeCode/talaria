@@ -10,10 +10,7 @@ import sys
 import time
 import types
 
-import pytest
-
-from talaria_sidecar.errors import RpcError
-from talaria_sidecar.methods import cron
+from talaria_sidecar.methods import cron, cron_execution
 
 
 class _Ctx:
@@ -23,7 +20,7 @@ class _Ctx:
         pass
 
 
-def _ignore_terminate(job, execution_home, result_queue):
+def _ignore_terminate(job, execution_home, result_queue, cancel_event):
     import os as _os
     import signal as _signal
     import time as _time
@@ -34,7 +31,7 @@ def _ignore_terminate(job, execution_home, result_queue):
     _time.sleep(60)
 
 
-def _spawn_grandchild(job, execution_home, result_queue):
+def _spawn_grandchild(job, execution_home, result_queue, cancel_event):
     import subprocess as _subprocess
     import time as _time
 
@@ -65,10 +62,21 @@ def _stub_jobs(monkeypatch, *, owns: bool = True, heartbeat=lambda job_id, *, ex
     monkeypatch.setattr(cron, "_jobs", lambda: jobs)
     monkeypatch.setattr(cron, "scoped_home", lambda home, **kwargs: contextlib.nullcontext(home))
     monkeypatch.setitem(sys.modules, "cron", types.ModuleType("cron"))
-    monkeypatch.setitem(sys.modules, "cron.scheduler", types.ModuleType("cron.scheduler"))
+    monkeypatch.setitem(sys.modules, "cron.scheduler", types.SimpleNamespace(SILENT_MARKER="[SILENT]", _deliver_result=lambda job, content: None))
     monkeypatch.setattr(cron, "_result_timeout", lambda job: 60.0)
     monkeypatch.setattr(cron, "_delivery_home", lambda scheduler, home: contextlib.nullcontext())
+    _stub_attempt_ledger(monkeypatch)
     return calls
+
+
+def _stub_attempt_ledger(monkeypatch) -> None:
+    """The Agent's executions ledger and cancel marker behind a script run's attempt row; no stop is requested."""
+    monkeypatch.setitem(sys.modules, "cron.executions", types.SimpleNamespace(
+        create_execution=lambda job_id, *, source: {"id": "attempt-1"}, mark_execution_running=lambda execution_id: None,
+        finish_execution=lambda execution_id, *, success, error=None: None))
+    monkeypatch.setitem(sys.modules, "cron.cancellation", types.SimpleNamespace(
+        CancelRequest=lambda execution_id: types.SimpleNamespace(is_set=lambda: False, reason=None)))
+    monkeypatch.setattr(cron_execution, "scoped_home", lambda home, **kwargs: contextlib.nullcontext(home))
 
 
 def _run_now(monkeypatch, tmp_path) -> tuple[dict, list]:
@@ -88,14 +96,6 @@ def _method(name: str):
     return methods[name]
 
 
-def test_stop_refuses_explicitly_on_an_agent_without_the_cancel_api(monkeypatch, tmp_path) -> None:
-    _stub_jobs(monkeypatch)
-    with pytest.raises(RpcError) as refusal:
-        _method("cron.cancel")(_Ctx(), {"profile_home": str(tmp_path), "job_id": "job-1"})
-    assert refusal.value.data["condition"] == "cron_cancel_unsupported"
-    assert "stop" in str(refusal.value).lower()
-
-
 def test_run_now_executes_the_claimed_record(monkeypatch, tmp_path) -> None:
     _stub_jobs(monkeypatch)
     _, seen = _run_now(monkeypatch, tmp_path)
@@ -108,7 +108,7 @@ def test_run_now_executes_the_claimed_record(monkeypatch, tmp_path) -> None:
 def test_completion_is_fenced_by_the_claim_owner(monkeypatch, tmp_path) -> None:
     calls = _stub_jobs(monkeypatch, owns=False)
     monkeypatch.setattr(cron, "_run_in_child", lambda *args, **kwargs: (True, "output", "response", None))
-    outcome = cron.run_tracked({"id": "job-1", "name": "Job"}, tmp_path, None, _Ctx(), "owner-1")
+    outcome = cron.run_tracked({"id": "job-1", "name": "Job", "no_agent": True}, tmp_path, None, _Ctx(), "owner-1")
     assert "claim" in str(outcome.get("error")), outcome
     assert calls["saved"] == []
     assert calls["marked"] == [("job-1", False, "owner-1")]
@@ -128,7 +128,7 @@ def test_a_worker_that_ignores_terminate_is_killed_before_the_run_ends(monkeypat
     monkeypatch.setattr(cron, "_CLAIM_HEARTBEAT_SECONDS", 0.0)
     monkeypatch.setattr(cron, "_CLAIM_MISS_CONFIRM_SECONDS", 0.0)
     monkeypatch.setitem(cron._RUNNING, "job-1", time.time())
-    outcome = cron.run_tracked({"id": "job-1", "name": "Job", "pid_file": str(pid_file)}, tmp_path, None, _Ctx(), "owner-1")
+    outcome = cron.run_tracked({"id": "job-1", "name": "Job", "no_agent": True, "pid_file": str(pid_file)}, tmp_path, None, _Ctx(), "owner-1")
     pid = int(pid_file.read_text(encoding="utf-8"))
     try:
         assert "claim" in str(outcome.get("error")), outcome
@@ -173,7 +173,7 @@ def test_stopping_a_run_ends_the_processes_its_worker_started(monkeypatch, tmp_p
     monkeypatch.setattr(cron, "_child_main", _spawn_grandchild)
     monkeypatch.setattr(cron, "_CLAIM_HEARTBEAT_SECONDS", 0.0)
     monkeypatch.setattr(cron, "_CLAIM_MISS_CONFIRM_SECONDS", 0.0)
-    cron.run_tracked({"id": "job-1", "name": "Job", "pid_file": str(pid_file)}, tmp_path, None, _Ctx(), "owner-1")
+    cron.run_tracked({"id": "job-1", "name": "Job", "no_agent": True, "pid_file": str(pid_file)}, tmp_path, None, _Ctx(), "owner-1")
     pid = int(pid_file.read_text(encoding="utf-8"))
     try:
         deadline = time.monotonic() + 5

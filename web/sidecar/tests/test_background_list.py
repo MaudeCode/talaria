@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import sqlite3
+import sys
 import threading
 from contextlib import closing
 from types import SimpleNamespace
@@ -164,5 +166,7 @@ def test_a_running_process_lists_its_latest_output_line(monkeypatch: pytest.Monk
         "proc_quiet": proc("proc_quiet", "\n  \n"),
     }, _finished={"proc_done": proc("proc_done", "built\n", exited=True)})
     monkeypatch.setattr(process, "_registry", lambda: registry)
+    # The Agent's own stripper, as tools.ansi_strip answers for the colour codes above.
+    monkeypatch.setitem(sys.modules, "tools.ansi_strip", SimpleNamespace(strip_ansi=lambda text: re.sub(r"\x1b\[[0-9;]*m", "", text)))
     tails = {p["process_id"]: p["output_tail"] for p in process._owned_processes({"web-a"})}
     assert tails == {"proc_ansi": "✓ 41 passing", "proc_bar": "Downloading 55%", "proc_long": "x" * 1000, "proc_quiet": "", "proc_done": ""}

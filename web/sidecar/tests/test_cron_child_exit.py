@@ -9,9 +9,10 @@ import time
 import types
 
 from talaria_sidecar.methods import cron
+from test_cron_fire_claim import _stub_attempt_ledger
 
 
-def _die(job, execution_home, result_queue):
+def _die(job, execution_home, result_queue, cancel_event):
     os._exit(3)
 
 
@@ -31,9 +32,10 @@ def test_a_child_that_exits_without_a_result_fails_the_run_before_its_deadline(m
     monkeypatch.setattr(cron, "_result_timeout", lambda job: 30.0)
     monkeypatch.setitem(sys.modules, "cron", types.ModuleType("cron"))
     monkeypatch.setitem(sys.modules, "cron.scheduler", types.ModuleType("cron.scheduler"))
+    _stub_attempt_ledger(monkeypatch)
     monkeypatch.setitem(cron._RUNNING, "job-1", time.time())
 
-    outcome = cron.run_tracked({"id": "job-1", "name": "Job"}, tmp_path, None, _Ctx())
+    outcome = cron.run_tracked({"id": "job-1", "name": "Job", "no_agent": True}, tmp_path, None, _Ctx())
 
     assert outcome["status"] == "failed"
     assert outcome["error"] == "cron run subprocess exited with code 3 without producing a result"

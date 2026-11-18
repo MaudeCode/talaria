@@ -12,7 +12,6 @@ from __future__ import annotations
 import contextlib
 import heapq
 import importlib
-import inspect
 import logging
 import multiprocessing
 import queue
@@ -22,7 +21,7 @@ import signal
 import threading
 import time
 from datetime import datetime
-from functools import wraps
+from functools import partial, wraps
 from pathlib import Path
 
 from ..errors import InvalidParams, RpcError
@@ -62,32 +61,10 @@ class _OperatorStop(Exception):
 
 
 def _main_model_pin() -> tuple[str | None, str | None]:
-    """``(provider, model)`` the scoped profile's main agent runs on: the Agent's own ``cron.jobs._main_model_pin``.
-
-    Agent 0.21.3 predates that helper, so it is rebuilt from the readers 0.21.4 composes: the home's effective
-    ``config.yaml`` model and the provider the runtime resolves for it. ``(None, None)`` when no model is configured.
-    """
+    """``(provider, model)`` the scoped profile's main agent runs on: the Agent's own ``cron.jobs._main_model_pin``."""
     from cron import jobs
 
-    if hasattr(jobs, "_main_model_pin"):
-        return jobs._main_model_pin()
-    from hermes_cli.config_effective import load_user_config_effective
-    from hermes_constants import get_hermes_home
-
-    cfg_path = get_hermes_home() / "config.yaml"
-    cfg = load_user_config_effective(cfg_path) if cfg_path.exists() else {}
-    model_cfg = cfg.get("model") or {}
-    model = model_cfg.get("default") or model_cfg.get("model") if isinstance(model_cfg, dict) else model_cfg
-    model = model.strip() or None if isinstance(model, str) else None
-    if not model:
-        return None, None
-    provider = None
-    with contextlib.suppress(Exception):
-        from hermes_cli.runtime_provider import resolve_runtime_provider
-
-        resolved = resolve_runtime_provider(requested=None).get("provider")
-        provider = resolved.strip().lower() or None if isinstance(resolved, str) else None
-    return provider, model
+    return jobs._main_model_pin()
 
 
 class CronUnavailable(RpcError):
@@ -151,7 +128,7 @@ def _settled_mutation(method):
         from .cron_execution import ManualExecution, Unverified
         home, jobs = profile_home_param(params), _jobs()
         with _store(home):
-            job = getattr(jobs, "resolve_job_ref", jobs.get_job)(_job_ref(params))
+            job = jobs.resolve_job_ref(_job_ref(params))
         if job is None:
             return method(ctx, params)
         job_id = _job_id({"job_id": job["id"]})
@@ -191,14 +168,8 @@ def _continuity_refs(context_from, continuity: bool) -> list:
     return refs
 
 
-def _schedule_policy_available() -> bool:
-    """Agent 0.22.6's ``create_job`` takes the per-job schedule policy; an older ``update_job`` would store the keys unread."""
-    return set(_SCHEDULE_POLICY_FIELDS) <= set(inspect.signature(_jobs().create_job).parameters)
-
-
 def _field_updates(body: dict, current_context_from=None) -> dict:
-    fields = _PASSTHROUGH_FIELDS + _SCHEDULE_POLICY_FIELDS if _schedule_policy_available() else _PASSTHROUGH_FIELDS
-    updates = {key: body[key] for key in fields if key in body}
+    updates = {key: body[key] for key in _PASSTHROUGH_FIELDS + _SCHEDULE_POLICY_FIELDS if key in body}
     if "monitor" in body:
         updates.update(_monitor_storage(body["monitor"]))
     if "continuity" in body:
@@ -218,32 +189,19 @@ def job_for_api(job: dict) -> dict:
 
 # ── store health and foreign runs (TAL-810) ─────────────────────────────
 
-def _store_health(cron_dir: Path) -> dict | None:
-    """The Agent's cross-process write probe: ``None`` when the store accepts writes or the Agent predates it."""
-    try:
-        from cron.store_health import probe_report
-    except ImportError:
-        return None
-    return probe_report(cron_dir)
-
-
 def _live_executions(home: Path, job_ids: list[str], *, strict: bool = False) -> dict[str, dict]:
     """Jobs with an attempt claimed or running under a live owner: the gateway scheduler or another process.
 
     The executions ledger lives under ``get_hermes_home()``, not the cron store override, so it is read in the
     profile's scope. A store without a ledger never ran anything, and is not created by this read. An unreadable
     ledger reads idle for a listing; ``strict`` (run admission) refuses instead, since it cannot prove the job idle."""
-    try:
-        from cron import executions
-        # Newest live attempt, not the latest row: a refused Run now's newer row must not hide the run it lost to.
-        read = getattr(executions, "live_executions", None) or (lambda ids: {job_id: record for job_id in ids if (record := executions.live_inflight_execution(job_id))})
-    except ImportError:
-        return {}
     if not job_ids or not (Path(home).expanduser() / "cron" / "executions.db").is_file():
         return {}
+    # Newest live attempt, not the latest row: a refused Run now's newer row must not hide the run it lost to.
+    from cron.executions import live_executions
     try:
         with scoped_home(home):
-            return read([job_id for job_id in job_ids if job_id])
+            return live_executions([job_id for job_id in job_ids if job_id])
     except Exception as exc:  # noqa: BLE001 - an unreadable ledger cannot prove a run; the list still loads
         if strict:
             raise RpcError("Cannot tell whether this task is already running: its executions ledger is unreadable", condition="cron_ledger_unreadable") from exc
@@ -252,11 +210,8 @@ def _live_executions(home: Path, job_ids: list[str], *, strict: bool = False) ->
 
 
 def _stoppable(home: Path, live: dict[str, dict]) -> dict[str, dict]:
-    """Each live attempt an operator can stop, and whether a stop is already on its way. Empty on an Agent that cannot."""
-    try:
-        from cron.cancellation import cancel_requested
-    except ImportError:
-        return {}
+    """Each live attempt an operator can stop, and whether a stop is already on its way."""
+    from cron.cancellation import cancel_requested
     with scoped_home(home, read_only=True):
         return {job_id: {"id": record["id"], "stopping": cancel_requested(record["id"])} for job_id, record in live.items()}
 
@@ -294,12 +249,7 @@ def _owner_fence(jobs, job_id: str, owner: str | None, *, protect_unclaimed=Fals
 def _mark_run(jobs, job_id: str, success: bool, error, owner: str | None, delivery_error=None) -> None:
     """``mark_job_run`` fenced by the run's fire claim: a run that lost its claim records nothing over the new owner's."""
     fence = {"expected_fire_owner": owner} if owner else {}
-    try:
-        jobs.mark_job_run(job_id, success, error, delivery_error=delivery_error, **fence)
-    except TypeError:
-        if owner:
-            raise
-        jobs.mark_job_run(job_id, success, error)
+    jobs.mark_job_run(job_id, success, error, delivery_error=delivery_error, **fence)
 
 
 def _elapsed(record: dict) -> float:
@@ -424,9 +374,7 @@ def _child_main(job, execution_home, result_queue, cancel_event=None, execution_
             if recovering:
                 from .cron_execution import recover
                 return recover(job, execution_id, cancel_event)
-            if execution_id is not None:
-                return run_job(job, cancel_event=cancel_event, execution_id=execution_id)
-            return run_job(job, cancel_event=cancel_event) if cancel_event is not None else run_job(job)
+            return run_job(job, cancel_event=cancel_event, execution_id=execution_id)
 
         if execution_home is None:
             result = execute()
@@ -498,14 +446,12 @@ def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None, executi
     stop = execution.stop_reason if execution is not None else stop
     ctx_mp = multiprocessing.get_context("spawn")
     result_queue = ctx_mp.Queue(maxsize=1)
-    cancel_event = ctx_mp.Event() if execution is not None or stop is not None else None
+    cancel_event = ctx_mp.Event()
 
     def start(recovering=False):
-        args = (job, str(execution_home) if execution_home else None, result_queue)
+        args = (job, str(execution_home) if execution_home else None, result_queue, cancel_event)
         if execution is not None:
-            args += (cancel_event, execution.execution_id, recovering)
-        elif cancel_event is not None:
-            args += (cancel_event,)
+            args += (execution.execution_id, recovering)
         child = ctx_mp.Process(target=_worker, args=(_child_main, *args))
         child.start()
         return child
@@ -567,7 +513,7 @@ def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None, executi
                         status, payload = "cancelled", ["cancelled", ""]
                         break
                     cancel("cancelled")
-                if stop is not None and settling is None and (reason := stop()):
+                if settling is None and (reason := stop()):
                     cancel(reason)
                 if not process.is_alive():
                     # The child may have put its result just before exiting; otherwise it died (OOM, signal) without one.
@@ -632,11 +578,8 @@ def _delivery_home(scheduler, home: Path):
 
 
 def _platform_labels(names) -> dict[str, str]:
-    """Display names (``PlatformEntry.label``) from the bound profile's platform registry; empty on Agents without one."""
-    try:
-        registry = importlib.import_module("gateway.platform_registry").platform_registry
-    except Exception:  # noqa: BLE001
-        return {}
+    """Display names (``PlatformEntry.label``) from the bound profile's platform registry."""
+    registry = importlib.import_module("gateway.platform_registry").platform_registry
     labels = {}
     for name in names:
         with contextlib.suppress(Exception):
@@ -674,18 +617,16 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
         return cron_execution.run(job, store_home, execution_home, ctx, claim_owner, recovery_only=recovery_only)
     jobs = _jobs()
     scheduler = importlib.import_module("cron.scheduler")
-    silent_marker = getattr(scheduler, "SILENT_MARKER", "[SILENT]")
-    deliver = getattr(scheduler, "_deliver_result", None)
     job_id = job.get("id", "")
     execution_home = execution_home or store_home
     outcome: dict = {"job_id": job_id, "status": "completed"}
     attempt = None
     try:
         attempt = cron_execution.open_attempt(execution_home, job_id)
-        stop = (lambda: cron_execution.operator_cancel(execution_home, attempt)) if attempt else None
+        stop = partial(cron_execution.operator_cancel, execution_home, attempt)
         heartbeat = _heartbeat(store_home, job_id, claim_owner)
         success, output, final_response, error = _run_in_child(job, execution_home, ctx, heartbeat if claim_owner else None, stop=stop)
-        if stop is not None and (reason := stop()):
+        if reason := stop():
             raise _OperatorStop(reason)
         with _store(store_home), _owner_fence(jobs, job_id, claim_owner) as owns, contextlib.ExitStack() as delivery:
             if not owns:
@@ -693,11 +634,11 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
             delivery.enter_context(_delivery_home(scheduler, store_home))
             jobs.save_job_output(job_id, output)
             content = final_response if success else f"⚠️ Cron job '{job.get('name', job_id)}' failed:\n{error}"
-            should_deliver = bool(content) and not (success and silent_marker in content.strip().upper())
+            should_deliver = bool(content) and not (success and scheduler.SILENT_MARKER in content.strip().upper())
             delivery_error = None
-            if should_deliver and deliver is not None:
+            if should_deliver:
                 try:
-                    delivery_error = deliver(job, content)
+                    delivery_error = scheduler._deliver_result(job, content)
                 except Exception as exc:  # noqa: BLE001
                     delivery_error = str(exc)
             if success and not final_response:
@@ -739,12 +680,7 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
 def register(registry) -> None:
     @registry.method("cron.blueprints")
     def blueprints(ctx: CallContext, params: dict) -> dict:
-        try:
-            catalog = importlib.import_module("cron.blueprint_catalog")
-        except ModuleNotFoundError as exc:
-            if exc.name != "cron.blueprint_catalog":
-                raise
-            return {"blueprints": []}
+        catalog = importlib.import_module("cron.blueprint_catalog")
         with scoped_home(profile_home_param(params)):
             rows = []
             for blueprint in catalog.list_blueprints():
@@ -761,12 +697,7 @@ def register(registry) -> None:
         key, values = params.get("key"), params.get("values")
         if not isinstance(key, str) or not key.strip() or not isinstance(values, dict) or not all(isinstance(v, str) for v in values.values()):
             raise InvalidParams("key and string slot values are required")
-        try:
-            catalog = importlib.import_module("cron.blueprint_catalog")
-        except ModuleNotFoundError as exc:
-            if exc.name != "cron.blueprint_catalog":
-                raise
-            raise InvalidParams("Automation blueprints are unavailable") from exc
+        catalog = importlib.import_module("cron.blueprint_catalog")
         with scoped_home(profile_home_param(params)):
             blueprint = catalog.get_blueprint(key)
             if blueprint is None:
@@ -793,8 +724,10 @@ def register(registry) -> None:
         result: dict = {"jobs": listed}
         if params.get("probe_store"):
             with _store(home):
-                result["store_health"] = _store_health(jobs.get_cron_output_dir().parent)
-            result["schedule_policy"] = _schedule_policy_available()
+                from cron.store_health import probe_report
+                result["store_health"] = probe_report(jobs.get_cron_output_dir().parent)
+            # Every supported Agent's create_job takes the per-job schedule policy.
+            result["schedule_policy"] = True
         live = _live_executions(home, [str(job.get("id") or "") for job in listed])
         with _RUNNING_LOCK:
             active = set(_RUNNING)
@@ -938,8 +871,6 @@ def register(registry) -> None:
     def cancel(ctx: CallContext, params: dict) -> dict:
         """Ask the job's live run to stop; the run itself books ``cancelled``. Its schedule is untouched."""
         jobs, home, job_id = _jobs(), profile_home_param(params), _job_id(params)
-        if not hasattr(jobs, "cancel_job_run"):
-            raise RpcError("This Hermes Agent can't stop a running task. Update it to v0.22.6 or newer.", condition="cron_cancel_unsupported")
         with _store(home), scoped_home(home, read_only=True):
             result = jobs.cancel_job_run(job_id, reason=params.get("reason"))
         return {"ok": True, "job_id": job_id, "status": "stopping" if result.get("cancelled") else "not_running"}
@@ -1043,27 +974,14 @@ def register(registry) -> None:
 
     @registry.method("cron.delivery_options", requires_agent=False)
     def delivery_options(ctx: CallContext, params: dict) -> dict:
-        home = profile_home_param(params)
-        known: set = set()
-        labels: dict = {}
-        room_delivery_supported = False
-        for module_name in ("cron.scheduler_delivery", "cron.scheduler"):
-            try:
-                module = importlib.import_module(module_name)
-            except Exception:  # noqa: BLE001
-                continue
-            if module_name == "cron.scheduler_delivery":
-                room_delivery_supported = callable(getattr(module, "parse_room_deliver_token", None))
-            candidates = getattr(module, "_KNOWN_DELIVERY_PLATFORMS", None)
-            if candidates:
-                known = set(candidates)
-                # Agent 0.22.3+ keeps messaging platforms in the plugin registry; mirror its `_is_known_delivery_platform`.
-                plugin_platforms = getattr(module, "_iter_home_target_platforms", None)
-                if plugin_platforms is not None:
-                    with scoped_home(home):
-                        known.update(plugin_platforms())
-                        labels = _platform_labels(known)
-                break
         platforms = [{"value": "local", "label": "Local (save output only)"}, {"value": "origin", "label": "Origin (reply to creator)"}]
+        try:
+            module = importlib.import_module("cron.scheduler_delivery")
+        except Exception:  # noqa: BLE001 - without an importable Agent only the local choices exist
+            return {"platforms": platforms, "room_delivery_supported": False}
+        # Messaging platforms live in the profile's plugin registry; mirror the Agent's `_is_known_delivery_platform`.
+        with scoped_home(profile_home_param(params)):
+            known = {*module._KNOWN_DELIVERY_PLATFORMS, *module._iter_home_target_platforms()}
+            labels = _platform_labels(known)
         platforms.extend({"value": name, "label": labels.get(name) or name.capitalize()} for name in sorted(known))
-        return {"platforms": platforms, "room_delivery_supported": room_delivery_supported}
+        return {"platforms": platforms, "room_delivery_supported": True}

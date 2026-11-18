@@ -79,11 +79,9 @@ def test_scheduled_and_review_tasks_have_columns_and_leave_through_the_agent_ver
     assert {c["name"]: c["label"] for c in board["columns"]}["review"] == "Review"
     shown = {c["name"]: [t["id"] for t in c["tasks"]] for c in board["columns"]}
     assert (shown["ready"], shown["scheduled"], sorted(shown["review"])) == ([ids["plain"]], [ids["parked"]], sorted([ids["handed"], ids["approved"]]))
-    # Each task names the Agent's manual moves from its status, which the server's narrower policy is layered on;
-    # an Agent before 0.21.6 publishes no move table.
+    # Each task names the Agent's manual moves from its status, which the server's narrower policy is layered on.
     review = next(t for c in board["columns"] for t in c["tasks"] if t["id"] == ids["handed"])
-    has_workflow = (pathlib.Path(AGENT_DIR) / "hermes_cli" / "kanban_workflow.py").exists()
-    assert review["agent_move_targets"] == (["done", "ready", "todo", "triage"] if has_workflow else None)
+    assert review["agent_move_targets"] == ["done", "ready", "todo", "triage"]
     assert handshaken.result("kanban.config", home)["columns"] == names
 
     # A reopened review lands in ready whatever the target, so a move to todo is refused rather than misreported.

@@ -54,12 +54,10 @@ def test_tasks_with_the_same_goal_each_keep_their_own_child() -> None:
 def test_an_image_tasks_stored_first_message_still_reads_as_its_goal() -> None:
     from talaria_sidecar.methods.process import _goal_text
     assert _goal_text("Describe it\n\n[Image attached at: /tmp/a.png]\nUse vision_analyze to inspect these images.") == "Describe it"
-    assert _goal_text('\x00json:[{"type": "text", "text": "Describe it"}, {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA"}}]') == "Describe it"
     assert _goal_text("Plain goal") == "Plain goal"
     assert _goal_text(None) == ""
 
 
-@pytest.mark.parametrize("agent", ["absent", "legacy", "decoder"])
 @pytest.mark.parametrize("stored, expected", [
     ("\x00json:" + json.dumps("\x00json:x"), "\x00json:x"),
     ("\x00json:" + json.dumps("\x00json:[1,2]"), "\x00json:[1,2]"),
@@ -68,7 +66,7 @@ def test_an_image_tasks_stored_first_message_still_reads_as_its_goal() -> None:
     ('\x00json:{"text":"not a goal"}', ""),
     ("\x00json:null", ""),
 ])
-def test_stored_goal_decodes_once(monkeypatch, agent, stored, expected) -> None:
+def test_stored_goal_decodes_once(monkeypatch, stored, expected) -> None:
     from talaria_sidecar.methods.process import _goal_text
 
     def decode(content):
@@ -78,8 +76,6 @@ def test_stored_goal_decodes_once(monkeypatch, agent, stored, expected) -> None:
             return content
 
     decoder = Mock(side_effect=decode)
-    session_db = SimpleNamespace(_decode_content=decoder) if agent == "decoder" else SimpleNamespace()
-    monkeypatch.setitem(sys.modules, "hermes_state", None if agent == "absent" else SimpleNamespace(SessionDB=session_db))
+    monkeypatch.setitem(sys.modules, "hermes_state", SimpleNamespace(SessionDB=SimpleNamespace(_decode_content=decoder)))
     assert _goal_text(stored) == expected
-    if agent == "decoder":
-        decoder.assert_called_once_with(stored)
+    decoder.assert_called_once_with(stored)

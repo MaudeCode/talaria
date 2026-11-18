@@ -21,10 +21,6 @@ from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
 
-# Agent 2026.9.24 predates ``kanban_workflow``; its ``VALID_STATUSES`` set holds these columns, in this board order.
-# Delete with that release's entry in ``agent_support.json``.
-_LEGACY_COLUMNS = ("triage", "todo", "scheduled", "ready", "running", "blocked", "review", "done")
-
 
 class NotFound(RpcError):
     def __init__(self, message: str):
@@ -46,17 +42,14 @@ def _kb():
 
 class _Workflow(NamedTuple):
     columns: tuple[tuple[str, str], ...]  # (key, label) in board order
-    manual: dict | None  # src -> [dst]; None on an Agent without a move table
+    manual: dict  # src -> [dst]
 
 
 @functools.cache
 def _workflow() -> _Workflow:
-    """The Agent's board columns and manual move table from ``kanban_workflow.DEFAULT_WORKFLOW`` (Agent 0.21.6+, TAL-796)."""
-    try:
-        from hermes_cli.kanban_workflow import DEFAULT_WORKFLOW
-    except ImportError:
-        statuses = getattr(_kb(), "VALID_STATUSES", _LEGACY_COLUMNS)
-        return _Workflow(tuple((key, key.title()) for key in _LEGACY_COLUMNS if key in statuses), None)
+    """The Agent's board columns and manual move table from ``kanban_workflow.DEFAULT_WORKFLOW`` (TAL-796)."""
+    from hermes_cli.kanban_workflow import DEFAULT_WORKFLOW
+
     workflow = DEFAULT_WORKFLOW.to_dict()
     return _Workflow(tuple((c["key"], c["label"]) for c in workflow["columns"]), workflow["manual"])
 
@@ -76,7 +69,7 @@ def _board(params: dict):
         raise InvalidParams(f"invalid board slug: {raw!r}") from exc
     if not normed:
         return None
-    if normed == getattr(kb, "DEFAULT_BOARD", "default"):
+    if normed == kb.DEFAULT_BOARD:
         return normed
     return _live_board(kb, normed, normed)
 
@@ -89,20 +82,10 @@ def _live_board(kb, normed: str, shown, *, archived_ok: bool = False) -> str:
     return normed
 
 
-def _connect_module():
-    """Newer Agents moved connect helpers to ``hermes_cli.kanban_db_connect``."""
-    try:
-        from hermes_cli import kanban_db_connect
-
-        return kanban_db_connect
-    except Exception:  # noqa: BLE001 - older Agent keeps them on kanban_db
-        return _kb()
-
-
 def _conn(board=None):
-    module = _connect_module()
-    closing = getattr(module, "connect_closing", None)
-    return closing(board=board) if closing is not None else module.connect(board=board)
+    from hermes_cli.kanban_db_connect import connect_closing
+
+    return connect_closing(board=board)
 
 
 def _obj_dict(value):
@@ -128,28 +111,10 @@ def _row_claim_live(row) -> bool:
         return False
     columns = row.keys()
     claim = {k: row[k] if k in columns else None for k in ("status", "claim_lock", "worker_pid", "worker_started_at")}
-    claimed = bool(claim["claim_lock"] and claim["worker_pid"])
     try:
-        helper = getattr(_kb(), "_claim_is_live", None)
-    except RpcError:
-        return claimed
-    if helper is not None:
-        try:
-            return bool(helper(claim))
-        except Exception:  # noqa: BLE001 - the Agent could not decide: unknown liveness counts as live
-            return claimed
-    if not claimed:
-        return False
-    try:
-        # Agent 0.21.3 has no _claim_is_live, but its dispatcher's own worker PID check. Like its crash sweep, probe
-        # only a claim this host issued: another host's PID means nothing here, so a remote claim stays live.
-        from hermes_cli.kanban_db_dispatch import _pid_alive
-
-        if not str(claim["claim_lock"]).startswith(_kb()._host_prefix()):
-            return True
-        return bool(_pid_alive(int(claim["worker_pid"])))
-    except Exception:  # noqa: BLE001
-        return True
+        return bool(_kb()._claim_is_live(claim))
+    except Exception:  # noqa: BLE001 - the Agent could not decide: unknown liveness counts as live
+        return bool(claim["claim_lock"] and claim["worker_pid"])
 
 
 def _claim_live(conn, task_id) -> bool:
@@ -243,8 +208,7 @@ def _task_dict(task, conn, claims=None):
     else:
         data["claim_live"] = _claim_live(conn, data.get("id"))
     data["has_completion_evidence"] = bool(str(data.get("result") or "").strip())
-    manual = _workflow().manual
-    data["agent_move_targets"] = None if manual is None else list(manual.get(data.get("status"), []))
+    data["agent_move_targets"] = list(_workflow().manual.get(data.get("status"), []))
     try:
         age = _kb().task_age(task)
     except Exception:  # noqa: BLE001
@@ -326,7 +290,7 @@ def _set_status_direct(conn, task_id: str, new_status: str, *, confirm_running_e
             "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, ?, 'status', ?, ?)",
             (task_id, run_id, json.dumps({"status": new_status, "source": "webui"}), int(time.time())),
         )
-    if new_status in ("done", "ready") and hasattr(kb, "recompute_ready"):
+    if new_status in ("done", "ready"):
         try:
             kb.recompute_ready(conn)
         except Exception:  # noqa: BLE001
@@ -363,8 +327,7 @@ def _patch_task(conn, task_id: str, body: dict) -> None:
     if updates:
         assignments = ", ".join(f"{field} = ?" for field in updates)
         conn.execute(f"UPDATE tasks SET {assignments} WHERE id = ?", [*updates.values(), task_id])
-        if hasattr(kb, "_append_event"):
-            kb._append_event(conn, task_id, "updated", {"fields": list(updates), "source": "webui"})
+        kb._append_event(conn, task_id, "updated", {"fields": list(updates), "source": "webui"})
     if "assignee" in body and not kb.assign_task(conn, task_id, body.get("assignee") or None):
         raise NotFound("task not found")
     if "status" not in body or body.get("status") in (None, ""):
@@ -413,7 +376,9 @@ def _board_counts(slug):
     if not kb.board_exists(slug):
         return {}
     try:
-        conn = _connect_module().connect(board=slug)
+        from hermes_cli.kanban_db_connect import connect
+
+        conn = connect(board=slug)
     except Exception:  # noqa: BLE001
         return {}
     try:
@@ -717,17 +682,7 @@ def stats_payload(params: dict) -> dict:
 def _stats(params: dict) -> dict:
     kb = _kb()
     with _conn(board=_board(params)) as conn:
-        if hasattr(kb, "board_stats"):
-            return kb.board_stats(conn)
-        rows = conn.execute("SELECT status, assignee, COUNT(*) AS n FROM tasks WHERE status != 'archived' GROUP BY status, assignee").fetchall()
-        by_status: dict[str, int] = {}
-        by_assignee: dict[str, int] = {}
-        for row in rows:
-            n = int(row["n"] or 0)
-            by_status[row["status"]] = by_status.get(row["status"], 0) + n
-            assignee = row["assignee"] or "unassigned"
-            by_assignee[assignee] = by_assignee.get(assignee, 0) + n
-        return {"by_status": by_status, "by_assignee": by_assignee}
+        return kb.board_stats(conn)
 
 
 def assignees_payload(params: dict) -> dict:
@@ -748,12 +703,10 @@ def task_log_payload(params: dict) -> dict:
     with _conn(board=_board(params)) as conn:
         if not kb.get_task(conn, task_id):
             raise NotFound("task not found")
-    if not hasattr(kb, "read_worker_log"):
-        return {"task_id": task_id, "path": "", "exists": False, "size_bytes": 0, "content": "", "truncated": False}
     content = kb.read_worker_log(task_id, tail_bytes=tail)
-    log_path = kb.worker_log_path(task_id) if hasattr(kb, "worker_log_path") else None
+    log_path = kb.worker_log_path(task_id)
     try:
-        size = log_path.stat().st_size if log_path and log_path.exists() else 0
+        size = log_path.stat().st_size if log_path.exists() else 0
     except OSError:
         size = 0
     return {"task_id": task_id, "path": str(log_path or ""), "exists": content is not None, "size_bytes": size, "content": content or "", "truncated": bool(tail and size > tail)}
@@ -789,8 +742,7 @@ def bulk_payload(params: dict) -> dict:
                         entry.update(ok=False, error="priority must be an integer")
                     else:
                         conn.execute("UPDATE tasks SET priority = ? WHERE id = ?", (priority, task_id))
-                        if hasattr(kb, "_append_event"):
-                            kb._append_event(conn, task_id, "reprioritized", {"priority": priority, "source": "webui"})
+                        kb._append_event(conn, task_id, "reprioritized", {"priority": priority, "source": "webui"})
             except Exception as exc:  # noqa: BLE001 - per-row outcome
                 entry.update(ok=False, error=str(exc))
             results.append(entry)
@@ -800,7 +752,6 @@ def bulk_payload(params: dict) -> dict:
 def dispatch_payload(params: dict) -> dict:
     _kb()
     try:
-        # Agent 0.21.6 dropped the kanban_db re-export; every supported release defines it here.
         from hermes_cli.kanban_db_dispatch import dispatch_once
     except Exception as exc:  # noqa: BLE001
         raise InvalidParams("dispatcher is unavailable") from exc
@@ -826,11 +777,7 @@ def task_action_payload(params: dict) -> dict:
         if action == "block":
             ok = _fenced(conn, task_id, lambda: kb.block_task(conn, task_id, reason=params.get("reason")), confirm_running_exit=bool(params.get("confirm_running_exit")))
         elif action == "unblock":
-            if hasattr(kb, "unblock_task"):
-                ok = kb.unblock_task(conn, task_id)
-            else:
-                _patch_task(conn, task_id, {"status": "ready"})
-                ok = True
+            ok = kb.unblock_task(conn, task_id)
         else:
             raise InvalidParams(f"invalid action: {action}")
         if not ok:
@@ -848,7 +795,7 @@ def list_boards_payload(params: dict) -> dict:
             kb.clear_current_board()
         except Exception:  # noqa: BLE001
             pass
-        current = getattr(kb, "DEFAULT_BOARD", "default")
+        current = kb.DEFAULT_BOARD
     out = []
     for raw in boards:
         meta = _board_meta(raw)
@@ -902,7 +849,7 @@ def update_board_payload(params: dict) -> dict:
 def delete_board_payload(params: dict) -> dict:
     kb = _kb()
     normed = _normalize_existing_slug(params.get("slug"))
-    if normed == getattr(kb, "DEFAULT_BOARD", "default"):
+    if normed == kb.DEFAULT_BOARD:
         raise InvalidParams("cannot remove the default board")
     res = kb.remove_board(normed, archive=not _bool(params, "delete"))
     return {"result": _board_meta(res) if isinstance(res, dict) else res, "current": _current_board(), "read_only": False}

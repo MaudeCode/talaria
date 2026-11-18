@@ -1,4 +1,4 @@
-"""Heartbeat notifications use the Agent's formatter without inventing exits on older Agents."""
+"""Heartbeat and watch notifications use the Agent's formatter."""
 
 import json
 import subprocess
@@ -19,23 +19,12 @@ def test_heartbeat_matches_the_installed_agent_formatter(handshaken, hermes_home
     code = """
 import json, sys
 sys.path.insert(0, sys.argv[1])
-from tools.process_registry import ProcessRegistry, format_process_notification
-event = json.loads(sys.argv[2])
-print(json.dumps(format_process_notification(event) if hasattr(ProcessRegistry, '_emit_heartbeat') else ''))
+from tools.process_registry import format_process_notification
+print(json.dumps(format_process_notification(json.loads(sys.argv[2]))))
 """
     expected = json.loads(subprocess.run([AGENT_PYTHON, "-c", code, str(AGENT_DIR), json.dumps(EVENT)], env=isolated_env(hermes_home), capture_output=True, text=True, check=True).stdout)
     assert handshaken.result("process.format_notification", {"event": EVENT}) == {"text": expected}
-    if expected:
-        assert "heartbeat #1" in expected and "test passed" in expected
-
-
-def test_older_agent_never_formats_a_heartbeat_as_a_completion(monkeypatch):
-    module = ModuleType("tools.process_registry")
-    module.ProcessRegistry = type("ProcessRegistry", (), {})
-    module.format_process_notification = lambda event: "[completed with exit code ?]"
-    monkeypatch.setitem(sys.modules, "tools", ModuleType("tools"))
-    monkeypatch.setitem(sys.modules, "tools.process_registry", module)
-    assert format_notification(EVENT) == ""
+    assert "heartbeat #1" in expected and "test passed" in expected
 
 
 @pytest.mark.parametrize("kind", ["watch_match", "watch_disabled", "watch_overflow_tripped", "watch_overflow_released"])

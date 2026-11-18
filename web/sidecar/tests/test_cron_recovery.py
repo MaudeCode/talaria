@@ -185,18 +185,20 @@ def _tail(monkeypatch, tmp_path, *, owns=True, booked=False, interrupt=False):
         _RunDelivery=lambda job, success, error, **kw: types.SimpleNamespace(job=job, success=success, error=error),
         _FireOwnership=lambda job: None, _save_compose_deliver=save,
     )
-    executions = types.SimpleNamespace(get_execution=lambda eid: {"status": "unknown"},
+    executions = types.SimpleNamespace(get_execution=lambda eid: {"status": "unknown"}, FIRER_FINISHED_STATES=frozenset({"completed", "failed", "cancelled"}),
                                        finish_execution=finish_ledger, recover_receipted_execution=finish_ledger)
     monkeypatch.setitem(sys.modules, "cron", types.SimpleNamespace(jobs=jobs, scheduler=scheduler, executions=executions))
     monkeypatch.setattr(executions, "give_up_execution", lambda *args, **kwargs: None, raising=False)
     monkeypatch.setitem(sys.modules, "cron.executions", executions)
+    monkeypatch.setitem(sys.modules, "cron.cancellation", types.SimpleNamespace(
+        CancelRequest=lambda execution_id: types.SimpleNamespace(is_set=lambda: False, reason=None)))
     monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", types.SimpleNamespace(connect_gateway=lambda: None))
     monkeypatch.setitem(sys.modules, "hermes_cli.gateway_runtime", types.SimpleNamespace(discover_gateway_endpoint=lambda: None))
     monkeypatch.setitem(sys.modules, "cron.scheduler_authority", types.SimpleNamespace(
         journal_path=lambda jid, eid: tmp_path / "admission.json", _lift_pause=lambda *args: calls.append(("resume", "execution-original"))))
     monkeypatch.setitem(sys.modules, "cron.scheduler_bookkeeping", types.SimpleNamespace(
         fail_empty_response=lambda *args: None, finish_completed_run=mark))
-    monkeypatch.setattr(cron_execution, "scoped_home", lambda home: contextlib.nullcontext())
+    monkeypatch.setattr(cron_execution, "scoped_home", lambda home, **kwargs: contextlib.nullcontext())
     monkeypatch.setattr(cron, "_delivery_home", lambda *args: contextlib.nullcontext())
     execution = cron_execution.ManualExecution(tmp_path, tmp_path, {"id": "job-original", "fire_claim": {"by": "owner-original"}}, "owner-original")
     execution.execution_id = "execution-original"

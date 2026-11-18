@@ -125,14 +125,11 @@ class _Session:
 
 
 class _Registry:
-    """Agent 0.21.6's shape: it prunes a gone recovered PID without a completion and publishes through _publish_finished."""
+    """The Agent's shape: it prunes a gone recovered PID without a completion and publishes through _publish_finished."""
 
     def __init__(self, *sessions: _Session) -> None:
         self._lock, self._finished, self.published, self.fail = threading.Lock(), {}, [], 0
         self._running = {s.id: s for s in sessions}
-
-    def _detached_host_fate(self, pid, start):
-        return "gone"
 
     def _publish_finished(self, session, was_running):
         if self.fail:
@@ -158,13 +155,3 @@ def test_recovered_exits_are_reported_once_and_never_after_a_collected_exit(monk
     process._publish_recovered_exits(registry)
     assert registry.published == ["proc_gone"]
     assert registry._finished == {"proc_gone": gone} and process._RECOVERED == {}
-
-
-def test_older_agents_report_recovered_exits_themselves(monkeypatch) -> None:
-    from talaria_sidecar.methods import process
-
-    monkeypatch.setattr(process, "_RECOVERED", {})
-    registry = _Registry(_Session("proc_old"))
-    monkeypatch.delattr(_Registry, "_detached_host_fate")
-    process.track_recovered(registry)
-    assert process._RECOVERED == {}

@@ -44,23 +44,3 @@ def register(ctx):
         assert not (home / "cron" / "jobs.json").exists()
     finally:
         sidecar.close()
-
-
-def test_an_agent_without_blueprints_has_an_empty_catalog(monkeypatch):
-    from types import SimpleNamespace
-    from talaria_sidecar.methods import Registry, cron
-    from talaria_sidecar.errors import InvalidParams
-
-    registry = Registry(SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
-    cron.register(registry)
-    original_import = cron.importlib.import_module
-
-    def missing(name):
-        if name == "cron.blueprint_catalog":
-            raise ModuleNotFoundError("No blueprint catalog", name=name)
-        return original_import(name)
-
-    monkeypatch.setattr(cron.importlib, "import_module", missing)
-    assert registry.methods["cron.blueprints"](None, {}) == {"blueprints": []}
-    with pytest.raises(InvalidParams, match="unavailable"):
-        registry.methods["cron.blueprint_fill"](None, {"key": "missing", "values": {}})

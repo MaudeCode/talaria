@@ -10,7 +10,7 @@
     },
     "tests/test_cron_room_delivery.py::test_real_agent_room_delivery_posts_one_scheduled_message": {
       "layer": "compatibility",
-      "reason": "Supported-Agent room delivery API: the advertised parser must correspond to _deliver_result appending one scheduled user event to a disposable real room store. The real Agent interpreter and store are required.",
+      "reason": "The Agent's cron.scheduler_delivery._deliver_result with a room token appends one scheduled user event from cron:<id> to a disposable real room store, and delivery options advertise rooms. The real Agent interpreter and store are required.",
       "cases": [
         ""
       ]
@@ -497,28 +497,28 @@
     },
     "tests/test_background_list.py::test_lists_only_the_sessions_own_units_with_their_goals_and_outcomes": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: lists only the sessions own units with their goals and outcomes. Uses the real installed release, not a fabricated API response.",
+      "reason": "Rows the installed Agent's tools.async_delegation _persist_dispatch and _persist_completion write to a disposable state.db must list per-unit goals by task_indexes, child statuses and results from result_json, and only the asking session's units. Only the real ledger schema and row encoding prove the read; no network or providers.",
       "cases": [
         ""
       ]
     },
     "tests/test_background_list.py::test_a_units_full_result_is_read_only_by_its_own_session": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a units full result is read only by its own session. Uses the real installed release, not a fabricated API response.",
+      "reason": "process.delegation_result reads a real async_delegations row only for its own session and words it with the Agent's tools.process_registry.format_process_notification. The real ledger and formatter are required; disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_background_list.py::test_an_agent_that_never_delegated_lists_nothing": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an agent that never delegated lists nothing. Uses the real installed release, not a fabricated API response.",
+      "reason": "A fresh real Agent home, with no state.db or async_delegations table, lists no delegations or processes instead of failing. Only the installed release decides which ledger files a fresh home has.",
       "cases": [
         ""
       ]
     },
     "tests/test_background_list.py::test_an_image_tasks_child_is_linked_by_the_goal_inside_its_stored_message": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an image tasks child is linked by the goal inside its stored message, and only by its own parent session. Uses the real installed release, not a fabricated API response.",
+      "reason": "hermes_state.SessionDB.append_message stores an image task's first message as multimodal parts or as hint-suffixed text; _goal_text decodes it through SessionDB._decode_content and links the child by goal and by _delegate_from to its own parent session only. Only the installed release's stored content encoding proves the decode.",
       "cases": [
         ""
       ]
@@ -1064,7 +1064,7 @@
     },
     "tests/test_cron_blueprints.py::test_profile_blueprints_fill_and_validate": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: profile blueprints fill and validate. Uses the real installed release, not a fabricated API response.",
+      "reason": "A synthetic profile plugin registers through the Agent's register_automation_blueprint under each plugins.isolation mode; cron.blueprint_catalog must list it only in its profile, fill its slots and pass through the Agent's invalid-time refusal without writing a job. The real plugin loader and isolation cannot be faked.",
       "cases": [
         "[in_process]",
         "[host]"
@@ -1109,56 +1109,56 @@
     },
     "tests/test_cron_health.py::test_list_reports_an_unwritable_store_only_when_probed": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: list reports an unwritable store only when probed. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's cron.store_health.probe_report reports a read-only tick lock in a disposable store as EACCES with its fix path, only when probe_store asks. The Agent re-secures store permissions on load, so only the installed release shows what the probe reports.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_health.py::test_a_live_owner_reads_running_and_refuses_run_now": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a live owner reads running and refuses run now. Uses the real installed release, not a fabricated API response.",
+      "reason": "A second Agent process claims an attempt through cron.executions.create_execution; cron.executions.live_executions must read it as running_elsewhere and run-now must refuse already_running. Cross-process ledger ownership needs the real ledger and a real second process.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_health.py::test_stopping_a_gateway_claimed_run_ends_it_and_books_cancelled": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the Agent scheduler in another process reads the marker Web writes and books cancelled. Uses the real installed release, not a fabricated API response.",
+      "reason": "Web's cron.cancel writes the Agent's cron.cancellation marker through cron.jobs.cancel_job_run; a real Agent scheduler process running the job reads it, stops, and books cancelled with the first reason. Cross-process marker delivery needs the real scheduler.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_health.py::test_stopping_a_manual_script_run_ends_it_and_books_cancelled": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a Web-run script job gets a real ledger row, and its process group stops on the Agent marker. Uses the real installed release, not a fabricated API response.",
+      "reason": "A Web-run script job opens a real cron.executions attempt row; the Agent's cron.cancellation marker stops its worker's process group and finish_cancelled_run books it cancelled. Needs the real ledger, marker and processes.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_health.py::test_run_now_refuses_when_the_ledger_is_unreadable": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: run now refuses when the ledger is unreadable. Uses the real installed release, not a fabricated API response.",
+      "reason": "A corrupt real cron/executions.db makes cron.executions.live_executions raise: cron.list still loads and run-now fails closed with cron_ledger_unreadable. Only the installed release's SQLite ledger shows how it fails.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_health.py::test_run_now_holds_the_agent_fire_claim": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: run now holds the agent fire claim. Uses the real installed release, not a fabricated API response.",
+      "reason": "Run-now holds the Agent's durable cron.jobs.claim_job_for_fire claim in the real store during the run and releases it through mark_job_run, and a claim a gateway process holds wins. Needs the real store and its lock.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_owner.py::test_started_cancel_waits_for_exact_owner_terminal_before_releasing_run": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: started cancel waits for exact owner terminal before releasing run. Uses the real installed release, not a fabricated API response.",
+      "reason": "Against a disposable real Agent gateway owner and loopback model, Web's cancel answers only after the exact gateway admission is terminal, and no work persists after it. The admission lifecycle exists only in the real owner.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_owner.py::test_stopped_manual_run_books_cancelled_without_a_failure_notice": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the Agent cancel marker, written by Web or by the Agent itself, stops a Web manual run through the real owner and books cancelled. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's cron.cancellation marker, written by Web's cron.cancel or by the Agent's own cancel, stops a Web manual run through a real gateway owner and loopback model, which books it cancelled once and leaves no marker or ManualExecution record.",
       "cases": [
         "[web]",
         "[agent]"
@@ -1166,7 +1166,7 @@
     },
     "tests/test_cron_owner.py::test_lost_submitter_recovers_same_admission_without_another_run": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: lost submitter recovers same admission without another run. Uses the real installed release, not a fabricated API response.",
+      "reason": "A killed worker, a restarted sidecar or a deleted job recovers the same real gateway admission through its cron.recover and cron.status RPCs with no second model request. Needs a real gateway owner, a loopback model and killed processes.",
       "cases": [
         "[False-False]",
         "[True-False]",
@@ -1175,14 +1175,14 @@
     },
     "tests/test_cron_owner.py::test_owner_disconnect_and_restart_leave_unknown_guarded_without_resubmission": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: owner disconnect and restart leave unknown guarded without resubmission. Uses the real installed release, not a fabricated API response.",
+      "reason": "Killing the real gateway owner leaves the manual run unverified and paused, blocks schedule edits and freezes its execution profile; after restart, recovery reuses the original admission, which the Agent settles as interrupted. Needs real gateway process loss.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_owner.py::test_successful_manual_run_books_once_and_preserves_operator_schedule_state": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: successful manual run books once and preserves operator schedule state. Uses the real installed release, not a fabricated API response.",
+      "reason": "A real gateway owner books a manual run once through mark_job_run and the operator's state, enabled flag and pause reason survive; scheduled, paused and disabled jobs take different Agent booking branches.",
       "cases": [
         "[scheduled]",
         "[paused]",
@@ -1191,28 +1191,28 @@
     },
     "tests/test_cron_owner.py::test_schedule_mutations_cannot_remove_a_manual_execution_recovery_barrier": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: schedule mutations cannot remove a manual execution recovery barrier. Uses the real installed release, not a fabricated API response.",
+      "reason": "While a real gateway owner runs a manual execution, cron.resume, cron.update and cron.delete are refused by the held ManualExecution lease and the paused job, fire claim and record survive. Needs the real in-flight admission.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_parity.py::test_create_keeps_monitor_fields_and_update_clears_profile": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: create keeps monitor fields and update clears profile. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's cron.jobs create_job, update_job, pause_job and resolve_job_ref in a disposable store: monitor_url and monitor_script shaping, a null profile clears, pause returns the raw record and a job resolves by name.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_parity.py::test_schedule_policy_round_trips_clears_and_returns_the_agents_refusal": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: create_job and update_job accept, clear and refuse per-job timezone, catch_up and grace_minutes. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's cron.jobs create_job and update_job accept, clear and refuse per-job timezone, catch_up and grace_minutes; the Agent's refusals pass through unchanged. Disposable store.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_parity.py::test_create_pins_execution_profile_model": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: create pins execution profile model. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's cron.jobs._main_model_pin, bound to the execution profile's home, pins its main model and provider into the profile's real store, with caller model-only and provider-only overrides and whitespace normalization.",
       "cases": [
         "[overrides0-openrouter-profile-model]",
         "[overrides1-openrouter-caller-model]",
@@ -1222,56 +1222,56 @@
     },
     "tests/test_cron_parity.py::test_explicit_model_and_provider_skip_profile_resolution": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: explicit model and provider skip profile resolution. Uses the real installed release, not a fabricated API response.",
+      "reason": "An explicit model and provider skip the Agent's _main_model_pin even for an unconfigured profile, and the real store keeps the caller's pin.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_parity.py::test_scheduled_script_uses_execution_profile_scope": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: scheduled script uses execution profile scope. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's own cron.scheduler_tick.tick runs a profile script job with the execution profile's home and secrets. Only the real scheduler shows which scope it binds.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_parity.py::test_a_failed_profile_snapshot_leaves_no_orphan_job": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a failed profile snapshot leaves no orphan job. Uses the real installed release, not a fabricated API response.",
+      "reason": "When the Agent's _main_model_pin cannot resolve a profile's model, cron.create refuses cron_snapshot_failed and neither real store keeps a job.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_parity.py::test_delivery_options_list_messaging_platforms": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: delivery options list the messaging platforms the installed release delivers to. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's cron.scheduler_delivery._KNOWN_DELIVERY_PLATFORMS and _iter_home_target_platforms give the messaging platforms the installed release delivers to, local and origin first and the rest sorted.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_parity.py::test_update_pins_the_store_profiles_own_main_model": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: update pins the store profile's own main model through the Agent's real pin helper. Uses the real installed release, not a fabricated API response.",
+      "reason": "cron.update pins the store profile's own main model through the Agent's _main_model_pin with a fresh config read; unpin releases it and an explicit model wins. Disposable profiles.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_parity.py::test_concurrent_pins_never_read_another_profiles_runtime": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: concurrent pins in different profiles resolve each profile's own config expansion, secret scope and provider, never another profile's or the launch environment's. Uses the real installed release, not a fabricated API response.",
+      "reason": "Concurrent _main_model_pin calls in different profiles resolve each profile's own ${VAR} expansion, secret scope and provider, never another profile's or the launch environment's. Only the Agent's real config and secret scoping show the leak.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_parity.py::test_profile_scope_is_restored_after_a_refused_update": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a refused or missing-job update restores the home and secret scope for the next call. Uses the real installed release, not a fabricated API response.",
+      "reason": "A refused or missing-job update through the Agent's update_job restores the home and secret scope for the next call, and the root and named stores keep their own pins.",
       "cases": [
         ""
       ]
     },
     "tests/test_cron_parity.py::test_schedule_times_follow_the_store_profiles_timezone": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: schedule edits, pause and resume compute times in the store profile's configured timezone. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's update_job, pause_job and resume_job compute next_run_at and paused_at in the store profile's configured timezone.",
       "cases": [
         "[cron.update]",
         "[cron.resume]"
@@ -1603,35 +1603,35 @@
     },
     "tests/test_kanban_archived_board.py::test_an_archived_board_answers_not_found_and_its_slug_can_be_reused": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an archived board answers not found and its slug can be reused. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's hermes_cli.kanban_db leaves an archived board.json tombstone at an archived board's slug; every board verb must answer not_found for it, and the slug can be created again.",
       "cases": [
         ""
       ]
     },
     "tests/test_kanban_events.py::test_events_coerce_text_created_at_and_advance_past_unparseable_rows": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: events coerce text created_at and advance past unparseable rows. Uses the real installed release, not a fabricated API response.",
+      "reason": "ISO text created_at written into the Agent's real task_events table coerces to epoch, garbage to null, and the events cursor advances past unparseable rows.",
       "cases": [
         ""
       ]
     },
     "tests/test_kanban_task_detail.py::test_task_detail_names_each_linked_task": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: task detail names each linked task. Uses the real installed release, not a fabricated API response.",
+      "reason": "Links the Agent's hermes_cli.kanban_db.link_tasks writes appear in task detail with each linked task's id, title and status in both directions.",
       "cases": [
         ""
       ]
     },
     "tests/test_kanban_task_detail.py::test_a_retried_tasks_run_clock_counts_from_its_newest_run": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a retried tasks run clock counts from its newest run. Uses the real installed release, not a fabricated API response.",
+      "reason": "On the Agent's real task_runs schema, a retried task's current_run_started_at comes from current_run_id, not from its first run.",
       "cases": [
         ""
       ]
     },
     "tests/test_kanban_workflow.py::test_scheduled_and_review_tasks_have_columns_and_leave_through_the_agent_verbs": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: scheduled and review tasks have columns and leave through the agent verbs. Uses the real installed release, not a fabricated API response.",
+      "reason": "Columns and move targets come from the Agent's hermes_cli.kanban_workflow.DEFAULT_WORKFLOW, and scheduled and review tasks leave through its unblock_task and reopen_review_task verbs; refusals happen before any write.",
       "cases": [
         ""
       ]
@@ -1979,21 +1979,21 @@
     },
     "tests/test_process_child_notifications.py::test_the_installed_agent_classifies_drained_events": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the installed agent classifies drained events. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's tools.process_registry_notifications.is_child_process_notification, run in an Agent interpreter, must classify every row of the shared EVENTS table as _event_row reports it.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_completions.py::test_launch_ledger_replays_once_and_a_claimed_completion_is_not_offered_again": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: launch ledger replays once and a claimed completion is not offered again. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's ProcessRegistry.restore_completions replays the launch home's undelivered async_delegations rows once across a sidecar restart, and a row claimed through claim_event_delivery is not offered again.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_completions.py::test_named_ledger_replays_once_even_when_the_launch_profile_is_the_only_drained_home": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: named ledger replays once even when the launch profile is the only drained home. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's tools.async_delegation.restore_undelivered_completions replays a named profile's real ledger once from any drain scope, and a profile created later joins the replay.",
       "cases": [
         "[False]",
         "[True]"
@@ -2001,28 +2001,28 @@
     },
     "tests/test_process_completions.py::test_drain_sweeps_dead_owners_in_every_served_home_but_not_live_or_claimed_rows": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: drain sweeps dead owners in every served home but not live or claimed rows. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's maybe_sweep_orphaned_completions runs in every served home: rows whose real owner process died are offered, and live or claimed rows are held. Real producer processes give the owner liveness.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_completions.py::test_failed_named_replay_retries_without_blocking_launch_or_live_events": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: failed named replay retries without blocking launch or live events. Uses the real installed release, not a fabricated API response.",
+      "reason": "A named home whose real restore_undelivered_completions fails does not block the launch home or live events, and is retried on a later drain.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_completions.py::test_delivered_unknown_notification_is_reconciled_without_reopening_the_agent_ledger": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: delivered unknown notification is reconciled without reopening the agent ledger. Uses the real installed release, not a fabricated API response.",
+      "reason": "A typed transcript delivery in a real state.db reconciles the notification without resetting the Agent ledger's delivered state or attempts, as get_durable_delegation reads them.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_completions.py::test_reconciliation_requires_current_typed_final_delivery_in_the_exact_parent": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: reconciliation requires current typed final delivery in the exact parent. Uses the real installed release, not a fabricated API response.",
+      "reason": "Each row breaks one predicate of _delivered_notifications on the Agent's real messages and async_delegations schema, and the forged delivery must be refused.",
       "cases": [
         "[DELETE FROM messages]",
         "[UPDATE messages SET session_id='other-parent']",
@@ -2034,77 +2034,77 @@
     },
     "tests/test_process_completions.py::test_pending_cross_consumer_claim_is_retryable_not_a_delivered_receipt": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: pending cross consumer claim is retryable not a delivered receipt. Uses the real installed release, not a fabricated API response.",
+      "reason": "Another consumer's pending claim from the Agent's claim_event_delivery makes process.claim_delivery retryable, as get_durable_delegation reports it, never a delivered receipt.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_completions.py::test_typed_deliveries_reconcile_in_each_owning_profile_after_sidecar_restart": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: typed deliveries reconcile in each owning profile after sidecar restart. Uses the real installed release, not a fabricated API response.",
+      "reason": "The same delegation ids in two profiles' real ledgers reconcile only in their owning home after a sidecar restart.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_completions.py::test_reconciliation_advances_past_the_first_page_of_accepted_deliveries": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: reconciliation advances past the first page of accepted deliveries. Uses the real installed release, not a fabricated API response.",
+      "reason": "The reconcile cursor pages past the first 200 accepted deliveries in a real state.db written through the Agent's ledger.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_delivery.py::test_a_completed_delivery_is_never_claimed_again": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a completed delivery is never claimed again. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's tools.async_delegation claim_event_delivery and complete_event_delivery: a held claim excludes a second consumer, completion marks the row delivered, and it is never claimed again.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_delivery.py::test_a_released_delivery_stays_pending_and_can_be_claimed_again": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a released delivery stays pending and can be claimed again. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's release_event_delivery leaves the row pending, and claim_event_delivery can claim it again.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_delivery.py::test_a_deferred_delivery_returns_without_spending_an_attempt": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a deferred delivery returns without spending an attempt. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's defer_completion_delivery hands a claim back without spending a delivery attempt, so repeated defers never reach the Agent's drop budget.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_delivery.py::test_an_interim_notice_needs_no_acknowledgement": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an interim notice needs no acknowledgement. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's claim_event_delivery returns no claim for a task_failure_notice interim notice, and completing it acknowledges nothing.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_heartbeat.py::test_heartbeat_matches_the_installed_agent_formatter": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: heartbeat matches the installed agent formatter. Uses the real installed release, not a fabricated API response.",
+      "reason": "process.format_notification must return exactly the heartbeat text the Agent's tools.process_registry.format_process_notification produces in an Agent interpreter.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_recovery.py::test_a_checkpointed_process_is_listed_after_restart_and_its_exit_completes_its_session": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a checkpointed process is listed after restart and its exit completes its session. Uses the real installed release, not a fabricated API response.",
+      "reason": "The Agent's process registry re-adopts a real processes.json checkpoint per profile when the sidecar starts, and the real child's exit produces its session's completion.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_recovery.py::test_startup_recovery_reports_an_inactive_profiles_exit_before_that_profile_is_used": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: startup recovery reports an inactive profiles exit before that profile is used. Uses the real installed release, not a fabricated API response.",
+      "reason": "process.recover re-adopts an inactive profile's real checkpoint through the Agent's registry, so its process exit is reported before that profile is used.",
       "cases": [
         ""
       ]
     },
     "tests/test_process_recovery.py::test_a_failed_recovery_blocks_the_home_until_a_retry_succeeds": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a failed recovery blocks the home until a retry succeeds. Uses the real installed release, not a fabricated API response.",
+      "reason": "When the Agent's checkpoint recovery fails on a bad entry or JSON, the home stays fail-closed, the checkpoint is untouched and the warning is logged once until a retry succeeds.",
       "cases": [
         "[entry]",
         "[json]"

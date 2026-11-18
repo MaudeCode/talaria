@@ -1,0 +1,1 @@
+{"skip": "Dead-code removal: deletes sidecar cron, kanban and process fallbacks that only Agents older than the supported v0.23.0-v0.23.2 releases reach, with the tests that faked those Agents; no app behavior changes on a supported Agent."}

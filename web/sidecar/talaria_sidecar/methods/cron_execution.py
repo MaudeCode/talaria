@@ -67,10 +67,7 @@ def pending_jobs(home):
 def operator_cancel(home, execution_id):
     """The operator's first stop reason for this attempt (Web's Stop, ``hermes cron cancel``, the agent's own tool),
     else ``None``. The Agent's marker outlives a lost submitter, so recovery reads the same answer."""
-    try:
-        from cron.cancellation import CancelRequest
-    except ImportError:
-        return None
+    from cron.cancellation import CancelRequest
     with scoped_home(home, read_only=True):
         request = CancelRequest(execution_id)
         return request.reason if request.is_set() else None
@@ -83,13 +80,8 @@ def clear_operator_cancel(home, execution_id):
 
 
 def open_attempt(home, job_id):
-    """A ledger row for a Web run with no ``ManualExecution`` (a script job), so a stop request can find it. ``None`` on
-    an Agent that cannot stop a run."""
-    try:
-        from cron import executions
-        from cron import cancellation  # noqa: F401 - the capability this row exists for
-    except ImportError:
-        return None
+    """A ledger row for a Web run with no ``ManualExecution`` (a script job), so a stop request can find it."""
+    from cron import executions
     with scoped_home(home, read_only=True):
         row = executions.create_execution(job_id, source="web-manual")
         executions.mark_execution_running(row["id"])
@@ -104,22 +96,21 @@ def close_attempt(home, execution_id, success, error):
 
 
 def supported(job, *, recovery=False):
+    """An Agent job runs as a ``ManualExecution``; ``recovery`` also requires the Agent's recovery owner, so a retained
+    record is never touched by an Agent that cannot reconcile it (TAL-1054)."""
     if job.get("no_agent"):
         return False
+    if not recovery:
+        return True
     try:
-        authority = importlib.import_module("cron.scheduler_authority")
-        if recovery:
-            surfaces = ((authority, ("journal_path", "_lift_pause")),
-                        (importlib.import_module("cron.scheduler_bookkeeping"), ("fail_empty_response", "finish_completed_run")),
-                        (importlib.import_module("cron.executions"), ("give_up_execution", "recover_receipted_execution")),
-                        (importlib.import_module("hermes_cli.gateway_client"), ("connect_gateway",)),
-                        (importlib.import_module("hermes_cli.gateway_runtime"), ("discover_gateway_endpoint",)))
-            return all(callable(getattr(module, name, None)) for module, names in surfaces for name in names)
-    except ImportError as exc:
-        if recovery or (isinstance(exc, ModuleNotFoundError) and exc.name in {"cron.scheduler_authority", "cron"}):
-            return False
-        raise
-    return True
+        surfaces = ((importlib.import_module("cron.scheduler_authority"), ("journal_path", "_lift_pause")),
+                    (importlib.import_module("cron.scheduler_bookkeeping"), ("fail_empty_response", "finish_completed_run")),
+                    (importlib.import_module("cron.executions"), ("give_up_execution", "recover_receipted_execution")),
+                    (importlib.import_module("hermes_cli.gateway_client"), ("connect_gateway",)),
+                    (importlib.import_module("hermes_cli.gateway_runtime"), ("discover_gateway_endpoint",)))
+    except ImportError:
+        return False
+    return all(callable(getattr(module, name, None)) for module, names in surfaces for name in names)
 
 
 def recover(job, execution_id, cancel_event):
@@ -235,7 +226,7 @@ class ManualExecution:
             current = jobs.get_job(self.job["id"]) or {}
             row = executions.get_execution(self.execution_id)
             marked = self.execution_id in current.get("canonical_completions", [])
-            finished = getattr(executions, "FIRER_FINISHED_STATES", {"completed", "failed"})
+            finished = executions.FIRER_FINISHED_STATES
             booked = marked or (row and row["status"] in finished)
             # Like the Agent's own firer, a run whose marker is set when it ends is a cancel, whatever it returned.
             stopped = self.stop_reason()
