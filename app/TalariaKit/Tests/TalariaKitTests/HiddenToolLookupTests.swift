@@ -39,11 +39,19 @@ final class HiddenToolLookupTests: XCTestCase {
         XCTAssertEqual(AssistantTurnLayout(message: unsettled, liveRows: timeline.rows, archivedRows: []).rows.flatMap(\.toolCalls).map(\.id), ["f", "r"])
     }
 
-    func testSettingDecodesAndAbsentFromAnOlderServer() throws {
+    /// TAL-2341: each Tool Calls switch and the Live Activity's decode from their server keys; an older server sends none.
+    func testToolCallSwitchesDecodeAndAreAbsentFromAnOlderServer() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let decode = { (json: String) in try decoder.decode(SettingsResponse.self, from: Data(json.utf8)) }
-        XCTAssertEqual(try decode(#"{"show_tool_lookups":true}"#).showToolLookups, true)
-        XCTAssertNil(try decode("{}").showToolLookups)
+        let sent = try decode(#"{"show_tool_lookups":true,"formatted_tool_results":false,"inline_tool_media":false,"tool_row_outcomes":false,"merge_repeated_tool_calls":false,"live_tool_progress":false,"status_chip_current_action":false,"turn_summary":false,"live_activity_current_tool":false}"#)
+        XCTAssertEqual(sent.toolCallSettings, [
+            .showToolLookups: true, .formattedToolResults: false, .inlineToolMedia: false, .toolRowOutcomes: false,
+            .mergeRepeatedToolCalls: false, .liveToolProgress: false, .statusChipCurrentAction: false, .turnSummary: false,
+        ])
+        XCTAssertEqual(sent.liveActivityCurrentTool, false)
+        let older = try decode("{}")
+        XCTAssertEqual(older.toolCallSettings, [:])
+        XCTAssertNil(older.liveActivityCurrentTool)
     }
 }

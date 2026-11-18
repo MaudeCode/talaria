@@ -15,6 +15,7 @@ import type { ActiveRun, StreamRegistry } from '../streams.js'
 import type { TurnOrigin } from '../background-updates.js'
 import { str } from '../../util.js'
 import { activityTool, heldActivityTool, isApprovalTool, redactString } from '../../redact.js'
+import { displaySetting } from '../display-settings.js'
 
 const TERMINAL_RETENTION_S = 15 * 60
 // ponytail: bounds the terminal ledger when no channel ever reads it; the oldest finished run goes first.
@@ -282,9 +283,10 @@ export class ActivityStates {
         if (run.seen_phase?.phase !== phase) run.seen_phase = { phase, at: run.seen_phase ? run.terminal_at ?? this.deps.now() : run.started_at }
         activity = { toolCount: run.tool_count ?? 0, activityAt: Math.floor(Math.max(run.seen_phase.at, run.tool_at ?? 0) * 1000) }
         // TAL-2336: a live row names its call: the one an approval holds, else the run's current one; a finished row none.
+        // TAL-2341: with `live_activity_current_tool` off it names none, so the activity and its alerts keep their plain wording.
         const held = phase === 'waiting_for_approval' && isApprovalTool(approval?.tool) ? approval.tool : undefined
         const details = this.deps.callDetails?.() ?? true
-        const current = held ? heldActivityTool(held, details) : run.current_call && !run.relay_phase ? activityTool(run.current_call, this.deps.redactEnabled?.() ?? true, session.workspace ?? null, details) : undefined
+        const current = !displaySetting('live_activity_current_tool') ? undefined : held ? heldActivityTool(held, details) : run.current_call && !run.relay_phase ? activityTool(run.current_call, this.deps.redactEnabled?.() ?? true, session.workspace ?? null, details) : undefined
         if (current) activity.currentTool = current
       }
       // TAL-1422: only a live run has a plan; a finished, replaced or restarted one clears it.

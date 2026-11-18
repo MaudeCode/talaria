@@ -1737,6 +1737,36 @@ final class LiveActivityTests: XCTestCase {
         ])
     }
 
+    /// TAL-2341: with the activity's current call switched off, a call the server marks `activity_unnamed` reads "Working".
+    func testACallTheServerLeavesUnnamedReadsWorking() async throws {
+        let baseURL = URL(string: "https://example.test")!
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveActivityURLProtocol.self]
+        let client = APIClient(baseURL: baseURL, session: URLSession(configuration: configuration))
+        let streamClient = LiveActivitySpySSEClient()
+        let manager = SpyAgentLiveActivityManager()
+        LiveActivityURLProtocol.handler = { request in
+            return Self.jsonResponse(#"{"stream_id":"stream-123","session_id":"session-abc"}"#, for: request)
+        }
+        let viewModel = ChatViewModel(
+            session: try Self.sessionSummary(id: "session-abc", title: "Live work"), server: baseURL, client: client,
+            streamClient: streamClient, approvalStreamClient: LiveActivitySpySSEClient(), clarifyStreamClient: LiveActivitySpySSEClient(),
+            liveActivityManager: manager
+        )
+        let didStart = await viewModel.sendMessage("Run the tests")
+        XCTAssertTrue(didStart)
+        var frame = ToolStreamEvent(eventType: nil, name: nil, preview: nil, args: nil, duration: nil, isError: nil,
+                                    stableID: "call-test", kind: .shell, target: "npm test")
+        frame.activityUnnamed = true
+        streamClient.emit(.toolStarted(frame))
+        streamClient.emit(.toolCompleted(frame))
+        XCTAssertEqual(manager.updates, [.promptSettled])
+        // The call an approval holds carries the same flag, so the waiting activity names no call either.
+        let held = try JSONDecoder().decode(PendingApproval.self, from: Data(#"{"approval_id":"held","command":"npm test","tool":{"name":"terminal","kind":"shell","target":"npm test","activity_unnamed":true}}"#.utf8))
+        streamClient.emit(.approvalPending(ApprovalPendingResponse(pending: held, pendingCount: 1)))
+        XCTAssertEqual(manager.updates.last, .waitingForApproval(headID: held.headId, text: held.actionText, tool: nil))
+    }
+
     func testChatViewModelLiveActivityLifecycleUsesInjectedManager() async throws {
         let baseURL = URL(string: "https://example.test")!
         let configuration = URLSessionConfiguration.ephemeral

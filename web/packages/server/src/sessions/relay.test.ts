@@ -1194,6 +1194,10 @@ describe('the current call on a relay row (TAL-2336)', () => {
       expect(await tool()).toEqual({ kind: 'shell', target: 'npm test', done: false })
       await next(2)
       await waitForRelay(async () => { expect(await tool()).toEqual({ kind: 'shell', target: 'npm test', done: true, failed: true, outcome: { key: 'exit', tone: 'error', count: 1 } }) })
+      // TAL-2341: the transcript's outcome switch leaves the activity's outcome alone.
+      await post(server, '/api/settings', { tool_row_outcomes: false })
+      expect((await tool())?.outcome).toEqual({ key: 'exit', tone: 'error', count: 1 })
+      await post(server, '/api/settings', { tool_row_outcomes: true })
       await next(3)
       await waitForRelay(async () => { expect((await tool())?.target).toBe(`${long.slice(0, 63)}…`) })
       await next(4)
@@ -1204,6 +1208,9 @@ describe('the current call on a relay row (TAL-2336)', () => {
       const off = await post(server, '/api/settings', { activity_call_details: false })
       expect(off.status, await off.clone().text()).toBe(200)
       expect(await tool()).toEqual({ kind: 'shell', target: '', done: false, outcome: { key: 'pending_approval', tone: 'attention' } })
+      // TAL-2341: with the Live Activity switch off the row names no call.
+      await post(server, '/api/settings', { live_activity_current_tool: false })
+      expect(await tool()).toBeUndefined()
     } finally {
       ended = true
       for (const release of steps) release()

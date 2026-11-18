@@ -2322,6 +2322,43 @@ final class ChatHostedTests: XCTestCase {
         }
     }
 
+    /// TAL-2341: a row the server marks `opens_raw` opens on its raw view, and its `{}` still switches to the formatted rows.
+    func testRowTheServerOpensRawStartsInItsRawView() async throws {
+        let rawArgs = "{\n  \"limit\": 2\n}"
+        var call = ToolCall(id: "opens-raw", name: "session_list", preview: nil, args: nil,
+                            argsFields: [ToolField(key: "limit", value: "2", multiline: false)], rawArgs: rawArgs,
+                            kind: .talaria, target: "session_list", isCompleted: true)
+        call.displayFlags.opensRaw = true
+        let window = try hostWindow(VStack { ToolCallCardView(toolCall: call); Spacer() }.padding()
+            .environment(\.chatTranscriptRowState, ChatTranscriptRowState()), size: CGSize(width: 390, height: 520))
+        defer { window.isHidden = true; window.rootViewController = nil }
+        HostedAccessibility.activate(try await requireElement(in: window) { $0.accessibilityHint == "Double tap to expand details." })
+        _ = try await requireElement(in: window, label: rawArgs)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Show formatted"))
+        _ = try await requireElement(in: window, label: "Show raw")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: rawArgs))
+    }
+
+    /// TAL-2341: media the server keeps in details (`media_in_details`) stays out of the folded row and shows once it opens.
+    func testMediaTheServerKeepsInDetailsShowsOnceTheRowOpens() async throws {
+        var image = ToolCall(
+            id: "image-details", name: "image_generate", preview: nil, args: nil, kind: .image, target: "",
+            resultView: try JSONDecoder().decode(ToolResultView.self, from: Data(#"{"text": "{}", "media": [{"url": "./api/media?path=%2Fsrv%2Fcat.png&session_id=s1", "name": "cat.png", "mime": "image/png", "kind": "image"}]}"#.utf8)),
+            isCompleted: true
+        )
+        image.displayFlags.mediaInDetails = true
+        let media = ChatTranscriptMedia(cacheNamespace: "tool-media-\(UUID().uuidString)", loadImage: { _ in nil }, loadData: { _ in nil }, preview: { _ in })
+        let window = try hostWindow(ScrollView { ToolCallCardView(toolCall: image).padding() }
+            .environment(\.chatTranscriptRowState, ChatTranscriptRowState())
+            .environment(\.chatTranscriptMedia, media), size: CGSize(width: 390, height: 600))
+        defer { window.isHidden = true; window.rootViewController = nil }
+        let header = try await requireElement(in: window) { $0.accessibilityHint == "Double tap to expand details." }
+        XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "cat.png").isEmpty)
+        HostedAccessibility.activate(header)
+        let shown = await awaitCondition(timeout: 5) { !HostedAccessibility.elements(in: window, labelContaining: "cat.png").isEmpty }
+        XCTAssertTrue(shown)
+    }
+
     /// TAL-2335: on a narrow line the label gives way first; the outcome keeps its width up to 55% of the line.
     func testToolOutcomeLineTruncatesTheLabelFirst() {
         XCTAssertEqual(ToolOutcomeLineLayout.widths(line: 300, label: 120, outcome: 80).label, 120)

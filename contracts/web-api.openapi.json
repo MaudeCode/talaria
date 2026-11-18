@@ -545,6 +545,38 @@
                               "type": "boolean",
                               "description": "TAL-2331: show the Agent's `tool_search` and `tool_describe` calls in the transcript (default false); off, the server marks them `hidden`."
                             },
+                            "formatted_tool_results": {
+                              "type": "boolean",
+                              "description": "TAL-2341: open tool rows show the server's formatted result (default true); off, the server marks each call `opens_raw`."
+                            },
+                            "inline_tool_media": {
+                              "type": "boolean",
+                              "description": "TAL-2341: the media a call made shows on its collapsed row (default true); off, the server marks each call `media_in_details`."
+                            },
+                            "tool_row_outcomes": {
+                              "type": "boolean",
+                              "description": "TAL-2341: collapsed tool rows show what a call did (default true); off, the server leaves `result_view.outcome` out of transcript calls."
+                            },
+                            "merge_repeated_tool_calls": {
+                              "type": "boolean",
+                              "description": "TAL-2341: repeated same-kind calls merge into one row (default true); off, the server sends no `merged_count` or `merged_into`."
+                            },
+                            "live_tool_progress": {
+                              "type": "boolean",
+                              "description": "TAL-2341: running tool rows count their time and show a background command's latest output line (default true); off, the server sends no `started_at` or `process_id` on calls."
+                            },
+                            "status_chip_current_action": {
+                              "type": "boolean",
+                              "description": "TAL-2341: the run status names the running call (default true); off, the server sends no `current_tool` and the status says Working."
+                            },
+                            "turn_summary": {
+                              "type": "boolean",
+                              "description": "TAL-2341: a reply's footer says what its turn changed (default true); off, the server sends an empty `turn_summary`."
+                            },
+                            "live_activity_current_tool": {
+                              "type": "boolean",
+                              "description": "TAL-2341: Live Activities and push alerts name the current call (default true); off, the server sends Relay no `currentTool`, alerts keep their fixed bodies and calls carry `activity_unnamed`."
+                            },
                             "show_busy_placeholder_hint": {
                               "type": "boolean",
                               "description": "TAL-2148: while a chat is busy and the draft is empty, the composer placeholder names the busy action (default true)."
@@ -8238,6 +8270,18 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "opens_raw": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                    },
+                                    "media_in_details": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                    },
+                                    "activity_unnamed": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
+                                    },
                                     "raw_args": {
                                       "type": "string",
                                       "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
@@ -9299,6 +9343,18 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "opens_raw": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                            },
+                                            "media_in_details": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                            },
+                                            "activity_unnamed": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                             },
                                             "raw_args": {
                                               "type": "string",
@@ -10989,6 +11045,18 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "opens_raw": {
+                                "const": true,
+                                "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                              },
+                              "media_in_details": {
+                                "const": true,
+                                "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                              },
+                              "activity_unnamed": {
+                                "const": true,
+                                "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                               },
                               "raw_args": {
                                 "type": "string",
@@ -15909,6 +15977,18 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "opens_raw": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                    },
+                                    "media_in_details": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                    },
+                                    "activity_unnamed": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
+                                    },
                                     "raw_args": {
                                       "type": "string",
                                       "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
@@ -16970,6 +17050,18 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "opens_raw": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                            },
+                                            "media_in_details": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                            },
+                                            "activity_unnamed": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                             },
                                             "raw_args": {
                                               "type": "string",
@@ -18660,6 +18752,18 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "opens_raw": {
+                                "const": true,
+                                "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                              },
+                              "media_in_details": {
+                                "const": true,
+                                "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                              },
+                              "activity_unnamed": {
+                                "const": true,
+                                "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                               },
                               "raw_args": {
                                 "type": "string",
@@ -22251,6 +22355,18 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "opens_raw": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                    },
+                                    "media_in_details": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                    },
+                                    "activity_unnamed": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
+                                    },
                                     "raw_args": {
                                       "type": "string",
                                       "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
@@ -23312,6 +23428,18 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "opens_raw": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                            },
+                                            "media_in_details": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                            },
+                                            "activity_unnamed": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                             },
                                             "raw_args": {
                                               "type": "string",
@@ -25002,6 +25130,18 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "opens_raw": {
+                                "const": true,
+                                "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                              },
+                              "media_in_details": {
+                                "const": true,
+                                "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                              },
+                              "activity_unnamed": {
+                                "const": true,
+                                "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                               },
                               "raw_args": {
                                 "type": "string",
@@ -31725,6 +31865,18 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "opens_raw": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                    },
+                                    "media_in_details": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                    },
+                                    "activity_unnamed": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
+                                    },
                                     "raw_args": {
                                       "type": "string",
                                       "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
@@ -32786,6 +32938,18 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "opens_raw": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                            },
+                                            "media_in_details": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                            },
+                                            "activity_unnamed": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                             },
                                             "raw_args": {
                                               "type": "string",
@@ -34476,6 +34640,18 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "opens_raw": {
+                                "const": true,
+                                "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                              },
+                              "media_in_details": {
+                                "const": true,
+                                "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                              },
+                              "activity_unnamed": {
+                                "const": true,
+                                "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                               },
                               "raw_args": {
                                 "type": "string",
@@ -40510,6 +40686,18 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "opens_raw": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                    },
+                                    "media_in_details": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                    },
+                                    "activity_unnamed": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
+                                    },
                                     "raw_args": {
                                       "type": "string",
                                       "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
@@ -41571,6 +41759,18 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "opens_raw": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                            },
+                                            "media_in_details": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                            },
+                                            "activity_unnamed": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                             },
                                             "raw_args": {
                                               "type": "string",
@@ -43261,6 +43461,18 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "opens_raw": {
+                                "const": true,
+                                "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                              },
+                              "media_in_details": {
+                                "const": true,
+                                "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                              },
+                              "activity_unnamed": {
+                                "const": true,
+                                "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                               },
                               "raw_args": {
                                 "type": "string",
@@ -49927,6 +50139,18 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "opens_raw": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                    },
+                                    "media_in_details": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                    },
+                                    "activity_unnamed": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
+                                    },
                                     "raw_args": {
                                       "type": "string",
                                       "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
@@ -50988,6 +51212,18 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "opens_raw": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                            },
+                                            "media_in_details": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                            },
+                                            "activity_unnamed": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                             },
                                             "raw_args": {
                                               "type": "string",
@@ -52678,6 +52914,18 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "opens_raw": {
+                                "const": true,
+                                "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                              },
+                              "media_in_details": {
+                                "const": true,
+                                "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                              },
+                              "activity_unnamed": {
+                                "const": true,
+                                "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                               },
                               "raw_args": {
                                 "type": "string",
@@ -56214,6 +56462,18 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "opens_raw": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                    },
+                                    "media_in_details": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                    },
+                                    "activity_unnamed": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
+                                    },
                                     "raw_args": {
                                       "type": "string",
                                       "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
@@ -57275,6 +57535,18 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "opens_raw": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                            },
+                                            "media_in_details": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                            },
+                                            "activity_unnamed": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                             },
                                             "raw_args": {
                                               "type": "string",
@@ -58965,6 +59237,18 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "opens_raw": {
+                                "const": true,
+                                "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                              },
+                              "media_in_details": {
+                                "const": true,
+                                "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                              },
+                              "activity_unnamed": {
+                                "const": true,
+                                "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                               },
                               "raw_args": {
                                 "type": "string",
@@ -62563,6 +62847,18 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "opens_raw": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                    },
+                                    "media_in_details": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                    },
+                                    "activity_unnamed": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
+                                    },
                                     "raw_args": {
                                       "type": "string",
                                       "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
@@ -63624,6 +63920,18 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "opens_raw": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                            },
+                                            "media_in_details": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                            },
+                                            "activity_unnamed": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                             },
                                             "raw_args": {
                                               "type": "string",
@@ -65314,6 +65622,18 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "opens_raw": {
+                                "const": true,
+                                "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                              },
+                              "media_in_details": {
+                                "const": true,
+                                "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                              },
+                              "activity_unnamed": {
+                                "const": true,
+                                "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                               },
                               "raw_args": {
                                 "type": "string",
@@ -68910,6 +69230,18 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "opens_raw": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                    },
+                                    "media_in_details": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                    },
+                                    "activity_unnamed": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
+                                    },
                                     "raw_args": {
                                       "type": "string",
                                       "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
@@ -69971,6 +70303,18 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "opens_raw": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                            },
+                                            "media_in_details": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                            },
+                                            "activity_unnamed": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                             },
                                             "raw_args": {
                                               "type": "string",
@@ -71661,6 +72005,18 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "opens_raw": {
+                                "const": true,
+                                "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                              },
+                              "media_in_details": {
+                                "const": true,
+                                "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                              },
+                              "activity_unnamed": {
+                                "const": true,
+                                "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                               },
                               "raw_args": {
                                 "type": "string",
@@ -75066,6 +75422,18 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "opens_raw": {
+                                "const": true,
+                                "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                              },
+                              "media_in_details": {
+                                "const": true,
+                                "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                              },
+                              "activity_unnamed": {
+                                "const": true,
+                                "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                               },
                               "raw_args": {
                                 "type": "string",
@@ -87878,6 +88246,18 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "opens_raw": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                    },
+                                    "media_in_details": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                    },
+                                    "activity_unnamed": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
+                                    },
                                     "raw_args": {
                                       "type": "string",
                                       "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
@@ -88939,6 +89319,18 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "opens_raw": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                            },
+                                            "media_in_details": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                            },
+                                            "activity_unnamed": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                             },
                                             "raw_args": {
                                               "type": "string",
@@ -90629,6 +91021,18 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "opens_raw": {
+                                "const": true,
+                                "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                              },
+                              "media_in_details": {
+                                "const": true,
+                                "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                              },
+                              "activity_unnamed": {
+                                "const": true,
+                                "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                               },
                               "raw_args": {
                                 "type": "string",
@@ -94217,6 +94621,18 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "opens_raw": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                    },
+                                    "media_in_details": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                    },
+                                    "activity_unnamed": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
+                                    },
                                     "raw_args": {
                                       "type": "string",
                                       "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
@@ -95278,6 +95694,18 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "opens_raw": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                            },
+                                            "media_in_details": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                            },
+                                            "activity_unnamed": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                             },
                                             "raw_args": {
                                               "type": "string",
@@ -96968,6 +97396,18 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "opens_raw": {
+                                "const": true,
+                                "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                              },
+                              "media_in_details": {
+                                "const": true,
+                                "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                              },
+                              "activity_unnamed": {
+                                "const": true,
+                                "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                               },
                               "raw_args": {
                                 "type": "string",
@@ -101242,6 +101682,18 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "opens_raw": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                    },
+                                    "media_in_details": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                    },
+                                    "activity_unnamed": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
+                                    },
                                     "raw_args": {
                                       "type": "string",
                                       "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
@@ -102303,6 +102755,18 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "opens_raw": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                            },
+                                            "media_in_details": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                            },
+                                            "activity_unnamed": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                             },
                                             "raw_args": {
                                               "type": "string",
@@ -103993,6 +104457,18 @@
                               "hidden": {
                                 "const": true,
                                 "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                              },
+                              "opens_raw": {
+                                "const": true,
+                                "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                              },
+                              "media_in_details": {
+                                "const": true,
+                                "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                              },
+                              "activity_unnamed": {
+                                "const": true,
+                                "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                               },
                               "raw_args": {
                                 "type": "string",
@@ -108137,6 +108613,18 @@
                                           "const": true,
                                           "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                         },
+                                        "opens_raw": {
+                                          "const": true,
+                                          "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                        },
+                                        "media_in_details": {
+                                          "const": true,
+                                          "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                        },
+                                        "activity_unnamed": {
+                                          "const": true,
+                                          "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
+                                        },
                                         "raw_args": {
                                           "type": "string",
                                           "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
@@ -109101,6 +109589,18 @@
                                                 "hidden": {
                                                   "const": true,
                                                   "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                                },
+                                                "opens_raw": {
+                                                  "const": true,
+                                                  "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                                },
+                                                "media_in_details": {
+                                                  "const": true,
+                                                  "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                                },
+                                                "activity_unnamed": {
+                                                  "const": true,
+                                                  "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                                 },
                                                 "raw_args": {
                                                   "type": "string",
@@ -110486,6 +110986,18 @@
                                   "hidden": {
                                     "const": true,
                                     "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                  },
+                                  "opens_raw": {
+                                    "const": true,
+                                    "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                  },
+                                  "media_in_details": {
+                                    "const": true,
+                                    "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                  },
+                                  "activity_unnamed": {
+                                    "const": true,
+                                    "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                   },
                                   "raw_args": {
                                     "type": "string",
@@ -113447,6 +113959,10 @@
                                     ]
                                   },
                                   "description": "TAL-2318: the call's redacted arguments, one row per top-level key in the order the call sent them, each value capped. Absent when the arguments are not an object, and on an older server."
+                                },
+                                "activity_unnamed": {
+                                  "const": true,
+                                  "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                 }
                               },
                               "required": [
@@ -115725,6 +116241,38 @@
                       "type": "boolean",
                       "description": "TAL-2331: show the Agent's `tool_search` and `tool_describe` calls in the transcript (default false); off, the server marks them `hidden`."
                     },
+                    "formatted_tool_results": {
+                      "type": "boolean",
+                      "description": "TAL-2341: open tool rows show the server's formatted result (default true); off, the server marks each call `opens_raw`."
+                    },
+                    "inline_tool_media": {
+                      "type": "boolean",
+                      "description": "TAL-2341: the media a call made shows on its collapsed row (default true); off, the server marks each call `media_in_details`."
+                    },
+                    "tool_row_outcomes": {
+                      "type": "boolean",
+                      "description": "TAL-2341: collapsed tool rows show what a call did (default true); off, the server leaves `result_view.outcome` out of transcript calls."
+                    },
+                    "merge_repeated_tool_calls": {
+                      "type": "boolean",
+                      "description": "TAL-2341: repeated same-kind calls merge into one row (default true); off, the server sends no `merged_count` or `merged_into`."
+                    },
+                    "live_tool_progress": {
+                      "type": "boolean",
+                      "description": "TAL-2341: running tool rows count their time and show a background command's latest output line (default true); off, the server sends no `started_at` or `process_id` on calls."
+                    },
+                    "status_chip_current_action": {
+                      "type": "boolean",
+                      "description": "TAL-2341: the run status names the running call (default true); off, the server sends no `current_tool` and the status says Working."
+                    },
+                    "turn_summary": {
+                      "type": "boolean",
+                      "description": "TAL-2341: a reply's footer says what its turn changed (default true); off, the server sends an empty `turn_summary`."
+                    },
+                    "live_activity_current_tool": {
+                      "type": "boolean",
+                      "description": "TAL-2341: Live Activities and push alerts name the current call (default true); off, the server sends Relay no `currentTool`, alerts keep their fixed bodies and calls carry `activity_unnamed`."
+                    },
                     "show_busy_placeholder_hint": {
                       "type": "boolean",
                       "description": "TAL-2148: while a chat is busy and the draft is empty, the composer placeholder names the busy action (default true)."
@@ -116205,6 +116753,38 @@
                     "show_tool_lookups": {
                       "type": "boolean",
                       "description": "TAL-2331: show the Agent's `tool_search` and `tool_describe` calls in the transcript (default false); off, the server marks them `hidden`."
+                    },
+                    "formatted_tool_results": {
+                      "type": "boolean",
+                      "description": "TAL-2341: open tool rows show the server's formatted result (default true); off, the server marks each call `opens_raw`."
+                    },
+                    "inline_tool_media": {
+                      "type": "boolean",
+                      "description": "TAL-2341: the media a call made shows on its collapsed row (default true); off, the server marks each call `media_in_details`."
+                    },
+                    "tool_row_outcomes": {
+                      "type": "boolean",
+                      "description": "TAL-2341: collapsed tool rows show what a call did (default true); off, the server leaves `result_view.outcome` out of transcript calls."
+                    },
+                    "merge_repeated_tool_calls": {
+                      "type": "boolean",
+                      "description": "TAL-2341: repeated same-kind calls merge into one row (default true); off, the server sends no `merged_count` or `merged_into`."
+                    },
+                    "live_tool_progress": {
+                      "type": "boolean",
+                      "description": "TAL-2341: running tool rows count their time and show a background command's latest output line (default true); off, the server sends no `started_at` or `process_id` on calls."
+                    },
+                    "status_chip_current_action": {
+                      "type": "boolean",
+                      "description": "TAL-2341: the run status names the running call (default true); off, the server sends no `current_tool` and the status says Working."
+                    },
+                    "turn_summary": {
+                      "type": "boolean",
+                      "description": "TAL-2341: a reply's footer says what its turn changed (default true); off, the server sends an empty `turn_summary`."
+                    },
+                    "live_activity_current_tool": {
+                      "type": "boolean",
+                      "description": "TAL-2341: Live Activities and push alerts name the current call (default true); off, the server sends Relay no `currentTool`, alerts keep their fixed bodies and calls carry `activity_unnamed`."
                     },
                     "show_busy_placeholder_hint": {
                       "type": "boolean",
@@ -159469,6 +160049,18 @@
                                       "const": true,
                                       "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
                                     },
+                                    "opens_raw": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                    },
+                                    "media_in_details": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                    },
+                                    "activity_unnamed": {
+                                      "const": true,
+                                      "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
+                                    },
                                     "raw_args": {
                                       "type": "string",
                                       "description": "TAL-2338: the call's arguments as its row's raw view shows and copies them: redacted, as indented JSON when they are an object or list, else their text. A scene row's are the whole arguments; a live frame's the sidecar's bounded copy (a start frame's its display snapshot). Absent when empty, on a call outside a scene row or live frame, and on an older server; a frame without it keeps its start frame's."
@@ -160530,6 +161122,18 @@
                                             "hidden": {
                                               "const": true,
                                               "description": "TAL-2331: a `tool_search` or `tool_describe` call that did not fail, while the `show_tool_lookups` setting is off; clients leave it out of the transcript and its tool group. A failed lookup's completion omits it, which shows the call again. Absent for any other call."
+                                            },
+                                            "opens_raw": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `formatted_tool_results` setting is off, so the open row starts in its raw view (`raw_args`, `raw_result`); its raw toggle still switches. Absent while the setting is on."
+                                            },
+                                            "media_in_details": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `inline_tool_media` setting is off, so clients show `result_view.media` only inside the open row, and a media call is not a `shows_card` call. Absent while the setting is on."
+                                            },
+                                            "activity_unnamed": {
+                                              "const": true,
+                                              "description": "TAL-2341: the `live_activity_current_tool` setting is off, so a Live Activity counts this call without naming it. Absent while the setting is on."
                                             },
                                             "raw_args": {
                                               "type": "string",

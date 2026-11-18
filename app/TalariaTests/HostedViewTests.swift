@@ -984,6 +984,35 @@ final class SettingsPlacementHostedTests: XCTestCase {
         }
     }
 
+    /// TAL-2341: Chats' Transcript opens Tool Calls with a row that counts the switches the server sent.
+    func testChatsLinksToolCallsWithItsRowCount() async throws {
+        let fixture = try FixtureApp(for: self)
+        let store = ServerSettingsStore(client: fixture.client)
+        await store.loadIfNeeded()
+        let window = try hostWindow(NavigationStack { ChatsSettingsView().environment(store) }, size: HostedSize.phone)
+        defer { window.isHidden = true; window.rootViewController = nil }
+        let link = try await requireElementScrolling(in: window, "Chats must link Tool Calls") {
+            HostedAccessibility.identifier(of: $0) == SettingsIndex.chatToolCalls.id
+        }
+        let read = [link.accessibilityLabel, link.accessibilityValue].compactMap { $0 }.joined(separator: " ")
+        XCTAssertTrue(read.contains("Tool Calls") && read.contains("8"), read)
+        attachHostedScreenshot(window, name: "settings-chats-tool-calls-link")
+    }
+
+    /// TAL-2341: Tool Calls shows its switches in two groups, the tool rows' six then the two around the chat.
+    func testToolCallsPageGroupsItsSwitches() async throws {
+        let fixture = try FixtureApp(for: self)
+        let store = ServerSettingsStore(client: fixture.client)
+        await store.loadIfNeeded()
+        let window = try hostWindow(NavigationStack { ToolCallsSettingsView().environment(store) }, size: HostedSize.phone)
+        defer { window.isHidden = true; window.rootViewController = nil }
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == SettingsIndex.toolCallsTurnSummary.id }
+        let rows = allSettingsRows(in: window)
+        XCTAssertTrue(rows.labels.isSuperset(of: ["Tool Rows", "Around the Chat"]), "\(rows.labels)")
+        XCTAssertEqual(rows.identifiers.filter { $0.hasPrefix("settings-tool-calls-") }, Set(ToolCallSetting.allCases.map(\.index.id)))
+        attachHostedScreenshot(window, name: "settings-tool-calls")
+    }
+
     func testCategoryPagesKeepTheirRowsAndIdentifiersAtOneHome() async throws {
         let fixture = try FixtureApp(for: self)
         let store = ServerSettingsStore(client: fixture.client)

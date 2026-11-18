@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { LiveActivityGroups } from './activity-groups.js'
 import { anchorActivitySceneTransportPreview, buildTurnScene } from './anchor.js'
-import { readToolLookupsShown } from './tool-display.js'
+import { stubDisplaySettings } from './display-settings.js'
 
 type Json = Record<string, unknown>
 const call = (id: string, name: string, args: Json = {}) => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
@@ -11,7 +11,7 @@ const reply = (id: string, content: string, isError = false) => ({ role: 'tool',
 const sceneOf = (rows: Json[]) => anchorActivitySceneTransportPreview(buildTurnScene(rows.map((m, i) => [m, i]))!) as { activity_rows: Json[]; activity_groups: Json[]; final_phase_activity: Json }
 const shape = (rows: Json[]) => rows.map((row) => [row.row_id, row.group_id ?? null, row.merged_count ?? row.merged_into ?? null])
 
-afterEach(() => { readToolLookupsShown(() => false) })
+afterEach(() => { stubDisplaySettings({}) })
 
 describe('activity groups', () => {
   it('runs reasoning and tools into one group until prose, and counts each group by kind', () => {
@@ -84,7 +84,7 @@ describe('activity groups', () => {
     ])
     expect(scene.activity_groups.map((group) => group.parts)).toEqual([[{ kind: 'read', count: 2, failed: 0 }], [{ kind: 'talaria', count: 1, failed: 0 }], [{ kind: 'read', count: 1, failed: 0 }]])
     // Shown lookups count like any call.
-    readToolLookupsShown(() => true)
+    stubDisplaySettings({ show_tool_lookups: true })
     const shown = sceneOf([
       { role: 'assistant', id: 'a1', content: '', tool_calls: [call('l1', 'tool_search', { queries: ['x'] }), call('l2', 'tool_search', { queries: ['y'] })] },
       reply('l1', '[]'), reply('l2', '[]'),

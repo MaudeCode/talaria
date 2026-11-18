@@ -1,5 +1,21 @@
 public import Foundation
 
+/// TAL-2331, TAL-2341: the Settings › Chats › Tool Calls switches, keyed by their server setting. The server applies each to
+/// the transcripts it sends, so a client only offers them.
+public enum ToolCallSetting: String, CaseIterable, Sendable {
+    case formattedToolResults = "formatted_tool_results"
+    case inlineToolMedia = "inline_tool_media"
+    case toolRowOutcomes = "tool_row_outcomes"
+    case mergeRepeatedToolCalls = "merge_repeated_tool_calls"
+    case liveToolProgress = "live_tool_progress"
+    case showToolLookups = "show_tool_lookups"
+    case statusChipCurrentAction = "status_chip_current_action"
+    case turnSummary = "turn_summary"
+
+    /// The key as `convertFromSnakeCase` decodes it: the case's own name.
+    fileprivate var decodedKey: String { String(describing: self) }
+}
+
 public struct SettingsResponse: Decodable, Equatable, Sendable {
     public internal(set) var botName: String?
     public let webuiVersion: String?
@@ -25,8 +41,10 @@ public struct SettingsResponse: Decodable, Equatable, Sendable {
     public internal(set) var ignoreAgentUpdates: Bool?
     /// TAL-2270: continue chats a Web shutdown interrupted on the next start; nil from an older server.
     public internal(set) var continueInterruptedChats: Bool?
-    /// TAL-2331: show the Agent's tool lookups in the transcript; nil from an older server.
-    public internal(set) var showToolLookups: Bool?
+    /// TAL-2331, TAL-2341: the Tool Calls switches the server sent; a switch an older server predates is absent.
+    public internal(set) var toolCallSettings: [ToolCallSetting: Bool] = [:]
+    /// TAL-2341: Live Activities and push alerts name the run's current call; nil from an older server.
+    public internal(set) var liveActivityCurrentTool: Bool?
     /// TAL-2336: Live Activities and push alerts name a call's target, app and outcome text; nil from an older server.
     public internal(set) var activityCallDetails: Bool?
     public let updateChannels: [String]?
@@ -35,7 +53,7 @@ public struct SettingsResponse: Decodable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case agentApprovals, compressionPrepareAhead, autoTitleRefreshEvery, autoApplyUpdates
         case summarizeUpdatesAutomatically, updateChannel, agentUpdateChannel, ignoreAgentUpdates, updateChannels, continueInterruptedChats
-        case showToolLookups, activityCallDetails
+        case activityCallDetails, liveActivityCurrentTool
         case botName
         case webuiVersion
         case agentVersion
@@ -61,8 +79,12 @@ public struct SettingsResponse: Decodable, Equatable, Sendable {
         agentUpdateChannel = container.decodeLossyStringIfPresent(forKey: .agentUpdateChannel)
         ignoreAgentUpdates = container.decodeLossyBoolIfPresent(forKey: .ignoreAgentUpdates)
         continueInterruptedChats = container.decodeLossyBoolIfPresent(forKey: .continueInterruptedChats)
-        showToolLookups = container.decodeLossyBoolIfPresent(forKey: .showToolLookups)
         activityCallDetails = container.decodeLossyBoolIfPresent(forKey: .activityCallDetails)
+        liveActivityCurrentTool = container.decodeLossyBoolIfPresent(forKey: .liveActivityCurrentTool)
+        let switches = try decoder.container(keyedBy: SettingKey.self)
+        for setting in ToolCallSetting.allCases {
+            toolCallSettings[setting] = switches.decodeLossyBoolIfPresent(forKey: SettingKey(stringValue: setting.decodedKey))
+        }
         updateChannels = try? container.decodeIfPresent([String].self, forKey: .updateChannels)
         hasMaxTokens = container.contains(.maxTokens)
         botName = container.decodeLossyStringIfPresent(forKey: .botName)
@@ -78,6 +100,13 @@ public struct SettingsResponse: Decodable, Equatable, Sendable {
         passwordlessEnabled = container.decodeLossyBoolIfPresent(forKey: .passwordlessEnabled)
         providerQuotaThresholds = try? container.decodeIfPresent(ProviderQuotaThresholds.self, forKey: .providerQuotaThresholds)
     }
+}
+
+private struct SettingKey: CodingKey {
+    let stringValue: String
+    var intValue: Int? { nil }
+    init(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { nil }
 }
 
 public struct DefaultModelResponse: Decodable, Equatable, Sendable {

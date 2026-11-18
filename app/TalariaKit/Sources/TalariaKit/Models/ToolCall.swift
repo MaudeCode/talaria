@@ -42,6 +42,8 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
     /// TAL-2340: the server's start of a running call (`started_at`, epoch seconds), which its row's timer counts from;
     /// nil without one, so a row rebuilt from a scene never restarts a clock.
     public var timerStart: Double?
+    /// TAL-2341: how the server's Tool calls settings show this call.
+    public var displayFlags = ToolDisplayFlags()
 
     public init(
         id: String = "live-tool-\(UUID().uuidString)",
@@ -93,6 +95,27 @@ public struct ToolCall: Identifiable, Equatable, Sendable {
             return String(localized: "Tool")
         }
         return trimmedName
+    }
+}
+
+/// TAL-2341: per-call display switches the server stamps from Settings › Chats › Tool Calls: the open row starts in its raw
+/// view (`opens_raw`), and the call's media shows only inside the open row (`media_in_details`).
+public struct ToolDisplayFlags: Equatable, Sendable {
+    public var opensRaw = false
+    public var mediaInDetails = false
+    /// `activity_unnamed`: a Live Activity does not name this call (an approval's held call carries it too).
+    public var activityUnnamed = false
+
+    public init(opensRaw: Bool = false, mediaInDetails: Bool = false, activityUnnamed: Bool = false) {
+        self.opensRaw = opensRaw
+        self.mediaInDetails = mediaInDetails
+        self.activityUnnamed = activityUnnamed
+    }
+
+    init(_ object: [String: JSONValue]?) {
+        opensRaw = object?["opens_raw"]?.boolValue == true
+        mediaInDetails = object?["media_in_details"]?.boolValue == true
+        activityUnnamed = object?["activity_unnamed"]?.boolValue == true
     }
 }
 
@@ -676,7 +699,7 @@ public struct ToolCallGroup: Identifiable, Equatable, Sendable {
         guard case .object(let object) = value else { return nil }
 
         let function = object["function"]?.objectValue
-        return ToolCall(
+        var call = ToolCall(
             id: nonEmpty(object["id"]?.stringValue) ?? nonEmpty(object["call_id"]?.stringValue) ?? fallbackID,
             name: nonEmpty(function?["name"]?.stringValue) ?? nonEmpty(object["name"]?.stringValue) ?? "tool",
             preview: nonEmpty(object["result"]?.stringValue) ?? nonEmpty(object["preview"]?.stringValue),
@@ -694,6 +717,8 @@ public struct ToolCallGroup: Identifiable, Equatable, Sendable {
             isCompleted: object["done"]?.boolValue ?? true,
             isHidden: object["hidden"]?.boolValue == true
         )
+        call.displayFlags = ToolDisplayFlags(object)
+        return call
     }
 
     private static func arguments(from value: JSONValue?) -> [String: JSONValue]? {

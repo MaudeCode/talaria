@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AppWindow, RefreshCw, Smartphone, Volume2 } from 'lucide-react'
+import { Activity, AppWindow, RefreshCw, Smartphone, Volume2 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { WebPushPreferences } from '@maudecode/talaria-web-contracts'
 import { webPushSupported } from '../../app/pwa'
@@ -80,6 +80,10 @@ export function NotificationsSection() {
         <SettingToggle label={m.settings_label_notifications()} settingKey="notifications_enabled" icon={AppWindow} disabled={permission === 'unsupported'} confirmOn={allow}
           detail={<StatusDot state={shown.state}>{shown.text()}</StatusDot>} />
         <SettingToggle label={m.settings_label_sound()} settingKey="sound_enabled" icon={Volume2} />
+      </SettingsGroup>
+      {/* TAL-2341: off, the server sends Relay no current call and alerts keep their plain bodies. */}
+      <SettingsGroup id="live-activities" title={m.settings_group_live_activities()}>
+        <SettingToggle label={m.settings_label_live_activity_current_tool()} settingKey="live_activity_current_tool" icon={Activity} fallback />
       </SettingsGroup>
       <SettingsGroup id="reply-finishes" title={m.settings_group_reply_finishes()}><CompletionAudioSettings /></SettingsGroup>
       <WebPushSection />

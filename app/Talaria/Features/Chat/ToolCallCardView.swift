@@ -14,8 +14,9 @@ struct ToolCallCardView: View {
     @ChatRetainedState("tool-result") private var fullResult: ToolResultResponse? = nil
     @ChatRetainedState("tool-result-loading") private var isLoadingFullResult = false
     @ChatRetainedState("tool-result-failure") private var fullResultFailed = false
-    /// TAL-2338: the open row shows the server's raw view; formatted until the reader asks.
-    @ChatRetainedState("tool-raw") private var showsRaw = false
+    /// TAL-2338: the reader's choice of the open row's raw view; nil until they choose, so the row opens as the server says
+    /// (TAL-2341 `opens_raw`, else formatted).
+    @ChatRetainedState("tool-raw") private var showsRaw: Bool? = nil
     @State private var copyConfirmation = ChatCodeBlock.CopyConfirmation()
 
     init(toolCall: ToolCall) {
@@ -24,7 +25,7 @@ struct ToolCallCardView: View {
         _fullResult = ChatRetainedState(wrappedValue: nil, "tool:\(toolCall.id):result")
         _isLoadingFullResult = ChatRetainedState(wrappedValue: false, "tool:\(toolCall.id):loading")
         _fullResultFailed = ChatRetainedState(wrappedValue: false, "tool:\(toolCall.id):failure")
-        _showsRaw = ChatRetainedState(wrappedValue: false, "tool:\(toolCall.id):raw")
+        _showsRaw = ChatRetainedState(wrappedValue: nil, "tool:\(toolCall.id):raw")
     }
 
     private var isExpanded: Bool {
@@ -87,8 +88,9 @@ struct ToolCallCardView: View {
                 TerminalResultSection(reference: reference)
             }
 
-            // TAL-2325: and the images, speech or video a media tool made.
-            if let media = toolCall.resultView?.media, !media.isEmpty {
+            // TAL-2325: and the images, speech or video a media tool made. TAL-2341: only inside the open row when the
+            // server says so (`media_in_details`).
+            if let media = toolCall.resultView?.media, !media.isEmpty, isExpanded || !toolCall.displayFlags.mediaInDetails {
                 ToolResultMediaSection(media: media)
                     .padding(.top, 6)
             }
@@ -107,7 +109,7 @@ struct ToolCallCardView: View {
 
     /// TAL-2338: the server sent a raw view to switch to; an older server sends none.
     private var hasRaw: Bool { toolCall.rawArgs != nil || toolCall.rawResult != nil }
-    private var isRaw: Bool { showsRaw && hasRaw }
+    private var isRaw: Bool { (showsRaw ?? toolCall.displayFlags.opensRaw) && hasRaw }
     /// A clipped result's raw view is the whole one, once fetched; the clipped text never shows as raw.
     private var rawResult: String? { toolCall.resultTruncated ? fullResult?.rawResult : toolCall.rawResult }
 
@@ -350,10 +352,10 @@ struct ToolCallCardView: View {
             if hasRaw {
                 Button {
                     chatDisclosureToggled()
-                    showsRaw.toggle()
+                    showsRaw = !isRaw
                     // The checkmark confirmed the other view's copy.
                     copyConfirmation.reset()
-                    if showsRaw, toolCall.resultTruncated, fullResult == nil {
+                    if isRaw, toolCall.resultTruncated, fullResult == nil {
                         startFullResult()
                     }
                 } label: {

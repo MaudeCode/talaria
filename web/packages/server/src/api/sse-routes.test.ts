@@ -297,6 +297,11 @@ it('replays the shared lookup run with the visibility the setting decides now an
   expect(await replay()).toEqual(live)
   await post('/api/settings', { show_tool_lookups: true })
   expect(await replay()).toEqual(live.map(({ hidden: _hidden, ...frame }) => frame))
+  // TAL-2341: and the Tool calls switches in force now: no timer start, and every call opening raw.
+  expect(live.filter((f) => typeof f.started_at === 'number')).toHaveLength(3)
+  await post('/api/settings', { show_tool_lookups: false, live_tool_progress: false, formatted_tool_results: false })
+  expect(await replay()).toEqual(live.map(({ started_at: _start, ...frame }) => ({ ...frame, opens_raw: true })))
+  await post('/api/settings', { live_tool_progress: true, formatted_tool_results: true })
 })
 
 it('per-session journal replay settles prompts only from their own run', async () => {

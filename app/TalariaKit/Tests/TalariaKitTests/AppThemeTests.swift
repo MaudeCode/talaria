@@ -124,6 +124,8 @@ final class SettingsNavigationTests: XCTestCase {
             case .profile: allowed = [.profile]
             case .server: allowed = [.server]
             case .device, .synced: allowed = [.interface, .device]
+            // The server's interface settings, and the one a Live Activity reads (TAL-2341), which sits with its other switches.
+            case .interface: allowed = [.interface, .device]
             }
             XCTAssertTrue(allowed.contains(entry.category.group), "\(entry.id): \(entry.scope) belongs outside \(entry.category.group)")
         }

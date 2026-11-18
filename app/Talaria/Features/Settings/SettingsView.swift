@@ -134,6 +134,8 @@ struct SettingsPaneView: View {
             ProviderQuotaSidebarDisplayView()
         case .widgetProfiles:
             ProviderQuotaWidgetProfilesView()
+        case .toolCalls:
+            ToolCallsSettingsView()
         case .category(let category):
             categoryPage(category)
         }

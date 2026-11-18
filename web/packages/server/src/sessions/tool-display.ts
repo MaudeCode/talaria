@@ -10,6 +10,7 @@ import { str } from '../util.js'
 import { expandHome } from '../workspace/paths.js'
 import { diffHunks, hunkTotals } from '../text/diff.js'
 import { isDict, messageText, TOOL_ARG_CONTENT_CAP, TOOL_ARG_CONTENT_KEYS } from './merge.js'
+import { displaySetting } from './display-settings.js'
 
 /** Only a structured tool reply supplies a locator. Its content/authority still comes from the registered backend. */
 export function outboundDraftRef(name: unknown, raw: unknown): OutboundDraftRef | undefined {
@@ -270,7 +271,7 @@ export function toolDisplay(name: unknown, args: unknown, workspace: string | nu
   const verb = actions ? (Object.hasOwn(actions, action) ? actions[action] : undefined) : agentTool(name)?.verb
   return {
     kind, target: capped(first), focus_path: focus(kind),
-    ...(typeof name === 'string' && CARD_TOOLS.has(name) ? { shows_card: true as const } : {}),
+    ...(showsCard(name) ? { shows_card: true as const } : {}),
     ...(verb ? { verb } : {}),
   }
 }
@@ -299,7 +300,7 @@ const displayKind = (name: unknown): ToolKind => BRIDGES.get(str(name))?.kind ??
  * for a name the table does not list) and whether its card stands alone (`shows_card`).
  */
 export function toolGrouping(name: unknown): { kind: ToolKind; presentation: string; card: boolean } {
-  return { kind: displayKind(name), presentation: toolPresentation(name) ?? 'generic', card: typeof name === 'string' && CARD_TOOLS.has(name) }
+  return { kind: displayKind(name), presentation: toolPresentation(name) ?? 'generic', card: showsCard(name) }
 }
 
 /** TAL-2328: the verb of a tool whose `action` decides what it does; an action not listed reads as its kind's own phrase. */
@@ -317,12 +318,8 @@ const BRIDGES = new Map<string, { kind: ToolKind; key: string; target: (items: s
   ['tool_search', { kind: 'search', key: 'queries', target: (queries) => queries.find((q) => q.trim()) ?? '' }],
 ])
 
-/** TAL-2331: the `show_tool_lookups` setting, which the runtime wires to the settings store; off until it does. */
-let toolLookupsShown = (): boolean => false
-export function readToolLookupsShown(read: () => boolean): void { toolLookupsShown = read }
-
-/** TAL-2331: a `tool_search` or `tool_describe` call the transcript leaves out: one that did not fail, while the setting is off. */
-export const hiddenLookup = (name: unknown, isError: boolean): boolean => BRIDGES.has(str(name)) && !isError && !toolLookupsShown()
+/** TAL-2331: a `tool_search` or `tool_describe` call the transcript leaves out: one that did not fail, while `show_tool_lookups` is off. */
+export const hiddenLookup = (name: unknown, isError: boolean): boolean => BRIDGES.has(str(name)) && !isError && !displaySetting('show_tool_lookups')
 
 /** A quoted string in a `pythonStr` list, whose closing quote the snapshot cap may have cut. */
 const QUOTED = /(['"])((?:(?!\1)[^\\]|\\.)*)\1?/gs
@@ -332,8 +329,11 @@ function snapshotItems(value: string): string[] {
   return value.startsWith('[') ? Array.from(value.matchAll(QUOTED), (m) => unescapeGoal(m[2] ?? '')) : [value]
 }
 
-/** TAL-1968: calls whose transcript card the user must see, as a settled turn keeps them open (`buildTurnScene`). TAL-2325: and the media a media tool made. */
-const CARD_TOOLS = new Set(['show', 'deliver', 'propose', 'draft_card', 'terminal_open', ...Object.entries(TOOL_PRESENTATIONS).flatMap(([name, entry]) => (entry.presentation === 'media' ? [name] : []))])
+/** TAL-1968: calls whose transcript card the user must see, as a settled turn keeps them open (`buildTurnScene`). */
+const CARD_TOOLS = new Set(['show', 'deliver', 'propose', 'draft_card', 'terminal_open'])
+/** TAL-2325: the media tools, whose media stands alone like a card while `inline_tool_media` is on (TAL-2341). */
+const MEDIA_TOOLS = new Set(Object.entries(TOOL_PRESENTATIONS).flatMap(([name, entry]) => (entry.presentation === 'media' ? [name] : [])))
+const showsCard = (name: unknown): boolean => typeof name === 'string' && (CARD_TOOLS.has(name) || (MEDIA_TOOLS.has(name) && displaySetting('inline_tool_media')))
 
 const FOCUS_KEYS = ['path', 'file_path', 'file', 'target']
 

@@ -74,7 +74,7 @@ const renderPage = ({ section, page }: { section: SettingsSectionId; page?: Sett
  */
 const PLACEMENT: Record<string, string> = {
   send_key: 'chat', default_message_mode: 'chat', large_text_paste_as_attachment: 'chat', chat_activity_display_mode: 'chat', transparent_stream_event_timestamps: 'chat/advanced',
-  worklog_details_expanded_default: 'chat', show_tool_lookups: 'chat', auto_scroll_follow: 'chat', render_user_markdown: 'chat', fade_text_effect: 'chat/advanced', virtualize_transcript: 'chat/advanced',
+  worklog_details_expanded_default: 'chat', show_tool_lookups: 'chat/tool-calls', auto_scroll_follow: 'chat', render_user_markdown: 'chat', fade_text_effect: 'chat/advanced', virtualize_transcript: 'chat/advanced',
   show_busy_placeholder_hint: 'chat/advanced', show_token_usage: 'chat', show_tps: 'chat/advanced',
   max_tokens: 'models', compression_prepare_ahead: 'models', group_discussion_max_rounds: 'system', group_discussion_max_messages: 'system', auto_title_refresh_every: 'chat/advanced',
   sidebar_density: 'navigation', pinned_sessions_limit: 'navigation', session_endless_scroll: 'chat/advanced', session_jump_buttons: 'chat', show_conversation_outline: 'chat', project_quick_create_buttons: 'navigation',
@@ -84,6 +84,8 @@ const PLACEMENT: Record<string, string> = {
   hide_composer_attach: 'chat', hide_composer_mic: 'chat', hide_composer_context: 'chat', hide_composer_yolo: 'chat',
   workspace_panel_open: 'chat/workspace-panel', workspace_todos_tab: 'chat/workspace-panel', new_chat_on_workspace_switch: 'chat/workspace-panel',
   terminal_auto_expand_on_output: 'chat/workspace-panel', screen_reader_mode: 'chat/workspace-panel',
+  formatted_tool_results: 'chat/tool-calls', inline_tool_media: 'chat/tool-calls', tool_row_outcomes: 'chat/tool-calls', merge_repeated_tool_calls: 'chat/tool-calls',
+  live_tool_progress: 'chat/tool-calls', status_chip_current_action: 'chat/tool-calls', turn_summary: 'chat/tool-calls', live_activity_current_tool: 'notifications',
   default_model: 'models', '#settingsModel': 'models', '[data-group="auxiliary"]': 'models', '[data-group="quota-remaining"]': 'providers/quota-alerts',
   notifications_enabled: 'notifications', sound_enabled: 'notifications', '#completionSound': 'notifications',
   agent_approvals: 'tools',
@@ -121,12 +123,16 @@ it('edits every retired Preferences, Conversation, System and Models & Providers
 const GROUPS: Record<string, [string, string][]> = {
   chat: [
     ['Send with', 'composer'], ['While the agent is working', 'composer'], ['Attach long pasted text as a file', 'composer'],
-    ['Activity display', 'transcript'], ['Open worklog details automatically', 'transcript'], ['Show tool lookups', 'transcript'], ['Format Markdown in my messages', 'transcript'], ['Show token usage', 'transcript'],
+    ['Activity display', 'transcript'], ['Open worklog details automatically', 'transcript'], ['Format Markdown in my messages', 'transcript'], ['Show token usage', 'transcript'],
     ['Follow new content', 'transcript'], ['Conversation outline', 'transcript'], ['Jump buttons', 'transcript'],
   ],
   'chat/workspace-panel': [
     ['Keep workspace panel open by default', 'panel'], ['Show Todos tab in workspace panel', 'panel'], ['Start a new chat when switching workspace', 'panel'],
     ['Auto-expand terminal on output', 'terminal'], ['Terminal screen reader mode', 'terminal'],
+  ],
+  'chat/tool-calls': [
+    ['Formatted results', 'tool-rows'], ['Media in tool rows', 'tool-rows'], ['Outcomes', 'tool-rows'], ['Merge repeated calls', 'tool-rows'],
+    ['Live progress', 'tool-rows'], ['Show tool lookups', 'tool-rows'], ['Current action in status', 'around-chat'], ['Turn summary', 'around-chat'],
   ],
   'chat/advanced': [
     ['Name the busy action in the composer', 'transcript-advanced'], ['Event timestamps', 'transcript-advanced'], ['Fade in streamed text', 'transcript-advanced'],
@@ -164,6 +170,7 @@ it('keeps Chat to the composer drawing and at most 14 rows, with links that coun
   expect(page.querySelectorAll('[data-group] label').length + page.querySelectorAll('[data-group="more"] a').length).toBeLessThanOrEqual(14)
   expect(within(page).getByRole('link', { name: /Workspace panel/ })).toHaveTextContent('5 settings')
   expect(within(page).getByRole('link', { name: /Advanced/ })).toHaveTextContent('7 settings')
+  expect(within(page).getByRole('link', { name: /Tool calls/ })).toHaveTextContent('8 settings')
   for (const name of ['Send with', 'While the agent is working', 'Activity display']) expect(within(page).getByRole('radiogroup', { name })).toBeInTheDocument()
   expect(within(page).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Enter', 'Ctrl Enter', 'Steer', 'Queue', 'Interrupt', 'Compact', 'Every step', 'Final answer only'])
   expect(page.querySelector('[role="switch"][id^="settings-hide_composer_"]')).toBeNull()

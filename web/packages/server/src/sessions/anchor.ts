@@ -17,6 +17,7 @@ import { decidedEditDiff, toolArgs, toolEditDiff, toolName } from './tool-displa
 import { ToolProgressSchema, type ToolProgress, type ToolEditDiff } from '@maudecode/talaria-web-contracts'
 import { turnFileChanges } from './file-changes.js'
 import { turnSummary } from './turn-summary.js'
+import { displaySetting } from './display-settings.js'
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
@@ -492,8 +493,8 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
   const terminalState = opts.running ? 'running' : terminalStateOf(last, finalAnswer)
   return {
     version: 'activity_scene_v1', activity_rows: rows, final_answer: finalAnswer, terminal_state: terminalState,
-    expanded_by_default: worklogExpandedByDefault(terminalState, rows.length, { mustShow: rows.some((row) => row.tool?.result_view?.outbound_draft ?? row.tool?.result_view?.proposal ?? row.tool?.result_view?.block ?? row.tool?.result_view?.terminal ?? row.tool?.result_view?.media?.length) }), turn_duration: anchorSceneMessageTurnDuration(last),
-    file_changes: turnFileChanges(rows), turn_summary: turnSummary(rows),
+    expanded_by_default: worklogExpandedByDefault(terminalState, rows.length, { mustShow: rows.some((row) => row.tool?.result_view?.outbound_draft ?? row.tool?.result_view?.proposal ?? row.tool?.result_view?.block ?? row.tool?.result_view?.terminal ?? (displaySetting('inline_tool_media') && row.tool?.result_view?.media?.length)) }), turn_duration: anchorSceneMessageTurnDuration(last),
+    file_changes: turnFileChanges(rows), turn_summary: displaySetting('turn_summary') ? turnSummary(rows) : [],
     ...(typeof last._final_phase_duration === 'number' ? { final_phase_duration: last._final_phase_duration } : {}),
   }
 }

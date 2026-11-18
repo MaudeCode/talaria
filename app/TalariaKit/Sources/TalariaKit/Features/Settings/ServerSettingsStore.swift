@@ -100,16 +100,22 @@ public final class ServerSettingsStore {
     public func setContinueInterruptedChats(_ value: Bool) -> Task<Void, Never> {
         save("continue_interrupted_chats", \.continueInterruptedChats, value)
     }
-    /// TAL-2331: the server marks tool lookups `hidden` by this setting, so open chats reread their transcript once it settles.
+    /// TAL-2331, TAL-2341: the server applies this switch to the transcripts it sends, so open chats reread theirs once the
+    /// save settles.
     @discardableResult
-    public func setShowToolLookups(_ value: Bool) -> Task<Void, Never> {
-        let write = save("show_tool_lookups", \.showToolLookups, value)
+    public func setToolCallSetting(_ setting: ToolCallSetting, _ value: Bool) -> Task<Void, Never> {
+        let write = save(setting.rawValue, \.toolCallSettings[setting], value)
         let server = client.baseURL
         return Task {
             await write.value
             NotificationCenter.default.post(name: .talariaSessionsChanged, object: server,
-                                            userInfo: [SessionsChange.userInfoKey: SessionsChange.changed(reason: "show_tool_lookups", sessionID: nil)])
+                                            userInfo: [SessionsChange.userInfoKey: SessionsChange.changed(reason: setting.rawValue, sessionID: nil)])
         }
+    }
+    /// TAL-2341: off, the server names no call on Live Activities and push alerts.
+    @discardableResult
+    public func setLiveActivityCurrentTool(_ value: Bool) -> Task<Void, Never> {
+        save("live_activity_current_tool", \.liveActivityCurrentTool, value)
     }
     /// TAL-2336: off, the server sends Live Activities and push alerts only each call's kind. Owner only.
     @discardableResult

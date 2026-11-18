@@ -6735,6 +6735,7 @@ public final class ChatViewModel {
             isHidden: payload.isHidden
         )
         call.timerStart = payload.startedAt
+        call.displayFlags = payload.displayFlags
         liveAssistantActivity.appendTool(
             call,
             groupID: payload.groupID,
@@ -6797,27 +6798,29 @@ public final class ChatViewModel {
 
         guard let index = liveToolCallCompletionIndex(for: payload) else {
             flushPendingStreamingContent()
+            var call = ToolCall(
+                id: payload.stableID ?? "live-tool-\(UUID().uuidString)",
+                name: payload.name,
+                preview: payload.preview,
+                args: payload.args,
+                argsFields: payload.argsFields,
+                rawArgs: payload.rawArgs,
+                rawResult: payload.rawResult,
+                kind: payload.kind,
+                verb: payload.verb,
+                app: payload.app,
+                target: payload.target,
+                resultView: payload.resultView,
+                editDiff: payload.editDiff,
+                duration: payload.duration,
+                isError: payload.isError,
+                isCompleted: true,
+                isHidden: payload.isHidden,
+                processID: payload.processID
+            )
+            call.displayFlags = payload.displayFlags
             liveAssistantActivity.appendTool(
-                ToolCall(
-                    id: payload.stableID ?? "live-tool-\(UUID().uuidString)",
-                    name: payload.name,
-                    preview: payload.preview,
-                    args: payload.args,
-                    argsFields: payload.argsFields,
-                    rawArgs: payload.rawArgs,
-                    rawResult: payload.rawResult,
-                    kind: payload.kind,
-                    verb: payload.verb,
-                    app: payload.app,
-                    target: payload.target,
-                    resultView: payload.resultView,
-                    editDiff: payload.editDiff,
-                    duration: payload.duration,
-                    isError: payload.isError,
-                    isCompleted: true,
-                    isHidden: payload.isHidden,
-                    processID: payload.processID
-                ),
+                call,
                 groupID: payload.groupID,
                 group: payload.group
             )

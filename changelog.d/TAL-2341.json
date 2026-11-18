@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Settings › Chat › Tool calls switches off each optional tool-call presentation on the App and the Web: formatted results, media in tool rows, outcomes, merged repeated calls, live progress, tool lookups, the current action in the status and the turn summary. A Current call switch for Live Activities and alerts sits in Notifications on the Web and in Live Activities settings on the App.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

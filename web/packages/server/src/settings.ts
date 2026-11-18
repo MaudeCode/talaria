@@ -11,6 +11,7 @@ import { InvalidDocument, RevisionConflict, type DocumentBackend } from './sessi
 import { withDocumentQueue } from './sessions/storage/document.js'
 import { resolveDefaultWorkspace, type Env } from './config.js'
 import { normalizeTrustedLinkHosts } from './links.js'
+import { DISPLAY_SETTING_DEFAULTS } from './sessions/display-settings.js'
 import { KanbanPinnedBoardsSchema, MODEL_FAVORITES_MAX, ModelFavoritesSchema, HiddenModelsSchema, OUTSIDE_SOURCE_SETTING_KEYS, WebUpdateChannelSchema, type ModelFavorite } from '@maudecode/talaria-web-contracts'
 
 export type Settings = Record<string, unknown>
@@ -70,7 +71,8 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     virtualize_transcript_optin: false,
     show_tps: false,
     fade_text_effect: true,
-    show_tool_lookups: false,
+    // TAL-2331, TAL-2341: the Settings › Chat › Tool calls switches and the Live Activity's.
+    ...DISPLAY_SETTING_DEFAULTS,
     show_cli_sessions: true,
     show_claude_code_sessions: true,
     show_messaging_sessions: true,

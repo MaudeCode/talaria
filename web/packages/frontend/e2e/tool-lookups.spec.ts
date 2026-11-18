@@ -7,7 +7,7 @@ test.use({ serviceWorkers: 'block' })
 
 const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../contracts/fixtures/web-session.json'), 'utf8')) as { tool_lookup_views: { session: { messages: unknown[] } } }).tool_lookup_views
 
-test('a tool lookup the server hides stays out of the turn, a failed one shows, and Settings › Chat offers the switch (TAL-2331)', async ({ page }, testInfo) => {
+test('a tool lookup the server hides stays out of the turn, a failed one shows, and Settings › Chat › Tool calls offers the switch (TAL-2331)', async ({ page }, testInfo) => {
   const shot = (name: string) => page.screenshot({ path: testInfo.outputPath(`${name}-${testInfo.project.name}.png`), fullPage: true })
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'lookup-session', title: 'Tool lookups', messages: fixture.session.messages } } }))
 
@@ -21,7 +21,8 @@ test('a tool lookup the server hides stays out of the turn, a failed one shows, 
   await expect(page.locator('[data-tool-id="call-describe"]')).toHaveCount(0)
   await shot('tool-lookups-transcript')
 
-  await page.goto('/settings/chat')
+  // TAL-2341: the switch sits on Settings › Chat › Tool calls.
+  await page.goto('/settings/chat/tool-calls')
   await settle(page)
   const toggle = page.getByRole('switch', { name: 'Show tool lookups' })
   await expect(toggle).not.toBeChecked()

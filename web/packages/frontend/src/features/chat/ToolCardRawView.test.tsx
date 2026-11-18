@@ -8,6 +8,7 @@ import * as api from '../../api/endpoints'
 import { copyWithToast } from '../../lib/clipboard'
 import { TurnActivityView } from './TurnActivityView'
 import { WorklogDisclosureProvider } from './blocks/Worklog'
+import { ToolCard, type ToolCardData } from './blocks/ToolCard'
 import { groupAssistantTurns, persistedActivity } from './turnActivity'
 import { projectMessages } from './useTranscript'
 import type { Message } from '../../contracts'
@@ -89,5 +90,25 @@ describe('raw view and copy on an open tool row (TAL-2338)', () => {
     fireEvent.click(button('big', 'Copy raw')!)
     expect(copyWithToast).toHaveBeenLastCalledWith(`{\n  "path": "big.txt"\n}\n\n${whole}`)
     expect(screen.queryAllByRole('button', { name: 'Copy raw' })).toHaveLength(1)
+  })
+})
+
+describe('the server\'s raw default (TAL-2341)', () => {
+  it('follows `opens_raw` while the row stays mounted, until the reader picks a view', () => {
+    const call: ToolCardData = { id: 'list', name: 'session_list', kind: 'session', target: '', args: { limit: 2 }, argsFields: [{ key: 'limit', value: '2', multiline: false }], rawArgs, rawResult, preview: null, done: true, isError: false, duration: null, costUsd: null, resultView: null, progress: null }
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const ui = (c: ToolCardData) => <QueryClientProvider client={qc}><WorklogDisclosureProvider scope="profile/sess-1"><ToolCard call={c} sessionId="sess-1" /></WorklogDisclosureProvider></QueryClientProvider>
+    const view = render(ui(call))
+    open('list')
+    const pressed = () => (button('list', 'Show raw') ?? button('list', 'Show formatted'))?.getAttribute('aria-pressed')
+    expect(pressed()).toBe('false')
+    view.rerender(ui({ ...call, opensRaw: true }))
+    expect(pressed()).toBe('true')
+    fireEvent.click(button('list', 'Show formatted')!)
+    expect(pressed()).toBe('false')
+    // The reader's choice outlasts the next default.
+    view.rerender(ui({ ...call, opensRaw: undefined }))
+    view.rerender(ui({ ...call, opensRaw: true }))
+    expect(pressed()).toBe('false')
   })
 })

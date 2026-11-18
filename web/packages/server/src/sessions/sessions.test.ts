@@ -3390,6 +3390,64 @@ describe('session detail hides the Agent\'s tool lookups while Settings does (TA
   })
 })
 
+describe('session detail applies each Tool calls switch (TAL-2341)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  const at = (m: Json, i: number): Json => ({ ...m, timestamp: 9500 + i, _turn_id: 'switch-run' })
+  const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
+  const reply = (id: string, content: string): Json => ({ role: 'tool', tool_call_id: id, content })
+  /** Two reads that merge, a memory write with an outcome the turn summary counts, a background command and a media call. */
+  const transcript = [
+    { role: 'user', content: 'Tidy up', message_id: 'switch-user' },
+    { role: 'assistant', content: '', message_id: 'switch-calls', tool_calls: [
+      call('r1', 'read_file', { path: 'a.txt' }), call('r2', 'read_file', { path: 'b.txt' }), call('m1', 'memory', { action: 'add', target: 'memory', content: 'x' }),
+      call('t1', 'terminal', { command: 'npm run dev', background: true }), call('i1', 'image_generate', { prompt: 'a cat' }),
+    ] },
+    reply('r1', 'a'), reply('r2', 'b'), reply('m1', '{"success":true}'), reply('t1', '{"output":"","session_id":"proc_abc","exit_code":0}'), reply('i1', '{"success":true}'),
+    { role: 'assistant', content: 'Done.', message_id: 'switch-answer' },
+  ].map(at)
+
+  it('leaves out or marks exactly its own feature while a switch is off; an absent key reads as its default', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = structuredClone(transcript)
+    await s.deps.sessionStore.save(session)
+    const view = async () => {
+      const messages = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+      const calls = messages.find((m) => m.message_id === 'switch-calls')?.tool_calls as Json[]
+      const scene = messages.find((m) => m.message_id === 'switch-answer')?._anchor_activity_scene as Json
+      const rows = (scene.activity_rows as Json[]).filter((r) => r.role === 'tool')
+      const tool = (id: string) => rows.find((r) => (r.tool as Json).id === id)?.tool as Json
+      const every = (flag: string) => [...calls, ...rows.map((r) => r.tool as Json)].map((c) => c[flag] === true)
+      return {
+        outcome: ((tool('m1').result_view as Json | null)?.outcome as Json | undefined)?.key ?? null,
+        merged: rows.map((r) => r.merged_count ?? r.merged_into ?? null),
+        process: tool('t1').process_id ?? null,
+        raw: every('opens_raw'), media: every('media_in_details'), unnamed: every('activity_unnamed'),
+        card: tool('i1').shows_card ?? false,
+        summary: scene.turn_summary,
+      }
+    }
+    const none = Array(10).fill(false)
+    const defaults = { outcome: 'memory_added', merged: [2, 'tool:r1', null, null, null], process: 'proc_abc', raw: none, media: none, unnamed: none, card: true, summary: [{ key: 'memories_saved', count: 1 }] }
+    expect(await view()).toEqual(defaults)
+    const all = Array(10).fill(true)
+    const off: [string, Record<string, unknown>][] = [
+      ['formatted_tool_results', { raw: all }], ['inline_tool_media', { media: all, card: false }], ['tool_row_outcomes', { outcome: null }],
+      ['merge_repeated_tool_calls', { merged: [null, null, null, null, null] }], ['live_tool_progress', { process: null }],
+      ['turn_summary', { summary: [] }], ['live_activity_current_tool', { unnamed: all }],
+    ]
+    const save = (patch: Json) => s.get('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) })
+    for (const [key, changed] of off) {
+      await save({ [key]: false })
+      expect(await view(), key).toEqual({ ...defaults, ...changed })
+      await save({ [key]: true })
+    }
+  })
+})
+
 describe('session detail ships browser and computer-use views (TAL-2328)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

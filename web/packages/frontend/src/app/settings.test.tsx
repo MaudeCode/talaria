@@ -200,7 +200,7 @@ describe('shared optimistic settings', () => {
     expect(result.current.settings.data).not.toHaveProperty('_set_password')
   })
 
-  it('re-reads open transcripts only when the Worklog default (TAL-2149) or tool lookups (TAL-2331) change, and the chat list only when density does (TAL-2153)', async () => {
+  it('re-reads open transcripts only when the Worklog default (TAL-2149) or a Tool calls switch (TAL-2331, TAL-2341) changes, and the chat list only when density does (TAL-2153)', async () => {
     vi.mocked(api.saveSettings).mockImplementation((patch) => Promise.resolve({ ...initial, ...patch }))
     const { result, qc } = setup()
     qc.setQueryData(keys.sessions.detail('s1'), { session: {} })
@@ -211,10 +211,12 @@ describe('shared optimistic settings', () => {
     await act(async () => { await result.current.save.mutateAsync({ worklog_details_expanded_default: true }) })
     expect(stale()).toEqual([true, false])
     qc.setQueryData(keys.sessions.detail('s1'), { session: {} })
-    // TAL-2331: the server's `hidden` tool lookups follow `show_tool_lookups`.
-    await act(async () => { await result.current.save.mutateAsync({ show_tool_lookups: true }) })
-    expect(stale()).toEqual([true, false])
-    qc.setQueryData(keys.sessions.detail('s1'), { session: {} })
+    // TAL-2331, TAL-2341: the transcript the server sends follows each Tool calls switch.
+    for (const key of ['show_tool_lookups', 'formatted_tool_results', 'inline_tool_media', 'tool_row_outcomes', 'merge_repeated_tool_calls', 'live_tool_progress', 'status_chip_current_action', 'turn_summary']) {
+      await act(async () => { await result.current.save.mutateAsync({ [key]: false }) })
+      expect(stale(), key).toEqual([true, false])
+      qc.setQueryData(keys.sessions.detail('s1'), { session: {} })
+    }
     await act(async () => { await result.current.save.mutateAsync({ sidebar_density: 'detailed' }) })
     expect(stale()).toEqual([false, true])
   })

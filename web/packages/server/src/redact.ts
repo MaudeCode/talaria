@@ -4,6 +4,7 @@ import { channel } from 'node:diagnostics_channel'
 import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
 import { isRasterDataUri } from './raster-image.js'
+import { displaySetting } from './sessions/display-settings.js'
 import { gutterLines, gutterText, hiddenLookup, snapshotArgs, startedProcessId, toolArgs, toolDisplay, toolName, withResultFocusPaths } from './sessions/tool-display.js'
 import { cappedFields, codexCommentary, hasNativeImages, isDict, messageText, normalizeAssistantDisplay, normalizeUserDisplay, toolFields, TOOL_ARG_CONTENT_CAP, withoutImageData, withoutReasoningParts } from './sessions/merge.js'
 import { REASONING_FIELDS } from './sessions/reasoning-display.js'
@@ -2536,16 +2537,26 @@ function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean, workspa
   const { focus_path: focusPath, ...display } = redactedToolDisplay(record, enabled, workspace)
   // TAL-2323: the files a read or search result names, located in the workspace from their redacted paths; TAL-2325: its local media served for this session.
   if (isDict(out.result_view)) out.result_view = withResultFocusPaths(out.result_view, workspace, sessionId)
-  return withLookupVisibility({ ...out, ...display, ...(focusPath ? { focus_path: focusPath } : {}) }, toolName(record), record.is_error === true) as T
+  return withDisplaySettings({ ...out, ...display, ...(focusPath ? { focus_path: focusPath } : {}) }, toolName(record), record.is_error === true) as T
 }
 
 /**
- * TAL-2331: a call with `hidden` as the setting decides it now, replacing any stamp it carries (a journaled frame): a lookup
- * the transcript leaves out; a failed one stays, so its completion clears the start frame's flag.
+ * TAL-2331, TAL-2341: a call as the Tool calls switches decide it now, replacing any stamp it carries (a journaled frame).
+ * `hidden` marks a lookup the transcript leaves out (a failed one stays, so its completion clears the start frame's flag);
+ * `opens_raw`, `media_in_details` and `activity_unnamed` mark a switch that is off; `tool_row_outcomes` off drops the
+ * collapsed row's outcome and `live_tool_progress` off the timer's start and the background process.
  */
-export function withLookupVisibility(call: Record<string, unknown>, name: unknown, isError: boolean): Record<string, unknown> {
-  const { hidden: _stamped, ...rest } = call
-  return hiddenLookup(name, isError) ? { ...rest, hidden: true } : rest
+export function withDisplaySettings(call: Record<string, unknown>, name: unknown, isError: boolean): Record<string, unknown> {
+  const { hidden: _hidden, opens_raw: _raw, media_in_details: _media, activity_unnamed: _unnamed, ...rest } = call
+  if (!displaySetting('live_tool_progress')) { delete rest.started_at; delete rest.process_id }
+  if (!displaySetting('tool_row_outcomes') && isDict(rest.result_view) && 'outcome' in rest.result_view) {
+    const { outcome: _outcome, ...view } = rest.result_view
+    rest.result_view = view
+  }
+  return {
+    ...rest, ...(hiddenLookup(name, isError) ? { hidden: true } : {}), ...(displaySetting('formatted_tool_results') ? {} : { opens_raw: true }),
+    ...(displaySetting('inline_tool_media') ? {} : { media_in_details: true }), ...(displaySetting('live_activity_current_tool') ? {} : { activity_unnamed: true }),
+  }
 }
 
 /** TAL-2328: a result view showing the code its call ran: an excerpt without a path (`code` presentation). */
@@ -2675,7 +2686,7 @@ function withRawTool(raw: Record<string, unknown>, out: Record<string, unknown>,
   const result = raw.raw_result ?? raw.result ?? raw.output
   const rawResult = rawToolText(result, enabled)
   // TAL-2340: the background process the call started, whose latest output line its row shows.
-  const processId = startedProcessId(toolName(raw), result)
+  const processId = displaySetting('live_tool_progress') ? startedProcessId(toolName(raw), result) : null
   return { ...rest, ...(rawArgs === undefined ? {} : { raw_args: rawArgs }), ...(rawResult === undefined ? {} : { raw_result: rawResult }), ...(processId ? { process_id: processId } : {}) }
 }
 
@@ -2716,6 +2727,8 @@ export function approvalTool(call: Record<string, unknown>, enabled: boolean, wo
     name: toolName(call), kind, target: str(frame.target),
     ...(frame.verb ? { verb: frame.verb as ApprovalTool['verb'] } : {}), ...(frame.app ? { app: frame.app as ApprovalTool['app'] } : {}),
     ...(kind !== 'shell' && Array.isArray(frame.args_fields) ? { args_fields: frame.args_fields as ApprovalTool['args_fields'] } : {}),
+    // TAL-2341: as on the call's own frame, so a Live Activity does not name the call the approval holds either.
+    ...(frame.activity_unnamed === true ? { activity_unnamed: true as const } : {}),
   }
 }
 
@@ -2755,17 +2768,22 @@ function activityFields(fields: { kind?: unknown; target?: unknown; verb?: unkno
 export function activityTool(call: Record<string, unknown>, enabled: boolean, workspace: string | null, details = true): ActivityTool | undefined {
   const frame = publicToolFrame(call, enabled, workspace)
   if (frame.hidden === true) return undefined
-  const outcome = isDict(frame.result_view) && isDict(frame.result_view.outcome) ? frame.result_view.outcome as ActivityTool['outcome'] : undefined
+  // From the call itself: the transcript's `tool_row_outcomes` switch (TAL-2341) leaves the frame's out.
+  const view = redactValue(call.result_view, enabled)
+  const outcome = isDict(view) && isDict(view.outcome) ? view.outcome as ActivityTool['outcome'] : undefined
   return activityFields(frame, call.done === true, call.is_error === true, outcome, details)
 }
 
 /**
  * TAL-2337: a run status under the redaction policy in force now. Its `current_tool` was redacted (or not) when the status
  * was built; with redaction on, its texts are redacted again on delivery, so a status built while it was off never ships a
- * credential once it is back on. Redacting a redacted text changes nothing.
+ * credential once it is back on. Redacting a redacted text changes nothing. TAL-2341: with `status_chip_current_action` off
+ * it names no call.
  */
 export function redactedRunStatus<T>(status: T, enabled: boolean): T {
-  if (!enabled || !isDict(status) || !isDict(status.current_tool)) return status
+  if (!isDict(status) || !isDict(status.current_tool)) return status
+  if (!displaySetting('status_chip_current_action')) { const { current_tool: _tool, ...rest } = status; return rest as T }
+  if (!enabled) return status
   const tool = status.current_tool as ActivityTool
   const text = (value: string): string => activityText(redactString(value, true))
   return { ...status, current_tool: { ...tool, target: text(tool.target), ...(tool.app ? { app: { name: text(tool.app.name) } } : {}), ...(tool.outcome?.value === undefined ? {} : { outcome: { ...tool.outcome, value: text(tool.outcome.value) } }) } }

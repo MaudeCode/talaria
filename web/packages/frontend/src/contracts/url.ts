@@ -42,7 +42,7 @@ export type { SettingsSectionId as SettingsSection, SettingsSectionGroup } from 
 export const ToolsTabSchema = z.enum(['toolsets', 'plugins', 'connectors', 'mcp'])
 export type ToolsTab = z.infer<typeof ToolsTabSchema>
 /** TAL-2138: Settings › Chat's sub-pages, `settings/chat/<page>`. */
-export const ChatPageSchema = z.enum(['workspace-panel', 'advanced'])
+export const ChatPageSchema = z.enum(['workspace-panel', 'advanced', 'tool-calls'])
 export type ChatPage = z.infer<typeof ChatPageSchema>
 /** TAL-2085: `name` opens one profile's detail on Settings > Profiles. */
 export const SettingsSearchSchema = z.object({ tab: ToolsTabSchema.optional().catch(undefined), name: z.string().min(1).max(64).optional().catch(undefined) })
