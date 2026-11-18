@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Fail a test run whose tests break the per-test run-time budget (TAL-2403, test-audit rules heavy and oversized).
 
-Reads JUnit XML (vitest, Playwright, pytest) and `xcrun xcresulttool get test-results tests` JSON (App hosted tests).
+Reads JUnit XML (vitest, Playwright, pytest), `xcrun xcresulttool get test-results tests` JSON (App hosted tests) and
+XCTest logs (`swift test` output, *.log: the App package tests).
 A test over `budgetSeconds` in scripts/test-durations.json fails unless `overBudget` lists it with its ticket.
 A listed key is `suite::test`; it matches a JUnit case whose name ends with the test's title after its describe
 blocks, and every parameter of a parametrized pytest case.
@@ -33,7 +34,17 @@ def xcresult(path):
         yield from visit(root, "")
 
 
+def xctest_log(path):
+    for suite, name, seconds in XCTEST_LOG.findall(Path(path).read_text(errors="replace")):
+        yield suite, name, float(seconds)
+
+
+XCTEST_LOG = re.compile(r"Test Case '-\[\w+\.(\w+) (\w+)\]' (?:passed|failed|skipped) \((\d+(?:\.\d+)?) seconds\)")
+
+
 def cases(path):
+    if path.endswith(".log"):
+        return xctest_log(path)
     return xcresult(path) if path.endswith(".json") else junit(path)
 
 

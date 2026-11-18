@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Usage: scripts/test-package [--repeat N] [TalariaKitTests/Class[/testMethod] ...]
+# Usage: scripts/test-package [--repeat N [--budget SECONDS]] [TalariaKitTests/Class[/testMethod] ...]
 # Runs TalariaKit's package tests with `swift test`: no simulator (TAL-399). Without identifiers it runs every test once.
 # With identifiers it builds once, then runs exactly those, up to N times (1 to 100, default 1) with --skip-build,
 # stopping at the first failing attempt (TAL-2390). SwiftPM's own repetition flags apply only to Swift Testing, so the
 # attempts are this loop. Each attempt must run every identifier exactly once and nothing else (ci/hosted-test-shard).
+# --budget starts no attempt after the first once SECONDS have passed since the first began (TAL-2402: a pull request
+# repeats the tests it adds or changes within a fixed time).
 # Logs: TALARIA_PACKAGE_RESULTS (default .codex-tmp/package-tests/<run>/), one attempt-N.log each.
 # Exit: 0 every attempt passed; 1 a test failed (that attempt's log is kept); 64 an invalid request; 65 an attempt ran other than the
 # selection; 70 the build failed, or an attempt failed without a failing test (infrastructure).
@@ -11,9 +13,15 @@ set -euo pipefail
 
 app=$(cd "$(dirname "$(realpath "$0")")/.." && pwd -P)
 repeat=1
+budget=""
 if [[ "${1:-}" == --repeat ]]; then
     repeat=${2:?--repeat needs a count}
     shift 2
+fi
+if [[ "${1:-}" == --budget ]]; then
+    budget=${2:?--budget needs seconds}
+    shift 2
+    [[ "$budget" =~ ^[1-9][0-9]*$ ]] || { echo "--budget needs a whole number of seconds, not '$budget'." >&2; exit 64; }
 fi
 cd "$app"
 run_dir=${TALARIA_PACKAGE_RESULTS:-$app/.codex-tmp/package-tests/$(date +%Y%m%d-%H%M%S)-$$}
@@ -31,7 +39,13 @@ fi
 
 swift build --package-path TalariaKit --build-tests --only-use-versions-from-resolved-file ||
     { echo "The package tests did not build." >&2; exit 70; }
+started=$SECONDS
+completed=0
 for attempt in $(seq "$repeat"); do
+    if [[ -n "$budget" ]] && (( attempt > 1 && SECONDS - started >= budget )); then
+        echo "The ${budget}s budget is spent: $completed of $repeat attempt(s) ran, all passed. Logs: $run_dir"
+        exit 0
+    fi
     log="$run_dir/attempt-$attempt.log"
     status=0
     TALARIA_TEST_ATTEMPT=$attempt swift test --package-path TalariaKit --skip-build ${filter[@]+"${filter[@]}"} > "$log" 2>&1 ||
@@ -52,6 +66,7 @@ for attempt in $(seq "$repeat"); do
         ci/hosted-test-shard check "$run_dir/plan.json" "$run_dir/attempt-$attempt" > /dev/null ||
             { echo "Attempt $attempt ran other than the selection; its log: $log" >&2; exit 65; }
     fi
+    completed=$attempt
     echo "Attempt $attempt of $repeat passed: $(grep -oE 'Executed [0-9]+ tests?' "$log" | tail -1)."
 done
 echo "All $repeat attempt(s) passed. Logs: $run_dir"

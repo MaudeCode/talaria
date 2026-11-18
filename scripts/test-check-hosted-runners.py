@@ -170,6 +170,8 @@ RUN apt-get update \\
                   ("app-tests.yml", "package-test"): "./.github/actions/app-package-tests",
                   # A focused diagnostic repeats TalariaKit tests with swift test (TAL-2390).
                   ("app-test-diagnostics.yml", "package"): "scripts/test-package",
+                  # A pull request repeats the TalariaKit tests it adds or changes the same way (TAL-2402).
+                  ("app-tests.yml", "package-repeat"): "scripts/test-package",
                   ("ios-release-build.yml", "build"): "xcodebuild archive",
                   # Both App contract gates share one runner (TAL-414).
                   ("release-set.yml", "contracts"): "check-previous-app.py --app-ref",

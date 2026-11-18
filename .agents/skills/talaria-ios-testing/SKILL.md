@@ -40,8 +40,12 @@ To investigate a failing or flaky test, copy its `Target/Class/testMethod` from 
 CI (pull requests and main pushes) runs, for every App change, `swift test` for
 TalariaKit and the App build for testing (App, extensions and the test bundle).
 Main pushes, releases and pull requests labelled `hosted-tests` also run the
-simulator-hosted unit tests (`TalariaTests`). A pull request runs only the tests
-its diff reaches; main pushes and releases run both targets in full.
+simulator-hosted unit tests (`TalariaTests`) in full. A pull request runs only
+the tests its diff reaches, hosted ones without the label; main pushes and
+releases run both targets in full. A pull request also repeats each test method
+it adds or changes until the first failure or its time budget ("App repeated
+tests", "App repeated package tests"): a failing attempt is a flaky test to fix,
+never to rerun.
 
 The script serializes runs within one worktree and leases pooled simulators across
 worktrees. Let the current run finish instead of starting an overlapping run.

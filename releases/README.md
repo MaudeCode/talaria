@@ -77,7 +77,7 @@ dependency:
 | Workflow | Job | Native dependency |
 |---|---|---|
 | `app-tests.yml` | `app-build` | `app/ci/build-for-testing` once; in hosted mode, uploaded as the `app-test-build` artifact for the test job, then `swift test` for TalariaKit on the same runner (a release's hosted-tests call leaves that to `contracts`) |
-| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the hosted unit tests (TalariaTests) in four class shards (`app/ci/hosted-test-shard`) on main pushes, manual runs, at release and on pull requests labelled `hosted-tests` |
+| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the hosted unit tests (TalariaTests) in four class shards (`app/ci/hosted-test-shard`) on main pushes, manual runs, at release and on pull requests labelled `hosted-tests`; a pull request's selected tests and repeats otherwise |
 | `app-tests.yml` | `package-test` | `swift test` for TalariaKit (every native contract class and the live Web contract test) in build and contracts modes |
 | `ci.yml` | `app-tooling` | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
 | `ios-release-build.yml` | `build` | `xcodebuild archive`, and signing, IPA export and verification through the shared `ios-signing` and `ios-publish` actions |
@@ -125,8 +125,10 @@ preparing took 3 to 8 minutes on hosted runners, mostly the notification
 service's restarts, so a shard job takes about 6 minutes of tests plus that.
 In hosted mode the build job runs the package tests after its upload, so the
 shards never wait on them, and the build job and the four shards fill the five
-macOS slots. A pull request without the `hosted-tests` label takes two slots:
-the build and the package tests, side by side, and no shards.
+macOS slots. A pull request without the `hosted-tests` label takes the build
+and the package tests, side by side, plus the selected hosted shards and its
+repeat jobs when its diff has them; the shard planner keeps the total within
+five (TAL-2402).
 
 The pinned Agent gate runs one `agent-release` job per supported Agent release
 of the selected Web source and shard of its sidecar suite: three shards each,

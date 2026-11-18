@@ -29,6 +29,11 @@ XCRESULT = {"testNodes": [{"nodeType": "Test Plan", "name": "Plan", "children": 
             {"nodeType": "Test Case", "name": "testNew()", "durationInSeconds": "{seconds}"},
         ]}]}]}]}
 
+XCTEST_LOG = """Test Case '-[TalariaKitTests.ChatTests testListed]' passed (90.000 seconds).
+Test Case '-[TalariaKitTests.ChatTests testNew]' started.
+Test Case '-[TalariaKitTests.ChatTests testNew]' passed ({seconds} seconds).
+"""
+
 BUDGET = {"budgetSeconds": 30, "overBudget": {
     "src/a.test.ts::slow and listed": "TAL-2405",
     "tests.test_x::test_param": "TAL-2405",
@@ -54,10 +59,15 @@ class BudgetTests(unittest.TestCase):
         for name, within, over in [
             ("junit.xml", JUNIT.format(extra=""), JUNIT.format(extra='<testcase classname="src/b.test.ts" name="new" time="31"/>')),
             ("tests.json", json.dumps(XCRESULT).replace('"{seconds}"', "29"), json.dumps(XCRESULT).replace('"{seconds}"', "31")),
+            ("attempt-1.log", XCTEST_LOG.format(seconds="29.000"), XCTEST_LOG.format(seconds="31.000")),
         ]:
             with self.subTest(name):
                 self.assertEqual(self.run_check(name, within), 0)
                 self.assertEqual(self.run_check(name, over), 1)
+
+    def test_a_skipped_xctest_case_is_a_measured_case(self):
+        # A repeated contract test skips without its fixture; its log is still a report, not an empty one (TAL-2402).
+        self.assertEqual(self.run_check("attempt-1.log", "Test Case '-[TalariaKitTests.C testS]' skipped (0.001 seconds).\n"), 0)
 
     def test_a_report_with_no_test_cases_fails(self):
         self.assertEqual(self.run_check("junit.xml", "<testsuites/>"), 1)

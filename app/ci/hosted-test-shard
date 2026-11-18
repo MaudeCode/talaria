@@ -18,6 +18,11 @@
                                               validate a focused diagnostic against this checkout and print its App test
                                               plan: one target's classes or methods, repeated 1 to 100 times
   ci/hosted-test-shard attempts RESULTS       print each test case's completed attempts and first failing one
+  ci/hosted-test-shard repeated SHARD RESULTS [STOPPED]
+                                              judge a repeat shard's run: every planned test completed an attempt and
+                                              none failed; STOPPED 1 means its time budget interrupted the last attempt
+  ci/hosted-test-shard package-repeat PLAN    print scripts/test-package's arguments for an App test plan's added and
+                                              changed TalariaKitTests methods, one per line
 
 SHARD is a JSON file holding one entry of a plan's `shards`.
 
@@ -26,6 +31,11 @@ other shards' classes, so a class the scanner missed still runs. A selective lan
 shard. The planner groups identifiers by class, since a class's tests share its setup, places the heaviest group first on
 the least-loaded shard, estimates each width's finish from the measured timeline in hosted-test-weights.json, and takes
 the fewest shards within 10% of the fastest. A focused run (repetitions) always uses one shard.
+
+A pull request's lane also lists the test methods its diff added or changed (`repeat`, TAL-2402). They get one more shard,
+the repeat shard: it runs them up to REPEAT_ATTEMPTS times on one simulator beside the lane's shards, stopping at the first
+failure or once REPEAT_BUDGET seconds of testing are spent after the first complete attempt. It is a detector, not a
+retry: any failing attempt fails it. Its receipts prove nothing for the lane, so the lane's gate leaves it out.
 """
 
 import heapq
@@ -52,6 +62,17 @@ WITHIN = 1.10  # The fewest shards predicted to finish within 10% of the fastest
 CONTENTION_POLICY = "observe"
 CONTENTION_MAX = 3
 STALE_SECONDS = 120
+# Repeats of a pull request's added and changed tests (TAL-2402). The budgets keep the repeats inside the time a pull
+# request already spends: in benchmark run 44224379174 the 90 s repeat shard's test step took 156 s beside its lane
+# shard's 127 s, and the 60 s package repeat job finished with the App build (about 400 s each). There, a 15 s hosted
+# test got 6 attempts and a TalariaKit method 7 (8.5 s per `swift test` process), so a test failing one run in five fails
+# its pull request about three times in four; a test under 2 s reaches the 50-attempt cap. Raising either budget makes
+# every pull request with repeats slower by the same amount.
+REPEAT_ATTEMPTS = 50
+REPEAT_BUDGET = 90
+PACKAGE_REPEAT_ATTEMPTS = 50
+PACKAGE_REPEAT_BUDGET = 60
+CANCELED = "Testing was canceled"
 # Classes whose tests await the simulator's notification server. Only a shard that runs one waits for the server in
 # preparation (TAL-2352); the catch-all shard always does.
 NOTIFICATION_CLASSES = ("NotificationAnswerTests",)
@@ -140,18 +161,26 @@ def policy(capacity):
                      "competing": observed.get("competing", []), "reason": observed.get("reason", "")}
 
 
-def plan(lane, capacity=None, repetitions=1, table=None, classes=None, at_once=MAX_SHARDS):
+def plan(lane, capacity=None, repetitions=1, table=None, classes=None, at_once=MAX_SHARDS, reserved=0):
     """The shard plan for a hosted lane. `table` defaults to hosted-test-weights.json and a full lane's `classes` to the
-    checkout's; `at_once` is how many shards the workflow runs at a time (a release runs two)."""
+    checkout's; `at_once` is how many shards the workflow runs at a time (a release runs two). `reserved` counts the
+    run's other macOS jobs beside the build (a package repeat job), which leave the shards fewer of the five slots."""
     table = table or weights()
     full = lane["mode"] == "full"
-    if lane["mode"] == "empty" or not lane.get("identifiers"):
+    repeat = sorted(lane.get("repeat") or []) if repetitions == 1 else []
+    empty = lane["mode"] == "empty" or not lane.get("identifiers")
+    if empty and not repeat:
         raise ValueError("an empty lane has no shards; the workflow skips the simulators")
-    identifiers = [f"{TARGET}/{cls}" for cls in (classes if classes is not None else discover())] if full else lane["identifiers"]
-    grouped = groups(identifiers, table)
     limit, decision = policy(capacity)
+    limit = max(1, min(limit, MAX_SHARDS - reserved - (1 if repeat else 0)))
     if repetitions > 1:
         limit = 1  # A focused investigation repeats its selection on one runner.
+    if empty:
+        return {"target": TARGET, "mode": "empty", "partial": True, "width": 0, "shards": [repeat_shard(repeat, 1)],
+                "candidates": [], "capacity": decision, "fallbacks": [],
+                "startup": {"overlapping_build": 0, "beyond_build": 0}}
+    identifiers = [f"{TARGET}/{cls}" for cls in (classes if classes is not None else discover())] if full else lane["identifiers"]
+    grouped = groups(identifiers, table)
     slots = min(limit, at_once)
     widths = range(1, min(limit, len(grouped)) + 1)
     candidates = []
@@ -176,12 +205,20 @@ def plan(lane, capacity=None, repetitions=1, table=None, classes=None, at_once=M
             "notifications": catch_all or any(cls in NOTIFICATION_CLASSES for cls in shard["classes"]),
             "estimate": round(shard["load"], 1), "repetitions": repetitions,
         })
+    if repeat:
+        entries.append(repeat_shard(repeat, len(entries) + 1))
     timeline = table["timeline"]
     return {"target": TARGET, "mode": lane["mode"], "partial": not full, "width": width, "shards": entries,
             "candidates": candidates, "capacity": decision,
             "fallbacks": sorted(cls for cls, (_, _, measured) in grouped.items() if not measured),
             "startup": {"overlapping_build": min(timeline["startup"], timeline["artifact"] + timeline["download"]),
                         "beyond_build": max(0, timeline["startup"] - timeline["artifact"] - timeline["download"])}}
+
+
+def repeat_shard(identifiers, number):
+    return {"shard": number, "target": TARGET, "planned": identifiers, "catch_all": False, "only": identifiers, "skip": [],
+            "notifications": any(identifier.split("/")[1] in NOTIFICATION_CLASSES for identifier in identifiers),
+            "estimate": REPEAT_BUDGET, "repetitions": REPEAT_ATTEMPTS, "repeat": True, "budget": REPEAT_BUDGET}
 
 
 def describe(result):
@@ -191,6 +228,10 @@ def describe(result):
         lines.append(f"- {candidate['width']} shard(s): finish ~{candidate['finish']:.0f} s after the build starts, "
                      f"slowest shard ~{candidate['slowest_load']:.0f} s of tests{chosen}")
     for shard in result["shards"]:
+        if shard.get("repeat"):
+            lines.append(f"- Shard {shard['shard']} repeats {len(shard['planned'])} added or changed test(s): up to "
+                         f"{shard['repetitions']} attempts within {shard['budget']} s, stopping at the first failure")
+            continue
         lines.append(f"- Shard {shard['shard']}: {len(shard['planned'])} identifier(s), ~{shard['estimate']:.0f} s"
                      + (", plus any class the scanner missed" if shard["catch_all"] else ""))
     startup = result["startup"]
@@ -265,9 +306,12 @@ def swift_filter(result):
 
 
 def check(result, ran):
-    """`ran` maps each shard number to the Target/Class/method cases it ran. Returns the summary lines."""
+    """`ran` maps each shard number to the Target/Class/method cases it ran. Returns the summary lines. The repeat shard
+    proves nothing for the lane: its receipt is left out, and `repeated` judges it in its own job."""
     result = package_shards(result)
-    expected = {shard["shard"]: shard for shard in result["shards"]}
+    expected = {shard["shard"]: shard for shard in result["shards"] if not shard.get("repeat")}
+    ran = {number: cases for number, cases in ran.items() if number in expected or
+           not any(shard["shard"] == number for shard in result["shards"])}
     if sorted(ran) != sorted(expected):
         raise ValueError(f"expected receipts for shards {sorted(expected)}, got {sorted(ran)}")
     owner, lines, extra_classes = {}, [], set()
@@ -340,8 +384,15 @@ def focus(repetitions, identifiers, root=HERE.parents[1]):
     return {"version": 1, "focused": True, "repetitions": int(repetitions), "target": target, "lanes": lanes}
 
 
-def attempts(path):
-    """{case: (completed attempts, first failing attempt or None)} from an xcresulttool test-results JSON."""
+def canceled(run):
+    """An attempt the run's time budget interrupted: failed with xcodebuild's cancellation as its only failure."""
+    messages = [child.get("name") for child in run.get("children", []) if child.get("nodeType") == "Failure Message"]
+    return run.get("result") == "Failed" and messages == [CANCELED]
+
+
+def attempts(path, stopped=False):
+    """{case: (completed attempts, first failing attempt or None)} from an xcresulttool test-results JSON. `stopped`: a
+    time budget interrupted the run, so a last attempt failed only by that cancellation never completed."""
     found = {}
 
     def visit(node, target):
@@ -351,6 +402,8 @@ def attempts(path):
         if kind == "Test Case":
             match = RESULT.match(node.get("nodeIdentifier", ""))
             runs = [child for child in node.get("children", []) if child.get("nodeType") == "Repetition"] or [node]
+            if stopped and canceled(runs[-1]):
+                runs = runs[:-1]
             failing = next((index for index, run in enumerate(runs, start=1) if run.get("result") == "Failed"), None)
             if match and target:
                 found[f"{target}/{match['class']}/{match['method']}"] = (len(runs), failing)
@@ -361,6 +414,39 @@ def attempts(path):
     for root in json.loads(Path(path).read_text()).get("testNodes", []):
         visit(root, None)
     return found
+
+
+def repeated(shard, results, stopped=False):
+    """A repeat shard's verdict: (passed, summary lines). Every planned test must complete an attempt, none may fail, and
+    nothing unplanned may run."""
+    found = attempts(results, stopped)
+    lines, passed = [], True
+    unplanned = sorted(case for case in found if case not in shard["planned"])
+    if unplanned:
+        passed = False
+        lines.append(f"- Unplanned: {', '.join(unplanned[:5])}")
+    for identifier in shard["planned"]:
+        completed, failing = found.get(identifier, (0, None))
+        if failing:
+            passed = False
+            lines.append(f"- {identifier}: failed at attempt {failing} of {completed}")
+        elif not completed:
+            passed = False
+            lines.append(f"- {identifier}: completed no attempt")
+        else:
+            lines.append(f"- {identifier}: {completed} attempt(s), no failure")
+    budget = "its time budget ran out" if stopped else "it finished its attempts or stopped at a failure"
+    lines.insert(0, f"### Repeated tests ({shard['repetitions']} attempts at most, {shard['budget']} s budget): "
+                    f"{'passed' if passed else 'failed'}; {budget}")
+    return passed, lines
+
+
+def package_repeat(result):
+    """scripts/test-package's arguments for a plan's added and changed TalariaKitTests methods."""
+    identifiers = result["lanes"][app_test_plan.PACKAGE].get("repeat") or []
+    if not identifiers:
+        raise ValueError("the package lane repeats no test")
+    return ["--repeat", str(PACKAGE_REPEAT_ATTEMPTS), "--budget", str(PACKAGE_REPEAT_BUDGET), *identifiers]
 
 
 def capacity(repository, run_id, timeout=20):
@@ -409,7 +495,8 @@ def main(argv):
         lane = json.loads(Path(values[0]).read_text())
         observed = json.loads(Path(values[1]).read_text()) if len(values) > 1 else None
         result = plan(lane, capacity=observed, repetitions=int(os.environ.get("REPETITIONS", "1")),
-                      at_once=int(os.environ.get("SHARDS_AT_ONCE", str(MAX_SHARDS))))
+                      at_once=int(os.environ.get("SHARDS_AT_ONCE", str(MAX_SHARDS))),
+                      reserved=int(os.environ.get("RESERVED_SLOTS", "0")))
         print(describe(result), file=sys.stderr)
         print(json.dumps(result, separators=(",", ":")))
     elif command == "capacity":
@@ -431,6 +518,12 @@ def main(argv):
     elif command == "attempts":
         for case, (completed, failing) in sorted(attempts(values[0]).items()):
             print(f"- {case}: {completed} attempt(s) completed, " + (f"first failure at attempt {failing}" if failing else "no failure"))
+    elif command == "repeated":
+        passed, lines = repeated(json.loads(Path(values[0]).read_text()), values[1], values[2:3] == ["1"])
+        print("\n".join(lines))
+        sys.exit(0 if passed else 1)
+    elif command == "package-repeat":
+        print("\n".join(package_repeat(json.loads(Path(values[0]).read_text()))))
     elif command == "report":
         result = json.loads(Path(values[0]).read_text())
         times = {number: float(path.read_text()) for number, path in receipts(values[1], ".time").items()}

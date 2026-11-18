@@ -756,6 +756,31 @@ class AppPlanTests(unittest.TestCase):
         self.assertIn(("TalariaTests", frozenset({"titleMenu"})), scans)
         self.assertEqual([scan for scan, count in Counter(scans).items() if count > 1], [])
 
+    def test_added_and_changed_test_methods_are_listed_to_repeat(self):
+        # Only a method whose own lines changed repeats (TAL-2402); setup and helpers widen the selection, not the repeats.
+        leaf = "app/TalariaKit/Tests/TalariaKitTests/LeafTests.swift"
+        alpha = "app/TalariaTests/AlphaHostedTests.swift"
+        cases = [
+            ("an edited method", [(leaf, "XCTAssertEqual(value, 2)", "XCTAssertEqual(value, 2, \"two\")")],
+             {"TalariaKitTests": ["TalariaKitTests/LeafTests/testOne"], "TalariaTests": []}),
+            ("an added method", [(alpha, "    func testPlain() {", "    func testAdded() {\n        XCTAssertTrue(true)\n    }\n\n    func testPlain() {")],
+             {"TalariaKitTests": [], "TalariaTests": ["TalariaTests/AlphaHostedTests/testAdded"]}),
+            ("a line removed from a method", [(alpha, "        XCTAssertEqual(SharedFixture.make(), 1)\n", "")],
+             {"TalariaKitTests": [], "TalariaTests": ["TalariaTests/AlphaHostedTests/testFixture"]}),
+            ("class setup", [(leaf, "value = 2", "value = 1 + 1")], {"TalariaKitTests": [], "TalariaTests": []}),
+            ("a helper", [("app/TalariaTests/Hosted.swift", "        1\n", "        0 + 1\n")], {"TalariaKitTests": [], "TalariaTests": []}),
+            ("a method beside a change that runs its target in full",
+             [("app/Talaria/View.swift", "{}", "{ let x = 1 }"), (alpha, "XCTAssertEqual(Hosted.other(), 2)", "XCTAssertEqual(Hosted.other(), 1 + 1)")],
+             {"TalariaKitTests": [], "TalariaTests": ["TalariaTests/AlphaHostedTests/testPlain"]}),
+        ]
+        for name, edits, expected in cases:
+            with self.subTest(name):
+                self.git("reset", "-q", "--hard", self.base)
+                for path, old, new in edits:
+                    self.edit(path, old, new)
+                plan = self.committed()
+                self.assertEqual({target: lane["repeat"] for target, lane in plan["lanes"].items()}, expected)
+
     def test_local_changes_plan_exactly_as_the_committed_diff(self):
         # Staged, unstaged and untracked changes together: the local dry run and CI's committed diff agree.
         self.edit("app/TalariaKit/Tests/TalariaKitTests/LeafTests.swift", "XCTAssertEqual(value, 2)", "XCTAssertEqual(value, 2, \"two\")")
@@ -820,7 +845,8 @@ class AppPlanTests(unittest.TestCase):
         result = subprocess.run([os.sys.executable, str(SCRIPT), f"--base={self.base}", f"--head={head}", "--merge-base",
                                  "--app-plan"], cwd=self.root, env=self.env, text=True, capture_output=True, check=True)
         outputs = dict(line.split("=", 1) for line in result.stdout.splitlines())
-        self.assertEqual((outputs["app"], outputs["app_package"], outputs["app_hosted"]), ("true", "empty", "full"))
+        self.assertEqual((outputs["app"], outputs["app_package"], outputs["app_hosted"], outputs["app_hosted_repeat"]),
+                         ("true", "empty", "full", "false"))
         self.assertEqual(json.loads(outputs["app_plan"])["lanes"]["TalariaTests"]["mode"], "full")
         self.assertIn("app/Talaria/View.swift: no reviewed rule bounds its consumers.", result.stderr)
 

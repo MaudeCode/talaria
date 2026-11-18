@@ -241,6 +241,82 @@ class ReceiptTests(unittest.TestCase):
             shard.check(plan, {1: ["TalariaKitTests/D/testX"]})
 
 
+class RepeatTests(unittest.TestCase):
+    """A pull request's added and changed test methods (TAL-2402): one more shard, its own verdict."""
+
+    @staticmethod
+    def bundle(*cases):
+        def case(identifier, runs):
+            return {"nodeType": "Test Case", "nodeIdentifier": identifier, "result": runs[-1][0], "children": [
+                {"nodeType": "Repetition", "result": result,
+                 "children": [{"nodeType": "Failure Message", "name": message} for message in messages]}
+                for result, *messages in runs]}
+        return {"testNodes": [{"nodeType": "Test Plan", "children": [{"nodeType": "Unit test bundle", "name": "TalariaTests",
+                "children": [{"nodeType": "Test Suite", "name": "B", "children": [case(*item) for item in cases]}]}]}]}
+
+    def test_repeats_run_in_their_own_shard_within_the_five_slots(self):
+        repeat = ["TalariaTests/Heavy1/testSlow"]
+        four, three = ({**lane(*names), "repeat": repeat} for names in (("Heavy1", "Heavy2", "Heavy3", "Heavy4"),
+                                                                          ("Heavy1", "Heavy2", "Heavy3")))
+        cases = [
+            # Four heavy classes alone take four shards; beside the repeat shard at most three, and two finish as early.
+            ("the lane gives up a shard for the repeats", four, {}, 2),
+            # Three take three alone; a package repeat job beside the build leaves the lane two.
+            ("a package repeat job takes another slot", three, {"reserved": 1}, 2),
+            ("a full lane's unlabelled pull request runs only the repeats", {"mode": "empty", "identifiers": [], "repeat": repeat}, {}, 0),
+        ]
+        for name, selected, options, width in cases:
+            with self.subTest(name):
+                result = shard.plan(selected, table=TABLE, **options)
+                self.assertEqual(result["width"], width)
+                self.assertLessEqual(len(result["shards"]), shard.MAX_SHARDS - options.get("reserved", 0))
+                *lanes, last = result["shards"]
+                self.assertEqual(len(lanes), width)
+                self.assertEqual((last["shard"], last["repeat"], last["planned"], last["budget"]),
+                                 (width + 1, True, repeat, shard.REPEAT_BUDGET))
+                self.assertEqual(shard.selection(last), ["-only-testing:TalariaTests/Heavy1/testSlow", "-test-iterations",
+                                                         str(shard.REPEAT_ATTEMPTS), "-run-tests-until-failure"])
+        # A focused diagnostic repeats its own selection; nothing else joins it.
+        focused = shard.plan(four, table=TABLE, repetitions=3)
+        self.assertFalse(any(entry.get("repeat") for entry in focused["shards"]))
+
+    def test_the_lane_gate_leaves_out_the_repeat_receipt(self):
+        result = shard.plan({**lane("Heavy1"), "repeat": ["TalariaTests/Heavy1/testSlow"]}, table=TABLE)
+        lines = shard.check(result, {1: ["TalariaTests/Heavy1/testSlow"], 2: ["TalariaTests/Heavy1/testSlow"] * 40})
+        self.assertIn("across 1 shard(s)", lines[-1])
+
+    def test_any_failing_attempt_fails_the_repeats_but_the_budget_stop_does_not(self):
+        entry = {"planned": ["TalariaTests/B/testOne"], "repetitions": 100, "budget": 120}
+        canceled = ("Failed", shard.CANCELED)
+        cases = [
+            ("the budget interrupted the fourth attempt", [("B/testOne()", [("Passed",)] * 3 + [canceled])], True,
+             True, "3 attempt(s), no failure"),
+            ("a cancellation the budget did not cause", [("B/testOne()", [("Passed",)] * 3 + [canceled])], False,
+             False, "failed at attempt 4 of 4"),
+            ("a real failure stops the attempts", [("B/testOne()", [("Passed",), ("Failed", "XCTAssertEqual failed")])], True,
+             False, "failed at attempt 2 of 2"),
+            ("the budget ran out inside the first attempt", [("B/testOne()", [canceled])], True,
+             False, "completed no attempt"),
+            ("an unplanned test ran", [("B/testOne()", [("Passed",)]), ("B/testTwo()", [("Passed",)])], False,
+             False, "Unplanned: TalariaTests/B/testTwo"),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            results = Path(directory) / "results.json"
+            for name, cases_run, stopped, passed, line in cases:
+                with self.subTest(name):
+                    results.write_text(json.dumps(self.bundle(*cases_run)))
+                    verdict, lines = shard.repeated(entry, results, stopped)
+                    self.assertEqual(verdict, passed)
+                    self.assertTrue(any(line in each for each in lines), lines)
+
+    def test_package_repeats_pass_their_methods_attempts_and_budget(self):
+        plan = {"lanes": {"TalariaKitTests": {"repeat": ["TalariaKitTests/D/testX"]}}}
+        self.assertEqual(shard.package_repeat(plan), ["--repeat", str(shard.PACKAGE_REPEAT_ATTEMPTS), "--budget",
+                                                      str(shard.PACKAGE_REPEAT_BUDGET), "TalariaKitTests/D/testX"])
+        with self.assertRaisesRegex(ValueError, "repeats no test"):
+            shard.package_repeat({"lanes": {"TalariaKitTests": {"repeat": []}}})
+
+
 class FocusTests(unittest.TestCase):
     def test_a_focused_request_is_validated_against_the_checkout(self):
         method = "TalariaTests/SessionListHostedTests/testDeepLinkedChatKeepsNavigationStackAndToolbarMounted"
