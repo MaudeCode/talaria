@@ -20,12 +20,7 @@
       "web/packages/server/src/sessions/workers.test.ts": 2,
       "web/packages/server/src/tools/memory-masks.test.ts": 1,
       "web/packages/server/src/workspace/media-realpath.test.ts": 1,
-      "web/sidecar/tests/fixtures/gateway_session_peer.py": 4,
-      "web/sidecar/tests/fixtures/peer_phases.py": 5,
-      "web/sidecar/tests/plugin_oauth_probe.py": 1,
-      "web/sidecar/tests/test_oauth.py": 1,
-      "web/sidecar/tests/test_process_completions.py": 1,
-      "web/sidecar/tests/test_worktree.py": 1
+      "web/sidecar/tests/test_process_completions.py": 1
     },
     "clock-sleep": {
       "app/TalariaKit/Tests/TalariaKitTests/ApprovalNotificationTests.swift": 1,
@@ -122,42 +117,27 @@
       "web/packages/server/src/tools/health-logs.test.ts": 1,
       "web/packages/server/src/tools/toolsets.test.ts": 1,
       "web/packages/server/src/workspace/git.test.ts": 2,
-      "web/sidecar/tests/conftest.py": 1,
-      "web/sidecar/tests/evict_grants_probe.py": 1,
-      "web/sidecar/tests/fixtures/gateway_execution_peer.py": 3,
-      "web/sidecar/tests/fixtures/gateway_session_peer.py": 21,
-      "web/sidecar/tests/fixtures/group_peer.py": 5,
-      "web/sidecar/tests/plugin_oauth_probe.py": 1,
       "web/sidecar/tests/probe_cron_atomicity.py": 1,
       "web/sidecar/tests/review_cancel_probe.py": 4,
       "web/sidecar/tests/test_agent_gateway_identity.py": 1,
       "web/sidecar/tests/test_agent_mutation.py": 6,
-      "web/sidecar/tests/test_agent_release.py": 3,
       "web/sidecar/tests/test_agent_services.py": 17,
       "web/sidecar/tests/test_aux_funnel.py": 1,
       "web/sidecar/tests/test_chat_finalize.py": 1,
       "web/sidecar/tests/test_chat_shell_hooks.py": 1,
       "web/sidecar/tests/test_chat_turn.py": 2,
-      "web/sidecar/tests/test_connectors.py": 2,
       "web/sidecar/tests/test_cron_fire_claim.py": 3,
       "web/sidecar/tests/test_cron_health.py": 1,
       "web/sidecar/tests/test_cron_owner.py": 3,
       "web/sidecar/tests/test_cron_recovery.py": 3,
       "web/sidecar/tests/test_dependency_sync.py": 2,
       "web/sidecar/tests/test_env_write.py": 2,
-      "web/sidecar/tests/test_gateway_restart.py": 1,
-      "web/sidecar/tests/test_namespaces.py": 1,
-      "web/sidecar/tests/test_oauth.py": 2,
-      "web/sidecar/tests/test_oauth_guest.py": 1,
-      "web/sidecar/tests/test_plugin_providers.py": 2,
       "web/sidecar/tests/test_process_recovery.py": 1,
       "web/sidecar/tests/test_profile_skill_stats.py": 1,
       "web/sidecar/tests/test_recovery_environment.py": 2,
       "web/sidecar/tests/test_server_calls.py": 1,
-      "web/sidecar/tests/test_state_db_idle_release.py": 1,
       "web/sidecar/tests/test_stt_stream.py": 1,
       "web/sidecar/tests/test_suite_runner.py": 14,
-      "web/sidecar/tests/test_turn_lease_busy.py": 1,
       "web/sidecar/tests/yolo_release_probe.py": 1
     },
     "retry-config": {
@@ -176,5 +156,108 @@
       "web/packages/server/src/tools/project-os.test.ts": 1
     }
   },
-  "exceptions": []
+  "exceptions": [
+    {
+      "rule": "clock-elapsed",
+      "file": "web/sidecar/tests/fixtures/gateway_session_peer.py",
+      "count": 4,
+      "reason": "Three are the session-open probe's ceilings on its bounded polls and one is a turn duration printed only in failure messages; no assertion compares elapsed time to an expected value."
+    },
+    {
+      "rule": "clock-elapsed",
+      "file": "web/sidecar/tests/fixtures/peer_phases.py",
+      "count": 5,
+      "reason": "Phase timings the real-owner peers print as PHASES diagnostics; no test asserts on them."
+    },
+    {
+      "rule": "clock-elapsed",
+      "file": "web/sidecar/tests/test_worktree.py",
+      "count": 1,
+      "reason": "Backdates the fixture worktree's mtimes two days past the Agent's 24-hour sweep threshold; nothing is measured."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/conftest.py",
+      "count": 1,
+      "reason": "Poll interval inside the leak guard's 30 s ceiling-bounded wait, read from process_snapshot, for the Agent's detached scratch prune to exit."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/evict_grants_probe.py",
+      "count": 1,
+      "reason": "Poll interval inside the probe's 20 s ceiling-bounded wait for the parked approval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/fixtures/gateway_execution_peer.py",
+      "count": 3,
+      "reason": "Poll intervals inside the peer's 45 s and 60 s ceiling-bounded waits on the owner's snapshot and its workers' exit."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/fixtures/gateway_session_peer.py",
+      "count": 20,
+      "reason": "Poll intervals inside the probes' ceiling-bounded waits on the owner's snapshot, prompts, opens log and state.db admissions."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/fixtures/gateway_session_peer.py",
+      "count": 1,
+      "reason": "The synthetic on_session_open plugin holds a delivery past the owner's OPEN_TURN_WAIT_S bound: the slow consumer the probe proves a Web turn never waits on."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/fixtures/group_peer.py",
+      "count": 5,
+      "reason": "Poll intervals inside the group probe's 40 s and 60 s ceiling-bounded waits on the room's state and log."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/plugin_oauth_probe.py",
+      "count": 1,
+      "reason": "Poll interval inside the probe's settle helper, bounded by its 20 s CEILING."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_agent_release.py",
+      "count": 2,
+      "reason": "Poll intervals inside the _cancels and _ended helpers' ceiling-bounded waits for events recorded on release threads."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_connectors.py",
+      "count": 2,
+      "reason": "Poll intervals inside 20 s ceiling-bounded waits for the connect operation to settle."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_gateway_restart.py",
+      "count": 1,
+      "reason": "The synthetic hung gateway child outlives the restart's background wait, so the code under test must time it out and terminate it."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_oauth.py",
+      "count": 2,
+      "reason": "Poll intervals inside the settle and wait_until helpers' ceiling-bounded waits on the flow's state."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_oauth_guest.py",
+      "count": 1,
+      "reason": "Poll interval inside the until helper's 60 s ceiling-bounded wait on the flow's state."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_plugin_providers.py",
+      "count": 1,
+      "reason": "Poll interval inside the sidecar script's 10 s ceiling-bounded wait for the device login to end."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_turn_lease_busy.py",
+      "count": 1,
+      "reason": "The synthetic wedged tool ignores its interrupt and polls for the test's release flag under a 120 s ceiling."
+    }
+  ]
 }
