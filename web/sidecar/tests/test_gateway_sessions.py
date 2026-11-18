@@ -22,8 +22,7 @@ def test_stopped_owner_is_an_explicit_refusal_without_starting(tmp_path):
         })
     finally:
         sidecar.close()
-    expected = "stopped" if (AGENT_DIR / "hermes_cli/gateway_client.py").exists() else "incompatible"
-    assert response.get("result", {}).get("state") == expected, response
+    assert response.get("result", {}).get("state") == "stopped", response
     assert not (home / "gateway.pid").exists()
 
 
@@ -71,12 +70,8 @@ def test_diagnostic_creation_refuses_without_starting(tmp_path):
                                                     "cwd": str(tmp_path), "model": "fixture"})
     finally:
         sidecar.close()
-    native = (AGENT_DIR / "hermes_cli/gateway_client.py").exists()
     for result in (probed, created):
-        if native:
-            assert result["state"] == "stopped", result
-        else:
-            assert (result["state"], result["reason"]) == ("incompatible", "native_sessions_unavailable"), result
+        assert result["state"] == "stopped", result
         assert result["snapshot"] is None and result["receipt"] is None
     assert not (home / "gateway.pid").exists() and not (home / "state.db").exists()
 
@@ -84,6 +79,34 @@ def test_diagnostic_creation_refuses_without_starting(tmp_path):
 @requires_agent
 def test_real_owner_diagnostic_execution_modes(request, tmp_path):
     run_owner_peer(request, tmp_path, "gateway_execution_peer.py", ["normal", "ignore_config", "safe"], timeout=600)
+
+
+@pytest.mark.parametrize("owner_lacks,probe,outcome", [
+    pytest.param(None, True, ("attached", None), id="supported-probe"),
+    pytest.param("parameters", True, ("incompatible", "execution_mode_unavailable"), id="parameters-probe"),
+    pytest.param("parameters", False, ("incompatible", "execution_mode_unavailable"), id="parameters-create"),
+    pytest.param("capability", False, ("incompatible", "execution_mode_unavailable"), id="capability-create"),
+    pytest.param("served", False, ("incompatible", "served_profile_sessions_unavailable"), id="served-create"),
+])
+def test_diagnostic_creation_requires_the_owners_bypass_creation_contract(native_owner_stub, tmp_path, owner_lacks, probe, outcome):
+    """A probe or create reaches ``session.create`` only on an owner that advertises local CLI creation with the bypass
+    fields, and never on a served profile's owner."""
+    owner = native_owner_stub
+    parameters = ["request_id", "source", "cwd", "model", "provider", "base_url", "toolsets", "safe_mode", "ignore_user_config"]
+    owner.described.update(capabilities=[*owner.described["capabilities"], "local-cli-create-v1"],
+                           session_create={"sources": ["cli"], "parameters": parameters})
+    if owner_lacks == "parameters":
+        parameters.remove("safe_mode")
+        parameters.remove("ignore_user_config")
+    elif owner_lacks == "capability":
+        owner.described["capabilities"].remove("local-cli-create-v1")
+    elif owner_lacks == "served":
+        owner.endpoint.control_home = str(tmp_path.parent)
+    result = owner.create({"profile_home": str(tmp_path), "probe": probe, "request_id": "diagnostic", "execution_mode": "safe",
+                           "cwd": str(tmp_path), "model": "fixture"})
+    assert (result["state"], result["reason"]) == outcome, result
+    assert result["snapshot"] is None and result["receipt"] is None
+    assert owner.calls == ([] if owner_lacks == "served" else [("runtime.describe", {})])
 
 
 @pytest.mark.parametrize("action,method,extra", [
@@ -231,23 +254,24 @@ def native_owner_stub(tmp_path, monkeypatch):
         yield SimpleNamespace(rpc=rpc), queue
     monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError, GatewayClientError=ConnectionError))
     monkeypatch.setattr(adapter, "_connect", connect)
+    monkeypatch.setattr(adapter, "_opens_on_resume", lambda: False)  # a v0.23.0 owner; the open test sets both
     owner.control_refusal = adapter._control_refusal
     monkeypatch.setattr(adapter, "_control_refusal", lambda *args: None)
     endpoint = SimpleNamespace(code_sha=SUPPORTED_REVISIONS[-1], control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
     found = SimpleNamespace(endpoint=endpoint, state="ready")
     owner.endpoint, owner.discovery = endpoint, found
     monkeypatch.setattr(adapter, "_with_owner", lambda home, run: asyncio.run(run(found)))
-    owner.session = adapter.session
+    owner.session, owner.create = adapter.session, adapter.create
     owner.run = lambda ctx, params, **loop: asyncio.run(adapter._run(ctx, params, tmp_path, found), **loop)
     return owner
 
 
 @pytest.mark.parametrize("kind", ["background", "btw"])
-def test_native_side_launch_uses_subscribed_parent_and_only_native_text(native_owner_stub, kind):
+def test_native_side_launch_uses_subscribed_parent_and_only_native_text(native_owner_stub, tmp_path, kind):
     owner = native_owner_stub
     owner.launch = {"task_id": "bg-native", "private": "never forward"}
-    result = owner.run(None, {"session_id": "native", "action": "launch_" + kind,
-                              "authority_epoch": 1, "replay_epoch": "epoch", "text": "Check"})
+    result = owner.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": "launch_" + kind,
+                                  "authority_epoch": 1, "replay_epoch": "epoch", "text": "Check"})
     assert result.get("launch") == {"state": "accepted", "task_id": "bg-native"}
     calls = owner.calls
     assert calls.index(("session.resume", {"session_id": "native"})) < calls.index(("prompt." + kind, {"session_id": "native", "text": "Check"}))
@@ -275,14 +299,6 @@ def test_native_side_launch_fences_owner_before_dispatch(native_owner_stub):
                               "authority_epoch": 2, "replay_epoch": "epoch", "text": "Check"})
     assert result.get("launch") == {"state": "failed", "task_id": None}
     assert not any(method.startswith("prompt.") for method, _ in owner.calls)
-
-
-def test_native_side_launch_is_reachable_through_the_registered_rpc(native_owner_stub, tmp_path):
-    owner = native_owner_stub
-    owner.launch = {"task_id": "bg-native"}
-    result = owner.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": "launch_background",
-                                  "authority_epoch": 1, "replay_epoch": "epoch", "text": "Check"})
-    assert result["launch"] == {"state": "accepted", "task_id": "bg-native"}
 
 
 @pytest.mark.parametrize("extra", [{"model": "other"}, {"submission_id": "unsafe-retry"}, {"profile": "other"}, {"text": " "}])
@@ -538,8 +554,6 @@ def test_real_owner_todo_producer_matches_snapshot_and_replay(native_owner_stub,
                             capture_output=True, text=True, timeout=30, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     produced = json.loads(result.stdout)
-    if not produced["supported"]:
-        pytest.skip("this supported owner predates native todo hydration")
     owner = native_owner_stub
     owner.snapshot_extra = {"todo_state": produced["snapshot"]}
     owner.replay = produced["events"]
@@ -583,13 +597,7 @@ def test_real_cron_refusal_matches_public_consumer_fixture(tmp_path):
                             env=env, capture_output=True, text=True, timeout=60, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(result.stdout)
-    if report.get("status") == "unsupported":
-        if report.get("method") == "cron.submit":
-            assert report == {"status": "unsupported", "method": "cron.submit"}
-            pytest.skip("this Agent does not advertise cron.submit")
-        assert report == CRON_REFUSAL["legacy_refusal"]
-        pytest.skip("verified legacy cron refusal has no typed descriptor")
-    assert report["status"] == "supported"
+    assert report["status"] == "supported", report
     assert report["scheduled_job_calls"] == 0
 
 
@@ -603,44 +611,6 @@ def test_watch_brackets_retained_terminal_events_before_idle_settlement(native_o
     native_owner_stub.run(ctx, {"session_id": "chat", "action": "watch"})
     assert emitted[0][0] == "snapshot" and emitted[0][1]["replaying"] is True
     assert emitted[1:] == [("event", event), ("replay_complete", {})]
-
-
-@pytest.mark.parametrize("report,outcome", [
-    pytest.param({"status": "supported", "scheduled_job_calls": 0}, "supported", id="True"),
-    pytest.param({"status": "unsupported", "method": "cron.submit"}, "method", id="False"),
-    pytest.param(CRON_REFUSAL["legacy_refusal"], "legacy", id="legacy-refusal"),
-    pytest.param({**CRON_REFUSAL["legacy_refusal"], "source_revision": CRON_REFUSAL["producer_revision"]}, "invalid", id="unexpected-revision"),
-    pytest.param({**CRON_REFUSAL["legacy_refusal"], "reason": "storage_error"}, "invalid", id="unexpected-code"),
-    pytest.param({**CRON_REFUSAL["legacy_refusal"], "scheduled_job_calls": 1}, "invalid", id="unexpected-job"),
-    pytest.param({**CRON_REFUSAL["legacy_refusal"], "captured_result": True}, "invalid", id="captured-result"),
-])
-def test_cron_refusal_compatibility_observes_runtime_capabilities(tmp_path, monkeypatch, report, outcome):
-    from types import SimpleNamespace
-    agent = tmp_path / "agent"
-    (agent / "gateway").mkdir(parents=True)
-    (agent / "gateway/session_cron.py").write_text('"""Refusal metadata can be constructed without a module constant."""\n')
-    monkeypatch.setitem(globals(), "AGENT_DIR", agent)
-    calls = []
-    def run(command, **kwargs):
-        calls.append((command, kwargs))
-        return SimpleNamespace(returncode=0, stdout=json.dumps(report), stderr="")
-    with monkeypatch.context() as patch:
-        patch.setattr(subprocess, "run", run)
-        if outcome == "supported":
-            try:
-                test_real_cron_refusal_matches_public_consumer_fixture(tmp_path)
-            except pytest.skip.Exception as exc:
-                pytest.fail(f"Skipped a capable owner before observing its runtime capability: {exc}")
-        elif outcome == "method":
-            with pytest.raises(pytest.skip.Exception, match="does not advertise cron.submit"):
-                test_real_cron_refusal_matches_public_consumer_fixture(tmp_path)
-        elif outcome == "legacy":
-            with pytest.raises(pytest.skip.Exception, match="verified legacy"):
-                test_real_cron_refusal_matches_public_consumer_fixture(tmp_path)
-        else:
-            with pytest.raises(AssertionError):
-                test_real_cron_refusal_matches_public_consumer_fixture(tmp_path)
-    assert len(calls) == 1, "Every Agent must reach the runtime capability probe before a skip decision"
 
 
 def test_context_detail_reads_authorized_owner_metadata_without_starting(native_owner_stub):
@@ -665,21 +635,15 @@ def test_context_detail_rejects_changed_owner_or_context(native_owner_stub, chan
     assert result['context_detail']['categories'] == []
 
 
-def test_context_detail_prebuild_and_foreign_authority_are_unavailable(native_owner_stub):
+def test_context_detail_before_the_owner_builds_its_agent_is_not_built(native_owner_stub):
     native_owner_stub.context_payload = {'categories': [], 'context_used': 0, 'context_max': 256000}
     assert native_owner_stub.run(None, {'session_id': 'native', 'action': 'context_detail'})['context_detail']['reason'] == 'not_built'
-    native_owner_stub.calls.clear()
-    native_owner_stub.described['profile_id'] = 'foreign'
-    assert native_owner_stub.run(None, {'session_id': 'native', 'action': 'context_detail'})['state'] == 'incompatible'
-    assert native_owner_stub.calls == [('runtime.describe', {})]
 
 
 @requires_agent
 def test_real_plugin_notice_producer_replays_without_turn_stamp(native_owner_stub, tmp_path):
     import json
     from types import SimpleNamespace
-    if not (AGENT_DIR / "gateway/plugin_messages.py").exists():
-        pytest.skip("this supported Agent has no plugin post/edit API")
     fixture_path = SIDECAR_ROOT.parent.parent / "contracts/fixtures/web-native-notices.json"
     env = isolated_env(tmp_path / "producer", TALARIA_WEB_AGENT_DIR=str(AGENT_DIR))
     result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_notice_producer.py"),
@@ -739,7 +703,7 @@ def test_checkpoint_diff_uses_frozen_owner_read_without_ambient_manager(native_o
     from talaria_sidecar.methods import checkpoints
     monkeypatch.setattr(checkpoints, "_manager", lambda: pytest.fail("ambient checkpoint manager used"))
     native_owner_stub.checkpoint_diff = {"enabled": True, "success": True, "stat": "old project changes", "diff": "older than session\n", "diff_lines": 1, "empty": False}
-    result = native_owner_stub.run(None, {"session_id": "logical-before-compression", "action": "checkpoint_diff"})
+    result = native_owner_stub.session(None, {"profile_home": str(tmp_path), "session_id": "logical-before-compression", "action": "checkpoint_diff"})
     assert result.get("checkpoint_diff") == {"diff": "older than session\n", "stat": "old project changes", "comparison": {
         "provenance": "native_owner", "baseline": "earliest_retained_project_checkpoint", "available": True, "reason": None, "truncated": False}}
     assert native_owner_stub.calls == [("runtime.describe", {}), ("rollback.session_diff", {"session_id": "logical-before-compression", "_timeout": 25})]
@@ -766,12 +730,10 @@ def test_checkpoint_diff_reports_native_line_truncation(native_owner_stub):
     assert result["checkpoint_diff"]["comparison"]["truncated"] is True
 
 
-@pytest.mark.parametrize("boundary", ["restart", "profile", "unsupported"])
+@pytest.mark.parametrize("boundary", ["restart", "unsupported"])
 def test_checkpoint_diff_never_falls_back_on_owner_refusal(native_owner_stub, boundary):
     if boundary == "restart":
         native_owner_stub.discovery.state = "restart_wait"
-    elif boundary == "profile":
-        native_owner_stub.described["profile_id"] = "foreign"
     else:
         native_owner_stub.checkpoint_failure = "method_not_found"
     result = native_owner_stub.run(None, {"session_id": "native", "action": "checkpoint_diff"})
@@ -796,12 +758,6 @@ def test_checkpoint_diff_empty_retained_baseline_is_not_unavailable(native_owner
     assert [method for method, _ in native_owner_stub.calls] == ['runtime.describe', 'rollback.session_diff', 'rollback.list']
 
 
-def test_checkpoint_diff_is_exposed_as_a_closed_session_read(native_owner_stub, tmp_path):
-    native_owner_stub.checkpoint_diff = {'enabled': False}
-    result = native_owner_stub.session(None, {'profile_home': str(tmp_path), 'session_id': 'native', 'action': 'checkpoint_diff'})
-    assert result['checkpoint_diff']['comparison']['reason'] == 'checkpoints_disabled'
-
-
 @pytest.mark.parametrize("failure", [None, "unsupported_terminal_backend", "cwd_unavailable", "dangerous_command", "command_timeout", "timeout"])
 def test_captured_command_uses_only_authorized_owner(native_owner_stub, failure):
     owner = native_owner_stub
@@ -819,23 +775,18 @@ def test_captured_command_uses_only_authorized_owner(native_owner_stub, failure)
     assert sum(method == "shell.exec" for method, _ in owner.calls) == 1
 
 
-@pytest.mark.parametrize("boundary", ["profile", "owner", "epoch", "replay"])
-def test_captured_command_refuses_stale_or_wrong_owner(native_owner_stub, boundary):
+@pytest.mark.parametrize("boundary", ["epoch", "replay"])
+def test_captured_command_refuses_a_stale_owner(native_owner_stub, boundary):
     owner = native_owner_stub
-    if boundary in {"profile", "owner"}:
-        owner.described["profile_id" if boundary == "profile" else "instance_id"] = "other"
-    else:
-        owner.snapshot_extra = {"authority_epoch": 2} if boundary == "epoch" else {"replay_epoch": "successor"}
+    owner.snapshot_extra = {"authority_epoch": 2} if boundary == "epoch" else {"replay_epoch": "successor"}
     result = owner.run(None, {"session_id": "native", "action": "shell_exec", "command": "pwd",
                               "authority_epoch": 1, "replay_epoch": "epoch"})
-    assert result["state"] in {"refused", "incompatible"}
+    assert (result["state"], result["reason"]) == ("refused", "owner_changed"), result
     assert not any(method == "shell.exec" for method, _ in owner.calls)
 
 
 @requires_agent
 def test_supported_owner_captured_command_policy(tmp_path):
-    if not (AGENT_DIR / "gateway/session_shell.py").exists():
-        pytest.skip("this supported Agent has no captured shell command")
     env = isolated_env(tmp_path / "hermes", TALARIA_WEB_AGENT_DIR=str(AGENT_DIR))
     result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_shell_policy.py"),
                              str(AGENT_DIR), str(tmp_path / "workspaces")], env=env,

@@ -7,8 +7,6 @@ import os
 import subprocess
 import sys
 import textwrap
-import threading
-import time
 import types
 from pathlib import Path
 
@@ -44,7 +42,7 @@ def _script(tmp_path, body: str) -> str:
 def test_restart_survives_a_restart_that_floods_both_pipes(tmp_path, monkeypatch) -> None:
     script = _script(tmp_path, """
         import sys
-        assert sys.argv[1:] == ["gateway", "restart"], sys.argv
+        assert sys.argv[1:] == ["gateway", "restart", "--detach"], sys.argv
         sys.stdout.write("out-" * 200000)
         sys.stderr.write("err-" * 200000)
         sys.stdout.write("\\nrestarted\\n")
@@ -55,18 +53,6 @@ def test_restart_survives_a_restart_that_floods_both_pipes(tmp_path, monkeypatch
     result = gateway.control("restart", tmp_path, None, _Ctx(), quick_timeout=0.2, background_wait=5.0)
     assert result["status"] == "completed", result
     assert result["detail"].endswith("restarted")
-
-
-def test_restart_reports_a_failed_exit_with_stderr(tmp_path, monkeypatch) -> None:
-    script = _script(tmp_path, """
-        import sys
-        sys.stderr.write("launchd rotating\\n")
-        sys.exit(2)
-    """)
-    monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
-    monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
-    result = gateway.control("restart", tmp_path, None, _Ctx(), quick_timeout=2.0, background_wait=5.0)
-    assert result == {"status": "failed", "message": "Restart failed: launchd rotating", "detail": "launchd rotating", "returncode": 2, "reason": "launchd rotating"}
 
 
 def test_restart_terminates_a_hung_child_after_the_background_wait(tmp_path, monkeypatch) -> None:
@@ -84,25 +70,12 @@ def test_restart_terminates_a_hung_child_after_the_background_wait(tmp_path, mon
     assert [e for e, _ in ctx.events] == ["progress", "progress"]
 
 
-@pytest.mark.parametrize("action", ["start", "stop"])
-def test_start_and_stop_run_their_cli_subcommand_in_the_profile_home(tmp_path, monkeypatch, action) -> None:
-    def script(cmd, kwargs):
-        assert cmd[1:] == ['gateway', action]
-        assert kwargs['env']['HERMES_HOME'] == str(tmp_path)
-        return 'pid 4242 service details\n', '', 0, 0
-    monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
-    monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
-    result = gateway.control(action, tmp_path, None, _Ctx(), quick_timeout=2.0, background_wait=5.0)
-    assert result["status"] == "completed", result
-    assert result["message"] == f"Gateway service {'started' if action == 'start' else 'stopped'} successfully"
-
-
 def test_failed_stop_reports_the_exit_code(tmp_path, monkeypatch) -> None:
     script = lambda *args: ('partial output\n', 'stop failed\n', 7, 0)
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
     monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
     result = gateway.control("stop", tmp_path, None, _Ctx(), quick_timeout=2.0, background_wait=5.0)
-    assert result["status"] == "failed" and result["returncode"] == 7, result
+    assert result == {"status": "failed", "message": "Stop failed: stop failed", "detail": "partial output", "returncode": 7, "reason": "stop failed"}
 
 
 def test_an_action_in_flight_makes_every_other_action_busy_without_spawning(tmp_path, monkeypatch) -> None:
@@ -205,7 +178,8 @@ def test_a_refused_named_profile_starts_the_host_gateway_then_reruns_its_action(
     monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
     result = gateway.control(action, named, None, _Ctx(), quick_timeout=2.0, background_wait=5.0)
     assert result["status"] == "completed", result
-    assert _calls(calls) == [f"{named} --profile work gateway {action}", f"{named.parent.parent} --profile default gateway start", f"{named} --profile work gateway {action}"]
+    profile_action = f"{named} --profile work gateway {action}" + (" --detach" if action == "restart" else "")
+    assert _calls(calls) == [profile_action, f"{named.parent.parent} --profile default gateway start", profile_action]
 
 
 def test_a_refusal_the_host_resolves_reads_as_started_when_the_host_serves_the_profile(tmp_path, monkeypatch) -> None:
@@ -293,18 +267,17 @@ def _restart_method():
     return registry.methods["gateway.restart"]
 
 
-@pytest.mark.parametrize("action", gateway.ACTIONS)
+@pytest.mark.parametrize(("action", "done"), [("start", "started"), ("stop", "stopped"), ("restart", "restarted")])
 @pytest.mark.parametrize("interrupt", [False, True])
-@pytest.mark.parametrize("modern", [False, True])
-def test_lifecycle_flags_are_scoped_to_capability_action_and_consent(tmp_path, monkeypatch, action, interrupt, modern) -> None:
-    if modern:
-        monkeypatch.setitem(sys.modules, "hermes_cli.gateway_lifecycle_guards", types.ModuleType("hermes_cli.gateway_lifecycle_guards"))
+def test_lifecycle_flags_are_scoped_to_action_and_consent(tmp_path, monkeypatch, action, done, interrupt) -> None:
+    """A home without a profile runs its selector-less verb in that home."""
     def cli(cmd, kwargs):
-        assert cmd[1:] == ["gateway", action, *(["--yes"] if modern and interrupt and action != "start" else []), *(["--detach"] if modern and action == "restart" else [])]
+        assert cmd[1:] == ["gateway", action, *(["--yes"] if interrupt and action != "start" else []), *(["--detach"] if action == "restart" else [])]
+        assert kwargs["env"]["HERMES_HOME"] == str(tmp_path)
         return "ok", "", 0, 0
     monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(cli))
     result = gateway.control(action, tmp_path, None, _Ctx(), quick_timeout=1, background_wait=1, interrupt=interrupt)
-    assert result["status"] == "completed", result
+    assert result == {"status": "completed", "message": f"Gateway service {done} successfully", "detail": "ok"}
 
 
 @pytest.mark.parametrize("interrupt", ["true", 1, None])
@@ -358,16 +331,20 @@ def test_a_restart_waits_out_the_agents_own_restart_budget(tmp_path, monkeypatch
 
 
 def test_cancel_still_terminates_a_restart_with_no_deadline(tmp_path, monkeypatch) -> None:
-    script = _script(tmp_path, "import time\ntime.sleep(30)\n")
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
-    monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
+    monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(lambda *args: ('', '', 0, float("inf"))))
     _agent_budget(monkeypatch, float("inf"))
     ctx = _Ctx()
-    threading.Timer(1.0, lambda: setattr(ctx, "cancelled", True)).start()
-    started = time.monotonic()
+    clock = [0.0]
+
+    def sleep(seconds: float) -> None:
+        clock[0] += seconds
+        assert clock[0] < 3600, "the cancel never ended the restart's wait"
+        ctx.cancelled = clock[0] >= 60  # the user cancels a minute into the drain
+
+    monkeypatch.setattr(gateway, 'time', types.SimpleNamespace(monotonic=lambda: clock[0], sleep=sleep))
     result = _restart_method()(ctx, {"profile_home": str(tmp_path)})
-    assert result["status"] == "failed" and result["timed_out"] is True and "cancelled" in result["message"], result
-    assert time.monotonic() - started < 10
+    assert result == {"status": "failed", "message": "Gateway restart was cancelled and its process terminated", "timed_out": True}
 
 
 def _cli_sidecar(tmp_path, hermes_home, **env: str):
@@ -419,30 +396,26 @@ def test_live_work_consent_matches_the_installed_gateway_cli(tmp_path, hermes_ho
         #!{AGENT_PYTHON}
         import json, sys
         sys.path.insert(0, {str(AGENT_DIR)!r})
-        try:
-            from hermes_cli import gateway_lifecycle_guards as guards
-        except ImportError:
-            guards = None
+        from hermes_cli import gateway_lifecycle_guards as guards
         print(json.dumps(sys.argv[1:]))
-        if guards and sys.argv[4] in ('stop', 'restart') and '--yes' not in sys.argv:
+        if sys.argv[4] in ('stop', 'restart') and '--yes' not in sys.argv:
             from pathlib import Path
             print('✗ ' + guards._work_lines(sys.argv[4], Path('.'), {{'active_agents': 1}}, 'hermes gateway {{verb}} --yes')[0])
             sys.exit(1)
     """))
     cli.chmod(0o755)
-    modern = (AGENT_DIR / "hermes_cli/gateway_lifecycle_guards.py").is_file()
     proc = SidecarProcess(hermes_home, env={"PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}"})
     try:
         for method in ("gateway.control", "gateway.restart"):
             for interrupt in (False, True):
                 result = proc.result(method, {"profile_home": str(hermes_home), "action": "restart", "interrupt": interrupt, "background_wait_seconds": 2})
-                if modern and not interrupt:
+                if not interrupt:
                     assert result["status"] == "busy_live_work", result
                     assert result["reason"] == "Refusing to restart the gateway: 1 live session(s) would be interrupted."
                 else:
                     assert result["status"] == "completed", result
                 args = json.loads(result["detail"].splitlines()[0])
-                assert args == ["--profile", "default", "gateway", "restart", *(["--yes"] if modern and interrupt else []), *(["--detach"] if modern else [])]
+                assert args == ["--profile", "default", "gateway", "restart", *(["--yes"] if interrupt else []), "--detach"]
     finally:
         proc.close()
 
@@ -454,7 +427,7 @@ def test_every_action_names_the_requested_profile_not_the_sticky_active_one(tmp_
     (hermes_home / "active_profile").write_text("work\n")
     proc, run = _cli_sidecar(tmp_path, hermes_home)
     try:
-        assert run(hermes_home, "restart")["argv"] == ["--profile", "default", "gateway", "restart", *(["--detach"] if (AGENT_DIR / "hermes_cli/gateway_lifecycle_guards.py").is_file() else [])]
+        assert run(hermes_home, "restart")["argv"] == ["--profile", "default", "gateway", "restart", "--detach"]
         assert run(b, "start")["argv"] == ["--profile", "b", "gateway", "start"]
         assert run(hermes_home, "stop", cli_profile="work")["argv"] == ["--profile", "work", "gateway", "stop"]
     finally:
@@ -484,31 +457,16 @@ def test_the_restart_wait_is_the_installed_agents_own_budget_plus_headroom(herme
     assert float(out.strip().splitlines()[-1]) > gateway._RESTART_FALLBACK_SECONDS + gateway._RESTART_HEADROOM_SECONDS, out
 
 
-@pytest.mark.parametrize("action", gateway.ACTIONS)
-def test_a_named_profile_whose_selector_cannot_be_resolved_is_refused_without_spawning(tmp_path, monkeypatch, action) -> None:
-    named = tmp_path / ".hermes" / "profiles" / "work"
-    named.mkdir(parents=True)
+@pytest.mark.parametrize(("action", "home"), [("start", ".hermes/profiles/work"), ("stop", ".hermes/profiles/work"),
+                                            ("restart", ".hermes/profiles/work"), ("restart", ".hermes")])
+def test_a_home_whose_profile_cannot_be_named_is_refused_without_spawning(tmp_path, monkeypatch, action, home) -> None:
+    """``gateway.control`` runs without loading the Agent: when it cannot import the Agent's profile selector, a selector-less
+    verb would follow the sticky active profile, so the action is refused (TAL-894)."""
+    home = tmp_path / home
+    home.mkdir(parents=True)
+    (tmp_path / ".hermes" / "active_profile").write_text("work\n")
     spawned: list[list[str]] = []
-    monkeypatch.setitem(sys.modules, "hermes_constants", types.ModuleType("hermes_constants"))  # an Agent without profile_name_for_home
-    monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
-
-
-    def popen(cmd, **kwargs):
-        spawned.append(cmd)
-        raise FileNotFoundError(cmd[0])
-
-    monkeypatch.setattr(gateway.subprocess, "Popen", popen)
-    result = gateway.control(action, named, None, _Ctx(), quick_timeout=0.1, background_wait=0.1)
-    assert spawned == [], spawned
-    assert result["status"] == "failed" and "work" in result["message"], result
-
-
-def test_a_root_profile_action_is_refused_when_the_agent_cannot_name_profiles(tmp_path, monkeypatch) -> None:
-    root = tmp_path / ".hermes"
-    root.mkdir()
-    (root / "active_profile").write_text("work\n")
-    spawned: list[list[str]] = []
-    monkeypatch.setitem(sys.modules, "hermes_constants", types.ModuleType("hermes_constants"))  # an Agent without profile_name_for_home
+    monkeypatch.setitem(sys.modules, "hermes_constants", None)  # an Agent the sidecar cannot import
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
 
     def popen(cmd, **kwargs):
@@ -516,9 +474,9 @@ def test_a_root_profile_action_is_refused_when_the_agent_cannot_name_profiles(tm
         raise FileNotFoundError(cmd[0])
 
     monkeypatch.setattr(gateway.subprocess, "Popen", popen)
-    result = gateway.control("restart", root, None, _Ctx(), quick_timeout=0.1, background_wait=0.1)
+    result = gateway.control(action, home, None, _Ctx(), quick_timeout=0.1, background_wait=0.1)
     assert spawned == [], spawned
-    assert result["status"] == "failed" and "refused" in result["message"], result
+    assert result == {"status": "failed", "message": f"Gateway {action} refused: the installed Hermes Agent cannot name the profile at {home}"}
 
 
 @requires_agent

@@ -7,9 +7,6 @@ from types import SimpleNamespace as NS
 
 sys.path.insert(0, sys.argv[1])
 progress = import_module('tui_gateway.tool_progress')
-if not hasattr(progress, '_todo_state_from_history'):
-    print(json.dumps({'supported': False}))
-    sys.exit(0)
 from gateway.config import Platform
 from gateway.run_turn_progress import GatewayTurnProgressMixin
 from gateway.session_events import SessionEvents
@@ -33,4 +30,4 @@ turn = NS(_approval_owner=(NS(sessions={}), 'chat', 1),
 GatewayTurnProgressMixin.combined_tool_complete_callback(turn, 'todo-call', 'todo', {}, json.dumps(raw))
 events = [e for e in stream.since('epoch', 0)['events'] if e['type'] == 'todo.updated']
 assert len(events) == 1 and events[0]['payload'] == raw, events
-print(json.dumps({'supported': True, 'snapshot': progress._todo_state_from_history(history), 'events': events}))
+print(json.dumps({'snapshot': progress._todo_state_from_history(history), 'events': events}))

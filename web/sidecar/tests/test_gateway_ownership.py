@@ -37,15 +37,13 @@ def agent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     package = types.ModuleType("gateway")
     package.status = status
     pause = types.ModuleType("hermes_cli.update_cmd_posix_pause")
-    profiles = types.ModuleType("hermes_cli.profiles")
-    profiles._PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
     cli = types.ModuleType("hermes_cli")
     cli.update_cmd_posix_pause = pause
-    cli.profiles = profiles
     constants = types.ModuleType("hermes_constants")
+    constants.PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
     constants.profile_name_for_home = lambda home: state.selector
     for name, module in {"gateway": package, "gateway.status": status, "hermes_cli": cli, "hermes_cli.update_cmd_posix_pause": pause,
-                         "hermes_cli.profiles": profiles, "hermes_constants": constants}.items():
+                         "hermes_constants": constants}.items():
         monkeypatch.setitem(sys.modules, name, module)
     monkeypatch.setattr(services, "_gateway_home_matches", lambda home, runtime, used: used is pause and state.verified)
     monkeypatch.setattr(services, "listener_state", lambda pid, port: state.listeners.get(pid, "none") if port == 8642 else "none")
@@ -117,13 +115,6 @@ def test_unproven_identity_or_unreadable_evidence_is_unverified(agent, monkeypat
         agent.raises = RuntimeError("ambiguous gateway runtime state")
     else:
         monkeypatch.setattr(services, "listener_state", lambda pid, port: (_ for _ in ()).throw(PermissionError("fd table")))
-    assert gateway.ownership(agent.work, 8642)["state"] == "unverified"
-
-
-def test_an_agent_without_the_identity_helpers_proves_nothing(agent, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(sys.modules, "hermes_cli.update_cmd_posix_pause", None)
-    monkeypatch.delattr(sys.modules["hermes_cli"], "update_cmd_posix_pause")
-    agent.runtimes = {agent.work: OWN}
     assert gateway.ownership(agent.work, 8642)["state"] == "unverified"
 
 
