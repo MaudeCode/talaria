@@ -673,7 +673,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         XCTAssertEqual(elapsed(83), "running for 1 minute, 23 seconds")
         XCTAssertEqual(elapsed(120), "running for 2 minutes")
         XCTAssertEqual(elapsed(3_723), "running for 1 hour, 2 minutes, 3 seconds")
-        XCTAssertEqual(elapsed(-5), "running for 0 seconds", "A clock behind the run start reads as just started")
+        XCTAssertEqual(elapsed(-5), "running for less than 1 second", "A clock behind the run start reads as just started")
     }
 
     func testChipShowsTheElapsedTimeInT3CodeUnits() {
@@ -692,6 +692,21 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         XCTAssertEqual(elapsed(5_400), "1h 30m")
         XCTAssertEqual(elapsed(-5), "0s", "A clock behind the run start reads as just started")
         XCTAssertNil(ChatActiveRunStatusPresentation(kind: .active).elapsedTime(now: start))
+    }
+
+    /// TAL-2321: every App duration is whole narrow units, "<1s" under a second, and full words for VoiceOver.
+    func testElapsedTextRoundsToWholeUnits() {
+        let english = Locale(identifier: "en_US")
+        let cases: [(TimeInterval, String)] = [(0, "<1s"), (0.04, "<1s"), (0.99, "<1s"), (1.4, "1s"), (59.6, "1m"), (61, "1m 1s"), (120, "2m"), (3_725, "1h 2m")]
+        for (seconds, text) in cases {
+            XCTAssertEqual(ChatActiveRunStatusPresentation.elapsedText(seconds: seconds, showSeconds: true, locale: english), text, "\(seconds)s")
+        }
+        XCTAssertEqual(ChatActiveRunStatusPresentation.elapsedText(seconds: 61, locale: english), "1m", "The run chip drops the seconds past a minute")
+        XCTAssertEqual(ChatActiveRunStatusPresentation.elapsedText(seconds: 0, counting: true, locale: english), "0s", "A counting timer starts at 0s")
+        let german = Locale(identifier: "de_DE")
+        XCTAssertEqual([0.04, 61].map { ChatActiveRunStatusPresentation.elapsedText(seconds: $0, showSeconds: true, locale: german) }, ["<1s", "1min 1s"])
+        XCTAssertEqual(ChatActiveRunStatusPresentation.accessibilityElapsedText(seconds: 0.04, locale: english), "less than 1 second")
+        XCTAssertEqual(ChatActiveRunStatusPresentation.accessibilityElapsedText(seconds: 61, locale: english), "1 minute, 1 second")
     }
 }
 

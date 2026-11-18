@@ -97,9 +97,16 @@ describe('reply token usage (TAL-1076)', () => {
   it('shows nothing for an older reply without a record or with the setting off', () => {
     const { rerender } = render(<AssistantMessageRow row={reply()} name="Assistant" mode="compact_worklog" actions={{}} tts={false} tokenUsage isLast />)
     expect(screen.queryByRole('button', { name: /Token usage/ })).toBeNull()
-    expect(screen.getByText('4.3s · test-model')).toBeTruthy()
+    expect(screen.getByText('4s · test-model')).toBeTruthy()
     rerender(<AssistantMessageRow row={reply({ _turnUsage: usage })} name="Assistant" mode="compact_worklog" actions={{}} tts={false} isLast />)
     expect(screen.queryByRole('button', { name: /Token usage/ })).toBeNull()
+  })
+})
+
+describe('reply turn duration (TAL-2321)', () => {
+  it('shows a turn under half a second as <1s instead of hiding it', () => {
+    render(<AssistantMessageRow row={groupAssistantTurns(projectMessages([{ role: 'assistant', id: 1, content: 'Done.', _turnDuration: 0.2, _usedModel: 'test-model' }]))[0]!} name="Assistant" mode="compact_worklog" actions={{}} tts={false} isLast />)
+    expect(screen.getByText('<1s · test-model')).toBeTruthy()
   })
 })
 

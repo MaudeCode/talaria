@@ -48,7 +48,7 @@ struct ToolCallCardView: View {
                 header
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Self.accessibilityText(for: toolCall, detail: statusDisplay.detailText))
+            .accessibilityLabel(Self.accessibilityText(for: toolCall, detail: statusDisplay.accessibilityDetailText))
             .accessibilityHint(isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
 
             // TAL-2340: the latest output line of the background process the call started, while it runs.
@@ -601,10 +601,11 @@ struct DelegateAgentRows: View {
             }
             Spacer(minLength: 6)
             if let duration = agent.duration {
-                Text(Duration.seconds(duration).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .narrow)))
+                Text(ChatActiveRunStatusPresentation.elapsedText(seconds: duration, showSeconds: true))
                     .font(AppFont.caption2())
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
+                    .accessibilityLabel(ChatActiveRunStatusPresentation.accessibilityElapsedText(seconds: duration))
             }
         }
         .frame(minHeight: 32)

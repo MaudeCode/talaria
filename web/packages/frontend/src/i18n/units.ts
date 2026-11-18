@@ -5,12 +5,15 @@ export function formatDurationUnits(locale: string, ...parts: [number, DurationU
   return parts.map(([n, unit]) => new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'narrow' }).format(n)).join(' ')
 }
 
-/** Seconds as `42s`, `3m 5s` (`3m` without `showSeconds`) or `1h 4m`; formatting only, the seconds are the caller's. */
-export function formatElapsed(locale: string, totalSeconds: number, showSeconds = true): string {
-  const seconds = Math.max(0, Math.floor(totalSeconds))
+/** TAL-2321: seconds rounded to whole narrow units: `<1s`, `42s`, `3m 5s` (`3m` without `showSeconds`, and when the seconds
+ *  are 0) or `1h 4m`; formatting only, the seconds are the caller's. A `counting` timer starts at `0s` instead, so its
+ *  first tick keeps its width. */
+export function formatElapsed(locale: string, totalSeconds: number, showSeconds = true, counting = false): string {
+  if (!(totalSeconds >= 1)) return counting ? formatDurationUnits(locale, [0, 'second']) : `<${formatDurationUnits(locale, [1, 'second'])}`
+  const seconds = Math.round(totalSeconds)
   const minutes = Math.floor(seconds / 60)
   if (seconds < 60) return formatDurationUnits(locale, [seconds, 'second'])
-  if (minutes < 60) return formatDurationUnits(locale, [minutes, 'minute'], ...(showSeconds ? [[seconds % 60, 'second'] as [number, 'second']] : []))
+  if (minutes < 60) return formatDurationUnits(locale, [minutes, 'minute'], ...(showSeconds && seconds % 60 ? [[seconds % 60, 'second'] as [number, 'second']] : []))
   return formatDurationUnits(locale, [Math.floor(minutes / 60), 'hour'], [minutes % 60, 'minute'])
 }
 

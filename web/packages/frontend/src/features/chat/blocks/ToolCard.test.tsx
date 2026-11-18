@@ -385,7 +385,12 @@ describe('a long-running call (TAL-2340)', () => {
     expect(elapsed()).toBe('35s')
     view.rerender(<ToolCard call={{ ...running, done: true, duration: 35.2 }} />)
     expect(elapsed()).toBeUndefined()
-    expect(screen.getByText('35.2s')).toBeInTheDocument()
+    expect(screen.getByText('35s')).toBeInTheDocument()
+  })
+
+  it('reads a call that took under a second as <1s (TAL-2321)', () => {
+    render(<ToolCard call={{ ...call, duration: 0.04 }} />)
+    expect(screen.getByText('<1s')).toBeInTheDocument()
   })
 
 })

@@ -137,7 +137,15 @@ func testToolCallStatusDisplayHidesCompletedCollapsedText() {
     )
 
     XCTAssertNil(display.collapsedText)
-    XCTAssertEqual(display.detailText, "Completed in 1.2s")
+    XCTAssertEqual(display.detailText, "Completed in 1s")
+}
+
+/// TAL-2321: a call under a second reads "<1s", and VoiceOver hears it in words.
+func testToolCallStatusDisplayReadsASubSecondCallAsUnderOneSecond() {
+    let display = ToolCallStatusDisplay(toolCall: ToolCall(name: "terminal", preview: nil, args: nil, duration: 0.04, isCompleted: true))
+
+    XCTAssertEqual(display.detailText, "Completed in <1s")
+    XCTAssertEqual(display.accessibilityDetailText, "Completed in less than 1 second")
 }
 
 func testToolCallStatusDisplayShowsRunningCollapsedText() {

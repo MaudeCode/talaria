@@ -4,6 +4,8 @@ import SwiftUI
 public struct ToolCallStatusDisplay: Equatable, Sendable {
     let collapsedText: String?
     public let detailText: String
+    /// `detailText` with its duration in full words, for VoiceOver.
+    public let accessibilityDetailText: String
     public let progressText: String?
 
     public init(toolCall: ToolCall) {
@@ -16,26 +18,30 @@ public struct ToolCallStatusDisplay: Equatable, Sendable {
         if toolCall.isError == true {
             collapsedText = String(localized: "Failed")
             detailText = String(localized: "Failed")
+            accessibilityDetailText = detailText
             return
         }
 
         if toolCall.isCompleted {
             collapsedText = nil
             if let duration = toolCall.duration {
-                detailText = "Completed in \(duration.formatted(.number.precision(.fractionLength(1))))s"
+                detailText = String(localized: "Completed in \(ChatActiveRunStatusPresentation.elapsedText(seconds: duration, showSeconds: true))")
+                accessibilityDetailText = String(localized: "Completed in \(ChatActiveRunStatusPresentation.accessibilityElapsedText(seconds: duration))")
             } else {
                 detailText = String(localized: "Completed")
+                accessibilityDetailText = detailText
             }
             return
         }
 
         collapsedText = String(localized: "Running")
         detailText = String(localized: "Running")
+        accessibilityDetailText = detailText
     }
 
     /// TAL-2340: how long a running call has gone on as of `now`, from the server's start; nil once it ends or without one.
     public static func runningElapsed(for toolCall: ToolCall, now: Date, locale: Locale = .autoupdatingCurrent) -> String? {
         guard !toolCall.isCompleted, toolCall.isError != true, let start = toolCall.timerStart else { return nil }
-        return ChatActiveRunStatusPresentation.elapsedText(seconds: max(0, Int(now.timeIntervalSince1970 - start)), locale: locale)
+        return ChatActiveRunStatusPresentation.elapsedText(seconds: max(0, (now.timeIntervalSince1970 - start).rounded(.down)), counting: true, locale: locale)
     }
 }
