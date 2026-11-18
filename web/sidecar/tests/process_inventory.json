@@ -1582,8 +1582,7 @@
       "layer": "process",
       "reason": "A fresh sidecar must capture its launch home and observe its update marker before any Agent import.",
       "cases": [
-        "[False]",
-        "[True]"
+        ""
       ]
     },
     "tests/test_import_bootstrap.py::test_agent_helpers_preserve_native_lazy_install_policy": {
@@ -1781,8 +1780,7 @@
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: config set writes through a symlinked config. Uses the real installed release, not a fabricated API response.",
       "cases": [
-        "[384]",
-        "[416]"
+        ""
       ]
     },
     "tests/test_namespaces.py::test_stdout_is_reserved_for_rpc_frames": {
@@ -2224,36 +2222,8 @@
       ]
     },
     "tests/test_runtime.py::test_handshake_rejects_another_rpc_version": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: handshake rejects another rpc version. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_runtime.py::test_handshake_rejects_pre_receipt_delivery_protocol": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: handshake rejects pre receipt delivery protocol. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_runtime.py::test_handshake_rejects_pre_selection_guard_protocol": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: handshake rejects pre selection guard protocol. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_runtime.py::test_status_before_handshake_reports_nothing_loaded": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: status before handshake reports nothing loaded. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_runtime.py::test_unknown_method_and_cancel_of_inactive_request": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: unknown method and cancel of inactive request. Uses the real installed release, not a fabricated API response.",
+      "layer": "process",
+      "reason": "A real sidecar process must exit with status 3 over stdio after refusing a mismatched RPC version; the gate runs before any Agent import, so it runs on the test interpreter with a missing Agent checkout.",
       "cases": [
         ""
       ]
@@ -2265,34 +2235,11 @@
         ""
       ]
     },
-    "tests/test_runtime.py::test_runtime_env_edits_the_sidecar_process_environment": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: runtime env edits the sidecar process environment. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
     "tests/test_runtime.py::test_config_reads_survive_agent_import_failure": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: config reads survive agent import failure. Uses the real installed release, not a fabricated API response.",
       "cases": [
         ""
-      ]
-    },
-    "tests/test_runtime.py::test_handshake_rejects_pre_scoped_usage_credentials": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: handshake rejects pre scoped usage credentials. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        "[41]",
-        "[42]"
-      ]
-    },
-    "tests/test_runtime_pm_path.py::test_runtime_resolves_managed_tools_before_agent_import": {
-      "layer": "process",
-      "reason": "Actual executable discovery and execution under the imported runtime PATH establish managed-tool activation at the process boundary.",
-      "cases": [
-        "[True]",
-        "[False]"
       ]
     },
     "tests/test_skills_catalog.py::test_resolved_skill_catalog": {
@@ -2611,13 +2558,6 @@
         ""
       ]
     },
-    "tests/test_suite_runner.py::test_serial_selection_rejects_a_missing_execution_journal": {
-      "layer": "process",
-      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
-      "cases": [
-        ""
-      ]
-    },
     "tests/test_suite_runner.py::test_a_slow_module_splits_across_workers": {
       "layer": "process",
       "reason": "Actual pytest worker processes prove a recorded-slow module splits its cases across concurrent workers and each case runs exactly once.",
@@ -2634,8 +2574,6 @@
       "cases": [
         "[1-2]",
         "[2-3]",
-        "[4-5]",
-        "[8-9]",
         "[8-2]"
       ]
     },
@@ -2645,8 +2583,6 @@
       "cases": [
         "[]",
         "[0]",
-        "[-1]",
-        "[1.5]",
         "[abc]"
       ]
     },
@@ -2678,9 +2614,7 @@
       "layer": "process",
       "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
       "cases": [
-        "[selector0]",
-        "[selector1]",
-        "[selector2]"
+        ""
       ]
     },
     "tests/test_suite_runner.py::test_merged_outcomes_and_durations": {
@@ -2695,6 +2629,7 @@
       "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
       "cases": [
         "[crash]",
+        "[manifest-missing]",
         "[missing]",
         "[malformed]",
         "[omitted]",

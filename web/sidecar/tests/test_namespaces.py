@@ -11,7 +11,7 @@ import sys
 
 import pytest
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, assert_matches, isolated_env, load_schema, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, assert_matches, isolated_env, requires_agent
 from connectors_portal import Portal, seed_identity, serve
 from scenarios import SCENARIOS, UNEXERCISED
 from talaria_sidecar import SIDECAR_RPC_VERSION
@@ -209,14 +209,14 @@ def test_config_round_trip_keeps_mode_and_key_order(handshaken: SidecarProcess, 
     home = str(hermes_home)
     path = hermes_home / "config.yaml"
     path.write_text("model:\n  default: claude-sonnet-4-6\n  provider: anthropic\nagent:\n  reasoning_effort: high\n", encoding="utf-8")
-    path.chmod(0o600)
+    path.chmod(0o640)  # not mkstemp's 0o600, so a write that drops the mode shows
     message, _ = handshaken.call("config.get", {"profile_home": home, "config_path": str(path)})
     config = message["result"]["config"]
     assert config["model"]["provider"] == "anthropic" and message["result"]["exists"] is True
     config["max_tokens"] = 4096
     message, _ = handshaken.call("config.set", {"profile_home": home, "config_path": str(path), "config": config})
     assert message["result"]["ok"] is True
-    assert path.stat().st_mode & 0o777 == 0o600
+    assert path.stat().st_mode & 0o777 == 0o640
     text = path.read_text(encoding="utf-8")
     assert text.index("model:") < text.index("agent:") < text.index("max_tokens: 4096")
     message, _ = handshaken.call("config.get", {"profile_home": home, "config_path": str(path)})
@@ -265,19 +265,18 @@ def test_config_get_resolves_references_under_each_profile_scope(hermes_home: pa
 
 
 @requires_agent
-@pytest.mark.parametrize("mode", [0o600, 0o640])
-def test_config_set_writes_through_a_symlinked_config(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path, mode: int) -> None:
+def test_config_set_writes_through_a_symlinked_config(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
     """An operator-managed ``config.yaml`` symlink keeps pointing at its referent; the referent gets the bytes."""
     home = str(hermes_home)
     managed = tmp_path / "managed.yaml"
     managed.write_text("model:\n  provider: anthropic\n", encoding="utf-8")
-    managed.chmod(mode)
+    managed.chmod(0o640)  # not mkstemp's 0o600, so a write that drops the mode shows
     link = hermes_home / "config.yaml"
     link.symlink_to(managed)
     handshaken.result("config.set", {"profile_home": home, "config_path": str(link), "config": {"model": {"provider": "anthropic"}, "max_tokens": 9}})
     assert link.is_symlink() and os.readlink(link) == str(managed)
     assert "max_tokens: 9" in managed.read_text(encoding="utf-8")
-    assert managed.stat().st_mode & 0o777 == mode
+    assert managed.stat().st_mode & 0o777 == 0o640
     assert handshaken.result("config.get", {"profile_home": home, "config_path": str(link)})["config"]["max_tokens"] == 9
 
 

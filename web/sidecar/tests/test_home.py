@@ -605,9 +605,21 @@ def test_runtime_env_waits_for_a_launch_policy_import_in_flight(tmp_path, monkey
     importer.start()
     assert gate.started.wait(10)
     errors = []
-    editor = threading.Thread(target=lambda: _record(errors, lambda: home_module.edit_launch_env({}, ["OPENAI_API_KEY"])))
+    # Set once the editor asks for the policy module while its first import is held, or once the editor gave up.
+    reached = threading.Event()
+
+    def import_module(name, *args):
+        reached.set()
+        return importlib.import_module(name, *args)
+
+    def edit():
+        _record(errors, lambda: home_module.edit_launch_env({}, ["OPENAI_API_KEY"]))
+        reached.set()
+
+    monkeypatch.setattr(home_module, "importlib", types.SimpleNamespace(import_module=import_module))
+    editor = threading.Thread(target=edit)
     editor.start()
-    editor.join(0.2)
+    assert reached.wait(10)
     gate.release.set()
     importer.join(10)
     editor.join(10)
