@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from 'node:os'
 import { readMetadataJsonPrefixWithSignature, statSignature } from './storage/json-files.js'
 import { Session } from './session.js'
+import { allSessions } from './list.js'
 import { stampCompressionExhaustedRecovery } from './turn.js'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -4223,5 +4224,258 @@ describe('session detail ships each call\'s outcome (TAL-2335)', () => {
         for (const list of [calls, rows]) for (const c of list) expect((c.result_view as Json | null)?.outcome, `${query} ${String(c.id)}`).toEqual(expected[String(c.id)])
       }
     }
+  })
+})
+
+describe('session persistence and streaming flags', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('save writes the session JSON with its id and messages', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = [{ role: 'user', content: 'persist me' }]
+    await s.deps.sessionStore.save(session)
+    const raw = JSON.parse(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')) as Json
+    expect(raw.session_id).toBe(sid)
+    expect((raw.messages as Json[])[0]).toMatchObject({ role: 'user', content: 'persist me' })
+  })
+
+  it('pending prompt, start time, and stream id survive a reload from disk', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.pending_user_message = 'still pending'
+    session.pending_started_at = 1234.5
+    session.active_stream_id = 'stream-restart'
+    await s.deps.sessionStore.save(session)
+    s.deps.sessionStore.sessions.delete(sid)
+    const reloaded = (await s.deps.sessionStore.get(sid))
+    expect(reloaded).toMatchObject({ pending_user_message: 'still pending', pending_started_at: 1234.5, active_stream_id: 'stream-restart' })
+  })
+
+  it('live stream ids mark both indexed and in-memory sessions as streaming', async () => {
+    const indexed = String((await newSession(s)).session_id)
+    const inMemory = String((await newSession(s)).session_id)
+    for (const [sid, stream] of [[indexed, 'live-1'], [inMemory, 'live-2']] as const) {
+      const session = (await s.deps.sessionStore.get(sid))
+      session.messages = [{ role: 'user', content: 'hi' }]
+      session.active_stream_id = stream
+      await s.deps.sessionStore.save(session)
+      s.deps.registry.liveIds.add(stream)
+    }
+    s.deps.sessionStore.sessions.delete(indexed)
+    const rows = (await allSessions(s.deps.sessionStore))
+    for (const sid of [indexed, inMemory]) expect(rows.find((r) => r.session_id === sid)).toMatchObject({ is_streaming: true })
+    expect(rows.find((r) => r.session_id === indexed)?.active_stream_id).toBe('live-1')
+    s.deps.registry.liveIds.delete('live-1')
+    s.deps.registry.liveIds.delete('live-2')
+  })
+
+  it('a persisted stream id does not resurrect streaming after a restart', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = [{ role: 'user', content: 'hi' }]
+    session.active_stream_id = 'gone-after-restart'
+    await s.deps.sessionStore.save(session)
+    s.deps.sessionStore.sessions.delete(sid)
+    const row = (await allSessions(s.deps.sessionStore)).find((r) => r.session_id === sid)
+    expect(row?.active_stream_id).toBe('gone-after-restart')
+    expect(row?.is_streaming).toBe(false)
+  })
+
+  it('the HTTP list repairs a stale stream id before serialising', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = [{ role: 'user', content: 'hi' }]
+    session.active_stream_id = 'stale-list'
+    await s.deps.sessionStore.save(session)
+    const rows = (await json(await s.get('/api/sessions'))).sessions as Json[]
+    expect(rows.find((r) => r.session_id === sid)).toMatchObject({ active_stream_id: null, is_streaming: false })
+  })
+
+  it('clear persists empty transcript, context, and tool calls with a clear generation', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'yo' }]
+    session.context_messages = [{ role: 'user', content: 'hi' }]
+    session.tool_calls = [{ name: 't' }]
+    await s.deps.sessionStore.save(session)
+    const res = await post(s, '/api/session/clear', { session_id: sid })
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body.ok).toBe(true)
+    expect((body.session as Json).active_stream_id ?? null).toBeNull()
+    expect((body.session as Json).pending_user_message ?? null).toBeNull()
+    const raw = JSON.parse(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')) as Json
+    expect(raw.messages).toEqual([])
+    expect(raw.context_messages).toEqual([])
+    expect(raw.tool_calls).toEqual([])
+    expect(String(raw.clear_generation)).toMatch(/^[0-9a-f]{32}$/)
+  })
+})
+
+describe('import scrubbing and ephemeral projection', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => { sidecar = new FakeSidecar(); s = await bootTestServer({ sidecar }) })
+  afterAll(() => s.close())
+
+  it('an import drops provider sidecars and row-id aliases but keeps nested alias-named keys', async () => {
+    const res = await post(s, '/api/session/import', {
+      messages: [{ role: 'user', content: { text: 'hi', api_content: 'nested stays' }, api_content: 'provider only', _state_db_row_id: 4, state_db_row_id: 5 }, { role: 'assistant', content: 'yo', _db_row_id: 6 }],
+      tool_calls: [{ name: 'read', api_content: 'gone', _state_db_row_id: 7 }],
+    })
+    expect(res.status, await res.clone().text()).toBe(200)
+    const sid = String(((await json(res)).session as Json).session_id)
+    const raw = JSON.parse(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')) as Json
+    const messages = raw.messages as Json[]
+    for (const m of messages) for (const k of ['api_content', '_state_db_row_id', 'state_db_row_id', '_db_row_id']) expect(m, k).not.toHaveProperty(k)
+    expect((messages[0]!.content as Json).api_content).toBe('nested stays')
+    expect((raw.tool_calls as Json[])[0]).not.toHaveProperty('api_content')
+    expect((raw.tool_calls as Json[])[0]).not.toHaveProperty('_state_db_row_id')
+  })
+
+  it('a non-list tool_calls answers 400 and creates nothing', async () => {
+    const before = (await s.deps.sessionStore.persistedIds()).size
+    const res = await post(s, '/api/session/import', { messages: [{ role: 'user', content: 'hi' }], tool_calls: { name: 'not a list' } })
+    expect(res.status).toBe(400)
+    expect((await s.deps.sessionStore.persistedIds()).size).toBe(before)
+  })
+
+  it('a btw turn ends with only role and content per message', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    sidecar.respond('chat.start', (params) => ({
+      status: 'completed', messages: [{ role: 'user', content: str(params.user_message), api_content: 'secret', _state_db_row_id: 1 }, { role: 'assistant', content: 'because', api_content: 'secret' }], final_response: 'because', error: null, failed: false, partial: false, compression_exhausted: false,
+      tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [],
+    }))
+    const started = await json(await post(s, '/api/btw', { session_id: sid, question: 'why?' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done')
+    const done = frames.find((f) => f.event === 'done')?.data as Json
+    expect(done.ephemeral).toBe(true)
+    const session = done.session as Json
+    expect(session.session_id).toBe(started.session_id)
+    expect(session.messages).toEqual([{ role: 'user', content: expect.any(String) as unknown }, { role: 'assistant', content: 'because' }])
+    await vi.waitFor(() => { expect(existsSync(join(s.state, 'sessions', `${String(started.session_id)}.json`))).toBe(false) })
+  })
+})
+
+describe('runtime seams from review round 10', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  const synced: Json[] = []
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    sidecar.respond('state_db.sync_title', (params) => { synced.push(params); return { ok: true as const } })
+    s = await bootTestServer({ sidecar })
+  })
+  afterAll(() => s.close())
+
+  it('a provider-qualified model is split before it is persisted or sent to the sidecar', async () => {
+    const created = (await json(await post(s, '/api/session/new', { model: '@nous:openai/gpt-5.4-mini' }))).session as Json
+    expect(created).toMatchObject({ model: 'openai/gpt-5.4-mini', model_provider: 'nous' })
+    let seen: Json | null = null
+    sidecar.respond('chat.start', (params) => { seen = params; return { status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } })
+    const started = await json(await post(s, '/api/chat/start', { session_id: created.session_id, message: 'hi', model: '@nous:openai/gpt-5.4-mini' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done')
+    expect(seen).toMatchObject({ model: 'openai/gpt-5.4-mini', model_provider: 'nous' })
+    const updated = (await json(await post(s, '/api/session/update', { session_id: created.session_id, model: '@openrouter:anthropic/claude-sonnet-4.6' }))).session as Json
+    expect(updated).toMatchObject({ model: 'anthropic/claude-sonnet-4.6', model_provider: 'openrouter' })
+  })
+
+  it('renaming a session syncs the title to state.db only when sync_to_insights is on', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    await post(s, '/api/session/rename', { session_id: sid, title: 'quiet' })
+    expect(synced).toEqual([])
+    await s.deps.settings.save({ sync_to_insights: true })
+    try {
+      // The rename response waits for the state.db acknowledgement, so an immediate insights read sees the new title.
+      let entered!: () => void
+      let ackSync!: () => void
+      const syncing = new Promise<void>((resolve) => { entered = resolve })
+      const acknowledged = new Promise<void>((resolve) => { ackSync = resolve })
+      const original = sidecar.responderFor('state_db.sync_title')
+      sidecar.respond('state_db.sync_title', async (params) => { entered(); await acknowledged; synced.push(params); return { ok: true as const } })
+      const renaming = post(s, '/api/session/rename', { session_id: sid, title: 'loud' })
+      let settled = false
+      void renaming.then(() => { settled = true })
+      try {
+        await syncing
+        expect(settled).toBe(false)
+        ackSync()
+        expect((await renaming).status).toBe(200)
+      } finally {
+        ackSync()
+        await renaming
+        sidecar.respond('state_db.sync_title', original)
+      }
+      expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'loud', profile_home: s.state, manual: true })
+      // Regenerating a manually named session applies the full generated-title transition (manual flag cleared,
+      // generated flag set) and syncs the new title as a user-requested one, so it replaces the manual name in state.db.
+      const manual = (await s.deps.sessionStore.get(sid))
+      manual.messages = [{ role: 'user', content: 'How do I rotate the deploy key on the staging cluster safely?' }, { role: 'assistant', content: 'Rotate it in two steps: add the new key, then remove the old one once every node picked it up.' }]
+      await s.deps.sessionStore.save(manual)
+      expect((await s.deps.sessionStore.get(sid)).manual_title).toBe(true)
+      sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Rotate staging deploy key', usage: null }))
+      const regenerated = await post(s, '/api/session/title/regenerate', { session_id: sid })
+      expect(regenerated.status, await regenerated.clone().text()).toBe(200)
+      expect((await json(regenerated)).title).toBe('Rotate staging deploy key')
+      const after = (await s.deps.sessionStore.get(sid))
+      expect([after.title, after.manual_title, after.llm_title_generated]).toEqual(['Rotate staging deploy key', false, true])
+      expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'Rotate staging deploy key', manual: true })
+    } finally {
+      await s.deps.settings.save({ sync_to_insights: false })
+    }
+  })
+
+  it('a settled turn syncs the session usage to state.db only when sync_to_insights is on', async () => {
+    const usageSynced: Json[] = []
+    sidecar.respond('state_db.sync_usage', (params) => { usageSynced.push(params); return { ok: true as const } })
+    sidecar.respond('chat.start', (params) => ({ status: 'completed', messages: [...(params.conversation_history as Json[]), { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 120, completion_tokens: 30, cache_read_tokens: 40, cache_write_tokens: 8, estimated_cost_usd: 0.0125 }, context: {}, model: 'used-model', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const turn = async (message: string): Promise<void> => {
+      const started = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+    }
+    await turn('quiet turn')
+    expect(usageSynced).toEqual([])
+    await s.deps.settings.save({ sync_to_insights: true })
+    try {
+      await turn('loud turn')
+      expect(usageSynced).toHaveLength(1)
+      const session = (await s.deps.sessionStore.get(sid))
+      expect(usageSynced[0]).toMatchObject({
+        profile_home: s.state, session_id: sid, input_tokens: 120, output_tokens: 30, cache_read_tokens: 40, cache_write_tokens: 8,
+        estimated_cost: 0.0125, model: 'used-model', title: session.title, message_count: session.messages.length,
+      })
+      expect(session.messages.length).toBeGreaterThan(0)
+      // A failed or cancelled turn persists the counters the stream reported, so state.db follows those exits too.
+      for (const [status, usage] of [['error', { prompt_tokens: 200, completion_tokens: 50, cache_read_tokens: 60, cache_write_tokens: 9, estimated_cost_usd: 0.02 }], ['cancelled', { prompt_tokens: 260, completion_tokens: 70, cache_read_tokens: 80, cache_write_tokens: 10, estimated_cost_usd: 0.03 }]] as const) {
+        sidecar.respond('chat.start', () => ({ status, messages: [], final_response: '', error: status === 'error' ? 'HTTP 500: upstream failed' : null, failed: status === 'error', partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage, context: {}, model: 'used-model', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: false, pending_steer: '', live_tool_calls: [] }))
+        const before = usageSynced.length
+        await turn(`${status} turn`)
+        await expect.poll(() => usageSynced.length).toBe(before + 1)
+        const settled = (await s.deps.sessionStore.get(sid))
+        expect(usageSynced.at(-1)).toMatchObject({ session_id: sid, input_tokens: settled.input_tokens, output_tokens: settled.output_tokens, estimated_cost: settled.estimated_cost, message_count: settled.messages.length })
+        if (status === 'cancelled') expect(usageSynced.at(-1)).toMatchObject({ input_tokens: usage.prompt_tokens, estimated_cost: usage.estimated_cost_usd })
+      }
+    } finally {
+      await s.deps.settings.save({ sync_to_insights: false })
+    }
+  })
+
+  it('a model switch resolves the context length from the sidecar with the profile config inputs and the detail load reports it', async () => {
+    let seenInputs: Json | null = null
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: { model: { provider: 'custom', base_url: 'https://llm.example/v1' }, providers: { custom: { api_key: 'sk-custom-1234', models: [{ id: 'big-model', context_length: 1_000_000 }] } } } }))
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+    s.deps.agentConfig.invalidate()
+    sidecar.respond('models.context_length', (params) => { seenInputs = params; return { model: params.model, context_length: params.config_context_length ?? 200_000 } })
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const updated = (await json(await post(s, '/api/session/update', { session_id: sid, model: 'big-model', model_provider: 'custom' }))).session as Json
+    expect(updated.context_length).toBe(1_000_000)
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    expect(detail.context_length).toBe(1_000_000)
+    expect(s.deps.sessions.deps.contextLengthFor('big-model', 'custom')).toBe(1_000_000)
+    expect(seenInputs).toMatchObject({ model: 'big-model', provider: 'custom', base_url: 'https://llm.example/v1', config_context_length: 1_000_000 })
   })
 })

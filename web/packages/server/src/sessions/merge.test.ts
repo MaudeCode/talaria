@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { BODY_EXCERPT_LIMIT, assistantReplyAddedAfterCurrentTurn, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, messageIdentity, messagesHavePrefix, normalizeAssistantDisplay, sessionLacksFinalAssistantAnswer, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withFinalAssistantAnswer } from './merge.js'
+import { BODY_EXCERPT_LIMIT, truncateToolArgs, assistantReplyAddedAfterCurrentTurn, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, messageIdentity, messagesHavePrefix, normalizeAssistantDisplay, sessionLacksFinalAssistantAnswer, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withFinalAssistantAnswer } from './merge.js'
 
 describe('withFinalAssistantAnswer (TAL-1030)', () => {
   const opts = { previousContext: [], msgText: 'question', prompt: { role: 'user', content: 'question', api_content: 'Expanded prompt' }, streamedText: 'Streamed prose', toolLimitReached: false }
@@ -687,5 +687,33 @@ describe('settlement identity cost (TAL-1688)', () => {
   ])('collapses %j to %d characters like splitting the whole text', (text, limit) => {
     const collapsed = text.split(/\s+/).join(' ').trim().slice(0, limit)
     expect(messageIdentity({ role: 'assistant', content: text }, limit)).toBe(JSON.stringify(['assistant', collapsed, '', '[]']))
+  })
+})
+
+describe('tool argument content cap', () => {
+  it('a long command survives past 120 characters', () => {
+    const command = `${'echo start\n'.repeat(30)}echo end`
+    expect(command.length).toBeGreaterThan(120)
+    const out = truncateToolArgs({ command })
+    expect(String(out.command).length).toBeGreaterThan(120)
+    expect(String(out.command).endsWith('echo end')).toBe(true)
+  })
+
+  it('old_string, new_string, and patch keep their full text', () => {
+    const patch = `@@ -1 +1 @@\n${'-x\n+y\n'.repeat(60)}`
+    const out = truncateToolArgs({ old_string: 'a'.repeat(300), new_string: 'b'.repeat(300), patch })
+    expect(String(out.old_string).length).toBe(300)
+    expect(String(out.new_string).length).toBe(300)
+    expect(out.patch).toBe(patch)
+  })
+
+  it('an incidental argument is cut to 120 characters', () => {
+    expect(truncateToolArgs({ label: 'z'.repeat(300) }).label).toBe(`${'z'.repeat(120)}...`)
+  })
+
+  it('a command past the cap is bounded to cap + ellipsis', () => {
+    const out = truncateToolArgs({ command: 'c'.repeat(9000) })
+    expect(String(out.command).endsWith('...')).toBe(true)
+    expect(String(out.command)).toHaveLength(4003)
   })
 })

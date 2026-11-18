@@ -2,9 +2,11 @@ import * as fs from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS, summaryFromTail } from '../journal.js'
 import { JsonJournal } from './json-journal.js'
+import { bootTestServer, type TestServer } from '../../test/harness.js'
+import { jsonJournal, useJsonStorage } from '../../test/storage.js'
 
 vi.mock('node:fs', async (original) => {
   const real = await original<typeof fs>()
@@ -492,3 +494,62 @@ describe('run summary reads', () => {
     await writer.close()
   })
 })
+
+describe('run journal deletion', () => {
+  useJsonStorage()
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+  const write = async (sid: string, run: string): Promise<void> => { const w = (await s.deps.journal.writer(sid, run)); (await w.appendSseEvent('token', { text: 'x' })); (await w.close()) }
+
+  it('deleting a session journal removes its directory and its events', async () => {
+    await write('sess-a', 'run-a1')
+    expect(fs.existsSync(join(jsonJournal(s.deps.journal).root(), 'sess-a'))).toBe(true)
+    expect((await s.deps.journal.deleteSession('sess-a'))).toBe(true)
+    expect(fs.existsSync(join(jsonJournal(s.deps.journal).root(), 'sess-a'))).toBe(false)
+    expect((await s.deps.journal.readRunEvents('sess-a', 'run-a1'))).toEqual([])
+  })
+
+  it('other sessions keep their journals', async () => {
+    await write('sess-b', 'run-b1')
+    await write('sess-c', 'run-c1')
+    expect((await s.deps.journal.deleteSession('sess-b'))).toBe(true)
+    expect(fs.existsSync(join(jsonJournal(s.deps.journal).root(), 'sess-c'))).toBe(true)
+  })
+
+  it('missing, traversal, and empty ids are refused', async () => {
+    expect((await s.deps.journal.deleteSession('never-existed'))).toBe(false)
+    expect((await s.deps.journal.deleteSession('../sess-c'))).toBe(false)
+    expect((await s.deps.journal.deleteSession(''))).toBe(false)
+  })
+
+  it('paged reads match whole-file reads across page boundaries, multibyte text, and seq bounds', async () => {
+    const w = (await s.deps.journal.writer('sess-pages', 'run-pages'))
+    // Rows of mixed widths so lines and multibyte characters straddle the 64 KiB page edges.
+    for (let i = 1; i <= 400; i += 1) (await w.appendSseEvent('token', { text: `${'é🙂'.repeat(i * 7)}${String(i)}` }))
+    await w.close()
+    const seqs = (rows: { seq: number }[]): number[] => rows.map((r) => r.seq)
+    const paged = await collectRows(s.deps.journal.iterRunEvents('sess-pages', 'run-pages'))
+    expect(seqs(paged)).toEqual(Array.from({ length: 400 }, (_, i) => i + 1))
+    expect(paged.map((r) => (r.payload as { text: string }).text)).toEqual(Array.from({ length: 400 }, (_, i) => `${'é🙂'.repeat((i + 1) * 7)}${String(i + 1)}`))
+    expect(seqs(await collectRows(s.deps.journal.iterRunEvents('sess-pages', 'run-pages', { afterSeq: 120, maxSeq: 333 })))).toEqual(Array.from({ length: 213 }, (_, i) => i + 121))
+    expect(seqs((await s.deps.journal.readRunEvents('sess-pages', 'run-pages', { afterSeq: 120, maxSeq: 333 })))).toEqual(Array.from({ length: 213 }, (_, i) => i + 121))
+    expect(await collectRows(s.deps.journal.iterRunEvents('sess-pages', 'never-written'))).toEqual([])
+  })
+
+  it('dot ids are refused and legitimate journals survive', async () => {
+    expect((await s.deps.journal.deleteSession('.'))).toBe(false)
+    expect((await s.deps.journal.deleteSession('..'))).toBe(false)
+    expect(fs.existsSync(join(jsonJournal(s.deps.journal).root(), 'sess-c'))).toBe(true)
+  })
+
+  it('deleting a session over HTTP removes its run journal', async () => {
+    const created = await s.get('/api/session/new', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } })
+    const sid = ((await created.json()) as { session: { session_id: string } }).session.session_id
+    await write(sid, 'run-http')
+    expect((await s.get('/api/session/delete', { method: 'POST', body: JSON.stringify({ session_id: sid }), headers: { 'content-type': 'application/json' } })).status).toBe(200)
+    expect(fs.existsSync(join(jsonJournal(s.deps.journal).root(), sid))).toBe(false)
+  })
+})
+
+async function collectRows<T>(rows: AsyncIterable<T>): Promise<T[]> { const result: T[] = []; for await (const row of rows) result.push(row); return result }

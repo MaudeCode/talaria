@@ -249,3 +249,17 @@ describe('the session stream bridges a rotation', () => {
     expect(frames[1]?.data).toMatchObject({ source: 'subscribe_recovery', stream_id: `run-${sid}` })
   })
 })
+
+describe('the per-identity stream budget', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('the per-identity stream budget defaults to eight', () => {
+    const claims: (() => void)[] = []
+    for (let i = 0; i < 8; i += 1) { const c = s.deps.streamSlots.claim('one'); expect(c, String(i)).not.toBeNull(); if (c) claims.push(c) }
+    expect(s.deps.streamSlots.claim('one')).toBeNull()
+    expect(s.deps.streamSlots.claim('two')).not.toBeNull()
+    for (const c of claims) c()
+  })
+})

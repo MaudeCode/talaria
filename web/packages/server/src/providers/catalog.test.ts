@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentConfig, parseProviderQualifiedModel } from '../config/agent-config.js'
 import { FakeSidecar } from '../sidecar/fake.js'
+import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, WEB_ROOT, type TestServer } from '../test/harness.js'
 import { composerQuota, ProviderCatalog, quotaSummary, repairSessionModel, withProviderHeadlines, type ModelEntry, type ModelGroup, type ModelsCatalog } from './catalog.js'
 import { OAUTH_PROVIDERS, PROVIDER_MODELS } from './tables.js'
@@ -1081,5 +1082,51 @@ describe('Settings › Providers figures (TAL-2135)', () => {
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
+  })
+})
+
+describe('Nous picker signals', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let loggedIn = false
+  let liveIds: string[] | Error = []
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: { model: { provider: 'anthropic', default: 'claude-sonnet-4-6' } } }))
+    sidecar.respond('providers.auth_status', (params) => ({ status: params.provider === 'nous' ? { logged_in: loggedIn, error: loggedIn ? null : 'not logged in' } : { logged_in: false, error: 'not logged in' } }))
+    sidecar.respond('providers.model_ids', (params) => { if (liveIds instanceof Error) throw liveIds; return { provider: params.provider, model_ids: params.provider === 'nous' ? liveIds : [] } })
+    s = await bootTestServer({ sidecar })
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+    writeEnvFile(join(s.state, '.env'), { ANTHROPIC_API_KEY: 'sk-ant-1234' })
+  })
+  afterAll(() => s.close())
+  const groups = async (): Promise<{ provider_id: string; models: { id: string }[] }[]> => { s.deps.catalog.invalidate(); return ((await (await s.get('/api/models')).json()) as Json).groups as { provider_id: string; models: { id: string }[] }[] }
+
+  it('a logged-in Nous account puts the Nous group in the picker', async () => {
+    loggedIn = true
+    liveIds = ['Hermes-4-70B', 'Hermes-4-405B']
+    const nous = (await groups()).find((g) => g.provider_id === 'nous')
+    expect(nous?.models.map((m) => m.id.replace(/^@nous:/, ''))).toEqual(['Hermes-4-70B', 'Hermes-4-405B'])
+  })
+
+  it('without a key or a login the Nous group is absent', async () => {
+    loggedIn = false
+    liveIds = ['Hermes-4-70B']
+    expect((await groups()).map((g) => g.provider_id)).not.toContain('nous')
+  })
+
+  it('a logged-in account with an empty live catalog shows no Nous group', async () => {
+    loggedIn = true
+    liveIds = []
+    expect((await groups()).map((g) => g.provider_id)).not.toContain('nous')
+  })
+
+  it('when the live lookup fails the curated Nous models answer', async () => {
+    loggedIn = true
+    liveIds = new SidecarError('hermes_cli unavailable', { condition: 'sidecar_error' })
+    const nous = (await groups()).find((g) => g.provider_id === 'nous')
+    expect(nous).toBeDefined()
+    expect(nous!.models.length).toBeGreaterThanOrEqual(4)
+    expect(nous!.models.every((m) => m.id.startsWith('@nous:'))).toBe(true)
   })
 })

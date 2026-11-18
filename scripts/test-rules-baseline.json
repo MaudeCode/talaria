@@ -71,8 +71,6 @@
       "web/packages/server/src/auth/store.test.ts": 3,
       "web/packages/server/src/cli/supervise.test.ts": 1,
       "web/packages/server/src/http/pinned.test.ts": 1,
-      "web/packages/server/src/port/misc.port.test.ts": 1,
-      "web/packages/server/src/port/streams.port.test.ts": 10,
       "web/packages/server/src/providers/env-write.agent.test.ts": 2,
       "web/packages/server/src/sessions/background-tasks.test.ts": 1,
       "web/packages/server/src/sessions/chat.test.ts": 23,
