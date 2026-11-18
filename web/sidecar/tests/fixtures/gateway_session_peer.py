@@ -20,6 +20,8 @@ agent = Path(os.environ["TALARIA_WEB_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
 from peer_phases import POLL_SECONDS, Phases, report_modes
 
+# A watch's injected idle reaction poll: the production 10 s interval is pinned by the fast watch tests.
+REACTION_POLL_S = .5
 OWN_OWNER = {"recovery", "secure", "dedicated", "profiles", "replay", "restart", "reasoning", "reasoning-restart", "session-open"}
 # Longest the owner holds a claimed turn on a pending open (the Agent's _UNBOUNDED_TURN_WAIT_S).
 OPEN_TURN_WAIT_S = 5
@@ -249,7 +251,7 @@ async def probe_reactions(home, peer, desc):
 
 async def probe_reaction_watch(home, peer, desc):
     """Another native viewer's reaction reaches a watching Web viewer and survives the watch's cancel. The owner emits
-    no event for it, so the watch reads it on its idle poll."""
+    no event for it, so the watch reads it on its idle poll, injected here as REACTION_POLL_S (TAL-2526)."""
     sidecar = SidecarProcess(home)
     viewer = SidecarProcess(home)
     try:
@@ -262,13 +264,19 @@ async def probe_reaction_watch(home, peer, desc):
             final = await drained(call)
             assert final["snapshot"].get("reactions_supported") is True, final
             reaction_row = final["snapshot"]["messages"][-1]["row_id"]
-            reaction_watch = viewer.request("gateway.session", {"profile_home": str(home), "session_id": sid, "action": "watch"})
+            reaction_watch = viewer.request("gateway.session", {"profile_home": str(home), "session_id": sid, "action": "watch",
+                                                                "reaction_poll_seconds": REACTION_POLL_S})
             frame = await asyncio.to_thread(viewer.next_message, 20)
             assert frame["params"]["event"] == "snapshot", frame
             changed = await rpc(native, "message.react", session_id=sid, row_id=reaction_row, emoji="🎉", author="agent")
             assert "result" in changed, changed
+            deadline, frames = time.monotonic() + 20, []
             while True:
-                frame = await asyncio.to_thread(viewer.next_message, 20)
+                try:
+                    frame = await asyncio.to_thread(viewer.next_message, max(0, deadline - time.monotonic()))
+                except queue.Empty:
+                    raise AssertionError(f"no watch frame carried another viewer's reaction: {frames[-5:]}") from None
+                frames.append(frame)
                 data = frame.get("params", {}).get("data", {})
                 if frame.get("params", {}).get("event") == "snapshot" and any(r.get("reactions") == [{"author": "agent", "emoji": "🎉"}] for r in data["snapshot"]["messages"]):
                     break

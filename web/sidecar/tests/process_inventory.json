@@ -73,9 +73,13 @@
     },
     "tests/test_groups.py::test_native_group_round_trip": {
       "layer": "compatibility",
-      "reason": "Real native room service (session_group_controls), authenticated sidecar RPC, two disposable profile authorities and loopback inference prove durable create/send, attributed replies, pagination and disband without installed state. Boundary fakes cannot establish native task execution and custody.",
+      "reason": "Real native room service (session_group_controls), authenticated sidecar RPC, two disposable profile authorities and loopback inference, one owner per scenario. [round-trip] proves durable create/send with attachments, attributed replies, pagination, the stale-room refusal and disband; [approval] proves a member's parked approval refuses a stale generation and a repeat, is answered through Web and its denied command never runs; [stop] proves a stopped discussion posts no member reply; [partial] proves one member's failure leaves the other's reply; [lead] proves lead routing context and the gateway's fallback assignment. Boundary fakes cannot establish native task execution and custody.",
       "cases": [
-        ""
+        "[round-trip]",
+        "[approval]",
+        "[stop]",
+        "[partial]",
+        "[lead]"
       ]
     },
     "tests/test_guest_handoff.py::test_standalone_resumes_native_guest_handoffs": {

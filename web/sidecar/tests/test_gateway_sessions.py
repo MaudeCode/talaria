@@ -893,7 +893,7 @@ def test_snapshot_skips_model_only_micro_compaction_rows(native_owner_stub):
     assert [row["content"] for row in result["snapshot"]["messages"]] == ["q0", "q1", "answer"]
 
 
-def _simulated_watch(owner, monkeypatch, seconds, on_emit=lambda kind, at: None, restart_wait=lambda home: False):
+def _simulated_watch(owner, monkeypatch, seconds, on_emit=lambda kind, at: None, restart_wait=lambda home: False, **params):
     """Run a watch on a virtual clock until ``seconds`` have passed: the loop jumps to its next timer instead of
     sleeping. Returns the emitted frames with their clock time, and the resumes issued before the deadline."""
     import asyncio
@@ -922,7 +922,7 @@ def _simulated_watch(owner, monkeypatch, seconds, on_emit=lambda kind, at: None,
         frames.append((clock["now"], kind, data))
         on_emit(kind, clock["now"])
     ctx.emit = emit
-    owner.run(ctx, {"session_id": "native", "action": "watch"}, loop_factory=virtual_loop)
+    owner.run(ctx, {"session_id": "native", "action": "watch", **params}, loop_factory=virtual_loop)
     assert owner.calls[-1][0] == "session.detach"
     return frames, clock["resumes"]
 
@@ -934,6 +934,21 @@ def test_an_idle_watch_reads_the_transcript_at_most_every_ten_seconds(native_own
     _, resumes = _simulated_watch(native_owner_stub, monkeypatch, 30)
     assert resumes <= 3
     assert reads.count("agent_support.json") <= 1
+
+
+def test_a_watch_reads_reactions_at_its_injected_interval(native_owner_stub, monkeypatch):
+    """TAL-2526: a watch's reaction_poll_seconds replaces the 10 s idle interval, so a real-owner test need not wait it out."""
+    _, resumes = _simulated_watch(native_owner_stub, monkeypatch, 3, reaction_poll_seconds=.5)
+    assert resumes >= 5
+
+
+@pytest.mark.parametrize("action,value", [("watch", 0), ("watch", -1), ("watch", True), ("watch", "1"), ("watch", float("inf")),
+                                          ("watch", float("nan")), ("snapshot", .5)])
+def test_a_reaction_poll_is_a_watchs_positive_interval(native_owner_stub, tmp_path, action, value):
+    from talaria_sidecar.errors import InvalidParams
+    with pytest.raises(InvalidParams):
+        native_owner_stub.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": action, "reaction_poll_seconds": value})
+    assert native_owner_stub.calls == []
 
 
 @pytest.mark.parametrize("event,within", [(None, 10), ("message.complete", 1), ("message.reaction", 1)])

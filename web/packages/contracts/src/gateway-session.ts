@@ -130,6 +130,7 @@ export const GatewaySessionParamsSchema = z.object({
   connector: z.string().min(1).optional().describe('`connection_retry`: the target to run again.'),
   work_kind: z.enum(['process', 'subagent']).optional().describe('`work_tail`, `work_stop`, `work_steer`: the roster `work_id` comes from; bound by `authority_epoch` to this owner.'),
   work_id: z.string().min(1).optional(),
+  reaction_poll_seconds: z.number().positive().optional().describe("`watch`: how often an idle watch rereads the transcript for another viewer's reaction, which the owner announces with no event. Defaults to 10."),
 })
 /**
  * TAL-1040: how a fresh chat's Agent runs, frozen at creation. `ignore_config` runs explicit settings without the profile's
