@@ -436,6 +436,19 @@ class PullRequestReportTests(unittest.TestCase):
             self.assertIn(required, body)
         self.assertNotIn("**CI Gate**", body)
 
+    def test_hosted_mode_build_job_owns_package_failures_beside_a_skipped_package_job(self):
+        # Hosted mode runs the package tests inside App build; the standalone package job is listed, skipped.
+        polls = [{"jobs": [pjob(1, PACKAGE, "skipped"), pjob(2, "App / App build")],
+                  "statuses": [status("App package test failures", "APIClientTests.testDecodesRun")]},
+                 {"jobs": [pjob(1, PACKAGE, "skipped"), pjob(2, "App / App build", "failure", "Run the package tests"),
+                           gate()],
+                  "statuses": [status("App package test failures", "APIClientTests.testDecodesRun")]}]
+        github = FakePullRun(polls)
+        self.watch(github)
+        self.assertEqual(github.writes[0], (0, "POST"))
+        self.assertIn("**App / App build**: failing test, `TalariaKitTests/APIClientTests/testDecodesRun`",
+                      github.published[0])
+
     def test_a_superseded_head_or_older_run_never_overwrites_the_report(self):
         failing = {"jobs": [pjob(1, "relay / check", "failure", "Run ../scripts/check relay")]}
         github = FakePullRun([dict(failing, head=NEWER)])

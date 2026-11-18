@@ -388,8 +388,10 @@ class Run:
         if set(lanes.values()) & set(TARGETS):
             tests = failing_tests(self.github.get(f"repos/{REPOSITORY}/commits/{self.sha}/status?per_page=100")
                                   .get("statuses", []))
-        # Hosted mode's build job owns the package statuses only when no package job of its own runs.
-        builder = {} if any(name.endswith("package tests") for name in lanes) else tests
+        # Hosted mode's build job owns the package statuses only when no package job of its own runs; a skipped one is
+        # still listed.
+        builder = {} if any(job.get("name", "").endswith("package tests") and job.get("conclusion") != "skipped"
+                            for job in found) else tests
         for job in found:
             # A completed job's annotations are final; read them once.
             if job.get("status") == "completed" and job.get("conclusion") in ("failure", "cancelled") \
