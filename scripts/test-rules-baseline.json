@@ -150,7 +150,7 @@
       "web/sidecar/tests/conftest.py": 1,
       "web/sidecar/tests/evict_grants_probe.py": 1,
       "web/sidecar/tests/fixtures/gateway_execution_peer.py": 3,
-      "web/sidecar/tests/fixtures/gateway_session_peer.py": 24,
+      "web/sidecar/tests/fixtures/gateway_session_peer.py": 22,
       "web/sidecar/tests/fixtures/group_peer.py": 5,
       "web/sidecar/tests/plugin_oauth_probe.py": 2,
       "web/sidecar/tests/probe_cron_atomicity.py": 1,
