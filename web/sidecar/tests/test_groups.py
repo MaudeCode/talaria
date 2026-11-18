@@ -1,9 +1,8 @@
 """Native room compatibility through the actual sidecar RPC boundary."""
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 import subprocess
-import sys
-import asyncio
 import sys
 from types import SimpleNamespace
 
@@ -14,8 +13,6 @@ from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, isolated_env, requir
 
 @requires_agent
 def test_native_group_round_trip(tmp_path):
-    if not (AGENT_DIR / "gateway/session_group_controls.py").exists():
-        pytest.skip("this supported Agent has no native groups")
     env = isolated_env(tmp_path / "hermes", TALARIA_WEB_AGENT_DIR=str(AGENT_DIR),
                        TALARIA_WEB_PYTHON=str(AGENT_PYTHON),
                        PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
@@ -24,33 +21,20 @@ def test_native_group_round_trip(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_context_forwards_only_declared_fields(monkeypatch, tmp_path):
-    import contextlib
+@pytest.mark.parametrize("action,fields,smuggled", [
+    ("context", {"room_id": "room", "event_id": "save", "purpose": "Ship", "notes": "", "routing": "lead", "lead_member_id": "one"}, "profile"),
+    ("continue", {"room_id": "room", "discussion_event_id": "discussion"}, "thread_id"),
+])
+def test_a_room_operation_forwards_only_its_declared_fields(monkeypatch, tmp_path, action, fields, smuggled):
     from talaria_sidecar.errors import InvalidParams
-    from talaria_sidecar.methods import groups as module
-    calls = []
-    class Client:
-        websocket = SimpleNamespace(protocol=SimpleNamespace(max_size=0))
-        async def rpc(self, method, **fields):
-            calls.append((method, fields))
-            return {"driver": True, "methods": ["groups.context"]} if method == "groups.capabilities" else {}
-    @contextlib.asynccontextmanager
-    async def connect(*_args, **_kwargs):
-        yield Client(), None
-    monkeypatch.setitem(sys.modules, "hermes_cli", SimpleNamespace())
-    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError))
-    monkeypatch.setattr(module, "_connect", connect)
-    monkeypatch.setattr(module, "_owner_refusal", lambda *_: False)
+    module, calls = _group_rpc(monkeypatch, "groups." + action, {"done": True})
     monkeypatch.setattr(module, "_with_owner", lambda _home, run: asyncio.run(run(SimpleNamespace(state="ready", endpoint="ws://owner"))))
-    ctx, fields = SimpleNamespace(check_cancelled=lambda: None), {
-        "room_id": "room", "event_id": "save", "purpose": "Ship", "notes": "", "routing": "lead", "lead_member_id": "one"}
-    params = {"profile_home": str(tmp_path), "subject": "owner"}
-    assert module.groups(ctx, {**params, "operation": {"action": "context", **fields}})["state"] == "available"
-    assert calls[-1][0] == "groups.context"
-    assert {k: v for k, v in calls[-1][1].items() if k != "_timeout"} == fields
+    ctx, params = SimpleNamespace(check_cancelled=lambda: None), {"profile_home": str(tmp_path), "subject": "owner"}
+    assert module.groups(ctx, {**params, "operation": {"action": action, **fields}}) == {"state": "available", "reason": None, "value": {"done": True}}
+    assert calls[-1] == ("groups." + action, {**fields, "_timeout": 25})
     calls.clear()
     with pytest.raises(InvalidParams):
-        module.groups(ctx, {**params, "operation": {"action": "context", **fields, "profile": "other"}})
+        module.groups(ctx, {**params, "operation": {"action": action, **fields, smuggled: "other"}})
     assert calls == []
 
 
@@ -94,20 +78,6 @@ def _group_rpc(monkeypatch, method, value):
     monkeypatch.setattr(module, "_connect", connect)
     monkeypatch.setattr(module, "_owner_refusal", lambda *_: None)
     return module, calls
-
-
-def test_continue_forwards_only_its_declared_fields(monkeypatch, tmp_path):
-    from talaria_sidecar.errors import InvalidParams
-    from talaria_sidecar.methods import groups as module
-    operation = {"action": "continue", "room_id": "room", "discussion_event_id": "discussion"}
-    with pytest.raises(InvalidParams):
-        module.groups(SimpleNamespace(), {"profile_home": str(tmp_path), "subject": "owner",
-                                          "operation": {**operation, "thread_id": "smuggled"}})
-
-    module, calls = _group_rpc(monkeypatch, "groups.continue", {"continued": True})
-    result = asyncio.run(module._run(tmp_path, "owner", operation, SimpleNamespace(state="ready", endpoint="ws://owner")))
-    assert result == {"state": "available", "reason": None, "value": {"continued": True}}
-    assert calls[-1] == ("groups.continue", {"room_id": "room", "discussion_event_id": "discussion", "_timeout": 25})
 
 
 @pytest.mark.parametrize("thread_id", [None, "existing-thread"])

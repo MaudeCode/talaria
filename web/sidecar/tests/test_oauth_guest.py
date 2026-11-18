@@ -1,8 +1,7 @@
-"""Native guest sign-in through real oauth.* RPCs, using each release's device or promotion protocol."""
+"""Native guest sign-in through real oauth.* RPCs, over the release's plain device login."""
 
 from __future__ import annotations
 
-import ast
 import base64
 import json
 import threading
@@ -27,10 +26,9 @@ def jwt(claims: dict) -> str:
 
 
 class NousPortal:
-    """The portal's device-code, promotion and token routes. The native approval request is held until the test answers it."""
+    """The portal's device-code and token routes. The token request is held until the test answers it."""
 
-    def __init__(self, promotion: bool) -> None:
-        self.promotion = promotion
+    def __init__(self) -> None:
         self.paths: list[str] = []
         self.asked = threading.Event()
         self.answered = threading.Event()
@@ -41,28 +39,16 @@ class NousPortal:
         if path == "/api/oauth/device/code":
             return 200, {"device_code": "device-1", "user_code": "USER-1", "verification_uri": "https://portal.example.test/device",
                          "verification_uri_complete": f"{self.origin}/device?code=USER-1", "expires_in": 600, "interval": 1}
-        if path == "/api/anonymous/promotion-intent":
-            assert self.promotion
-            assert body == {"token": "guest-token", "user_code": "USER-1", "device_code": "device-1"}
-            return 200, {"claim_code": "CLAIM-42", "claim_url": "/claim/CLAIM-42", "expires_in": 600, "interval": 1}
-        if path == "/api/anonymous/promotion-status":
+        if path == "/api/oauth/token":
             self.asked.set()
             assert self.answered.wait(30)
-            return 200, {"status": "completed", "account_email": "user@example.test"}
-        if path == "/api/oauth/token":
-            if not self.promotion:
-                self.asked.set()
-                assert self.answered.wait(30)
             return 200, {"access_token": self.token, "refresh_token": "refresh-1", "token_type": "Bearer", "expires_in": 86400, "scope": "inference:invoke"}
         return 404, {"error": "not_found"}
 
 
 @pytest.fixture
 def portal():
-    # Read the installed native declaration without importing Agent code into the test runner.
-    module = ast.parse((AGENT_DIR / "hermes_cli/anon_sign_in.py").read_text())
-    run = next(node for node in module.body if isinstance(node, ast.FunctionDef) and node.name == "run_sign_in")
-    return NousPortal(any(arg.arg == "cancel_wins_after_promotion" for arg in run.args.kwonlyargs))
+    return NousPortal()
 
 
 @pytest.fixture
@@ -85,20 +71,29 @@ def nous(hermes_home) -> dict:
     return json.loads((hermes_home / "auth.json").read_text())["providers"]["nous"]
 
 
+def until(condition, explain):
+    """``condition()`` once it holds, failing under the suite's 60 s ceiling with ``explain()``."""
+    deadline = time.monotonic() + 60
+    while not (value := condition()):
+        assert time.monotonic() < deadline, explain()
+        time.sleep(0.05)
+    return value
+
+
 def test_an_approved_guest_sign_in_promotes_the_guest_to_the_account(signing_in, hermes_home, portal):
     proc, origin = signing_in
     flow = proc.result("oauth.start", {"profile_home": str(hermes_home), "provider": "nous"}, timeout=60)
-    code, link = ("CLAIM-42", f"{origin}/claim/CLAIM-42") if portal.promotion else ("USER-1", f"{origin}/device?code=USER-1")
-    assert (flow["user_code"], flow["verification_url"], flow["expires_in"], flow["interval"]) == (code, link, 600, 1)
+    assert (flow["user_code"], flow["verification_url"], flow["expires_in"], flow["interval"]) == ("USER-1", f"{origin}/device?code=USER-1", 600, 1)
     assert portal.asked.wait(30)
     portal.answered.set()  # the user approved the transfer in the browser
-    deadline = time.monotonic() + 60
-    while (view := proc.result("oauth.poll", {"profile_home": str(hermes_home), "flow_id": flow["flow_id"]}))["status"] == "pending":
-        assert time.monotonic() < deadline, portal.paths
-        time.sleep(0.2)
+
+    def settled():
+        view = proc.result("oauth.poll", {"profile_home": str(hermes_home), "flow_id": flow["flow_id"]})
+        return view if view["status"] != "pending" else None
+
+    view = until(settled, lambda: portal.paths)
     assert view["status"] == "approved", view
-    if not portal.promotion:
-        assert view.get("nous_account", {}).get("email") == "u***@example.test", view
+    assert view.get("nous_account", {}).get("email") == "u***@example.test", view
     account = nous(hermes_home)
     assert account["auth_method"] == "oauth_device_code" and account["access_token"] == portal.token
     assert "anon_token" not in account
@@ -113,7 +108,10 @@ def test_a_guest_sign_in_cancelled_after_the_transfer_persists_nothing(signing_i
     view = proc.result("oauth.cancel", {"profile_home": str(hermes_home), "flow_id": flow["flow_id"]})
     assert view["status"] == "cancelled"
     portal.answered.set()  # the transfer completes in the browser after the cancel
-    time.sleep(2)  # let the native worker consume the late approval/token and unwind
-    assert portal.paths.count("/api/oauth/token") == (0 if portal.promotion else 1)
+    # The flow thread logs its ending once the native sign-in has consumed the late token; a save would have come first.
+    ended = f"sign-in ended cancelled (flow={flow['flow_id'][:6]})"
+    until(lambda: any(ended in line for line in proc.stderr_lines) or nous(hermes_home)["auth_method"] != "anonymous",
+          lambda: proc.stderr_lines[-10:])
+    assert portal.paths.count("/api/oauth/token") == 1
     assert proc.result("oauth.poll", {"profile_home": str(hermes_home), "flow_id": flow["flow_id"]})["status"] == "cancelled"
     assert nous(hermes_home)["auth_method"] == "anonymous"

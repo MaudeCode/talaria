@@ -35,7 +35,7 @@ _REACTION_EMOJIS = {"👍", "👎", "❤️", "😂", "😮", "🎉"}
 # RESTART_WAIT_WS_METHODS); new work waits for the next owner.
 _RESTART_ACTIONS = {"snapshot", "watch", "receipt", "approval", "clarify", "clarify_lock", "interrupt"}
 _CAPABILITIES = {"durable-admission-v1", "event-replay-v1"}
-_CONTROL_REFUSALS = {"native_clarify_batch_unavailable", "owner_controls_unverified"}
+_CONTROL_REFUSALS = {"owner_controls_unverified"}
 # The owner held state.db past the read budget while committing; the caller may retry.
 _STATE_BUSY, _STATE_BUSY_BUDGET = "owner_state_busy", 5.0
 # A read refused while the owner commits (its transcript kept changing under the read, or state.db stayed locked).
@@ -49,26 +49,16 @@ _SUPPORT_RECORD = Path(__file__).resolve().parents[2] / "agent_support.json"
 _CREATE_FIELDS = {"request_id", "source", "cwd", "model", "provider", "base_url", "toolsets", "safe_mode", "ignore_user_config"}
 
 
-def _batch_locks() -> bool:
-    """v0.22.3 owners serve ``clarify.lock``, so an attached viewer can answer a clarify batch per question."""
-    return find_spec("gateway.session_clarify_lock") is not None
-
-
 def _opens_on_resume() -> bool:
     """v0.23.1 owners fire ``on_session_open`` on a connection's first resume of a session, unless that connection read
     the session's replay first (a reconnect). Only the watch is a viewer opening the chat (TAL-2054)."""
-    try:
-        return find_spec("gateway.session_open") is not None
-    except ModuleNotFoundError:  # no Agent ``gateway`` package to look in
-        return False
+    return find_spec("gateway.session_open") is not None
 
 
 def _restart_wait(home: Path) -> bool:
     """Whether the owner has entered a restart's after-turn wait since a watch attached. The owner announces
     it on no socket, and the watch must not send on its own: a socket opened before the wait is cut when it does."""
     from hermes_cli import gateway_runtime
-    if not hasattr(gateway_runtime, "attachable"):
-        return False
     try:
         found = gateway_runtime.discover_gateway_endpoint(home)
     except Exception:  # noqa: BLE001 - a failed probe leaves the watch as it was; every action rediscovers anyway
@@ -77,7 +67,7 @@ def _restart_wait(home: Path) -> bool:
 
 
 def _control_refusal(home: Path, sid: str) -> str | None:
-    """Only canonical PendingControls can be recovered before v0.22.3. Never infer a missing batch.
+    """An admission whose ``cli_turn_v1`` policy is malformed leaves the owner's controls unverified.
 
     Read the owner's committed admission in a read-only connection; opening SessionDB here
     would run its schema writer alongside the owner. Compression keeps the logical target.
@@ -107,8 +97,6 @@ def _control_refusal(home: Path, sid: str) -> str | None:
                 return "owner_controls_unverified"
             if "clarify_batch" in policy and not isinstance(policy["clarify_batch"], bool):
                 return "owner_controls_unverified"
-            if policy.get("clarify_batch") is True and not _batch_locks():
-                return "native_clarify_batch_unavailable"
     except (ValueError, TypeError, AttributeError):
         return "owner_controls_unverified"
     return None
@@ -629,8 +617,6 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 if isinstance(frame, Exception):
                     raise frame
                 if frame.get("method") == "clarify" and "id" in frame:
-                    if not _batch_locks():
-                        raise GatewayRPCError("native_clarify_batch_unavailable")
                     # The owner asks attached viewers only, once; its later request.cancel event settles it.
                     request = frame.get("params", {})
                     if request.get("session_id") == sid:
@@ -744,17 +730,12 @@ def session(ctx, params: dict) -> dict:
 
 
 def _with_owner(home: Path, run) -> dict:
-    try:
-        from hermes_constants import set_hermes_home_override, reset_hermes_home_override  # noqa: F401
-        from hermes_cli import gateway_runtime
-        from hermes_cli.gateway_client import connect_gateway  # noqa: F401
-    except ImportError:
-        return _refused("incompatible", "native_sessions_unavailable")
-    # v0.22.3 also admits a restart's after-turn wait, so a parked approval or clarify can still be answered.
-    attachable = getattr(gateway_runtime, "attachable", lambda found: found.state == "ready")
+    from hermes_cli import gateway_runtime
+
     with scoped_home(home):
         discovery = gateway_runtime.discover_gateway_endpoint(home)
-        if discovery.endpoint is None or not attachable(discovery):
+        # A restart's after-turn wait is attachable too, so a parked approval or clarify can still be answered.
+        if discovery.endpoint is None or not gateway_runtime.attachable(discovery):
             return _refused("stopped" if discovery.state in {"stopped", "absent"} else "unavailable", discovery.reason_code or discovery.state)
         try:
             return asyncio.run(run(discovery))

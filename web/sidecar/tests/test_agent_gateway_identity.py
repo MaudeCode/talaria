@@ -51,12 +51,7 @@ clock = iter(range(0, 100000, 60))  # Reaches the native job budget without wait
 budget.time = types.SimpleNamespace(monotonic=lambda: next(clock), sleep=lambda seconds: None)
 entry = dict(kind='systemd', scope='user', unit='synthetic.gateway')
 entry['config_stamp'] = services._config_stamp(entry)
-if hasattr(budget, 'run_unit_job'):
- services._start(entry, pause)
-else:
- try: services._start(entry, pause)
- except subprocess.TimeoutExpired: pass
- else: raise AssertionError('an Agent without run_unit_job cannot outwait the start')
+services._start(entry, pause)
 ''')
 
 
@@ -74,7 +69,7 @@ def live_writers(boot_start):
  identity._ledger_path().write_text(json.dumps([dict(pid=os.getpid(), create_time=psutil.Process().create_time() + 3600, purpose='gateway',
                                                      install=identity.install_id(root), boot_id='synthetic-boot', boot_start=boot_start)]))
  return [entry['pid'] for entry, _ in _writer_ledger(root, identity)]
-assert live_writers(12.5) == ([os.getpid()] if hasattr(identity, '_entry_boot') else []), 'a stepped clock dropped a live writer'
+assert live_writers(12.5) == [os.getpid()], 'a stepped clock dropped a live writer'
 assert live_writers(99.5) == [], 'a reused PID stayed a live writer'
 ''')
 
@@ -114,9 +109,9 @@ try:
  command=status._read_process_cmdline(child.pid)
  assert status._looks_like_gateway_process(child.pid), command
  if os.environ['PROFILE']=='named':
-  # Agents before v0.22.3 refuse the raw inline line; v0.22.3 decodes its argv. Talaria's own decode is the ready() matrix.
-  native=status._command_line_belongs_to_profile(command,home)
-  assert pause._gateway_on_home(str(home),set())==(child.pid if native else None)
+  # The Agent decodes the raw inline line's argv. Talaria's own decode is the ready() matrix.
+  assert status._command_line_belongs_to_profile(command,home), command
+  assert pause._gateway_on_home(str(home),set())==child.pid
  plist=root/'gateway.plist'; plist.write_text('synthetic original service')
  old=subprocess.Popen([sys.executable,'-c','input()'],stdin=subprocess.PIPE,text=True)
  old_entry=dict(pid=old.pid,service_pid=old.pid)

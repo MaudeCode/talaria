@@ -45,36 +45,15 @@ def register(ctx):
 
 def unsupported(mode):
     """Why this Agent release cannot run a mode, or None. Read from its source: nothing here imports the release yet."""
-    def source(path):
-        return (agent / path).read_text() if (agent / path).exists() else ""
-    if not (agent / "hermes_cli/gateway_client.py").exists():
-        return "this supported Agent does not expose native sessions"
-    if mode == "detail" and "def _publish_subagent" not in source("gateway/local_viewer_events.py"):
-        return "this supported Agent does not forward native subagent lifecycle events"
-    if mode == "restart" and "def attachable(" not in source("hermes_cli/gateway_runtime.py"):
-        return "this supported Agent refuses every client during a restart's after-turn wait"
-    if mode == "model" and not (agent / "gateway/session_deferred_pick.py").exists():
-        return "this supported Agent does not expose deferred native model picks"
-    if mode == "reasoning" and not (agent / "gateway/session_mutation_policy.py").exists():
-        return "this supported Agent does not expose native reasoning picks"
-    if mode == "voice-stop" and "voice_stopped" not in source("gateway/session_controls.py"):
-        return "this supported Agent does not consume typed voice stops"
-    if mode == "approval-tell" and "'session.steer'" not in source("gateway/session_busy_controls.py"):
-        return "this supported Agent does not steer a native session's running turn"
     if mode == "session-open" and not (agent / "gateway/session_open.py").exists():
         return "this supported Agent has no on_session_open hook"
-    if mode == "work" and "'subagent.tail'" not in source("gateway/session_ancillary.py"):
-        return "this supported Agent does not project a session's processes and subagents"
-    # Only releases publishing these verbs can establish their execution semantics.
-    if mode == "queued-controls" and not any("prompt.steer_queued" in p.read_text() for p in (agent / "gateway").rglob("*.py")):
-        return "this supported Agent does not expose queued controls"
     return None
 
 
 REQUESTED = sys.argv[1:] or ["shared"]
 SKIPPED = {mode: reason for mode in REQUESTED if (reason := unsupported(mode))}
 MODES = [mode for mode in REQUESTED if mode not in SKIPPED]
-if not MODES:  # A release without native sessions has none of the fixtures imported below.
+if not MODES:
     report_modes([], SKIPPED)
     sys.exit(0)
 from agent.context_compressor import SUMMARY_PREFIX
@@ -109,8 +88,6 @@ async def probe(home, peer, desc, *, require_gap=False):
             def call(action, **params):
                 return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": action, **params})
             async def exports(expected):
-                if "def export_session(" not in (agent / "gateway/session_tui_ops.py").read_text():
-                    return  # Older supported owners have no read-only export verb.
                 before = (await asyncio.to_thread(call, "snapshot"))["snapshot"]
                 for fmt in ("json", "markdown", "html"):
                     value = await asyncio.to_thread(call, "export", format=fmt, redact=True)
@@ -623,9 +600,6 @@ async def probe_session_open(home, peer, desc):
 
 
 async def probe_batch(home, peer, desc):
-    from importlib.util import find_spec
-    if find_spec("gateway.session_clarify_lock") is None:
-        return await probe_batch_unavailable(home, peer, desc)
     sidecar = SidecarProcess(home)
     viewer = SidecarProcess(home)
     try:
@@ -712,8 +686,7 @@ async def probe_connections(home, peer, desc):
             op_id = operation["op_id"]
             assert [(t["name"], t["kind"]) for t in operation["targets"]] == [("linear", "mcp")] and operation["tool_call_id"] == "owned-connection", operation
             assert set(operation["targets"][0]) - {"launch"} == {"name", "kind", "state", "detail", "connect_url", "required_env"}, operation
-            # An Agent older than v0.23.0 sends no consent line.
-            assert operation["targets"][0].get("launch") in (None, {"kind": "remote", "target": "https://mcp.linear.app/mcp", "env": [], "cwd": None}), operation
+            assert operation["targets"][0]["launch"] == {"kind": "remote", "target": "https://mcp.linear.app/mcp", "env": [], "cwd": None}, operation
 
             def call(action, **extra):
                 return sidecar.result("gateway.session", {**params, "action": action, **extra})
@@ -754,47 +727,6 @@ async def probe_connections(home, peer, desc):
             assert len(turns) == 2 and any(m["role"] == "tool" for m in turns[-1]), turns
     finally:
         viewer.close()
-        sidecar.close()
-
-
-async def probe_batch_unavailable(home, peer, desc):
-    """Agents without ``clarify.lock`` keep the explicit refusal and never release the parked batch."""
-    sidecar = SidecarProcess(home)
-    try:
-        async with websocket(home, desc) as native:
-            created = await rpc(native, "session.create", request_id="batch-create", source="cli", toolsets=["clarify"])
-            sid = created["result"]["session_id"]
-            admitted = await rpc(native, "prompt.submit", session_id=sid, submission_id="native-batch",
-                                 text="Ask for a color", clarify_batch=True)
-            assert "result" in admitted, admitted
-            async with asyncio.timeout(30):
-                while True:
-                    frame = json.loads(await native.recv())
-                    if frame.get("method") == "clarify" and str(frame.get("id", "")).startswith("srq-"):
-                        break
-            await native.close()
-        async with websocket(home, desc) as resumed:
-            before = await rpc(resumed, "session.resume", session_id=sid)
-            assert before["result"]["running"] and before["result"]["prompts"] == [], before
-            before_requests = len(peer.requests)
-            result = await asyncio.to_thread(sidecar.result, "gateway.session", {
-                "profile_home": str(home), "session_id": sid, "action": "snapshot"})
-            assert result["state"] == "incompatible" and result["reason"] == "native_clarify_batch_unavailable", result
-            # Attachment must not decline the native batch or release its parked turn.
-            after = await rpc(resumed, "session.resume", session_id=sid)
-            assert after["result"]["running"] and len(peer.requests) == before_requests, {
-                "running": after["result"]["running"], "before_requests": before_requests,
-                "after_requests": len(peer.requests), "pending": after["result"]["pending"]}
-            await resumed.send(json.dumps({"jsonrpc": "2.0", "id": frame["id"],
-                "result": {"answers": {"q0": "green", "q1": "large"}, "outcome": "submitted"}}))
-            deadline = time.monotonic() + 30
-            while True:
-                done = await rpc(resumed, "session.resume", session_id=sid)
-                if not done["result"]["pending"]:
-                    break
-                assert time.monotonic() < deadline, done
-                await asyncio.sleep(POLL_SECONDS)
-    finally:
         sidecar.close()
 
 
@@ -1259,9 +1191,6 @@ async def probe_detail(home, peer, desc):
             context_params = {'profile_home': str(home), 'session_id': sid, 'action': 'context_detail'}
             prebuild = await asyncio.to_thread(viewer.result, 'gateway.session', context_params)
             assert prebuild['context_detail']['reason'] == 'not_built', prebuild
-            # Recording can enable the native flag independently of Talaria's pre-fix adapter.
-            if os.environ.get('TALARIA_RECORD_OWNER_EVENTS'):
-                assert 'result' in await rpc(native, 'config.set', session_id=sid, key='show_reasoning', value='1')
             watch = viewer.request('gateway.session', {'profile_home': str(home), 'session_id': sid, 'action': 'watch', 'show_reasoning': True})
             first = await asyncio.to_thread(viewer.next_message, 20)
             assert first['params']['event'] == 'snapshot', first
@@ -1289,9 +1218,6 @@ async def probe_detail(home, peer, desc):
                         break
             assert followup_complete, 'the child completion follow-up must finish before context inspection'
             kinds = [e['type'] for e in events]
-            if os.environ.get('TALARIA_RECORD_OWNER_EVENTS'):
-                Path(os.environ['TALARIA_RECORD_OWNER_EVENTS']).write_text(json.dumps({'release': 'v0.22.3',
-                    'revision': '5b147ab036d6d19131bff8d20701b5001eab844a', 'events': events}, indent=2) + '\n')
             assert 'reasoning.delta' in kinds, kinds
             assert kinds.index('reasoning.delta') < kinds.index('message.delta'), kinds
             assert 'subagent.start' in kinds and 'subagent.complete' in kinds, kinds

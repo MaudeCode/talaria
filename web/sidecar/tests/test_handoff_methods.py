@@ -123,11 +123,3 @@ def test_append_message_writes_one_row_and_bumps_message_count(hermes_home) -> N
         count = db.execute("SELECT message_count FROM sessions WHERE id = 'gw-1'").fetchone()[0]
     assert rows == [("user", "Need help", None, rows[0][3]), ("tool", card, "handoff_summary", 1234.5)]
     assert count == 2
-
-
-def test_append_message_without_a_state_db_is_not_ok(hermes_home) -> None:
-    proc = SidecarProcess(hermes_home)
-    try:
-        assert proc.result("state_db.append_message", {"profile_home": str(hermes_home), "session_id": "gw-2", "role": "tool", "content": "{}"}) == {"ok": False}
-    finally:
-        proc.close()

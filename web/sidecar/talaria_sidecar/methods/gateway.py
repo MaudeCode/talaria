@@ -97,13 +97,11 @@ def _ownership_state(home: Path, port: int) -> str:
     """TAL-1627: who owns loopback ``port`` for the profile at ``home``. Only the Agent's own gateway identity checks (PID
     lock identity, home, command line and profile) name a gateway, the root host's too for a named profile it serves,
     and the OS socket inventory names the port's holder. Any error is ``unverified``; nothing here guesses a process."""
+    from gateway.status import get_running_pid_identity_strict
+    from hermes_cli import update_cmd_posix_pause as pause
+
     from .. import agent_services as services
 
-    try:
-        from gateway.status import get_running_pid_identity_strict
-        from hermes_cli import update_cmd_posix_pause as pause
-    except ImportError:  # An Agent without the identity helpers proves nothing.
-        return "unverified"
     root = _host_root(home)
     held: list[str] = []
     try:
@@ -126,13 +124,10 @@ def _ownership_state(home: Path, port: int) -> str:
 
 def _start_command(home: Path) -> str | None:
     """The exact one-time start ``_run`` would run for ``home``, named only by a valid profile id."""
-    try:
-        from hermes_cli.profiles import _PROFILE_ID_RE
+    from hermes_constants import PROFILE_ID_RE
 
-        profile = _profile_selector(home)
-    except Exception:  # noqa: BLE001 - an Agent that cannot name the profile gets no command
-        return None
-    return f"hermes --profile {profile} gateway start" if isinstance(profile, str) and _PROFILE_ID_RE.fullmatch(profile) else None
+    profile = _profile_selector(home)
+    return f"hermes --profile {profile} gateway start" if isinstance(profile, str) and PROFILE_ID_RE.fullmatch(profile) else None
 
 
 def ownership(home: Path, port: int) -> dict:
@@ -176,7 +171,7 @@ def control(action: str, home: Path, cli_profile: str | None, ctx: CallContext, 
 
 def _profile_selector(home: Path) -> str | None:
     """The profile the Agent names ``home`` (``default`` for the root; None for no profile home): a selector-less verb would
-    follow the sticky ``active_profile``. Raises ImportError on an Agent without ``profile_name_for_home``."""
+    follow the sticky ``active_profile``. Raises ImportError when the sidecar cannot import the Agent."""
     from hermes_constants import profile_name_for_home
 
     return profile_name_for_home(home)
@@ -228,7 +223,8 @@ def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, 
     try:
         profile = cli_profile or _profile_selector(home)
     except ImportError:
-        # Selector-less, the CLI would follow the sticky profile, and a named profile's would inherit the launch profile's credentials.
+        # ``gateway.control`` runs without loading the Agent. Selector-less, the CLI would follow the sticky profile, and a
+        # named profile's would inherit the launch profile's credentials.
         return {"status": "failed", "message": f"Gateway {action} refused: the installed Hermes Agent cannot name the profile at {home}"}
     try:
         env = _child_env(home, profile, action)
@@ -239,15 +235,10 @@ def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, 
     if profile:
         cmd.extend(["--profile", profile])
     cmd.extend(["gateway", action])
-    try:
-        from hermes_cli import gateway_lifecycle_guards  # noqa: F401 - installed CLI capability
-    except ImportError:
-        pass
-    else:
-        if interrupt and action in ("stop", "restart"):
-            cmd.append("--yes")
-        if action == "restart":
-            cmd.append("--detach")
+    if interrupt and action in ("stop", "restart"):
+        cmd.append("--yes")
+    if action == "restart":
+        cmd.append("--detach")
     log.info("Running gateway %s via %s (HERMES_HOME=%s)", action, " ".join(cmd), home)
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)

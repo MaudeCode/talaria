@@ -20,9 +20,6 @@ sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__fi
 from peer_phases import POLL_SECONDS, Phases, report_modes
 
 EXECUTION_MODES = ["normal", "ignore_config", "safe"]
-if not (agent / "hermes_cli/gateway_client.py").exists():  # None of the fixtures imported below exist either.
-    report_modes([], {mode: "this supported Agent does not expose native sessions" for mode in EXECUTION_MODES})
-    sys.exit(0)
 from local_recovery_probe import Model, child_env, daemon as owner_daemon, rpc, websocket
 from conftest import SidecarProcess
 
@@ -198,36 +195,6 @@ def receipt_policy(home: Path, sid: str) -> dict:
     return {key: policy[key] for key in ("safe_mode", "ignore_user_config")}
 
 
-async def unsupported(home: Path):
-    """An owner that does not advertise the bypass creation fields gets an explicit refusal and no create."""
-    from types import SimpleNamespace
-    from unittest.mock import patch
-    from websockets.asyncio.server import serve
-    from talaria_sidecar.methods.gateway_sessions import _create
-    seen = []
-
-    async def owner(ws):
-        async for raw in ws:
-            frame = json.loads(raw)
-            seen.append(frame["method"])
-            await ws.send(json.dumps({"jsonrpc": "2.0", "id": frame["id"], "result": {
-                "instance_id": "fixture", "profile_id": str(home), "authority_epoch": 1,
-                "capabilities": ["durable-admission-v1", "event-replay-v1", "local-cli-create-v1"],
-                "session_create": {"sources": ["cli"], "parameters": ["request_id", "source", "cwd", "model", "provider", "base_url", "toolsets"]}}}))
-    with patch("hermes_cli.gateway_client._session_ticket", return_value="synthetic-one-use-ticket"):
-        async with serve(owner, "127.0.0.1", 0, subprotocols=["hermes-gateway-v1"]) as server:
-            endpoint = SimpleNamespace(api_origin=f"http://127.0.0.1:{server.sockets[0].getsockname()[1]}", control_home=None,
-                                       instance_id="fixture", profile_id=str(home), authority_epoch=1)
-            params = {"request_id": "old", "execution_mode": "safe", "cwd": str(home), "model": "fixture"}
-            for probe_only in (True, False):
-                result = await _create({**params, "probe": probe_only}, home, SimpleNamespace(endpoint=endpoint, state="ready"))
-                assert result == {"state": "incompatible", "reason": "execution_mode_unavailable", "snapshot": None, "receipt": None}, result
-            served = SimpleNamespace(state="ready", endpoint=SimpleNamespace(**{**vars(endpoint), "control_home": str(home.parent)}))
-            result = await _create(params, home, served)
-            assert result["reason"] == "served_profile_sessions_unavailable", result
-    assert seen == ["runtime.describe", "runtime.describe"], seen
-
-
 def probe(root: Path, home: Path, alpha: Path, workspace: Path, witness: Path, peer, env, alpha_env):
     sidecar = SidecarProcess(home)
     audit = Witness(witness / "audit.jsonl")
@@ -246,7 +213,6 @@ def probe(root: Path, home: Path, alpha: Path, workspace: Path, witness: Path, p
         return settle(lambda action, s: call(action, s, target), sid)
 
     try:
-        asyncio.run(unsupported(home.resolve()))
         with daemon(agent, home, env, barrier=False) as (_, desc), daemon(agent, alpha, alpha_env, barrier=False) as (_, alpha_desc):
             probed = sidecar.result("gateway.create", {"profile_home": str(home), "probe": True})
             assert probed == {"state": "attached", "reason": None, "snapshot": None, "receipt": None}, probed

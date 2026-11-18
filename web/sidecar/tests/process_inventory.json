@@ -45,7 +45,7 @@
     },
     "tests/test_gateway_sessions.py::test_real_owner_todo_producer_matches_snapshot_and_replay": {
       "layer": "compatibility",
-      "reason": "Real installed Agent history hydration and native tool-completion callback must publish the same todo snapshot through SessionEvents. A separate Agent interpreter isolates its imports; no daemon, model, or real account runs. Boundary fakes cannot prove supported-Agent producer behavior.",
+      "reason": "Real installed Agent history hydration (_todo_state_from_history) and native tool-completion callback must publish the same todo snapshot through SessionEvents, matching the shared fixture. A separate Agent interpreter isolates its imports; no daemon, model, or real account runs.",
       "cases": [
         ""
       ]
@@ -73,26 +73,30 @@
     },
     "tests/test_groups.py::test_native_group_round_trip": {
       "layer": "compatibility",
-      "reason": "Real native room service, authenticated sidecar RPC, two disposable profile authorities and loopback inference prove durable create/send, attributed replies, pagination and disband without installed state. Boundary fakes cannot establish native task execution and custody.",
+      "reason": "Real native room service (session_group_controls), authenticated sidecar RPC, two disposable profile authorities and loopback inference prove durable create/send, attributed replies, pagination and disband without installed state. Boundary fakes cannot establish native task execution and custody.",
       "cases": [
         ""
       ]
     },
     "tests/test_guest_handoff.py::test_standalone_resumes_native_guest_handoffs": {
       "layer": "compatibility",
-      "reason": "Real Agent handoff worker, auth-store locks, destination proof and private credential cleanup across seed and standalone stdio processes. Controlled native timer/clock and HTTPX transport keep all state synthetic; retained, plain-device, foreign-profile, wrong-account and deleted-profile cases prove native API behavior unavailable to boundary fakes.",
+      "reason": "Real Agent handoff worker, auth-store locks, destination proof and private credential cleanup across seed and standalone stdio processes, one disposable launch home per scenario. Controlled native timer/clock and HTTPX transport keep all state synthetic. [retained] claims a seeded debt once at its due tick; [plain_device] claims after a device sign-in without a poll dispatching a second claim; [wrong_account] claims for the account the profile now holds; [deleted_profile] keeps the debt and its credential; [eof_retained] keeps the debt when stdin closes before its tick. Only the installed handoff worker decides these.",
       "cases": [
-        ""
+        "[retained]",
+        "[plain_device]",
+        "[wrong_account]",
+        "[deleted_profile]",
+        "[eof_retained]"
       ]
     },
     "tests/test_gateway_sessions.py::test_supported_owner_captured_command_policy": {
       "layer": "compatibility",
-      "reason": "Installed native shell handler must preserve frozen session cwd, SSH/Docker refusal, dangerous-command refusal, timeout, secret stripping and redaction before bounding. Uses synthetic policies and a subprocess.run tripwire, with a separate interpreter to isolate native imports; no command or owner daemon starts.",
+      "reason": "Installed native shell handler (session_shell) must preserve frozen session cwd, SSH/Docker refusal, dangerous-command refusal, timeout, secret stripping and redaction before bounding. Uses synthetic policies and a subprocess.run tripwire, with a separate interpreter to isolate native imports; no command or owner daemon starts.",
       "cases": [""]
     },
     "tests/test_gateway_sessions.py::test_real_cron_refusal_matches_public_consumer_fixture": {
       "layer": "compatibility",
-      "reason": "Real installed Agent cron refusal producer, admission ledger and completion publisher must match the shared public consumer fixture and never invoke the scheduled job. An older refusal must match its attested revision and explicit outcome. Requires the Agent interpreter; only job execution is a tripwire.",
+      "reason": "Real installed Agent cron refusal producer, admission ledger and completion publisher must match the shared public consumer fixture and never invoke the scheduled job; the release must advertise cron.submit in its wire catalog. Requires the Agent interpreter; only job execution is a tripwire.",
       "cases": [
         ""
       ]
@@ -155,28 +159,28 @@
     },
     "tests/test_agent_gateway_identity.py::test_native_inline_successor_readiness": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native inline successor readiness. Uses the real installed release, not a fabricated API response.",
+      "reason": "A real inline-launched named gateway decoded by the installed gateway.status (status_inline_source, PID-lock identity, profile flags, launchers, HERMES_HOME and symlinked homes) must satisfy ServiceRecovery readiness and gateway_entries, while a foreign, stopped or rewritten process, stale lock or pid fields and changed supervisor configuration are refused. Only the release's decoder proves this; every process is disposable.",
       "cases": [
         ""
       ]
     },
     "tests/test_agent_gateway_identity.py::test_native_retained_inline_recovery_and_rpc_admission": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native retained inline recovery and rpc admission. Uses the real installed release, not a fabricated API response.",
+      "reason": "A retained recovery record on a disposable clone, read through the installed checkout lock and update_pause_record, must adopt a live inline successor without starting or disarming it, keep the debt while its command line is unreadable, then reopen admission so provider, credential-pool and usage RPCs answer from a real sidecar.",
       "cases": [
         ""
       ]
     },
     "tests/test_agent_gateway_identity.py::test_native_inline_default_profile_readiness": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native inline default profile readiness. Uses the real installed release, not a fabricated API response.",
+      "reason": "The root profile's real inline gateway, whose served home is the Hermes root, must satisfy the installed Agent's readiness and gateway_entries checks; only the release decides how the root home is named.",
       "cases": [
         ""
       ]
     },
     "tests/test_agent_gateway_identity.py::test_native_inline_recovery_preserves_unverified_sibling_debt": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native inline recovery preserves unverified sibling debt. Uses the real installed release, not a fabricated API response.",
+      "reason": "On a disposable clone's real checkout lock, an unverified sibling recovery entry must keep 'recovery remains owed' after the verified successor is adopted, and ensure_current must raise AgentRuntimeStale; only the installed recovery record proves the debt survives.",
       "cases": [
         ""
       ]
@@ -1356,70 +1360,56 @@
     },
     "tests/test_gateway_restart.py::test_restart_survives_a_restart_that_floods_both_pipes": {
       "layer": "process",
-      "reason": "Actual pipe saturation, independent child exit and signal cancellation exercise the process transport itself.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_gateway_restart.py::test_restart_reports_a_failed_exit_with_stderr": {
-      "layer": "process",
-      "reason": "Actual pipe saturation, independent child exit and signal cancellation exercise the process transport itself.",
+      "reason": "A real child writing 800 KB to each pipe proves both pipes drain concurrently while the action waits, so a chatty restart never blocks on a full pipe; an in-memory stream cannot fill.",
       "cases": [
         ""
       ]
     },
     "tests/test_gateway_restart.py::test_restart_terminates_a_hung_child_after_the_background_wait": {
       "layer": "process",
-      "reason": "Actual pipe saturation, independent child exit and signal cancellation exercise the process transport itself.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_gateway_restart.py::test_cancel_still_terminates_a_restart_with_no_deadline": {
-      "layer": "process",
-      "reason": "Actual pipe saturation, independent child exit and signal cancellation exercise the process transport itself.",
+      "reason": "A real hung child holding a full stdout pipe proves SIGTERM delivery and reaping after the background wait, and the started and draining progress phases; a fake Popen cannot be signalled or reaped.",
       "cases": [
         ""
       ]
     },
     "tests/test_gateway_restart.py::test_every_action_names_the_requested_profile_not_the_sticky_active_one": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: every action names the requested profile not the sticky active one. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's profile_name_for_home names each requested home despite a sticky active_profile, and an explicit cli_profile overrides it; a real sidecar runs a logging CLI stub, so no gateway starts.",
       "cases": [
         ""
       ]
     },
     "tests/test_gateway_restart.py::test_a_named_profiles_gateway_loads_its_own_env_never_the_default_profiles": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a named profiles gateway loads its own env never the default profiles. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's _profile_action_environment and load_hermes_dotenv give a named profile's gateway only its own .env, never the default profile's secrets already in the sidecar's environment, and strip HERMES_EXEC_ASK; a real sidecar runs a logging CLI stub.",
       "cases": [
         ""
       ]
     },
     "tests/test_gateway_restart.py::test_the_restart_wait_is_the_installed_agents_own_budget_plus_headroom": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the restart wait is the installed agents own budget plus headroom. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's _get_restart_exit_wait_budget, read by Talaria's budget script in a home without a .env, yields its own default above the 240 s fallback; only the release decides that default.",
       "cases": [
         ""
       ]
     },
     "tests/test_gateway_restart.py::test_a_named_launch_profile_never_donates_its_env_to_the_default_profiles_gateway": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a named launch profile never donates its env to the default profiles gateway. Uses the real installed release, not a fabricated API response.",
+      "reason": "A sidecar launched as a named profile holds that profile's .env in its environment; the installed Agent's _profile_action_environment must give the default profile's gateway the root .env and none of the launch profile's secrets. A real sidecar runs a logging CLI stub.",
       "cases": [
         ""
       ]
     },
     "tests/test_gateway_restart.py::test_the_restart_wait_follows_the_restarted_profiles_own_env": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the restart wait follows the restarted profiles own env. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's env loader and restart budget read HERMES_RESTART_AFTER_TURN_TIMEOUT from each restarted profile's own .env, not the sidecar's environment; only the release's loader proves that order.",
       "cases": [
         ""
       ]
     },
     "tests/test_gateway_sessions.py::test_stopped_owner_is_an_explicit_refusal_without_starting": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: stopped owner is an explicit refusal without starting. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's gateway_runtime discovery, run by a real sidecar in a disposable home with no daemon, must report a session snapshot as stopped and never write gateway.pid; only the release's discovery decides a stopped owner.",
       "cases": [
         ""
       ]
@@ -1447,14 +1437,14 @@
     },
     "tests/test_gateway_sessions.py::test_diagnostic_creation_refuses_without_starting": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: diagnostic creation refuses without starting. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's gateway_runtime discovery, run by a real sidecar in a disposable home with no daemon, must answer both a gateway.create probe and a create as stopped, writing neither gateway.pid nor state.db.",
       "cases": [
         ""
       ]
     },
     "tests/test_gateway_sessions.py::test_real_owner_diagnostic_execution_modes": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the normal, ignore_config and safe execution modes on one real disposable owner, restarted once, with the peer reporting all three. Uses the real installed release, not a fabricated API response.",
+      "reason": "One real disposable owner, restarted once, with a loopback provider and an audit hook in every owner and worker interpreter: normal sessions read the whole profile, ignore_config drops only its config, and safe runs each turn in a fresh private worker that reads, imports and launches nothing from the profile, keeping that frozen policy across cancel, interrupt, provider failure and the restart. Only the installed owner's creation policy and managed worker prove this.",
       "cases": [
         ""
       ]
@@ -1524,28 +1514,21 @@
     },
     "tests/test_handoff_methods.py::test_an_explicit_model_answers_with_its_finish_reason_reasoning_off_and_no_tools": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an explicit model answers with its finish reason reasoning off and no tools. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's call_llm must send an explicit model with reasoning_effort none and no tools to a loopback provider, and surface its finish_reason through a real sidecar's aux.complete; only the release's request builder proves the wire.",
       "cases": [
         ""
       ]
     },
     "tests/test_handoff_methods.py::test_an_explicit_model_without_a_credential_is_credential_missing": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an explicit model without a credential is credential missing. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's runtime resolution for an explicit model with no key must surface credential_missing through a real sidecar's aux.complete; only the release decides how a missing credential resolves.",
       "cases": [
         ""
       ]
     },
     "tests/test_handoff_methods.py::test_append_message_writes_one_row_and_bumps_message_count": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: append message writes one row and bumps message count. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_handoff_methods.py::test_append_message_without_a_state_db_is_not_ok": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: append message without a state db is not ok. Uses the real installed release, not a fabricated API response.",
+      "reason": "The installed Agent's SessionDB, seeded and then written through a real sidecar's state_db.append_message, must hold the appended tool row and a bumped message_count; only the release owns that storage.",
       "cases": [
         ""
       ]
@@ -2892,21 +2875,21 @@
     },
     "tests/test_oauth_guest.py::test_an_approved_guest_sign_in_promotes_the_guest_to_the_account": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an approved guest sign-in promotes the guest to the account. Runs the real installed release's run_sign_in against a synthetic portal, not a fabricated generator.",
+      "reason": "The installed Agent's run_sign_in over a connector guest, driven through a real sidecar's oauth.start and oauth.poll against a synthetic portal: one token request after approval persists the account, removes the guest token and keeps every secret out of RPC frames and logs. Only the release's sign-in and persist path prove this.",
       "cases": [
         ""
       ]
     },
     "tests/test_oauth_guest.py::test_a_guest_sign_in_cancelled_after_the_transfer_persists_nothing": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a guest sign-in cancelled after the transfer persists nothing. Runs the real installed release's run_sign_in against a synthetic portal, not a fabricated generator.",
+      "reason": "The installed Agent's run_sign_in, cancelled through a real sidecar while its token request is held by a synthetic portal, must consume the late token without saving it: the guest stays, the flow stays cancelled and the flow thread ends. Only the release's cancel check and Talaria's persist guard together decide this.",
       "cases": [
         ""
       ]
     },
     "tests/test_gateway_restart.py::test_live_work_consent_matches_the_installed_gateway_cli": {
       "layer": "compatibility",
-      "reason": "The installed Agent release owns lifecycle guard availability and refusal formatting; a disposable CLI stub proves sidecar flags and RPC outcomes without touching a gateway.",
+      "reason": "The installed gateway_lifecycle_guards._work_lines refusal text must map to busy_live_work, and the --yes and --detach flags must reach the CLI through both RPC names; a disposable CLI stub formats the refusal with the real guard, without touching a gateway.",
       "cases": [
         ""
       ]
@@ -2998,7 +2981,7 @@
     },
     "tests/test_gateway_sessions.py::test_real_plugin_notice_producer_replays_without_turn_stamp": {
       "layer": "compatibility",
-      "reason": "The installed Agent plugin post/edit API and SessionEvents replay produce unstamped idle notices. The selected Agent interpreter is required to import these real APIs; one disposable producer process proves the shared fixture without any daemon or provider.",
+      "reason": "The installed Agent plugin post/edit API (plugin_messages) and SessionEvents replay produce unstamped idle notices. The selected Agent interpreter is required to import these real APIs; one disposable producer process proves the shared fixture without any daemon or provider.",
       "cases": [
         ""
       ]
