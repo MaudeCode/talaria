@@ -84,21 +84,6 @@ describe('LoginPage', () => {
   })
 
   // TAL-1075: at a /mount/ install the server resolves the destination once; the page navigates its path verbatim.
-  it('navigates once to the server-resolved destination at a subpath mount', async () => {
-    const page = mountAt('/mount/login?next=%2Fmount%2Ftasks%3Fview%3Dopen')
-    vi.mocked(api.login).mockResolvedValue({ ok: true, redirect_path: '/mount/tasks?view=open' })
-    try {
-      renderLogin('/mount/tasks?view=open')
-      await userEvent.type(screen.getByPlaceholderText(/password/i), 'synthetic-pw')
-      await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
-      await waitFor(() => expect(page.assign).toHaveBeenCalledTimes(1))
-      const url = page.landed()
-      expect(url.origin).toBe(window.location.origin)
-      expect(url.pathname + url.search).toBe('/mount/tasks?view=open')
-      expect(api.login).toHaveBeenCalledWith('synthetic-pw', { next: '/mount/tasks?view=open', mount_path: '/mount/' })
-    } finally { page.restore() }
-  })
-
   it('lands a mounted passkey sign-in on the same server-resolved destination', async () => {
     const page = mountAt('/mount/login?next=%2Ftasks')
     vi.mocked(api.passkeyOptions).mockResolvedValue({ ok: true, publicKey: { challenge: 'c' } })

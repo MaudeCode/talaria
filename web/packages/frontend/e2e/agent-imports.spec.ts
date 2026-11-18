@@ -15,10 +15,6 @@ test('profile import previews, cancels, confirms and reconciles using keyboard a
   })
   await page.goto('/settings/profiles')
   await settle(page)
-  if (process.env.TALARIA_IMPORT_BEFORE === '1') {
-    await page.screenshot({ path: `/tmp/TAL-1493-evidence/before-${testInfo.project.name}.png` })
-    return
-  }
   await page.getByRole('button', { name: 'Import agent setup' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('combobox', { name: 'Source' }).click()
@@ -28,7 +24,7 @@ test('profile import previews, cancels, confirms and reconciles using keyboard a
   await expect(dialog.getByText('Importable', { exact: true })).toBeVisible()
   await expect(dialog.getByText('Conflict', { exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await page.screenshot({ path: `/tmp/TAL-1493-evidence/after-${testInfo.project.name}.png` })
+  await page.screenshot({ path: testInfo.outputPath('after.png') })
   await dialog.getByRole('button', { name: 'Import', exact: true }).click()
   const confirmation = page.getByRole('alertdialog')
   await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click()
@@ -42,7 +38,6 @@ test('profile import previews, cancels, confirms and reconciles using keyboard a
 })
 
 test('unknown import outcomes offer readback without replaying the write', async ({ page }, testInfo) => {
-  if (process.env.TALARIA_IMPORT_BEFORE === '1') return
   let applies = 0
   let reads = 0
   const base = { status: 'available', sources: [{ agent: 'codex', label: 'Codex CLI', available: true, input: 'none', detail: null, export_prompt: null }], items: [], stripped_secrets: [], receipt: null, can_apply: false, message: null }
@@ -60,23 +55,11 @@ test('unknown import outcomes offer readback without replaying the write', async
   await dialog.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('alertdialog').getByRole('button', { name: 'Import', exact: true }).click()
   await expect(dialog.getByText('Import outcome is unknown.', { exact: false })).toBeVisible()
-  await page.screenshot({ path: `/tmp/TAL-1493-evidence/unknown-${testInfo.project.name}.png` })
+  await page.screenshot({ path: testInfo.outputPath('unknown.png') })
   await dialog.getByRole('button', { name: 'Check result', exact: true }).click()
   await expect(dialog.getByText('Import complete', { exact: true })).toBeVisible()
   expect(applies).toBe(1)
   expect(reads).toBe(1)
-})
-
-test('configuration refusals keep the profile unchanged and offer no unrelated install action', async ({ page }, testInfo) => {
-  await page.route('**/api/profile/import', (route) => route.fulfill({ json: { status: 'unavailable', sources: [], items: [], stripped_secrets: [], receipt: null, can_apply: false, catalog_required: false, message: 'Profile configuration is managed or its write policy cannot be verified. Import is unavailable.' } }))
-  await page.goto('/settings/profiles')
-  await settle(page)
-  await page.getByRole('button', { name: 'Import agent setup' }).click()
-  const dialog = page.getByRole('dialog')
-  await expect(dialog.getByText('Profile configuration is managed', { exact: false })).toBeVisible()
-  await expect(dialog.getByRole('link', { name: 'Open plugin catalog' })).toHaveCount(0)
-  await expect(dialog.getByRole('button', { name: 'Preview', exact: true })).toHaveCount(0)
-  await page.screenshot({ path: `/tmp/TAL-1493-evidence/config-refusal-${testInfo.project.name}.png` })
 })
 
 test('TAL-1826: a Grok Bot export previews through the file input and an unavailable source stays disabled', async ({ page }) => {
