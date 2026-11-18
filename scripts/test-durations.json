@@ -12,7 +12,6 @@
     "demo-tour.spec.ts::every Settings section and Tools tab shows its heading in the light theme": "TAL-2405: 25.9 s on main",
     "TranscriptHostedTests::testContinuousHistoryLoadsAllTwoThousandRowsAndPreservesPosition": "TAL-2405: 25.8 s on main",
     "ScreenGalleryHostedTests::testInsights": "TAL-2405: 25.6 s on main",
-    "src/redact.test.ts::stays linear on long runs of scheme and identifier characters": "TAL-2405: 23.9 s on main",
     "SettingsPlacementHostedTests::testSettingsSearchButtonSitsInTheBottomBarOnPhoneAndTopTrailingOnPad": "TAL-2405: 23.8 s on main",
     "tests.test_gateway_sessions::test_real_native_owner_on_its_own_daemon[recovery]": "TAL-2405: 23.5 s on CI run 44288546624 (TAL-2526: three real owner boots plus admission recovery)",
     "SessionActionsHostedTests::testSidebarRemovalOfTheParentKeepsItsDisplayedFork": "TAL-2405: 20.4 s on main",

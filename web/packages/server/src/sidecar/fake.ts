@@ -106,6 +106,8 @@ export class FakeSidecar implements SidecarLike {
   }
 
   async call<M extends SidecarMethodName>(method: M, params: SidecarParams<M>, opts: CallOptions = {}, starting = false): Promise<SidecarResult<M>> {
+    // As `SidecarClient.rawCall`: a signal that already fired never reaches the sidecar.
+    if (opts.signal?.aborted) throw new SidecarError(`sidecar call ${method} cancelled before it was sent`, { condition: 'cancelled' })
     const schema = SIDECAR_METHODS[method]
     const parsedParams = schema.params.parse(params) as SidecarParams<M>
     this.calls.push({ method, params: parsedParams })

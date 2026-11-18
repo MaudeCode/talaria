@@ -3,6 +3,7 @@ import { jsonJournal } from '../test/storage.js'
 import { JsonJournal } from './storage/json-journal.js'
 import { JsonDocuments } from './storage/json-documents.js'
 import { sessionPath, sessionDirectory } from '../test/storage.js'
+import { settler } from '../test/turns.js'
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
@@ -26,22 +27,6 @@ useJsonStorage()
 type Json = Record<string, unknown>
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
-/**
- * Settles every turn on `s`, the teardown drains they fire and any turn those drains start. It awaits those workers and
- * drains, so a negative check after it covers a turn that would have started, without waiting on a clock.
- */
-const settler = (s: TestServer): (() => Promise<void>) => {
-  const drains = vi.spyOn(s.deps.completions, 'drainDeferred')
-  const settle = async (): Promise<void> => {
-    const runs = [...s.deps.registry.activeRuns.keys()]
-    const fired = drains.mock.results.length
-    await Promise.all(runs.map((stream) => s.deps.turns.finished(stream)))
-    await Promise.allSettled(drains.mock.results.map((result) => result.value as Promise<number>))
-    expect(runs.filter((stream) => s.deps.registry.activeRuns.has(stream)), 'a finished run left the registry').toEqual([])
-    if (runs.length || drains.mock.results.length > fired) await settle()
-  }
-  return settle
-}
 const completed = (text: string) => ({ status: 'completed' as const, messages: [{ role: 'user', content: 'x' }, { role: 'assistant', content: text }], final_response: text, error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: { context_length: 1000 }, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] })
 
 describe('background completion drain', () => {
