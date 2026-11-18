@@ -1,7 +1,7 @@
 import workpoolTest from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
 import { webcrypto } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
@@ -15,6 +15,11 @@ const localizedApprovalAlert = {
   title: { "loc-key": "Approval required" },
   body: { "loc-key": "An agent run is waiting for your approval." },
 };
+
+// Fake timers hold convex-test's scheduler and the APNs workpool, so no queued job runs or logs behind a test's back,
+// or after the file's worker has torn down.
+beforeEach(() => { vi.useFakeTimers(); });
+afterEach(() => { vi.useRealTimers(); });
 
 function testBackend() {
   const backend = convexTest(schema, modules);
