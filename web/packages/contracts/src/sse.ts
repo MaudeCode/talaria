@@ -120,8 +120,8 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
 ])
 export type ChatEvent = z.infer<typeof ChatEventSchema>
 
-/** Relay close set: stop draining after these (the server's `SSE_RELAY_CLOSE_EVENTS`). */
-export const RELAY_CLOSE_EVENTS: ReadonlySet<ChatEventName> = new Set(['stream_end', 'cancel', 'apperror', 'error'])
+/** Relay close set: the server ends a relayed chat stream after these, and clients stop draining. */
+export const RELAY_CLOSE_EVENTS: ReadonlySet<string> = new Set<ChatEventName>(['stream_end', 'cancel', 'apperror', 'error'])
 
 /** Web playback instruction. Absent from initial and history frames; a resumed `/api/sessions/events` connection replays missed ones (TAL-1954). */
 export const WebAudioCompletionSchema = z.object({

@@ -6,7 +6,6 @@ export type RunJournalWriter = JournalWriter
 
 export const RUN_JOURNAL_DIR_NAME = '_run_journal'
 export const TERMINAL_SSE_EVENTS = new Set(['done', 'cancel', 'apperror', 'error', 'stream_end'])
-export const SSE_RELAY_CLOSE_EVENTS = new Set(['stream_end', 'cancel', 'apperror', 'error'])
 const SAFE_ID_RE = /^[A-Za-z0-9_.-]+$/
 export interface JournalEvent {
   version: 1

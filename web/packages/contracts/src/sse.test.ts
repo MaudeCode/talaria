@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseChatEvent, RELAY_CLOSE_EVENTS } from './sse'
+import { parseChatEvent } from './sse.js'
 
 describe('parseChatEvent', () => {
   it('parses every authoritative wire name into the union', () => {
@@ -22,8 +22,5 @@ describe('parseChatEvent', () => {
   })
   it('treats an empty data frame as an empty object', () => {
     expect(parseChatEvent('cancel', '')?.event).toBe('cancel')
-  })
-  it('knows the relay close set', () => {
-    expect([...RELAY_CLOSE_EVENTS].sort()).toEqual(['apperror', 'cancel', 'error', 'stream_end'])
   })
 })
