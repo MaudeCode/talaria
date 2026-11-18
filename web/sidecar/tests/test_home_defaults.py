@@ -46,6 +46,9 @@ def test_standalone_runtime_reads_update_marker_from_resolved_home(tmp_path):
     )
     try:
         expected = "active" if _MARKER_SAFE_OPEN_AVAILABLE else "unknown"
-        assert proc.result("runtime.status")["update_state"] == expected
+        status = proc.result("runtime.status")
+        assert status["update_state"] == expected
+        # Nothing is loaded before a handshake: no revision is reported and nothing is compatible yet.
+        assert status["compatible"] is False and status["agent_revision"] is None
     finally:
         proc.close()
