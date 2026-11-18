@@ -33,6 +33,8 @@ RELEASE_WORKFLOW = ".github/workflows/production-cutover.yml"
 BRANCH = "main"
 GATE = "CI Gate"
 CHANGES = "Detect changed paths"
+# App jobs named for their lane, not the tests their plan picked (app-tests.yml, TAL-2390, TAL-2402).
+SELECTIVE = re.compile(r"^App / App (?:build and )?(?:selected|repeated) ")
 # The notice CHANGES leaves on a main push: "since <commit>", or "every suite" (TAL-2461).
 RANGE = "Tested range"
 TIMEOUT_ANNOTATION = "exceeded the maximum execution time"
@@ -351,13 +353,15 @@ def decide(github, run, kind):
                 or "no failed or timed-out job in any attempt"}
     if kind == "main" and not any(fact["passed"] for fact in failures):
         # A main push runs only what its range reaches (TAL-2461, TAL-2544), so a newer green run supersedes the
-        # failures only if it passed every failed job under the same name.
+        # failures only if it passed every failed job under the same name, and only a full-suite job's name says which
+        # tests it ran: a selected or repeated App job's runs whatever its plan picked.
         names = {fact["name"] for fact in failures}
+        names = names if not any(name is None or SELECTIVE.search(name) for name in names) else set()
         green = [item for item in main_runs(github) + main_runs(github, "workflow_dispatch")
                  if item.get("run_number", 0) > run.get("run_number", 0)
                  and item.get("head_sha") != run.get("head_sha") and item.get("conclusion") == "success"
                  and cross("run", item.get("id")) and cross("sha", item.get("head_sha"))]
-        for item in green if None not in names else []:
+        for item in green if names else []:
             if names <= {job.get("name") for job in jobs(github, item["id"]) if job.get("conclusion") == "success"}:
                 return {"stop": f"superseded: main run {item['id']} at {item['head_sha']} passed"}
     known = known_failures(github)

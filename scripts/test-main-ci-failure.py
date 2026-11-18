@@ -211,6 +211,12 @@ class ReportTests(unittest.TestCase):
         full = [job(30, shard), job(31, "CI Gate")]
         self.assertIn("superseded", self.decide(jobs=flaky_shard(passed=False), runs=later,
                                                 others={2: (later[0], full)})["stop"])
+        # A selected or repeated job's name says nothing about which tests it ran: the same name proves nothing.
+        for name in ("App / App selected hosted tests 1", "App / App selected package tests",
+                     "App / App build and selected package tests", "App / App repeated tests"):
+            with self.subTest(name=name):
+                self.assertIn("work", self.decide(jobs=flaky_shard(passed=False, shard=name), runs=later,
+                                                  others={2: (later[0], [job(30, name), job(31, "CI Gate")])}))
 
     def test_main_s_scheduled_full_run_is_a_main_run_that_tested_every_suite(self):
         # GitHub Scheduler dispatches CI on main daily to run every suite (TAL-2544); T3 Factory repairs it like a push.

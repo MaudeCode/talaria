@@ -31,7 +31,8 @@ installing, booting or waiting for the simulator, a lost runner) or a release's
 build or publication jobs; when a newer `main` run passed every failed job
 under the same name and no rerun of this commit passed the failed job (a
 passing rerun is an intermittent failure, never a fix; a newer push that skipped
-the job or ran only selected tests under another name proves nothing, TAL-2544); and when every failure already has an open needs-a-person issue. On
+the job or ran only selected tests under another name proves nothing, and a
+selected or repeated App job's name never says which tests it ran, TAL-2544); and when every failure already has an open needs-a-person issue. On
 `stop`, report the reason and end.
 
 On `work`, its `message` lists each failure to repair with its key, job,
