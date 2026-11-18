@@ -248,10 +248,10 @@ final class AppScreenVisualReferenceTests: XCTestCase {
     """
 
     /// Decoding matches how the app builds summaries, and the relative-date
-    /// label is anchored to a whole number of days before the render so it
-    /// reads the same on every run.
+    /// label, which reads the server's `sort_ts`, is anchored to a whole number
+    /// of days before the render so it reads the same on every run.
     private func makeSession() throws -> SessionSummary {
-        let lastMessageAt = Date().addingTimeInterval(-3 * 24 * 60 * 60).timeIntervalSince1970
+        let sortTs = Date().addingTimeInterval(-3 * 24 * 60 * 60).timeIntervalSince1970
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(
@@ -263,7 +263,7 @@ final class AppScreenVisualReferenceTests: XCTestCase {
               "workspace": "/Users/talaria/git/hermes-webui",
               "workspace_name": "hermes-webui",
               "message_count": 42,
-              "last_message_at": \(lastMessageAt),
+              "sort_ts": \(sortTs),
               "pinned": true
             }
             """.utf8)
