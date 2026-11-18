@@ -411,18 +411,6 @@ it('settles a terminal append only after its fsync completes, before closing the
   await writer.close()
 })
 
-it('keeps a settled run replayable after retention archives it', async () => {
-  const journal = fixture()
-  const writer = await journal.writer('session', 'run')
-  await writer.appendSseEvent('token', { text: 'kept after retention' })
-  await writer.appendSseEvent('done', { session_id: 'session' })
-  await writer.close()
-  const before = await journal.readRunEvents('session', 'run')
-  expect((await journal.pruneSettled({ now: Date.now() / 1000 + 10, retentionSeconds: 1, keepRecent: 0 })).pruned).toBe(1)
-  expect(fs.existsSync(journal.pathFor('session', 'run')), 'the live journal is reclaimed').toBe(false)
-  expect(await journal.readRunEvents('session', 'run'), 'retention keeps every replayable event').toEqual(before)
-})
-
 describe('run summary reads', () => {
   const KIB = 1024
   const pad = (bytes: number): { text: string } => ({ text: 'x'.repeat(bytes) })

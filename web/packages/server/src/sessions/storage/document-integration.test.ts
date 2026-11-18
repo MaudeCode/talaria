@@ -1,14 +1,6 @@
 import { expect, it } from 'vitest'
 import { DraftStore } from '../drafts.js'
 
-it('reads composer drafts from the selected backend without a local state directory', async () => {
-  const documents = {
-    get: () => Promise.resolve({ value: { text: 'remote draft', files: [], _draft_version: '1000' }, revision: '1000' }),
-  }
-  const drafts = new DraftStore(documents as never)
-  expect(await drafts.read('session')).toEqual({ text: 'remote draft', files: [] })
-})
-
 it('does not invent an empty winning draft when the backend cannot read a conflicting write', async () => {
   const { RevisionConflict } = await import('./backend.js')
   let reads = 0

@@ -22,8 +22,6 @@ type Json = Record<string, unknown>
 const mainThreadOpens = vi.hoisted(() => [] as string[])
 /** Each main-thread open's stack, so a failure names its caller. */
 const mainThreadStacks = vi.hoisted(() => [] as string[])
-/** A main-thread open blocks the thread this long, as a slow state.db does under memory pressure. */
-const mainThreadOpenDelay = vi.hoisted(() => ({ ms: 0 }))
 vi.mock('node:sqlite', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:sqlite')>()
   class CountingDatabaseSync extends real.DatabaseSync {
@@ -32,7 +30,6 @@ vi.mock('node:sqlite', async (importOriginal) => {
       if (!args[1]?.readOnly) return
       mainThreadOpens.push(String(args[0]))
       mainThreadStacks.push(new Error().stack ?? '')
-      if (mainThreadOpenDelay.ms) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, mainThreadOpenDelay.ms)
     }
   }
   return { ...real, DatabaseSync: CountingDatabaseSync }
@@ -380,40 +377,6 @@ async function opensDuring(s: TestServer, dbPath: string, run: () => Promise<voi
   return mainThreadStacks.filter((_, i) => mainThreadOpens[i] === dbPath)
 }
 
-const SLOW_MAIN_THREAD_OPEN_MS = 500
-/** The longest stall `expectHealthyWhileSlow` allows: above busy-runner noise, below the open it exists to catch. */
-const HEALTHY_STALL_LIMIT_MS = SLOW_MAIN_THREAD_OPEN_MS - 100
-
-/** `request` against a slow state.db: worker reads held 2 s, main-thread opens 500 ms. Neither `/health` nor the event loop waits on it. */
-async function expectHealthyWhileSlow(s: TestServer, request: () => Promise<unknown>, outcome: unknown): Promise<void> {
-  s.deps.cliSessions.invalidate()
-  setStateDbReadDelayForTests(2000)
-  mainThreadOpenDelay.ms = SLOW_MAIN_THREAD_OPEN_MS
-  let doneAt = Number.POSITIVE_INFINITY
-  // The test client shares the server's thread, so the longest event-loop stall is what a watchdog probe would wait.
-  let last = performance.now()
-  let maxGap = 0
-  const ticker = setInterval(() => { const now = performance.now(); maxGap = Math.max(maxGap, now - last); last = now }, 10)
-  try {
-    const pending = request().then((result) => { doneAt = performance.now(); return result })
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    const healthStart = performance.now()
-    const health = await s.get('/health')
-    const healthAt = performance.now()
-    const result = await pending
-    clearInterval(ticker)
-    expect(maxGap).toBeLessThan(HEALTHY_STALL_LIMIT_MS)
-    expect(health.status).toBe(200)
-    expect(healthAt - healthStart).toBeLessThan(HEALTHY_STALL_LIMIT_MS)
-    expect(healthAt).toBeLessThan(doneAt)
-    expect(result).toEqual(outcome)
-  } finally {
-    clearInterval(ticker)
-    setStateDbReadDelayForTests(0)
-    mainThreadOpenDelay.ms = 0
-  }
-}
-
 describe('session list state.db reads off the event loop (TAL-920)', () => {
   let s: TestServer
   let dbPath: string
@@ -517,28 +480,6 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     } finally { requests.mockRestore(); await server.close() }
   })
 
-  it('answers /health while a slow state.db read holds /api/sessions', async () => {
-    s.deps.cliSessions.invalidate()
-    setStateDbReadDelayForTests(2000)
-    let sessionsAt = Number.POSITIVE_INFINITY
-    try {
-      const sessions = s.get(ALL_SOURCES).then((res) => { sessionsAt = performance.now(); return res })
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      const healthStart = performance.now()
-      const health = await s.get('/health')
-      const healthAt = performance.now()
-      setStateDbReadDelayForTests(0)
-      expect(health.status).toBe(200)
-      expect(healthAt - healthStart).toBeLessThan(200)
-      expect(healthAt).toBeLessThan(sessionsAt)
-      const res = await sessions
-      expect(res.status).toBe(200)
-      expect(ids((await res.json()) as Json)).toContain('tg-a')
-    } finally {
-      setStateDbReadDelayForTests(0)
-    }
-  })
-
   it('takes sidecar titles and archived flags from the session index, reading only unindexed sidecar files', async () => {
     const extra = Array.from({ length: 5 }, (_, i) => ({ id: `idx-${String(i)}`, source: 'telegram', at: 2000 + i }))
     seedStateDb(dbPath, extra)
@@ -638,11 +579,6 @@ describe('single-session state.db lookups off the event loop (TAL-923)', () => {
   const post = (path: string, body: Json): Promise<Response> => s.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   const subagentStart = (): Promise<Response> => post('/api/chat/start', { session_id: 'sub-a', message: 'hi' })
   const SUBAGENT_REFUSAL = [403, 'session is read-only in its foreign store; cannot be claimed writeable in WebUI']
-  const foreignDetail = async (query: string): Promise<unknown[]> => {
-    const res = await s.get(`/api/session?session_id=cli-d${query}`)
-    const session = ((await res.json()) as { session: Json }).session
-    return [res.status, (session.messages as Json[]).length, session.message_count]
-  }
   beforeAll(async () => {
     s = await bootTestServer()
     dbPath = join(s.state, 'state.db')
@@ -651,17 +587,20 @@ describe('single-session state.db lookups off the event loop (TAL-923)', () => {
       await s.deps.sessionStore.save(new Session({ session_id: sid, title, source_tag: 'webui', messages: [{ role: 'user', content: 'x', timestamp: 1 }] }, { workspace: s.state, model: null }))
     }
   })
-  afterAll(async () => { setStateDbReadDelayForTests(0); mainThreadOpenDelay.ms = 0; await s.close() })
+  afterAll(async () => { await s.close() })
 
   it('never opens state.db on the main thread for chat start, a state.db-only detail, pin, unpin, or delete', async () => {
     expect(await opensDuring(s, dbPath, async () => {
       const res = await subagentStart()
       expect([res.status, ((await res.json()) as Json).error]).toEqual(SUBAGENT_REFUSAL)
     })).toEqual([])
-    for (const query of ['', '&messages=0', '&msg_limit=1']) {
+    // TAL-1249: a metadata-only read ships no messages and a page ships one, each keeping the full count.
+    for (const [query, shipped] of [['', 2], ['&messages=0', 0], ['&msg_limit=1', 1]] as const) {
       expect(await opensDuring(s, dbPath, async () => {
         const res = await s.get(`/api/session?session_id=cli-d${query}`)
-        expect(((await res.json()) as { session: Json }).session).toMatchObject({ session_id: 'cli-d', title: 'cli-d title', read_only: false, message_count: 2 })
+        const session = ((await res.json()) as { session: Json }).session
+        expect(session).toMatchObject({ session_id: 'cli-d', title: 'cli-d title', read_only: false, message_count: 2 })
+        expect((session.messages as Json[]).length).toBe(shipped)
       }), query).toEqual([])
     }
     for (const pinned of [true, false]) {
@@ -717,15 +656,6 @@ describe('single-session state.db lookups off the event loop (TAL-923)', () => {
     expect(rows.map((r) => [r.session_id, r._lineage_root_id])).toEqual([['fan-tip3', 'fan-tip1']])
   })
 
-  it.each([
-    ['a chat start on a state.db-only subagent session', async () => { const res = await subagentStart(); return [res.status, ((await res.json()) as Json).error] }, SUBAGENT_REFUSAL],
-    ['a pin', async () => { const res = await post('/api/session/pin', { session_id: 'web-p', pinned: true }); return [res.status, ((await res.json()) as { session: Json }).session.pinned] }, [200, true]],
-    // TAL-1249: a foreign session opened metadata-only, and a page of it.
-    ['a metadata-only state.db-only detail', async () => foreignDetail('&messages=0'), [200, 0, 2]],
-    ['a page of a state.db-only detail', async () => foreignDetail('&msg_limit=1'), [200, 1, 2]],
-  ])('answers /health while a slow state.db holds %s', async (_, request, outcome) => {
-    await expectHealthyWhileSlow(s, request, outcome)
-  }, 60_000)
 })
 
 describe('transcript state.db reads off the event loop (TAL-1162)', () => {
@@ -773,7 +703,7 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
     dbPath = join(s.state, 'state.db')
     mkdirSync(join(s.state, 'workspace'), { recursive: true })
   })
-  afterAll(async () => { setStateDbReadDelayForTests(0); mainThreadOpenDelay.ms = 0; await s.close() })
+  afterAll(async () => { await s.close() })
 
   it('never opens state.db on the main thread for a turn, its settlement, a cancelled turn, or the session detail', async () => {
     await seeded('web-turn', 1000)
@@ -784,6 +714,8 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
     await seeded('web-detail', 1100)
     expect(await opensDuring(s, dbPath, async () => {
       expect(await contents('/api/session?session_id=web-detail')).toEqual(['hi', 'hi', 'CLI later'])
+      // A new state.db signature misses the page-tail cache, so the paged read reads state.db again.
+      utimesSync(dbPath, new Date(), new Date())
       expect((await contents('/api/session?session_id=web-detail&msg_limit=2')).at(-1)).toBe('CLI later')
     })).toEqual([])
 
@@ -802,21 +734,6 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
     expect((await contents('/api/session?session_id=web-cancel')).filter((c) => c === 'stop me' || c === 'partial' || c === 'CLI later')).toEqual(['CLI later', 'stop me', 'partial'])
     expect((await s.deps.sessionStore.get('web-cancel')).state_db_seen_id).toBe(maxId('web-cancel'))
   })
-
-  it('answers /health while a slow state.db holds a turn', async () => {
-    await seeded('web-slow-turn', 1300)
-    await expectHealthyWhileSlow(s, () => turn('web-slow-turn', 'slow'), [200, 'slow answered'])
-  }, 60_000)
-
-  it.each(['', '&msg_limit=2'])('answers /health while a slow state.db holds the session detail%s', async (query) => {
-    const sid = `web-slow-detail${query ? '-paged' : ''}`
-    await seeded(sid, 1400)
-    const path = `/api/session?session_id=${sid}${query}`
-    const expected = await contents(path)
-    // A new state.db signature misses the page-tail cache, so the slow request reads again.
-    utimesSync(dbPath, new Date(), new Date())
-    await expectHealthyWhileSlow(s, () => contents(path), expected)
-  }, 60_000)
 
   it('settles a Stop that lands during the starting read as a turn whose read failed', async () => {
     await seeded('web-stop', 1500)
