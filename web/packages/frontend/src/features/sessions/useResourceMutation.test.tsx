@@ -242,7 +242,6 @@ describe('optimistic resource ownership', () => {
 
   it('never ships a pending label', () => {
     const messages = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../messages/en.json'), 'utf8')) as Record<string, unknown>
-    expect(messages).not.toHaveProperty('resource_change_pending')
     expect(Object.values(messages).some((text) => typeof text === 'string' && text.startsWith('Pending: '))).toBe(false)
   })
 

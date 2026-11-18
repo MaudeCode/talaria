@@ -30,18 +30,14 @@ describe('SessionContextMenu', () => {
     for (const refused of ['Rename', 'Move', 'Delete']) expect(items.some((t) => t.startsWith(refused)), refused).toBe(false)
   })
 
-  it('hides Share and Refresh snapshot where the server refuses sharing, keeping copy and revoke (TAL-732)', async () => {
-    const items = await menuItems({ ...writable, session_id: 'claude', source_kind: 'claude_code', can_share: false, share_url: '/share/old' })
-    for (const refused of ['Share publicly', 'Refresh snapshot']) expect(items, refused).not.toContain(refused)
-    for (const offered of ['Copy share link', 'Revoke public link']) expect(items, offered).toContain(offered)
-  })
-
-  it('offers Share where the server allows sharing (TAL-732)', async () => {
-    expect(await menuItems(writable)).toContain('Share publicly')
-  })
-
-  it('offers Refresh snapshot on a shared row the server allows sharing (TAL-732)', async () => {
-    expect(await menuItems({ ...writable, session_id: 'shared', share_url: '/share/old' })).toContain('Refresh snapshot')
+  it.each([
+    ['refuses sharing on a shared row', { session_id: 'claude', source_kind: 'claude_code', can_share: false, share_url: '/share/old' }, ['Copy share link', 'Revoke public link'], ['Share publicly', 'Refresh snapshot']],
+    ['allows sharing', {}, ['Share publicly'], ['Refresh snapshot']],
+    ['allows sharing on a shared row', { session_id: 'shared', share_url: '/share/old' }, ['Refresh snapshot'], ['Share publicly']],
+  ] as const)('follows the server where it %s (TAL-732)', async (_, extra, offered, refused) => {
+    const items = await menuItems({ ...writable, ...extra })
+    for (const name of offered) expect(items, name).toContain(name)
+    for (const name of refused) expect(items, name).not.toContain(name)
   })
 
   it('starts with Open in new tab, which opens the conversation without an opener (TAL-699)', async () => {

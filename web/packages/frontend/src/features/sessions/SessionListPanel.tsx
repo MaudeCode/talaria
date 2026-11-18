@@ -46,7 +46,6 @@ export function useSessionListQuery(params: api.SessionListParams = {}) {
   return useQuery({ queryKey: keys.sessions.list(params as Record<string, string | boolean | number | undefined>), queryFn: ({ signal }) => api.fetchSessions(params, signal), staleTime: 10_000 })
 }
 
-export { useSessionListStream } from './useSessionListStream'
 
 export function relativeTime(ts: number | null | undefined, now = Date.now()): string {
   if (!ts) return m.session_time_unknown()
@@ -118,7 +117,7 @@ export function groupSessionRows(rows: SessionRow[], now = Date.now()): { id: Gr
  * TAL-1151: the server's nesting. A row with `sidebar_parent_session_id` shows only under that listed parent, in server
  * order; filters apply to the top-level rows and their nested rows follow them.
  */
-export function nestSessionRows(rows: SessionRow[]): { roots: SessionRow[]; children: Map<string, SessionRow[]> } {
+function nestSessionRows(rows: SessionRow[]): { roots: SessionRow[]; children: Map<string, SessionRow[]> } {
   const ids = new Set(rows.map((r) => r.session_id))
   const roots: SessionRow[] = []
   const children = new Map<string, SessionRow[]>()

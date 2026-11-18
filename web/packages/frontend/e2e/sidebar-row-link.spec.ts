@@ -19,6 +19,7 @@ test('a sidebar row is a link named by its conversation, not its action buttons'
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: sessionFixture({ session_id: sid, title: 'Linked row', sort_ts: now }) } }))
   await page.goto(`/session/${sid}`)
   if (info.project.name === 'mobile') await page.locator('#btnHamburger').click()
+  await expect(page.locator('#sessionList')).toHaveAttribute('role', 'list')
   const link = page.locator('#sessionList').getByRole('listitem').getByRole('link', { name: /^Linked row/ })
   await expect(link).toHaveAttribute('href', `/session/${sid}`)
   await expect(link).toHaveAttribute('aria-current', 'page')

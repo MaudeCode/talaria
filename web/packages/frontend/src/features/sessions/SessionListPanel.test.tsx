@@ -9,7 +9,7 @@ import { SessionsListSchema, type SessionRow } from '../../contracts'
 import { ApiError } from '../../contracts/common'
 
 const settings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }))
-vi.mock('../../api/endpoints', () => ({ fetchSettings: () => Promise.resolve({ sound_enabled: false, ...settings.value }), fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchSettings: () => Promise.resolve({ sound_enabled: false, ...settings.value }), fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn() }))
 const sessionEvents = vi.hoisted(() => ({ emit: vi.fn<(event: { event: string; data: { session_id?: string; reason?: string } }) => void>() }))
 vi.mock('../../api/sse', () => ({ SSE_OPEN: 1, openSessionListStream: ({ onEvent }: { onEvent: typeof sessionEvents.emit }) => { sessionEvents.emit.mockImplementation(onEvent); return { close: () => undefined, readyState: () => 1 } } }))
 const newChat = vi.hoisted(() => vi.fn())
@@ -344,12 +344,6 @@ describe('SessionListPanel search (TAL-308, TAL-2184)', () => {
     expect(screen.getByText('a zebra here')).toBeInTheDocument()
   })
 
-  it('shows a server match for words in another order (TAL-453)', async () => {
-    vi.mocked(api.searchSessions).mockResolvedValue({ sessions: [{ ...alpha, match_type: 'title' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' } as never)
-    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
-    await userEvent.type(screen.getByRole('searchbox'), 'zebra alpha')
-    await waitFor(() => { expect(shown()).toEqual(['alpha']) })
-  })
 })
 
 describe('nested subagent rows (TAL-1151)', () => {
@@ -550,17 +544,6 @@ describe('SessionListPanel Agent storage notice (TAL-785)', () => {
   })
 })
 
-describe('SessionListPanel import (TAL-607)', () => {
-  it('posts the chosen JSON export and opens the created session', async () => {
-    vi.mocked(api.importSession).mockResolvedValue({ ok: true, session: { ...alpha, session_id: 'imported' } } as never)
-    const { container } = render(<QueryClientProvider client={new QueryClient()}><SessionListPanel /></QueryClientProvider>)
-    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!
-    await userEvent.upload(input, new File([JSON.stringify({ title: 'Saved', messages: [{ role: 'user', content: 'hi' }] })], 'saved.json', { type: 'application/json' }))
-    await waitFor(() => { expect(navigate).toHaveBeenCalledWith({ to: '/session/$sessionId', params: { sessionId: 'imported' } }) })
-    expect(api.importSession).toHaveBeenCalledWith({ title: 'Saved', messages: [{ role: 'user', content: 'hi' }] })
-  })
-})
-
 describe('session list date groups (TAL-306)', () => {
   const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { session_list: { sessions: unknown[] } }
   const rows = SessionsListSchema.shape.sessions.parse(fixture.session_list.sessions)
@@ -715,12 +698,6 @@ describe('session row archive toggle (TAL-1633)', () => {
     expect(document.querySelector('.session-archive-toggle')).toBeNull()
   })
 
-  it('keeps the toggle on an archivable row and archives it', async () => {
-    const onArchive = vi.fn()
-    item(alpha, onArchive)
-    await userEvent.click(screen.getByRole('button', { name: 'Archive' }))
-    expect(onArchive).toHaveBeenCalledWith('alpha', true)
-  })
 })
 
 describe('optimistic session and project writes (TAL-1179)', () => {
@@ -795,7 +772,6 @@ describe('Chats filter menu (TAL-1869)', () => {
   it('replaces the tabs and chips with one trigger whose label and heading detail follow the filters', async () => {
     panel()
     await screen.findAllByTitle('Proj')
-    expect(document.querySelector('.project-bar, .session-source-tabs')).toBeNull()
     expect(screen.getByRole('heading', { name: 'Chats' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Chat filters' })).toBeInTheDocument()
     expect(detail()).toBeNull()

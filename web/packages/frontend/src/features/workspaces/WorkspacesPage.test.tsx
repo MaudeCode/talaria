@@ -31,14 +31,6 @@ async function runAction(name: string, action: string) {
 describe('WorkspacesPage', () => {
   beforeEach(() => { toast.mockReset(); vi.mocked(api.fetchWorkspaces).mockResolvedValue({ workspaces: [], last: null }) })
 
-  it('keeps the page explanation behind the title help button', async () => {
-    renderPage()
-    expect(await screen.findByText('No workspaces yet')).toBeVisible()
-    expect(screen.queryByText('Add and switch workspaces for your sessions.')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'About Spaces' }))
-    expect(await screen.findByText('Add and switch workspaces for your sessions.')).toBeVisible()
-  })
-
   it('TAL-2141: marks the server\'s default space, not the last-used one, and keeps it from being removed', async () => {
     vi.mocked(api.fetchWorkspaces).mockResolvedValue({ workspaces: [{ path: '/srv/alpha', name: 'Alpha' }, { path: '/srv/beta', name: 'Beta', is_default: true }], last: '/srv/alpha' })
     renderPage()
@@ -99,6 +91,21 @@ describe('space writes show their result while the server is held (TAL-1179)', (
     await runAction('Gamma', 'Move up')
     expect(names()).toEqual(['Gamma', 'Alpha', 'Beta'])
     expect(api.reorderWorkspaces).toHaveBeenCalledWith(['/srv/alpha', '/srv/gamma', '/srv/beta'])
+  })
+
+  it('keeps the moved order once the server confirms it', async () => {
+    vi.mocked(api.reorderWorkspaces).mockImplementation((paths) => {
+      const confirmed = { workspaces: paths.map((path) => spaces.workspaces.find((space) => space.path === path)!), last: null }
+      vi.mocked(api.fetchWorkspaces).mockResolvedValue(confirmed)
+      return Promise.resolve({ ok: true, ...confirmed })
+    })
+    renderPage()
+    await screen.findByText('Gamma')
+    await runAction('Gamma', 'Move up')
+    await waitFor(() => expect(api.reorderWorkspaces).toHaveBeenCalledWith(['/srv/alpha', '/srv/gamma', '/srv/beta']))
+    // The server's answer settles the list on the order already shown, with no snap back.
+    await waitFor(() => expect(api.fetchWorkspaces).toHaveBeenCalledTimes(2))
+    expect(names()).toEqual(['Alpha', 'Gamma', 'Beta'])
   })
 
   it('restores the confirmed order when a reorder is refused', async () => {

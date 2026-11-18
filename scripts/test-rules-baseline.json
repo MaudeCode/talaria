@@ -5,7 +5,6 @@
       "web/packages/frontend/e2e/cold-session-read.spec.ts": 1,
       "web/packages/frontend/e2e/composer.spec.ts": 2,
       "web/packages/frontend/e2e/session-entry.spec.ts": 1,
-      "web/packages/frontend/e2e/sidebar.spec.ts": 1,
       "web/packages/frontend/src/app/bootstrap.test.tsx": 1,
       "web/packages/frontend/src/features/chat/useTranscript.test.tsx": 1,
       "web/packages/frontend/src/features/voice/completionAudio.test.ts": 1,
