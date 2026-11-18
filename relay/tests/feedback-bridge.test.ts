@@ -486,7 +486,7 @@ describe("watch mode", () => {
       return new Promise<number>((resolve) => finishes.push(() => { active -= 1; resolve(0); }));
     });
     const stop = new AbortController();
-    const exit = watch(subscribe, deliver, stop.signal, 120_000);
+    const exit = watch(subscribe, deliver, stop.signal);
     const settleRun = async () => { finishes.shift()?.(); await vi.advanceTimersByTimeAsync(0); };
     return { push: (ids: string[]) => push(ids), fail: () => fail(), unsubscribe, deliver, stop, exit, settleRun, peak: () => peak };
   }

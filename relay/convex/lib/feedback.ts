@@ -3,8 +3,8 @@ import type { Infer } from "convex/values";
 import { sha256Hex, timingSafeEqual } from "./crypto";
 import type { feedbackAttachmentTypeValidator, feedbackPayloadValidator } from "./validators";
 
-export type FeedbackPayload = Infer<typeof feedbackPayloadValidator>;
-export type FeedbackAttachmentType = Infer<typeof feedbackAttachmentTypeValidator>;
+type FeedbackPayload = Infer<typeof feedbackPayloadValidator>;
+type FeedbackAttachmentType = Infer<typeof feedbackAttachmentTypeValidator>;
 type Attachment = NonNullable<FeedbackPayload["attachments"]>[number];
 
 /** Mirrors `contracts/fixtures/feedback-attachment-limits.json`; the bridge enforces `maxVideoSeconds`. */

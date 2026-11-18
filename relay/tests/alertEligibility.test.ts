@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
 import { defaultNotificationPreferences, type NotificationPreferences, type SessionPhase } from "../convex/lib/model";
-import { type Backend, now, publish, publisherId, runScheduledRecomputes, seed, snapshotState } from "./relayFixture";
+import { type Backend, now, readState, publish, publisherId, runScheduledRecomputes, seed, snapshotState } from "./relayFixture";
 
 async function jobs(backend: Backend) {
   const rows = await backend.run(async (ctx) => ctx.db.query("deliveryJobs").order("asc").collect());
@@ -17,7 +17,7 @@ describe("publisher alert eligibility", () => {
       states: [snapshotState("session-1", 2, "waiting_for_approval", false), snapshotState("session-2", 1, "running")],
     });
     await runScheduledRecomputes(backend);
-    await expect(backend.query(internal.publishers.getState, { userId: "user-1", publisherId, sessionId: "session-1" }))
+    await expect(readState(backend, { userId: "user-1", publisherId, sessionId: "session-1" }))
       .resolves.toMatchObject({ phase: "waiting_for_approval", revision: 2, alertEligible: false });
     let delivered = await jobs(backend);
     expect(delivered).toHaveLength(1);
@@ -39,7 +39,7 @@ describe("publisher alert eligibility", () => {
     await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
     delivered = await jobs(backend);
     expect(delivered.every((job) => job.kind === "live_activity_update" && !("alert" in job.aps))).toBe(true);
-    await expect(backend.query(internal.publishers.getState, { userId: "user-1", publisherId, sessionId: "session-1" }))
+    await expect(readState(backend, { userId: "user-1", publisherId, sessionId: "session-1" }))
       .resolves.toMatchObject({ revision: 3, alertEligible: false });
 
     // Omitting the field keeps the existing alert behavior for a new transition.
@@ -223,7 +223,7 @@ describe("publisher alert eligibility", () => {
       states: [snapshotState("session-1", 3, "waiting_for_approval", undefined, "run-2"), snapshotState("session-2", 1, "running")],
     });
     await runScheduledRecomputes(backend);
-    const state = await backend.query(internal.publishers.getState, { userId: "user-1", publisherId, sessionId: "session-1" });
+    const state = await readState(backend, { userId: "user-1", publisherId, sessionId: "session-1" });
     expect(state).toMatchObject({ streamId: "run-2" });
     expect(state).not.toHaveProperty("alertEligible");
     expect(await jobs(backend)).toEqual([

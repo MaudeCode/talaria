@@ -27,7 +27,7 @@ type QueuedAttachment = {
   reason?: "tier" | "quota" | "disabled";
 };
 
-export type Sanitized = { name: string; contentType: "image/png" | "image/jpeg" | "video/mp4"; data: Buffer };
+type Sanitized = { name: string; contentType: "image/png" | "image/jpeg" | "video/mp4"; data: Buffer };
 type Outcome = { index: number } & ({ kept: Sanitized } | { dropped: string });
 class Dropped extends Error {}
 
@@ -361,14 +361,17 @@ async function deliver(config: Config): Promise<number> {
   return failed ? 1 : 0;
 }
 
+// A failed delivery is retried this often, whether or not the pending set changes.
+const retryMs = 120_000;
+
 type Subscribe = (onIds: (ids: string[]) => void, onError: () => void) => () => void;
 
 /**
- * Runs `run` whenever the subscribed pending set changes and is non-empty, and every `retryMs` so a failed delivery
+ * Runs `run` whenever the subscribed pending set changes and is non-empty, and every two minutes so a failed delivery
  * is retried, never two at once: a change during a run queues exactly one more. Resolves with 0 once `stop` aborts
  * (after the current run) or 1 when the subscription fails.
  */
-export function watch(subscribe: Subscribe, run: () => Promise<unknown>, stop: AbortSignal, retryMs = 120_000): Promise<number> {
+export function watch(subscribe: Subscribe, run: () => Promise<unknown>, stop: AbortSignal): Promise<number> {
   return new Promise((resolve) => {
     let running = false;
     let again = false;

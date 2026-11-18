@@ -3,7 +3,7 @@ import { connect, type ClientHttp2Session, type IncomingHttpHeaders } from "node
 
 import type { ApsEnvironment } from "./model";
 
-export interface ApnsWireRequest {
+interface ApnsWireRequest {
   token: string;
   topic: string;
   environment: ApsEnvironment;

@@ -27,7 +27,6 @@ import {
 } from "./lib/apnsPayload";
 import type { ActivityAggregate, ActivityAlert, SessionState } from "./lib/model";
 import {
-  aggregateValidator,
   apnsDeliveryResultValidator,
   apnsRequestValidator,
   sessionPhaseValidator,
