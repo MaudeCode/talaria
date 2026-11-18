@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Screen readers now announce the download button on an open file in Files with the file's name, not as a folder.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

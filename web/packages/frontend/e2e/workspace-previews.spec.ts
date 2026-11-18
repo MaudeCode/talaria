@@ -92,7 +92,7 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   await back()
 
   await open('tone.wav')
-  const audio = page.getByLabel('tone.wav')
+  const audio = page.getByLabel('tone.wav', { exact: true })
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.duration)).toBeGreaterThan(0.4)
   await shot('audio')
   // A hidden Files page unmounts its player, so playback stops; the open file comes back with the page.
@@ -104,7 +104,7 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   await back()
 
   await open('clip.webm')
-  const video = page.getByLabel('clip.webm')
+  const video = page.getByLabel('clip.webm', { exact: true })
   await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.videoWidth)).toBe(64)
   await shot('video')
   await back()

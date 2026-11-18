@@ -167,6 +167,15 @@ describe('file tree writes roll back only themselves on refusal (TAL-1384)', () 
   })
 })
 
+describe('the open file', () => {
+  it('names its download link for the file it downloads', async () => {
+    renderFiles()
+    await userEvent.click(await screen.findByRole('treeitem', { name: row('a.txt') }))
+    expect(await screen.findByRole('link', { name: 'Download a.txt' })).toHaveAttribute('href', expect.stringMatching(/\/raw$/))
+    expect(api.rawFileUrl).toHaveBeenCalledWith('s1', 'a.txt', undefined)
+  })
+})
+
 describe('file save keeps the user\'s edits (TAL-1384)', () => {
   async function openFile(name: string) {
     await userEvent.click(await screen.findByRole('treeitem', { name: row(name) }))
