@@ -5,7 +5,7 @@ import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, beforeEach, inject, vi } from 'vitest'
+import { beforeEach, inject } from 'vitest'
 import { createApp } from '../app.js'
 import type { Env } from '../config.js'
 import type { AppDeps } from '../http/context.js'
@@ -175,13 +175,12 @@ export function cookieHeader(setCookies: string[], name: string): string | undef
 }
 
 /**
- * For a suite sharing one server whose tests each set their own cron stores: moves the clock past the store listing the
- * last test left behind. The returned function does the same mid-test.
+ * For a suite sharing one server whose tests each set their own cron stores: a server clock (`bootTestServer({ now })`)
+ * that each test moves past the store listing the last test left behind. `skip()` does the same mid-test. Only the
+ * server's injected clock moves; real timers and `Date.now` stay real.
  */
-export function freshCronListingsPerTest(): () => void {
+export function freshCronListingsPerTest(): { now: () => number; skip: () => void } {
   let skew = 0
-  const realNow = Date.now.bind(Date)
-  beforeEach(() => { skew += 10_000; vi.spyOn(Date, 'now').mockImplementation(() => realNow() + skew) })
-  afterEach(() => { vi.mocked(Date.now).mockRestore() })
-  return () => { skew += 10_000 }
+  beforeEach(() => { skew += 10 })
+  return { now: () => Date.now() / 1000 + skew, skip: () => { skew += 10 } }
 }

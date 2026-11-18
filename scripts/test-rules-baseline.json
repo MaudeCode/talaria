@@ -2,13 +2,7 @@
   "counts": {
     "clock-elapsed": {
       "app/TalariaTests/ChatViewModelSendTests.swift": 1,
-      "web/packages/server/src/api/settings.test.ts": 2,
-      "web/packages/server/src/api/sse-routes.test.ts": 1,
-      "web/packages/server/src/cli/main.test.ts": 2,
-      "web/packages/server/src/redact.test.ts": 1,
-      "web/packages/server/src/sessions/workers.test.ts": 2,
-      "web/packages/server/src/tools/memory-masks.test.ts": 1,
-      "web/packages/server/src/workspace/media-realpath.test.ts": 1
+      "web/packages/server/src/sessions/workers.test.ts": 2
     },
     "clock-sleep": {
       "app/TalariaKit/Tests/TalariaKitTests/ApprovalNotificationTests.swift": 1,
@@ -43,27 +37,14 @@
       "app/TalariaTests/HostedViewTests.swift": 2,
       "app/TalariaTests/SessionListHostedTests.swift": 1,
       "app/TalariaTests/TranscriptHostedTests.swift": 6,
-      "web/packages/server/src/api/tools.test.ts": 4,
       "web/packages/server/src/app.test.ts": 1,
-      "web/packages/server/src/cli/supervise.test.ts": 1,
       "web/packages/server/src/providers/env-write.agent.test.ts": 1,
       "web/packages/server/src/sessions/chat.test.ts": 1,
       "web/packages/server/src/sessions/compress.test.ts": 1,
       "web/packages/server/src/sessions/notify/agent-notify.test.ts": 2,
       "web/packages/server/src/sessions/sessions.test.ts": 9,
       "web/packages/server/src/sessions/state-db-worker.test.ts": 4,
-      "web/packages/server/src/sessions/state-db.test.ts": 4,
-      "web/packages/server/src/sidecar/client.test.ts": 4,
-      "web/packages/server/src/tools/health-logs.test.ts": 1,
-      "web/packages/server/src/tools/toolsets.test.ts": 1,
-      "web/packages/server/src/workspace/git.test.ts": 2
-    },
-    "unheld-clock": {
-      "web/packages/server/src/api/feedback.test.ts": 2,
-      "web/packages/server/src/api/sse-writer.test.ts": 1,
-      "web/packages/server/src/fs/stat.test.ts": 1,
-      "web/packages/server/src/test/harness.ts": 1,
-      "web/packages/server/src/tools/project-os.test.ts": 1
+      "web/packages/server/src/sessions/state-db.test.ts": 4
     }
   },
   "exceptions": [

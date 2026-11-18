@@ -10,15 +10,15 @@ it('trusts a file signature only after the full coarse-timestamp window has sett
   writeFileSync(path, 'synthetic')
   utimesSync(path, 100, 100)
   const st = statSync(path, { bigint: true })
-  const now = vi.spyOn(Date, 'now')
+  vi.useFakeTimers()
   try {
     for (const millis of [99_000, 100_000, 101_999]) {
-      now.mockReturnValue(millis)
+      vi.setSystemTime(millis)
       expect(settledFileStatKey(path, st)).toBeNull()
     }
-    now.mockReturnValue(102_000)
+    vi.setSystemTime(102_000)
     expect(settledFileStatKey(path, st)).toBe(fileStatKey(path, st))
-    now.mockReturnValue(103_000)
+    vi.setSystemTime(103_000)
     expect(settledFileStatKey(path, st)).toBe(fileStatKey(path, st))
-  } finally { now.mockRestore(); rmSync(dir, { recursive: true, force: true }) }
+  } finally { vi.useRealTimers(); rmSync(dir, { recursive: true, force: true }) }
 })

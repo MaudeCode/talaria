@@ -78,7 +78,7 @@ describe('crons, kanban, extensions, terminal', () => {
   let pty: ReturnType<typeof fakePty>
   let zip: Buffer
   let sha: string
-  const skipCronListing = freshCronListingsPerTest()
+  const cronClock = freshCronListingsPerTest()
   beforeAll(async () => {
     sidecar = new FakeSidecar()
     pty = fakePty()
@@ -101,7 +101,7 @@ describe('crons, kanban, extensions, terminal', () => {
       }
       return Promise.resolve(new Response('nope', { status: 404 }))
     }
-    s = await bootTestServer({ sidecar, deps: (deps) => { (deps as { fetch: typeof fetch }).fetch = fakeFetch } })
+    s = await bootTestServer({ sidecar, now: cronClock.now, deps: (deps) => { (deps as { fetch: typeof fetch }).fetch = fakeFetch } })
     ;(s.deps as { terminals: TerminalRegistry }).terminals = new TerminalRegistry({ env: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: s.state, SECRET: 'no' }, now: () => Date.now(), log: () => undefined, pty })
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
     sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: {} }))
@@ -301,7 +301,7 @@ describe('crons, kanban, extensions, terminal', () => {
       expect(body.since).toBe(0)
       expect(body.completions).toHaveLength(5)
       sidecar.respond('cron.list', () => { throw new SidecarError('cron unavailable', { condition: 'cron_unavailable' }) })
-      skipCronListing()
+      cronClock.skip()
       expect(await json(await s.get('/api/crons/recent?since=5'))).toEqual({ completions: [], since: 5 })
     } finally {
       rmSync(join(home, 'state.db'), { force: true })

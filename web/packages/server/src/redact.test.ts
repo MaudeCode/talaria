@@ -613,7 +613,7 @@ describe('redactSensitive cost', () => {
     }
   })
 
-  it('stays linear on long runs of scheme and identifier characters', () => {
+  describe('stays linear on long runs of scheme and identifier characters', () => {
     // Four times the input takes about 4x as long when linear and about 16x when quadratic, on a runner of any speed.
     // `scale` multiplies each input's repeat counts, so 1/4 builds the same input at a quarter of its length.
     const inputs = (scale: number): string[] => {
@@ -647,9 +647,8 @@ describe('redactSensitive cost', () => {
       return (user + system) / 1000
     }
     const quarters = inputs(1 / 4)
-    inputs(1).forEach((text, i) => {
-      const label = JSON.stringify(text.slice(0, 60))
-      const quarter = quarters[i]!
+    // One test per input, so each stays inside the per-test budget and a regression names its input.
+    it.each(inputs(1).map((text, i) => ({ label: JSON.stringify(text.slice(0, 60)), text, quarter: quarters[i]! })))('$label', ({ label, text, quarter }) => {
       // An input whose quarter build keeps its length would compare against itself and never fail.
       expect(text.length / quarter.length, label).toBeGreaterThan(3)
       const quarterCost = cost(quarter)
@@ -658,8 +657,7 @@ describe('redactSensitive cost', () => {
       // A hang guard, far above any runner's linear cost.
       expect(fullCost, label).toBeLessThan(10_000)
     })
-    // The per-input checks above decide; this only has to outlast all of them on a loaded runner.
-  }, 300_000)
+  })
 })
 
 describe('publicToolFrame', () => {
@@ -943,11 +941,19 @@ describe('redactSessionData', () => {
       throw new Error(mime)
     }
 
-    // Only the exempt path sees the 4 MB image: a full scan of it takes seconds on a CI runner.
+    // Only the exempt path sees the 4 MB image: a full scan of it takes seconds on a CI runner. Its base64 padding is an
+    // `=`, so a text scan of it would report an assignment-family scan.
     const url = dataUri('image/png', image('image/png', 4 * 1024 * 1024))
-    const started = performance.now()
-    expect(imageUrl(url) === url, '4 MB PNG data URI returned byte-identical').toBe(true)
-    expect(performance.now() - started).toBeLessThan(150)
+    expect(url.endsWith('=')).toBe(true)
+    const scans: unknown[] = []
+    const onScan = (message: unknown): void => { scans.push(message) }
+    subscribe('talaria.redaction.assignment-scan', onScan)
+    try {
+      expect(imageUrl(url) === url, '4 MB PNG data URI returned byte-identical').toBe(true)
+    } finally {
+      unsubscribe('talaria.redaction.assignment-scan', onScan)
+    }
+    expect(scans).toEqual([])
     // MIME and scheme are case-insensitive; the exemption covers every raster type the composer embeds.
     for (const [mime, bytes] of [['IMAGE/PNG', image('image/png')], ['image/jpg', image('image/jpeg')], ...Object.keys(formats).map((m) => [m, image(m)] as const)] as const) {
       const raster = dataUri(mime, bytes)

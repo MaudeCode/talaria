@@ -50,7 +50,7 @@ describe('/api/media realpath cost (TAL-1696)', () => {
   /** Age every directory past the two-second window in which a same-tick write could share a stat signature. */
   const settle = (dir = hermesHome): void => {
     for (const child of readdirSync(dir, { withFileTypes: true })) if (child.isDirectory()) settle(join(dir, child.name))
-    const past = new Date(Date.now() - 60_000)
+    const past = new Date('2020-01-01T00:00:00Z')
     utimesSync(dir, past, past)
   }
 

@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { cleanGeneratedCommitMessage, classifyGitError, GitRunner } from './git.js'
 
@@ -239,13 +239,17 @@ describe('slow git off the event loop', () => {
   let s: TestServer
   let shimDir: string
   let marker: string
+  let gate: string
   beforeAll(async () => {
-    // A `git` shim that sleeps before every push and pull, so the command stays in flight while the test probes the server.
+    // A `git` shim that holds every push and pull until the test opens its gate, so the command stays in flight while the
+    // test probes the server. The gate stays open between tests.
     const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim()
     shimDir = mkdtempSync(join(tmpdir(), 'talaria-slow-git-'))
     marker = join(shimDir, 'push-started')
+    gate = join(shimDir, 'release')
+    writeFileSync(gate, '')
     // With `slow-rev-parse` present, `rev-parse` (the context lookup every mutation starts with) sleeps too.
-    writeFileSync(join(shimDir, 'git'), `#!/bin/sh\nfor a in "$@"; do if [ "$a" = push ] || [ "$a" = pull ] || { [ "$a" = rev-parse ] && [ -e '${shimDir}/slow-rev-parse' ]; }; then touch '${marker}'; sleep 2; break; fi; done\nexec '${realGit}' "$@"\n`)
+    writeFileSync(join(shimDir, 'git'), `#!/bin/sh\nfor a in "$@"; do if [ "$a" = push ] || [ "$a" = pull ] || { [ "$a" = rev-parse ] && [ -e '${shimDir}/slow-rev-parse' ]; }; then touch '${marker}'; while [ ! -e '${gate}' ]; do sleep 0.01; done; break; fi; done\nexec '${realGit}' "$@"\n`)
     chmodSync(join(shimDir, 'git'), 0o755)
     const env = { TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE: '1', ...identity, PATH: `${shimDir}:${process.env.PATH ?? ''}` }
     // A short lock wait so contention answers `operation_in_progress` well before the slow push finishes.
@@ -260,36 +264,46 @@ describe('slow git off the event loop', () => {
     git(ws, 'remote', 'add', 'origin', origin)
     git(ws, 'push', '-q', '-u', 'origin', 'main')
   })
+  // A test that fails while it holds Git must not leave the next one waiting on a closed gate.
+  afterEach(() => { writeFileSync(gate, '') })
   afterAll(async () => {
     await s.close()
     rmSync(shimDir, { recursive: true, force: true })
   })
 
-  async function inFlight(sid: string, op = 'push'): Promise<{ push: Promise<Response>; settled: () => boolean }> {
-    rmSync(marker, { force: true })
+  /** The shim has started the slow command. The server spawns Git, and a loaded runner can take seconds to start a process. */
+  const gitStarted = (): Promise<void> => vi.waitFor(() => { expect(existsSync(marker)).toBe(true) }, { timeout: 15_000 })
+
+  /** Closes the gate, so the next push, pull or slow rev-parse waits in the shim until `release()`. */
+  const hold = (): (() => void) => { rmSync(marker, { force: true }); rmSync(gate, { force: true }); return () => { writeFileSync(gate, '') } }
+
+  async function inFlight(sid: string, op = 'push'): Promise<{ push: Promise<Response>; settled: () => boolean; release: () => void }> {
+    const release = hold()
     let done = false
     const push = post(s, `/api/git/${op}`, { session_id: sid }).finally(() => { done = true })
-    while (!existsSync(marker)) await new Promise((r) => setTimeout(r, 20))
-    return { push, settled: () => done }
+    await gitStarted()
+    return { push, settled: () => done, release }
   }
   const pushInFlight = (sid: string): ReturnType<typeof inFlight> => inFlight(sid)
 
   it('serves another HTTP request while a push is in flight', async () => {
     const { sid } = await repoSession(s)
-    const { push, settled } = await pushInFlight(sid)
+    const { push, settled, release } = await pushInFlight(sid)
     const health = await s.get('/health')
     expect(health.status).toBe(200)
     expect(settled()).toBe(false)
+    release()
     const res = await push
     expect(res.status, await res.clone().text()).toBe(200)
   })
 
   it('a second mutation on the same repo during a push answers operation_in_progress', async () => {
     const { sid } = await repoSession(s)
-    const { push, settled } = await pushInFlight(sid)
+    const { push, settled, release } = await pushInFlight(sid)
     const second = await post(s, '/api/git/fetch', { session_id: sid })
     expect(await json(second)).toMatchObject({ error: 'Another Git operation is still running', code: 'operation_in_progress' })
     expect(settled()).toBe(false)
+    release()
     expect((await push).status).toBe(200)
     // The timed-out waiter's chain does not stay behind in the lock map.
     expect((s.deps.git as unknown as { locks: Map<string, unknown> }).locks.size).toBe(0)
@@ -297,7 +311,7 @@ describe('slow git off the event loop', () => {
 
   it('no chat run or terminal starts in the workspace while a working-tree mutation runs', async () => {
     const { sid } = await repoSession(s)
-    const { push: pull, settled } = await inFlight(sid, 'pull')
+    const { push: pull, settled, release } = await inFlight(sid, 'pull')
     let res = await post(s, '/api/chat/start', { session_id: sid, message: 'hi' })
     expect(await json(res)).toMatchObject({ error: 'A Git operation is running in this workspace.' })
     expect(res.status).toBe(409)
@@ -305,6 +319,7 @@ describe('slow git off the event loop', () => {
     expect(await json(res)).toMatchObject({ error: 'A Git operation is running in this workspace.' })
     expect(res.status).toBe(409)
     expect(settled()).toBe(false)
+    release()
     expect((await pull).status).toBe(200)
     // Released with the mutation.
     expect(s.deps.git.workspaceBusy(join(s.state, 'workspace'))).toBe(false)
@@ -319,9 +334,10 @@ describe('slow git off the event loop', () => {
     }
     const sidA = await sessionIn(join(ws, 'sub-a'))
     const sidB = await sessionIn(join(ws, 'sub-b'))
-    const { push: pull } = await inFlight(sidA, 'pull')
+    const { push: pull, release } = await inFlight(sidA, 'pull')
     const res = await post(s, '/api/chat/start', { session_id: sidB, message: 'hi' })
     expect(await json(res)).toMatchObject({ error: 'A Git operation is running in this workspace.' })
+    release()
     expect((await pull).status).toBe(200)
   })
 
@@ -336,16 +352,17 @@ describe('slow git off the event loop', () => {
     const sidF = await sessionIn(join(ws, 'sub-f'))
     writeFileSync(join(shimDir, 'slow-rev-parse'), '')
     let pull: Promise<Response>
+    const release = hold()
     try {
-      rmSync(marker, { force: true })
       pull = post(s, '/api/git/pull', { session_id: sidE })
-      while (!existsSync(marker)) await new Promise((r) => setTimeout(r, 20))
+      await gitStarted()
       // The context lookup is still running; a terminal in the sibling directory must not start.
       const res = await post(s, '/api/terminal/start', { session_id: sidF })
       expect(await json(res)).toMatchObject({ error: 'A Git operation is running in this workspace.' })
       expect(res.status).toBe(409)
     } finally {
       rmSync(join(shimDir, 'slow-rev-parse'), { force: true })
+      release()
     }
     expect((await pull).status).toBe(200)
   })
@@ -368,7 +385,7 @@ describe('slow git off the event loop', () => {
 
   it('file writes, rollback restore, directory creation, and worktree sessions wait out a working-tree mutation', async () => {
     const { sid, ws } = await repoSession(s)
-    const { push: pull } = await inFlight(sid, 'pull')
+    const { push: pull, release } = await inFlight(sid, 'pull')
     const busy = { error: 'A Git operation is running in this workspace.' }
     const attempts: [string, unknown][] = [
       ['/api/file/create', { session_id: sid, path: 'new-during-pull.txt', content: 'x' }],
@@ -384,6 +401,7 @@ describe('slow git off the event loop', () => {
     }
     expect(existsSync(join(ws, 'new-during-pull.txt'))).toBe(false)
     expect(existsSync(join(ws, 'made-during-pull'))).toBe(false)
+    release()
     expect((await pull).status).toBe(200)
   })
 
@@ -395,10 +413,11 @@ describe('slow git off the event loop', () => {
     const session = (await s.deps.sessionStore.get(wtSid))
     Object.assign(session, { worktree_path: worktree, worktree_repo_root: ws })
     await s.deps.sessionStore.save(session)
-    const { push: pull } = await inFlight(sid, 'pull')
+    const { push: pull, release } = await inFlight(sid, 'pull')
     const res = await post(s, '/api/session/worktree/remove', { session_id: wtSid })
     expect(await json(res)).toMatchObject({ code: 'operation_in_progress' })
     expect(existsSync(worktree)).toBe(true)
+    release()
     expect((await pull).status).toBe(200)
     expect(await json(await post(s, '/api/session/worktree/remove', { session_id: wtSid }))).toMatchObject({ ok: true })
   })

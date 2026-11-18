@@ -24,7 +24,7 @@ it('bounds config reads across busy subscribers and refreshes reasoning on the h
   const stat = vi.spyOn(fileStats, 'fileStatKey')
   const peek = vi.spyOn(agentConfig, 'peek')
   const fileChecks = () => peek.mock.calls.filter(([, opts]) => opts?.cacheOnly !== true).length
-  const clock = vi.spyOn(Date, 'now').mockReturnValue(10_000)
+  vi.useFakeTimers({ now: 10_000 })
   const writers = Array.from({ length: 2 }, () => {
     const res = Object.assign(new EventEmitter(), { destroyed: false, writeHead: vi.fn(), flushHeaders: vi.fn(), write: vi.fn(), end: vi.fn() })
     const ctx = { res, pendingCookies: [], securityHeaders: () => ({}), markFinished: () => undefined,
@@ -40,7 +40,7 @@ it('bounds config reads across busy subscribers and refreshes reasoning on the h
     for (const { res } of writers) expect(res.write).toHaveBeenCalledTimes(1000)
     show = false
     writeFileSync(path, '# hidden reasoning')
-    clock.mockReturnValue(10_000 + SSE_HEARTBEAT_INTERVAL_MS)
+    vi.setSystemTime(10_000 + SSE_HEARTBEAT_INTERVAL_MS)
     for (const { writer, res } of writers) {
       res.write.mockClear()
       writer.event('reasoning', { text: 'private' })
@@ -50,7 +50,7 @@ it('bounds config reads across busy subscribers and refreshes reasoning on the h
     expect(fileChecks()).toBe(4)
     show = true
     writeFileSync(path, '# shown again')
-    clock.mockReturnValue(10_000 + 2 * SSE_HEARTBEAT_INTERVAL_MS)
+    vi.setSystemTime(10_000 + 2 * SSE_HEARTBEAT_INTERVAL_MS)
     for (const { writer } of writers) writer.comment('heartbeat')
     await vi.waitFor(() => {
       for (const { writer, res } of writers) {
@@ -63,7 +63,7 @@ it('bounds config reads across busy subscribers and refreshes reasoning on the h
     for (const { writer } of writers) writer.end()
     peek.mockRestore()
     stat.mockRestore()
-    clock.mockRestore()
+    vi.useRealTimers()
     rmSync(home, { recursive: true, force: true })
   }
 })

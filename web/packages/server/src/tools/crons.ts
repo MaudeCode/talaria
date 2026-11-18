@@ -16,6 +16,8 @@ export interface CronDeps {
   profilesMatch: (row: string, active: string) => boolean
   isolatedProfileMode: () => boolean
   log: (line: string) => void
+  /** Epoch seconds: the runtime's clock, so listing freshness and run starts follow an injected clock. */
+  now?: () => number
   /** Python `_publish_session_list_changed("cron_complete", profile=...)` once a manual run finishes. */
   publishSessionsChanged?: (reason: string, profile: string | null) => void
   /**
@@ -276,6 +278,8 @@ export class CronService {
 
   constructor(private readonly deps: CronDeps) {}
 
+  private now(): number { return this.deps.now?.() ?? Date.now() / 1000 }
+
   private sidecar(): SidecarLike {
     const s = this.deps.sidecar()
     if (!s) throw new HttpFailure(503, 'Hermes Agent sidecar is not running; cron jobs are unavailable')
@@ -284,7 +288,7 @@ export class CronService {
 
   /** One store's `cron.list`, shared while it is fresh. `probe` also makes sure `probes` holds a current probe of the store. */
   private listStore(home: string, probe = false): StoreListing['listed'] {
-    const now = Date.now()
+    const now = this.now() * 1000
     const probed = this.probes.get(home)
     const needsProbe = probe && (!probed || now - probed.at >= STORE_PROBE_TTL_MS)
     const fresh = this.listings.get(home)
@@ -631,9 +635,9 @@ export class CronService {
     if (this.deps.updateInProgress?.()) throw new HttpFailure(503, 'Web is updating. Retry after it restarts.')
     const running = this.deps.runningJobs
     const existing = running?.get(jobId)
-    if (existing !== undefined) return { ok: false, job_id: jobId, status: 'already_running', elapsed: Math.max(0, Date.now() / 1000 - existing) }
+    if (existing !== undefined) return { ok: false, job_id: jobId, status: 'already_running', elapsed: Math.max(0, this.now() - existing) }
     // Own admission before any await so update/restart cannot race validation or dispatch.
-    running?.set(jobId, Date.now() / 1000)
+    running?.set(jobId, this.now())
     try {
       const sidecar = this.sidecar()
       const store = await this.resolveStore(home, jobId)
@@ -659,7 +663,7 @@ export class CronService {
       return await new Promise((resolve, reject) => {
         let answered = false
         const answer = (payload: Dict): void => { if (!answered) { answered = true; resolve(payload) } }
-        sidecar.call('cron.run', { profile_home: home, job_id: jobId, execution_home: executionHome }, { timeoutMs: 0, onStream: (frame) => { if (frame.event === 'started') { this.listings.clear(); started = true; running?.set(jobId, Date.now() / 1000); answer({ ok: true, job_id: jobId, status: 'running' }) } } })
+        sidecar.call('cron.run', { profile_home: home, job_id: jobId, execution_home: executionHome }, { timeoutMs: 0, onStream: (frame) => { if (frame.event === 'started') { this.listings.clear(); started = true; running?.set(jobId, this.now()); answer({ ok: true, job_id: jobId, status: 'running' }) } } })
           .then((result) => { answer(result.status === 'already_running' ? { ok: false, job_id: jobId, status: 'already_running', elapsed: result.elapsed } : { ok: true, job_id: jobId, status: 'running' }); done() })
           .catch((error: unknown) => {
             this.deps.log(`[cron] manual run ${jobId} failed: ${str((error as Error).message)}`)

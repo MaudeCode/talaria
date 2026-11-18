@@ -78,9 +78,16 @@ describe('restoreMasks (TAL-886)', () => {
   })
 
   it('bounds the edit check on a long masked token', () => {
-    const original = `${'a'.repeat(20_000)},password=hunter2`
-    const started = performance.now()
-    expect(save(original, () => `${'b'.repeat(20_000)},password=other`)).toBe(`${'b'.repeat(20_000)},password=other`)
-    expect(performance.now() - started).toBeLessThan(1_000)
+    // This thread's CPU time in milliseconds for a save over a masked token `width` characters long: wall clock charges a
+    // short run less than a long one on a preempted runner.
+    const cost = (width: number): number => {
+      const started = process.threadCpuUsage()
+      expect(save(`${'a'.repeat(width)},password=hunter2`, () => `${'b'.repeat(width)},password=other`)).toBe(`${'b'.repeat(width)},password=other`)
+      const { user, system } = process.threadCpuUsage(started)
+      return (user + system) / 1000
+    }
+    const quarterCost = cost(5_000)
+    // Linear in the token: a quarter of it costs about a quarter. Comparing every character pair costs sixteen times.
+    expect(cost(20_000)).toBeLessThan(8 * quarterCost + 100)
   })
 })

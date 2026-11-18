@@ -125,7 +125,7 @@ describe('person isolation on', () => {
       return { 'last-event-id': id! }
     }
     const [aliceCursor, bobCursor] = [await cursor(alice), await cursor(bob)]
-    const webAudio = (identity: string) => ({ identity, scope: 'default', profile: 'default', eligible: true, expires_at: Date.now() + 60_000 })
+    const webAudio = (identity: string) => ({ identity, scope: 'default', profile: 'default', eligible: true, expires_at: Date.UTC(2100, 0, 1) })
     server.deps.events.publish('web_completion', { profile: 'default', sessionId: aliceChat, webAudio: webAudio('alice-run') })
     // A completion that names no session cannot prove whose it is.
     server.deps.events.publish('web_completion', { profile: 'default', webAudio: webAudio('unnamed-run') })

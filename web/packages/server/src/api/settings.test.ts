@@ -335,16 +335,17 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       return Date.now()
     }
 
-    /** A live gateway whose pid record was written `age` ms ago (negative: after every save in the test). */
-    const gatewayStarted = (age: number) => {
+    /** A live gateway whose pid record was written before, or after, every save in the test. */
+    const gatewayStarted = (when: 'before' | 'after') => {
       const record = join(s.state, 'gateway.pid')
+      const at = new Date(when === 'before' ? '2020-01-01T00:00:00Z' : '2100-01-01T00:00:00Z')
       writeFileSync(record, '{}')
-      utimesSync(record, new Date(Date.now() - age), new Date(Date.now() - age))
+      utimesSync(record, at, at)
       return [{ dir: s.state, pid: 10, start_time: 10 }]
     }
 
     it('requires a restart after a save until a gateway started since replaces the one that loaded the old limits', async () => {
-      const live = vi.spyOn(s.deps.gatewayRestarts, 'gateways').mockResolvedValue(gatewayStarted(60_000))
+      const live = vi.spyOn(s.deps.gatewayRestarts, 'gateways').mockResolvedValue(gatewayStarted('before'))
       await withRootConfig({}, async () => {
         try {
           expect((await fields()).group_discussion_restart_required).toBe(false)
@@ -363,7 +364,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
           expect((await fields()).group_discussion_restart_required).toBe(false)
           await post(s, '/api/settings', { group_discussion_max_rounds: 9 })
           expect((await fields()).group_discussion_restart_required).toBe(true)
-          live.mockResolvedValue(gatewayStarted(-60_000))
+          live.mockResolvedValue(gatewayStarted('after'))
           expect((await fields()).group_discussion_restart_required).toBe(false)
           // Saving what the new gateway already loaded changes nothing it would need to reload.
           await post(s, '/api/settings', { group_discussion_max_rounds: 9 })
@@ -378,7 +379,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
         try {
           await post(s, '/api/settings', { group_discussion_max_rounds: 7 })
           expect((await fields()).group_discussion_restart_required).toBe(true)
-          live.mockResolvedValue(gatewayStarted(-60_000))
+          live.mockResolvedValue(gatewayStarted('after'))
           expect((await fields()).group_discussion_restart_required).toBe(false)
         } finally { rmSync(join(s.state, 'gateway.pid'), { force: true }) }
       })
@@ -389,7 +390,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       await withRootConfig({}, async () => {
         try {
           await post(s, '/api/settings', { group_discussion_max_rounds: 7 })
-          live.mockResolvedValue(gatewayStarted(60_000))
+          live.mockResolvedValue(gatewayStarted('before'))
           expect((await fields()).group_discussion_restart_required).toBe(true)
         } finally { rmSync(join(s.state, 'gateway.pid'), { force: true }) }
       })

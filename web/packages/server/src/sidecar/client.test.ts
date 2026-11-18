@@ -45,9 +45,8 @@ describe('SidecarClient handshake recovery', () => {
     expect(client.status).toBe('restarting')
     await expect(client.call('rpc.methods', {})).rejects.toMatchObject({ condition: 'sidecar_unavailable' })
     writeFileSync(marker, '')
-    const deadline = Date.now() + 5000
-    while (client.status !== 'ready' && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25))
-    expect(client.status).toBe('ready')
+    // The restart backoff and handshake timeout are real timers.
+    await vi.waitFor(() => { expect(client?.status).toBe('ready') }, { timeout: 15_000 })
   })
 })
 
@@ -63,7 +62,8 @@ describe('SidecarClient version mismatch', () => {
     client = new SidecarClient({ python: process.execPath, command: [process.execPath, '-e', script], agentDir: '', sidecarDir: dir, hermesHome: dir, log: (l) => logs.push(l), backoffMs: [20], handshakeTimeoutMs: 2_000 })
     await expect(client.start()).rejects.toMatchObject({ condition: 'sidecar_rpc_version_mismatch' })
     expect(client.status).toBe('incompatible')
-    await new Promise((r) => setTimeout(r, 300))
+    // The exit handler decides on a restart in the same turn it logs the exit, so the status after it is the decision.
+    await vi.waitFor(() => { expect(logs.filter((l) => l.includes('exited'))).toHaveLength(1) }, { timeout: 15_000 })
     expect(client.status).toBe('incompatible')
     expect(logs.filter((l) => l.includes('restarting'))).toEqual([])
     expect(logs.filter((l) => l.includes('exited')).length).toBeLessThanOrEqual(1)
@@ -101,10 +101,8 @@ describe('SidecarClient version mismatch', () => {
     await client.start()
     const config_path = resolve(dir, 'config.yaml')
     expect((await client.call('config.get', { profile_home: dir, config_path })).config).toEqual({})
-    const deadline = Date.now() + 5000
-    while ((client.status !== 'incompatible' || !existsSync(starts) || readFileSync(starts, 'utf8').length < 2) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25))
-    expect(readFileSync(starts, 'utf8')).toBe('xx')
-    expect(client.status).toBe('incompatible')
+    // The restart backoff is a real timer.
+    await vi.waitFor(() => { expect(readFileSync(starts, 'utf8')).toBe('xx'); expect(client?.status).toBe('incompatible') }, { timeout: 15_000 })
     expect((await client.call('config.get', { profile_home: dir, config_path })).config).toEqual({})
   })
 
@@ -196,10 +194,11 @@ describe('SidecarClient version mismatch', () => {
     client = new SidecarClient({ python: resolve(dir, 'missing-interpreter'), agentDir: '', sidecarDir: dir, hermesHome: dir, log: (l) => logs.push(l), backoffMs: [20], handshakeTimeoutMs: 2_000 })
     await expect(client.start()).rejects.toMatchObject({ condition: 'sidecar_unavailable' })
     expect(client.status).toBe('restarting')
-    await new Promise((r) => setTimeout(r, 150))
-    // Each attempt fails the same way and re-arms the timer; exactly one restart is scheduled per failure.
-    expect(logs.filter((l) => l.includes('spawn error')).length).toBeGreaterThanOrEqual(2)
-    expect(client.status).toBe('restarting')
+    // Each attempt fails the same way and re-arms the real backoff timer; exactly one restart is scheduled per failure.
+    await vi.waitFor(() => {
+      expect(logs.filter((l) => l.includes('spawn error')).length).toBeGreaterThanOrEqual(2)
+      expect(client?.status).toBe('restarting')
+    }, { timeout: 15_000 })
   })
 })
 

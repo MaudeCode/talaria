@@ -128,7 +128,7 @@ it('filters coalesced Web audio instructions to the SSE request profile', async 
   const s = server = await bootTestServer()
   const received = s.sse('/api/sessions/events', (frame) => {
     if (frame.event === 'initial') {
-      for (const profile of ['default', 'foreign']) s.deps.events.publish('web_completion', { profile, webAudio: { identity: profile, scope: profile, profile, eligible: true, expires_at: Date.now() + 60_000 } })
+      for (const profile of ['default', 'foreign']) s.deps.events.publish('web_completion', { profile, webAudio: { identity: profile, scope: profile, profile, eligible: true, expires_at: Date.UTC(2100, 0, 1) } })
     }
     return frame.event === 'sessions_changed'
   })
@@ -137,7 +137,7 @@ it('filters coalesced Web audio instructions to the SSE request profile', async 
 })
 
 // TAL-1954: a completion published while a tab is between connections still plays once it resumes.
-const completion = (identity: string, profile = 'default', expiresAt = Date.now() + 60_000) => ({ identity, scope: profile, profile, eligible: true, expires_at: expiresAt })
+const completion = (identity: string, profile = 'default', expiresAt = Date.UTC(2100, 0, 1)) => ({ identity, scope: profile, profile, eligible: true, expires_at: expiresAt })
 const publishCompletion = (s: TestServer, identity: string, profile = 'default', expiresAt?: number): void => { s.deps.events.publish('web_completion', { profile, webAudio: completion(identity, profile, expiresAt) }) }
 /** One session-list connection, read through a sentinel published after `initial` so it ends without a timeout. */
 const connectList = (s: TestServer, headers: Record<string, string> = {}): Promise<SseFrame[]> => s.sse('/api/sessions/events', (frame) => {
@@ -177,7 +177,7 @@ it.each([
 it('replays only unexpired completions for the request profile, at most the newest 32', async () => {
   const s = server = await bootTestServer()
   let cursor = resumeFrom(await connectList(s))
-  publishCompletion(s, 'expired', 'default', Date.now() - 1)
+  publishCompletion(s, 'expired', 'default', Date.UTC(2020, 0, 1))
   publishCompletion(s, 'foreign', 'foreign')
   publishCompletion(s, 'fresh')
   const resumed = await connectList(s, cursor)
