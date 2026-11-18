@@ -21,13 +21,13 @@
 		C10620000000000000000001 /* ChatTranscriptRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10620000000000000000002 /* ChatTranscriptRow.swift */; };
 		D1477000000000000000B001 /* RetainedChats.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1477000000000000000B002 /* RetainedChats.swift */; };
 		AA1900000000000000000001 /* ReauthenticationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1900000000000000000002 /* ReauthenticationSheet.swift */; };
-		26AB000000000000000000B1 /* ProvidersViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F1 /* ProvidersViewModel.swift */; };
+		26AB000000000000000000B1 /* ProviderQuotaAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F1 /* ProviderQuotaAlerts.swift */; };
 		26AB000000000000000388B1 /* AuxiliaryModelsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000388F1 /* AuxiliaryModelsSettingsView.swift */; };
 		26AB000000000000000000B2 /* ProvidersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F2 /* ProvidersView.swift */; };
 		A06100000000000000000003 /* ProviderQuotaWidgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000004 /* ProviderQuotaWidgetTests.swift */; };
 		E14790000000000000000014 /* NeedsYouWidgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14790000000000000000002 /* NeedsYouWidgetTests.swift */; };
 		E22300000000000000000101 /* CarPlayWidgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E22300000000000000000100 /* CarPlayWidgetTests.swift */; };
-		26AB000000000000000000B4 /* ProvidersViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F4 /* ProvidersViewModelTests.swift */; };
+		26AB000000000000000000B4 /* ProvidersViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F4 /* ProvidersViewTests.swift */; };
 		759A00000000000000000003 /* UpdateSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759A00000000000000000004 /* UpdateSummaryTests.swift */; };
 		211500000000000000000001 /* ScreenGalleryHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 211500000000000000000002 /* ScreenGalleryHostedTests.swift */; };
 		182A00000000000000000003 /* WhatsNewHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 182A00000000000000000004 /* WhatsNewHostedTests.swift */; };
@@ -901,13 +901,13 @@
 		57B5FD09B6B5937573B5F9A4 /* InsightsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InsightsView.swift; sourceTree = "<group>"; };
 		D1965A000000000000000001 /* DecisionReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionReviewView.swift; sourceTree = "<group>"; };
 		D1966A000000000000000001 /* DecisionsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionsListView.swift; sourceTree = "<group>"; };
-		26AB000000000000000000F1 /* ProvidersViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersViewModel.swift; sourceTree = "<group>"; };
+		26AB000000000000000000F1 /* ProviderQuotaAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaAlerts.swift; sourceTree = "<group>"; };
 		26AB000000000000000388F1 /* AuxiliaryModelsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxiliaryModelsSettingsView.swift; sourceTree = "<group>"; };
 		26AB000000000000000000F2 /* ProvidersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersView.swift; sourceTree = "<group>"; };
 		A06100000000000000000004 /* ProviderQuotaWidgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetTests.swift; sourceTree = "<group>"; };
 		E14790000000000000000002 /* NeedsYouWidgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeedsYouWidgetTests.swift; sourceTree = "<group>"; };
 		E22300000000000000000100 /* CarPlayWidgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayWidgetTests.swift; sourceTree = "<group>"; };
-		26AB000000000000000000F4 /* ProvidersViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersViewModelTests.swift; sourceTree = "<group>"; };
+		26AB000000000000000000F4 /* ProvidersViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersViewTests.swift; sourceTree = "<group>"; };
 		759A00000000000000000004 /* UpdateSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateSummaryTests.swift; sourceTree = "<group>"; };
 		211500000000000000000002 /* ScreenGalleryHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenGalleryHostedTests.swift; sourceTree = "<group>"; };
 		182A00000000000000000004 /* WhatsNewHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatsNewHostedTests.swift; sourceTree = "<group>"; };
@@ -1112,7 +1112,7 @@
 				A06100000000000000000004 /* ProviderQuotaWidgetTests.swift */,
 				E14790000000000000000002 /* NeedsYouWidgetTests.swift */,
 				E22300000000000000000100 /* CarPlayWidgetTests.swift */,
-				26AB000000000000000000F4 /* ProvidersViewModelTests.swift */,
+				26AB000000000000000000F4 /* ProvidersViewTests.swift */,
 				759A00000000000000000004 /* UpdateSummaryTests.swift */,
 				182A00000000000000000004 /* WhatsNewHostedTests.swift */,
 				211500000000000000000002 /* ScreenGalleryHostedTests.swift */,
@@ -1487,7 +1487,7 @@
 				26AB000000000000000000F2 /* ProvidersView.swift */,
 				C107I000000000000000016 /* ProviderRow.swift */,
 				C107I000000000000000017 /* ProvidersStatusRow.swift */,
-				26AB000000000000000000F1 /* ProvidersViewModel.swift */,
+				26AB000000000000000000F1 /* ProviderQuotaAlerts.swift */,
 				26AB000000000000000388F1 /* AuxiliaryModelsSettingsView.swift */,
 			);
 			path = Settings;
@@ -2178,7 +2178,7 @@
 				8B71DA2AAC521382F54A841C /* InsightsView.swift in Sources */,
 				D1965A000000000000000002 /* DecisionReviewView.swift in Sources */,
 				D1966A000000000000000002 /* DecisionsListView.swift in Sources */,
-				26AB000000000000000000B1 /* ProvidersViewModel.swift in Sources */,
+				26AB000000000000000000B1 /* ProviderQuotaAlerts.swift in Sources */,
 				26AB000000000000000388B1 /* AuxiliaryModelsSettingsView.swift in Sources */,
 				26AB000000000000000000B2 /* ProvidersView.swift in Sources */,
 				C107I000000000000000006 /* ProviderRow.swift in Sources */,
@@ -2261,7 +2261,7 @@
 				A06100000000000000000003 /* ProviderQuotaWidgetTests.swift in Sources */,
 				E14790000000000000000014 /* NeedsYouWidgetTests.swift in Sources */,
 				E22300000000000000000101 /* CarPlayWidgetTests.swift in Sources */,
-				26AB000000000000000000B4 /* ProvidersViewModelTests.swift in Sources */,
+				26AB000000000000000000B4 /* ProvidersViewTests.swift in Sources */,
 				759A00000000000000000003 /* UpdateSummaryTests.swift in Sources */,
 				182A00000000000000000003 /* WhatsNewHostedTests.swift in Sources */,
 				211500000000000000000001 /* ScreenGalleryHostedTests.swift in Sources */,

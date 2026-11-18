@@ -221,7 +221,7 @@ struct SessionListView: View {
         )
         if let modelContext { list.paintCachedStateIfEmpty(modelContext: modelContext) }
         _viewModel = State(initialValue: list)
-        _quotaViewModel = State(initialValue: ProvidersViewModel(server: server))
+        _quotaViewModel = State(initialValue: ProvidersViewModel.app(server: server))
         _updateNotificationViewModel = State(initialValue: UpdateNotificationCenterViewModel(server: server))
         _sectionViewModels = State(initialValue: SectionViewModels(server: server))
         _chats = State(initialValue: chats ?? ChatViewModelCache())

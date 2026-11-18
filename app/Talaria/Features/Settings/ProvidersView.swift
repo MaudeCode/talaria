@@ -22,7 +22,7 @@ struct ProvidersView: View {
 
     init(server: URL) {
         self.server = server
-        _viewModel = State(initialValue: ProvidersViewModel(server: server))
+        _viewModel = State(initialValue: ProvidersViewModel.app(server: server))
     }
 
     var body: some View {

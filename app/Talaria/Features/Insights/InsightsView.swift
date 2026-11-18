@@ -56,7 +56,7 @@ struct InsightsView: View {
         onAPIError: @escaping (Error) -> Void
     ) {
         self.server = server
-        self.quotaViewModel = quotaViewModel ?? ProvidersViewModel(server: server)
+        self.quotaViewModel = quotaViewModel ?? ProvidersViewModel.app(server: server)
         self._selection = selection
         self.openProviderSettings = openProviderSettings
         self.onAPIError = onAPIError

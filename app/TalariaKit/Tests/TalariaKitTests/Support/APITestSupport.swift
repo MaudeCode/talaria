@@ -12,13 +12,17 @@ extension XCTestCase {
 }
 
 class APIClientTestCase: XCTestCase {
+    static let defaultServerURL = URL(string: "https://example.test")!
+
     override func tearDown() {
         MockURLProtocol.requestHandler = nil
+        // A profile switch records the shared server's active profile process-wide; later tests expect none.
+        ActiveServerProfile.record(nil, for: Self.defaultServerURL)
         super.tearDown()
     }
 
     func makeClient(
-        baseURL: URL = URL(string: "https://example.test")!,
+        baseURL: URL = APIClientTestCase.defaultServerURL,
         cookiePersistence: (@Sendable () throws -> Void)? = nil,
         forgetProfileOwner: (@Sendable () throws -> Void)? = nil,
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
