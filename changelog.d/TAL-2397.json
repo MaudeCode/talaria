@@ -1,1 +1,1 @@
-{"skip": "Repository CI tooling only; no app behavior changes."}
+{"skip": "Repository CI tooling only: failure handoff and the CI repair worker; no app behavior changes."}
