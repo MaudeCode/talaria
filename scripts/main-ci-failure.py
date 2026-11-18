@@ -3,7 +3,7 @@
 (TAL-1103, TAL-2397, TAL-2460) and pull requests' failure report (TAL-2395). T3 Factory decides when a repair session
 starts (T3F-136); docs/main-ci-repair.md is the session's guide.
 
-report    A repair session's entry point: given a run ID, re-reads that main push or release run from GitHub and prints
+report    A repair session's entry point: given a run ID, re-reads that main or release run from GitHub and prints
           its verified failure report, or why there is nothing to repair.
 park      The needs-a-person issue for a failure the session could not repair: the open one for its key, or a new one.
 findings  Everything the session reads about its own repair PR, and a text-free wait for its next change.
@@ -88,9 +88,9 @@ def timed_out(github, job, notes=None):
     return any(TIMEOUT_ANNOTATION in (note.get("message") or "") for note in notes)
 
 
-def main_runs(github):
-    """main's latest completed push runs of CI, newest first."""
-    return github.get(f"repos/{REPOSITORY}/actions/workflows/ci.yml/runs?branch={BRANCH}&event=push"
+def main_runs(github, event="push"):
+    """main's latest completed push runs of CI, or runs of another event, newest first."""
+    return github.get(f"repos/{REPOSITORY}/actions/workflows/ci.yml/runs?branch={BRANCH}&event={event}"
                       "&status=completed&per_page=100").get("workflow_runs", [])
 
 
@@ -229,7 +229,8 @@ def lane(run):
         return None
     own = (run.get("head_repository") or {}).get("full_name") == REPOSITORY
     path, event = run.get("path"), run.get("event")
-    if own and run.get("head_branch") == BRANCH and (path, event) == (WORKFLOW, "push"):
+    # A manual run on main, GitHub Scheduler's daily full run included (TAL-2544), is repaired like a push.
+    if own and run.get("head_branch") == BRANCH and path == WORKFLOW and event in ("push", "workflow_dispatch"):
         return "main"
     if own and run.get("head_branch") == BRANCH and (path, event) == (RELEASE_WORKFLOW, "workflow_dispatch"):
         return "release"
@@ -349,11 +350,16 @@ def decide(github, run, kind):
         return {"stop": "; ".join(f"{fact['label']}: {ROUTES[fact['route']]}" for fact in routed)
                 or "no failed or timed-out job in any attempt"}
     if kind == "main" and not any(fact["passed"] for fact in failures):
-        green = [item for item in main_runs(github) if item.get("run_number", 0) > run.get("run_number", 0)
+        # A main push runs only what its range reaches (TAL-2461, TAL-2544), so a newer green run supersedes the
+        # failures only if it passed every failed job under the same name.
+        names = {fact["name"] for fact in failures}
+        green = [item for item in main_runs(github) + main_runs(github, "workflow_dispatch")
+                 if item.get("run_number", 0) > run.get("run_number", 0)
                  and item.get("head_sha") != run.get("head_sha") and item.get("conclusion") == "success"
                  and cross("run", item.get("id")) and cross("sha", item.get("head_sha"))]
-        if green:
-            return {"stop": f"superseded: main run {green[0]['id']} at {green[0]['head_sha']} passed"}
+        for item in green if None not in names else []:
+            if names <= {job.get("name") for job in jobs(github, item["id"]) if job.get("conclusion") == "success"}:
+                return {"stop": f"superseded: main run {item['id']} at {item['head_sha']} passed"}
     known = known_failures(github)
     new = [fact for fact in failures if fact["key"] not in known]
     if not new:
@@ -366,7 +372,7 @@ def message(run, kind, failures, routed, known, base=None):
     """The verified failure report a repair session works from, filled only with crossed values. How to repair is the
     repository's repair guide, docs/main-ci-repair.md."""
     head = run["source"]
-    source = {"main": f"main push run at {head}", "release": f"release run of {head} on main"}[kind]
+    source = {"main": f"main run at {head}", "release": f"release run of {head} on main"}[kind]
     lines = [f"CI failure on {REPOSITORY}, {source} (run {run['run']}, attempt {run['attempt']}): {run['url']}", "",
              *([tested_range(base, head), ""] if kind == "main" else []),
              "Failures to repair, verified against GitHub, each with its key:"]
@@ -387,14 +393,14 @@ def message(run, kind, failures, routed, known, base=None):
 
 
 def failure_report(github, run_id):
-    """A repair session's entry point: the verified report of a main push or release run, or why there is nothing to
+    """A repair session's entry point: the verified report of a main or release run, or why there is nothing to
     repair. The run ID arrives in a prompt, so it is checked, and the run is re-read from GitHub."""
     if not cross("run", run_id):
         return {"action": "stop", "reason": "malformed run ID"}
     run = github.get(f"repos/{REPOSITORY}/actions/runs/{run_id}")
     kind, head = lane(run), cross("sha", run.get("head_sha"))
     if not kind or not head:
-        return {"action": "stop", "reason": "not a main push or release run of this repository"}
+        return {"action": "stop", "reason": "not a main or release run of this repository"}
     if not on_main(github, head):
         return {"action": "stop", "reason": f"{head} is not on {BRANCH}"}
     facts = {"run": cross("run", run_id), "attempt": cross("attempt", run.get("run_attempt")) or 1, "source": head,
@@ -825,7 +831,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("base")
-    reporter = commands.add_parser("report", help="the verified failure report of a main push or release run")
+    reporter = commands.add_parser("report", help="the verified failure report of a main or release run")
     reporter.add_argument("--run-id", required=True)
     parker = commands.add_parser("park")
     parker.add_argument("--key", required=True)

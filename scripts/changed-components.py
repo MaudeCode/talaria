@@ -442,6 +442,9 @@ def main():
                         help="Compare the working tree, untracked files included, with its merge-base with --base (default origin/main).")
     parser.add_argument("--app-plan", nargs="?", const="outputs", choices=("outputs", "json", "text"),
                         help="Also plan the App tests (TAL-2390): Actions outputs (default), the plan's JSON or a readable plan.")
+    parser.add_argument("--no-repeat", action="store_true",
+                        help="Leave the App plan's repeats out: a main push runs each test once, as its pull request "
+                             "already repeated the ones it added or changed (TAL-2544).")
     parser.add_argument("--browser-plan", action="store_true",
                         help="Also print the pull request's Playwright plan (TAL-2391): none, the changed specs or full.")
     parser.add_argument("--tested-worktree", action="store_true",
@@ -496,6 +499,8 @@ def main():
         selected, app_plan, browser_plan = set(SUITES), None, None
     if args.app_plan and app_plan is None:
         app_plan = app_test_plan.full_plan("Every suite runs: no diff, or one that could not be classified.")
+    for lane in (app_plan or {}).get("lanes", {}).values() if args.no_repeat else ():
+        lane["repeat"] = []
     if args.app_plan == "json":
         print(json.dumps(app_plan, indent=2))
         return

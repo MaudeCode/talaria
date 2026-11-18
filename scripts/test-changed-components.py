@@ -791,6 +791,17 @@ class AppPlanTests(unittest.TestCase):
                 plan = self.committed()
                 self.assertEqual({target: lane["repeat"] for target, lane in plan["lanes"].items()}, expected)
 
+    def test_a_main_push_plans_the_same_tests_without_repeats(self):
+        # Its pull request already repeated what it added or changed (TAL-2402); main runs each test once (TAL-2544).
+        self.edit("app/TalariaTests/AlphaHostedTests.swift", "XCTAssertEqual(Hosted.other(), 2)", "XCTAssertEqual(Hosted.other(), 1 + 1)")
+        head = self.commit("change")
+        pull = self.plan(f"--base={self.base}", f"--head={head}", "--merge-base")
+        push = self.plan(f"--base={self.base}", f"--head={head}", "--no-repeat")
+        self.assertEqual(pull["lanes"]["TalariaTests"]["repeat"], ["TalariaTests/AlphaHostedTests/testPlain"])
+        self.assertEqual(self.lanes(push), self.lanes(pull))
+        self.assertEqual({target: lane["repeat"] for target, lane in push["lanes"].items()},
+                         {"TalariaKitTests": [], "TalariaTests": []})
+
     def test_local_changes_plan_exactly_as_the_committed_diff(self):
         # Staged, unstaged and untracked changes together: the local dry run and CI's committed diff agree.
         self.edit("app/TalariaKit/Tests/TalariaKitTests/LeafTests.swift", "XCTAssertEqual(value, 2)", "XCTAssertEqual(value, 2, \"two\")")

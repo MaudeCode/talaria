@@ -1,0 +1,1 @@
+{"skip": "CI and repository tooling only: main pushes run the App tests their diff reaches; no app behavior changes."}
