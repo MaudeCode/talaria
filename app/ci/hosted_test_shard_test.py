@@ -277,11 +277,26 @@ class RepeatTests(unittest.TestCase):
                 self.assertEqual(len(lanes), width)
                 self.assertEqual((last["shard"], last["repeat"], last["planned"], last["budget"]),
                                  (width + 1, True, repeat, shard.REPEAT_BUDGET))
-                self.assertEqual(shard.selection(last), ["-only-testing:TalariaTests/Heavy1/testSlow", "-test-iterations",
-                                                         str(shard.REPEAT_ATTEMPTS), "-run-tests-until-failure"])
+                # Its one 300 s pass is over the 90 s budget, so it gets the one attempt that proves it completes.
+                self.assertEqual(shard.selection(last), ["-only-testing:TalariaTests/Heavy1/testSlow"])
         # A focused diagnostic repeats its own selection; nothing else joins it.
         focused = shard.plan(four, table=TABLE, repetitions=3)
         self.assertFalse(any(entry.get("repeat") for entry in focused["shards"]))
+
+    def test_repeat_attempts_fit_one_pass_of_every_planned_test_in_the_budget(self):
+        # xcodebuild runs each test's iterations back to back, so a fixed 50 let the first tests spend the budget and
+        # left later ones with no attempt (TAL-2535, PR run 44304145594). One pass of the selection sets the count.
+        table = {**TABLE, "methods": {**TABLE["methods"], "Cheap1/testFast": 0.1}}
+        cases = [
+            ("a sub-second selection keeps the cap", ["TalariaTests/Cheap1/testFast"], 50),
+            ("a 2 s pass fits 45 attempts", ["TalariaTests/Cheap0/testX"], 45),
+            ("a 20 s pass fits 4", ["TalariaTests/Split/testA", "TalariaTests/Split/testB"], 4),
+            ("a test longer than the budget still gets its one attempt", ["TalariaTests/Heavy1/testSlow"], 1),
+        ]
+        for name, repeat, attempts in cases:
+            with self.subTest(name):
+                last = shard.plan({"mode": "empty", "identifiers": [], "repeat": repeat}, table=table)["shards"][-1]
+                self.assertEqual(last["repetitions"], attempts)
 
     def test_the_lane_gate_leaves_out_the_repeat_receipt(self):
         result = shard.plan({**lane("Heavy1"), "repeat": ["TalariaTests/Heavy1/testSlow"]}, table=TABLE)

@@ -23,7 +23,7 @@ struct GitStatusChip: View {
         case .renamed: return String(localized: "Renamed")
         case .untracked: return String(localized: "Untracked")
         case .conflict: return String(localized: "Conflict")
-        case .ignored, .unknown: return nil
+        case .unknown: return nil
         }
     }
 
@@ -34,7 +34,7 @@ struct GitStatusChip: View {
         case .renamed: return .blue
         case .conflict: return .orange
         case .modified: return .yellow
-        case .ignored, .unknown: return .secondary
+        case .unknown: return .secondary
         }
     }
 }

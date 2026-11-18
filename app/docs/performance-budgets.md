@@ -15,7 +15,6 @@ touches them.
 
 | Budget | Test |
 | --- | --- |
-| Streaming replay catch-up scaling | `TalariaTests/ReplayCatchUpPerformanceTests` |
 | Chat stream tick and keystroke | `TalariaTests/ChatStreamTickPerformanceTests` |
 | Chat open scaling | `TalariaTests/ChatOpenPerformanceTests` |
 | Unknown remote media resolve and export | `TalariaTests/UnknownMediaProbePerformanceTests` |
@@ -42,9 +41,6 @@ them.
   file extension.
 - The transcript math budget lays out 120 generated Markdown paragraphs with
   code spans, fences and links and no `$` or `\`.
-- The replay budget streams generated tokens, replays them over a scripted
-  reconnect, and checks the resulting transcript on every run so a broken dedup
-  cannot pass as a fast one.
 
 ## Hardware and runtime
 
@@ -73,14 +69,8 @@ simulator running iOS 27.2.
 The Markdown file preview budget was measured on an iPhone 17 Pro simulator
 running iOS 27.0 (build 24A434), in the pool above.
 
-The replay and chat open budgets assert time thresholds; the chat stream tick
-budget asserts work counts.
-
-- Replay catch-up may not cost more than 8x across the curve's 4x span, and
-  4,000 tokens may not take more than 80 ms. A linear path measures ~3.9x and
-  ~8.7 ms; the quadratic path this replaced measured ~16x and 212 ms. The
-  endpoints are compared rather than each step because at these millisecond
-  scales one noisy middle sample decides a per-step ratio.
+The chat open budget asserts time thresholds; the chat stream tick budget
+asserts work counts.
 
 - The chat's work counts below are its gate: each count's minimum across two
   runs is asserted exactly. Its time is attached for comparison only.
@@ -134,23 +124,6 @@ builds every line once more when it closes (TAL-1396). Reasoning cards are deriv
 when the transcript changes (TAL-855). A keystroke re-evaluates only the
 composer; the chat's one pass follows the composer's height as the draft
 wraps. A change that removes a repeat lowers its count in the test and here.
-
-## Replay catch-up: the measured change
-
-Replay token dedup rebuilt `flushedContent + pendingAssistantTokenText` and
-traversed it for every replayed token, so catching up after a reconnect cost
-O(response²) on the main actor.
-
-| Tokens | Response | Before | After |
-| --- | --- | --- | --- |
-| 1,000 | 7,590 chars | 14.0 ms | 2.3 ms |
-| 2,000 | 15,172 chars | 54.7 ms | 4.4 ms |
-| 4,000 | 30,340 chars | 212.4 ms | 8.7 ms |
-| growth per doubling | | ~3.9x | ~1.96x |
-
-`ChatViewModel` now caches the unmatched tail of the received text while an
-armed replay keeps matching in order, keyed on the received UTF-8 length so any
-other rewrite of the streaming message falls back to the exact comparison.
 
 ## Chat open: the measured change
 

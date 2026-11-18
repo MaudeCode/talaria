@@ -179,7 +179,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
             controller.recordRowMinY(180, for: "reader")
             XCTAssertTrue(controller.capture(anchorRowID: "reader"))
             XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
-            controller.holdVisiblePosition(resync: {})
+            controller.holdVisiblePosition()
             XCTAssertTrue(controller.isPreservingPosition,
                           "Excerpt updates must retain active history preservation during momentum")
             XCTAssertFalse(controller.isHoldingPosition,
@@ -244,7 +244,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
             controller.prepareNativeScroll(revision: 1, targetID: "destination", anchor: .top)
             var realized = 0
             controller.enqueueRowRealization(id: "neighbor", priority: 0) { realized += 1 }
-            if disclosure { controller.holdPosition(anchorRowID: "reader", resync: {}) }
+            if disclosure { controller.holdPosition(anchorRowID: "reader") }
             else { controller.userDidBeginDragging() }
             await clock.advance(by: realizationTick)
             XCTAssertEqual(realized, 1, "A user's disclosure or drag must not wait for an abandoned navigation")
@@ -655,7 +655,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         scrollView.contentOffset = CGPoint(x: 0, y: bottom)
         let controller = makeController(for: scrollView)
 
-        controller.holdPosition(anchorRowID: nil) {}
+        controller.holdPosition(anchorRowID: nil)
         scrollView.contentSize.height -= 200
         await nextTurn()
 
@@ -667,7 +667,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         scrollView.contentOffset = CGPoint(x: 0, y: 0)
         let controller = makeController(for: scrollView)
 
-        controller.holdPosition(anchorRowID: nil) {}
+        controller.holdPosition(anchorRowID: nil)
         controller.releaseHold()
         scrollView.contentOffset.y = 300
 
@@ -681,7 +681,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         scrollView.contentOffset = CGPoint(x: 0, y: 0)
         let controller = makeController(for: scrollView)
 
-        controller.holdPosition(anchorRowID: nil) {}
+        controller.holdPosition(anchorRowID: nil)
         for growth in [640, 400, 220, 90, 40] as [CGFloat] {
             scrollView.contentSize.height += growth
             scrollView.contentOffset.y = scrollView.contentSize.height - scrollView.bounds.height
@@ -695,7 +695,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         scrollView.contentOffset.y = 240
         let controller = makeController(for: scrollView)
         controller.recordRowMinY(180, for: "reader")
-        controller.holdPosition(anchorRowID: "reader") {}
+        controller.holdPosition(anchorRowID: "reader")
         scrollView.contentSize.height += 640
         controller.recordRowMinY(580, for: "reader")
         await nextTurn()
@@ -770,7 +770,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         controller.recordRowFrame(collapsed, for: "reader")
         var requests = 0
         controller.onHoldAnchor = { _, _ in requests += 1 }
-        controller.holdPosition(anchorRowID: "reader", resync: {})
+        controller.holdPosition(anchorRowID: "reader")
         controller.recordRowFrame(collapsed, for: "reader")
         await nextTurn()
         XCTAssertEqual(requests, 0, "The collapsed frame cannot anchor the expanded row")
@@ -787,7 +787,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         controller.recordRowFrame(scrollView.convert(CGRect(x: 0, y: 180, width: 320, height: 200), to: nil), for: "reader")
         var requestedAnchor: UnitPoint?
         controller.onHoldAnchor = { _, point in requestedAnchor = point }
-        controller.holdPosition(anchorRowID: "reader", resync: {})
+        controller.holdPosition(anchorRowID: "reader")
         controller.recordRowFrame(scrollView.convert(CGRect(x: 0, y: 180, width: 320, height: 300), to: nil), for: "reader")
         await nextTurn()
         let anchor = try XCTUnwrap(requestedAnchor)
@@ -798,7 +798,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
     func testDisclosureCompletionRunsAfterThePositionHoldFinishes() async {
         let controller = makeController(for: makeScrollView())
         var completed = 0
-        controller.holdPosition(anchorRowID: nil, resync: {}, completion: {
+        controller.holdPosition(anchorRowID: nil, completion: {
             XCTAssertFalse(controller.isHoldingPosition)
             completed += 1
         })
@@ -810,30 +810,10 @@ final class ChatScrollPositionControllerTests: XCTestCase {
     func testCancellingThePositionHoldFinishesItsDisclosureSuspensionOnce() {
         let controller = makeController(for: makeScrollView())
         var completed = 0
-        controller.holdPosition(anchorRowID: nil, resync: {}, completion: { completed += 1 })
+        controller.holdPosition(anchorRowID: nil, completion: { completed += 1 })
         controller.releaseHold()
         controller.releaseHold()
         XCTAssertEqual(completed, 1)
-    }
-
-    /// SwiftUI's own scroll resyncs it only after the hold put back an offset SwiftUI applied, and only at the top:
-    /// that scroll goes to the transcript's top.
-    func testHoldResyncsSwiftUIOnlyAfterItHadToRevertAtTheTop() async {
-        for (start, revert, expected) in [(CGFloat(0), true, true), (0, false, false), (240, true, false)] {
-            let scrollView = makeScrollView()
-            scrollView.contentOffset = CGPoint(x: 0, y: start)
-            let controller = makeController(for: scrollView)
-            var resynced = false
-            controller.holdPosition(anchorRowID: nil) { resynced = true }
-            scrollView.contentSize.height += 640
-            // SwiftUI re-applies the bottom anchor on the size change.
-            if revert { scrollView.contentOffset.y = scrollView.contentSize.height - scrollView.bounds.height }
-            await nextTurn()
-            XCTAssertEqual(scrollView.contentOffset.y, start, accuracy: 0.001)
-            await clock.advance(by: .seconds(ChatScrollPolicy.disclosureHoldQuietPeriod))
-            XCTAssertFalse(controller.isHoldingPosition)
-            XCTAssertEqual(resynced, expected, "start \(start), reverted \(revert)")
-        }
     }
 
     func testDeliberateScrollDuringHoldReleasesItInsteadOfReverting() {
@@ -843,7 +823,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         scrollView.contentOffset = CGPoint(x: 0, y: 0)
         let controller = makeController(for: scrollView)
 
-        controller.holdPosition(anchorRowID: nil) {}
+        controller.holdPosition(anchorRowID: nil)
         scrollView.contentOffset.y = 300
 
         XCTAssertEqual(scrollView.contentOffset.y, 300, accuracy: 0.001)
@@ -855,7 +835,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         scrollView.contentOffset = CGPoint(x: 0, y: 240)
         let controller = makeController(for: scrollView)
 
-        controller.holdPosition(anchorRowID: nil) {}
+        controller.holdPosition(anchorRowID: nil)
         controller.releaseHold()
         XCTAssertTrue(controller.capture(anchorRowID: nil))
 
@@ -873,7 +853,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = makeController(for: scrollView)
 
         XCTAssertTrue(controller.capture(anchorRowID: nil))
-        controller.holdPosition(anchorRowID: nil) {}
+        controller.holdPosition(anchorRowID: nil)
 
         XCTAssertFalse(controller.restoreAfterPrepend())
         scrollView.contentSize.height += 640
@@ -889,7 +869,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
 
         XCTAssertTrue(controller.capture(anchorRowID: nil))
         XCTAssertTrue(controller.restoreAfterPrepend())
-        controller.holdPosition(anchorRowID: nil) {}
+        controller.holdPosition(anchorRowID: nil)
 
         XCTAssertFalse(controller.isHoldingPosition)
         scrollView.contentSize.height += 640
@@ -935,7 +915,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = makeController(for: scrollView)
         controller.recordRowMinY(400, for: "tapped")
 
-        controller.holdPosition(anchorRowID: "tapped") {}
+        controller.holdPosition(anchorRowID: "tapped")
         scrollView.contentSize.height += 300
         await nextTurn()
         XCTAssertEqual(scrollView.contentOffset.y, 240, accuracy: 0.001)
@@ -955,7 +935,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = armedPrepend(in: scrollView)
         controller.recordRowMinY(1_040, for: "tapped")
 
-        controller.holdPosition(anchorRowID: "tapped") {}
+        controller.holdPosition(anchorRowID: "tapped")
         scrollView.contentSize.height += 300
         await nextTurn()
         XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
@@ -974,7 +954,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let scrollView = makeScrollView()
         let controller = armedPrepend(in: scrollView)
 
-        controller.holdPosition(anchorRowID: nil) {}
+        controller.holdPosition(anchorRowID: nil)
         XCTAssertTrue(controller.isHoldingPosition)
         scrollView.contentSize.height += 300
         await nextTurn()
@@ -990,7 +970,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let scrollView = makeScrollView()
         let controller = armedPrepend(in: scrollView)
         controller.recordRowMinY(1_040, for: "tapped")
-        controller.holdPosition(anchorRowID: "tapped") {}
+        controller.holdPosition(anchorRowID: "tapped")
 
         await clock.advance(by: .seconds(ChatScrollPolicy.disclosureHoldQuietPeriod) + .milliseconds(100))
         XCTAssertTrue(controller.isHoldingPosition, "A hold armed inside the prepend window outlasts its quiet period")

@@ -177,7 +177,7 @@ def plan(lane, capacity=None, repetitions=1, table=None, classes=None, at_once=M
     if repetitions > 1:
         limit = 1  # A focused investigation repeats its selection on one runner.
     if empty:
-        return {"target": TARGET, "mode": "empty", "partial": True, "width": 0, "shards": [repeat_shard(repeat, 1)],
+        return {"target": TARGET, "mode": "empty", "partial": True, "width": 0, "shards": [repeat_shard(repeat, 1, table)],
                 "candidates": [], "capacity": decision, "fallbacks": [],
                 "startup": {"overlapping_build": 0, "beyond_build": 0}}
     identifiers = [f"{TARGET}/{cls}" for cls in (classes if classes is not None else discover())] if full else lane["identifiers"]
@@ -207,7 +207,7 @@ def plan(lane, capacity=None, repetitions=1, table=None, classes=None, at_once=M
             "estimate": round(shard["load"], 1), "repetitions": repetitions,
         })
     if repeat:
-        entries.append(repeat_shard(repeat, len(entries) + 1))
+        entries.append(repeat_shard(repeat, len(entries) + 1, table))
     timeline = table["timeline"]
     return {"target": TARGET, "mode": lane["mode"], "partial": not full, "width": width, "shards": entries,
             "candidates": candidates, "capacity": decision,
@@ -216,10 +216,14 @@ def plan(lane, capacity=None, repetitions=1, table=None, classes=None, at_once=M
                         "beyond_build": max(0, timeline["startup"] - timeline["artifact"] - timeline["download"])}}
 
 
-def repeat_shard(identifiers, number):
+def repeat_shard(identifiers, number, table):
+    """xcodebuild runs each test's iterations back to back, so the attempts are what one pass of the whole selection fits
+    in the budget: every planned test then gets its first attempt before the budget can stop the run (TAL-2535)."""
+    one_pass = sum(seconds for _, seconds, _ in groups(identifiers, table).values())
+    repetitions = max(1, min(REPEAT_ATTEMPTS, int(REPEAT_BUDGET // max(one_pass, 0.1))))
     return {"shard": number, "target": TARGET, "planned": identifiers, "catch_all": False, "only": identifiers, "skip": [],
             "notifications": any(identifier.split("/")[1] in NOTIFICATION_CLASSES for identifier in identifiers),
-            "estimate": REPEAT_BUDGET, "repetitions": REPEAT_ATTEMPTS, "repeat": True, "budget": REPEAT_BUDGET}
+            "estimate": REPEAT_BUDGET, "repetitions": repetitions, "repeat": True, "budget": REPEAT_BUDGET}
 
 
 def describe(result):

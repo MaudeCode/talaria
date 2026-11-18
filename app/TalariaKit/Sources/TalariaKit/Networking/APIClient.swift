@@ -45,6 +45,8 @@ public actor APIClient {
     /// Internal, not private, because the upload and transcribe extensions build
     /// their multipart requests by hand and need the same header injection (#61).
     let customHeaderProvider: @Sendable () -> [CustomHeader]
+    /// The widget's quota snapshot, cleared by a successful profile switch.
+    let quotaSnapshotStore: ProviderQuotaWidgetSnapshotStore
 
     public init(
         baseURL: URL,
@@ -53,10 +55,12 @@ public actor APIClient {
         cookieStorage: HTTPCookieStorage? = nil,
         cookiePersistence: (@Sendable () throws -> Void)? = nil,
         forgetProfileOwner: (@Sendable () throws -> Void)? = nil,
-        customHeaderProvider: @escaping @Sendable () -> [CustomHeader] = { CustomHeaderStore.shared.snapshot() }
+        customHeaderProvider: @escaping @Sendable () -> [CustomHeader] = { CustomHeaderStore.shared.snapshot() },
+        quotaSnapshotStore: ProviderQuotaWidgetSnapshotStore = ProviderQuotaWidgetSnapshotStore()
     ) {
         self.baseURL = baseURL
         self.customHeaderProvider = customHeaderProvider
+        self.quotaSnapshotStore = quotaSnapshotStore
 
         // One redirect guard for every request (same origin + same header
         // provider), so a server-issued same-origin → cross-origin redirect can't

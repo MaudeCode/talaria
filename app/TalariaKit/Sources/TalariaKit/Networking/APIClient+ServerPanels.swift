@@ -158,7 +158,7 @@ extension APIClient {
             )
             try persistCookies()
             try forgetProfileOwner()
-            if ProviderQuotaWidgetSnapshotStore().clear() {
+            if quotaSnapshotStore.clear() {
                 ProviderQuotaWidgetSnapshotStore.reloadTimelines()
             }
         }

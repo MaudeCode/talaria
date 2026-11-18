@@ -26,8 +26,6 @@ public struct SettingsResponse: Decodable, Equatable, Sendable {
     let maxTokensEffective: Int?
     let authEnabled: Bool?
     let passwordAuthEnabled: Bool?
-    let passkeysEnabled: Bool?
-    let passwordlessEnabled: Bool?
     /// The request profile's quota thresholds; nil from a server that predates TAL-411.
     public internal(set) var providerQuotaThresholds: ProviderQuotaThresholds?
 
@@ -63,8 +61,6 @@ public struct SettingsResponse: Decodable, Equatable, Sendable {
         case maxTokensEffective
         case authEnabled
         case passwordAuthEnabled
-        case passkeysEnabled
-        case passwordlessEnabled
         case providerQuotaThresholds
     }
 
@@ -96,8 +92,6 @@ public struct SettingsResponse: Decodable, Equatable, Sendable {
         maxTokensEffective = container.decodeLossyIntIfPresent(forKey: .maxTokensEffective)
         authEnabled = container.decodeLossyBoolIfPresent(forKey: .authEnabled)
         passwordAuthEnabled = container.decodeLossyBoolIfPresent(forKey: .passwordAuthEnabled)
-        passkeysEnabled = container.decodeLossyBoolIfPresent(forKey: .passkeysEnabled)
-        passwordlessEnabled = container.decodeLossyBoolIfPresent(forKey: .passwordlessEnabled)
         providerQuotaThresholds = try? container.decodeIfPresent(ProviderQuotaThresholds.self, forKey: .providerQuotaThresholds)
     }
 }

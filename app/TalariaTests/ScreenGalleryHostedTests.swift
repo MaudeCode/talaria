@@ -18,9 +18,17 @@ final class ScreenGalleryHostedTests: XCTestCase {
         addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
     }
 
-    func testInterfaceSettings() async throws { try await categories(in: .interface) }
+    // One test per Settings category page (TAL-2535); the three Profile pages stay together.
+    func testAppearanceSettingsPage() async throws { try await category(.appearance) }
+    func testChatsSettingsPage() async throws { try await category(.chats) }
+    func testNavigationSettingsPage() async throws { try await category(.navigation) }
+    func testNotificationsAndHapticsSettingsPage() async throws { try await category(.notificationsAndHaptics) }
+    func testSpeechSettingsPage() async throws { try await category(.speech) }
     func testProfileSettings() async throws { try await categories(in: .profile) }
-    func testServerSettings() async throws { try await categories(in: .server) }
+    func testProfilesSettingsPage() async throws { try await category(.profiles) }
+    func testWorkspacesSettingsPage() async throws { try await category(.workspaces) }
+    func testSystemSettingsPage() async throws { try await category(.system) }
+    func testLogsSettingsPage() async throws { try await category(.logs) }
 
     func testLogsShowsServerTailAndControls() async throws {
         _ = try XCTUnwrap(SettingsCategory(rawValue: "logs"), "Settings must offer the server log tail")
@@ -70,7 +78,12 @@ final class ScreenGalleryHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "settings-logs-empty")
     }
 
-    func testDeviceSettings() async throws { try await categories(in: .device) }
+    func testServersSettingsPage() async throws { try await category(.servers) }
+    func testLiveActivitiesAndWidgetsSettingsPage() async throws { try await category(.liveActivitiesAndWidgets) }
+    func testSiriAndShortcutsSettingsPage() async throws { try await category(.siriAndShortcuts) }
+    func testDataAndStorageSettingsPage() async throws { try await category(.dataAndStorage) }
+    func testAboutSettingsPage() async throws { try await category(.about) }
+    func testDeveloperSettingsPage() async throws { try await category(.developer) }
 
     func testModelsThinkingChoicePersistsFromTheVisibleControl() async throws {
         let window = try hostWindow(NavigationStack { ModelsSettingsView(server: server) })
@@ -197,9 +210,13 @@ final class ScreenGalleryHostedTests: XCTestCase {
 
     private func categories(in group: SettingsCategory.Group) async throws {
         for category in SettingsCategory.rootCategories where category.group == group {
-            try await page("settings-\(category.id)", title: category.title) {
-                SettingsPaneView(authManager: fixture.environment.authManager, server: server, pane: .category(category))
-            }
+            try await self.category(category)
+        }
+    }
+
+    private func category(_ category: SettingsCategory) async throws {
+        try await page("settings-\(category.id)", title: category.title) {
+            SettingsPaneView(authManager: fixture.environment.authManager, server: server, pane: .category(category))
         }
     }
 

@@ -1,3 +1,4 @@
+import os
 import UserNotifications
 import XCTest
 @testable import TalariaKit
@@ -648,15 +649,13 @@ final class ProvidersViewModelTests: APIClientTestCase {
 
     @MainActor
     func testPeriodicQuotaRefreshForcesServerRefreshWhileVisible() async {
-        let refreshed = expectation(description: "periodic quota refresh")
-        var requestCount = 0
+        // A due interval (zero here) refreshes with no wait; the second, periodic request ends the loop.
+        let loop = OSAllocatedUnfairLock<Task<Void, Never>?>(initialState: nil)
+        var forced: [Bool] = []
         let client = makeScopedClient { request in
-            requestCount += 1
             let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
-            XCTAssertTrue(components?.queryItems?.contains(URLQueryItem(name: "refresh", value: "1")) == true)
-            if requestCount == 1 {
-                refreshed.fulfill()
-            }
+            forced.append(components?.queryItems?.contains(URLQueryItem(name: "refresh", value: "1")) == true)
+            if forced.count == 2 { loop.withLock { $0?.cancel() } }
             return apiTestJSONResponse("""
             {
               "version": 1,
@@ -668,13 +667,11 @@ final class ProvidersViewModelTests: APIClientTestCase {
         }
         let model = ProvidersViewModel(server: Self.serverURL, client: client)
 
-        let refreshTask = Task {
-            await model.refreshQuotasPeriodically(every: .milliseconds(10))
-        }
-        await fulfillment(of: [refreshed], timeout: 2)
-        refreshTask.cancel()
+        let refreshTask = Task { await model.refreshQuotasPeriodically(every: .zero, sleep: { _ in throw CancellationError() }) }
+        loop.withLock { $0 = refreshTask }
         await refreshTask.value
 
+        XCTAssertEqual(forced, [true, true], "The entry refresh and the periodic one both force the server")
         XCTAssertFalse(model.isQuotaLoading)
     }
 

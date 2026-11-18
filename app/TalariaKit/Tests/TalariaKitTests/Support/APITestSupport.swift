@@ -25,6 +25,7 @@ class APIClientTestCase: XCTestCase {
         baseURL: URL = APIClientTestCase.defaultServerURL,
         cookiePersistence: (@Sendable () throws -> Void)? = nil,
         forgetProfileOwner: (@Sendable () throws -> Void)? = nil,
+        quotaSnapshotDefaults: UserDefaults? = nil,
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) -> APIClient {
         MockURLProtocol.requestHandler = handler
@@ -37,7 +38,9 @@ class APIClientTestCase: XCTestCase {
             baseURL: baseURL,
             session: session,
             cookiePersistence: cookiePersistence,
-            forgetProfileOwner: forgetProfileOwner
+            forgetProfileOwner: forgetProfileOwner,
+            // A test's profile switch never touches the shared App Group snapshot.
+            quotaSnapshotStore: ProviderQuotaWidgetSnapshotStore(defaults: quotaSnapshotDefaults)
         )
     }
 
@@ -650,6 +653,8 @@ final class ManualTestClock: Clock, @unchecked Sendable {
 
     var now: Instant { lock.withLock { current } }
     var minimumResolution: Duration { .zero }
+    /// The tasks waiting on this clock.
+    var sleeperCount: Int { lock.withLock { sleepers.count } }
 
     func sleep(until deadline: Instant, tolerance: Duration?) async throws {
         let id = UUID()

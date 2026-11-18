@@ -574,7 +574,7 @@ public struct ToolEditDiff: Decodable, Equatable, Sendable {
         self.removed = removed
         diff = container.decodeLossyStringIfPresent(forKey: .diff) ?? ""
         truncated = container.decodeLossyBoolIfPresent(forKey: .truncated) ?? false
-        hunks = DiffHunk.resolved(try? container.decodeIfPresent(JSONValue.self, forKey: .hunks), diff: diff)
+        hunks = DiffHunk.resolved(try? container.decodeIfPresent(JSONValue.self, forKey: .hunks))
     }
 
     /// The change a decoded JSON field holds; nil when the server sent none.

@@ -168,7 +168,8 @@ public struct ProviderQuotaWidgetSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-public struct ProviderQuotaWidgetSnapshotStore {
+/// `@unchecked Sendable` is safe: the one stored property is immutable and `UserDefaults` is thread-safe.
+public struct ProviderQuotaWidgetSnapshotStore: @unchecked Sendable {
     public static let widgetKind = "ProviderQuotaWidget"
     public static let paceWidgetKind = "ProviderQuotaPaceWidget"
     public static let storageKey = "providerQuotaWidgetSnapshot.v1"

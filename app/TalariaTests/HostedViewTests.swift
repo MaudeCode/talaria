@@ -345,7 +345,43 @@ final class SettingsPlacementHostedTests: XCTestCase {
     }
 
     // The rendered list, rather than the SwiftUI type, owns Settings' chrome contract.
-    func testSettingsPagesUseChatsListChrome() async throws {
+    // One test per page over `assertChatsListChrome`'s fixture (TAL-2535).
+    func testRootUsesChatsListChrome() async throws { try await assertChatsListChrome("root") }
+    func testAppearanceUsesChatsListChrome() async throws { try await assertChatsListChrome("appearance") }
+    func testChatUsesChatsListChrome() async throws { try await assertChatsListChrome("chat") }
+    func testNavigationUsesChatsListChrome() async throws { try await assertChatsListChrome("navigation") }
+    func testNotificationsUsesChatsListChrome() async throws { try await assertChatsListChrome("notifications") }
+    func testSpeechUsesChatsListChrome() async throws { try await assertChatsListChrome("speech") }
+    func testModelsUsesChatsListChrome() async throws { try await assertChatsListChrome("models") }
+    func testProvidersUsesChatsListChrome() async throws { try await assertChatsListChrome("providers") }
+    func testToolsUsesChatsListChrome() async throws { try await assertChatsListChrome("tools") }
+    func testProfilesUsesChatsListChrome() async throws { try await assertChatsListChrome("profiles") }
+    func testWorkspacesUsesChatsListChrome() async throws { try await assertChatsListChrome("workspaces") }
+    func testSystemUsesChatsListChrome() async throws { try await assertChatsListChrome("system") }
+    func testLogsUsesChatsListChrome() async throws { try await assertChatsListChrome("logs") }
+    func testServersUsesChatsListChrome() async throws { try await assertChatsListChrome("servers") }
+    func testLiveActivitiesAndWidgetsUsesChatsListChrome() async throws { try await assertChatsListChrome("liveActivitiesAndWidgets") }
+    func testSiriAndShortcutsUsesChatsListChrome() async throws { try await assertChatsListChrome("siriAndShortcuts") }
+    func testDataAndStorageUsesChatsListChrome() async throws { try await assertChatsListChrome("dataAndStorage") }
+    func testAboutUsesChatsListChrome() async throws { try await assertChatsListChrome("about") }
+    func testDeveloperUsesChatsListChrome() async throws { try await assertChatsListChrome("developer") }
+    func testAppleAccountUsesChatsListChrome() async throws { try await assertChatsListChrome("apple-account") }
+    func testRelayUsesChatsListChrome() async throws { try await assertChatsListChrome("relay") }
+    func testWidgetAppearanceUsesChatsListChrome() async throws { try await assertChatsListChrome("widget-appearance") }
+    func testWidgetOverallUsesChatsListChrome() async throws { try await assertChatsListChrome("widget-overall") }
+    func testWidgetProfilesUsesChatsListChrome() async throws { try await assertChatsListChrome("widget-profiles") }
+    func testProvidersOfflineUsesChatsListChrome() async throws { try await assertChatsListChrome("providers-offline") }
+    func testSidebarQuotasUsesChatsListChrome() async throws { try await assertChatsListChrome("sidebar-quotas") }
+    func testProvidersListUsesChatsListChrome() async throws { try await assertChatsListChrome("providers-list") }
+    func testUserProfileUsesChatsListChrome() async throws { try await assertChatsListChrome("user-profile") }
+    func testServerDetailUsesChatsListChrome() async throws { try await assertChatsListChrome("server-detail") }
+    func testConnectionHeadersUsesChatsListChrome() async throws { try await assertChatsListChrome("connection-headers") }
+    func testDefaultModelUsesChatsListChrome() async throws { try await assertChatsListChrome("default-model") }
+    func testAuxiliaryModelsUsesChatsListChrome() async throws { try await assertChatsListChrome("auxiliary-models") }
+
+    /// The Settings page `name` draws Chats' plain list chrome in light and dark: its rows' insets and width, its
+    /// background, help behind each section's About row, and no explanation outside it.
+    private func assertChatsListChrome(_ name: String) async throws {
         let fixture = try FixtureApp(for: self)
         let server = UITestFixtureEnvironment.serverURL
         let defaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
@@ -388,6 +424,7 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 ("default-model", AnyView(DefaultModelPicker(server: server, currentDefaultModel: nil, onSave: { _ in }))),
                 ("auxiliary-models", AnyView(AuxiliaryModelsSettingsView(server: server)))
             ]
+        let page = try XCTUnwrap(pages.first { $0.0 == name }?.1, "No Settings page named \(name)")
         for style in [UIUserInterfaceStyle.light, .dark] {
             let reference = try hostWindow(NavigationStack {
                 SidebarList { Text("Chat").sidebarRowPadding().sidebarRow(isSelected: false) }
@@ -399,7 +436,7 @@ final class SettingsPlacementHostedTests: XCTestCase {
             XCTAssertFalse(referenceBackground.isEmpty, "The baseline background must render")
             reference.isHidden = true
             reference.rootViewController = nil
-            for (name, page) in pages {
+            do {
                 defaults.set(name == "widget-overall" ? "overall" : "pace", forKey: ProviderQuotaWidgetColorBasis.storageKey)
                 if name == "providers-offline" {
                     XCTAssertNotNil(ProviderQuotaThresholds.cached(defaults: defaults), "The offline page owns a readable cached threshold fixture")
@@ -412,8 +449,6 @@ final class SettingsPlacementHostedTests: XCTestCase {
                         $0.accessibilityLabel?.contains("Offline: showing the breakpoints last read from the server.") == true
                     }
                 }
-                let labels = allSettingsRows(in: window).labels
-                let rows = labels.joined(separator: "\n")
                 let helpSections = [
                     "chat": ["Composer", "Conversation"], "notifications": ["Provider Quotas"], "speech": ["Speech"],
                     "servers": ["Server Access"], "navigation": ["Quota Display"],
@@ -426,8 +461,14 @@ final class SettingsPlacementHostedTests: XCTestCase {
                     "user-profile": ["User Profile"], "server-detail": ["Identity", "Account"],
                     "connection-headers": ["Connection Headers"], "default-model": ["Custom"]
                 ]
-                for section in helpSections[name] ?? [] {
-                    XCTAssertTrue(labels.contains("About \(section)"), "\(name) must expose help for \(section)")
+                // A page that loads its rows shows no "Loading" row first (auxiliary models), so wait for the help the
+                // page owns before reading its rows once (rule `snapshot`).
+                let expectedHelp = (helpSections[name] ?? []).map { "About \($0)" }
+                let helpShown = await awaitCondition { expectedHelp.allSatisfy(self.allSettingsRows(in: window).labels.contains) }
+                let labels = allSettingsRows(in: window).labels
+                let rows = labels.joined(separator: "\n")
+                for help in expectedHelp {
+                    XCTAssertTrue(helpShown && labels.contains(help), "\(name) must expose help for \(help.dropFirst(6))")
                 }
                 if name == "providers-offline" {
                     XCTAssertTrue(rows.contains("Offline: showing the breakpoints last read from the server."),
@@ -1000,7 +1041,55 @@ final class SettingsPlacementHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "settings-tool-calls")
     }
 
-    func testCategoryPagesKeepTheirRowsAndIdentifiersAtOneHome() async throws {
+    // One test per indexed page over `assertIndexedRowsAtOneHome`'s fixture (TAL-2535).
+    func testAppearanceKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.appearance)) }
+    func testChatsKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.chats)) }
+    func testToolCallsKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.toolCalls) }
+    func testNavigationKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.navigation)) }
+    func testNotificationsAndHapticsKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.notificationsAndHaptics)) }
+    func testSpeechKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.speech)) }
+    func testModelsKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.models)) }
+    func testSystemKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.system)) }
+    func testProvidersKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.providers)) }
+    func testToolsKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.tools)) }
+    func testProfilesKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.profiles)) }
+    func testWorkspacesKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.workspaces)) }
+    func testLogsKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.logs)) }
+    func testServersKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.servers)) }
+    func testLiveActivitiesAndWidgetsKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.liveActivitiesAndWidgets)) }
+    func testSiriAndShortcutsKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.siriAndShortcuts)) }
+    func testDataAndStorageKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.dataAndStorage)) }
+    func testAboutKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.about)) }
+    func testDeveloperKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.category(.developer)) }
+    func testSidebarQuotasKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.sidebarQuotas) }
+    // The widget page's conditional rows each need their own host, so its sections split further.
+    func testProviderQuotaWidgetKeepsItsGaugeRowsAtOneHome() async throws {
+        try await assertIndexedRowsAtOneHome(.providerQuotaWidget) { $0.section == "Gauge" }
+    }
+    func testProviderQuotaWidgetKeepsItsSurfaceRowsAtOneHome() async throws {
+        try await assertIndexedRowsAtOneHome(.providerQuotaWidget) { $0.section == "Surface" }
+    }
+    func testProviderQuotaWidgetKeepsItsStateRowsAtOneHome() async throws {
+        try await assertIndexedRowsAtOneHome(.providerQuotaWidget) { $0.section == "Automatic Colors" && !$0.title.hasPrefix("Custom") }
+    }
+    func testProviderQuotaWidgetKeepsItsCustomHealthyAndWarningColorRowsAtOneHome() async throws {
+        try await assertIndexedRowsAtOneHome(.providerQuotaWidget) { [.widgetCustomHealthyColor, .widgetCustomWarningColor].contains($0) }
+    }
+    func testProviderQuotaWidgetKeepsItsCustomCriticalStaleAndUnavailableColorRowsAtOneHome() async throws {
+        try await assertIndexedRowsAtOneHome(.providerQuotaWidget) {
+            [.widgetCustomCriticalColor, .widgetCustomStaleColor, .widgetCustomUnavailableColor].contains($0)
+        }
+    }
+    func testProviderQuotaWidgetKeepsItsOtherRowsAtOneHome() async throws {
+        try await assertIndexedRowsAtOneHome(.providerQuotaWidget) { !["Gauge", "Surface", "Automatic Colors"].contains($0.section) }
+    }
+    func testUserProfileKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.userProfile) }
+    func testAppleAccountKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.appleAccount) }
+    func testWidgetProfilesKeepsItsIndexedRowsAtOneHome() async throws { try await assertIndexedRowsAtOneHome(.widgetProfiles) }
+
+    /// `page` shows only rows its Settings index entries own, and every one of `entries`, a conditional row through its
+    /// targeted link.
+    private func assertIndexedRowsAtOneHome(_ page: SettingsPane, entries: (SettingsIndex) -> Bool = { _ in true }) async throws {
         let fixture = try FixtureApp(for: self)
         let store = ServerSettingsStore(client: fixture.client)
         await store.loadIfNeeded()
@@ -1039,16 +1128,12 @@ final class SettingsPlacementHostedTests: XCTestCase {
             return Set(identifiers)
         }
 
-        let pages = SettingsIndex.allCases.reduce(into: [SettingsPane]()) { pages, entry in
-            if !pages.contains(entry.page) { pages.append(entry.page) }
-        }
-        for page in pages {
-            let found = try await identifiers(on: page)
-            for entry in SettingsIndex.allCases where entry.page == page && !found.contains(where: entry.owns(identifier:)) {
-                // Conditional controls must be reachable without changing their stored parent preference or signing in.
-                let targeted = try await identifiers(on: page, target: entry)
-                XCTAssertTrue(targeted.contains(where: entry.owns(identifier:)), "\(page) is missing indexed row \(entry.id)")
-            }
+        let found = try await identifiers(on: page)
+        for entry in SettingsIndex.allCases where entry.page == page && entries(entry)
+            && !found.contains(where: entry.owns(identifier:)) {
+            // Conditional controls must be reachable without changing their stored parent preference or signing in.
+            let targeted = try await identifiers(on: page, target: entry)
+            XCTAssertTrue(targeted.contains(where: entry.owns(identifier:)), "\(page) is missing indexed row \(entry.id)")
         }
     }
 }

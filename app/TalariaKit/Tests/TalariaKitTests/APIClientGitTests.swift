@@ -98,11 +98,6 @@ final class APIClientGitTests: APIClientTestCase {
                     "path": "New.swift", "old_path": null, "workspace_path": "New.swift",
                     "status": "??", "staged": false, "unstaged": false, "untracked": true,
                     "ignored": false, "conflict": false, "additions": 0, "deletions": 0, "binary": false
-                  },
-                  {
-                    "path": ".DS_Store", "old_path": null, "workspace_path": ".DS_Store",
-                    "status": "Ignored", "staged": false, "unstaged": false, "untracked": false,
-                    "ignored": true, "conflict": false, "additions": 0, "deletions": 0, "binary": false
                   }
                 ],
                 "truncated": false,
@@ -121,14 +116,10 @@ final class APIClientGitTests: APIClientTestCase {
         XCTAssertEqual(status.ahead, 1)
         XCTAssertEqual(status.behind, 2)
         XCTAssertEqual(status.totals?.changed, 2)
-        XCTAssertEqual(status.files?.count, 3, "Raw files include the ignored entry.")
-
-        // Ignored files are filtered from the tracked list and counts/totals.
         XCTAssertEqual(status.trackedFiles.count, 2)
         XCTAssertEqual(status.changedCount, 2)
         XCTAssertEqual(status.totalAdditions, 10)
         XCTAssertEqual(status.totalDeletions, 4)
-        XCTAssertFalse(status.trackedFiles.contains { $0.ignored == true })
 
         // Change kind is derived from the booleans.
         XCTAssertEqual(status.trackedFiles[0].changeKind, .modified)
@@ -174,31 +165,6 @@ final class APIClientGitTests: APIClientTestCase {
         XCTAssertEqual(file.path, "a.txt")
         XCTAssertNil(file.additions)
         XCTAssertEqual(file.changeKind, .added)
-        // Truncation defaults to "not truncated" and changedCount falls back to file count.
-        XCTAssertEqual(status.changedCount, 1)
-    }
-
-    func testGitStatusFiltersIgnoredFilesByStatusString() async throws {
-        let client = makeClient { request in
-            apiTestJSONResponse("""
-            {
-              "git": {
-                "is_git": true,
-                "branch": "main",
-                "files": [
-                  {"path": ".DS_Store", "status": "Ignored", "additions": 0, "deletions": 0}
-                ]
-              }
-            }
-            """, for: request)
-        }
-
-        let statusResponse = try await client.gitStatus(sessionID: "abc123")
-        let status = try XCTUnwrap(statusResponse.git)
-        XCTAssertEqual(status.files?.count, 1)
-        XCTAssertEqual(status.trackedFiles.count, 0)
-        XCTAssertEqual(status.changedCount, 0)
-        XCTAssertEqual(status.files?.first?.changeKind, .ignored)
     }
 
     func testGitStatusTruncatedFlagDecodes() async throws {
@@ -333,17 +299,6 @@ final class APIClientGitTests: APIClientTestCase {
         XCTAssertEqual(diff.hunks.map(\.displayLabel), ["Lines 1-3"])
         XCTAssertEqual(diff.hunks.first?.lines.map(\.kind), [.context, .deletion, .addition, .addition])
         XCTAssertEqual(diff.hunks.first?.lines.map(\.gutterLabel), ["1", "2", "2", "3"])
-    }
-
-    func testGitDiffFromAnOlderServerParsesItsText() async throws {
-        // A Web from before TAL-604 sends no hunks (TAL-697).
-        let client = makeClient { request in
-            apiTestJSONResponse(#"{"diff": {"path": "a.txt", "kind": "unstaged", "additions": 1, "deletions": 0, "diff": "@@ -0,0 +1 @@\n+a\n"}}"#, for: request)
-        }
-        let response = try await client.gitDiff(sessionID: "abc123", path: "a.txt")
-        let diff = try XCTUnwrap(response.diff)
-        XCTAssertEqual(diff.hunks.map(\.displayLabel), ["Line 1"])
-        XCTAssertEqual(diff.hunks.first?.lines.first?.text, "+a")
     }
 
     func testGitDiffDefaultsKindToUnstaged() async throws {
