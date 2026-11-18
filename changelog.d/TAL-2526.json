@@ -1,0 +1,1 @@
+{"skip": "Test harness only: a watch can take its reaction poll interval so real-owner tests stop waiting out the 10 s default, and the room compatibility test splits by scenario; no app behavior changes."}

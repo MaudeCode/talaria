@@ -12,11 +12,12 @@ from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, isolated_env, requir
 
 
 @requires_agent
-def test_native_group_round_trip(tmp_path):
+@pytest.mark.parametrize("scenario", ["round-trip", "approval", "stop", "partial", "lead"])
+def test_native_group_round_trip(tmp_path, scenario):
     env = isolated_env(tmp_path / "hermes", TALARIA_WEB_AGENT_DIR=str(AGENT_DIR),
                        TALARIA_WEB_PYTHON=str(AGENT_PYTHON),
                        PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
-    result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/group_peer.py")],
+    result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/group_peer.py"), scenario],
                             env=env, capture_output=True, text=True, timeout=150, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
 

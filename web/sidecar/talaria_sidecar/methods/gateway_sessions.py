@@ -43,7 +43,8 @@ _TRANSIENT_READS = {"storage_unavailable", _STATE_BUSY}
 # Queued on a watch's event queue when its call is cancelled, so the watch ends without polling the flag (TAL-1746).
 _WAKE = object()
 # An idle watch reads the transcript for another viewer's reaction at most this often; a message or reaction event
-# brings the read forward (TAL-1711). A streaming token changes no stored reaction.
+# brings the read forward (TAL-1711). A streaming token changes no stored reaction. A watch's `reaction_poll_seconds`
+# replaces the interval (TAL-2526).
 _RESTART_CHECK_S, _REACTION_POLL_S = 2, 10
 _SUPPORT_RECORD = Path(__file__).resolve().parents[2] / "agent_support.json"
 _CREATE_FIELDS = {"request_id", "source", "cwd", "model", "provider", "base_url", "toolsets", "safe_mode", "ignore_user_config"}
@@ -577,10 +578,11 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
             ctx.emit("replay_complete", {})
             _wake_on_cancel(ctx, events)
             checked = polled = asyncio.get_running_loop().time()
+            poll = params.get("reaction_poll_seconds", _REACTION_POLL_S)
             stale = False  # a message or reaction event arrived since the last reaction read
             while not ctx.cancelled:
                 now = asyncio.get_running_loop().time()
-                read = snap.get("reactions_supported") and (stale or now - polled >= _REACTION_POLL_S)
+                read = snap.get("reactions_supported") and (stale or now - polled >= poll)
                 # A read sends on this socket, so it always follows a fresh probe.
                 if not restarting and (read or now - checked >= _RESTART_CHECK_S):
                     checked = now
@@ -609,7 +611,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                         ctx.emit("snapshot", {**result, "snapshot": current, "reaction_only": True})
                     snap = current
                 try:
-                    frame = await asyncio.wait_for(events.get(), 1.0)
+                    frame = await asyncio.wait_for(events.get(), min(1.0, poll))
                 except TimeoutError:
                     continue
                 if frame is _WAKE:
@@ -701,6 +703,9 @@ def session(ctx, params: dict) -> dict:
                               or type(params.get("row_id")) is not int or params["row_id"] <= 0
                               or "emoji" not in params or (params["emoji"] is not None and (not isinstance(params["emoji"], str) or params["emoji"] not in _REACTION_EMOJIS))):
         raise InvalidParams("react requires a visible row and an allowed emoji")
+    if "reaction_poll_seconds" in params and (action != "watch" or type(params["reaction_poll_seconds"]) not in (int, float)
+                                              or not 0 < params["reaction_poll_seconds"] < float("inf")):
+        raise InvalidParams("reaction_poll_seconds is a watch's positive poll interval")
     if action == "export" and (params.get("format") not in ("json", "markdown", "html")
                                or not isinstance(params.get("redact"), bool)):
         raise InvalidParams("export requires an allowed format and redaction policy")

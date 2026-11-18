@@ -1,4 +1,7 @@
-"""Disposable two-profile native driver; inference stays on a synthetic loopback provider."""
+"""Disposable two-profile native driver; inference stays on a synthetic loopback provider.
+
+Usage: group_peer.py SCENARIO, one room scenario on its own disposable owner (TAL-2526).
+"""
 from http.server import ThreadingHTTPServer
 import json
 import base64
@@ -47,7 +50,7 @@ class RoomModel(Model):
             pass
 
 
-def probe(home, peer):
+def probe(home, peer, scenario):
     sidecar = SidecarProcess(home)
     def call(action, **fields):
         response, _ = sidecar.call("gateway.groups", {"profile_home": str(home), "subject": "talaria-fixture",
@@ -69,113 +72,123 @@ def probe(home, peer):
         assert caps["driver"] is True
         assert {"default", "helper"}.issubset(caps["seatable_profiles"]), caps
         members = [{"member_id": name, "profile": name, "handle": name} for name in ("default", "helper")]
-        room = call("create", room_id="fixture-room", name="Discussion", members=members)["room"]
-        assert room["room_id"] == "fixture-room", room
-        assert [m["profile"] for m in room["members"]] == [m["profile"] for m in members], room
-        stale, _ = sidecar.call("gateway.groups", {"profile_home": str(home), "subject": "talaria-fixture",
-            "expected_room": {"room_id": "fixture-room", "gateway_id": "foreign", "authority_epoch": room["authority_epoch"]},
-            "operation": {"action": "rename", "room_id": "fixture-room", "event_id": "stale-rename", "name": "Wrong source"}})
-        assert stale["result"]["state"] == "refused", stale
-        assert call("state", room_id="fixture-room")["room"]["name"] == "Discussion"
-        attachment = call("attachment.upload", room_id="fixture-room", upload_id="note", kind="file", name="note.txt",
-                          mime="text/plain", data_base64=base64.b64encode(b"disposable note").decode())
-        manifest = {k: attachment[k] for k in ("attachment_id", "kind", "name", "mime", "size")}
-        large_bytes = b"x" * 6_400_000
-        large = call("attachment.upload", room_id="fixture-room", upload_id="large", kind="file", name="large.txt",
-                     mime="text/plain", data_base64=base64.b64encode(large_bytes).decode())
-        large_manifest = {k: large[k] for k in ("attachment_id", "kind", "name", "mime", "size")}
-        denied, _ = sidecar.call("gateway.groups", {"profile_home": str(home), "subject": "other-viewer",
-            "operation": {"action": "state", "room_id": "fixture-room"}})
-        assert denied["result"]["state"] == "refused", denied
-        for event_id in ("uncommitted", "foreign-event"):
+
+        def round_trip():
+            room = call("create", room_id="fixture-room", name="Discussion", members=members)["room"]
+            assert room["room_id"] == "fixture-room", room
+            assert [m["profile"] for m in room["members"]] == [m["profile"] for m in members], room
+            stale, _ = sidecar.call("gateway.groups", {"profile_home": str(home), "subject": "talaria-fixture",
+                "expected_room": {"room_id": "fixture-room", "gateway_id": "foreign", "authority_epoch": room["authority_epoch"]},
+                "operation": {"action": "rename", "room_id": "fixture-room", "event_id": "stale-rename", "name": "Wrong source"}})
+            assert stale["result"]["state"] == "refused", stale
+            assert call("state", room_id="fixture-room")["room"]["name"] == "Discussion"
+            attachment = call("attachment.upload", room_id="fixture-room", upload_id="note", kind="file", name="note.txt",
+                              mime="text/plain", data_base64=base64.b64encode(b"disposable note").decode())
+            manifest = {k: attachment[k] for k in ("attachment_id", "kind", "name", "mime", "size")}
+            large_bytes = b"x" * 6_400_000
+            large = call("attachment.upload", room_id="fixture-room", upload_id="large", kind="file", name="large.txt",
+                         mime="text/plain", data_base64=base64.b64encode(large_bytes).decode())
+            large_manifest = {k: large[k] for k in ("attachment_id", "kind", "name", "mime", "size")}
+            denied, _ = sidecar.call("gateway.groups", {"profile_home": str(home), "subject": "other-viewer",
+                "operation": {"action": "state", "room_id": "fixture-room"}})
+            assert denied["result"]["state"] == "refused", denied
+            for event_id in ("uncommitted", "foreign-event"):
+                denied, _ = sidecar.call("gateway.groups", {"profile_home": str(home), "subject": "talaria-fixture",
+                    "operation": {"action": "attachment.download", "room_id": "fixture-room", "event_id": event_id,
+                                  "attachment_id": manifest["attachment_id"]}})
+                assert denied["result"]["state"] != "available", denied
+            sent = call("send", room_id="fixture-room", event_id="fixture-send", payload={"text": "GROUP_HELLO", "thread_id": "fixture-thread", "attachments": [manifest, large_manifest]})
+            assert sent["accepted"] and sent["client_event_id"] == "fixture-send", sent
+            downloaded = call("attachment.download", room_id="fixture-room", event_id=sent["event"]["event_id"], attachment_id=manifest["attachment_id"])
+            assert base64.b64decode(downloaded["data_base64"]) == b"disposable note", downloaded
+            assert str(home) not in json.dumps(downloaded), downloaded
+            large_download = call("attachment.download", room_id="fixture-room", event_id=sent["event"]["event_id"], attachment_id=large_manifest["attachment_id"])
+            assert base64.b64decode(large_download["data_base64"]) == large_bytes
+            deadline = time.monotonic() + 60
+            while True:
+                log = call("log", room_id="fixture-room", since_seq=0, limit=100)
+                replies = [e for e in log["events"] if e["kind"] == "message.member"]
+                if {e["payload"]["member_id"] for e in replies} == {"default", "helper"}:
+                    break
+                assert time.monotonic() < deadline, log
+                time.sleep(.1)
+            seqs = [e["seq"] for e in log["events"]]
+            assert seqs == sorted(set(seqs)), log
+            first = call("log", room_id="fixture-room", since_seq=0, limit=2)
+            rest = call("log", room_id="fixture-room", since_seq=first["cursor"], limit=100)
+            assert [e["seq"] for e in first["events"] + rest["events"] if e["seq"] <= log["cursor"]] == seqs
+            assert call("state", room_id="fixture-room")["room"]["room_id"] == "fixture-room"
+            if "groups.continue" in caps["methods"]:
+                assert call("state", room_id="fixture-room")["driver_status"]["max_continues"] > 0
+                unpaused, _ = sidecar.call("gateway.groups", {"profile_home": str(home), "subject": "talaria-fixture",
+                    "operation": {"action": "continue", "room_id": "fixture-room", "discussion_event_id": sent["event"]["event_id"]}})
+                assert unpaused["result"]["state"] == "refused", unpaused
+            wait_for("fixture-room", lambda s: not s["driver_status"]["working"])
+            call("disband", room_id="fixture-room", cancel_id="fixture-disband")
+            assert call("list")["rooms"] == []
+
+
+        def approval():
+            peer.mode = "approval"
+            call("create", room_id="approval-room", name="Approval", members=members)
+            call("send", room_id="approval-room", event_id="approval-send", payload={"text": "GROUP_APPROVAL"})
+            state = wait_for("approval-room", lambda s: any(a.get("kind") == "approval" for a in s["driver_status"]["pending_actions"]))
+            action = next(a for a in state["driver_status"]["pending_actions"] if a["kind"] == "approval")
+            fields = {k: action[k] for k in ("member_id", "task_id", "execution_generation", "request_id")}
             denied, _ = sidecar.call("gateway.groups", {"profile_home": str(home), "subject": "talaria-fixture",
-                "operation": {"action": "attachment.download", "room_id": "fixture-room", "event_id": event_id,
-                              "attachment_id": manifest["attachment_id"]}})
+                "operation": {"action": "approve", "room_id": "approval-room", **fields,
+                              "execution_generation": fields["execution_generation"] + 1, "choice": "deny"}})
             assert denied["result"]["state"] != "available", denied
-        sent = call("send", room_id="fixture-room", event_id="fixture-send", payload={"text": "GROUP_HELLO", "thread_id": "fixture-thread", "attachments": [manifest, large_manifest]})
-        assert sent["accepted"] and sent["client_event_id"] == "fixture-send", sent
-        downloaded = call("attachment.download", room_id="fixture-room", event_id=sent["event"]["event_id"], attachment_id=manifest["attachment_id"])
-        assert base64.b64decode(downloaded["data_base64"]) == b"disposable note", downloaded
-        assert str(home) not in json.dumps(downloaded), downloaded
-        large_download = call("attachment.download", room_id="fixture-room", event_id=sent["event"]["event_id"], attachment_id=large_manifest["attachment_id"])
-        assert base64.b64decode(large_download["data_base64"]) == large_bytes
-        deadline = time.monotonic() + 60
-        while True:
-            log = call("log", room_id="fixture-room", since_seq=0, limit=100)
-            replies = [e for e in log["events"] if e["kind"] == "message.member"]
-            if {e["payload"]["member_id"] for e in replies} == {"default", "helper"}:
-                break
-            assert time.monotonic() < deadline, log
-            time.sleep(.1)
-        seqs = [e["seq"] for e in log["events"]]
-        assert seqs == sorted(set(seqs)), log
-        first = call("log", room_id="fixture-room", since_seq=0, limit=2)
-        rest = call("log", room_id="fixture-room", since_seq=first["cursor"], limit=100)
-        assert [e["seq"] for e in first["events"] + rest["events"] if e["seq"] <= log["cursor"]] == seqs
-        assert call("state", room_id="fixture-room")["room"]["room_id"] == "fixture-room"
-        if "groups.continue" in caps["methods"]:
-            assert call("state", room_id="fixture-room")["driver_status"]["max_continues"] > 0
-            unpaused, _ = sidecar.call("gateway.groups", {"profile_home": str(home), "subject": "talaria-fixture",
-                "operation": {"action": "continue", "room_id": "fixture-room", "discussion_event_id": sent["event"]["event_id"]}})
-            assert unpaused["result"]["state"] == "refused", unpaused
-        wait_for("fixture-room", lambda s: not s["driver_status"]["working"])
-        call("disband", room_id="fixture-room", cancel_id="fixture-disband")
-        assert call("list")["rooms"] == []
+            assert call("approve", room_id="approval-room", **fields, choice="deny")["approved"]
+            duplicate, _ = sidecar.call("gateway.groups", {"profile_home": str(home), "subject": "talaria-fixture",
+                "operation": {"action": "approve", "room_id": "approval-room", **fields, "choice": "deny"}})
+            assert duplicate["result"]["state"] != "available", duplicate
+            answered = {(fields["task_id"], fields["request_id"])}
+            deadline = time.monotonic() + 40
+            while True:
+                current = call("state", room_id="approval-room")["driver_status"]
+                if not current["working"]:
+                    break
+                for pending in current["pending_actions"]:
+                    if pending["kind"] == "approval" and (pending["task_id"], pending["request_id"]) not in answered:
+                        answer = {k: pending[k] for k in ("member_id", "task_id", "execution_generation", "request_id")}
+                        call("approve", room_id="approval-room", **answer, choice="deny")
+                        answered.add((answer["task_id"], answer["request_id"]))
+                assert time.monotonic() < deadline, current
+                time.sleep(.1)
+            assert (home / "approval-disposable/owned.txt").read_text() == "keep"
+            call("disband", room_id="approval-room", cancel_id="approval-disband")
 
-        peer.mode = "approval"
-        call("create", room_id="approval-room", name="Approval", members=members)
-        call("send", room_id="approval-room", event_id="approval-send", payload={"text": "GROUP_APPROVAL"})
-        state = wait_for("approval-room", lambda s: any(a.get("kind") == "approval" for a in s["driver_status"]["pending_actions"]))
-        action = next(a for a in state["driver_status"]["pending_actions"] if a["kind"] == "approval")
-        fields = {k: action[k] for k in ("member_id", "task_id", "execution_generation", "request_id")}
-        denied, _ = sidecar.call("gateway.groups", {"profile_home": str(home), "subject": "talaria-fixture",
-            "operation": {"action": "approve", "room_id": "approval-room", **fields,
-                          "execution_generation": fields["execution_generation"] + 1, "choice": "deny"}})
-        assert denied["result"]["state"] != "available", denied
-        assert call("approve", room_id="approval-room", **fields, choice="deny")["approved"]
-        duplicate, _ = sidecar.call("gateway.groups", {"profile_home": str(home), "subject": "talaria-fixture",
-            "operation": {"action": "approve", "room_id": "approval-room", **fields, "choice": "deny"}})
-        assert duplicate["result"]["state"] != "available", duplicate
-        answered = {(fields["task_id"], fields["request_id"])}
-        deadline = time.monotonic() + 40
-        while True:
-            current = call("state", room_id="approval-room")["driver_status"]
-            if not current["working"]:
-                break
-            for pending in current["pending_actions"]:
-                if pending["kind"] == "approval" and (pending["task_id"], pending["request_id"]) not in answered:
-                    answer = {k: pending[k] for k in ("member_id", "task_id", "execution_generation", "request_id")}
-                    call("approve", room_id="approval-room", **answer, choice="deny")
-                    answered.add((answer["task_id"], answer["request_id"]))
-            assert time.monotonic() < deadline, current
-            time.sleep(.1)
-        assert (home / "approval-disposable/owned.txt").read_text() == "keep"
-        call("disband", room_id="approval-room", cancel_id="approval-disband")
 
-        peer.mode = "stop"
-        peer.release.clear()
-        call("create", room_id="stop-room", name="Stop race", members=members)
-        call("send", room_id="stop-room", event_id="stop-send", payload={"text": "GROUP_STOP"})
-        call("stop", room_id="stop-room", cancel_id="stop-race")
-        peer.release.set()
-        wait_for("stop-room", lambda s: not s["driver_status"]["working"])
-        stopped = call("log", room_id="stop-room", since_seq=0, limit=100)
-        assert not any(e["kind"] == "message.member" for e in stopped["events"]), stopped
-        call("disband", room_id="stop-room", cancel_id="stop-disband")
+        def stop():
+            peer.mode = "stop"
+            peer.release.clear()
+            call("create", room_id="stop-room", name="Stop race", members=members)
+            call("send", room_id="stop-room", event_id="stop-send", payload={"text": "GROUP_STOP"})
+            call("stop", room_id="stop-room", cancel_id="stop-race")
+            peer.release.set()
+            wait_for("stop-room", lambda s: not s["driver_status"]["working"])
+            stopped = call("log", room_id="stop-room", since_seq=0, limit=100)
+            assert not any(e["kind"] == "message.member" for e in stopped["events"]), stopped
+            call("disband", room_id="stop-room", cancel_id="stop-disband")
 
-        peer.mode = "partial"
-        call("create", room_id="partial-room", name="Partial failure", members=members)
-        call("send", room_id="partial-room", event_id="partial-send", payload={"text": "GROUP_PARTIAL"})
-        deadline = time.monotonic() + 40
-        while True:
-            log = call("log", room_id="partial-room", since_seq=0, limit=100)
-            if any(e["kind"] == "message.member" for e in log["events"]) and any(e["kind"] == "turn.failed" for e in log["events"]):
-                break
-            assert time.monotonic() < deadline, log
-            time.sleep(.1)
-        call("disband", room_id="partial-room", cancel_id="partial-disband")
 
-        if "groups.context" in caps["methods"]:
+        def partial():
+            peer.mode = "partial"
+            call("create", room_id="partial-room", name="Partial failure", members=members)
+            call("send", room_id="partial-room", event_id="partial-send", payload={"text": "GROUP_PARTIAL"})
+            deadline = time.monotonic() + 40
+            while True:
+                log = call("log", room_id="partial-room", since_seq=0, limit=100)
+                if any(e["kind"] == "message.member" for e in log["events"]) and any(e["kind"] == "turn.failed" for e in log["events"]):
+                    break
+                assert time.monotonic() < deadline, log
+                time.sleep(.1)
+            call("disband", room_id="partial-room", cancel_id="partial-disband")
+
+
+        def lead():
+            assert "groups.context" in caps["methods"], caps
             peer.mode = "plain"
             call("create", room_id="lead-room", name="Lead", members=members)
             settings = dict(room_id="lead-room", event_id="lead-save", purpose="  Ship   it ", notes=" Shared ",
@@ -201,11 +214,14 @@ def probe(home, peer):
             assert assigned[0]["actor"]["kind"] == "gateway", assigned
             assert assigned[0]["payload"]["lead_member_id"] == "helper" and assigned[0]["payload"]["member_ids"] == ["helper"] and assigned[0]["payload"]["fallback"] is True, assigned
             call("disband", room_id="lead-room", cancel_id="lead-disband")
+
+        {"round-trip": round_trip, "approval": approval, "stop": stop, "partial": partial, "lead": lead}[scenario]()
     finally:
         sidecar.close()
 
 
 def main():
+    [scenario] = sys.argv[1:]
     home = Path(os.environ["HERMES_HOME"])
     home.mkdir(mode=0o700, parents=True, exist_ok=True)
     peer = ThreadingHTTPServer(("127.0.0.1", 0), RoomModel)
@@ -235,7 +251,7 @@ def main():
         AWS_EC2_METADATA_DISABLED="true")
     try:
         with daemon(agent, home, env, barrier=False):
-            probe(home, peer)
+            probe(home, peer, scenario)
     finally:
         peer.release.set()
         peer.shutdown()
