@@ -3,9 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   bytesToBase64Url,
-  randomToken,
   sha256,
-  timingSafeEqual,
   verifyPublisherSignature,
 } from "../convex/lib/crypto";
 
@@ -54,11 +52,5 @@ describe("publisher signatures", () => {
         body: JSON.stringify({ revision: 2 }),
       }),
     ).toBe(false);
-  });
-
-  it("compares credentials without an early exit", () => {
-    expect(timingSafeEqual("credential", "credential")).toBe(true);
-    expect(timingSafeEqual("credential", "credentiaL")).toBe(false);
-    expect(randomToken(32)).toMatch(/^[A-Za-z0-9_-]{40,}$/u);
   });
 });

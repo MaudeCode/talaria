@@ -8,7 +8,7 @@ import type {
 } from "./model";
 import { activityPhase, isTerminalPhase } from "./model";
 
-export const MAX_AGGREGATE_ROWS = 5;
+const MAX_AGGREGATE_ROWS = 5;
 
 function phasePriority(phase: SessionPhase): number {
   switch (phase) {

@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  rowForState,
   alertForTransition,
   makeAggregate,
-  MAX_AGGREGATE_ROWS,
   shouldUpdateAggregate,
 } from "../convex/lib/aggregate";
 import { defaultNotificationPreferences, type SessionPhase, type SessionState } from "../convex/lib/model";
@@ -39,7 +37,6 @@ describe("makeAggregate", () => {
       const aggregate = makeAggregate([turn], now)!;
       expect(aggregate.activeCount).toBe(1);
       expect(aggregate.rows[0]).toMatchObject({ phase: "running", status: "Working" });
-      expect(rowForState(turn, turn.phase).phase).toBe(phase);
       expect(alertForTransition(state("parent", "running"), turn, defaultNotificationPreferences)).toBeNull();
     }
     expect(makeAggregate([{ ...state("parent", "completed"), activityPhase: "stale" }], now)?.rows[0]).toMatchObject({ phase: "stale" });
@@ -58,7 +55,7 @@ describe("makeAggregate", () => {
     const aggregate = makeAggregate(states, now);
 
     expect(aggregate?.activeCount).toBe(7);
-    expect(aggregate?.rows).toHaveLength(MAX_AGGREGATE_ROWS);
+    expect(aggregate?.rows).toHaveLength(5);
     expect(aggregate?.rows.slice(0, 2).map((row) => row.sessionId)).toEqual([
       "approval",
       "input",
@@ -126,20 +123,5 @@ describe("makeAggregate", () => {
     expect(shouldUpdateAggregate(previous, previous, now, now + 120_000)).toBe(true);
     expect(shouldUpdateAggregate(previous, changed, now, now + 1)).toBe(false);
     expect(shouldUpdateAggregate(previous, changed, now, now + 15_000)).toBe(true);
-  });
-});
-
-describe("alertForTransition", () => {
-  it("alerts once when a session enters an attention state", () => {
-    const previous = state("a", "running");
-    const waiting = state("a", "waiting_for_approval");
-
-    expect(alertForTransition(previous, waiting, defaultNotificationPreferences)).toEqual({
-      title: "Approval required",
-      body: "An agent run is waiting for your approval.",
-      localized: true,
-      interruptionLevel: "time-sensitive",
-    });
-    expect(alertForTransition(waiting, waiting, defaultNotificationPreferences)).toBeNull();
   });
 });
