@@ -14,6 +14,26 @@ simulator-hosted unit tests unless they carry the `hosted-tests` label, so a
 hosted-test regression usually surfaces here first, on the `main` push that
 introduced it.
 
+## Pull request failure report
+
+A pull request run's `Report the first failure` job (TAL-2395) polls the run's
+jobs every 30 seconds with `scripts/main-ci-failure.py watch` and keeps one PR
+comment current from the first failure on, while other jobs still run. Each
+failed job gets its failed test or step, a local reproduction command from the
+script's trusted table, and its job log, plus its result bundle or Playwright
+results when uploaded. An App test that fails mid-shard is known before its job
+ends from the commit status `app/ci/report-test-failures` posts, so its line
+names the test and `app/scripts/test-ios --repeat 3 <identifier>`. Infrastructure
+faults, timeouts and cancellations are labelled apart from failing tests.
+
+The comment carries the PR head, the tested merge commit, the run and attempt.
+A run whose PR head moved on, or an earlier run of the same head, never
+overwrites it; a new head's run marks it current, and a same-head rerun reports
+its attempt and, once it passes, the resolution. The job fails once it reported
+a failure so "Re-run failed jobs" includes it. CI Gate does not need it, and it
+never dispatches a main repair. A fork's pull request runs with a read-only
+token: its report is this job's log and summary.
+
 ## Pieces
 
 | Piece | Where |

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Main CI failure handoff over fake GitHub, HTTP and T3 inventories; no live service is contacted."""
+"""Main CI failure handoff and the pull request failure report over fake GitHub, HTTP and T3 inventories; no live
+service is contacted."""
 
 import hashlib
 import hmac
@@ -9,6 +10,7 @@ import io
 import json
 from pathlib import Path
 import re
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -299,6 +301,236 @@ class TriageTests(unittest.TestCase):
         decision = self.triage(threads, pulls=pulls)
         self.assertEqual((decision["action"], decision["threadId"]), ("reuse", "owner"))
         self.assertIn("PR #9", decision["message"])
+
+
+PR = 1810
+TESTED = "c" * 40
+START, EARLIER, LATER = "2026-11-17T10:00:00Z", "2026-11-17T09:00:00Z", "2026-11-17T10:05:00Z"
+SHARD = "App / App hosted tests 1"
+PACKAGE = "App / App package tests"
+E2E = "web / frontend / e2e (3/6)"
+
+
+def pjob(identifier, name, conclusion=None, failed=None, started=START):
+    """A pull request job: running without a conclusion, else completed; failed names its failed step."""
+    steps = [{"name": "Set up job", "conclusion": "success"}] + ([{"name": failed, "conclusion": "failure"}] if failed else [])
+    return {"id": identifier, "name": name, "status": "completed" if conclusion else "in_progress",
+            "conclusion": conclusion, "started_at": started, "steps": steps,
+            "html_url": f"https://github.com/{REPO}/actions/runs/{RUN}/job/{identifier}"}
+
+
+def gate(conclusion="failure", attempt=1):
+    return pjob(99, "CI Gate", conclusion, "Check selected suite results" if conclusion == "failure" else None) | {
+        "run_attempt": attempt}
+
+
+def status(context, test, updated=LATER, state="failure"):
+    return {"context": context, "state": state, "description": f"1 failed, latest {test}", "updated_at": updated}
+
+
+def report_comment(head=HEAD, run=RUN, attempt=1, login="github-actions[bot]"):
+    return {"id": 501, "user": {"login": login},
+            "body": f"<!-- pr-ci-failure-report head={head} run={run} attempt={attempt} -->\n**1 failed.**"}
+
+
+class FakePullRun(FakeGitHub):
+    """A pull request run seen through scripted polls; each sleep moves to the next poll's jobs, statuses and head."""
+
+    def __init__(self, polls, notes=None, comments=(), forbidden=False):
+        super().__init__(polls[0]["jobs"], notes)
+        self.polls, self.index, self.forbidden = polls, 0, forbidden
+        self.comments, self.writes, self.published = [dict(comment) for comment in comments], [], []
+
+    def advance(self, seconds):
+        assert seconds == handoff.POLL_SECONDS, seconds
+        assert self.index + 1 < len(self.polls), "the reporter polled past the end of the run"
+        self.index += 1
+        self.jobs = self.polls[self.index]["jobs"]
+
+    def get(self, path):
+        poll = self.polls[self.index]
+        if path.endswith(f"/commits/{TESTED}/status?per_page=100"):
+            return {"statuses": poll.get("statuses", [])}
+        if f"/runs/{RUN}/artifacts" in path:
+            return {"artifacts": poll.get("artifacts", [])}
+        if path.endswith(f"/pulls/{PR}"):
+            return {"head": {"sha": poll.get("head", HEAD)}}
+        if f"/issues/{PR}/comments?" in path:
+            return self.comments if path.endswith("page=1") else []
+        return super().get(path)
+
+    def send(self, method, path, body):
+        if self.forbidden:
+            raise subprocess.CalledProcessError(1, "gh", stderr="gh: Resource not accessible by integration (HTTP 403)")
+        self.writes.append((self.index, method))
+        self.published.append(body["body"])
+        if method == "POST":
+            assert path.endswith(f"/issues/{PR}/comments"), path
+            self.comments.append({"id": 777, "user": {"login": "github-actions[bot]"}, "body": body["body"]})
+        else:
+            next(comment for comment in self.comments if path.endswith(f"/comments/{comment['id']}"))["body"] = body["body"]
+        return {}
+
+    def body(self):
+        return next(comment["body"] for comment in self.comments if "pr-ci-failure-report" in comment["body"])
+
+
+class PullRequestReportTests(unittest.TestCase):
+    def watch(self, github, fork=False, **overrides):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        directory = Path(temporary.name)
+        repository = "someone/talaria" if fork else REPO
+        (directory / "event.json").write_text(json.dumps(
+            {"pull_request": {"number": PR, "head": {"sha": HEAD, "repo": {"full_name": repository}}}}))
+        summary = directory / "summary.md"
+        lines = []
+        variables = {"GITHUB_EVENT_NAME": "pull_request", "GITHUB_SHA": TESTED, "GITHUB_REF": f"refs/pull/{PR}/merge",
+                     "GITHUB_EVENT_PATH": str(directory / "event.json"), "GITHUB_STEP_SUMMARY": str(summary), **overrides}
+        status = handoff.watch(env(**variables), github, sleep=github.advance, out=lines.append)
+        return status, "\n".join(lines), summary.read_text() if summary.exists() else ""
+
+    def test_first_failure_is_reported_once_while_another_job_runs(self):
+        polls = [{"jobs": [pjob(1, SHARD), pjob(2, E2E)],
+                  "statuses": [status("App hosted test failures 1", "ChatViewTests.testSendsDraft")]},
+                 {"jobs": [pjob(1, SHARD), pjob(2, E2E, "success")],
+                  "statuses": [status("App hosted test failures 1", "ChatViewTests.testSendsDraft")]},
+                 {"jobs": [pjob(1, SHARD, "failure", "Test without building"), pjob(2, E2E, "success"), gate()],
+                  "statuses": [status("App hosted test failures 1", "ChatViewTests.testSendsDraft")]}]
+        github = FakePullRun(polls)
+        status_code, _, summary = self.watch(github)
+        self.assertEqual(status_code, 1)
+        self.assertEqual(github.writes, [(0, "POST"), (2, "PATCH")])
+        body = github.body()
+        for required in (f"PR head `{HEAD[:12]}`", f"tested merge commit `{TESTED[:12]}`", f"run {RUN}, attempt 1",
+                         "`TalariaTests/ChatViewTests/testSendsDraft`",
+                         "`app/scripts/test-ios --repeat 3 TalariaTests/ChatViewTests/testSendsDraft`",
+                         f"[job log](https://github.com/{REPO}/actions/runs/{RUN}/job/1)", "CI Gate: failure."):
+            self.assertIn(required, body)
+        self.assertNotIn(E2E, body)
+        self.assertIn("ChatViewTests/testSendsDraft", summary)
+
+    def test_each_later_failure_updates_the_one_report(self):
+        notes = {3: [{"annotation_level": "failure", "path": "web/packages/frontend/e2e/chat.spec.ts", "start_line": 42}]}
+        artifact = [{"id": 88, "name": "frontend-e2e-test-results-3-1"}]
+        polls = [{"jobs": [pjob(1, PACKAGE), pjob(3, E2E)],
+                  "statuses": [status("App package test failures", "APIClientTests.testDecodesRun")]},
+                 # The browser step's failure reaches the jobs API before the job ends and its annotations exist.
+                 {"jobs": [pjob(1, PACKAGE), pjob(3, E2E, None, "Run ./.github/actions/web-browser")],
+                  "statuses": [status("App package test failures", "APIClientTests.testDecodesRun")]},
+                 {"jobs": [pjob(1, PACKAGE, "failure", "Run ./.github/actions/app-package-tests"),
+                           pjob(3, E2E, "failure", "Run ./.github/actions/web-browser"),
+                           pjob(4, "relay / check", "failure", "Run ../scripts/check relay"),
+                           pjob(5, "tooling / Repository Tooling", "failure", "Validate release fragments"), gate()],
+                  "statuses": [status("App package test failures", "APIClientTests.testDecodesRun")],
+                  "artifacts": artifact}]
+        github = FakePullRun(polls, notes)
+        self.assertEqual(self.watch(github)[0], 1)
+        self.assertEqual(github.writes, [(0, "POST"), (1, "PATCH"), (2, "PATCH")])
+        self.assertEqual(sum("pr-ci-failure-report" in comment["body"] for comment in github.comments), 1)
+        body = github.body()
+        for required in ("**4 failed.**", "`app/scripts/test-ios --repeat 3 TalariaKitTests/APIClientTests/testDecodesRun`",
+                         "`scripts/check-web-browser e2e/chat.spec.ts:42`",
+                         f"[frontend-e2e-test-results-3-1](https://github.com/{REPO}/actions/runs/{RUN}/artifacts/88)",
+                         "`scripts/check relay`", "`scripts/check tooling`", "step “Validate release fragments”"):
+            self.assertIn(required, body)
+        self.assertNotIn("**CI Gate**", body)
+
+    def test_a_superseded_head_or_older_run_never_overwrites_the_report(self):
+        failing = {"jobs": [pjob(1, "relay / check", "failure", "Run ../scripts/check relay")]}
+        github = FakePullRun([dict(failing, head=NEWER)])
+        self.assertEqual(self.watch(github)[0], 0)
+        self.assertEqual(github.writes, [])
+        github = FakePullRun([failing], comments=[report_comment(run=RUN + 1)])
+        self.assertEqual(self.watch(github)[0], 0)
+        self.assertEqual(github.writes, [])
+
+    def test_a_same_head_rerun_reports_its_attempt_and_resolution(self):
+        stale = [status("App hosted test failures 1", "ChatViewTests.testSendsDraft", updated=EARLIER)]
+        # Attempt 1's finished gate can still be listed while attempt 2's reruns.
+        polls = [{"jobs": [pjob(1, SHARD), gate()], "statuses": stale},
+                 {"jobs": [pjob(1, SHARD, "success"), gate("success", attempt=2)], "statuses": stale}]
+        github = FakePullRun(polls, comments=[report_comment()])
+        self.assertEqual(self.watch(github, GITHUB_RUN_ATTEMPT="2")[0], 0)
+        self.assertEqual(github.writes, [(0, "PATCH"), (1, "PATCH")])
+        body = github.body()
+        self.assertIn(f"run={RUN} attempt=2", body)
+        self.assertIn("Attempt 2 passed. Any earlier failure on this pull request is resolved.", body)
+        # Attempt 1's failure status predates the rerun job, so no update names it.
+        self.assertFalse(any("testSendsDraft" in published for published in github.published))
+
+    def test_a_new_head_takes_over_an_earlier_heads_report(self):
+        # The report names NEWER, a head this pull request has since moved past to HEAD.
+        github = FakePullRun([{"jobs": [pjob(1, "relay / check")]}, {"jobs": [pjob(1, "relay / check", "success"),
+                                                                              gate("success")]}],
+                             comments=[report_comment(head=NEWER)])
+        self.watch(github, GITHUB_RUN_ID=str(RUN + 5))
+        self.assertEqual(github.writes, [(0, "PATCH"), (1, "PATCH")])
+        self.assertIn(f"head={HEAD} run={RUN + 5}", github.body())
+
+    def test_cancellation_timeouts_and_infrastructure_are_not_test_failures(self):
+        notes = {2: TIMEOUT, 4: [{"annotation_level": "failure", "title": "Simulator runner fault", "message": "x"}]}
+        jobs = [pjob(1, "web / server (sqlite storage, 2/3)", "cancelled"), pjob(2, PACKAGE, "cancelled"),
+                pjob(3, "Web contract probe", "failure", "Set up Node for the disposable Web server"),
+                pjob(4, "App / App hosted tests 2", "failure", "Test without building"),
+                pjob(5, "web / frontend / checks", "failure", "Strict TypeScript"), gate()]
+        github = FakePullRun([{"jobs": jobs}], notes)
+        self.assertEqual(self.watch(github)[0], 1)
+        body = github.body()
+        self.assertIn("Cancelled, not failed: web / server (sqlite storage, 2/3)", body)
+        self.assertIn(f"**{PACKAGE}**: timed out", body)
+        self.assertIn("**Web contract probe**: infrastructure", body)
+        self.assertIn("**App / App hosted tests 2**: infrastructure", body)
+        # No result bundle was uploaded, so the job log is its only evidence.
+        self.assertIn("**web / frontend / checks**: failed step, step “Strict TypeScript”\n  `cd web/packages/frontend && "
+                      "npm run i18n:gate && npm run lint && npm run typecheck && npm test`\n  [job log](", body)
+        self.assertNotIn("app-test-results-2", body)
+
+    def test_a_fork_or_read_only_token_reports_in_the_job_summary(self):
+        failing = [{"jobs": [pjob(1, "relay / check", "failure", "Run ../scripts/check relay"), gate()]}]
+        github = FakePullRun(failing)
+        status_code, output, summary = self.watch(github, fork=True)
+        self.assertEqual((status_code, github.writes), (1, []))
+        self.assertFalse(any("/comments" in path or "/pulls/" in path for path in github.paths))
+        self.assertIn("`scripts/check relay`", summary)
+        self.assertIn("`scripts/check relay`", output)
+        status_code, output, summary = self.watch(FakePullRun(failing, forbidden=True))
+        self.assertEqual(status_code, 1)
+        self.assertIn("cannot comment", output)
+        self.assertIn("`scripts/check relay`", summary)
+
+    def test_untrusted_names_never_reach_a_command_or_a_mention(self):
+        notes = {3: [{"annotation_level": "failure", "path": "e2e/x.spec.ts;curl evil", "start_line": 1}]}
+        jobs = [pjob(1, SHARD, "failure", "Test without building"), pjob(3, E2E, "failure", "Run web-browser"),
+                pjob(4, "relay / check @owner", "failure", "Run"), gate()]
+        github = FakePullRun([{"jobs": jobs, "statuses": [status("App hosted test failures 1", "A.b$(curl evil)")]}],
+                             notes, comments=[report_comment(login="someone")])
+        self.watch(github)
+        self.assertEqual(github.writes, [(0, "POST")])
+        body = github.comments[-1]["body"]
+        self.assertNotIn("evil", body)
+        self.assertNotIn("@owner", body)
+        self.assertIn("`app/scripts/test-ios`", body)
+        self.assertIn("`scripts/check-web-browser --shard=3/6`", body)
+
+    def test_other_events_report_nothing(self):
+        github = FakePullRun([{"jobs": []}])
+        self.assertEqual(self.watch(github, GITHUB_EVENT_NAME="push")[0], 0)
+        self.assertEqual(github.paths, [])
+
+    def test_the_reporter_job_is_advisory_and_pull_request_only(self):
+        workflow = (Path(__file__).parent.parent / ".github/workflows/ci.yml").read_text()
+        report = workflow[workflow.index("\n  report:\n"):workflow.index("\n  gate:\n")]
+        gate_needs = re.search(r"\n  gate:\n(?:.*\n)*?    needs: \[(.*)\]", workflow).group(1)
+        self.assertNotIn("report", [name.strip() for name in gate_needs.split(",")])
+        self.assertIn(f"name: {handoff.REPORTER}\n", report)
+        self.assertIn("if: github.event_name == 'pull_request'\n", report)
+        self.assertNotIn("secrets.", report)
+        permissions = re.search(r"permissions:\n((?:      .*\n)+)", report).group(1)
+        granted = {line.split(":")[0].strip(): line.split(":")[1].strip() for line in permissions.splitlines()
+                   if not line.strip().startswith("#")}
+        self.assertEqual(granted, {"contents": "read", "actions": "read", "checks": "read", "statuses": "read",
+                                   "pull-requests": "write"})
 
 
 class CommandTests(unittest.TestCase):

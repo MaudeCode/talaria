@@ -6,6 +6,8 @@
 #     plan: an App test plan (scripts/changed-components.py --app-plan) whose TalariaKitTests lane is explicit: only those
 #       identifiers run, with a SwiftPM filter, and the run must match them exactly (ci/hosted-test-shard check). Its
 #       coverage is partial and uploads as app-package-coverage-partial. Empty (the default) runs every test.
+#     failure_status: a commit status context; each failing test posts there as it fails, and a pass posts success
+#       (ci/report-test-failures, TAL-2395; the job grants statuses: write). Empty (the default) posts nothing.
 # TalariaKit's (models, networking, persistence, sync, view models) tests with `swift test`: no simulator and no app
 # host (TAL-399). Only the live contract test waits for the Web probe.
 name: App package tests
@@ -17,6 +19,10 @@ inputs:
     default: "false"
   plan:
     description: An App test plan with an explicit TalariaKitTests lane; empty runs every test.
+    required: false
+    default: ""
+  failure_status:
+    description: The commit status context that names each failing test while the tests run; empty posts none.
     required: false
     default: ""
 runs:
@@ -51,8 +57,16 @@ runs:
         CONTRACTS_SELECTED: ${{ inputs.contracts }}
         LIVE_CONTRACT_TEST: TalariaKitTests.APIClientSessionListTests testLiveUpstreamContractResponsesDecodeWhenSupplied
         PLAN: ${{ inputs.plan }}
+        FAILURE_STATUS: ${{ inputs.failure_status }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
+        if [[ -n "${FAILURE_STATUS}" ]]; then
+          # A job's log is unreadable until the job ends, so each failing test goes out as it fails (TAL-2395).
+          ci/report-test-failures package-tests.log "$(git rev-parse HEAD)" "${FAILURE_STATUS}" < /dev/null &
+          reporter=$!
+          trap 'kill "${reporter}" 2>/dev/null || true' EXIT
+        fi
         selection=()
         if [[ -n "${PLAN}" ]]; then
           printf '%s' "${PLAN}" > package-plan.json
@@ -73,6 +87,8 @@ runs:
         start_seconds=${SECONDS}
         swift test --package-path TalariaKit --skip-build --enable-code-coverage ${selection[@]+"${selection[@]}"} 2>&1 |
           tee package-tests.log
+        # A passing run replaces an earlier run's failure status on this commit with success.
+        [[ -z "${FAILURE_STATUS}" ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "${FAILURE_STATUS}"
         if [[ -n "${PLAN}" ]]; then
           # The run must match the plan: every identifier ran, once, and nothing else did.
           mkdir -p package-cases
