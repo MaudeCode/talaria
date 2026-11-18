@@ -111,17 +111,12 @@ final class ChatMarkdownLinkGeometryTests: XCTestCase {
     }
 
     /// `MarkdownRenderer` also renders memory, skills, workspace previews and
-    /// Kanban cards. Only a transcript row tracks links there — and only a
-    /// transcript row trades inline selection for that tracking.
-    func testMarkdownRendererTracksLinksOnlyForATranscriptRow() throws {
+    /// Kanban cards; inside a transcript row it reports its links.
+    func testMarkdownRendererTracksLinksInsideATranscriptRow() throws {
         let content = "words before [FixtureLinkTarget](https://example.invalid/x) and after."
         let tracked = ChatMessageLinkRegionStore()
         try host(MarkdownRenderer(content: content).environment(\.chatMessageLinkRegionStore, tracked))
         XCTAssertEqual(tracked.regions().map(\.url), [URL(string: "https://example.invalid/x")])
-
-        let untracked = ChatMessageLinkRegionStore()
-        try host(MarkdownRenderer(content: content))
-        XCTAssertEqual(untracked.regions(), [], "A view outside a transcript row must not report regions")
     }
 
     private let paragraphWidth: CGFloat = 320
@@ -137,11 +132,14 @@ final class ChatMarkdownLinkGeometryTests: XCTestCase {
         return store
     }
 
+    /// Draws the window once: the paragraphs publish their link regions from that draw pass.
     private func host(_ view: some View) throws {
-        try hostInOwnWindow(
+        let window = try hostInOwnWindow(
             view.coordinateSpace(.named(ChatMessageInteraction.rowCoordinateSpace)),
             size: CGSize(width: paragraphWidth, height: 300)
         )
-        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        _ = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
     }
 }

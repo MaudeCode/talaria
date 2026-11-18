@@ -28,35 +28,20 @@ public enum ChatScrollPolicy {
         return geometry.offsetY <= geometry.visibleHeight * screens
     }
 
-    /// Existing transcripts should enter at their latest content as part of the
-    /// scroll view's first layout, before the destination becomes visible.
-    public static let initialTranscriptAnchor = UnitPoint.bottom
-
-    /// Rich Markdown can finish measuring after the scroll view's initial
-    /// layout. Keep those size changes bottom-pinned only while follow is
-    /// latched on and no disclosure toggle is settling; otherwise return nil so
-    /// the reader's offset, and the row they just tapped, stay where they are.
-    public static func sizeChangeAnchor(
-        shouldFollowLatestMessage: Bool,
-        isDisclosureSettling: Bool = false
-    ) -> UnitPoint? {
-        shouldFollowLatestMessage && !isDisclosureSettling ? .bottom : nil
-    }
-
     /// Distance (pt) from the bottom within which the scroll-to-bottom button
     /// stays hidden while idle.
-    static let bottomDetectionThreshold: CGFloat = 80
+    private static let bottomDetectionThreshold: CGFloat = 80
 
     /// Looser bottom threshold while a response is streaming, so small layout
     /// jitter from incoming tokens does not flash the scroll-to-bottom button.
-    static let streamingBottomDetectionThreshold: CGFloat = 160
+    private static let streamingBottomDetectionThreshold: CGFloat = 160
 
     /// Extra distance past the bottom threshold required before the composer
     /// chrome collapses into its compact "reading older" presentation.
-    static let readingOlderHysteresis: CGFloat = 64
+    private static let readingOlderHysteresis: CGFloat = 64
 
     /// Strict bottom tolerance (pt) that re-arms follow when a gesture ends there.
-    static let followReArmThreshold: CGFloat = 12
+    private static let followReArmThreshold: CGFloat = 12
 
     /// How long a finished drag waits for momentum to announce itself before the
     /// release position is treated as final. Finger-lift velocity is not a
@@ -65,10 +50,6 @@ public enum ChatScrollPolicy {
 
     /// Gap between momentum ticks that means deceleration has stopped.
     public static let momentumSettleDelay: TimeInterval = 0.05
-
-    /// How long follow scrolls and the bottom size-change anchor stay suspended
-    /// after a disclosure toggle. Covers the disclosure animation plus a frame.
-    public static let disclosureAnchorSuspension: TimeInterval = 0.25
 
     /// The offset pin armed by a disclosure toggle releases once the content
     /// size has been quiet this long. Lazy rows can keep laying out well past
@@ -237,7 +218,7 @@ public enum ChatScrollPolicy {
         distanceFromBottom <= followReArmThreshold
     }
 
-    static func bottomThreshold(isStreaming: Bool) -> CGFloat {
+    private static func bottomThreshold(isStreaming: Bool) -> CGFloat {
         isStreaming ? streamingBottomDetectionThreshold : bottomDetectionThreshold
     }
 
@@ -295,14 +276,5 @@ extension View {
     /// Publishes `perform` as the disclosure action below this view.
     public func chatDisclosureToggled(perform: @escaping () -> Void) -> some View {
         chatEnvironmentAction(\.chatDisclosureToggled) { _ in perform() }
-    }
-}
-
-/// Keeps transcript reconciliation and other state-heavy startup work out of
-/// the system navigation transition. Cache preparation remains synchronous so
-/// an available transcript can participate in the destination's first layout.
-public enum ChatInitialAppearancePolicy {
-    public static func shouldBeginAsyncWork(hasCompletedAppearance: Bool) -> Bool {
-        hasCompletedAppearance
     }
 }

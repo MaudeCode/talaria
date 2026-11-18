@@ -228,13 +228,14 @@ final class ChatScrollPositionController {
         pendingRowRealizations[id] = (priority, action)
         guard rowRealizationTask == nil else { return }
         let epoch = rowRealizationEpoch
+        let clock = clock
         rowRealizationMotionRevision = nativeMotionRevision
         rowRealizationTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 guard let self, self.rowRealizationEpoch == epoch,
                       !self.pendingRowRealizations.isEmpty else { break }
                 if !self.startCoastingRowUpdates() { self.realizeNextRowIfAllowed() }
-                try? await Task.sleep(for: .milliseconds(17))
+                try? await clock.sleep(for: .milliseconds(17))
             }
             if let self, self.rowRealizationEpoch == epoch {
                 self.stopCoastingRowUpdates()
@@ -316,12 +317,20 @@ final class ChatScrollPositionController {
         }
     }
 
-    private let usesLazyLayout: Bool
     private var compensationScheduled = false
     private var compensationEpoch = 0
+    private let clock: any Clock<Duration>
+    /// Time on `clock` since this controller was made.
+    private let elapsed: () -> Duration
 
-    init(usesLazyLayout: Bool = false) {
-        self.usesLazyLayout = usesLazyLayout
+    init(clock: any Clock<Duration> = ContinuousClock()) {
+        self.clock = clock
+        elapsed = Self.stopwatch(clock)
+    }
+
+    private static func stopwatch<C: Clock<Duration>>(_ clock: C) -> () -> Duration {
+        let start = clock.now
+        return { start.duration(to: clock.now) }
     }
 
     private weak var scrollView: UIScrollView?
@@ -364,7 +373,7 @@ final class ChatScrollPositionController {
     private var anchor: (rowID: String, baselineMinY: CGFloat)?
     /// End of `restoreAfterPrepend()`'s window. A hold armed inside it lasts at
     /// least this long, so late measurement of the inserted rows is absorbed.
-    private var prependWindowEnd: ContinuousClock.Instant?
+    private var prependWindowEnd: Duration?
 
     var isHoldingPosition: Bool {
         mode == .hold && baselineOffsetY != nil
@@ -422,7 +431,7 @@ final class ChatScrollPositionController {
         inactiveRowIDs.insert(rowID)
         rowMinY[rowID] = nil
         if mode != .hold || rowID != anchor?.rowID { rowFrames[rowID] = nil }
-        if usesLazyLayout, isCompensatingPrepend, !hasRestoredMeasuredReader, !isRealizingReaderNatively,
+        if isCompensatingPrepend, !hasRestoredMeasuredReader, !isRealizingReaderNatively,
            rowID == anchor?.rowID, let scrollView, scrollView.window != nil,
            !scrollView.isDragging, !scrollView.isDecelerating,
            let onHoldAnchor, let height = heldRowBaselineHeight, height > 0, height.isFinite {
@@ -476,7 +485,7 @@ final class ChatScrollPositionController {
         baselineOffsetY = scrollView.contentOffset.y
         baselinePanTranslationY = scrollView.panGestureRecognizer.translation(in: scrollView).y
         anchor = anchorRowID.flatMap(anchorSnapshot)
-        if usesLazyLayout, let anchor { snapshotRowViewport(anchor.rowID, in: scrollView) }
+        if let anchor { snapshotRowViewport(anchor.rowID, in: scrollView) }
         if let contentRevision {
             rowGeometryRevision = contentRevision
             // Offscreen lazy rows may retain frames from an earlier page. The
@@ -632,7 +641,7 @@ final class ChatScrollPositionController {
     /// describes the held position when that position is the top. Anchor
     /// re-application has only been seen there (after a status-bar scroll);
     /// anywhere else, leave SwiftUI alone rather than hop.
-    nonisolated static func shouldResync(
+    nonisolated private static func shouldResync(
         didRevertSwiftUIOffset: Bool,
         heldOffsetY: CGFloat?,
         minimumOffsetY: CGFloat?
@@ -651,10 +660,12 @@ final class ChatScrollPositionController {
 
     private func scheduleQuietRelease() {
         quietReleaseTask?.cancel()
-        let quietEnd = ContinuousClock.now + .seconds(ChatScrollPolicy.disclosureHoldQuietPeriod)
-        let releaseAt = max(quietEnd, prependWindowEnd ?? quietEnd)
+        let now = elapsed()
+        let quietEnd = now + .seconds(ChatScrollPolicy.disclosureHoldQuietPeriod)
+        let delay = max(quietEnd, prependWindowEnd ?? quietEnd) - now
+        let clock = clock
         quietReleaseTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(until: releaseAt, clock: .continuous)
+            try? await clock.sleep(for: delay)
             guard !Task.isCancelled, let self else { return }
             self.finishHold()
         }
@@ -674,7 +685,7 @@ final class ChatScrollPositionController {
             Self.handleObservedOffsetChange(for: self, scrollView: scrollView, deltaY: current.y - previous.y)
         }
 
-        if mode == .prepend, usesLazyLayout, let scene = scrollView.window?.windowScene {
+        if mode == .prepend, let scene = scrollView.window?.windowScene {
             let link = UIUpdateLink(windowScene: scene)
             link.addAction(to: .afterUpdateComplete) { [weak self] link, _ in
                 guard let self, self.prependUpdateLink === link else { return }
@@ -690,9 +701,10 @@ final class ChatScrollPositionController {
     private func schedulePreservationEnd(mode: Mode, window: TimeInterval) {
         completionTask?.cancel()
         // Every admitted neighbor must retain compensation through its later measurement.
-        if mode == .prepend { prependWindowEnd = .now + .seconds(window) }
+        if mode == .prepend { prependWindowEnd = elapsed() + .seconds(window) }
+        let clock = clock
         completionTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(window))
+            try? await clock.sleep(for: .seconds(window))
             guard !Task.isCancelled, let self else { return }
             if mode == .hold {
                 self.finishHold()
@@ -801,7 +813,7 @@ final class ChatScrollPositionController {
 
         let sizeIsChanging = contentSizeChangedThisTurn
             || scrollView.contentSize.height != lastObservedContentHeight
-            || (usesLazyLayout && compensationScheduled)
+            || compensationScheduled
         if scrollView.isDragging || scrollView.isTracking || scrollView.isDecelerating {
             if mode == .prepend, let baselineOffsetY {
                 let translation = scrollView.panGestureRecognizer.translation(in: scrollView).y
@@ -846,7 +858,7 @@ final class ChatScrollPositionController {
                 anchorShift: 0, adjustedInset: scrollView.adjustedContentInset,
                 contentSizeHeight: scrollView.contentSize.height, boundsHeight: scrollView.bounds.height)
         }
-        if usesLazyLayout, mode == .prepend, hasRestoredMeasuredReader || isRealizingReaderNatively {
+        if mode == .prepend, hasRestoredMeasuredReader || isRealizingReaderNatively {
             // Bridge until the actual reader is restored, rather than an early background layout.
             guard let anchor, !inactiveRowIDs.contains(anchor.rowID), rowMinY[anchor.rowID] != nil else { return nil }
         }
@@ -878,7 +890,6 @@ final class ChatScrollPositionController {
     /// Disclosure holds and detached lazy layouts still coalesce measurements.
     private func requestCompensation() {
         guard baselineOffsetY != nil else { return }
-        guard usesLazyLayout else { applyCompensation(); return }
         if mode == .prepend, let scrollView, scrollView.window != nil {
             // Row geometry can arrive before UIKit extends the content bounds.
             // Clamping to the old end would realize an unrelated viewport.
@@ -1114,7 +1125,7 @@ final class ChatVerticalScrollAxisGuardView: UIView {
     /// (`contentSize.width + right inset - viewport width`), clamped to never fall
     /// below the LTR minimum. When the transcript has no horizontal overflow and
     /// no horizontal inset — its normal case — both branches resolve to `0`.
-    nonisolated static func pinnedHorizontalOffsetX(
+    nonisolated private static func pinnedHorizontalOffsetX(
         isRightToLeft: Bool,
         adjustedInset: UIEdgeInsets,
         contentSize: CGSize,

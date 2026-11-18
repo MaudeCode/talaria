@@ -30,6 +30,7 @@ final class ChatCodeBlockStreamingTests: XCTestCase {
         let recorder = ChatBodyEvaluationRecorder()
         ChatBodyEvaluationRecorder.installed = recorder
         let window = try hostWindow(ScrollView { StreamingFenceView(fence: fence) })
+        let scene = try XCTUnwrap(window.windowScene)
         let linesPerUpdate = Self.lineCount / Self.updateCount
         var fallbacks = 0
         var rebuiltLines = 0
@@ -46,7 +47,8 @@ final class ChatCodeBlockStreamingTests: XCTestCase {
             fence.content += (first..<first + linesPerUpdate).map { "let value\($0) = compute(\($0))\n" }.joined()
             let rendered = await awaitCondition { recorder.counts["codeLine", default: 0] > 0 }
             XCTAssertTrue(rendered, "Update \(update) never rendered")
-            try await Task.sleep(for: .milliseconds(10))
+            // The update's remaining groups render by the next drawn frame.
+            await awaitDisplayUpdates(2, in: scene)
             window.layoutIfNeeded()
 
             let rebuilt = recorder.counts["codeLine", default: 0]
@@ -68,7 +70,7 @@ final class ChatCodeBlockStreamingTests: XCTestCase {
         fence.isStreaming = false
         let decided = await awaitCondition { recorder.counts["highlightFallback", default: 0] > 0 }
         XCTAssertTrue(decided, "The settled block never decided")
-        try await Task.sleep(for: .milliseconds(50))
+        await awaitDisplayUpdates(2, in: scene)
         XCTAssertEqual(recorder.counts["highlightFallback", default: 0], 1)
     }
 }

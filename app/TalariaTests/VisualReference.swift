@@ -287,7 +287,8 @@ extension XCTestCase {
     /// support a hosting view added under another hosting controller's view (TAL-690). The window is hidden at
     /// teardown.
     @MainActor
-    func hostInOwnWindow(_ view: some View, size: CGSize) throws {
+    @discardableResult
+    func hostInOwnWindow(_ view: some View, size: CGSize) throws -> UIWindow {
         let window = try HostedScene.window(size: size)
         window.rootViewController = UIHostingController(rootView: view.frame(width: size.width))
         window.isHidden = false
@@ -295,5 +296,6 @@ extension XCTestCase {
         addTeardownBlock {
             MainActor.assumeIsolated { window.isHidden = true }
         }
+        return window
     }
 }

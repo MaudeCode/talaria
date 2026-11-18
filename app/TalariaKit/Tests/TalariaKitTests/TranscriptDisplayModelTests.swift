@@ -96,29 +96,6 @@ final class TranscriptMessageTests: XCTestCase {
         XCTAssertEqual(transcriptMessages.last?.assistantSegments.map(\.message.id), ["a1", "a2"])
     }
 
-    func testTranscriptMessagesCanHideActiveStreamingAssistantTurn() {
-        let messages = [
-            ChatMessage(role: "user", content: "Use tools", timestamp: 1, messageId: "u1"),
-            ChatMessage(role: "assistant", content: "", timestamp: 2, messageId: "stream-1"),
-            ChatMessage(
-                role: "tool",
-                content: #"{"success":true}"#,
-                timestamp: 3,
-                messageId: "t1",
-                toolCallId: "tool-1"
-            ),
-            ChatMessage(role: "assistant", content: "Older answer", timestamp: 4, messageId: "a2")
-        ]
-
-        let transcriptMessages = ChatViewModel.transcriptMessages(
-            from: messages,
-            hidingStreamingAssistantID: "stream-1"
-        )
-
-        XCTAssertEqual(transcriptMessages.map(\.loadedIndex), [0, 3])
-        XCTAssertEqual(transcriptMessages.map(\.message.id), ["u1", "a2"])
-    }
-
     func testTranscriptMessagesKeepStreamingAssistantAnchorStableAcrossContentUpdates() {
         let initialMessages = [
             ChatMessage(role: "user", content: "Write a long answer", timestamp: 1, messageId: "u1"),
@@ -245,25 +222,6 @@ final class TranscriptMessageTests: XCTestCase {
         }
 
         XCTAssertEqual(shown, ["u1", "marker", "a1", "old-user"])
-    }
-
-    func testTranscriptMessagesPreserveMessagesWithNilMessageIDsWhenNoStreamingTurnHidden() {
-        let messages = [
-            ChatMessage(role: "user", content: "Hello", timestamp: 1, messageId: nil),
-            ChatMessage(role: "assistant", content: "Hi", timestamp: 2, messageId: nil),
-            ChatMessage(
-                role: "tool",
-                content: #"{"success":true}"#,
-                timestamp: 3,
-                messageId: nil,
-                toolCallId: "tool-1"
-            )
-        ]
-
-        let transcriptMessages = ChatViewModel.transcriptMessages(from: messages)
-
-        XCTAssertEqual(transcriptMessages.map(\.loadedIndex), [0, 1])
-        XCTAssertEqual(transcriptMessages.map(\.message.role), ["user", "assistant"])
     }
 
     /// Only the server's scene folds work under "Worked"; the pre-steer part of a live turn has none, so it stays open.
@@ -455,22 +413,6 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
             isEnabled: false,
             showsResponseSpeed: true,
             hasResponseSpeed: false
-        ))
-    }
-
-    func testAssistantTurnHeaderShowsForAssistantTextTurnWhenEnabled() {
-        XCTAssertTrue(ChatTranscriptDisplaySettings.showsAssistantTurnHeader(
-            role: "assistant",
-            hasTextContent: true,
-            isEnabled: true
-        ))
-    }
-
-    func testAssistantTurnHeaderHiddenWhenToggleOff() {
-        XCTAssertFalse(ChatTranscriptDisplaySettings.showsAssistantTurnHeader(
-            role: "assistant",
-            hasTextContent: true,
-            isEnabled: false
         ))
     }
 
@@ -758,12 +700,16 @@ final class AssistantTurnTimestampFormatterTests: XCTestCase {
     private let fixedTimestamp: Double = 1_609_510_440
     private let utc = TimeZone(identifier: "UTC")!
 
-    func testFormatsTwelveHourLocaleAsShortTime() {
-        let result = AssistantTurnTimestampFormatter.shortTime(
-            forUnixTimestamp: fixedTimestamp,
-            locale: Locale(identifier: "en_US"),
-            timeZone: utc
+    /// The shared formatter's construction, under a fixed locale: the host's own locale decides 12h or 24h.
+    private func shortTime(locale: String) -> String? {
+        AssistantTurnTimestampFormatter.format(
+            fixedTimestamp,
+            with: AssistantTurnTimestampFormatter.makeFormatter(locale: Locale(identifier: locale), timeZone: utc)
         )
+    }
+
+    func testFormatsTwelveHourLocaleAsShortTime() {
+        let result = shortTime(locale: "en_US")
 
         XCTAssertNotNil(result)
         XCTAssertTrue(result?.contains("2:14") == true, "Expected 12h time, got \(result ?? "nil")")
@@ -771,11 +717,7 @@ final class AssistantTurnTimestampFormatterTests: XCTestCase {
     }
 
     func testFormatsTwentyFourHourLocaleAsShortTime() {
-        let result = AssistantTurnTimestampFormatter.shortTime(
-            forUnixTimestamp: fixedTimestamp,
-            locale: Locale(identifier: "en_GB"),
-            timeZone: utc
-        )
+        let result = shortTime(locale: "en_GB")
 
         XCTAssertNotNil(result)
         XCTAssertTrue(result?.contains("14:14") == true, "Expected 24h time, got \(result ?? "nil")")
@@ -784,11 +726,6 @@ final class AssistantTurnTimestampFormatterTests: XCTestCase {
 
     func testReturnsNilForNilTimestamp() {
         XCTAssertNil(AssistantTurnTimestampFormatter.shortTime(forUnixTimestamp: nil))
-        XCTAssertNil(AssistantTurnTimestampFormatter.shortTime(
-            forUnixTimestamp: nil,
-            locale: Locale(identifier: "en_US"),
-            timeZone: utc
-        ))
     }
 
     func testReturnsNilForNonFiniteTimestamp() {

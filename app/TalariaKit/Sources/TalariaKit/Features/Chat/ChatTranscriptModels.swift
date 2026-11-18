@@ -1079,14 +1079,6 @@ extension ChatViewModel {
     }
 
     nonisolated static func transcriptMessages(from messages: [ChatMessage], messageOffset: Int? = nil) -> [TranscriptMessage] {
-        transcriptMessages(from: messages, messageOffset: messageOffset, hidingStreamingAssistantID: nil)
-    }
-
-    nonisolated static func transcriptMessages(
-        from messages: [ChatMessage],
-        messageOffset: Int? = nil,
-        hidingStreamingAssistantID streamingAssistantID: String?
-    ) -> [TranscriptMessage] {
         let offset = max(0, messageOffset ?? 0)
         var transcriptMessages: [TranscriptMessage] = []
         transcriptMessages.reserveCapacity(messages.count)
@@ -1122,10 +1114,6 @@ extension ChatViewModel {
                 // A background reply that is only a silence marker shows nothing; its completion lines stay (TAL-460).
                 guard !message.backgroundSilent else { continue }
             }
-            if let streamingAssistantID, message.messageId == streamingAssistantID {
-                continue
-            }
-
             let anchorID = TranscriptTurnClassifier.anchorID(
                 for: message,
                 at: loadedIndex,

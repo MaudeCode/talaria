@@ -9,7 +9,7 @@ import XCTest
 /// App recognizes nothing in the text itself.
 @MainActor
 final class TranscriptMediaRenderingTests: XCTestCase {
-    func testEveryImageTheServerRewroteLoadsThroughTheAuthenticatedLoader() throws {
+    func testEveryImageTheServerRewroteLoadsThroughTheAuthenticatedLoader() async throws {
         let constructs = ["bold", "list", "quote", "linked", "inline"]
         let media = constructs.map { name in
             TranscriptMediaReference(url: "./api/media?path=%2Ftmp%2F\(name).png&session_id=s1", name: "\(name).png", mime: "image/png", mediaKind: .image)
@@ -48,11 +48,7 @@ final class TranscriptMediaRenderingTests: XCTestCase {
             transcriptMediaCacheNamespace: "https://example.invalid|\(UUID().uuidString)"
         ), size: CGSize(width: 360, height: 900))
 
-        let deadline = Date().addingTimeInterval(5)
-        while Date() < deadline {
-            if Set(loads.urls) == Set(media.map(\.url)) { break }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
+        _ = await awaitCondition { Set(loads.urls) == Set(media.map(\.url)) }
         XCTAssertEqual(Set(loads.urls), Set(media.map(\.url)), "Each construct's image loads as the server's item")
         XCTAssertFalse(loads.urls.contains(audio.url), "Audio renders as a tile, not an inline image")
     }

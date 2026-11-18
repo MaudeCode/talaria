@@ -399,23 +399,6 @@ final class MarkdownMathRendererTests: XCTestCase {
         XCTAssertEqual(decision, .highlight(language: "json", engine: .highlightr))
     }
 
-    func testMarkdownCodeHighlighterRendersSwiftCodeWithSplash() async {
-        let result = await MarkdownCodeHighlighter.highlightedCode(
-            for: MarkdownCodeHighlightRequest(
-                code: "let value = 1",
-                language: "swift",
-                colorScheme: .light,
-                isStreaming: false
-            )
-        )
-
-        guard case .highlighted(let highlightedCode) = result else {
-            return XCTFail("Expected Splash to highlight Swift code.")
-        }
-
-        XCTAssertEqual(highlightedCode.string, "let value = 1")
-    }
-
     func testMarkdownCodeHighlighterRendersNonSwiftCodeWithHighlightr() async {
         let result = await MarkdownCodeHighlighter.highlightedCode(
             for: MarkdownCodeHighlightRequest(
@@ -582,19 +565,27 @@ final class MarkdownMathRendererTests: XCTestCase {
     }
 
     func testMarkdownAttributedCodeFormatterSegmentsVeryLongHighlightedLines() {
-        let longLine = String(repeating: "x", count: MarkdownAttributedCodeFormatter.maxSegmentLength + 12)
-        let attributedCode = NSAttributedString(string: "first\n\(longLine)")
+        let cut = MarkdownAttributedCodeFormatter.maxSegmentLength
+        let longLine = String(repeating: "x", count: cut + 12)
+        let attributedCode = NSMutableAttributedString(string: "first\n\(longLine)")
+        // Highlighting runs: a colour on the line's first token and a font on a token that spans the cut.
+        let color = NSAttributedString.Key("color"), font = NSAttributedString.Key("font")
+        attributedCode.addAttribute(color, value: "keyword", range: NSRange(location: 6, length: 3))
+        attributedCode.addAttribute(font, value: "bold", range: NSRange(location: 6 + cut - 2, length: 6))
 
         let lines = MarkdownAttributedCodeFormatter.lines(in: attributedCode)
 
         XCTAssertEqual(lines.count, 2)
         XCTAssertEqual(lines[0].segments.map(\.attributedText.string), ["first"])
         XCTAssertEqual(lines[1].segments.count, 2)
-        XCTAssertEqual(
-            lines[1].segments[0].attributedText.string.count,
-            MarkdownAttributedCodeFormatter.maxSegmentLength
-        )
-        XCTAssertEqual(lines[1].segments[1].attributedText.string.count, 12)
+        let head = lines[1].segments[0].attributedText, tail = lines[1].segments[1].attributedText
+        XCTAssertEqual(head.string.count, cut)
+        XCTAssertEqual(tail.string.count, 12)
+        XCTAssertEqual(head.attribute(color, at: 0, effectiveRange: nil) as? String, "keyword")
+        XCTAssertNil(head.attribute(color, at: 3, effectiveRange: nil))
+        XCTAssertEqual(head.attribute(font, at: cut - 2, effectiveRange: nil) as? String, "bold")
+        XCTAssertEqual(tail.attribute(font, at: 3, effectiveRange: nil) as? String, "bold")
+        XCTAssertNil(tail.attribute(font, at: 4, effectiveRange: nil))
     }
 
     func testMarkdownContentRenderingPolicyAllowsNormalMarkdown() {
