@@ -1,4 +1,3 @@
-import { mkdirSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
@@ -50,14 +49,13 @@ for (const follows of [false, true]) test(`newest reply transfers its excerpt at
     await expect(page.locator('.scroll-to-bottom-btn')).toBeVisible()
   }
   const before = await prompt.evaluate((el) => el.getBoundingClientRect().top)
-  mkdirSync('/tmp/tal1114-evidence', { recursive: true })
-  await page.screenshot({ path: `/tmp/tal1114-evidence/before-${testInfo.project.name}-${follows ? 'follow' : 'reader'}.png` })
+  await page.screenshot({ path: testInfo.outputPath(`before-${follows ? 'follow' : 'reader'}.png`) })
   settled = true; finish()
   await expect(old.locator('.msg-collapse-toggle')).toBeVisible()
   await expect(page.locator('[data-message-key="4"] .msg-collapse-toggle')).toHaveCount(0)
   if (follows) await expect.poll(() => distance(page)).toBeLessThan(3)
   else await expect.poll(async () => Math.abs(await prompt.evaluate((el) => el.getBoundingClientRect().top) - before)).toBeLessThan(3)
-  await page.screenshot({ path: `/tmp/tal1114-evidence/after-${testInfo.project.name}-${follows ? 'follow' : 'reader'}.png` })
+  await page.screenshot({ path: testInfo.outputPath(`after-${follows ? 'follow' : 'reader'}.png`) })
   await old.locator('.msg-collapse-toggle').click()
   await expect(old.locator('.msg-collapse-toggle')).toHaveText('Show less')
   await old.locator('.msg-collapse-toggle').click()

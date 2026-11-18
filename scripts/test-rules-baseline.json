@@ -103,7 +103,6 @@
       "web/packages/frontend/e2e/workspace-previews.spec.ts": 2,
       "web/packages/frontend/src/app/settings.test.tsx": 1,
       "web/packages/frontend/src/features/chat/ChatSidePanel.test.tsx": 3,
-      "web/packages/frontend/src/features/chat/LiveTurnView.test.tsx": 1,
       "web/packages/frontend/src/features/composer/ComposerNotices.test.tsx": 1,
       "web/packages/frontend/src/features/composer/chips.test.tsx": 1,
       "web/packages/frontend/src/features/settings/SystemSection.test.tsx": 2,

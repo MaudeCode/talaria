@@ -3,8 +3,7 @@ import { expect, settle, test } from './fixtures'
 import ownerFixture from '../../../../contracts/fixtures/gateway-owner.json' with { type: 'json' }
 
 const sid = 'native-owner-reasoning'
-const { pinned, deferred } = ownerFixture.reasoning
-const shots = process.env.TAL1319_SHOTS
+const { pinned } = ownerFixture.reasoning
 const FOLDABLE = [[382, 618], [594, 406], [669, 902], [951, 620], [385, 609]] as const
 
 function ownerChat(page: Page, attachment: Record<string, unknown> | null) {
@@ -55,7 +54,7 @@ test('an owner chat shows, sets and resets its own level through its owner', asy
   await openPicker(page)
   await expect(page.getByRole('menuitemradio')).toHaveText(['Default', 'Low', 'Medium', 'High'])
   await expect(page.getByRole('menuitemradio', { name: 'High' })).toBeChecked()
-  if (shots) await page.screenshot({ path: `${shots}/picker-${info.project.name}.png` })
+  await page.screenshot({ path: info.outputPath(`picker.png`) })
 
   // The choice shows before the owner answers, and the owner's answer replaces it.
   let answer!: () => void
@@ -64,7 +63,7 @@ test('an owner chat shows, sets and resets its own level through its owner', asy
   await page.getByRole('menuitemradio', { name: 'Low' }).click()
   await expect(shown(page, 'Low')).toBeAttached()
   await expect.poll(() => chat.state.writes).toEqual([expect.objectContaining({ session_id: sid, action: 'mutate', operation: 'reasoning', payload: { effort: 'low' }, expected_revision: 2, execution_generation: 1 })])
-  if (shots) await page.screenshot({ path: `${shots}/chosen-${info.project.name}.png` })
+  await page.screenshot({ path: info.outputPath(`chosen.png`) })
   answer()
   await expect.poll(() => page.getByRole('menuitemradio', { name: 'Low' }).isChecked()).toBe(true)
 
@@ -76,63 +75,23 @@ test('an owner chat shows, sets and resets its own level through its owner', asy
   expect(chat.state.writes.at(-1)).toMatchObject({ operation: 'reasoning', payload: { effort: null }, expected_revision: 3 })
   expect(chat.state.writes).toHaveLength(2)
   expect(chat.state.profileReads).toBe(0)
-  if (shots) await page.screenshot({ path: `${shots}/reset-${info.project.name}.png` })
+  await page.screenshot({ path: info.outputPath(`reset.png`) })
 })
 
-// The states the unit tests own, kept for the screenshots a UI change attaches to its PR.
-test.describe('evidence', () => {
-  test.skip(!shots, 'runs for TAL1319_SHOTS')
-
-  test('a level held for the turn keeps the actual level and says so', async ({ page }, info) => {
-    const chat = ownerChat(page, { reasoning_control: deferred.attachment.reasoning_control })
-    await chat.ready
-    await page.goto(`/session/${sid}`)
-    await expect(page.getByText('Applies after this turn').first()).toBeVisible()
-    if (shots) await page.screenshot({ path: `${shots}/deferred-${info.project.name}.png` })
-    await openPicker(page)
-    await expect(page.getByRole('menuitemradio', { name: 'High' })).toBeChecked()
-  })
-
-  test('a refused pick rolls back to the actual level with the refusal', async ({ page, errors }, info) => {
-    const chat = ownerChat(page, { reasoning_control: control })
-    await chat.ready
-    chat.state.refuse = true
-    await page.goto(`/session/${sid}`)
-    await openPicker(page)
-    await page.getByRole('menuitemradio', { name: 'Low' }).click()
-    await expect(page.getByText('The owning Agent refused the action')).toBeVisible()
-    await expect(page.getByRole('menuitemradio', { name: 'High' })).toBeChecked()
-    expect(chat.state.writes).toHaveLength(1)
-    if (shots) await page.screenshot({ path: `${shots}/refused-${info.project.name}.png` })
-    errors.splice(0, errors.length, ...errors.filter((e) => !/api\/chat\/owner-action|status of 409/.test(e)))
-  })
-
-  test('an owner without a level offers no picker', async ({ page }, info) => {
-    const chat = ownerChat(page, null)
-    await chat.ready
+test('the picker fits every foldable viewport', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'one browser covers the viewport list')
+  const chat = ownerChat(page, { reasoning_control: control })
+  await chat.ready
+  for (const [width, height] of FOLDABLE) {
+    await page.setViewportSize({ width, height })
     await page.goto(`/session/${sid}`)
     await expect(page.locator('[data-role="user"]')).toHaveText(['Back up the cluster'])
-    await page.locator('#msg').focus()
-    await expect(page.getByRole('button', { name: /reasoning effort/i })).toHaveCount(0)
-    expect(chat.state.profileReads).toBe(0)
-    if (shots) await page.screenshot({ path: `${shots}/unsupported-${info.project.name}.png` })
-  })
-
-  test('the picker fits every foldable viewport', async ({ page }, info) => {
-    test.skip(info.project.name !== 'desktop', 'one browser covers the viewport list')
-    const chat = ownerChat(page, { reasoning_control: control })
-    await chat.ready
-    for (const [width, height] of FOLDABLE) {
-      await page.setViewportSize({ width, height })
-      await page.goto(`/session/${sid}`)
-      await expect(page.locator('[data-role="user"]')).toHaveText(['Back up the cluster'])
-      await openPicker(page)
-      await expect(page.getByRole('menuitemradio', { name: 'Default' })).toBeVisible()
-      await page.screenshot({ path: `${shots}/foldable-${width}x${height}.png` })
-      for (const option of await page.getByRole('menuitemradio').all()) {
-        const box = await option.boundingBox()
-        expect(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= height, `${width}x${height}: ${JSON.stringify(box)}`).toBe(true)
-      }
+    await openPicker(page)
+    await expect(page.getByRole('menuitemradio', { name: 'Default' })).toBeVisible()
+    await page.screenshot({ path: info.outputPath(`foldable-${width}x${height}.png`) })
+    for (const option of await page.getByRole('menuitemradio').all()) {
+      const box = await option.boundingBox()
+      expect(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= height, `${width}x${height}: ${JSON.stringify(box)}`).toBe(true)
     }
-  })
+  }
 })

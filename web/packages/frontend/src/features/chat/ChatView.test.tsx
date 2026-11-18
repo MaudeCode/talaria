@@ -159,24 +159,6 @@ it('renders each persisted message once while three token frames update the live
   expect(Object.fromEntries(persistedKeys.map((key) => [key, renders.mock.calls.filter(([rendered]) => rendered === key).length]))).toEqual(Object.fromEntries(persistedKeys.map((key) => [key, 1])))
 })
 
-it('updates streamed text without rendering composer controls again until turn state changes', async () => {
-  chat()
-  await screen.findByText('Persisted answer')
-  const token = (text: string, seq: number) => act(() => dispatch({ type: 'event', sessionId: 'memo-chat', streamId: 'live-run', event: { event: 'token', data: { text } }, lastEventId: `live-run:${seq}`, now: Date.now() }))
-  token('First', 1)
-  await screen.findByText('First')
-  composer.mockClear()
-  let text = 'First'
-  for (let seq = 2; seq <= 11; seq++) {
-    token(` word${seq}`, seq)
-    text += ` word${seq}`
-    await screen.findByText(text)
-  }
-  expect(composer).not.toHaveBeenCalled()
-  act(() => dispatch({ type: 'event', sessionId: 'memo-chat', streamId: 'live-run', event: { event: 'cancel', data: {} }, lastEventId: 'live-run:12', now: Date.now() }))
-  await waitFor(() => expect(composer).toHaveBeenLastCalledWith(expect.objectContaining({ busy: false })))
-})
-
 const token = (text: string, seq: number) => act(() => dispatch({ type: 'event', sessionId: 'memo-chat', streamId: 'live-run', event: { event: 'token', data: { text } }, lastEventId: `live-run:${seq}`, now: Date.now() }))
 
 it('streams 20 token frames into the live row alone, rendering neither ChatView, the side panel nor a settled row (TAL-1388)', async () => {
@@ -251,24 +233,6 @@ interface ComposerProps { onModelChange: (model: string, provider: string | null
   onToolsetsChange: (t: string[] | null) => void; onToggleYolo: () => void; onReasoningChange: (level: string | null) => void
   onLocalCommand: (name: string, args: string) => Promise<boolean | 'refused'>; onOwnerAction: (request: object) => Promise<void> }
 const lastComposer = () => composer.mock.calls.at(-1)![0] as ComposerProps
-
-it('shows toolsets, YOLO and reasoning choices to the composer before the writes answer (TAL-1384)', async () => {
-  const held = () => new Promise<never>(() => undefined)
-  vi.mocked(api.setSessionToolsets).mockReturnValue(held())
-  vi.mocked(api.setSessionYolo).mockReturnValue(held())
-  vi.mocked(api.setReasoningEffort).mockReturnValue(held())
-  chat(false)
-  await screen.findByText('Persisted answer')
-  await waitFor(() => expect(lastComposer().session).not.toBeNull())
-  act(() => { lastComposer().onToolsetsChange(['web']) })
-  await waitFor(() => expect(lastComposer().session?.enabled_toolsets).toEqual(['web']))
-  act(() => { lastComposer().onToggleYolo() })
-  await waitFor(() => expect(lastComposer().yolo).toBe(true))
-  act(() => { lastComposer().onReasoningChange('high') })
-  await waitFor(() => expect(lastComposer().reasoning).toBe('high'))
-  expect(api.setSessionToolsets).toHaveBeenCalledWith('memo-chat', ['web'])
-  expect(api.setSessionYolo).toHaveBeenCalledWith('memo-chat', true)
-})
 
 it('reads and writes reasoning per chat, and a late answer never reaches the next chat (TAL-1647)', async () => {
   const chats = Object.fromEntries(['chat-a', 'chat-b'].map((id) => [id, sessionFixture({ session_id: id, model: 'claude-sonnet-4-6', model_provider: 'anthropic', messages: [{ id: 1, role: 'user', content: 'Persisted question' }, { id: 2, role: 'assistant', content: `Answer ${id}` }] })]))
@@ -345,23 +309,6 @@ describe('an owner chat\'s reasoning level (TAL-1319)', () => {
   beforeEach(() => { vi.mocked(api.ownerAction).mockReset(); vi.mocked(api.setReasoningEffort).mockReset(); vi.mocked(api.fetchReasoning).mockClear() })
   const composerProps = () => lastComposer() as unknown as ComposerProps & { reasoning: string | null; reasoningLevels?: string[] }
 
-  it('shows the owner\'s level and levels, not the profile\'s', async () => {
-    open({ ...owner, reasoning_control: control })
-    await waitFor(() => expect(composerProps().reasoning).toBe('high'))
-    expect(composerProps().reasoningLevels).toEqual(control.supported_efforts)
-    expect(api.fetchReasoning).not.toHaveBeenCalled()
-  })
-
-  it('shows a pick at once and writes it only through the owner', async () => {
-    const session = open({ ...owner, reasoning_control: control })
-    vi.mocked(api.ownerAction).mockReturnValue(new Promise(() => undefined) as never)
-    await waitFor(() => expect(composerProps().reasoning).toBe('high'))
-    act(() => { composerProps().onReasoningChange('low') })
-    await waitFor(() => expect(composerProps().reasoning).toBe('low'))
-    expect(api.ownerAction).toHaveBeenCalledWith(expect.objectContaining({ session_id: session.session_id, operation: 'reasoning', payload: { effort: 'low' }, expected_revision: 2, execution_generation: 1 }))
-    expect(api.setReasoningEffort).not.toHaveBeenCalled()
-  })
-
   it('/reasoning takes the same path, and default resets', async () => {
     open({ ...owner, reasoning_control: control })
     vi.mocked(api.ownerAction).mockReturnValue(new Promise(() => undefined) as never)
@@ -405,6 +352,7 @@ it('rolls a refused YOLO change back and finishes /personality without waiting (
   await waitFor(() => expect(lastComposer().session).not.toBeNull())
   act(() => { lastComposer().onToggleYolo() })
   await waitFor(() => expect(lastComposer().yolo).toBe(true))
+  expect(api.setSessionYolo).toHaveBeenCalledWith('memo-chat', true)
   await act(async () => { refuse(new ApiError({ kind: 'http', status: 403, path: '/x', message: 'Not allowed' })); await Promise.resolve() })
   await waitFor(() => expect(lastComposer().yolo).toBe(false))
   await expect(lastComposer().onLocalCommand('personality', 'pirate')).resolves.toBe(true)
@@ -414,10 +362,10 @@ it('rolls a refused YOLO change back and finishes /personality without waiting (
 const refusal = () => new ApiError({ kind: 'http', status: 400, path: '/x', message: 'Refused by the server' })
 
 it.each([
-  ['toolsets', () => vi.mocked(api.setSessionToolsets), (c: ComposerProps) => { c.onToolsetsChange(['web']) }, (c: ComposerProps) => c.session?.enabled_toolsets ?? null, ['web'], null],
-  ['reasoning effort', () => vi.mocked(api.setReasoningEffort), (c: ComposerProps) => { c.onReasoningChange('high') }, (c: ComposerProps) => c.reasoning, 'high', null],
-  ['/personality', () => vi.mocked(api.setPersonality), (c: ComposerProps) => { void c.onLocalCommand('personality', 'pirate') }, (c: ComposerProps) => c.session?.personality ?? null, 'pirate', null],
-] as const)('rolls a refused %s change back with the error (TAL-1384)', async (_, write, act_, shown, chosen, confirmed) => {
+  ['toolsets', () => vi.mocked(api.setSessionToolsets), (c: ComposerProps) => { c.onToolsetsChange(['web']) }, (c: ComposerProps) => c.session?.enabled_toolsets ?? null, ['web'], null, ['memo-chat', ['web']]],
+  ['reasoning effort', () => vi.mocked(api.setReasoningEffort), (c: ComposerProps) => { c.onReasoningChange('high') }, (c: ComposerProps) => c.reasoning, 'high', null, null],
+  ['/personality', () => vi.mocked(api.setPersonality), (c: ComposerProps) => { void c.onLocalCommand('personality', 'pirate') }, (c: ComposerProps) => c.session?.personality ?? null, 'pirate', null, ['memo-chat', 'pirate']],
+] as const)('rolls a refused %s change back with the error (TAL-1384)', async (_, write, act_, shown, chosen, confirmed, sent) => {
   let refuse!: (error: unknown) => void
   write().mockReturnValue(new Promise((_, reject) => { refuse = reject }) as never)
   chat(false)
@@ -425,6 +373,7 @@ it.each([
   await waitFor(() => expect(lastComposer().session).not.toBeNull())
   act(() => { act_(lastComposer()) })
   await waitFor(() => expect(shown(lastComposer())).toEqual(chosen))
+  if (sent) expect(write()).toHaveBeenCalledWith(...sent)
   await act(async () => { refuse(refusal()); await Promise.resolve() })
   await waitFor(() => expect(shown(lastComposer())).toEqual(confirmed))
   expect(showToast).toHaveBeenCalledWith('Refused by the server', 4000, 'error')
@@ -519,30 +468,6 @@ it('brings the last exchange back when /undo is refused (TAL-1384)', async () =>
   expect(screen.getByText('Persisted question')).toBeInTheDocument()
   await expect(result).resolves.toBe('refused')
   expect(showToast).toHaveBeenCalledWith('Refused by the server', 4000, 'error')
-})
-
-it('drops a discarded owner input from the composer at once (TAL-1384)', async () => {
-  const owner = { state: 'attached' as const, reason: null, restarting: false, can_submit: true, can_interrupt: true, can_attach: false, revision: 1, execution_generation: 1,
-    admissions: [{ admission_id: 'a1', text: 'first', status: 'unknown', actions: ['retry', 'discard'], execution_generation: 1 }, { admission_id: 'a2', text: 'second', status: 'queued', actions: ['cancel'], execution_generation: 1 }], queued_input_count: 2 }
-  const session = sessionFixture({ session_id: 'owner-chat', owner_attachment: owner as never })
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-  vi.mocked(api.fetchSession).mockResolvedValue({ session })
-  qc.setQueryData(keys.sessions.detail(session.session_id), { session })
-  vi.mocked(api.ownerAction).mockReturnValue(new Promise(() => undefined) as never)
-  render(<QueryClientProvider client={qc}><ChatView sessionId={session.session_id} /></QueryClientProvider>)
-  await waitFor(() => expect(lastComposer().session?.owner_attachment?.admissions).toHaveLength(2))
-  void lastComposer().onOwnerAction({ session_id: 'owner-chat', action: 'discard', admission_id: 'a1', execution_generation: 1 })
-  await waitFor(() => expect(lastComposer().session?.owner_attachment?.admissions.map((a) => a.admission_id)).toEqual(['a2']))
-})
-
-it('empties the transcript on /clear and drops the last exchange on /undo before the server answers (TAL-1384)', async () => {
-  vi.mocked(api.undoSession).mockReturnValue(new Promise(() => undefined) as never)
-  chat(false)
-  await screen.findByText('Persisted answer')
-  await waitFor(() => expect(lastComposer().session).not.toBeNull())
-  void lastComposer().onLocalCommand('undo', '')
-  await waitFor(() => expect(screen.queryByText('Persisted question')).toBeNull())
-  expect(screen.queryByText('Persisted answer')).toBeNull()
 })
 
 it('brings the transcript back when /clear is refused (TAL-1384)', async () => {

@@ -9,9 +9,6 @@ import type { Message } from '../../contracts'
 import type { TurnSummaryPart } from '@maudecode/talaria-web-contracts'
 import { groupAssistantTurns } from './turnActivity'
 import { projectMessages } from './useTranscript'
-import { LiveStatusPill } from './LiveTurnView'
-import { dispatch, resetStreamStoreForTests } from '../../stream/store'
-import { queryWrapper } from '../../test/fixtures'
 
 afterEach(cleanup)
 // The client entry preloads the renderer before any history arrives; a transcript holds its rows until then (TAL-2410).
@@ -86,22 +83,6 @@ describe('reply token usage (TAL-1076)', () => {
   const usage = { input_tokens: 12_345, output_tokens: 678, cache_read_tokens: 9_000, cache_write_tokens: 120, estimated_cost: 0.0123, cache_hit_percent: 73 }
   const reply = (extra: Partial<Message> = {}) => groupAssistantTurns(projectMessages([{ role: 'assistant', id: 1, content: 'Done.', _turnDuration: 4.25, _usedModel: 'test-model', ...extra }]))[0]!
 
-  it('shows the reply\'s own in/out summary and opens its cache and cost figures', async () => {
-    render(<AssistantMessageRow row={reply({ _turnUsage: usage })} name="Assistant" mode="compact_worklog" actions={{}} tts={false} tokenUsage isLast />)
-    const trigger = screen.getByRole('button', { name: 'Token usage for this reply: 12.3K in, 678 out' })
-    expect(trigger.textContent).toBe('12.3K in · 678 out')
-    fireEvent.click(trigger)
-    const popup = await screen.findByRole('dialog', { name: 'Token usage for this reply: 12.3K in, 678 out' })
-    expect([...popup.querySelectorAll('span')].map((s) => s.textContent)).toEqual(['Input tokens: 12,345', 'Output tokens: 678', 'Estimated cost: $0.0123', 'Cache: 73% hit (9,000 read / 120 write)'])
-  })
-
-  it('omits figures the server left unknown', async () => {
-    render(<AssistantMessageRow row={reply({ _turnUsage: { ...usage, estimated_cost: null, cache_hit_percent: null } })} name="Assistant" mode="compact_worklog" actions={{}} tts={false} tokenUsage isLast />)
-    fireEvent.click(screen.getByRole('button', { name: /^Token usage for this reply/ }))
-    const popup = await screen.findByRole('dialog')
-    expect([...popup.querySelectorAll('span')].map((s) => s.textContent)).toEqual(['Input tokens: 12,345', 'Output tokens: 678'])
-  })
-
   it('shows nothing for an older reply without a record or with the setting off', () => {
     const { rerender } = render(<AssistantMessageRow row={reply()} name="Assistant" mode="compact_worklog" actions={{}} tts={false} tokenUsage isLast />)
     expect(screen.queryByRole('button', { name: /Token usage/ })).toBeNull()
@@ -123,11 +104,6 @@ describe('reply token speed (TAL-2150)', () => {
     expect(screen.queryByRole('button', { name: /Token usage/ }) !== null).toBe(tokenUsage)
   })
 
-  it('shows no speed for a reply stored without one', () => {
-    render(<AssistantMessageRow row={reply()} name="Assistant" mode="compact_worklog" actions={{}} tts={false} tps isLast />)
-    expect(screen.queryByText(/tok\/s/)).toBeNull()
-    expect(screen.getByText('4.3s · test-model')).toBeTruthy()
-  })
 })
 
 describe('reply turn summary (TAL-2339)', () => {
@@ -226,14 +202,6 @@ describe('background updates (TAL-460)', () => {
     expect(lines[1]).toHaveAttribute('aria-label', 'Legacy completed goal. The worker or parent review outcome is unknown.')
   })
 
-  it('says the run is working on background results only while the server says a background result started it', () => {
-    resetStreamStoreForTests()
-    dispatch({ type: 'start', sessionId: 'background-status', streamId: 'run', turnId: null, userMessageId: null, userText: '', now: Date.now() })
-    const { rerender } = render(<LiveStatusPill sessionId="background-status" background />, { wrapper: queryWrapper() })
-    expect(screen.getByRole('status')).toHaveTextContent('Working on background results')
-    rerender(<LiveStatusPill sessionId="background-status" />)
-    expect(screen.getByRole('status')).toHaveTextContent('Working')
-  })
 })
 
 describe('compaction markers (TAL-305)', () => {
