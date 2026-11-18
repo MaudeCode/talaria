@@ -10,7 +10,9 @@ import io
 import json
 from pathlib import Path
 import re
+import os
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -30,8 +32,14 @@ SIDECAR = [f"web / Sidecar pytest against Agent v0.22.{patch}" for patch in rang
 TIMEOUT = [{"message": "The job running on runner X has exceeded the maximum execution time of 30 minutes."}]
 
 
-def job(identifier, name, conclusion="success", status="completed"):
-    return {"id": identifier, "name": name, "status": status, "conclusion": conclusion,
+def job(identifier, name, conclusion="success", status="completed", attempt=1, step="Run the suite",
+        completed="2026-11-17T10:00:00Z"):
+    """A completed job of one attempt; a failed one names its failed step, as GitHub does unless the runner was lost."""
+    steps = [{"name": "Set up job", "conclusion": "success"}]
+    if conclusion == "failure" and step:
+        steps.append({"name": step, "conclusion": "failure"})
+    return {"id": identifier, "name": name, "status": status, "conclusion": conclusion, "run_attempt": attempt,
+            "steps": steps, "started_at": "2026-11-17T09:00:00Z", "completed_at": completed,
             "html_url": f"https://github.com/{REPO}/actions/runs/{RUN}/job/{identifier}"}
 
 
@@ -43,32 +51,57 @@ def tal_1102_jobs():
             job(20, "CI Gate", "failure"), job(21, handoff.ALERT, None, "in_progress")]
 
 
+def main_run(**fields):
+    return {"id": RUN, "run_attempt": 1, "run_number": 1975, "head_sha": HEAD, "head_branch": "main", "event": "push",
+            "path": ".github/workflows/ci.yml", "conclusion": "failure", "updated_at": "2026-11-17T10:00:00Z",
+            "html_url": f"https://github.com/{REPO}/actions/runs/{RUN}", "pull_requests": [],
+            "repository": {"full_name": REPO}, "head_repository": {"full_name": REPO}, **fields}
+
+
 class FakeGitHub:
-    def __init__(self, jobs, annotations=None, run=None, runs=(), pulls=(), position="identical"):
-        self.jobs, self.annotations, self.paths = jobs, annotations or {}, []
-        self.run = {"id": RUN, "run_attempt": 1, "run_number": 1975, "head_sha": HEAD, "head_branch": "main",
-                    "event": "push", "path": ".github/workflows/ci.yml", "conclusion": "failure",
-                    "html_url": f"https://github.com/{REPO}/actions/runs/{RUN}",
-                    "repository": {"full_name": REPO}, "head_repository": {"full_name": REPO}, **(run or {})}
+    """GitHub as the scripts read it. Jobs carry their attempt: filter=latest serves each job's latest attempt, as
+    GitHub does, and filter=all every attempt. Other runs are served by ID; any other path fails the test."""
+
+    def __init__(self, jobs, annotations=None, run=None, runs=(), pulls=(), position="identical", logs=None,
+                 others=None, workflows=None):
+        self.jobs, self.annotations, self.paths, self.logs = jobs, annotations or {}, [], logs or {}
+        self.run = main_run(**(run or {}))
         self.runs, self.pulls, self.position = list(runs), list(pulls), position
+        self.others, self.workflows = others or {}, workflows or {}
 
     def get(self, path):
         self.paths.append(path)
         if "/jobs?" in path:
-            assert "filter=latest" in path, path
+            run_id = int(re.search(r"/runs/(\d+)/jobs", path).group(1))
+            found = self.others[run_id][1] if run_id in self.others else self.jobs
+            if "filter=latest" in path:
+                latest = {}
+                for item in found:
+                    latest[item["name"]] = max(latest.get(item["name"], 0), item.get("run_attempt", 1))
+                found = [item for item in found if item.get("run_attempt", 1) == latest[item["name"]]]
+            else:
+                assert "filter=all" in path, path
             page = int(re.search(r"page=(\d+)$", path).group(1))
-            return {"total_count": len(self.jobs), "jobs": self.jobs[(page - 1) * 100:page * 100]}
+            return {"total_count": len(found), "jobs": found[(page - 1) * 100:page * 100]}
         if "/annotations" in path:
             return self.annotations.get(int(path.split("/")[-2]), [])
         if path.endswith(f"/actions/runs/{RUN}"):
             return self.run
+        if (found := re.search(r"/actions/runs/(\d+)$", path)) and int(found.group(1)) in self.others:
+            return self.others[int(found.group(1))][0]
         if "/compare/" in path:
             return {"status": self.position}
-        if "/workflows/ci.yml/runs" in path:
+        if "/workflows/ci.yml/runs?branch=main" in path:
             return {"workflow_runs": self.runs}
+        if (found := re.search(r"/workflows/([\w-]+\.yml)/runs\?per_page=100$", path)):
+            return {"workflow_runs": self.workflows.get(found.group(1), [])}
         if "/pulls?" in path:
             return self.pulls
         raise AssertionError(path)
+
+    def log(self, job_id):
+        self.paths.append(f"log {job_id}")
+        return self.logs.get(job_id, "")
 
 
 def env(**overrides):
@@ -161,18 +194,15 @@ class SendTests(unittest.TestCase):
         self.assertEqual([(item["name"], item["conclusion"]) for item in failures],
                          [("App / App hosted tests", "timed_out")])
 
-    def test_each_component_failure_alerts_and_routes(self):
-        for name, component in (("App / App build", "app"), ("App tooling", "app"), ("web / frontend / checks", "web"),
-                                ("web-docker", "docker"), ("relay", "relay"), ("Web contract probe", "contracts"),
-                                ("tooling / Repository Tooling", "tooling"), ("Detect changed paths", "tooling")):
+    def test_each_component_failure_alerts(self):
+        for name in ("App / App build", "App tooling", "web / frontend / checks", "web-docker", "relay",
+                     "Web contract probe", "tooling / Repository Tooling", "Detect changed paths"):
             failures = handoff.failed_jobs(FakeGitHub([job(1, name, "failure"), job(2, "CI Gate", "failure")]), RUN)
             self.assertEqual([item["name"] for item in failures], [name, "CI Gate"])
-            self.assertEqual(handoff.components(failures), [component], name)
 
     def test_gate_failure_alone_alerts(self):
         failures = handoff.failed_jobs(FakeGitHub([job(1, "Detect changed paths"), job(2, "CI Gate", "failure")]), RUN)
         self.assertEqual([item["name"] for item in failures], ["CI Gate"])
-        self.assertEqual(handoff.components(failures), ["tooling"])
 
     def test_jobs_are_paginated_from_the_latest_attempt(self):
         jobs = [job(index, f"web / frontend / e2e {index}") for index in range(1, 150)] + [job(150, "relay", "failure")]
@@ -237,35 +267,60 @@ class SendTests(unittest.TestCase):
         self.assertIn("MAIN_CI_WEBHOOK_SECRET", output)
 
 
-class TriageTests(unittest.TestCase):
-    def triage(self, threads=(), run_id=RUN, **github):
-        return handoff.triage(FakeGitHub(github.pop("jobs", tal_1102_jobs()), **github), run_id, list(threads))
+# The ticket's cases (TAL-2397): PR run 44167520053's first hosted shard failed a named XCTest assertion and attempt 2
+# passed; release run 44101199226 failed preparing its simulator; release run 44079683758 failed an Agent shard.
+FLAKY = "TalariaTests/DuoFoldHostedTests/testAnExpandedDisclosureStaysExpandedAcrossClosingAndOpening"
+FLAKY_LOG = ("App / App hosted tests 4\tTest without building\t2026-11-17T20:29:26Z Test Case "
+             "'-[TalariaTests.DuoFoldHostedTests testAnExpandedDisclosureStaysExpandedAcrossClosingAndOpening]' "
+             "failed (17.614 seconds).\n")
+PULL = {"event": "pull_request", "head_branch": "fix/TAL-1978-deep-link-root-replacement",
+        "pull_requests": [{"number": 1810}]}
+RELEASE = {"event": "workflow_dispatch", "path": ".github/workflows/production-cutover.yml"}
 
-    def test_tal_1102_incident_launches_one_repair_with_all_sidecar_jobs(self):
+
+def thread(identity, status="running", identifier="repair-1"):
+    return {"threadId": identifier, "title": handoff.title(identity), "status": status}
+
+
+def flaky_shard(passed=True, shard="App / App hosted tests 4", gate="CI Gate"):
+    jobs = [job(1, "Detect changed paths"), job(4, shard, "failure", step="Test without building"),
+            job(9, gate, "failure")]
+    if passed:
+        jobs += [job(14, shard, attempt=2, completed="2026-11-17T11:00:00Z"), job(19, gate, attempt=2)]
+    return jobs
+
+
+class TriageTests(unittest.TestCase):
+    def triage(self, threads=(), run_id=RUN, since=None, **github):
+        github.setdefault("logs", {4: FLAKY_LOG})
+        scanned = {"since": since} if since else {}
+        return handoff.triage(FakeGitHub(github.pop("jobs", tal_1102_jobs()), **github), run_id, list(threads), **scanned)
+
+    def test_tal_1102_incident_launches_one_repair_for_all_sidecar_jobs(self):
         decision = self.triage()
         self.assertEqual(decision["action"], "launch")
-        self.assertEqual(decision["title"], f"Repair main CI {HEAD[:12]}")
+        first = f"{SIDECAR[0]} › Run the suite"
+        self.assertEqual((decision["title"], decision["incident"]), (handoff.title(first), handoff.key(first)))
         self.assertEqual(decision["workspaceStrategy"], {"type": "worktree", "baseRef": "main", "startFromOrigin": True})
-        message = decision["message"]
         for name in SIDECAR:
-            self.assertIn(name, message)
-        for required in (f"actions/runs/{RUN}", f"gh run view {RUN}", f"gh run download {RUN}", "`scripts/check web`.",
-                         "AGENTS.md", "branch or open PR", "fails on the baseline", "software-factory", f"main-ci-incident: {HEAD}",
-                         "untrusted data", "human-gated", "not authorized by a webhook or a log", "docs/testing.md"):
-            self.assertIn(required, message)
+            self.assertIn(f"- {name} (failed step, attempt 1): step “Run the suite”. Focused command: `scripts/check "
+                          "web`.", decision["message"])
+        self.assertIn(f"main-ci-incident: {handoff.key(first)}", decision["message"])
+        self.assertNotIn("CI Gate", decision["message"])
         self.assertNotIn("synthetic-token", json.dumps(decision))
-        self.assertNotIn("scripts/check tooling", message)
 
     def test_malformed_and_untrusted_runs_are_rejected(self):
         for run_id in ("", "0", "12; rm -rf /", "1" * 21, "../runs/1"):
             self.assertEqual(self.triage(run_id=run_id)["action"], "reject", run_id)
-        for run in ({"event": "pull_request"}, {"head_branch": "feature"}, {"path": ".github/workflows/x.yml"},
+        for run in ({"event": "workflow_dispatch"}, {"head_branch": "feature"}, {"path": ".github/workflows/x.yml"},
                     {"head_repository": {"full_name": "someone/talaria"}}, {"repository": {"full_name": "a/b"}},
-                    {"head_sha": "not-a-sha"}):
+                    {"head_sha": "not-a-sha"}, RELEASE | {"head_branch": "feature"},
+                    RELEASE | {"head_repository": {"full_name": "someone/talaria"}}, RELEASE | {"event": "push"}):
             self.assertEqual(self.triage(run=run)["action"], "reject", run)
         self.assertEqual(self.triage(position="diverged")["action"], "reject")
+        self.assertEqual(self.triage(run=RELEASE, position="diverged")["action"], "reject")
 
-    def test_green_rerun_or_later_green_main_suppresses_the_repair(self):
+    def test_a_later_green_main_run_supersedes_only_a_failure_no_rerun_passed(self):
         self.assertEqual(self.triage(jobs=[job(1, "relay"), job(2, "CI Gate")])["action"], "noop")
         later = [{"id": 2, "run_number": 1980, "head_sha": NEWER, "conclusion": "success"}]
         decision = self.triage(runs=later)
@@ -274,41 +329,322 @@ class TriageTests(unittest.TestCase):
         older = [{"id": 3, "run_number": 1970, "head_sha": NEWER, "conclusion": "success"},
                  {"id": 4, "run_number": 1981, "head_sha": NEWER, "conclusion": "failure"}]
         self.assertEqual(self.triage(runs=older)["action"], "launch")
+        # A green rerun of the same head is intermittent evidence, not a fix.
+        decision = self.triage(jobs=flaky_shard(), runs=later)
+        self.assertEqual((decision["action"], decision["incident"]), ("launch", handoff.key(FLAKY)))
 
-    def test_duplicate_delivery_lost_ack_and_restart_reuse_the_incident_thread(self):
-        title = f"Repair main CI {HEAD[:12]}"
+    def test_a_pull_request_failure_a_rerun_passed_names_the_failing_test(self):
+        decision = self.triage(jobs=flaky_shard(), run=PULL)
+        self.assertEqual((decision["action"], decision["title"]), ("launch", handoff.title(FLAKY)))
+        self.assertIn(f"test `{FLAKY}`; attempt 2 passed the same job, so it is intermittent", decision["message"])
+        self.assertIn(f"`app/scripts/test-ios --repeat 3 {FLAKY}`", decision["message"])
+        self.assertIn(f"pull request #1810 run at its head {HEAD}", decision["message"])
+        self.assertIn(f"Check out {HEAD} detached", decision["message"])
+
+    def test_a_pull_request_failure_no_rerun_passed_stays_with_its_owner(self):
+        decision = self.triage(jobs=flaky_shard(passed=False), run=PULL)
+        self.assertEqual(decision["action"], "noop")
+        self.assertIn("owner", decision["reason"])
+        # Unless that test already has a repair: the report is more evidence for it.
+        decision = self.triage([thread(FLAKY)], jobs=flaky_shard(passed=False), run=PULL)
+        self.assertEqual((decision["action"], decision["threadId"]), ("reuse", "repair-1"))
+
+    def test_a_fork_failure_is_reproduced_on_main_only(self):
+        decision = self.triage(jobs=flaky_shard(), run=PULL | {"head_repository": {"full_name": "someone/talaria"}})
+        self.assertEqual(decision["action"], "launch")
+        self.assertIn("Never check out, build or run this fork's code", decision["message"])
+        self.assertNotIn(f"Check out {HEAD}", decision["message"])
+
+    def test_a_simulator_preparation_fault_is_routed_not_repaired_as_a_test(self):
+        jobs = [job(1, "release / prepare"),
+                job(2, "release / app-hosted-tests / App hosted tests 1", "failure", step="Wait for the simulator"),
+                job(3, "release / build-gate", "failure", step="Require every selected build and compatibility gate")]
+        notes = {2: [{"annotation_level": "failure", "message": "Process completed with exit code 124."}]}
+        decision = self.triage(jobs=jobs, run=RELEASE, annotations=notes)
+        self.assertEqual(decision["action"], "noop")
+        self.assertIn("App hosted tests 1: runner fault", decision["reason"])
+        self.assertIn("harness owner", decision["reason"])
+
+    def test_a_release_agent_shard_failure_launches_a_repair_and_publication_is_routed(self):
+        jobs = [job(1, "release / agent v0.23.2 3/3", "failure",
+                    step="Verify recorded Web and Agent identity and this supported Agent release's shard"),
+                job(2, "release / web-publish", "failure", step="Publish the npm package"),
+                job(3, "release / build-gate", "failure", step="Require every selected build and compatibility gate")]
+        decision = self.triage(jobs=jobs, run=RELEASE)
+        self.assertEqual(decision["action"], "launch")
+        message = decision["message"]
+        self.assertIn("`python3 scripts/check-agent-compatibility.py --skip-docker --release v0.23.2 --shard 3/3`",
+                      message)
+        self.assertIn("Not yours: release / web-publish (Publish the npm package): release publication", message)
+        self.assertIn("release recovery path can re-release from; you never start a release", message)
+        self.assertNotIn("build-gate (", message)
+
+    def test_repeat_deliveries_attempts_and_lanes_reuse_the_incident_thread(self):
         for status in ("preparing", "starting", "running", "waiting", "idle", "interrupted", "completed"):
-            decision = self.triage([{"threadId": "thread-1", "title": title, "status": status}])
-            self.assertEqual((decision["action"], decision["threadId"]), ("reuse", "thread-1"), status)
-            self.assertIn(SIDECAR[0], decision["message"])
+            for run, jobs in ((None, flaky_shard()), (PULL, flaky_shard()), (RELEASE, flaky_shard(
+                    shard="release / app-hosted-tests / App hosted tests 4", gate="release / build-gate"))):
+                decision = self.triage([thread(FLAKY, status)], jobs=jobs, run=run)
+                self.assertEqual((decision["action"], decision["threadId"]), ("reuse", "repair-1"), (status, run))
+                self.assertIn("reported again", decision["message"])
 
-    def test_failed_launch_is_retried_within_a_bound(self):
-        title = f"Repair main CI {HEAD[:12]}"
-        self.assertEqual(self.triage([{"threadId": "t1", "title": title, "status": "failed"}])["action"], "launch")
-        ended = [{"threadId": "t1", "title": title, "status": "failed"},
-                 {"threadId": "t2", "title": title, "status": "cancelled"}]
-        decision = self.triage(ended)
+    def test_failed_launches_are_retried_within_a_bound(self):
+        first = f"{SIDECAR[0]} › Run the suite"
+        self.assertEqual(self.triage([thread(first, "failed")])["action"], "launch")
+        decision = self.triage([thread(first, "failed"), thread(SIDECAR[2] + " › Run the suite", "cancelled", "t2")])
         self.assertEqual(decision["action"], "noop")
         self.assertIn("operator", decision["reason"])
 
-    def test_active_repair_of_an_older_head_absorbs_a_newer_red_run(self):
-        threads = [{"threadId": "older", "title": "Repair main CI cccccccccccc", "status": "running"},
-                   {"threadId": "done", "title": "Repair main CI dddddddddddd", "status": "completed"},
-                   {"threadId": "dispatcher", "title": "Main CI repair dispatcher", "status": "running"}]
-        decision = self.triage(threads)
-        self.assertEqual((decision["action"], decision["threadId"]), ("reuse", "older"))
-        self.assertIn("red again", decision["message"])
-
-    def test_open_repair_pr_owns_the_failure(self):
-        pulls = [{"number": 7, "body": "Unrelated"}, {"number": 9, "body": f"Fix\n\nmain-ci-incident: {NEWER}"}]
+    def test_an_open_repair_pr_owns_its_incident(self):
+        first = f"{SIDECAR[1]} › Run the suite"
+        pulls = [{"number": 7, "body": f"main-ci-incident: {HEAD}"},
+                 {"number": 9, "body": f"Fix\n\nmain-ci-incident: {handoff.key(first)}"}]
         decision = self.triage(pulls=pulls)
         self.assertEqual(decision["action"], "noop")
         self.assertIn("#9", decision["reason"])
         self.assertEqual(self.triage(pulls=pulls[:1])["action"], "launch")
-        threads = [{"threadId": "owner", "title": f"Repair main CI {NEWER[:12]}", "status": "completed"}]
-        decision = self.triage(threads, pulls=pulls)
-        self.assertEqual((decision["action"], decision["threadId"]), ("reuse", "owner"))
-        self.assertIn("PR #9", decision["message"])
+
+    def test_a_scan_skips_failures_it_already_saw(self):
+        decision = self.triage(since="2026-11-17T10:00:01Z")
+        self.assertEqual((decision["action"], decision.get("quiet")), ("noop", True))
+        # A rerun that passed after the window opened is news: the failure turned out intermittent.
+        self.assertEqual(self.triage(jobs=flaky_shard(), since="2026-11-17T10:30:00Z")["action"], "launch")
+
+
+class ScanTests(unittest.TestCase):
+    def test_one_launch_per_incident_and_only_runs_updated_in_the_window(self):
+        pull_run = main_run(id=RUN + 1, **PULL, run_attempt=2, conclusion="success", updated_at="2026-11-17T11:00:00Z")
+        stale = main_run(id=RUN + 2, updated_at="2026-11-17T08:00:00Z")
+        clean = main_run(id=RUN + 3, conclusion="success", updated_at="2026-11-17T11:00:00Z")
+        github = FakeGitHub(flaky_shard(), logs={4: FLAKY_LOG}, others={
+            RUN + 1: (pull_run, flaky_shard()), RUN + 2: (stale, tal_1102_jobs()), RUN + 3: (clean, [])},
+            workflows={"ci.yml": [main_run(updated_at="2026-11-17T11:00:00Z"), pull_run, stale, clean]})
+        decisions = handoff.scan(github, [], "2026-11-17T10:30:00Z")
+        self.assertEqual([(item["run"], item["action"]) for item in decisions], [(RUN, "launch"), (RUN + 1, "noop")])
+        self.assertIn(f"same incident as run {RUN}", decisions[1]["reason"])
+        self.assertFalse(any(f"/runs/{RUN + 2}" in path or f"/runs/{RUN + 3}" in path for path in github.paths))
+
+
+class LandTests(unittest.TestCase):
+    BODY = "Fix\n\nmain-ci-incident: 0123456789ab\n\n## Regression proof\n\nred then green"
+
+    def github(self, head=HEAD, gate="success", body=BODY, fork=False, contains=True):
+        github = FakeGitHub([])
+        pull = {"number": 42, "state": "open", "title": "TAL-1: Fix the leak", "body": body, "base": {"ref": "main"},
+                "head": {"sha": head, "repo": {"full_name": "someone/talaria" if fork else REPO}}}
+        sent = []
+
+        def get(path):
+            github.paths.append(path)
+            if path.endswith("/pulls/42"):
+                return pull
+            if "/check-runs?" in path:
+                return {"check_runs": [{"name": "CI Gate", "conclusion": gate}] if gate else []}
+            if "/compare/" in path:
+                return {"status": "ahead" if contains else "diverged"}
+            raise AssertionError(path)
+
+        github.get, github.sent = get, sent
+        github.send = lambda method, path, body: sent.append((method, path, body)) or {"sha": NEWER}
+        return github
+
+    def land(self, github, head=HEAD):
+        lines = []
+        return handoff.land(github, 42, head, lines.append), "\n".join(lines)
+
+    def test_merges_the_exact_head_and_reads_it_back(self):
+        github = self.github()
+        status, output = self.land(github)
+        self.assertEqual(status, 0)
+        self.assertEqual(github.sent, [("PUT", f"repos/{REPO}/pulls/42/merge",
+                                        {"sha": HEAD, "merge_method": "squash", "commit_title": "TAL-1: Fix the leak (#42)"})])
+        self.assertEqual(json.loads(output), {"merged": 42, "commit": NEWER, "verified_on": "main"})
+
+    def test_refuses_a_moved_head_a_red_gate_a_fork_or_a_missing_proof(self):
+        for github, reason in ((self.github(head=NEWER), f"the head moved to {NEWER}"),
+                               (self.github(gate="failure"), "CI Gate has not passed"),
+                               (self.github(gate=None), "CI Gate has not passed"),
+                               (self.github(fork=True), "not in this repository"),
+                               (self.github(body="Fix\n\n## Regression proof"), "no `main-ci-incident:` line"),
+                               (self.github(body="main-ci-incident: 0123456789ab"), "no Regression proof")):
+            status, output = self.land(github)
+            self.assertEqual((status, github.sent), (1, []), reason)
+            self.assertIn(reason, output)
+
+    def test_a_refused_or_unverified_merge_is_not_reported_merged(self):
+        status, output = self.land(self.github(contains=False))
+        self.assertEqual(status, 1)
+        self.assertIn("read it back before closing", output)
+        github = self.github()
+
+        def refuse(method, path, body):
+            raise subprocess.CalledProcessError(1, "gh", stderr="HTTP 405: Required status check is expected")
+
+        github.send = refuse
+        status, output = self.land(github)
+        self.assertEqual(status, 1)
+        self.assertIn("GitHub refused to merge PR #42", output)
+
+
+# The repair path end to end (TAL-2397): a disposable origin and clone hold a synthetic test that fails only after its
+# predecessor (the `leak` rule), and a GitHub stand-in merges into that origin. The worker's steps are scripted here;
+# in T3 the repair thread follows its brief.
+SUITE = """import unittest
+
+CACHE = {}
+
+
+class Cache(unittest.TestCase):
+    def test_a_fills_the_cache(self):
+        CACHE["user"] = "a"
+
+    def test_b_starts_empty(self):
+        self.assertEqual(CACHE, {}, "a predecessor left its cache behind")
+"""
+FIXED = SUITE.replace('        CACHE["user"]', '        self.addCleanup(CACHE.clear)\n        CACHE["user"]')
+# Git reads no host configuration (identity, signing, hooks): the repository is the test's own.
+GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_AUTHOR_NAME": "Synthetic",
+           "GIT_AUTHOR_EMAIL": "synthetic@example.invalid", "GIT_COMMITTER_NAME": "Synthetic",
+           "GIT_COMMITTER_EMAIL": "synthetic@example.invalid"}
+
+
+class DisposableRepository:
+    def __init__(self, root):
+        self.root, self.origin, self.work = root, root / "origin.git", root / "work"
+        self.git("init", "-q", "--bare", "-b", "main", str(self.origin), cwd=root)
+        self.git("clone", "-q", str(self.origin), str(self.work), cwd=root)
+        self.write(SUITE, "Add the cache suite")
+        self.git("push", "-q", "origin", "HEAD:main")
+
+    def git(self, *args, cwd=None):
+        return subprocess.run(["git", *args], cwd=cwd or self.work, env=GIT_ENV, capture_output=True, text=True,
+                              check=True).stdout.strip()
+
+    def write(self, suite, message):
+        (self.work / "tests").mkdir(exist_ok=True)
+        (self.work / "tests" / "__init__.py").write_text("")
+        (self.work / "tests" / "test_cache.py").write_text(suite)
+        self.git("add", "tests")
+        self.git("commit", "-q", "-m", message)
+        return self.git("rev-parse", "HEAD")
+
+    def main(self):
+        return self.git("rev-parse", "main", cwd=self.origin)
+
+    def contains(self, commit):
+        return subprocess.run(["git", "merge-base", "--is-ancestor", commit, "main"], cwd=self.origin, env=GIT_ENV,
+                              capture_output=True).returncode == 0
+
+    def squash(self, branch, title):
+        self.git("checkout", "-q", "main")
+        self.git("pull", "-q", "--ff-only", "origin", "main")
+        self.git("merge", "-q", "--squash", f"origin/{branch}")
+        self.git("commit", "-q", "-m", title)
+        self.git("push", "-q", "origin", "HEAD:main")
+        return self.git("rev-parse", "HEAD")
+
+    def repeat(self, attempts, target, cwd=None):
+        """Runs one unittest target up to `attempts` times; returns (runs, the first failure's output or None)."""
+        for run in range(1, attempts + 1):
+            result = subprocess.run([sys.executable, "-B", "-m", "unittest", target], cwd=cwd or self.work,
+                                    capture_output=True, text=True)
+            if result.returncode:
+                return run, result.stderr
+        return attempts, None
+
+
+class RepositoryGitHub(FakeGitHub):
+    """The disposable repository's GitHub: its run, its one repair PR, CI Gate per commit, and a squash merge."""
+
+    def __init__(self, repository, jobs):
+        super().__init__(jobs, run={"head_sha": repository.main()})
+        self.repository, self.pull, self.gate = repository, None, {}
+
+    def get(self, path):
+        if self.pull and path.endswith(f"/pulls/{self.pull['number']}"):
+            self.paths.append(path)
+            return self.pull
+        if "/pulls?" in path:
+            self.paths.append(path)
+            return [self.pull] if self.pull and self.pull["state"] == "open" else []
+        if found := re.search(r"/commits/([0-9a-f]{40})/check-runs\?check_name=CI%20Gate", path):
+            self.paths.append(path)
+            gate = self.gate.get(found.group(1))
+            return {"check_runs": [{"name": "CI Gate", "conclusion": gate}] if gate else []}
+        if (found := re.search(r"/compare/([0-9a-f]{40})\.\.\.main$", path)) and found.group(1) != HEAD:
+            self.paths.append(path)
+            return {"status": "ahead" if self.repository.contains(found.group(1)) else "diverged"}
+        return super().get(path)
+
+    def send(self, method, path, body):
+        self.paths.append(path)
+        assert (method, path) == ("PUT", f"repos/{REPO}/pulls/{self.pull['number']}/merge"), path
+        if body["sha"] != self.pull["head"]["sha"]:
+            raise subprocess.CalledProcessError(1, "gh", stderr="HTTP 409: Head branch was modified")
+        self.pull["state"] = "closed"
+        return {"sha": self.repository.squash(self.pull["head"]["ref"], body["commit_title"])}
+
+
+class RepairPathTests(unittest.TestCase):
+    def test_an_intermittent_test_goes_from_failure_to_a_verified_merge_with_no_operator(self):
+        root = tempfile.TemporaryDirectory()
+        self.addCleanup(root.cleanup)
+        repository = DisposableRepository(Path(os.path.realpath(root.name)))
+        github = RepositoryGitHub(repository, [job(1, "tooling / Repository Tooling", "failure",
+                                                   step="Run the synthetic suite"), job(2, "CI Gate", "failure")])
+        receiver = Receiver([])
+        self.addCleanup(receiver.close)
+
+        # CI signs its report; the receiver verifies it and hands the run ID to triage, as the T3 webhook task does.
+        sent = []
+        self.assertEqual(handoff.send(env(WEBHOOK_URL=receiver.url, GITHUB_SHA=repository.main()), github,
+                                      sleep=lambda _: None, out=sent.append), 0)
+        headers, body = receiver.requests[0]
+        self.assertTrue(verify(headers["x-hub-signature-256"], body))
+        run_id = json.loads(body)["run"]["id"]
+        decision = handoff.triage(github, run_id, [])
+        self.assertEqual(decision["action"], "launch")
+        threads = [{"threadId": "worker", "title": decision["title"], "status": "running"}]
+
+        # A redelivery and a green rerun of the same commit reach the same worker and keep the incident.
+        github.jobs += [job(11, "tooling / Repository Tooling", attempt=2), job(12, "CI Gate", attempt=2)]
+        again = handoff.triage(github, run_id, threads)
+        self.assertEqual((again["action"], again["threadId"]), ("reuse", "worker"))
+        self.assertIn("attempt 2 passed the same job, so it is intermittent", again["message"])
+
+        # The worker reproduces at the failing commit: the test passes alone and fails after its predecessor.
+        self.assertEqual(repository.repeat(5, "tests.test_cache.Cache.test_b_starts_empty"), (5, None))
+        runs, failure = repository.repeat(5, "tests.test_cache")
+        self.assertEqual(runs, 1)
+        self.assertIn("a predecessor left its cache behind", failure)
+
+        # The root-cause patch (rule `leak`) passes the same command and repetitions.
+        repository.git("checkout", "-q", "-b", "fix/TAL-9999-cache-leak")
+        head = repository.write(FIXED, "TAL-9999: Clear the cache test_a_fills_the_cache fills")
+        self.assertEqual(repository.repeat(5, "tests.test_cache"), (5, None))
+        repository.git("push", "-q", "origin", "HEAD")
+        github.pull = {"number": 42, "state": "open", "title": "TAL-9999: Clear the cache the first test fills",
+                       "base": {"ref": "main"}, "head": {"sha": head, "ref": "fix/TAL-9999-cache-leak",
+                                                         "repo": {"full_name": REPO}},
+                       "body": f"Defect rule: leak\n\nmain-ci-incident: {decision['incident']}\n\n## Regression proof\n\n"
+                               f"`python3 -m unittest tests.test_cache` failed at attempt 1 on {repository.main()} "
+                               f"and passed 5 of 5 at {head}."}
+
+        # A restarted dispatcher that lost the thread finds the PR and opens no competing repair.
+        self.assertEqual(handoff.triage(github, run_id, [])["action"], "noop")
+
+        # Merging waits for CI Gate on the exact head, then merges it and reads the merge back on main.
+        out = []
+        self.assertEqual(handoff.land(github, 42, head, out.append), 1)
+        github.gate[head] = "success"
+        self.assertEqual(handoff.land(github, 42, head, out.append), 0)
+        merged = json.loads(out[-1])["commit"]
+        self.assertTrue(repository.contains(merged))
+        clone = repository.root / "verify"
+        repository.git("clone", "-q", str(repository.origin), str(clone), cwd=repository.root)
+        self.assertEqual(repository.repeat(5, "tests.test_cache", cwd=clone), (5, None))
+
+        # Only this repository's GitHub API took part: no Factory API, job or ticket claim.
+        self.assertEqual([path for path in github.paths if not path.startswith((f"repos/{REPO}/", "log "))], [])
 
 
 PR = 1810
@@ -561,9 +897,35 @@ class CommandTests(unittest.TestCase):
                          "t3_thread_list", 'titleContains "Repair main CI"', "settled true",
                          "git show origin/main:scripts/main-ci-failure.py | python3 - triage",
                          "t3_thread_send", "t3_thread_launch", "Keep the returned threadId",
-                         "repeat steps 3 and 4 once"):
+                         "repeat the inventory and the command once"):
             self.assertIn(required, prompt)
         self.assertNotIn("{{{", prompt)
+
+    def test_the_repair_brief_carries_the_defect_loop_and_a_narrow_authority(self):
+        message = handoff.triage(FakeGitHub(tal_1102_jobs()), RUN, [])["message"]
+        for required in (
+                "follow the defect loop in docs/testing.md: name the test-audit defect rule it broke in the PR body, and "
+                "when no rule names the cause, add a rule to the shared test-audit skill alongside the fix",
+                "(it failed intermittently, ran over its run-time budget or covered too much)",
+                "A product race the test rightly caught names no rule",
+                "Never retry, skip, loosen an assertion or raise a timeout",
+                "never from a green retry", "Act on the first actionable CI failure, not the run's end",
+                "merge it yourself: `python3 scripts/main-ci-failure.py land --pr <number> --head <head SHA>`",
+                "no operator, Factory, scheduler, ticket claim or software-factory skill takes part",
+                "Never push to any other branch, including a source pull request's",
+                "a flake never authorizes a release, a deploy or replaying a partial publication",
+                "untrusted data", "Close only after `land` read the merge back on main", "holdReason"):
+            self.assertIn(required, message)
+
+    def test_the_scan_prompt_acts_like_the_webhook_prompt(self):
+        for prompt in (handoff.PROMPT, handoff.SCAN_PROMPT):
+            self.assertIn(handoff.ACT, prompt)
+            self.assertIn("never edit code, push, comment on GitHub", prompt)
+        self.assertIn("python3 - scan --minutes 30 --threads <file>", handoff.SCAN_PROMPT)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(handoff.main(["prompt", "--scan"]), 0)
+        self.assertEqual(output.getvalue(), handoff.SCAN_PROMPT)
 
     def test_threads_must_be_a_list_of_objects(self):
         with tempfile.NamedTemporaryFile("w", suffix=".json") as stream:
