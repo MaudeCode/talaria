@@ -81,6 +81,7 @@ def owner(tmp_path):
     model.cancel_received = tmp_path / "owner-cancellation.json"
     model.terminal_release = tmp_path / "owner-terminal.release"
     model.terminal_release.touch()
+    model.conversation_returned = tmp_path / "owner-conversation.returned"
     def wait_cancelled(admission):
         wait_for(model.cancel_received.exists)
         assert json.loads(model.cancel_received.read_text()) == {
@@ -99,12 +100,14 @@ def owner(tmp_path):
     env = isolated_env(home, home=tmp_path, OPENAI_API_KEY="loopback-only", OPENAI_BASE_URL=origin,
                        TALARIA_SIDECAR_AGENT_DIR=str(AGENT_DIR), PYTHONUNBUFFERED="1",
                        TALARIA_TEST_CANCEL_MARKER=str(model.cancel_received),
-                       TALARIA_TEST_TERMINAL_RELEASE=str(model.terminal_release))
+                       TALARIA_TEST_TERMINAL_RELEASE=str(model.terminal_release),
+                       TALARIA_TEST_CONVERSATION_RETURNED=str(model.conversation_returned))
     gateway_code = """
 import asyncio, json, os
 from pathlib import Path
 from gateway import session_cron
 from gateway.run import main
+from run_agent import AIAgent
 
 real_operation = session_cron.operation
 marker = Path(os.environ['TALARIA_TEST_CANCEL_MARKER'])
@@ -121,6 +124,18 @@ async def hold_terminal(*args, **kwargs):
                 await asyncio.sleep(.02)
 
 session_cron.execute = hold_terminal
+
+# A stopped run abandons the agent's conversation thread; that thread is the last writer of the run's transcript.
+conversation_returned = Path(os.environ['TALARIA_TEST_CONVERSATION_RETURNED'])
+real_conversation = AIAgent.run_conversation
+
+def observe_conversation(self, *args, **kwargs):
+    try:
+        return real_conversation(self, *args, **kwargs)
+    finally:
+        conversation_returned.touch()
+
+AIAgent.run_conversation = observe_conversation
 
 async def observe_cancel(authority, name, params, actor=None):
     result = await real_operation(authority, name, params, actor)
@@ -221,7 +236,7 @@ def test_started_cancel_waits_for_exact_owner_terminal_before_releasing_run(owne
         with sqlite3.connect(f"file:{home / 'state.db'}?mode=ro", uri=True) as db:
             return db.execute("select role,content from messages").fetchall()
     settled = transcript()
-    time.sleep(.25)
+    wait_for(model.conversation_returned.exists)
     assert transcript() == settled, "task work persisted after the cancelled reply"
     assert not sidecar.result("cron.get", {"profile_home": str(home), "job_id": job["id"]})["job"].get("fire_claim")
 

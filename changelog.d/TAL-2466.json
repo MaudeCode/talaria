@@ -1,0 +1,1 @@
+{"skip": "Test-only: sidecar tests wait on events and owner records instead of fixed sleeps; no app behavior changes."}

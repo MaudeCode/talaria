@@ -8,14 +8,12 @@ transaction. Disposable homes only; no job executes."""
 
 from __future__ import annotations
 
-import contextlib
 from datetime import datetime, timedelta, timezone
 import fcntl
 import os
 from pathlib import Path
 import sys
 import threading
-import time
 
 sys.path.insert(0, sys.argv[1])
 from cron import jobs  # noqa: E402
@@ -75,24 +73,20 @@ class _Reader(threading.Thread):
 
     def __init__(self, fn):
         super().__init__(daemon=True)
-        self.fn, self.done, self.blocked, self.result, self.error = fn, threading.Event(), threading.Event(), None, None
+        self.fn, self.done, self.moved, self.result, self.error = fn, threading.Event(), threading.Event(), None, None
 
     def run(self):
-        LOCK.waiting[threading.get_ident()] = self.blocked
+        LOCK.waiting[threading.get_ident()] = self.moved
         try:
             self.result = self.fn()
         except BaseException as exc:  # noqa: BLE001 - reported by the probe
             self.error = exc
         finally:
             self.done.set()
+            self.moved.set()
 
     def settled(self):
-        deadline = time.monotonic() + HOLD_S
-        while time.monotonic() < deadline:
-            if self.done.is_set() or self.blocked.is_set():
-                return
-            time.sleep(0.005)
-        raise AssertionError("reader neither finished nor waited for the store transaction")
+        assert self.moved.wait(HOLD_S), "reader neither finished nor waited for the store transaction"
 
 
 def _assert_released(home: Path) -> None:
