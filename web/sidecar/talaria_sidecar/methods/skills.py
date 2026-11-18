@@ -8,15 +8,11 @@ the Agent loads, and writes the Agent's own lock record.
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 
 from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
-from .profiles import disabled_skill_names
-
-log = logging.getLogger("talaria_sidecar.skills")
 
 
 def _skill_helper(name: str):
@@ -26,8 +22,7 @@ def _skill_helper(name: str):
 
 
 def _sort_skills(rows: list[dict]) -> list[dict]:
-    sort = _skill_helper("sort_skills")
-    return sort(rows) if sort else sorted(rows, key=lambda row: (row.get("category") or "", row["name"]))
+    return _skill_helper("sort_skills")(rows)
 
 
 def _within(base: Path, candidate: Path) -> bool:
@@ -38,78 +33,39 @@ def _within(base: Path, candidate: Path) -> bool:
         return False
 
 
-def search_dirs(skills_dir: Path) -> list[Path]:
-    dirs = [skills_dir]
-    try:
-        from agent.skill_utils import get_external_skills_dirs
-
-        dirs.extend(Path(p) for p in get_external_skills_dirs())
-    except Exception:  # noqa: BLE001
-        pass
-    return [p for p in dirs if p.exists()]
-
-
-def _category(skill_md: Path, dirs: list[Path], local: Path) -> str | None:
-    for skills_dir in dirs:
-        try:
-            rel = skill_md.relative_to(skills_dir)
-        except ValueError:
-            continue
-        parts = rel.parts[:-1]  # drop SKILL.md
-        if len(parts) >= 2:
-            return parts[0]
-        if len(parts) == 1 and skills_dir.resolve() != local.resolve():
-            return skills_dir.name
-        return None
-    return None
-
-
-def _skill_usage():
-    """The Agent's lock record (``tools.skill_usage``, v0.22.6+), or None before it."""
-    try:
-        from tools import skill_usage
-    except ImportError:
-        return None
-    return skill_usage if hasattr(skill_usage, "set_locked") else None
-
-
 def _locked_dirs() -> set[str] | None:
-    """Locked directory names; None without the Agent's lock or while its record is unreadable."""
-    usage = _skill_usage()
-    if usage is None:
-        return None
+    """Locked directory names in the Agent's lock record (``tools.skill_usage``); None while that record is unreadable."""
+    from tools import skill_usage
+
     try:
         # The listing reads a corrupt record as empty, and only the strict read tells that from no locks.
-        usage.is_locked("")
+        skill_usage.is_locked("")
     except (OSError, ValueError):
         return None
-    return set(usage.locked_skill_names())
+    return set(skill_usage.locked_skill_names())
 
 
 def _row_locked(locked: set[str] | None, skill_md: Path) -> bool | None:
     return None if locked is None else skill_md.parent.name in locked
 
 
-def set_skill_lock(profile_home: Path, name: str, locked: bool) -> dict:
+def set_skill_lock(name: str, locked: bool) -> dict:
     """Write the lock under the skill's directory name, the key the Agent's write guards resolve."""
-    usage = _skill_usage()
-    if usage is None:
-        return {"status": "unavailable"}
-    skill_dir, skill_md = find_skill(name, search_dirs(profile_home / "skills"))
+    from tools import skill_usage
+
+    skill_dir, skill_md = find_skill(name)
     if skill_md is None or skill_md.name != "SKILL.md":
         return {"status": "not_found"}
     # The Agent's write starts from the same lenient read, so it would replace a corrupt record.
     if _locked_dirs() is None:
         return {"status": "unreadable"}
-    return {"status": "ok" if usage.set_locked(skill_dir.name, locked) else "failed"}
+    return {"status": "ok" if skill_usage.set_locked(skill_dir.name, locked) else "failed"}
 
 
 def list_skills(profile_home: Path, category: str | None = None) -> dict:
-    try:
-        from agent.skill_utils import get_disabled_skill_names, is_disabled_entry
-        from tools.skills_tool import _skill_catalog
-    except ImportError:
-        return _legacy_list_skills(profile_home, category)
+    from agent.skill_utils import get_disabled_skill_names, is_disabled_entry
+    from tools.skills_tool import _skill_catalog
+
     disabled = get_disabled_skill_names("webui")
     locked = _locked_dirs()
     # Keep disabled rows manageable, but never advertise shadowed or unloadable copies.
@@ -124,62 +80,11 @@ def list_skills(profile_home: Path, category: str | None = None) -> dict:
     return {"success": True, "skills": out, "categories": sorted({s["category"] for s in out if s.get("category")}), "count": len(out)}
 
 
-def _legacy_list_skills(profile_home: Path, category: str | None = None) -> dict:
-    skills_dir = profile_home / "skills"
-    try:
-        from agent.skill_utils import iter_skill_index_files
-        from tools.skills_tool import MAX_DESCRIPTION_LENGTH, _EXCLUDED_SKILL_DIRS, _parse_frontmatter, skill_matches_platform
-    except ImportError:
-        return {"skills": [], "categories": [], "count": 0}
-    if not skills_dir.exists():
-        skills_dir.mkdir(parents=True, exist_ok=True)
-        return {"success": True, "skills": [], "categories": [], "count": 0, "message": f"No skills found. Skills directory created at {skills_dir}/"}
-    disabled = disabled_skill_names(profile_home)
-    locked = _locked_dirs()
-    dirs = search_dirs(skills_dir)
-    seen: set[str] = set()
-    out = []
-    for scan in dirs:
-        for skill_md in iter_skill_index_files(scan, "SKILL.md"):
-            if any(part in _EXCLUDED_SKILL_DIRS for part in skill_md.parts):
-                continue
-            try:
-                frontmatter, body = _parse_frontmatter(skill_md.read_text(encoding="utf-8")[:4000])
-                if not skill_matches_platform(frontmatter):
-                    continue
-                name = frontmatter.get("name", skill_md.parent.name)[:64]
-                if name in seen:
-                    continue
-                description = frontmatter.get("description", "")
-                if not description:
-                    for line in body.strip().split("\n"):
-                        line = line.strip()
-                        if line and not line.startswith("#"):
-                            description = line
-                            break
-                if len(description) > MAX_DESCRIPTION_LENGTH:
-                    description = description[: MAX_DESCRIPTION_LENGTH - 3] + "..."
-                seen.add(name)
-                out.append({"name": name, "description": description, "category": _category(skill_md, dirs, skills_dir), "disabled": name in disabled, "locked": _row_locked(locked, skill_md)})
-            except Exception:  # noqa: BLE001
-                log.debug("Skipping skill at %s", skill_md, exc_info=True)
-    if category:
-        out = [s for s in out if s.get("category") == category]
-    out = _sort_skills(out)
-    categories = sorted({s["category"] for s in out if s.get("category")})
-    return {"success": True, "skills": out, "categories": categories, "count": len(out)}
-
-
-def find_skill(name: str, dirs: list[Path]) -> tuple[Path | None, Path | None]:
-    try:
-        from agent.skill_utils import resolve_skill_catalog  # noqa: F401 - capability gate for the matching lookup API
-        locate_skill = _skill_helper("locate_skill")
-        skill_lookup_path_error = _skill_helper("skill_lookup_path_error")
-        skill_search_dirs = _skill_helper("skill_search_dirs")
-    except ImportError:
-        return _legacy_find_skill(name, dirs)
-    if not all((locate_skill, skill_lookup_path_error, skill_search_dirs)):
-        return _legacy_find_skill(name, dirs)
+def find_skill(name: str) -> tuple[Path | None, Path | None]:
+    """The Agent's own lookup (``tools.skills_tool``): ``pack:name`` also tries ``pack/name``; ambiguity and unsafe names refuse."""
+    locate_skill = _skill_helper("locate_skill")
+    skill_lookup_path_error = _skill_helper("skill_lookup_path_error")
+    skill_search_dirs = _skill_helper("skill_search_dirs")
     if error := skill_lookup_path_error(name):
         raise InvalidParams(error)
     local_name = name.replace(":", "/", 1) if ":" in name else None
@@ -193,62 +98,6 @@ def find_skill(name: str, dirs: list[Path]) -> tuple[Path | None, Path | None]:
             raise InvalidParams(result["error"])
         return None, None
     return skill_dir, skill_md
-
-
-def _legacy_find_skill(name: str, dirs: list[Path]) -> tuple[Path | None, Path | None]:
-    from agent.skill_utils import iter_skill_index_files
-    from tools.skills_tool import _EXCLUDED_SKILL_DIRS, _parse_frontmatter
-
-    raw = str(name or "").strip().strip("/")
-    if not raw:
-        return None, None
-    candidates = [raw]
-    if ":" in raw:
-        namespace, bare = raw.split(":", 1)
-        if namespace and bare:
-            candidates.append(f"{namespace}/{bare}")
-    for skills_dir in dirs:
-        if not skills_dir.exists():
-            continue
-        for candidate in candidates:
-            direct = skills_dir / candidate
-            if not _within(skills_dir, direct):
-                continue
-            if direct.is_dir() and (direct / "SKILL.md").exists():
-                return direct, direct / "SKILL.md"
-            legacy = direct.with_suffix(".md")
-            if legacy.exists() and _within(skills_dir, legacy):
-                return legacy.parent, legacy
-        for skill_md in iter_skill_index_files(skills_dir, "SKILL.md"):
-            if any(part in _EXCLUDED_SKILL_DIRS for part in skill_md.parts):
-                continue
-            if skill_md.parent.name == raw:
-                return skill_md.parent, skill_md
-            try:
-                frontmatter, _ = _parse_frontmatter(skill_md.read_text(encoding="utf-8")[:4000])
-                if frontmatter.get("name") == raw:
-                    return skill_md.parent, skill_md
-            except Exception:  # noqa: BLE001
-                continue
-        for legacy_md in _legacy_markdown(skills_dir):
-            if legacy_md.stem == raw and _within(skills_dir, legacy_md):
-                return legacy_md.parent, legacy_md
-    return None, None
-
-
-def _legacy_markdown(skills_dir: Path):
-    """Pruned walk for legacy ``<name>.md`` skills (never rglob)."""
-    import os
-
-    try:
-        from agent.skill_utils import EXCLUDED_SKILL_DIRS
-    except Exception:  # noqa: BLE001
-        EXCLUDED_SKILL_DIRS = frozenset({".git", ".venv", "node_modules", "site-packages"})
-    for root, dirnames, filenames in os.walk(skills_dir, followlinks=True):
-        dirnames[:] = [d for d in dirnames if d not in EXCLUDED_SKILL_DIRS]
-        for filename in filenames:
-            if filename != "SKILL.md" and filename.endswith(".md"):
-                yield Path(root) / filename
 
 
 def _linked_files(skill_dir: Path | None) -> dict:
@@ -304,9 +153,8 @@ def view_from_file(skill_dir: Path | None, skill_md: Path) -> dict:
 
 def view_skill(profile_home: Path, name: str) -> dict:
     skills_dir = profile_home / "skills"
-    dirs = search_dirs(skills_dir)
     try:
-        skill_dir, skill_md = find_skill(name, dirs)
+        skill_dir, skill_md = find_skill(name)
     except InvalidParams as exc:
         return {"success": False, "error": str(exc)}
     if skill_md:
@@ -383,7 +231,7 @@ def register(registry) -> None:
         if not isinstance(locked, bool):
             raise InvalidParams("locked must be a boolean")
         with scoped_home(home):
-            return set_skill_lock(home, name, locked)
+            return set_skill_lock(name, locked)
 
     @registry.method("skills.view")
     def view(ctx: CallContext, params: dict) -> dict:
@@ -401,19 +249,16 @@ def register(registry) -> None:
         if not name:
             raise InvalidParams("name is required")
         with scoped_home(home):
-            skill_dir, skill_md = find_skill(name, search_dirs(home / "skills"))
+            skill_dir, skill_md = find_skill(name)
             identity = {}
             if skill_md:
-                try:
-                    from tools.skills_tool import _skill_catalog
-                except ImportError:
-                    pass
-                else:
-                    catalog = _skill_catalog(skip_disabled=True, include_hidden=True)
-                    entry = next((e for e in catalog if e["path"] == skill_md), None)
-                    if entry is not None:
-                        if not entry["load_name"]:
-                            raise InvalidParams("Skill has no unambiguous catalog identity")
-                        identity = {"load_name": entry["load_name"], "declared_name": entry["name"],
-                                    "sibling_load_names": [e["load_name"] for e in catalog if e["name"] == entry["name"] and e["load_name"]]}
+                from tools.skills_tool import _skill_catalog
+
+                catalog = _skill_catalog(skip_disabled=True, include_hidden=True)
+                entry = next((e for e in catalog if e["path"] == skill_md), None)
+                if entry is not None:
+                    if not entry["load_name"]:
+                        raise InvalidParams("Skill has no unambiguous catalog identity")
+                    identity = {"load_name": entry["load_name"], "declared_name": entry["name"],
+                                "sibling_load_names": [e["load_name"] for e in catalog if e["name"] == entry["name"] and e["load_name"]]}
         return {"found": skill_md is not None, "skill_dir": str(skill_dir) if skill_dir else None, "skill_md": str(skill_md) if skill_md else None, **identity}

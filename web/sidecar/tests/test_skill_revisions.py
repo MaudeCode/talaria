@@ -4,7 +4,6 @@ import hashlib
 import json
 import shutil
 from types import SimpleNamespace as NS
-import sys
 
 import pytest
 
@@ -144,25 +143,3 @@ def test_revoked_consent_refuses_before_and_after_readback(store, monkeypatch):
     responses = iter([history._PIN, None])
     monkeypatch.setattr(history.dashboard_plugins, 'reviewed_producer', lambda *args: next(responses))
     assert b.call()['reason'] == 'backend_unavailable'
-
-
-def test_reviewed_source_registration_and_profile_consent_are_required(tmp_path, monkeypatch):
-    home = tmp_path / 'profile'
-    root = home / 'plugins/hermetic'
-    root.mkdir(parents=True)
-    (root / 'plugin.yaml').write_bytes(b'synthetic reviewed producer')
-    sources = {'plugin.yaml': hashlib.sha256(b'synthetic reviewed producer').hexdigest()}
-    metadata = {'hermetic': {'revision': history._PIN, 'catalog': {'name': 'hermetic', 'sha': history._PIN}}}
-    monkeypatch.setitem(sys.modules, 'hermes_cli', NS(plugins_cmd=NS(_read_install_metadata=lambda: metadata)))
-    plugin = dict(name='hermetic', enabled=True, source='user', _dir=str(root / 'dashboard'), _asset_anchor=str(home))
-    monkeypatch.setattr(history.dashboard_plugins, '_plugins', lambda selected: [plugin] if selected == home else [])
-    verify = lambda: history.dashboard_plugins.reviewed_producer(home, 'hermetic', history._PIN, sources)
-    assert verify() == history._PIN
-    plugin['enabled'] = False
-    assert verify() is None
-    plugin['enabled'] = True
-    metadata['hermetic']['revision'] = 'unreviewed'
-    assert verify() is None
-    metadata['hermetic']['revision'] = history._PIN
-    (root / 'plugin.yaml').write_bytes(b'changed bytes at same pin')
-    assert verify() is None

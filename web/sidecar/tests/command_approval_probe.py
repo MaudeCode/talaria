@@ -70,9 +70,7 @@ save = approval.save_permanent_allowlist
 
 def revoke_then_save(grants):
     disk[hermes_home_key()].remove("rm -rf build")
-    # Oldest retained Agents refresh explicitly; newer ones sync on every check.
-    if not hasattr(approval, "_sync_permanent_from_disk"):
-        approval.load_permanent_allowlist()
+    # The Agent syncs the allowlist from disk on every check.
     assert not approval.is_approved("observer", "rm -rf build")
     save(grants)
 

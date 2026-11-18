@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-import importlib.util
 import json
 import logging
 import os
@@ -82,54 +81,21 @@ def _expand_init(args: str, *, workspace: str, **_turn) -> str:
     return build_init_prompt_for_cwd(cwd=workspace, extra=args)
 
 
-def _expand_initiate_setup(_args: str, *, enabled_toolsets, **_turn) -> str:
-    from agent.initiate_setup_prompt import build_initiate_setup_prompt
-    from hermes_cli.setup_profile import primary_profile
-    from hermes_constants import get_hermes_home
-    from model_tools import get_tool_definitions
-
-    from .chat import _turn_toolsets
-    from .toolsets import disabled_toolsets
-
-    # The gateway's ``_hm_cmd_initiate_setup``: the tools this turn's agent gets, by name. MCP servers connect first, as
-    # chat start connects them before its agent snapshots tools; a failure leaves them out, as it does for the turn.
-    try:
-        discover_profile_mcp_tools()
-    except Exception:  # noqa: BLE001
-        log.warning("MCP discovery failed", exc_info=True)
-    tools = get_tool_definitions(enabled_toolsets=_turn_toolsets(enabled_toolsets), disabled_toolsets=disabled_toolsets(),
-                                 quiet_mode=True, skip_tool_search_assembly=True)
-    return build_initiate_setup_prompt("webui", [tool["function"]["name"] for tool in tools], primary_profile(get_hermes_home()))
-
-
 # The Agent built-ins every surface answers by rewriting the turn to a builder's prompt (the gateway's
-# ``_hm_rewrite_turn_to_prompt``), with the Agent module each expander needs. ``None``: no expander yet, so no client
-# offers it (``/blueprint`` seeds a turn only after its own slot parsing and job wiring).
-_PROMPT_BUILTINS: dict[str, tuple[Any, str] | None] = {
-    "plan": (_expand_plan, "agent.plan_prompt"),
-    "learn": (_expand_learn, "agent.learn_prompt"),
-    "init": (_expand_init, "hermes_cli.init_command"),
-    "initiate-setup": (_expand_initiate_setup, "agent.initiate_setup_prompt"),
+# ``_hm_rewrite_turn_to_prompt``). ``None``: no expander yet, so no client offers it (``/blueprint`` seeds a turn only
+# after its own slot parsing and job wiring).
+_PROMPT_BUILTINS: dict[str, Any] = {
+    "plan": _expand_plan,
+    "learn": _expand_learn,
+    "init": _expand_init,
     "blueprint": None,
 }
-
-
-def _prompt_expander(name: str):
-    """The expander for a prompt built-in this Agent ships the builder for; None when it has none."""
-    entry = _PROMPT_BUILTINS.get(name)
-    if entry is None:
-        return None
-    try:
-        found = importlib.util.find_spec(entry[1]) is not None
-    except (ImportError, ValueError):
-        found = False
-    return entry[0] if found else None
 
 
 def _prompt_mode(name: str) -> str | None:
     if name not in _PROMPT_BUILTINS:
         return None
-    return "expand" if _prompt_expander(name) else "unsupported"
+    return "expand" if _PROMPT_BUILTINS[name] else "unsupported"
 
 
 def expand_prompt(command: str, workspace: str, enabled_toolsets, session_id: str = "") -> dict[str, Any]:
@@ -145,7 +111,7 @@ def expand_prompt(command: str, workspace: str, enabled_toolsets, session_id: st
         return {"name": None, "message": None}
     # TAL-1279: as the CLI does, before it expands or refuses the built-in.
     _fire_pre_command(command, session_id, cmd.name, workspace)
-    expander = _prompt_expander(cmd.name)
+    expander = _PROMPT_BUILTINS[cmd.name]
     if expander is None:
         return {"name": cmd.name, "message": None}
     try:
@@ -524,13 +490,9 @@ def resolve_bundle_command(command: str) -> dict[str, Any]:
 
 def resolve_moa_config(preset: str | None) -> dict:
     try:
-        from hermes_cli.moa_config import moa_usage, normalize_moa_config
+        from hermes_cli.moa_config import moa_usage, normalize_moa_config, resolve_moa_preset
     except ImportError as exc:
         raise RpcError("MoA runtime unavailable (hermes-agent not installed or too old)", condition="moa_unavailable") from exc
-    try:
-        from hermes_cli.moa_config import resolve_moa_preset
-    except ImportError:
-        resolve_moa_preset = None
     try:
         from hermes_cli.config import load_config
 
@@ -542,14 +504,10 @@ def resolve_moa_config(preset: str | None) -> dict:
     name = str(preset or moa_cfg.get("default_preset") or "default").strip()
     if name not in (moa_cfg.get("presets") or {}):
         name = str(moa_cfg.get("default_preset") or "default")
-    selected: dict = {}
-    if resolve_moa_preset is not None:
-        try:
-            selected = resolve_moa_preset(raw, name)
-            if not isinstance(selected, dict):
-                selected = {}
-        except Exception:  # noqa: BLE001
-            selected, name = {}, str(moa_cfg.get("default_preset") or "default")
+    try:
+        selected = resolve_moa_preset(raw, name)
+    except Exception:  # noqa: BLE001
+        selected, name = {}, str(moa_cfg.get("default_preset") or "default")
     resolved = dict(moa_cfg)
     resolved.update(selected)
     resolved["preset"] = name

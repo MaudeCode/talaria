@@ -459,7 +459,7 @@
     },
     "tests/test_approval_timeout.py::test_an_approval_the_agent_times_out_is_withdrawn": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an approval the agent times out is withdrawn. Uses the real installed release, not a fabricated API response.",
+      "reason": "The supported Agent's gateway approval queue (tools.approval) drops a parked approval after approvals.timeout; only the real queue shows the sidecar then emits approval_resolved with reason timeout for the same id and the Agent holds nothing. A probe on the Agent interpreter in a disposable home with manual approvals; no provider calls.",
       "cases": [
         ""
       ]
@@ -757,63 +757,63 @@
     },
     "tests/test_chat_toolsets.py::test_turn_toolsets_follow_the_profile_config_unless_overridden": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: turn toolsets follow the profile config unless overridden. Uses the real installed release, not a fabricated API response.",
+      "reason": "chat.start must build the turn's Agent from platform_toolsets.cli through the supported Agent's own _get_platform_tools and resolve_toolset (empty list gives CLI defaults with default-off toolsets off, legacy hermes expands, an override replaces it); the fast tests fake that resolver. Probe on the Agent interpreter in a disposable home; no provider calls.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_toolsets.py::test_disabled_toolsets_win_over_overrides_and_cached_agents": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: disabled toolsets win over overrides and cached agents. Uses the real installed release, not a fabricated API response.",
+      "reason": "agent.disabled_toolsets must remove tools from the supported Agent's model_tools definitions, tool_search and tool_describe on the turn and compress paths, and a policy change must rebuild the cached Agent; only the real model_tools bridge shows it. Probe on the Agent interpreter in a disposable home; no provider calls.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_toolsets.py::test_catalog_reports_profile_policy_and_preserves_unknown_selection": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: catalog reports profile policy and preserves unknown selection. Uses the real installed release, not a fabricated API response.",
+      "reason": "toolsets.catalog groups and explains each toolset from the supported Agent's toolset registry and config resolution, keeps an unknown selection, reports default_toolsets under an explicit selection (TAL-2144) and isolates named profiles. Real sidecar on disposable homes.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_toolsets.py::test_catalog_names_tools_a_legacy_disabled_entry_strips": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the installed release's toolsets_partially_stripped reports what a legacy disabled_toolsets entry removes, and releases without it stay empty. Uses the real installed release, not a fabricated API response.",
+      "reason": "The supported Agent's tools_config.toolsets_partially_stripped reports which tools a legacy agent.disabled_toolsets entry (search, vision_tools) cuts from a toolset; toolsets.catalog must name them and mark a wholly emptied toolset disabled (TAL-1813). Real sidecar on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_toolsets.py::test_catalog_discovers_named_profile_plugin_before_any_turn": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: catalog discovers named profile plugin before any turn. Uses the real installed release, not a fabricated API response.",
+      "reason": "The first toolsets.catalog call for a named profile must run the supported Agent's plugin discovery in that profile, list the plugin's toolset, honor its disabled entry and keep it out of other profiles; only the real plugin loader shows it. Real sidecar on disposable homes.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_toolsets.py::test_own_toolsets_are_registered_and_listed_with_talaria_off_and_harness_on_by_default": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the sidecar registers its talaria and harness toolsets in the installed release's tool registry, the catalog lists both, the release's own default toolset resolution leaves talaria off, and its disabled_toolsets policy turns harness off even when selected. Uses the real installed release, not a fabricated API response.",
+      "reason": "The sidecar registers its talaria and harness toolsets in the installed release's tool registry, the catalog lists both, the release's own default toolset resolution leaves talaria off, and its disabled_toolsets policy turns harness off even when selected. Real sidecar on disposable homes; no provider calls.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_toolsets.py::test_default_toolsets_save_through_the_agent_saver_and_keep_talarias_own": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the defaults editor applies each toggle through the installed release's own hermes tools saver (_save_platform_tools), which keeps MCP entries and clears covered disabled_toolsets entries, and the release's default resolution reads the result back. Uses the real installed release, not a fabricated API response.",
+      "reason": "The defaults editor applies each toggle through the installed release's own hermes tools saver (_save_platform_tools), which keeps MCP entries and clears covered disabled_toolsets entries, and the release's default resolution reads the result back. Real sidecar on disposable homes; no provider calls.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_toolsets.py::test_harness_toolset_is_on_for_every_web_turn_unless_the_profile_disables_it": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a turn's Agent gets the harness toolset by default, and the installed release's disabled_toolsets filter removes its tools even when a session override names it. Uses the real installed release, not a fabricated API response.",
+      "reason": "A turn's Agent gets the harness toolset by default, and the installed release's disabled_toolsets filter removes its tools even when a session override names it. Probe on the Agent interpreter in a disposable home; no provider calls.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_toolsets.py::test_terminal_open_runs_the_agent_command_guard": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the harness terminal_open runs the installed release's check_all_command_guards on the command, and its hardline floor refuses a command before the server is asked. Uses the real installed release, not a fabricated API response.",
+      "reason": "The harness terminal_open runs the installed release's check_all_command_guards on the command, and its hardline floor refuses a command before the server is asked. Probe on the Agent interpreter in a disposable home; no provider calls.",
       "cases": [
         ""
       ]
@@ -855,80 +855,72 @@
     },
     "tests/test_checkpoints.py::test_a_checkpoint_the_agent_took_is_listed_diffed_and_restored": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a checkpoint the agent took is listed diffed and restored. Uses the real installed release, not a fabricated API response.",
+      "reason": "A checkpoint the supported Agent's CheckpointManager took in the shared profile store must list, diff and restore through checkpoints.*, with the Agent's pre-rollback snapshot taken first (TAL-913). Real sidecar and git store on a disposable home and workspace.",
       "cases": [
         ""
       ]
     },
     "tests/test_checkpoints.py::test_a_restore_keeps_the_users_hand_edits_unless_all_is_set": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a whole-tree restore keeps hand-edits through the Agent's agent-write ledger unless all is set. Uses the real installed release, not a fabricated API response.",
+      "reason": "A whole-tree restore keeps hand-edits through the Agent's agent-write ledger unless all is set. Real sidecar and store on a disposable home and workspace.",
       "cases": [
         ""
       ]
     },
     "tests/test_checkpoints.py::test_a_default_restore_without_a_record_of_agent_writes_is_refused": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a default restore without the Agent's agent-write ledger is refused before the Agent falls back to a full restore. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_checkpoints.py::test_an_unknown_checkpoint_is_the_agents_refusal": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an unknown checkpoint is the agents refusal. Uses the real installed release, not a fabricated API response.",
+      "reason": "A default restore without the Agent's agent-write ledger is refused before the Agent falls back to a full restore. Real sidecar and store on a disposable home and workspace.",
       "cases": [
         ""
       ]
     },
     "tests/test_checkpoints.py::test_a_checkpoint_of_another_workspace_is_refused": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a checkpoint of another workspace is refused. Uses the real installed release, not a fabricated API response.",
+      "reason": "The supported Agent's checkpoint store is shared by every workspace of a profile and its diff and restore accept any commit in it; another workspace's hash, an unknown hash and an option-like id must be refused before the Agent checks a tree out. Real sidecar and git store on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_checkpoints.py::test_a_restore_over_an_uncaptured_nested_repository_is_refused": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a restore over an uncaptured nested repository is refused. Uses the real installed release, not a fabricated API response.",
+      "reason": "The supported Agent's CheckpointManager refuses a restore over a nested git repository it did not capture; the sidecar must surface that as checkpoint_failed and leave the tree untouched. Real sidecar, git and store on a disposable home and workspace.",
       "cases": [
         ""
       ]
     },
     "tests/test_checkpoints.py::test_a_web_turn_takes_a_checkpoint_only_when_the_profile_enables_them": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a web turn takes a checkpoint only when the profile enables them. Uses the real installed release, not a fabricated API response.",
+      "reason": "A Web turn's real write_file call must take a checkpoint only when the profile enables them: checkpoints.enabled true, the legacy bare checkpoints: true that the supported Agent's load_config keeps, and its DEFAULT_CONFIG default off. Real sidecar with a stub OpenAI-compatible model on loopback; no provider calls.",
       "cases": [
         "[enabled]",
         "[legacy-bool]",
-        "[default-off]",
-        "[quoted-false]"
+        "[default-off]"
       ]
     },
     "tests/test_command_bundles.py::test_bundles_are_scoped_to_each_profile": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: bundles are scoped to each profile. Uses the real installed release, not a fabricated API response.",
+      "reason": "The supported Agent caches skill bundles process-wide by mtime only; commands.bundles and commands.bundle_resolve must re-read each profile's bundle files, honor the Web skill scope and build the invocation (bundle and user instruction) through the Agent's own skill helpers. Real sidecar on disposable homes.",
       "cases": [
         ""
       ]
     },
     "tests/test_commands_registry.py::test_registry_lists_every_runtime_command_once_as_exec": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: registry lists every runtime command once as exec. Uses the real installed release, not a fabricated API response.",
+      "reason": "commands.registry must list every command in the supported Agent's COMMAND_REGISTRY once and mark exactly the ones commands.exec runs, including /autoprune through the registry's own executor. Real sidecar on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_commands_registry.py::test_prompt_builtins_expand_through_the_agents_own_builders": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: prompt builtins expand through the agents own builders. Uses the real installed release, not a fabricated API response.",
+      "reason": "Prompt built-ins (/plan, /learn, /init) must expand through the supported Agent's own prompt builders and hermes_cli.commands aliases, /blueprint must stay unsupported and a path-like text must not resolve to a command. Real sidecar on a disposable home and workspace.",
       "cases": [
         ""
       ]
     },
     "tests/test_commit_memory.py::test_commit_memory_hands_the_transcript_to_providers_in_the_session_profile": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: commit memory hands the transcript to providers in the session profile. Uses the real installed release, not a fabricated API response.",
+      "reason": "chat.commit_memory must run the supported Agent's MemoryManager on_session_end with the cached Agent's transcript under the profile the Agent was built in, with that profile's secrets (TAL-528). Probe on the Agent interpreter with a recording memory provider in a disposable home.",
       "cases": [
         ""
       ]
@@ -1297,7 +1289,7 @@
     },
     "tests/test_display_config.py::test_web_reasoning_toggle_section_leaves_gateway_platforms_alone": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: web reasoning toggle section leaves gateway platforms alone. Uses the real installed release, not a fabricated API response.",
+      "reason": "The display.platforms.webui section the server writes for Web's reasoning toggle must not change show_reasoning for gateway platforms under the supported Agent's resolve_display_setting (TAL-895). Runs that resolver on the Agent interpreter; no sidecar code.",
       "cases": [
         ""
       ]
@@ -1437,63 +1429,49 @@
     },
     "tests/test_goals_dispatch.py::test_gate_runs_in_the_session_workspace": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: gate runs in the session workspace. Uses the real installed release, not a fabricated API response.",
+      "reason": "A /goal gate must run through the supported Agent's dispatch_goal_command and gate runner with the session workspace as its cwd, not the sidecar's TERMINAL_CWD. Real sidecar and gate shell on disposable home and workspace.",
       "cases": [
         ""
       ]
     },
     "tests/test_goals_dispatch.py::test_missing_workspace_pauses_with_the_agents_message": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: missing workspace pauses with the agents message. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_goals_dispatch.py::test_gate_add_is_refused_where_gates_would_leave_the_workspace": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: gate add is refused where gates would leave the workspace. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_goals_dispatch.py::test_gates_from_a_newer_agent_pause_instead_of_running": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: gates from a newer agent pause instead of running. Uses the real installed release, not a fabricated API response.",
+      "reason": "A gate whose session workspace is gone must pause the goal with the supported Agent's own quality-gate message, never a budget pause. Real sidecar on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_goals_dispatch.py::test_gate_list_and_clear": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: gate list and clear. Uses the real installed release, not a fabricated API response.",
+      "reason": "goals.command must pass gate list and gate clear to the supported Agent's dispatch_goal_command and keep the goal. Real sidecar on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_goals_dispatch.py::test_wait_parks_the_goal_without_replacing_it": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: wait parks the goal without replacing it. Uses the real installed release, not a fabricated API response.",
+      "reason": "goals.command wait and unwait must park and release the goal through the supported Agent's dispatch_goal_command without replacing its text. Real sidecar on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_goals_dispatch.py::test_get_reports_the_parked_barrier": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: get reports the parked barrier. Uses the real installed release, not a fabricated API response.",
+      "reason": "goals.get must read a live wait barrier's reason and deadline from the supported Agent's GoalState, including one restored from its own JSON, and report a paused goal as not parked (TAL-808). Real sidecar on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_goals_dispatch.py::test_control_verbs_with_trailing_words_keep_the_goal": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: control verbs with trailing words keep the goal. Uses the real installed release, not a fabricated API response.",
+      "reason": "Control verbs with trailing words (pause for now, resume last goal) must stay controls under the supported Agent's is_goal_control, and -- must escape a goal that starts with one. Real sidecar on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_goals_dispatch.py::test_running_turn_refuses_only_goal_setting_text": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: running turn refuses only goal setting text. Uses the real installed release, not a fabricated API response.",
+      "reason": "While a turn runs, goals.command must refuse only text the supported Agent classifies as setting a goal, and resume must start the Agent's continuation turn only when idle. Real sidecar on a disposable home.",
       "cases": [
         ""
       ]
@@ -1670,28 +1648,28 @@
     },
     "tests/test_memory_check.py::test_memory_check_counts_parsed_entries_against_the_profile_limits": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: memory check counts parsed entries against the profile limits. Uses the real installed release, not a fabricated API response.",
+      "reason": "memory.check must count a memory page save as the supported Agent's MemoryStore parses and deduplicates it, against the store's default and configured character limits (TAL-886). Real sidecar on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_memory_write.py::test_memory_write_refuses_a_save_over_an_entry_the_agent_stored_after_the_read": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: memory write refuses a save over an entry the agent stored after the read. Uses the real installed release, not a fabricated API response.",
+      "reason": "memory.write must refuse a save whose base no longer matches what the supported Agent's MemoryStore wrote after the server's read, and must not follow a symlinked memory file (TAL-784). Real sidecar and Agent memory tool on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_memory_write.py::test_memory_write_waits_for_the_agents_lock_file_and_rechecks_under_it": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: memory write waits for the agents lock file and rechecks under it. Uses the real installed release, not a fabricated API response.",
+      "reason": "Actual flock exclusion: memory.write must queue on the supported Agent's MEMORY.md.lock while another holder has it and recheck its base under the lock. A sitecustomize reports when the sidecar's flock waits; disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_memory_write.py::test_memory_write_lets_one_of_two_soul_saves_from_the_same_read_win": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: memory write lets one of two soul saves from the same read win. Uses the real installed release, not a fabricated API response.",
+      "reason": "Actual flock exclusion: two SOUL.md saves from the same read queue on the supported Agent's SOUL.md.lock and exactly one wins. A sitecustomize reports when each of the sidecar's flocks waits; disposable home.",
       "cases": [
         ""
       ]
@@ -1775,7 +1753,7 @@
     },
     "tests/test_personalities.py::test_lists_built_ins_then_both_config_blocks_case_folded": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: lists built ins then both config blocks case folded. Uses the real installed release, not a fabricated API response.",
+      "reason": "personalities.list must return the supported Agent's built-in personalities plus the top-level and agent.personalities blocks, case-folded, with the Agent's own description and prompt rendering and None excluded (TAL-901). Real sidecar; expectations derive from the release's built-ins.",
       "cases": [
         ""
       ]
@@ -2213,21 +2191,21 @@
     },
     "tests/test_skills_catalog.py::test_resolved_skill_catalog": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: resolved skill catalog. Uses the real installed release, not a fabricated API response.",
+      "reason": "skills listing and view must follow the supported Agent's resolved skill catalog (_skill_catalog, resolve_skill_catalog): ambiguous names, disabled skills, external dirs and the trusted project tier. Runs the sidecar functions on the Agent interpreter in a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_skills_catalog.py::test_skill_catalog_rpc_identity_and_profile_isolation": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: skill catalog rpc identity and profile isolation. Uses the real installed release, not a fabricated API response.",
+      "reason": "skills.find must resolve identities through the supported Agent's locate_skill and catalog (load name, siblings, ambiguity, unsafe names) and skills.list must stay per profile. Real sidecar on disposable homes.",
       "cases": [
         ""
       ]
     },
     "tests/test_skills_catalog.py::test_skill_lock_rpc_round_trip": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: skill lock record. Uses the real installed release, not a fabricated API response.",
+      "reason": "skills.set_locked must write the supported Agent's tools.skill_usage lock record keyed by directory, read it back in skills.list, and never replace an unreadable record. Real sidecar on a disposable home.",
       "cases": [
         ""
       ]
@@ -2659,7 +2637,7 @@
     },
     "tests/test_worktree.py::test_a_repository_filter_program_never_runs": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a repository filter program never runs. Uses the real installed release, not a fabricated API response.",
+      "reason": "worktree.create must check out through the supported Agent's _setup_worktree, whose noninteractive_repo_git_env keeps a repository's own filter programs (repo config or an onbranch include) from running. Real sidecar and git on disposable repositories.",
       "cases": [
         "[repo config]",
         "[include on the new branch]"
@@ -2667,7 +2645,7 @@
     },
     "tests/test_worktree.py::test_a_clean_repository_gets_a_worktree": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a clean repository gets a worktree. Uses the real installed release, not a fabricated API response.",
+      "reason": "worktree.create must return the supported Agent's _setup_worktree checkout, repo_root and hermes/ branch for a clean repository. Real sidecar and git on a disposable repository.",
       "cases": [
         ""
       ]
@@ -2702,65 +2680,56 @@
     },
     "tests/test_write_approval.py::test_staged_writes_list_with_diffs_and_approve_applies_them": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: staged writes list with diffs and approve applies them. Uses the real installed release, not a fabricated API response.",
+      "reason": "Memory and skill writes the supported Agent's own tools stage with write_approval on must list with the diff an approval applies and land through the Agent's /memory and /skills review handlers (TAL-819). Real sidecar and Agent tools on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_write_approval.py::test_reject_discards_a_staged_write": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: reject discards a staged write. Uses the real installed release, not a fabricated API response.",
+      "reason": "A reject must drop the supported Agent's staged record through its review handler, and a second reject of the same record must report not done. Real sidecar and Agent tools on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_write_approval.py::test_gates_off_stage_nothing": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: gates off stage nothing. Uses the real installed release, not a fabricated API response.",
+      "reason": "With the supported Agent's write_approval settings off its tools write directly and write_approval.pending reports enabled false with no items. Real sidecar and Agent tools on a disposable home.",
       "cases": [
         ""
       ]
     },
-    "tests/test_write_approval.py::test_ids_outside_the_pending_store_are_refused": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: ids outside the pending store are refused. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        "[../../config]",
-        "[a/b]",
-        "[]"
-      ]
-    },
     "tests/test_write_approval.py::test_a_staged_memory_remove_diffs_against_the_file_and_leaves_it_until_approved": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a staged memory remove diffs against the file and leaves it until approved. Uses the real installed release, not a fabricated API response.",
+      "reason": "A memory remove the supported Agent staged must diff against the current file through its apply_memory_pending on a scratch copy and leave the file untouched until approved. Real sidecar and Agent tools on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_write_approval.py::test_an_approval_is_refused_once_the_file_changed_after_the_review": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an approval is refused once the file changed after the review. Uses the real installed release, not a fabricated API response.",
+      "reason": "An approval must be refused once the file the supported Agent's staged write applies to changed after the review, and the new diff must apply. Real sidecar and Agent tools on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_write_approval.py::test_a_write_without_a_reviewable_diff_cannot_be_approved": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a write without a reviewable diff cannot be approved. Uses the real installed release, not a fabricated API response.",
+      "reason": "A staged memory remove whose pinned entry is gone has no diff the supported Agent's apply can produce, so it must be unapprovable but still rejectable. Real sidecar and Agent tools on a disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_write_approval.py::test_a_skill_write_landing_during_an_approval_is_never_overwritten": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a skill write landing during an approval is never overwritten. Uses the real installed release, not a fabricated API response.",
+      "reason": "Actual flock exclusion: an approval must hold the supported Agent's per-skill _skill_mutation_lock across its revision check and apply, so a write another Agent process makes under that lock is never overwritten. A sitecustomize reports when the sidecar's flock waits; disposable home.",
       "cases": [
         ""
       ]
     },
     "tests/test_yolo_release.py::test_enabling_yolo_releases_parked_approvals_once_and_they_prompt_after_it_turns_off": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: enabling yolo releases parked approvals once and they prompt after it turns off. Uses the real installed release, not a fabricated API response.",
+      "reason": "Turning YOLO on must release approvals parked in the supported Agent's gateway queue as once, and nothing may stay approved after YOLO turns off (TAL-500). Probe on the Agent interpreter with real gateway threads in a disposable home; no provider calls.",
       "cases": [
         ""
       ]
@@ -2840,7 +2809,7 @@
     },
     "tests/test_prune_advice.py::test_a_low_disk_asks_the_agents_question_until_web_answers_it": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the Agent's own low-disk auto-prune advisor and /autoprune executor answer through the real sidecar in a disposable home with a patched disk report, not a fabricated API response.",
+      "reason": "The supported Agent's own low-disk auto-prune advisor (hermes_cli.prune_advisor) and /autoprune executor must ask and settle the question through state_db.prune_advice and commands.exec, and a profile whose config already sets the key is never asked (TAL-1274). Real sidecar on disposable homes with a sitecustomize-patched disk report.",
       "cases": [
         ""
       ]

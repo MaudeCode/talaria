@@ -2,28 +2,13 @@
 
 from __future__ import annotations
 
-import inspect
-import re
-from urllib.parse import urlparse
-
 
 def fast_overrides(model: str, provider: str, base_url: str, tier: str) -> dict | None:
     if tier not in ("priority", "ultrafast"):
         return None
-    from hermes_cli import models
+    from hermes_cli.models import resolve_fast_mode_overrides
 
-    resolver = getattr(models, "resolve_fast_mode_overrides", None)
-    if resolver is not None:
-        if "tier" in inspect.signature(resolver).parameters:
-            return resolver(model, provider=provider, base_url=base_url, tier=tier)
-        return resolver(model, provider=provider, base_url=base_url) if tier == "priority" else None
-    # Older Agents have no resolver. Keep the former GPT-5/o-series gate, restricted to first-party routes.
-    hosts = {"openai": "api.openai.com", "openai-api": "api.openai.com", "openai-codex": "chatgpt.com"}
-    model = model.strip().lower().removeprefix("openai/")
-    host = urlparse(base_url).hostname if base_url else None
-    if tier == "priority" and provider in hosts and (not host or host == hosts[provider]) and (model.startswith("gpt-5") or re.match(r"o[0-9]", model)):
-        return {"service_tier": "priority"}
-    return None
+    return resolve_fast_mode_overrides(model, provider=provider, base_url=base_url, tier=tier)
 
 
 def supported_speed_tiers(model: str, provider: str, base_url: str) -> list[dict]:
@@ -37,11 +22,6 @@ def supported_speed_tiers(model: str, provider: str, base_url: str) -> list[dict
 
 def ultrafast_offered(model: str, provider: str, base_url: str) -> bool:
     """The Agent's account check: a Codex plan without Ultrafast accepts the tier and silently serves default."""
-    try:
-        from agent import codex_service_tiers
-    except ModuleNotFoundError as error:
-        if error.name not in ("agent", "agent.codex_service_tiers"):
-            raise
-        return True
-    offered = getattr(codex_service_tiers, "ultrafast_offered", None)
-    return offered is None or bool(offered(model, provider=provider, base_url=base_url))
+    from agent.codex_service_tiers import ultrafast_offered as offered
+
+    return bool(offered(model, provider=provider, base_url=base_url))

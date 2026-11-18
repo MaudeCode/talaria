@@ -8,10 +8,14 @@ from __future__ import annotations
 import json
 import pathlib
 import subprocess
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
 from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, assert_matches, isolated_env, requires_agent
+from talaria_sidecar.errors import InvalidParams
+from talaria_sidecar.methods import write_approval
 
 SKILL = "---\nname: demo-skill\ndescription: Staged by the test\n---\n\nStep one.\n"
 
@@ -101,14 +105,14 @@ def test_gates_off_stage_nothing(handshaken: SidecarProcess, hermes_home: pathli
         assert _pending(handshaken, hermes_home, kind) == {"supported": True, "enabled": False, "items": []}
 
 
-@requires_agent
 @pytest.mark.parametrize("bad", ["../../config", "a/b", ""])
-def test_ids_outside_the_pending_store_are_refused(handshaken: SidecarProcess, hermes_home: pathlib.Path, bad: str) -> None:
-    (hermes_home / "pending" / "skills").mkdir(parents=True)  # as after any staged skill write
-    (hermes_home / "config.json").write_text("{}", encoding="utf-8")
-    message = handshaken.call("write_approval.reject", {"profile_home": str(hermes_home), "kind": "skills", "writes": [{"id": bad, "revision": ""}]})[0]
-    assert (hermes_home / "config.json").exists()
-    assert message.get("error", {}).get("code") == -32602, message
+def test_ids_outside_the_pending_store_are_refused(monkeypatch: pytest.MonkeyPatch, bad: str) -> None:
+    """The Agent builds a record's path from its id, so only its own id shape may reach a record call."""
+    agent = SimpleNamespace(get_pending=Mock(), handle_pending_subcommand=Mock())
+    monkeypatch.setattr(write_approval, "_agent", lambda: (agent, agent))
+    with pytest.raises(InvalidParams):
+        write_approval.review("skills", "reject", [{"id": bad, "revision": ""}])
+    assert agent.get_pending.call_count == agent.handle_pending_subcommand.call_count == 0
 
 
 @requires_agent
@@ -173,31 +177,37 @@ def test_a_write_without_a_reviewable_diff_cannot_be_approved(handshaken: Sideca
 
 
 HOLD_SKILL_LOCK = (
-    "import time; from tools.skill_manager_tool import _skill_mutation_lock; from pathlib import Path\n"
+    "from tools.skill_manager_tool import _skill_mutation_lock; from pathlib import Path\n"
     "with _skill_mutation_lock('demo-skill'):\n"
-    "    print('ready', flush=True); time.sleep(1.5)\n"
+    "    print('ready', flush=True); sys.stdin.readline()\n"
     "    Path(sys.argv[2]).write_text(sys.argv[3], encoding='utf-8')\n"
 )
 
 
 @requires_agent
-def test_a_skill_write_landing_during_an_approval_is_never_overwritten(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+def test_a_skill_write_landing_during_an_approval_is_never_overwritten(lock_watched: SidecarProcess, hermes_home: pathlib.Path) -> None:
     set_gates(hermes_home, False)
     create_skill(hermes_home)
     set_gates(hermes_home, True)
     rewrite = SKILL.replace("Step one.", "Step one, rewritten.")
     staged = _agent(hermes_home, "from tools.skill_manager_tool import skill_manage; print(skill_manage(action='edit', name='demo-skill', content=sys.argv[2]))", rewrite)
     assert staged["staged"] is True
-    (reviewed,) = _pending(handshaken, hermes_home, "skills")["items"]
+    (reviewed,) = _pending(lock_watched, hermes_home, "skills")["items"]
     skill_file = hermes_home / "skills" / "demo-skill" / "SKILL.md"
     concurrent = SKILL.replace("Step one.", "Step one.\nStep two, from another run.")
-    # Another Agent run holds the skill's lock and writes SKILL.md while the approval is in flight.
+    # Another Agent run holds the skill's lock and writes SKILL.md once the approval waits for that lock.
     holder = subprocess.Popen([AGENT_PYTHON, "-c", f"import sys; sys.path.insert(0, sys.argv[1]); {HOLD_SKILL_LOCK}", str(AGENT_DIR), str(skill_file), concurrent],
-                              stdout=subprocess.PIPE, text=True, cwd=AGENT_DIR, env=isolated_env(hermes_home, PATH="/usr/bin:/bin"))
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, cwd=AGENT_DIR, env=isolated_env(hermes_home, PATH="/usr/bin:/bin"))
     try:
         assert holder.stdout.readline().strip() == "ready"
-        (result,) = _review(handshaken, hermes_home, "approve", "skills", [reviewed])
+        request_id = lock_watched.request("write_approval.approve", {"profile_home": str(hermes_home), "kind": "skills",
+                                                                     "writes": [{"id": reviewed["id"], "revision": reviewed["revision"]}]})
+        lock_watched.lock_waited()
     finally:
-        holder.wait(timeout=60)
+        holder.communicate("write\n", timeout=60)
+    message = lock_watched.next_message(timeout=60)
+    assert message["id"] == request_id, message
+    assert_matches("write_approval.approve", message["result"])
+    (result,) = message["result"]["results"]
     assert result["done"] is False, result
     assert skill_file.read_text() == concurrent
