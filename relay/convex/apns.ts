@@ -9,7 +9,7 @@ import { apnsDeliveryResultValidator } from "./lib/validators";
 import {
   classifyApnsFailure,
   makeProviderToken,
-  sendWithTransport,
+  sendHttp2,
 } from "./lib/apnsTransport.node";
 
 let cachedProviderToken: { cacheKey: string; token: string; issuedAt: number } | undefined;
@@ -56,7 +56,7 @@ export const sendJob = internalAction({
       cachedProviderToken = { cacheKey, token: providerToken, issuedAt: nowSeconds };
     }
 
-    const response = await sendWithTransport(
+    const response = await sendHttp2(
       { ...claimed.request, jobId: args.jobId },
       providerToken,
     );

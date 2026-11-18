@@ -59,7 +59,7 @@ export function nativeSessionRequest(request: ApnsRequest, registeredAt: number)
 
 // TAL-2336: a row outweighs its current call, so the last row's call goes before any row does; the first row, which a
 // per-session activity shows, keeps its call longest.
-export function fitActivityAggregate(aggregate: ActivityAggregate): ActivityAggregate {
+function fitActivityAggregate(aggregate: ActivityAggregate): ActivityAggregate {
   const fitted = { ...aggregate, rows: [...aggregate.rows] };
   const fits = () => new TextEncoder().encode(JSON.stringify(fitted)).byteLength <= maximumContentStateBytes;
   for (let index = fitted.rows.length - 1; index > 0 && !fits(); index--) {

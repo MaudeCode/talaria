@@ -22,11 +22,6 @@ export interface ApnsWireResponse {
   reason?: string;
 }
 
-export type ApnsTransport = (
-  request: ApnsWireRequest,
-  authorization: string,
-) => Promise<ApnsWireResponse>;
-
 function base64Url(value: string | Buffer): string {
   return Buffer.from(value).toString("base64url");
 }
@@ -51,7 +46,7 @@ function closeSession(session: ClientHttp2Session): void {
   if (!session.closed && !session.destroyed) session.close();
 }
 
-export const sendHttp2: ApnsTransport = async (request, authorization) =>
+export const sendHttp2 = async (request: ApnsWireRequest, authorization: string): Promise<ApnsWireResponse> =>
   new Promise((resolve, reject) => {
     const origin =
       request.environment === "production"
@@ -112,14 +107,6 @@ export const sendHttp2: ApnsTransport = async (request, authorization) =>
     });
     stream.end(request.payloadJson);
   });
-
-export async function sendWithTransport(
-  request: ApnsWireRequest,
-  authorization: string,
-  transport: ApnsTransport = sendHttp2,
-): Promise<ApnsWireResponse> {
-  return transport(request, authorization);
-}
 
 const permanentTokenReasons = new Set([
   "BadDeviceToken",
