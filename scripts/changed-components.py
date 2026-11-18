@@ -319,8 +319,8 @@ def git_deleted_workflows(base, head):
     return {os.fsdecode(path) for path in data.split(b"\0") if path}
 
 
-# What each part of ci.yml can break, so a change runs only those suites (TAL-2461). Path detection, the gate, the
-# failure report and the handoff run in full on every pull request, which the tooling checks join; concurrency only
+# What each part of ci.yml can break, so a change runs only those suites (TAL-2461). Path detection, the gate and the
+# failure report run in full on every pull request, which the tooling checks join; concurrency only
 # schedules runs (scripts/test-ci-concurrency.py). The contract probe's fixture feeds the App package tests. Any other
 # part, path detection's outputs included since every job reads them, keeps the whole ci.yml route.
 CI_PARTS = {
@@ -328,7 +328,6 @@ CI_PARTS = {
     ("job", "changes"): {"tooling"},
     ("job", "report"): {"tooling"},
     ("job", "gate"): {"tooling"},
-    ("job", "alert"): {"tooling"},
     ("job", "tooling"): {"tooling"},
     ("job", "app-tooling"): {"app_tooling", "tooling"},
     ("job", "app"): WORKFLOWS["app-tests.yml"],

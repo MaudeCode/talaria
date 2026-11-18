@@ -163,7 +163,7 @@ jobs:
       checks: ${{ needs.preflight.outputs.checks }}
 
   thaw:
-    needs: [preflight, freeze, release, alert]
+    needs: [preflight, freeze, release]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -171,33 +171,3 @@ jobs:
     steps:
       - uses: MaudeCode/.github/actions/release-freeze@20b180ba0237e316fcc65d83ed4e8f19ac5e16a7
         with: { mode: end, workflow: production-cutover.yml }
-
-  alert:
-    # Hands a release whose checks failed to the T3 repair dispatcher (TAL-2460, docs/main-ci-repair.md), as main CI's
-    # alert job does: the same sender, webhook and signing secret. The dispatcher re-reads the run, repairs only the
-    # failed test jobs and leaves build and publication to the release recovery path; a flake never re-releases.
-    name: Hand the failure to T3
-    needs: [preflight, release]
-    if: >-
-      always() && github.repository == 'MaudeCode/talaria' && github.ref == 'refs/heads/main'
-      && needs.release.result == 'failure'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: read
-      # Reads cancelled jobs' annotations for a timeout.
-      checks: read
-      # Reads the open repair claim and needs-a-person issues, so a red run starts a session only when it is new.
-      issues: read
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          sparse-checkout: scripts
-      - name: Post the signed failure report
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GATE_RESULT: ${{ needs.release.result }}
-          WEBHOOK_URL: ${{ secrets.MAIN_CI_WEBHOOK_URL }}
-          WEBHOOK_SECRET: ${{ secrets.MAIN_CI_WEBHOOK_SECRET }}
-        run: python3 scripts/main-ci-failure.py send
