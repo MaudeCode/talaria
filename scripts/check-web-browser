@@ -2,10 +2,27 @@
 # Playwright end-to-end against the Node server. Without TALARIA_WEB_AGENT_DIR
 # the server runs on the fixture replay sidecar (web/sidecar/scripts/replay_sidecar.py),
 # so the suite needs no Hermes Agent, model provider, or network.
+# --spec=e2e/NAME.spec.ts (repeatable) runs only those spec files, on every project, and then requires a test case from
+# each on each project and from no other file (scripts/web_browser_plan.py, TAL-2391). Other arguments go to Playwright.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 state=$(mktemp -d "${TMPDIR:-/tmp}/talaria-browser.XXXXXX")
 trap 'rm -rf -- "$state"' EXIT
+frontend="$root/web/packages/frontend"
+specs=() args=()
+for arg in "$@"; do
+  case "$arg" in
+    --spec=*) specs+=("${arg#--spec=}") ;;
+    *) args+=("$arg") ;;
+  esac
+done
+if ((${#specs[@]})); then
+  # Validated before the run: an unknown, repeated or non-spec path fails here.
+  filters=$(python3 "$root/scripts/web_browser_plan.py" filters "$frontend" "${specs[@]}")
+  while IFS= read -r filter; do args+=("$filter"); done <<< "$filters"
+  report="${TALARIA_TEST_REPORT:-$state/test-report.xml}"
+  export TALARIA_TEST_REPORT="$report"
+fi
 node_bin=$(node -p process.execPath)
 port=$(node -e '
 const net = require("node:net")
@@ -17,7 +34,7 @@ const probe = (p) => new Promise((resolve) => { const s = net.createServer(); s.
   }
   throw new Error("No available test port pair")
 })()')
-cd "$root/web/packages/frontend"
+cd "$frontend"
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$root/web/.codex-tmp/playwright}"
 # Hosted Linux CI runners lack Chromium's system libraries; Playwright installs them with apt (sudo). With
 # PLAYWRIGHT_APT_CACHE set (the e2e workflow caches it per runner image, TAL-432), cached .debs install offline and
@@ -55,4 +72,7 @@ fi
 if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then run_env+=("LD_LIBRARY_PATH=$LD_LIBRARY_PATH"); fi
 # CI's per-test run-time budget reads each test's time from this JUnit report (scripts/check-test-durations.py).
 if [[ -n "${TALARIA_TEST_REPORT:-}" ]]; then run_env+=("TALARIA_TEST_REPORT=$TALARIA_TEST_REPORT"); fi
-"${run_env[@]}" npm run e2e -- "$@"
+"${run_env[@]}" npm run e2e -- ${args[@]+"${args[@]}"}
+if ((${#specs[@]})); then
+  python3 "$root/scripts/web_browser_plan.py" receipts "$report" "$frontend" "${specs[@]}"
+fi

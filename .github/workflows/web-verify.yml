@@ -13,6 +13,14 @@ on:
       sidecar:
         type: boolean
         default: true
+      # A pull request's Playwright plan (TAL-2391, scripts/web_browser_plan.py): `none` runs no browser job, `specs`
+      # runs browser_specs in one job, and any other value, the default, runs every shard.
+      browser:
+        type: string
+        default: full
+      browser_specs:
+        type: string
+        default: "[]"
       # The commit to verify; empty for the triggering commit. A release verifies its selected commit (TAL-2396).
       ref:
         type: string
@@ -297,9 +305,11 @@ jobs:
         run: npm run build:fast
 
   # The e2e suite serves the frontend bundle, which its setup rebuilds on every run (static/dist is not committed, TAL-379).
-  # Playwright splits the spec files across the shards; each shard runs both projects for its files.
+  # Playwright splits the spec files across the shards; each shard runs both projects for its files. Main, manual runs,
+  # releases and any pull request the browser plan cannot narrow run every shard; production-cutover.yml reuses these
+  # jobs by name, so a narrower run never carries it.
   frontend-e2e:
-    if: inputs.frontend
+    if: inputs.frontend && inputs.browser != 'none' && inputs.browser != 'specs'
     name: frontend / e2e (${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
     # With Playwright on one worker, a healthy shard takes about 8 to 10 minutes including the bundle build (green main
@@ -309,66 +319,28 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4, 5, 6]
-    defaults:
-      run:
-        working-directory: web/packages/frontend
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
-
-      - name: Set up Node
-        uses: actions/setup-node@v7
+      - uses: ./.github/actions/web-browser
         with:
-          node-version-file: web/.nvmrc
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+          shard: ${{ matrix.shard }}/6
+          name: ${{ matrix.shard }}
 
-      - name: Clean install (workspace lockfile is authoritative)
-        run: npm ci --no-audit --no-fund
-        working-directory: web
-
-      - name: Build contracts and server
-        run: npm run build -w packages/contracts && npm run build -w packages/server
-        working-directory: web
-
-      # check-web-browser installs Chromium into this directory and, in CI on Linux, its system libraries.
-      - name: Restore the Playwright browsers
-        uses: actions/cache@v6
+  # A pull request whose only browser inputs are independent spec files runs those files on both projects in one job
+  # (TAL-2391), under a name of its own.
+  frontend-e2e-specs:
+    if: inputs.frontend && inputs.browser == 'specs'
+    name: frontend / e2e (changed specs)
+    runs-on: ubuntu-latest
+    # At most ten spec files after the same setup as a shard, which runs about thirty.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
         with:
-          path: web/.codex-tmp/playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
-
-      # Chromium's system packages (fonts, mesa, xvfb) come from the runner's apt mirror, which has taken over eight minutes
-      # for 32 MB (TAL-432). Their .debs are cached per runner image and installed offline on a hit.
-      # Reuse that image's packages when an unrelated dependency changes the lockfile.
-      - name: Name the runner image for the system-package cache
-        id: runner-image
-        run: echo "id=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
-
-      - name: Restore Chromium's system packages
-        uses: actions/cache@v6
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: ./.github/actions/web-browser
         with:
-          path: web/.codex-tmp/playwright-apt
-          key: playwright-apt-${{ steps.runner-image.outputs.id }}-${{ hashFiles('web/package-lock.json') }}
-          restore-keys: |
-            playwright-apt-${{ steps.runner-image.outputs.id }}-
-
-      - name: Playwright end-to-end on the Node server with the fixture replay sidecar (desktop + mobile)
-        run: ../../../scripts/check-web-browser --shard=${{ matrix.shard }}/6
-        env:
-          PLAYWRIGHT_APT_CACHE: ${{ github.workspace }}/web/.codex-tmp/playwright-apt
-          TALARIA_TEST_REPORT: ${{ runner.temp }}/test-report.xml
-
-      - name: Hold each test inside the run-time budget (TAL-2403)
-        run: python3 ../../../scripts/check-test-durations.py "$RUNNER_TEMP/test-report.xml"
-
-      # A failed test keeps its screenshot, error context and trace here (TAL-1883).
-      - name: Retain the failed tests' results
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: frontend-e2e-test-results-${{ matrix.shard }}-${{ github.run_attempt }}
-          path: web/packages/frontend/test-results
-          retention-days: 7
-          if-no-files-found: ignore
+          specs: ${{ inputs.browser_specs }}
+          name: changed-specs

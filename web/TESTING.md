@@ -36,6 +36,15 @@ Sidecar test changes skip the server job, except `sidecar/tests/fixtures/`, whic
 Each Agent job first runs the synthetic runner checks so isolation and cleanup failures surface
 before the longer real-Agent suite.
 
+A pull request's Playwright jobs follow its browser plan (`scripts/web_browser_plan.py`). A diff whose only
+frontend changes are Vitest tests (`src/**/*.test.ts(x)`) starts no Playwright job. A diff whose only browser
+inputs are spec files under `e2e/`, at most ten and none imported by another file, runs those files on desktop and
+mobile in one job, `frontend / e2e (changed specs)`, which fails unless every selected file reported test cases on
+both projects and no other file did. Anything else, including application code, e2e helpers, fixtures, global
+setup, configuration, lockfiles, contracts and server code, runs all six shards, as do pushes to `main` and manual
+runs. `python3 ../scripts/changed-components.py --local --browser-plan` prints the plan for local changes, and
+`../scripts/check-web-browser --spec=e2e/NAME.spec.ts` runs the same selection locally.
+
 ## Server tests
 
 `packages/server/src/**/*.test.ts`, Vitest 5, Node 24.

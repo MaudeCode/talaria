@@ -969,6 +969,8 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual((verify["server"]["name"], verify["frontend-checks"]["name"], verify["frontend-e2e"]["name"]),
                          ("server (${{ matrix.storage }} storage, ${{ matrix.shard }})", "frontend / checks",
                           "frontend / e2e (${{ matrix.shard }}/6)"))
+        # A pull request's narrower Playwright run carries a name of its own, so it never counts as a full shard (TAL-2391).
+        self.assertNotIn(f"ci.yml: web / {verify['frontend-e2e-specs']['name']}", named)
         self.assertEqual(set(workflow("relay-verify.yml")["jobs"]), {"check"})
         ci = workflow("ci.yml")["jobs"]
         self.assertEqual({name: ci[name]["uses"] for name in ("web", "relay")},
