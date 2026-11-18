@@ -391,7 +391,6 @@ def main():
     parser.add_argument("--base")
     parser.add_argument("--head", default="HEAD")
     parser.add_argument("--merge-base", action="store_true")
-    parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--check-results", action="store_true")
     parser.add_argument("--check-diff", action="store_true")
     parser.add_argument("--web-artifact", action="store_true", help="Print whether the diff changes the packed Web artifact.")
@@ -414,9 +413,6 @@ def main():
         global app_test_plan, web_browser_plan
         import app_test_plan
         import web_browser_plan
-    if args.self_test:
-        subprocess.run([sys.executable, str(Path(__file__).with_name("test-changed-components.py"))], check=True)
-        return
     if args.check_diff:
         check_diff(args.base, args.head, args.merge_base)
         return
