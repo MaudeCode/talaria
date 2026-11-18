@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "about": "Reviewed App test ownership for scripts/app_test_plan.py (TAL-2390). A rule narrows a production change to its tests only while its files declare nothing other files reach without naming it, and only its listed consumers and tests reference what it declares; the planner checks both on every run and runs the affected targets in full when either fails. Add a rule only after reading every consumer and the tests that cover it. A reader maps test resources to the Swift file that loads them.",
+  "readers": {
+    "app/TalariaTests/VisualReferences/": "app/TalariaTests/VisualReference.swift"
+  },
+  "rules": [
+    {
+      "name": "markdown-math-formatter",
+      "paths": [
+        "app/TalariaKit/Sources/TalariaKit/Features/Chat/MarkdownMathFormatter.swift",
+        "app/TalariaKit/Sources/TalariaKit/Features/Chat/MarkdownMathFormatter+Environments.swift",
+        "app/TalariaKit/Sources/TalariaKit/Features/Chat/MarkdownMathFormatter+Support.swift"
+      ],
+      "consumers": [
+        "app/TalariaKit/Sources/TalariaKit/Features/Chat/MarkdownMathSegmenter.swift",
+        "app/Talaria/Features/Chat/DisplayMathView.swift"
+      ],
+      "tests": [
+        "TalariaKitTests/MarkdownMathFormattingBudgetTests",
+        "TalariaKitTests/MarkdownMathLayoutCacheTests",
+        "TalariaKitTests/MarkdownMathRendererTests",
+        "TalariaTests/MarkdownMathRendererTests"
+      ],
+      "review": "The formatter reaches the App through two consumers. MarkdownMathSegmenter calls mayContainMath and replacingInlineMath for every message and feeds MarkdownMathLayoutCache; the package renderer, formatting-budget and layout-cache tests drive both through the segmenter. DisplayMathView falls back to renderedText for LaTeX SwiftMath cannot parse; the hosted MarkdownMathRendererTests render it."
+    }
+  ]
+}

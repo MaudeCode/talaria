@@ -16,14 +16,25 @@
 #     contracts: true | false  - the package tests also wait for this run's "Web contract probe" job and run the
 #       live decoding test against its contract-fixture artifact.
 #     ref: optional commit to check out (default: the triggering commit).
-#     package_tests: false leaves out the package tests (default true); a release runs the same suite in its
+#     package_tests: false leaves out the full package suite (default true); a release runs the same suite in its
 #       contracts job instead (TAL-414).
 #     shards_at_once: how many hosted test shards run at a time (default 4, all of them). A release passes 2 to stay
 #       within its three macOS jobs (TAL-2396).
+#     package_lane, hosted_lane: full | explicit | empty (default full), and plan: the App test plan JSON of
+#       `scripts/changed-components.py --app-plan` (default: none, both lanes full). A pull request runs only the tests
+#       its diff reaches (TAL-2390): an explicit package lane runs only its identifiers with a filter, in the package
+#       job, then named "App selected package tests", or in hosted mode's build job, then named "App build and selected
+#       package tests"; an explicit hosted lane runs only its identifiers. ci.yml passes package_tests false for an empty
+#       package lane. Main pushes, manual runs and releases pass no plan, so they always run both targets in full.
+#     diagnostic: true for a focused diagnostic (app-test-diagnostics.yml): its failing tests post commit statuses under
+#       its own run's name, never a CI shard's. repetitions: its attempts (default 1); more than one runs the hosted
+#       lane on one simulator with -test-iterations and -run-tests-until-failure.
 #   No outputs: the calling job's result is the suite's result.
-# Hosted mode's jobs are named "App build"/"App build started"/"App hosted tests N"/"App hosted tests"; the build artifact
-# is app-test-build. "App hosted tests" passes only once every shard passed and each class ran exactly
-# once; a release reuses main CI's when release-preflight reports it passed.
+# Hosted mode's full-suite jobs are named "App build"/"App build started"/"App hosted tests N"/"App hosted tests"; an
+# explicit hosted lane's are "App selected hosted tests N"/"App selected hosted tests", so a subset never reports under a
+# full-suite name. The build artifact is app-test-build. "App hosted tests" passes only once every shard passed and each
+# planned class ran exactly once; a release reuses main CI's when release-preflight
+# reports it passed.
 # Each test job boots its simulator while the build runs on another runner (TAL-380): hosted macOS allows five
 # concurrent jobs, and a simulator's first boot beside a build on one three-core runner slowed both. It polls the
 # jobs API for the build's upload from before its boot (TAL-405), and queues only once the build holds a runner
@@ -51,6 +62,21 @@ on:
       shards_at_once:
         type: number
         default: 4
+      package_lane:
+        type: string
+        default: full
+      hosted_lane:
+        type: string
+        default: full
+      plan:
+        type: string
+        default: ""
+      repetitions:
+        type: number
+        default: 1
+      diagnostic:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -61,12 +87,13 @@ defaults:
 
 env:
   # The build job the test job waits for.
-  BUILD_JOB: App build
+  # A subset of the package tests in the build job renames it, so it never reports under the full suite's name.
+  BUILD_JOB: ${{ inputs.mode == 'hosted' && inputs.package_lane == 'explicit' && 'App build and selected package tests' || 'App build' }}
   BUILD_ARTIFACT: app-test-build
 
 jobs:
   app-build:
-    name: App build
+    name: ${{ inputs.mode == 'hosted' && inputs.package_lane == 'explicit' && 'App build and selected package tests' || 'App build' }}
     # Hosted mode builds on its own runner while the test jobs boot their simulators, then runs the package tests after
     # its upload, whatever the build's result (TAL-1891). Build mode has nothing to upload, and its package tests run
     # beside it in their own job. A contract-only change leaves the App sources alone, so it needs no build.
@@ -129,11 +156,12 @@ jobs:
         uses: ./.github/actions/app-package-tests
         with:
           contracts: ${{ inputs.contracts }}
+          plan: ${{ inputs.package_lane == 'explicit' && inputs.plan || '' }}
 
   package-test:
     # Build mode's and contracts mode's package tests, on their own runner from the start. Hosted mode runs them in
-    # app-build.
-    name: App package tests
+    # app-build. An explicit lane runs here under its own name, so a subset never reports as the full suite.
+    name: ${{ inputs.package_lane == 'explicit' && 'App selected package tests' || 'App package tests' }}
     if: inputs.mode != 'hosted' && inputs.package_tests
     runs-on: xcode-27
     timeout-minutes: 30
@@ -151,6 +179,7 @@ jobs:
       - uses: ./.github/actions/app-package-tests
         with:
           contracts: ${{ inputs.contracts }}
+          plan: ${{ inputs.package_lane == 'explicit' && inputs.plan || '' }}
 
   build-started:
     # Two suites queued together once filled all five hosted macOS slots with test jobs waiting for builds that never
@@ -158,18 +187,31 @@ jobs:
     # holds a runner: a test job that holds a slot then waits at most for a build that is running. This Linux job
     # holds no macOS slot while the build queues, and queue time counts toward no job's timeout, so it may wait long.
     # "Re-run failed jobs" keeps this job's success, so after a failed build use "Re-run all jobs" to keep the gate.
+    # Once the build holds a runner it plans the shards (ci/hosted-test-shard, TAL-2390): the hosted lane's tests at the
+    # tested checkout, their measured times, and the macOS demand other pull requests had queued at that moment.
     name: App build started
     if: inputs.mode == 'hosted'
     runs-on: ubuntu-latest
     timeout-minutes: 355
     permissions:
       contents: read
-      # Reads this run's job list to see the build start.
+      # Reads this run's job list to see the build start, and other runs' queued jobs for the shard plan.
       actions: read
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+      shards: ${{ steps.plan.outputs.shards }}
     steps:
       - uses: actions/checkout@v7
         with:
-          sparse-checkout: app/ci
+          ref: ${{ inputs.ref || github.sha }}
+          # The planner reads the test targets' sources and the project to find a full run's classes.
+          sparse-checkout: |
+            /app/ci/
+            /scripts/
+            /app/TalariaTests/*.swift
+            /app/TalariaKit/Tests/**/*.swift
+            /app/Talaria.xcodeproj/project.pbxproj
+          sparse-checkout-cone-mode: false
 
       - name: Wait until the build holds a macOS runner
         env:
@@ -178,19 +220,43 @@ jobs:
           WAIT_FOR_JOB_POLL_SECONDS: "15"
         run: ci/wait-for-job "${BUILD_JOB}" 20700 "Set up job"
 
+      - name: Plan the simulator shards
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAN: ${{ inputs.plan }}
+          HOSTED_LANE: ${{ inputs.hosted_lane }}
+          REPETITIONS: ${{ inputs.repetitions }}
+          SHARDS_AT_ONCE: ${{ inputs.shards_at_once }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${PLAN}" && "${HOSTED_LANE}" != "full" ]]; then
+            jq '.lanes.TalariaTests' <<< "${PLAN}" > "${RUNNER_TEMP}/lane.json"
+          else
+            echo '{"mode":"full","identifiers":["TalariaTests"]}' > "${RUNNER_TEMP}/lane.json"
+          fi
+          # Read-only and bounded: an unavailable or stale observation plans as a quiet pool.
+          ci/hosted-test-shard capacity > "${RUNNER_TEMP}/capacity.json" || echo '{}' > "${RUNNER_TEMP}/capacity.json"
+          ci/hosted-test-shard plan "${RUNNER_TEMP}/lane.json" "${RUNNER_TEMP}/capacity.json" \
+            2> >(tee -a "${GITHUB_STEP_SUMMARY}" >&2) > "${RUNNER_TEMP}/shards.json"
+          {
+            echo "plan=$(cat "${RUNNER_TEMP}/shards.json")"
+            echo "shards=$(jq -c '.shards' "${RUNNER_TEMP}/shards.json")"
+          } >> "${GITHUB_OUTPUT}"
+
   app-test:
     # Boots its simulator to completion while the build runs on another runner and a background poll watches for the
     # build's upload, prepares the simulator in the background while it waits for and downloads the build, then runs
-    # its shard of the hosted unit tests (TalariaTests). Each shard is a fixed set of classes (ci/hosted-test-shard),
-    # balanced from measured class times, and the last runs every other class.
-    name: App hosted tests ${{ matrix.shard }}
+    # its shard of the hosted unit tests (TalariaTests). "App build started" planned the shards: one to four, balanced
+    # from measured times (ci/hosted-test-shard). A full run's last shard also runs any class the planner missed.
+    name: ${{ inputs.hosted_lane == 'explicit' && 'App selected hosted tests' || 'App hosted tests' }} ${{ matrix.shard }}
     needs: build-started
     if: inputs.mode == 'hosted'
     strategy:
       fail-fast: false
       max-parallel: ${{ inputs.shards_at_once }}
       matrix:
-        shard: [1, 2, 3, 4]
+        include: ${{ fromJSON(needs.build-started.outputs.shards) }}
     runs-on: xcode-27
     # The test step's own limit ends the tests, and this one only backs it up: setup takes up to about 15 minutes
     # before that step, and a loaded runner took 9 minutes over a single report after it (TAL-670).
@@ -202,9 +268,11 @@ jobs:
       # ci/report-test-failures posts each failing test as a commit status while the job runs (TAL-673).
       statuses: write
     env:
-      # One commit status per shard: a passing shard's success must not replace another shard's failure.
-      FAILURE_STATUS: App hosted test failures ${{ matrix.shard }}
+      # One commit status per shard: a passing shard's success must not replace another shard's failure. A selected
+      # run's statuses are its own, so they never replace a full run's; a diagnostic posts none.
+      FAILURE_STATUS: ${{ inputs.diagnostic && format('App test diagnostics {0}', github.run_id) || format('{0} {1}', inputs.hosted_lane == 'explicit' && 'App selected hosted test failures' || 'App hosted test failures', matrix.shard) }}
       SHARD: ${{ matrix.shard }}
+      SHARD_PLAN: ${{ toJSON(matrix) }}
       RESULT_BUNDLE_PATH: TestResults.xcresult
       # Relative to app/, like the result bundle; the memory log uploads on every run (TAL-419).
       MEMORY_LOG: memory.log
@@ -246,7 +314,8 @@ jobs:
       # shard whose tests wait on the notification server waits for it here (TAL-2352).
       - name: Prepare the simulator
         run: |
-          options=$(ci/hosted-test-shard prepare-options "${SHARD}")
+          printf '%s' "${SHARD_PLAN}" > "${RUNNER_TEMP}/shard.json"
+          options=$(ci/hosted-test-shard prepare-options "${RUNNER_TEMP}/shard.json")
           # shellcheck disable=SC2086 # One-word options, one per line; none where the shard needs notifications.
           ci/background start simulator-prepare scripts/prepare-ui-simulator ${options} "${{ steps.sim.outputs.udid }}"
 
@@ -317,7 +386,7 @@ jobs:
           reporter=$!
           trap 'kill "${reporter}" 2>/dev/null || true' EXIT
           # A read loop: macOS ships Bash 3.2, which has no array-reading builtin.
-          arguments=$(ci/hosted-test-shard args "${SHARD}")
+          arguments=$(ci/hosted-test-shard args "${RUNNER_TEMP}/shard.json")
           selection=()
           while IFS= read -r argument; do selection+=("${argument}"); done <<< "${arguments}"
           start_seconds=${SECONDS}
@@ -342,7 +411,7 @@ jobs:
             pkill -9 -f com.apple.CoreSimulator.CoreSimulatorService || true
             xcrun simctl bootstatus "${simulator_id}" -b > /dev/null
             # shellcheck disable=SC2046 # One-word options, as in "Prepare the simulator".
-            scripts/prepare-ui-simulator $(ci/hosted-test-shard prepare-options "${SHARD}") "${simulator_id}"
+            scripts/prepare-ui-simulator $(ci/hosted-test-shard prepare-options "${RUNNER_TEMP}/shard.json") "${simulator_id}"
           }
           status=0
           xctest_launch "${RESULT_BUNDLE_PATH}" "${XCODEBUILD_LOG}" \
@@ -354,7 +423,7 @@ jobs:
             -test-timeouts-enabled YES \
             -parallel-testing-enabled NO || status=$?
           duration_seconds=$((SECONDS - start_seconds))
-          echo "### App hosted tests ${SHARD}" >> "${GITHUB_STEP_SUMMARY}"
+          echo "### Hosted test shard ${SHARD}" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
           if [[ "${status}" == 70 ]]; then
             echo "::error title=Simulator runner fault::The test runner faulted before any test ran, also after restarting CoreSimulator. No test failed; rerun the job."
@@ -363,9 +432,17 @@ jobs:
             echo "::warning title=Simulator launch recovered::The first launch faulted before any test ran; the relaunch after restarting CoreSimulator ran the tests."
             echo "- Launch recovered: the first launch faulted before any test ran." >> "${GITHUB_STEP_SUMMARY}"
           fi
-          # The classes this shard ran, for "App hosted tests" to prove each class ran exactly once.
-          mkdir -p hosted-classes
-          ci/hosted-test-shard classes "${XCODEBUILD_LOG}" > "hosted-classes/shard-${SHARD}.txt"
+          # The test cases this shard ran, from its result bundle, and its test time: the gate proves every planned
+          # identifier ran exactly once and reports the slowest shard against its estimate.
+          mkdir -p hosted-cases
+          xcrun xcresulttool get test-results tests --path "${RESULT_BUNDLE_PATH}" --compact > hosted-cases/results.json 2>/dev/null ||
+            echo '{}' > hosted-cases/results.json
+          ci/hosted-test-shard cases hosted-cases/results.json > "hosted-cases/shard-${SHARD}.txt"
+          echo "${duration_seconds}" > "hosted-cases/shard-${SHARD}.time"
+          # A focused diagnostic's attempts: how many completed and the first that failed (TAL-2390).
+          [[ "$(jq -r '.repetitions // 1' "${RUNNER_TEMP}/shard.json")" == 1 ]] ||
+            ci/hosted-test-shard attempts hosted-cases/results.json | tee -a "${GITHUB_STEP_SUMMARY}"
+          rm hosted-cases/results.json
           # A passing run replaces an earlier run's failure status on this commit with success.
           [[ "${status}" != 0 ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "${FAILURE_STATUS}"
           # CoreSimulator's own log says what booted or shut down a simulator mid-test, which no result bundle records
@@ -403,12 +480,12 @@ jobs:
           overwrite: true
           if-no-files-found: ignore
 
-      - name: Upload the classes this shard ran
+      - name: Upload the test cases this shard ran
         timeout-minutes: 5
         uses: actions/upload-artifact@v7
         with:
-          name: app-hosted-classes-${{ matrix.shard }}
-          path: app/hosted-classes/
+          name: app-hosted-cases-${{ matrix.shard }}
+          path: app/hosted-cases/
           retention-days: 1
           overwrite: true
           if-no-files-found: error
@@ -512,27 +589,66 @@ jobs:
           if-no-files-found: ignore
 
   app-test-gate:
-    # The suite's one result: every shard passed and each TalariaTests class ran in exactly one of them. A release
-    # reuses main CI's "App / App hosted tests" job on the exact release source rather than testing again (TAL-1550).
+    # The suite's one result: every shard passed and every planned identifier ran exactly once, in its own shard, with
+    # nothing unplanned beside it. A release reuses main CI's "App / App hosted tests" job on the exact release source
+    # rather than testing again (TAL-1550). An explicit lane's gate is app-test-selected-gate, never this job.
     name: App hosted tests
-    needs: app-test
-    if: inputs.mode == 'hosted'
+    needs: [build-started, app-test]
+    if: inputs.mode == 'hosted' && inputs.hosted_lane != 'explicit'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
-          sparse-checkout: app/ci
+          sparse-checkout: |
+            app/ci
+            scripts
 
-      - name: Download the classes each shard ran
+      - name: Download the test cases each shard ran
         uses: actions/download-artifact@v8
         with:
-          pattern: app-hosted-classes-*
+          pattern: app-hosted-cases-*
           merge-multiple: true
-          path: ${{ runner.temp }}/hosted-classes
+          path: ${{ runner.temp }}/hosted-cases
 
-      - name: Require every class to run exactly once
+      - name: Require every planned identifier to run exactly once
+        env:
+          PLAN: ${{ needs.build-started.outputs.plan }}
         run: |
           set -euo pipefail
-          ci/hosted-test-shard check "${RUNNER_TEMP}/hosted-classes" | tee -a "${GITHUB_STEP_SUMMARY}"
+          printf '%s' "${PLAN}" > "${RUNNER_TEMP}/shards.json"
+          ci/hosted-test-shard check "${RUNNER_TEMP}/shards.json" "${RUNNER_TEMP}/hosted-cases" | tee -a "${GITHUB_STEP_SUMMARY}"
+          ci/hosted-test-shard report "${RUNNER_TEMP}/shards.json" "${RUNNER_TEMP}/hosted-cases" | tee -a "${GITHUB_STEP_SUMMARY}"
+
+  app-test-selected-gate:
+    # An explicit hosted lane's one result, under a name no full suite carries: the same proof as app-test-gate for the
+    # identifiers its plan selected (TAL-2390).
+    name: App selected hosted tests
+    needs: [build-started, app-test]
+    if: inputs.mode == 'hosted' && inputs.hosted_lane == 'explicit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          sparse-checkout: |
+            app/ci
+            scripts
+
+      - name: Download the test cases each shard ran
+        uses: actions/download-artifact@v8
+        with:
+          pattern: app-hosted-cases-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/hosted-cases
+
+      - name: Require every planned identifier to run exactly once
+        env:
+          PLAN: ${{ needs.build-started.outputs.plan }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${PLAN}" > "${RUNNER_TEMP}/shards.json"
+          ci/hosted-test-shard check "${RUNNER_TEMP}/shards.json" "${RUNNER_TEMP}/hosted-cases" | tee -a "${GITHUB_STEP_SUMMARY}"
+          ci/hosted-test-shard report "${RUNNER_TEMP}/shards.json" "${RUNNER_TEMP}/hosted-cases" | tee -a "${GITHUB_STEP_SUMMARY}"

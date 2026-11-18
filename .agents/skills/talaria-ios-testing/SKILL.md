@@ -33,12 +33,15 @@ window.
 
 1. Run the smallest focused test identifier that covers the change.
 2. Wait for it to finish.
-3. For App changes, run `swift test --package-path TalariaKit` and `scripts/test-ios TalariaTests` before review or commit. HTTP/SSE changes also require the contract checks. For UI changes, also run the flows they touch from [phone checks](../../../app/docs/phone-checks.md) on a signed physical-device build.
+3. For App changes, run `scripts/test-ios --changed` before review or commit: the tests the change reaches in both targets, the plan PR CI makes (`--dry-run` prints it). Run `scripts/test-package` and `scripts/test-ios TalariaTests` for full proof. HTTP/SSE changes also require the contract checks. For UI changes, also run the flows they touch from [phone checks](../../../app/docs/phone-checks.md) on a signed physical-device build.
+
+To investigate a failing or flaky test, copy its `Target/Class/testMethod` from the failure and repeat it alone: `scripts/test-ios --repeat N <identifier>` locally, or `scripts/test-ios --remote --sha <pushed SHA> --repeat N <identifier>` on a hosted runner while CI runs. It stops at the first failing attempt and reports it; never repeat until green. See [Repeat one test](../../../app/DEVELOPMENT.md#repeat-one-test).
 
 CI (pull requests and main pushes) runs, for every App change, `swift test` for
 TalariaKit and the App build for testing (App, extensions and the test bundle).
 Main pushes, releases and pull requests labelled `hosted-tests` also run the
-simulator-hosted unit tests (`TalariaTests`).
+simulator-hosted unit tests (`TalariaTests`). A pull request runs only the tests
+its diff reaches; main pushes and releases run both targets in full.
 
 The script serializes runs within one worktree and leases pooled simulators across
 worktrees. Let the current run finish instead of starting an overlapping run.

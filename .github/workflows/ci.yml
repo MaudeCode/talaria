@@ -1,8 +1,11 @@
 # Pull requests and main pushes run suites selected by the complete changed-path diff. App changes run
 # the TalariaKit package tests with `swift test` and build the App, its extensions and test bundle for
 # testing. Main pushes, manual runs and pull requests labelled hosted-tests also run the simulator-hosted
-# unit tests (TalariaTests) in four simulator jobs split by class (TAL-1896); a failure on main reaches the repair
-# handoff (docs/main-ci-repair.md). No labeled trigger: a label event would start a run that cancels the PR's running
+# unit tests (TalariaTests) in up to four simulator jobs split by class (TAL-1896); a failure on main reaches the repair
+# handoff (docs/main-ci-repair.md). A pull request runs only the App tests its diff reaches (TAL-2390): the router's App
+# test plan narrows each target to explicit identifiers, or leaves it out, and anything it cannot bound runs that target
+# in full. Main pushes and manual runs always run both in full; `gh workflow run ci.yml --ref <branch>` is the one-command
+# full run for a branch. No labeled trigger: a label event would start a run that cancels the PR's running
 # one through the concurrency group, so a label added after a run started takes effect on the next push.
 # Release metadata always validates; uncertain classification runs every suite.
 # The always-reporting CI Gate is the required check, including skipped jobs.
@@ -47,6 +50,11 @@ jobs:
       relay: ${{ steps.filter.outputs.relay }}
       contracts: ${{ steps.filter.outputs.contracts }}
       tooling: ${{ steps.filter.outputs.tooling }}
+      # A pull request's App test plan: each target's lane (full, explicit or empty) and the plan itself. Empty on other
+      # events, which run both targets in full.
+      app_package: ${{ steps.filter.outputs.app_package }}
+      app_hosted: ${{ steps.filter.outputs.app_hosted }}
+      app_plan: ${{ steps.filter.outputs.app_plan }}
     steps:
       # Classification needs history and trees for the merge-base and diff, not every historical blob;
       # git fetches the few file contents it compares on demand (TAL-317).
@@ -55,6 +63,12 @@ jobs:
           fetch-depth: 0
           filter: blob:none
           sparse-checkout: scripts
+      # A pull request's App test plan reads the tested checkout's Swift sources, project and ownership map; git
+      # fetches their blobs in one batch.
+      - name: Check out the App test sources
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        run: git sparse-checkout set --no-cone '/scripts/' '/app/**/*.swift' '/app/Talaria.xcodeproj/project.pbxproj' '/app/ci/test-ownership.json'
       - name: Classify changed files
         working-directory: .
         id: filter
@@ -72,7 +86,10 @@ jobs:
           else
             # Event base.sha can predate a merged parent PR. Checkout fetched
             # the current base branch, as release-fragment validation also uses.
-            python3 scripts/changed-components.py --base="refs/remotes/origin/${PR_BASE_REF}" --head="$PR_HEAD" --merge-base >> "$GITHUB_OUTPUT"
+            # The App test plan reads identifiers from this checkout, the merge commit the jobs test, and explains
+            # itself in the summary.
+            python3 scripts/changed-components.py --base="refs/remotes/origin/${PR_BASE_REF}" --head="$PR_HEAD" --merge-base \
+              --app-plan --tested-worktree >> "$GITHUB_OUTPUT" 2> >(tee -a "$GITHUB_STEP_SUMMARY" >&2)
           fi
 
   app-tooling:
@@ -112,8 +129,13 @@ jobs:
       statuses: write
     uses: ./.github/workflows/app-tests.yml
     with:
-      mode: ${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && ((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'hosted-tests')) && 'hosted' || 'build') || 'contracts' }}
+      mode: ${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && ((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'hosted-tests')) && needs.changes.outputs.app_hosted != 'empty' && 'hosted' || 'build') || 'contracts' }}
       contracts: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
+      # The package tests run unless the plan left them out; package_lane says whether all of them.
+      package_tests: ${{ needs.changes.result != 'success' || needs.changes.outputs.app_package != 'empty' }}
+      package_lane: ${{ needs.changes.result == 'success' && needs.changes.outputs.app_package || 'full' }}
+      hosted_lane: ${{ needs.changes.result == 'success' && needs.changes.outputs.app_hosted || 'full' }}
+      plan: ${{ needs.changes.result == 'success' && needs.changes.outputs.app_plan || '' }}
 
   tooling:
     needs: changes

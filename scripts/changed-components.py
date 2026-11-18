@@ -12,6 +12,7 @@ import subprocess
 import sys
 
 
+
 SUITES = {"app", "app_tooling", "web_server", "web_frontend", "web_sidecar", "docker", "relay", "contracts", "tooling"}
 CONSUMERS = {"app", "web_server", "web_frontend", "web_sidecar", "relay", "contracts"}
 # The sidecar job builds the server too, so the workspace build inputs select it (TAL-1161).
@@ -45,6 +46,7 @@ WORKFLOWS = {
     # CI owns the App jobs and the Web contract probe's fixture handoff.
     "ci.yml": {"app", "app_tooling", "web_sidecar", "contracts", "tooling"},
     "app-tests.yml": {"app", "contracts", "tooling"},
+    "app-test-diagnostics.yml": {"tooling"},
     "web-verify.yml": {"web_server", "web_frontend", "web_sidecar", "tooling"},
     "web-docker-smoke.yml": {"docker", "tooling"},
     "relay-verify.yml": {"relay", "tooling"},
@@ -61,6 +63,7 @@ WORKFLOWS = {
 }
 SCRIPTS = {
     "changed-components.py": {"tooling"},
+    "app_test_plan.py": {"tooling"},
     "check-ui-rules.mjs": {"app_tooling", "web_frontend", "tooling"},
     "test-changed-components.py": {"tooling"},
     "check-web-server": {"web_server", "tooling"},
@@ -288,14 +291,22 @@ def diff_refs(base, head, merge_base=False):
 
 def git_diff(base, head, merge_base=False):
     base, head = diff_refs(base, head, merge_base)
-    data = git("diff", "--no-renames", "--name-only", "-z", base, head, "--")
+    return changed_paths(base, head)
+
+
+def changed_paths(base, head):
+    """The paths a diff changes; head None compares with the working tree, untracked files included."""
+    data = git("diff", "--no-renames", "--name-only", "-z", base, *([head] if head else []), "--")
+    if head is None:
+        data += git("ls-files", "-z", "--others", "--exclude-standard")
     if data and not data.endswith(b"\0"):
         raise ValueError("invalid NUL-delimited diff")
-    return [os.fsdecode(path) for path in data.split(b"\0") if path]
+    return sorted({os.fsdecode(path) for path in data.split(b"\0") if path})
 
 
 def git_deleted_workflows(base, head):
-    data = git("diff", "--no-renames", "--name-only", "--diff-filter=D", "-z", base, head, "--", ".github/workflows/")
+    data = git("diff", "--no-renames", "--name-only", "--diff-filter=D", "-z", base, *([head] if head else []), "--",
+               ".github/workflows/")
     return {os.fsdecode(path) for path in data.split(b"\0") if path}
 
 
@@ -304,8 +315,9 @@ def workflow_overrides(base, head, paths):
     if path not in paths:
         return {}
     try:
-        before, after = (git("show", f"{ref}:{path}").decode() for ref in (base, head))
-    except subprocess.CalledProcessError:
+        before = git("show", f"{base}:{path}").decode()
+        after = git("show", f"{head}:{path}").decode() if head else Path(path).read_text()
+    except (OSError, subprocess.CalledProcessError):
         return {}
     # A change confined to this job cannot affect the App build or Web fixture handoff.
     job = re.compile(r"^  app-tooling:\n(?:[ \t]*\n| {4}[^\n]*(?:\n|\Z))*", re.MULTILINE)
@@ -378,7 +390,19 @@ def main():
     parser.add_argument("--web-artifact", action="store_true", help="Print whether the diff changes the packed Web artifact.")
     parser.add_argument("--web-check-fingerprint", action="store_true",
                         help="Print a hash of every input of the pre-push hook's Web lint and typecheck.")
+    parser.add_argument("--local", action="store_true",
+                        help="Compare the working tree, untracked files included, with its merge-base with --base (default origin/main).")
+    parser.add_argument("--app-plan", nargs="?", const="outputs", choices=("outputs", "json", "text"),
+                        help="Also plan the App tests (TAL-2390): Actions outputs (default), the plan's JSON or a readable plan.")
+    parser.add_argument("--tested-worktree", action="store_true",
+                        help="Read test identifiers from the checked-out working tree (CI's tested checkout) rather than --head.")
     args = parser.parse_args()
+    os.chdir(git("rev-parse", "--show-toplevel").decode().strip())
+    if args.app_plan:
+        # The App test plan beside this router (TAL-2390); loaded only when asked, so the router runs on its own.
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        global app_test_plan
+        import app_test_plan
     if args.self_test:
         subprocess.run([sys.executable, str(Path(__file__).with_name("test-changed-components.py"))], check=True)
         return
@@ -401,17 +425,38 @@ def main():
             changed = True
         print(f"web_artifact={str(changed).lower()}")
         return
+    selected, app_plan = set(SUITES), None
     try:
-        selected = set(SUITES)
-        if args.base:
+        if args.local:
+            base = git("merge-base", revision(args.base or "origin/main"), "HEAD").decode().strip()
+            head = None
+        elif args.base:
             base, head = diff_refs(args.base, args.head, args.merge_base)
-            paths = git_diff(base, head)
-            selected = affected(paths, git_deleted_workflows(base, head), workflow_overrides(base, head, paths))
+        if args.local or args.base:
+            paths = changed_paths(base, head)
+            deleted = git_deleted_workflows(base, head)
+            selected = affected(paths, deleted, workflow_overrides(base, head, paths))
+            if args.app_plan and paths:
+                tree = app_test_plan.Tree(None if head is None or args.tested_worktree else head)
+                app_plan = app_test_plan.plan(paths, base, head, tree, selected, path_suites, deleted)
     except (OSError, ValueError, subprocess.CalledProcessError):
         print("Could not classify the complete diff; running all suites.", file=sys.stderr)
-        selected = SUITES
+        selected, app_plan = set(SUITES), None
+    if args.app_plan and app_plan is None:
+        app_plan = app_test_plan.full_plan("Every suite runs: no diff, or one that could not be classified.")
+    if args.app_plan == "json":
+        print(json.dumps(app_plan, indent=2))
+        return
+    if args.app_plan == "text":
+        print(app_test_plan.describe(app_plan))
+        return
     for suite in sorted(SUITES):
         print(f"{suite}={str(suite in selected).lower()}")
+    if args.app_plan:
+        print(app_test_plan.describe(app_plan), file=sys.stderr)
+        for target, name in ((app_test_plan.PACKAGE, "app_package"), (app_test_plan.HOSTED, "app_hosted")):
+            print(f"{name}={app_plan['lanes'][target]['mode']}")
+        print(f"app_plan={json.dumps(app_plan, separators=(',', ':'))}")
 
 
 if __name__ == "__main__":

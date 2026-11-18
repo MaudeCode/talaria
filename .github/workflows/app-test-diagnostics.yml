@@ -1,0 +1,158 @@
+# Focused App test diagnostics (TAL-2390): repeat one target's classes or methods at an exact commit, independent of CI.
+# A session investigating a failure starts it with `app/scripts/test-ios --remote` while the pull request's CI runs:
+#   gh workflow run app-test-diagnostics.yml -f identifiers=TalariaTests/Class/testMethod -f sha=<40-hex> -f repetitions=N
+# It builds once. Hosted identifiers run on one simulator with -test-iterations and -run-tests-until-failure; TalariaKit
+# identifiers repeat `swift test --skip-build` in a bounded loop on one runner (scripts/test-package). Both stop at the
+# first failing attempt, keep its evidence and report requested and completed attempts. Its check names, its per-run
+# concurrency group and its commit statuses (named for this run) are its own: it never cancels CI, never replaces a CI
+# status, and never counts as CI or release evidence. There is no retry: a failure is the answer.
+
+name: App test diagnostics
+run-name: App test diagnostics ${{ inputs.request }} ${{ inputs.identifiers }} at ${{ inputs.sha }} x${{ inputs.repetitions }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      identifiers:
+        description: TalariaTests/Class[/testMethod] or TalariaKitTests/Class[/testMethod], space-separated, one target
+        required: true
+        type: string
+      sha:
+        description: The full 40-character commit to test
+        required: true
+        type: string
+      repetitions:
+        description: Attempts, 1 to 100; the run stops at the first failing one
+        required: false
+        default: "1"
+        type: string
+      request:
+        description: A tag the caller picks to find this run
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-test-diagnostics-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  request:
+    name: Validate the request
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      target: ${{ steps.focus.outputs.target }}
+      plan: ${{ steps.focus.outputs.plan }}
+      repetitions: ${{ steps.focus.outputs.repetitions }}
+    steps:
+      - name: Require a full commit SHA
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          [[ "${SHA}" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be a full 40-character commit SHA, not '${SHA}'."; exit 1; }
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+          sparse-checkout: |
+            /app/ci/
+            /scripts/
+            /app/TalariaTests/*.swift
+            /app/TalariaKit/Tests/**/*.swift
+            /app/Talaria.xcodeproj/project.pbxproj
+          sparse-checkout-cone-mode: false
+
+      - name: Validate the identifiers at that commit
+        id: focus
+        working-directory: app
+        env:
+          IDENTIFIERS: ${{ inputs.identifiers }}
+          REPETITIONS: ${{ inputs.repetitions }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2086 # Space-separated identifiers, each validated.
+          plan=$(ci/hosted-test-shard focus "${REPETITIONS}" ${IDENTIFIERS})
+          {
+            echo "target=$(jq -r .target <<< "${plan}")"
+            echo "repetitions=$(jq -r .repetitions <<< "${plan}")"
+            echo "plan=${plan}"
+          } >> "${GITHUB_OUTPUT}"
+          {
+            echo "### App test diagnostics"
+            echo "- Tested commit: \`${SHA}\`"
+            echo "- Requested attempts: ${REPETITIONS}"
+            jq -r '.lanes[.target].identifiers[] | "- `\(.)`"' <<< "${plan}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  hosted:
+    name: Hosted
+    needs: request
+    if: needs.request.outputs.target == 'TalariaTests'
+    permissions:
+      contents: read
+      actions: read
+      statuses: write
+    uses: ./.github/workflows/app-tests.yml
+    with:
+      mode: hosted
+      ref: ${{ inputs.sha }}
+      package_tests: false
+      package_lane: empty
+      hosted_lane: explicit
+      plan: ${{ needs.request.outputs.plan }}
+      repetitions: ${{ fromJSON(needs.request.outputs.repetitions) }}
+      diagnostic: true
+
+  package:
+    name: TalariaKit
+    needs: request
+    if: needs.request.outputs.target == 'TalariaKitTests'
+    runs-on: xcode-27
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+
+      - uses: ./.github/actions/setup-xcode
+
+      - uses: ./.github/actions/setup-bash
+
+      - name: Repeat the selection
+        env:
+          PLAN: ${{ needs.request.outputs.plan }}
+          REPETITIONS: ${{ needs.request.outputs.repetitions }}
+          TALARIA_PACKAGE_RESULTS: ${{ runner.temp }}/package-tests
+        run: |
+          set -euo pipefail
+          status=0
+          # shellcheck disable=SC2046 # One identifier per line, each validated.
+          scripts/test-package --repeat "${REPETITIONS}" $(jq -r '.lanes.TalariaKitTests.identifiers[]' <<< "${PLAN}") || status=$?
+          completed=$(find "${TALARIA_PACKAGE_RESULTS}" -name 'attempt-*.log' | wc -l | tr -d ' ')
+          {
+            echo "- Completed attempts: ${completed} of ${REPETITIONS}"
+            case "${status}" in
+              0) echo "- Result: every attempt passed" ;;
+              1) echo "- Result: attempt ${completed} failed a test; its log is the package-diagnostics artifact" ;;
+              70) echo "- Result: attempt ${completed} failed without a failing test (infrastructure, or the build failed)" ;;
+              *) echo "- Result: exit ${status}" ;;
+            esac
+          } >> "${GITHUB_STEP_SUMMARY}"
+          exit "${status}"
+
+      - name: Upload the attempts' logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-diagnostics
+          path: ${{ runner.temp }}/package-tests/
+          retention-days: 14
+          if-no-files-found: ignore

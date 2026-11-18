@@ -3,6 +3,7 @@
 
 import importlib.util
 from copy import deepcopy
+import json
 import os
 import re
 from pathlib import Path
@@ -409,6 +410,370 @@ class RoutingTests(unittest.TestCase):
         del needs["app"]
         with self.assertRaises(KeyError):
             routing.check_results(needs)
+
+
+
+PROJECT = """// !$*UTF8*$!
+{
+	objects = {
+		GROUPROOT = {
+			isa = PBXGroup;
+			children = (
+				GROUPTESTS /* TalariaTests */,
+			);
+			sourceTree = "<group>";
+		};
+		GROUPTESTS /* TalariaTests */ = {
+			isa = PBXGroup;
+			children = (
+%(children)s
+			);
+			path = TalariaTests;
+			sourceTree = "<group>";
+		};
+%(objects)s
+		PHASE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+%(files)s
+			);
+		};
+		TARGET /* TalariaTests */ = {
+			isa = PBXNativeTarget;
+			buildPhases = (
+				PHASE /* Sources */,
+			);
+			name = TalariaTests;
+		};
+	};
+}
+"""
+HOSTED_SOURCES = ["Hosted.swift", "AlphaHostedTests.swift", "BetaHostedTests.swift", "MathTests.swift", "Observer.swift",
+                  "../TalariaKit/Tests/TalariaKitTests/Support/SharedFixture.swift"]
+SOURCES = {
+    "app/TalariaKit/Tests/TalariaKitTests/LeafTests.swift": """import XCTest
+
+final class LeafTests: XCTestCase {
+    private var value = 1
+
+    override func setUp() {
+        value = 2
+    }
+
+    func testOne() {
+        XCTAssertEqual(value, 2)
+    }
+
+    func testTwo() {
+        XCTAssertEqual(value + 1, 3)
+    }
+}
+""",
+    "app/TalariaKit/Tests/TalariaKitTests/BaseCase.swift": """import XCTest
+
+class BaseCase: XCTestCase {
+    override func setUp() {
+        super.setUp()
+    }
+}
+
+final class DerivedTests: BaseCase {
+    func testDerived() {}
+}
+""",
+    "app/TalariaKit/Tests/TalariaKitTests/Support/SharedFixture.swift": """enum SharedFixture {
+    static func make() -> Int {
+        1
+    }
+
+    static func unused() -> Int {
+        2
+    }
+}
+""",
+    "app/TalariaKit/Tests/TalariaKitTests/UsesFixtureTests.swift": """import XCTest
+
+final class UsesFixtureTests: XCTestCase {
+    func testMakes() {
+        XCTAssertEqual(SharedFixture.make(), 1)
+    }
+
+    func testIndependent() {
+        let table = \"\"\"
+            | a |
+            \"\"\"
+        XCTAssertFalse(table.isEmpty)
+    }
+}
+""",
+    "app/TalariaKit/Tests/TalariaKitTests/MathTests.swift": """import XCTest
+
+final class MathTests: XCTestCase {
+    func testFormats() {
+        XCTAssertEqual(Formatter().format(), "x")
+    }
+}
+""",
+    "app/TalariaTests/Hosted.swift": """enum Hosted {
+    static func titleMenu() -> Int {
+        1
+    }
+
+    static func other() -> Int {
+        2
+    }
+}
+
+extension Hosted {
+    static func viaMenu() -> Int {
+        titleMenu() + 1
+    }
+}
+""",
+    "app/TalariaTests/AlphaHostedTests.swift": """import XCTest
+
+final class AlphaHostedTests: XCTestCase {
+    func testUsesMenu() {
+        XCTAssertEqual(Hosted.titleMenu(), 1)
+    }
+
+    func testPlain() {
+        XCTAssertEqual(Hosted.other(), 2)
+    }
+
+    func testFixture() {
+        XCTAssertEqual(SharedFixture.make(), 1)
+    }
+}
+""",
+    "app/TalariaTests/BetaHostedTests.swift": """import XCTest
+
+final class BetaHostedTests: XCTestCase {
+    func testThroughHelper() {
+        XCTAssertEqual(Hosted.viaMenu(), 2)
+    }
+}
+""",
+    # XCTest calls it through the bundle's principal class; no test names it.
+    "app/TalariaTests/Observer.swift": """import XCTest
+
+final class Observer: NSObject, XCTestObservation {
+    func testBundleWillStart(_ testBundle: Bundle) {
+        _ = 1
+    }
+}
+""",
+    "app/TalariaTests/MathTests.swift": """import XCTest
+
+final class MathTests: XCTestCase {
+    func testRenders() {
+        XCTAssertEqual(Formatter().format(), "x")
+    }
+}
+""",
+    "app/TalariaKit/Sources/TalariaKit/Formatter.swift": """public struct Formatter {
+    public init() {}
+
+    public func format() -> String {
+        "x"
+    }
+}
+""",
+    "app/TalariaKit/Sources/TalariaKit/Consumer.swift": """struct Consumer {
+    let text = Formatter().format()
+}
+""",
+    "app/TalariaKit/Sources/TalariaKit/Unmapped.swift": "struct Unmapped {}\n",
+    "app/Talaria/View.swift": "struct View {}\n",
+    "app/ci/test-ownership.json": json.dumps({"version": 1, "readers": {}, "rules": [{
+        "name": "formatter", "paths": ["app/TalariaKit/Sources/TalariaKit/Formatter.swift"],
+        "consumers": ["app/TalariaKit/Sources/TalariaKit/Consumer.swift"],
+        "tests": ["TalariaKitTests/MathTests", "TalariaTests/MathTests"], "review": "synthetic"}]}),
+    "README.md": "Synthetic.\n",
+}
+
+
+CONTRACT_PROOF = ["TalariaKitTests/APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied",
+                  "TalariaKitTests/SharedContractTests"]
+
+
+class AppPlanTests(unittest.TestCase):
+    """The App test plan on a synthetic App with both test targets, a shared helper compiled into both, a base test
+    class, a hosted support enum and a reviewed production rule (TAL-2390)."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(prefix="talaria-app-plan-")
+        self.root = Path(self.directory.name)
+        self.env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        files = {f"app/Talaria.xcodeproj/project.pbxproj": self.project(HOSTED_SOURCES), **SOURCES}
+        for path, text in files.items():
+            self.write(path, text)
+        self.git("init", "-b", "main")
+        self.base = self.commit("base")
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    @staticmethod
+    def project(sources):
+        children, objects, files = [], [], []
+        for index, source in enumerate(sources):
+            name = source.rsplit("/", 1)[-1]
+            children.append(f"\t\t\t\tFILE{index} /* {name} */,")
+            files.append(f"\t\t\t\tBUILD{index} /* {name} in Sources */,")
+            objects.append(f'\t\tFILE{index} /* {name} */ = {{isa = PBXFileReference; path = "{source}"; sourceTree = "<group>"; }};')
+            objects.append(f"\t\tBUILD{index} /* {name} in Sources */ = {{isa = PBXBuildFile; fileRef = FILE{index} /* {name} */; }};")
+        return PROJECT % {"children": "\n".join(children), "objects": "\n".join(objects), "files": "\n".join(files)}
+
+    def write(self, path, text):
+        (self.root / path).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / path).write_text(text)
+
+    def edit(self, path, old, new):
+        text = (self.root / path).read_text()
+        self.assertIn(old, text)
+        self.write(path, text.replace(old, new, 1))
+
+    def git(self, *args):
+        return subprocess.check_output(["git", "-c", "user.name=Synthetic", "-c", "user.email=test@example.invalid",
+                                        "-c", "commit.gpgsign=false", *args], cwd=self.root, env=self.env, text=True).strip()
+
+    def commit(self, name):
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", name)
+        return self.git("rev-parse", "HEAD")
+
+    def plan(self, *options):
+        result = subprocess.run([os.sys.executable, str(SCRIPT), *options, "--app-plan", "json"], cwd=self.root,
+                                env=self.env, text=True, capture_output=True, check=True)
+        return json.loads(result.stdout)
+
+    def committed(self):
+        return self.plan(f"--base={self.base}", f"--head={self.commit('change')}", "--merge-base")
+
+    def lanes(self, plan):
+        return {target: (lane["mode"], lane["identifiers"]) for target, lane in plan["lanes"].items()}
+
+    def test_changes_select_the_tests_that_reach_them(self):
+        empty = ("empty", [])
+        cases = [
+            ("a leaf test method runs alone",
+             [("app/TalariaKit/Tests/TalariaKitTests/LeafTests.swift", "XCTAssertEqual(value, 2)", "XCTAssertEqual(value, 2, \"two\")")],
+             {"TalariaKitTests": ("explicit", ["TalariaKitTests/LeafTests/testOne"]), "TalariaTests": empty}),
+            ("a test class's setup runs the whole class",
+             [("app/TalariaKit/Tests/TalariaKitTests/LeafTests.swift", "value = 2", "value = 1 + 1")],
+             {"TalariaKitTests": ("explicit", ["TalariaKitTests/LeafTests"]), "TalariaTests": empty}),
+            ("a base class's setup runs its subclasses, not the testless base",
+             [("app/TalariaKit/Tests/TalariaKitTests/BaseCase.swift", "super.setUp()", "super.setUp(); _ = 1")],
+             {"TalariaKitTests": ("explicit", ["TalariaKitTests/DerivedTests"]), "TalariaTests": empty}),
+            # The router counts the package's Support files as contract inputs, so the live contract proof runs too.
+            ("a package helper compiled into the hosted target reaches both targets' callers",
+             [("app/TalariaKit/Tests/TalariaKitTests/Support/SharedFixture.swift", "        1\n", "        0 + 1\n")],
+             {"TalariaKitTests": ("explicit", [*CONTRACT_PROOF, "TalariaKitTests/UsesFixtureTests/testMakes"]),
+              "TalariaTests": ("explicit", ["TalariaTests/AlphaHostedTests/testFixture"])}),
+            ("a hosted helper reaches direct and transitive callers only",
+             [("app/TalariaTests/Hosted.swift", "        1\n", "        0 + 1\n")],
+             {"TalariaKitTests": empty, "TalariaTests": ("explicit", ["TalariaTests/AlphaHostedTests/testUsesMenu",
+                                                                      "TalariaTests/BetaHostedTests/testThroughHelper"])}),
+            ("a reviewed production rule runs its tests in both targets, qualified by target",
+             [("app/TalariaKit/Sources/TalariaKit/Formatter.swift", '"x"', '"x" + ""')],
+             {"TalariaKitTests": ("explicit", ["TalariaKitTests/MathTests"]), "TalariaTests": ("explicit", ["TalariaTests/MathTests"])}),
+            ("an unmapped TalariaKit source runs both targets",
+             [("app/TalariaKit/Sources/TalariaKit/Unmapped.swift", "{}", "{ let x = 1 }")],
+             {"TalariaKitTests": ("full", ["TalariaKitTests"]), "TalariaTests": ("full", ["TalariaTests"])}),
+            ("an App source runs only the hosted target",
+             [("app/Talaria/View.swift", "{}", "{ let x = 1 }")],
+             {"TalariaKitTests": empty, "TalariaTests": ("full", ["TalariaTests"])}),
+            ("whitespace inside a string literal is a change",
+             [("app/TalariaKit/Tests/TalariaKitTests/UsesFixtureTests.swift", "            | a |\n", "                | a |\n")],
+             {"TalariaKitTests": ("explicit", ["TalariaKitTests/UsesFixtureTests/testIndependent"]), "TalariaTests": empty}),
+            ("support XCTest invokes for every test runs its target in full",
+             [("app/TalariaTests/Observer.swift", "_ = 1", "_ = 2")],
+             {"TalariaKitTests": empty, "TalariaTests": ("full", ["TalariaTests"])}),
+            ("comments change nothing", [("app/TalariaTests/Hosted.swift", "        1\n", "        1 // one\n")],
+             {"TalariaKitTests": empty, "TalariaTests": empty}),
+            ("documentation selects no App test", [("README.md", "Synthetic.", "Synthetic docs.")],
+             {"TalariaKitTests": empty, "TalariaTests": empty}),
+            ("a mixed diff runs the union",
+             [("app/TalariaKit/Tests/TalariaKitTests/LeafTests.swift", "XCTAssertEqual(value + 1, 3)", "XCTAssertEqual(value + 1, 3, \"three\")"),
+              ("app/TalariaTests/Hosted.swift", "        2\n", "        0 + 2\n")],
+             {"TalariaKitTests": ("explicit", ["TalariaKitTests/LeafTests/testTwo"]),
+              "TalariaTests": ("explicit", ["TalariaTests/AlphaHostedTests/testPlain"])}),
+        ]
+        for name, edits, expected in cases:
+            with self.subTest(name):
+                self.git("reset", "-q", "--hard", self.base)
+                for path, old, new in edits:
+                    self.edit(path, old, new)
+                self.assertEqual(self.lanes(self.committed()), expected)
+
+    def test_local_changes_plan_exactly_as_the_committed_diff(self):
+        # Staged, unstaged and untracked changes together: the local dry run and CI's committed diff agree.
+        self.edit("app/TalariaKit/Tests/TalariaKitTests/LeafTests.swift", "XCTAssertEqual(value, 2)", "XCTAssertEqual(value, 2, \"two\")")
+        self.git("add", "app/TalariaKit/Tests/TalariaKitTests/LeafTests.swift")
+        self.edit("app/TalariaTests/Hosted.swift", "        1\n", "        0 + 1\n")
+        self.write("app/TalariaKit/Tests/TalariaKitTests/NewTests.swift",
+                   "import XCTest\n\nfinal class NewTests: XCTestCase {\n    func testNew() {}\n}\n")
+        local = self.plan("--local", f"--base={self.base}")
+        committed = self.committed()
+        self.assertEqual(local["lanes"], committed["lanes"])
+        self.assertEqual(self.lanes(local)["TalariaKitTests"],
+                         ("explicit", ["TalariaKitTests/LeafTests/testOne", "TalariaKitTests/NewTests"]))
+
+    def test_renames_and_deletions_run_only_tests_present_at_the_tested_revision(self):
+        self.edit("app/TalariaKit/Tests/TalariaKitTests/LeafTests.swift", "func testTwo()", "func testSecond()")
+        (self.root / "app/TalariaKit/Tests/TalariaKitTests/UsesFixtureTests.swift").unlink()
+        self.git("mv", "app/TalariaKit/Tests/TalariaKitTests/MathTests.swift", "app/TalariaKit/Tests/TalariaKitTests/FormatTests.swift")
+        self.edit("app/TalariaKit/Tests/TalariaKitTests/FormatTests.swift", "class MathTests", "class FormatTests")
+        self.assertEqual(self.lanes(self.committed())["TalariaKitTests"],
+                         ("explicit", ["TalariaKitTests/FormatTests", "TalariaKitTests/LeafTests/testSecond"]))
+
+    def test_uncertainty_runs_the_affected_targets_in_full_with_its_reason(self):
+        cases = [
+            # A new consumer the rule's review never saw makes the rule stale.
+            ("app/TalariaKit/Sources/TalariaKit/Late.swift", "struct Late { let x = Formatter() }\n",
+             "app/TalariaKit/Sources/TalariaKit/Formatter.swift", '"x"', '"y"', "rule formatter is stale"),
+            # A test file the scanner cannot read.
+            ("app/TalariaTests/Broken.swift", "final class Broken: XCTestCase { func testX() { \n",
+             "app/TalariaTests/Hosted.swift", "        1\n", "        0 + 1\n", "unbalanced braces"),
+        ]
+        base = self.base
+        for added, text, path, old, new, reason in cases:
+            with self.subTest(reason):
+                self.git("reset", "-q", "--hard", base)
+                self.git("clean", "-qfd")
+                self.base = base
+                self.write(added, text)
+                if added.startswith("app/TalariaTests/"):
+                    self.write("app/Talaria.xcodeproj/project.pbxproj", self.project([*HOSTED_SOURCES, "Broken.swift"]))
+                    self.commit("project")
+                    self.base = self.git("rev-parse", "HEAD")
+                self.edit(path, old, new)
+                plan = self.committed()
+                full = [target for target, lane in plan["lanes"].items() if lane["mode"] == "full"]
+                self.assertIn("TalariaTests", full)
+                self.assertTrue(any(reason in why for lane in plan["lanes"].values() for why in lane["reasons"]), plan)
+        # A base that cannot be read: every suite and both targets in full.
+        unavailable = self.plan("--base=0123456789012345678901234567890123456789", "--head=HEAD")
+        self.assertEqual({lane["mode"] for lane in unavailable["lanes"].values()}, {"full"})
+
+    def test_a_selected_contracts_suite_keeps_the_live_contract_proof(self):
+        self.write("contracts/fixtures/web-session.json", "{}\n")
+        self.base = self.commit("fixture")
+        self.write("web/packages/server/src/x.ts", "export const x = 1;\n")
+        self.assertEqual(self.lanes(self.committed()), {
+            "TalariaKitTests": ("explicit", CONTRACT_PROOF),
+            "TalariaTests": ("empty", [])})
+
+    def test_ci_outputs_carry_each_lane_and_the_plan(self):
+        self.edit("app/Talaria/View.swift", "{}", "{ let x = 1 }")
+        head = self.commit("view")
+        result = subprocess.run([os.sys.executable, str(SCRIPT), f"--base={self.base}", f"--head={head}", "--merge-base",
+                                 "--app-plan"], cwd=self.root, env=self.env, text=True, capture_output=True, check=True)
+        outputs = dict(line.split("=", 1) for line in result.stdout.splitlines())
+        self.assertEqual((outputs["app"], outputs["app_package"], outputs["app_hosted"]), ("true", "empty", "full"))
+        self.assertEqual(json.loads(outputs["app_plan"])["lanes"]["TalariaTests"]["mode"], "full")
+        self.assertIn("app/Talaria/View.swift: no reviewed rule bounds its consumers.", result.stderr)
 
 
 if __name__ == "__main__":

@@ -35,8 +35,11 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(test["run"], 'ci/report-test-failures "${XCODEBUILD_LOG}" "$(git rev-parse HEAD)" "${FAILURE_STATUS}"')
     assert_includes(test["run"], %q(trap 'kill "${reporter}" 2>/dev/null || true' EXIT))
     assert_includes(test["run"], '[[ "${status}" != 0 ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "${FAILURE_STATUS}"')
-    # One status per shard, so a passing shard never replaces another shard's failure (TAL-1550).
-    assert_equal("App hosted test failures ${{ matrix.shard }}", shard["env"]["FAILURE_STATUS"])
+    # One status per shard, so a passing shard never replaces another shard's failure (TAL-1550). A selected run's and
+    # a diagnostic's statuses have names of their own, so neither replaces a full run's (TAL-2390).
+    assert_equal("${{ inputs.diagnostic && format('App test diagnostics {0}', github.run_id) || format('{0} {1}', " \
+                 "inputs.hosted_lane == 'explicit' && 'App selected hosted test failures' || 'App hosted test failures', matrix.shard) }}",
+                 shard["env"]["FAILURE_STATUS"])
     assert_equal("${{ github.token }}", test["env"]["GH_TOKEN"])
     assert_equal("write", shard["permissions"]["statuses"])
     { "ci.yml" => "app", "release-set.yml" => "app-hosted-tests" }.each do |file, job|
@@ -75,8 +78,8 @@ class TestIOSRunnerTest < Minitest::Test
       refute_match(Regexp.new(local), workflow)
     end
     assert_equal(1, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
-    # Each shard runs the selection ci/hosted-test-shard prints for it (TAL-1550).
-    assert_includes(workflow, 'arguments=$(ci/hosted-test-shard args "${SHARD}")')
+    # Each shard runs the selection ci/hosted-test-shard prints for its entry of the plan (TAL-1550, TAL-2390).
+    assert_includes(workflow, 'arguments=$(ci/hosted-test-shard args "${RUNNER_TEMP}/shard.json")')
     assert_includes(workflow, 'while IFS= read -r argument; do selection+=("${argument}"); done <<< "${arguments}"')
     # macOS's Bash 3.2 has no mapfile or readarray.
     refute_match(/mapfile|readarray/, workflow)
@@ -188,13 +191,18 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal("build-started", shard["needs"])
     started = jobs.fetch("build-started")
     assert_equal(["inputs.mode == 'hosted'", "ubuntu-latest"], started.values_at("if", "runs-on"))
-    assert_equal(['ci/wait-for-job "${BUILD_JOB}" 20700 "Set up job"'], started["steps"].filter_map { |step| step["run"] })
+    # Once the build holds a runner it plans the shards from the tested checkout and the observed demand (TAL-2390).
+    assert_equal(["Wait until the build holds a macOS runner", "Plan the simulator shards"],
+                 started["steps"].filter_map { |step| step["name"] if step["run"] })
+    assert_equal('ci/wait-for-job "${BUILD_JOB}" 20700 "Set up job"', started["steps"][1]["run"])
+    assert_equal({ "plan" => "${{ steps.plan.outputs.plan }}", "shards" => "${{ steps.plan.outputs.shards }}" }, started["outputs"])
     # The boot finishes before the build wait and download, so it competes with neither (TAL-380), and the simulator
     # is prepared in the background while the build runs and downloads (scripts/prepare-ui-simulator: the keyboard
     # introduction, TAL-668; notifications, TAL-651; a photo, TAL-633), collected right before the tests (TAL-1599).
     boot = shard["steps"].index { |step| step["name"] == "Boot the simulator" }
     # Only the shard whose tests wait on the notification server waits for it (ci/hosted-test-shard, TAL-2352).
-    assert_equal(['options=$(ci/hosted-test-shard prepare-options "${SHARD}")',
+    assert_equal(["printf '%s' \"${SHARD_PLAN}\" > \"${RUNNER_TEMP}/shard.json\"",
+                  'options=$(ci/hosted-test-shard prepare-options "${RUNNER_TEMP}/shard.json")',
                   'ci/background start simulator-prepare scripts/prepare-ui-simulator ${options} "${{ steps.sim.outputs.udid }}"'],
                  shard["steps"][boot + 1]["run"].lines.map(&:strip).reject { |line| line.start_with?("#") })
     assert_equal(["Prepare the simulator", "Wait for the build", "Download the test build", "Wait for the simulator", "Test without building"],
@@ -242,13 +250,19 @@ class TestIOSRunnerTest < Minitest::Test
     # run them in their own job, from the start (TAL-1896).
     assert_nil(package["needs"], "The package tests start beside a build-mode build")
     assert_equal("inputs.mode != 'hosted' && inputs.package_tests", package["if"])
+    # An explicit lane runs only its identifiers, and the job that runs them takes a name no full suite carries, so a
+    # subset never reports as the suite (TAL-2390).
+    assert_equal("${{ inputs.package_lane == 'explicit' && 'App selected package tests' || 'App package tests' }}", package["name"])
+    selected_build = "${{ inputs.mode == 'hosted' && inputs.package_lane == 'explicit' && 'App build and selected package tests' || 'App build' }}"
+    assert_equal([selected_build] * 2, [build["name"], YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)["env"]["BUILD_JOB"]])
     build_names = build["steps"].map { |step| step["name"] || step["uses"] }
     assert_equal("Upload the test build", build_names[-2], "The shards' download must never wait on the package tests")
     # Every caller runs them but a release's hosted-tests call, whose contracts job runs the same suite (TAL-414).
     assert_equal("${{ !cancelled() && inputs.mode == 'hosted' && inputs.package_tests }}", build["steps"].last["if"])
     [build["steps"].last, package["steps"].last].each do |caller|
       assert_equal("./.github/actions/app-package-tests", caller["uses"])
-      assert_equal({ "contracts" => "${{ inputs.contracts }}" }, caller["with"])
+      assert_equal({ "contracts" => "${{ inputs.contracts }}", "plan" => "${{ inputs.package_lane == 'explicit' && inputs.plan || '' }}" },
+                   caller["with"])
     end
     [build, package].each { |job| assert_equal("read", job["permissions"]["actions"], "The probe wait reads this run's job list") }
     assert_equal({"type" => "boolean", "default" => true},
@@ -304,26 +318,32 @@ class TestIOSRunnerTest < Minitest::Test
     refute_match(/COMPILATION_CACHE|build-cache/, File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8"))
     # Hosted mode runs the package tests, the App build for testing and the simulator-hosted unit tests.
     app_tests = YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)
-    assert_equal(%w[mode contracts ref package_tests shards_at_once], app_tests[true]["workflow_call"]["inputs"].keys)
+    assert_equal(%w[mode contracts ref package_tests shards_at_once package_lane hosted_lane plan repetitions diagnostic],
+                 app_tests[true]["workflow_call"]["inputs"].keys)
     jobs = app_tests["jobs"]
     shard = jobs.fetch("app-test")
-    # Four simulator jobs share the one build, each running a fixed set of classes; every shard runs to the end. CI
-    # runs all four at once; a release runs fewer at a time to stay within its macOS jobs (TAL-2396).
-    assert_equal({ "fail-fast" => false, "max-parallel" => "${{ inputs.shards_at_once }}", "matrix" => { "shard" => [1, 2, 3, 4] } },
-                 shard["strategy"])
+    # One to four simulator jobs share the one build, each running the classes "App build started" planned for it;
+    # every shard runs to the end. A full run keeps the full-suite names; an explicit lane's are its own (TAL-2390). CI
+    # runs every shard at once; a release runs fewer at a time to stay within its macOS jobs (TAL-2396).
+    assert_equal({ "fail-fast" => false, "max-parallel" => "${{ inputs.shards_at_once }}",
+                   "matrix" => { "include" => "${{ fromJSON(needs.build-started.outputs.shards) }}" } }, shard["strategy"])
     assert_equal({ "type" => "number", "default" => 4 }, app_tests[true]["workflow_call"]["inputs"]["shards_at_once"])
-    assert_equal("App hosted tests ${{ matrix.shard }}", shard["name"])
+    assert_equal("${{ inputs.hosted_lane == 'explicit' && 'App selected hosted tests' || 'App hosted tests' }} ${{ matrix.shard }}",
+                 shard["name"])
     shard["steps"].select { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }.each do |upload|
       assert_match(/-\$\{\{ matrix\.shard \}\}\z/, upload["with"]["name"], "shards overwrite each other's #{upload["name"]}")
     end
-    # "App hosted tests" is the suite's one result, the job a release reuses: every shard passed and each class ran in
-    # exactly one of them.
-    gate = jobs.fetch("app-test-gate")
-    assert_equal(["App hosted tests", "app-test", "inputs.mode == 'hosted'", "ubuntu-latest"],
-                 gate.values_at("name", "needs", "if", "runs-on"))
-    assert_equal("app-hosted-classes-*", gate["steps"].find { |step| step["uses"].to_s.start_with?("actions/download-artifact@") }["with"]["pattern"])
+    # "App hosted tests" is the suite's one result, the job a release reuses: every shard passed and every planned
+    # identifier ran exactly once. A selected run's gate is its own job, "App selected hosted tests", with the same proof.
+    gates = jobs.values_at("app-test-gate", "app-test-selected-gate")
+    assert_equal([["App hosted tests", %w[build-started app-test], "inputs.mode == 'hosted' && inputs.hosted_lane != 'explicit'", "ubuntu-latest"],
+                  ["App selected hosted tests", %w[build-started app-test], "inputs.mode == 'hosted' && inputs.hosted_lane == 'explicit'", "ubuntu-latest"]],
+                 gates.map { |gate| gate.values_at("name", "needs", "if", "runs-on") })
+    assert_equal(*gates.map { |gate| gate["steps"] })
+    gate = gates.first
+    assert_equal("app-hosted-cases-*", gate["steps"].find { |step| step["uses"].to_s.start_with?("actions/download-artifact@") }["with"]["pattern"])
     assert_includes(gate["steps"].last["run"], "set -euo pipefail")
-    assert_includes(gate["steps"].last["run"], 'ci/hosted-test-shard check "${RUNNER_TEMP}/hosted-classes"')
+    assert_includes(gate["steps"].last["run"], 'ci/hosted-test-shard check "${RUNNER_TEMP}/shards.json" "${RUNNER_TEMP}/hosted-cases"')
     # Only hosted mode has hosted tests, and the package tests run their contract classes in every mode.
     ["build-started", "app-test"].each { |name| assert_equal("inputs.mode == 'hosted'", jobs.fetch(name)["if"], name) }
     # build mode's build is the same job with nothing for shards to download.
@@ -355,11 +375,17 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(test, '-parallel-testing-enabled NO || status=$?')
     assert_match(/exit "\$\{status\}"\n\z/, test)
     # Main pushes, manual runs and labelled pull requests run the hosted tests; other pull requests only build and run
-    # the package tests (TAL-1896).
+    # the package tests (TAL-1896). A labelled pull request whose plan reaches no hosted test only builds, and a pull
+    # request passes its plan's lanes; any other event, or a failed classification, runs both targets in full (TAL-2390).
     app = workflow_jobs("ci.yml").fetch("app")
     assert_equal("./.github/workflows/app-tests.yml", app["uses"])
-    assert_equal("${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && ((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'hosted-tests')) && 'hosted' || 'build') || 'contracts' }}",
+    assert_equal("${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && ((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'hosted-tests')) && needs.changes.outputs.app_hosted != 'empty' && 'hosted' || 'build') || 'contracts' }}",
                  app["with"]["mode"])
+    assert_equal(["${{ needs.changes.result != 'success' || needs.changes.outputs.app_package != 'empty' }}",
+                  "${{ needs.changes.result == 'success' && needs.changes.outputs.app_package || 'full' }}",
+                  "${{ needs.changes.result == 'success' && needs.changes.outputs.app_hosted || 'full' }}",
+                  "${{ needs.changes.result == 'success' && needs.changes.outputs.app_plan || '' }}"],
+                 app["with"].values_at("package_tests", "package_lane", "hosted_lane", "plan"))
     # Every run keeps the hosted tests' performance budget measurements.
     assert_includes(workflow, "scripts/report-performance-metrics")
     reporter = File.read(File.expand_path("../scripts/report-performance-metrics", __dir__), encoding: "UTF-8")
