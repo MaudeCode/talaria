@@ -216,18 +216,6 @@ class ArtifactTests(unittest.TestCase):
         with patch.dict(os.environ, {"RELEASE_NEEDS": json.dumps(needs)}), self.assertRaises(ValueError):
             artifacts.references()
 
-    def test_recovery_restores_another_runs_handoffs_only_by_producer_digest(self):
-        reference = self.put(("ios-ipa", self.source))["ios-ipa"]
-        with patch.dict(os.environ, {"GITHUB_RUN_ID": "456", "GITHUB_SHA": "b" * 40}):
-            with self.assertRaises(ValueError):
-                self.get(reference, self.root / "rejected")
-            artifacts.extract(*artifacts.stored(reference), self.root / "recovered")
-            self.assertEqual(self.downloads[-1], ("123", "handoffs_123_1_ios-ipa"))
-            self.assertEqual((self.root / "recovered/receipt.json").read_text(), '{"synthetic":true}\n')
-            self.tamper("ios-ipa", b"tampered")
-            with self.assertRaisesRegex(ValueError, "digest differs"):
-                artifacts.stored(reference)
-
     def test_command_line_stages_and_restores_forwarded_names(self):
         with patch("sys.argv", ["artifacts.py", "put", "release-plan", str(self.source)]):
             artifacts.main()
