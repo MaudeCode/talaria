@@ -1,8 +1,6 @@
 import { expect, test } from './fixtures'
 import ownerFixture from '../../../../contracts/fixtures/gateway-owner.json' with { type: 'json' }
 
-test.use({ video: 'on' })
-
 test('an owner-consumed voice stop clears its optimistic row without a new stream', async ({ page }, info) => {
   const response = ownerFixture.voice_stop_response
   const calls: Record<string, unknown>[] = []
@@ -56,16 +54,13 @@ test('native queued prompts use owner controls and confirmed snapshots', async (
   await page.locator('[data-notice="queue"]').getByRole('button').click()
   const dialog = page.getByRole('dialog', { name: 'Agent inputs' })
   await expect(dialog).toContainText('Check the backup logs too')
-  if (process.env.TAL1270_SHOTS) await page.screenshot({ path: `${process.env.TAL1270_SHOTS}/queue-${info.project.name}.png` })
+  await page.screenshot({ path: info.outputPath('queue.png') })
   const legacy = dialog.locator('li', { hasText: 'Summarize the backup' })
   await expect(legacy.getByRole('button', { name: 'Edit queued message' })).toHaveCount(0)
   await expect(legacy.getByRole('button', { name: 'Steer current response' })).toHaveCount(0)
   await dialog.getByRole('button', { name: 'Edit queued message' }).click()
   await dialog.getByRole('textbox', { name: 'Edit queued message' }).fill('Check the restored backup')
-  if (process.env.TAL1270_SHOTS) {
-    await page.screenshot({ path: `${process.env.TAL1270_SHOTS}/editing-${info.project.name}.png` })
-    await page.waitForTimeout(250) // Retain the editing state in the interaction recording.
-  }
+  await page.screenshot({ path: info.outputPath('editing.png') })
   await dialog.getByRole('textbox').press('Enter')
   await expect(dialog).toContainText('Check the restored backup')
   // Optimistic text must be visible before the simulated owner processes the edit.
@@ -73,16 +68,10 @@ test('native queued prompts use owner controls and confirmed snapshots', async (
   allowOwner()
   await waitForCalls(1)
   expect(calls[0]).toMatchObject({ session_id: sid, action: 'replace_queued', admission_id: 'editable', text: 'Check the restored backup', submission_id: expect.any(String) })
-  if (process.env.TAL1270_SHOTS) await page.screenshot({ path: `${process.env.TAL1270_SHOTS}/edited-${info.project.name}.png` })
+  await page.screenshot({ path: info.outputPath('edited.png') })
   await dialog.getByRole('button', { name: 'Steer current response' }).click()
   await expect(dialog.locator('li')).toHaveCount(1)
   await waitForCalls(2)
   expect(calls[1]).toEqual({ session_id: sid, action: 'steer_queued', admission_id: 'editable' })
-  if (process.env.TAL1270_SHOTS) {
-    await page.screenshot({ path: `${process.env.TAL1270_SHOTS}/steered-${info.project.name}.png` })
-    await page.waitForTimeout(250) // Retain the confirmed steering result before the recorder closes.
-    const video = page.video()
-    await page.close()
-    await video?.saveAs(`${process.env.TAL1270_SHOTS}/interaction-${info.project.name}.webm`)
-  }
+  await page.screenshot({ path: info.outputPath('steered.png') })
 })

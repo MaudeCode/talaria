@@ -61,10 +61,22 @@ for (const style of ['on', 'off', 'reduced'] as const) {
       const live = page.locator('[data-live] .hermes-prose').last()
       await expect(live).toContainText('Use fake timers')
       await shot('before')
+      // Match the approved recording's uneven runs: a chunk within a line lands while the last growth still animates, and one
+      // that ends a line waits for the height to settle.
+      const settled = () => page.evaluate(async () => {
+        for (let frame = 0; frame < 600; frame++) {
+          await new Promise((resolve) => requestAnimationFrame(resolve))
+          const running = document.querySelector('[data-stream-height]')?.getAnimations() ?? []
+          if (running.length === 0) return
+          await Promise.all(running.map((animation) => animation.finished.catch(() => undefined)))
+        }
+        throw new Error('the stream height still animates after 600 frames')
+      })
       for (const chunk of CHUNKS.slice(1)) {
+        const shown = await live.evaluate((el) => (el.textContent ?? '').length)
         send(chunk)
-        // Match the approved recording's uneven runs, and let real frames paint between arrivals.
-        await page.waitForTimeout(chunk.includes('\n') ? 300 : 120)
+        await expect.poll(() => live.evaluate((el) => (el.textContent ?? '').length)).toBeGreaterThan(shown)
+        if (chunk.includes('\n')) await settled()
       }
       await expect(live).toContainText('moves them.')
       const spans = live.locator('p [data-sd-animate]')
@@ -77,7 +89,7 @@ for (const style of ['on', 'off', 'reduced'] as const) {
         await expect(spans).toHaveCount(0)
         await expect(page.locator('[data-stream-height]')).toHaveCount(0)
       }
-      await page.evaluate(() => Promise.all((document.querySelector('[data-stream-height]')?.getAnimations() ?? []).map((animation) => animation.finished)))
+      await settled()
       const samples = await page.evaluate(() => {
         const state = (window as unknown as { streamMotion: { samples: { height: number; gap: number; animated: boolean; blur: boolean }[]; frame: number } }).streamMotion
         cancelAnimationFrame(state.frame)

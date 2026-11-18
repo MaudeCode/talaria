@@ -1,6 +1,4 @@
 import { createServer, type ServerResponse } from 'node:http'
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import type { Locator } from '@playwright/test'
 import { expect, expectPromptReachable, test as base } from './fixtures'
 
@@ -44,13 +42,11 @@ const test = base.extend<{ approval: { send: (event: string, data: unknown) => v
   },
 })
 
-test.use({ serviceWorkers: 'block', video: process.env.TALARIA_APPROVAL_EVIDENCE_DIR ? { mode: 'on', size: { width: 1280, height: 800 } } : 'off' })
+test.use({ serviceWorkers: 'block' })
 
 /** The motion a browser alone can run: jsdom has no CSS transitions or animations (TAL-1783). */
 test('an answered approval tucks behind the composer, and the row it held lights once', async ({ page, approval: { send } }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
-  // Only an evidence recording needs time to read the card.
-  const pause = async (ms: number) => { if (process.env.TALARIA_APPROVAL_EVIDENCE_DIR) await page.waitForTimeout(ms) }
   const chip = page.locator('[data-notice="live"]')
   const card = page.locator('.approval-card')
   const answer = async (id: string, tool: string, command: string, button: RegExp, outcome: string, keyframes: string, row: Locator) => {
@@ -59,7 +55,6 @@ test('an answered approval tucks behind the composer, and the row it held lights
     send('approval', { approval_id: id, tool_call_id: tool, command, description: 'Force-pushing rewrites the history of the remote branch.' })
     await expect(card).toHaveClass(/visible/)
     await expect(chip).toHaveCount(0)
-    await pause(1000)
     await card.getByRole('button', { name: button }).click()
     await expect(card).toHaveClass(/leaving/)
     const inner = card.locator('.approval-inner')
@@ -75,7 +70,6 @@ test('an answered approval tucks behind the composer, and the row it held lights
   send('tool_complete', { id: 'push', name: 'terminal', kind: 'shell', target: 'git push origin main --force-with-lease', is_error: false, duration: 1.2 })
   await answer('a2', 'reset', 'git reset --hard origin/main', /^deny$/i, 'denied', 'newflash-error', page.locator('.tool-worklog-summary'))
   send('tool_complete', { id: 'reset', name: 'terminal', kind: 'shell', target: 'git reset --hard origin/main', is_error: true, duration: 0.1 })
-  await pause(700)
 })
 
 /** A dismissed approval card no longer answers Enter; the next approval shows again (TAL-503). */
@@ -93,11 +87,7 @@ test('dismissing an approval stops Enter from approving it; the next approval in
 
 /** The command stays held while the instruction is typed; the card leaves on submit and returns on refusal (TAL-1912). */
 test('a deny carries an instruction, Esc goes back, and a refusal brings the text back', async ({ page, errors, approval: { send, responses } }, info) => {
-  const shot = async (state: string) => {
-    if (!process.env.TALARIA_APPROVAL_EVIDENCE_DIR) return
-    mkdirSync(process.env.TALARIA_APPROVAL_EVIDENCE_DIR, { recursive: true })
-    await page.screenshot({ path: join(process.env.TALARIA_APPROVAL_EVIDENCE_DIR, `${info.project.name}-tell-${state}.png`) })
-  }
+  const shot = async (state: string) => { await page.screenshot({ path: info.outputPath(`tell-${state}.png`) }) }
   const card = page.getByRole('alertdialog')
   const tell = card.getByRole('button', { name: 'No, and tell Hermes instead' })
   const box = card.getByRole('textbox', { name: 'What should Hermes do instead?' })
@@ -148,11 +138,7 @@ test('a deny carries an instruction, Esc goes back, and a refusal brings the tex
 
 test('menu keyboard actions retain ownership while an approval is visible', async ({ page, approval: { send, responses } }, info) => {
   const card = page.getByRole('alertdialog')
-  const screenshot = async (state: string) => {
-    if (!process.env.TALARIA_APPROVAL_EVIDENCE_DIR) return
-    mkdirSync(process.env.TALARIA_APPROVAL_EVIDENCE_DIR, { recursive: true })
-    await page.screenshot({ path: join(process.env.TALARIA_APPROVAL_EVIDENCE_DIR, `${info.project.name}-${state}.png`) })
-  }
+  const screenshot = async (state: string) => { await page.screenshot({ path: info.outputPath(`${state}.png`) }) }
   send('approval', { approval_id: 'menu-approval', command: 'echo fixture' })
   await expect(card).toContainText('echo fixture')
   if (info.project.name !== 'mobile') {

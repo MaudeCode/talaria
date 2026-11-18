@@ -1,5 +1,5 @@
 import type { Page, Request } from '@playwright/test'
-import { expect, test } from './fixtures'
+import { expect, painted, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -212,7 +212,8 @@ test('the same file pasted twice while the new chat is created attaches once', a
   await expect(page).toHaveURL(/\/session\/twice-new$/)
   await expect(chips(page).and(page.locator('[data-status="done"]'))).toHaveCount(1)
   await expect.poll(() => uploads).toEqual(['twice-new'])
-  await page.waitForTimeout(300)
+  // The hand-off sends every upload once its chips render; a second one for the same file has been sent by then.
+  await painted(page)
   expect(uploads).toEqual(['twice-new'])
 })
 
@@ -234,10 +235,13 @@ test('opening another chat while a new chat is created leaves the hand-off to th
   await page.locator('#msg').fill('For the new chat')
   await page.locator('#fileInput').setInputFiles([image('bound.png')])
   // Another chat opens in the same tab before the new one exists.
+  const otherLoaded = page.waitForResponse((response) => { const url = new URL(response.url()); return url.pathname === '/api/session' && url.searchParams.get('session_id') === 'other-chat' })
   await page.evaluate(() => { history.pushState({}, '', '/session/other-chat'); dispatchEvent(new PopStateEvent('popstate')) })
   await expect(page).toHaveURL(/\/session\/other-chat$/)
   await expect(page.locator('#msg')).toBeVisible()
-  await page.waitForTimeout(300)
+  // Its composer could adopt the hand-off only once its record has loaded and rendered.
+  await otherLoaded
+  await painted(page)
   await expect(chips(page)).toHaveCount(0)
   await expect(page.locator('#msg')).not.toHaveValue('For the new chat')
   release()
