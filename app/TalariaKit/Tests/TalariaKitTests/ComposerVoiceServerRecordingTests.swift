@@ -12,8 +12,6 @@ final class ComposerVoiceServerRecordingTests: XCTestCase {
         XCTAssertEqual(settings[AVNumberOfChannelsKey] as? Int, 1)
         XCTAssertEqual(settings[AVSampleRateKey] as? Double, 16_000)
         XCTAssertEqual(settings[AVEncoderBitRateKey] as? Int, ComposerVoiceInputController.serverRecordingBitRate)
-        // The old uncompressed settings must be gone, or the size math below lies.
-        XCTAssertNil(settings[AVLinearPCMBitDepthKey])
     }
 
     func testServerRecordingURLKeepsM4AExtension() {

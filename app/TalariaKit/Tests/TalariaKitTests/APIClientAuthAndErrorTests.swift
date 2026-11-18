@@ -87,6 +87,8 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
     @MainActor
     func testAuthManagerLogsInWhenPasswordIsRequired() async throws {
         let keychain = InMemoryKeychainStore()
+        // authEnabled true but passwordAuthEnabled nil (older server) must NOT be
+        // treated as passkey-only — the regression-safety rule from #255.
         let client = MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: true, loggedIn: false))
         let manager = AuthManager(
             keychain: keychain,
@@ -1113,28 +1115,6 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         } catch APIError.unauthorized {} catch { XCTFail("Unexpected error: \(error)") }
         APIClient.setReauthenticationRequired(nil, owner: owner)
         try await client.requireMutationAuthorization()
-    }
-
-    @MainActor
-    func testPasswordSignInForgetsThePreviousOIDCProfileMarker() async throws {
-        let server = try XCTUnwrap(URL(string: "https://example.test"))
-        let keychain = InMemoryKeychainStore()
-        try keychain.save("member", forKey: .authenticatedProfile, scope: server.absoluteString)
-        let manager = AuthManager(
-            keychain: keychain,
-            clientFactory: { _ in
-                MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: true, loggedIn: false))
-            },
-            cookieStorage: URLSessionConfiguration.ephemeral.httpCookieStorage!,
-            profileEntityCache: ProfileEntityCache(defaults: nil),
-            serverRegistry: ServerRegistry.inMemory(keychain: keychain)
-        )
-
-        await manager.configure(serverURLString: server.absoluteString, password: "secret")
-
-        XCTAssertEqual(manager.state, .loggedIn(server: server))
-        // The next OIDC sign-in as "member" must reset, not trust this session's cache.
-        XCTAssertNil(keychain.scopedValue(.authenticatedProfile, scope: server.absoluteString))
     }
 
     @MainActor

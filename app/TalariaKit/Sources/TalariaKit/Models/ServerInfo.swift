@@ -15,8 +15,6 @@ public struct AuthStatusResponse: Decodable, Sendable {
     /// (and only an explicit false) marks a passkey-only server we can't sign
     /// into yet (#255); a missing value means "unknown" → treat as today.
     public let passwordAuthEnabled: Bool?
-    let passkeysEnabled: Bool?
-    let passwordlessEnabled: Bool?
     /// Set when the server offers single sign-on. `is_auth_enabled()` upstream
     /// covers password, OIDC *and* trusted-header, so "auth on, password off"
     /// on its own never meant passkeys.
@@ -47,8 +45,6 @@ public struct AuthStatusResponse: Decodable, Sendable {
         authEnabled: Bool? = nil,
         loggedIn: Bool? = nil,
         passwordAuthEnabled: Bool? = nil,
-        passkeysEnabled: Bool? = nil,
-        passwordlessEnabled: Bool? = nil,
         oidcEnabled: Bool? = nil,
         oidcNativeHandoffEnabled: Bool? = nil,
         oidcUnavailable: Bool? = nil,
@@ -59,8 +55,6 @@ public struct AuthStatusResponse: Decodable, Sendable {
         self.authEnabled = authEnabled
         self.loggedIn = loggedIn
         self.passwordAuthEnabled = passwordAuthEnabled
-        self.passkeysEnabled = passkeysEnabled
-        self.passwordlessEnabled = passwordlessEnabled
         self.oidcEnabled = oidcEnabled
         self.oidcNativeHandoffEnabled = oidcNativeHandoffEnabled
         self.oidcUnavailable = oidcUnavailable

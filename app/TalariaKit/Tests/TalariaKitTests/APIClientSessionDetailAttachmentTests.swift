@@ -2,44 +2,6 @@ import XCTest
 @testable import TalariaKit
 
 extension APIClientSessionDetailTests {
-func testSessionDecodesMessageAttachments() async throws {
-    let client = makeClient { request in
-        XCTAssertEqual(request.url?.path, "/api/session")
-        XCTAssertEqual(request.httpMethod, "GET")
-
-        return apiTestJSONResponse("""
-        {
-          "session": {
-            "session_id": "abc123",
-            "messages": [
-              {
-                "role": "user",
-                "content": "Please analyze this",
-                "_ts": 1770000000,
-                "attachments": [
-                  {"name": "report.pdf", "path": "/uploads/abc123/report.pdf", "mime": "application/pdf", "size": 1024},
-                  {"name": "image.jpg", "path": "/uploads/abc123/image.jpg", "mime": "image/jpeg", "size": 2048, "is_image": true}
-                ]
-              }
-            ]
-          }
-        }
-        """, for: request)
-    }
-
-    let response = try await client.session(id: "abc123")
-    let message = try XCTUnwrap(response.session?.messages?.first)
-
-    XCTAssertEqual(message.attachments?.count, 2)
-    XCTAssertEqual(message.attachments?.first?.name, "report.pdf")
-    XCTAssertEqual(message.attachments?.first?.path, "/uploads/abc123/report.pdf")
-    XCTAssertEqual(message.attachments?.first?.mime, "application/pdf")
-    XCTAssertEqual(message.attachments?.first?.size, 1024)
-    XCTAssertNil(message.attachments?.first?.isImage)
-
-    XCTAssertEqual(message.attachments?.last?.name, "image.jpg")
-    XCTAssertEqual(message.attachments?.last?.isImage, true)
-}
 
 func testSessionDecodesTolerantMessageAttachments() async throws {
     let client = makeClient { request in
@@ -101,7 +63,10 @@ func testSessionDecodesTolerantMessageAttachments() async throws {
     let msg1 = messages[0]
     XCTAssertEqual(msg1.attachments?.count, 2)
     XCTAssertEqual(msg1.attachments?[0].name, "report.pdf")
+    XCTAssertEqual(msg1.attachments?[0].path, "/uploads/report.pdf")
+    XCTAssertEqual(msg1.attachments?[0].mime, "application/pdf")
     XCTAssertEqual(msg1.attachments?[0].size, 1024)
+    XCTAssertNil(msg1.attachments?[0].isImage)
     XCTAssertEqual(msg1.attachments?[1].name, "image.jpg")
     XCTAssertEqual(msg1.attachments?[1].isImage, true)
 

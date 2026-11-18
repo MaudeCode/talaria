@@ -237,12 +237,15 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
         let (draft, coordinator, _) = makeComposer()
         let view = FocusTextView()
         view.delegate = coordinator
-        let dismissed = expectation(description: "A stale blur must not dismiss the keyboard")
-        dismissed.isInverted = true
-        view.onResign = { dismissed.fulfill() }
+        var resigned = false
+        view.onResign = { resigned = true }
+        // The queued blur reads the delegate when it runs and decides in that same main-actor job.
+        let ran = expectation(description: "The queued blur ran")
+        view.onDelegateRead = { ran.fulfill() }
         coordinator.syncFocus(for: view, shouldFocus: false, isDisabled: false)
         draft.isFocused = true
-        await fulfillment(of: [dismissed], timeout: 0.1)
+        await fulfillment(of: [ran], timeout: 10)
+        XCTAssertFalse(resigned, "A stale blur dismissed the keyboard")
         XCTAssertTrue(draft.isFocused)
     }
 
@@ -258,6 +261,15 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
 
     private final class FocusTextView: UITextView {
         var onResign: () -> Void = {}
+        var onDelegateRead: (() -> Void)?
+        override var delegate: UITextViewDelegate? {
+            get {
+                onDelegateRead?()
+                onDelegateRead = nil
+                return super.delegate
+            }
+            set { super.delegate = newValue }
+        }
         override var isFirstResponder: Bool { true }
         override func resignFirstResponder() -> Bool {
             onResign()

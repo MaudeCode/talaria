@@ -90,7 +90,8 @@ public struct CommandExecResponse: Decodable, Equatable, Sendable {
 /// One entry in the server's slash-command catalog (`GET /api/commands`, TAL-314): client-handled commands first, then
 /// the Agent registry, in display order.
 public struct AgentCommand: Decodable, Equatable, Identifiable, Sendable {
-    public var id: String { name ?? UUID().uuidString }
+    private let fallbackIdentity = DecodedIdentityToken()
+    public var id: String { name ?? fallbackIdentity.value }
 
     public let name: String?
     public let description: String?

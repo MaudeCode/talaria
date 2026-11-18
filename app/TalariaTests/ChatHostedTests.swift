@@ -609,7 +609,8 @@ final class ChatHostedTests: XCTestCase {
             stream.emit(.token(token))
             let revealed = await awaitCondition { viewModel.messages.last?.content == expected }
             XCTAssertTrue(revealed, "Reveal tick \(tick) never reached the transcript")
-            try await Task.sleep(for: .milliseconds(50))
+            let rendered = await awaitRenderedQuiet(in: window) { evaluations.counts.values.reduce(0, +) }
+            XCTAssertTrue(rendered, "Reveal tick \(tick) kept re-evaluating")
         }
         let measured = evaluations.counts
         let counts = XCTAttachment(string: "20 reveal ticks: \(measured)")
@@ -947,20 +948,6 @@ final class ChatHostedTests: XCTestCase {
         try await assertFullChatHistoryInsertion(expandDisclosure: true)
     }
 
-    func testTranscriptScrollViewWaitsForNativeAttachmentAfterTextAppears() throws {
-        let window = try hostWindow(Text("History answer 1999."))
-        let scroll = UIScrollView(frame: window.bounds)
-        let host = ChatMessageMenuHostView(registry: ChatMessageMenuRegistry())
-        let attach = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(20))
-            scroll.addSubview(host)
-            window.addSubview(scroll)
-        }
-        defer { attach.cancel() }
-        XCTAssertTrue(try transcriptScrollView(in: window) === scroll,
-                      "Visible text can precede the transcript's native attachment")
-    }
-
     func testHistoryInsideALongTurnPreservesTheExpandedWorkAndReader() async throws {
         try await assertFullChatHistoryInsertion(expandDisclosure: true, boundaryTurn: true)
     }
@@ -1054,9 +1041,10 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertEqual(state.toolResultCalls, 1)
     }
 
-    /// TAL-2340: a running call's row counts its time from the server's start, and the row that started a background
-    /// command shows the command's latest output line from Background Work while it runs; the line leaves when it ends.
-    func testRunningToolRowTimerAndBackgroundOutputLine() async throws {
+    /// TAL-2340: the row that started a background command shows the command's latest output line from Background Work
+    /// while it runs; the line leaves when it ends. The running row beside it is for the screenshot; its elapsed time is
+    /// owned by TalariaKit `ToolProgressTests`.
+    func testBackgroundCommandRowShowsItsOutputLineUntilItEnds() async throws {
         var running = ToolCall(id: "test-run", name: "terminal", preview: nil, args: nil, kind: .shell, target: "npm test -- auth.spec.ts")
         running.timerStart = Date().timeIntervalSince1970 - 34
         let started = ToolCall(id: "dev-server", name: "terminal", preview: "Background process started", args: nil, kind: .shell, target: "npm run dev",

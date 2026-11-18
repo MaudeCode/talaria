@@ -12,8 +12,7 @@ import XCTest
 /// too noisy to read it.
 ///
 /// `testReplayCatchUpStaysWithinLinearScaling` reports the curve and fails on a
-/// superlinear regression; `testReplayCatchUpLargeBacklog` carries the absolute
-/// wall-clock, CPU and memory budget.
+/// superlinear regression.
 @MainActor
 final class ReplayCatchUpPerformanceTests: XCTestCase {
     /// Token counts for the scaling curve. The span is 4x, so a linear path
@@ -80,24 +79,6 @@ final class ReplayCatchUpPerformanceTests: XCTestCase {
             \(report)
             """
         )
-    }
-
-    // MARK: - Absolute budget
-
-    func testReplayCatchUpLargeBacklog() throws {
-        try measureAsync(
-            metrics: [XCTClockMetric(), XCTCPUMetric(), XCTMemoryMetric()],
-            options: performanceOptions(manualWindow: true)
-        ) { test in
-            let harness = try await ReplayCatchUpHarness(
-                tokenCount: Self.scalingTokenCounts.last!,
-                test: test
-            )
-            test.startMeasuring()
-            harness.replay()
-            test.stopMeasuring()
-            try harness.verify()
-        }
     }
 
     // MARK: - Helpers

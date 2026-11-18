@@ -13,7 +13,7 @@ extension ChatViewModelSendTests {
 
     func testANewNoticeReplacesTheShownOneAndTheSameNoticeKeepsItsIdentity() throws {
         let viewModel = try noticeViewModel()
-        viewModel.noticeLifetime = { _ in .seconds(60) }
+        viewModel.noticeClock = ManualTestClock()
 
         viewModel.showNotice("  Goal set.  ")
         let first = try XCTUnwrap(viewModel.currentNotice)
@@ -34,26 +34,24 @@ extension ChatViewModelSendTests {
 
     func testANoticeGoesAfterItsLevelsLifetimeAndTheSameNoticeRestartsIt() async throws {
         let viewModel = try noticeViewModel()
-        var lifetimes: [Duration] = [.milliseconds(50), .seconds(60), .milliseconds(50)]
-        var askedLevels: [SessionNotice.Level] = []
-        viewModel.noticeLifetime = { level in
-            askedLevels.append(level)
-            return lifetimes.removeFirst()
-        }
+        let clock = ManualTestClock()
+        viewModel.noticeClock = clock
 
-        // Shown again before it went, its time starts over: the first 50 ms never ends it.
+        // Shown again before it went, its 2.5 s start over: the first deadline passes without ending it.
         viewModel.showNotice("Goal set.")
+        await clock.advance(by: .seconds(2))
         viewModel.showNotice("Goal set.")
-        try await Task.sleep(for: .milliseconds(300))
+        await clock.advance(by: .seconds(2))
         XCTAssertEqual(viewModel.currentNotice?.text, "Goal set.", "The repeat did not restart the notice's time")
+        await clock.advance(by: .milliseconds(500))
+        try await waitUntil { viewModel.currentNotice == nil }
 
+        // A warning stays its own 5 s.
         viewModel.showNotice("Nothing could take it.", level: .warn)
-        let deadline = ContinuousClock.now + .seconds(5)
-        while viewModel.currentNotice != nil, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        XCTAssertNil(viewModel.currentNotice, "The notice never went on its own")
-        XCTAssertEqual(askedLevels, [.info, .info, .warn])
+        await clock.advance(by: .milliseconds(4_900))
+        XCTAssertEqual(viewModel.currentNotice?.level, .warn, "A warning went on an info notice's time")
+        await clock.advance(by: .milliseconds(100))
+        try await waitUntil { viewModel.currentNotice == nil }
     }
 
     func testEachLevelHasItsLifetime() {
@@ -65,7 +63,7 @@ extension ChatViewModelSendTests {
 
     func testTapAndResetDismissTheNotice() throws {
         let viewModel = try noticeViewModel()
-        viewModel.noticeLifetime = { _ in .seconds(60) }
+        viewModel.noticeClock = ManualTestClock()
 
         viewModel.showNotice("Goal set.")
         viewModel.dismissNotice()

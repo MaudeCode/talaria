@@ -37,10 +37,8 @@ final class CustomHeaderAPIClientInjectionTests: APIClientTestCase {
             XCTAssertEqual(identity["buildNumber"] as? String, Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String)
             XCTAssertTrue(identity["sourceRevision"] is NSNull)
             XCTAssertTrue(identity["releaseSet"] is NSNull)
-            let contracts = try XCTUnwrap(identity["contracts"] as? [String: Any])
-            XCTAssertEqual(contracts["appWeb"] as? [Int], [1])
-            XCTAssertEqual(contracts["appRelay"] as? [Int], [1])
-            XCTAssertEqual(contracts["activityScene"] as? [String], ["activity_scene_v1"])
+            // The versions themselves are owned by TalariaKit `testAppAdvertisesCanonicalContractVersions`.
+            XCTAssertNotNil(identity["contracts"] as? [String: Any])
             XCTAssertFalse(value.contains("synthetic-secret"))
             return try self.ok(request)
         }

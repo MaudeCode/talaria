@@ -438,6 +438,14 @@ final class LiveActivityTests: XCTestCase {
         }
     }
 
+    func testClarificationWaitUsesInputInEveryLocalLiveActivityLabel() {
+        let initial = AgentRunActivityStateReducer.initialState(sessionID: "input-session", sessionTitle: "Synthetic input", startedAt: Date())
+        let waiting = AgentRunActivityStateReducer.waitingForClarification(state: initial)
+        XCTAssertEqual(waiting.status, .waitingForClarification)
+        XCTAssertEqual(waiting.status.title, "Input")
+        XCTAssertEqual(waiting.currentActivity, "Input")
+    }
+
     func testStaleLockScreenKeepsTheLeadOnlyWhileWaitingOnTheUser() {
         for status in AgentRunActivityStatus.allCases {
             let fresh = AgentRunActivityAttributes.ContentState(

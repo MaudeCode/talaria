@@ -99,8 +99,6 @@ func testMessageToolCallsGroupFromTheServerResolvedFields() {
     XCTAssertEqual(groups.first?.toolCalls.map(\.duration), [3.5, nil])
     XCTAssertEqual(groups.first?.toolCalls.map(\.isCompleted), [true, false])
     XCTAssertEqual(groups.first?.toolCalls.first?.args?["command"], .string("make test"))
-    XCTAssertEqual(groups.first?.hasFailedTool, true)
-    XCTAssertEqual(groups.first?.isComplete, false)
 }
 
 func testOlderServerToolCallsShowCompletedWithoutOutcome() {
@@ -125,31 +123,6 @@ func testOlderServerToolCallsShowCompletedWithoutOutcome() {
     XCTAssertNil(call?.isError)
     XCTAssertNil(call?.duration)
     XCTAssertNil(call?.preview)
-}
-func testContentArrayDisplaysTextAndPreservesToolParts() throws {
-    let decoder = JSONDecoder()
-    decoder.keyDecodingStrategy = .convertFromSnakeCase
-    let message = try decoder.decode(ChatMessage.self, from: Data("""
-    {
-      "role": "assistant",
-      "message_id": "assistant-array",
-      "content": [
-        {
-          "type": "tool_use",
-          "id": "toolu-1",
-          "name": "search_files",
-          "input": { "pattern": "*.md" }
-        },
-        {
-          "type": "text",
-          "text": "File search finished."
-        }
-      ]
-    }
-    """.utf8))
-
-    XCTAssertEqual(message.content, "File search finished.")
-    XCTAssertEqual(message.contentParts?.count, 2)
 }
 
 func testToolCallStatusDisplayHidesCompletedCollapsedText() {
@@ -485,11 +458,98 @@ func testLiveToolCallGroupUsesStableAnchorKeyAndPreservesToolIDs() {
 
     XCTAssertEqual(anchoredGroup.id, "live-tools-assistant-live")
     XCTAssertEqual(anchoredGroup.anchorMessageID, "assistant-live")
-    XCTAssertEqual(anchoredGroup.activityTitle, "Activity: 2 tools")
     XCTAssertEqual(anchoredGroup.toolCalls.map(\.id), ["terminal-1", "read-file-1"])
-    XCTAssertEqual(anchoredGroup.isComplete, false)
-    XCTAssertEqual(anchoredGroup.hasFailedTool, true)
     XCTAssertEqual(unanchoredGroup.id, "live-tools-unanchored")
 }
 
+
+func testReasoningDisplayReadsTheServerReasoningAndStripsVisibleAnswerEcho() {
+    let finalAnswer = """
+    **Terminal:** `/Users/hermes` directory listed.
+
+    **Search files:** 5 `config.yaml` matches found.
+    """
+    let messages = [
+        ChatMessage(
+            role: "user",
+            content: "Use terminal and search files",
+            timestamp: 1_770_000_000,
+            messageId: "user-tools"
+        ),
+        ChatMessage(
+            role: "assistant",
+            content: nil,
+            timestamp: 1_770_000_001,
+            messageId: "assistant-tools",
+            contentParts: [
+                .object([
+                    "type": .string("tool_use"),
+                    "id": .string("toolu-terminal"),
+                    "name": .string("terminal"),
+                    "input": .object(["command": .string("ls -la")])
+                ]),
+                .object([
+                    "type": .string("tool_use"),
+                    "id": .string("toolu-search"),
+                    "name": .string("search_files"),
+                    "input": .object(["pattern": .string("config.yaml")])
+                ])
+            ],
+            // The server moves typed thinking parts into the row's one reasoning string (TAL-302).
+            reasoning: "The user wants me to use terminal and search_files. I should run a quick command."
+        ),
+        ChatMessage(
+            role: "user",
+            content: nil,
+            timestamp: 1_770_000_002,
+            messageId: "tool-results",
+            contentParts: [
+                .object([
+                    "type": .string("tool_result"),
+                    "tool_use_id": .string("toolu-terminal"),
+                    "content": .string("81 entries")
+                ]),
+                .object([
+                    "type": .string("tool_result"),
+                    "tool_use_id": .string("toolu-search"),
+                    "content": .string("5 matches")
+                ])
+            ]
+        ),
+        ChatMessage(
+            role: "assistant",
+            content: nil,
+            timestamp: 1_770_000_003,
+            messageId: "assistant-post-tools",
+            reasoning: "Terminal works. Now run search_files to show that works too."
+        ),
+        ChatMessage(
+            role: "assistant",
+            content: finalAnswer,
+            timestamp: 1_770_000_004,
+            messageId: "assistant-final",
+            reasoning: """
+            The user wants me to use terminal and search_files. I should run a quick command.
+            Terminal works. Now run search_files to show that works too.
+            Both tools worked. I should give a concise summary.
+
+            \(finalAnswer)
+            """
+        )
+    ]
+
+    let reasoningGroups = ChatViewModel.reasoningDisplayGroups(messages: messages, archivedGroups: [])
+    let transcriptMessages = ChatViewModel.transcriptMessages(from: messages)
+
+    XCTAssertEqual(reasoningGroups.map(\.anchorMessageID), [
+        "assistant-tools",
+        "assistant-post-tools",
+        "assistant-final"
+    ])
+    XCTAssertEqual(reasoningGroups[0].text, "The user wants me to use terminal and search_files. I should run a quick command.")
+    XCTAssertEqual(reasoningGroups[1].text, "Terminal works. Now run search_files to show that works too.")
+    XCTAssertTrue(reasoningGroups[2].text.contains("Both tools worked. I should give a concise summary."))
+    XCTAssertFalse(reasoningGroups[2].text.contains("**Terminal:**"))
+    XCTAssertFalse(transcriptMessages.contains { $0.message.id == "tool-results" })
+}
 }

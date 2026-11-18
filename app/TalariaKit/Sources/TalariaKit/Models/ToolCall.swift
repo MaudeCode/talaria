@@ -653,18 +653,6 @@ public struct ToolCallGroup: Identifiable, Equatable, Sendable {
         self.toolCalls = toolCalls
     }
 
-    var activityTitle: String {
-        String(localized: "Activity: \(toolCalls.count) tools")
-    }
-
-    var isComplete: Bool {
-        toolCalls.allSatisfy(\.isCompleted)
-    }
-
-    var hasFailedTool: Bool {
-        toolCalls.contains { $0.isError == true }
-    }
-
     public static func live(anchorMessageID: String?, toolCalls: [ToolCall]) -> ToolCallGroup {
         ToolCallGroup(
             id: "live-tools-\(anchorMessageID ?? "unanchored")",

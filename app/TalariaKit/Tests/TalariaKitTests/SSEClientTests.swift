@@ -15,20 +15,17 @@ final class SSEClientTests: XCTestCase {
         XCTAssertEqual(SSEEventDecoder.decode(eventType: "apperror", data: text), .error(message, terminalState: "error"))
     }
 
-    func testWarningIsDeliveredAsANonterminalEvent() {
-        let event = SSEEventDecoder.decode(
-            eventType: "warning",
-            data: #"{"type":"fallback","message":"⚠️ custom stream drop — attempt 1/3 dropped, reconnecting","future_field":true}"#
-        )
-        XCTAssertNotEqual(event, .ignored, "The server's warning must reach the chat presentation")
-        if case .error = event { XCTFail("A warning must not terminate the turn") }
-        if case .transportError = event { XCTFail("A provider warning is not a broken SSE connection") }
-    }
-
     func testWarningPreservesServerMessageAndToleratesUnknownFields() {
         XCTAssertEqual(
             SSEEventDecoder.decode(eventType: "warning", data: #"{"type":{"future":true},"message":"❌ Endpoint unreachable","extra":17}"#),
             .warning("❌ Endpoint unreachable")
+        )
+        XCTAssertEqual(
+            SSEEventDecoder.decode(
+                eventType: "warning",
+                data: #"{"type":"fallback","message":"⚠️ custom stream drop — attempt 1/3 dropped, reconnecting","future_field":true}"#
+            ),
+            .warning("⚠️ custom stream drop — attempt 1/3 dropped, reconnecting")
         )
         for payload in ["{", "{}", #"{"type":"fallback"}"#, #"{"message":null}"#, #"{"message":17}"#] {
             XCTAssertEqual(SSEEventDecoder.decode(eventType: "warning", data: payload), .ignored)
@@ -959,9 +956,9 @@ final class SSEClientTests: XCTestCase {
     }
 
     func testMalformedErrorPayloadSurfacesExplicitError() {
-        let event = SSEEventDecoder.decode(eventType: "error", data: "{")
-
-        XCTAssertEqual(event, .error("The stream returned a malformed error event."))
+        for eventType in ["error", "apperror"] {
+            XCTAssertEqual(SSEEventDecoder.decode(eventType: eventType, data: "{"), .error("The stream returned a malformed error event."), eventType)
+        }
     }
 
     func testAppErrorEventDecodesPinnedUpstreamMessageShape() {
@@ -994,12 +991,6 @@ final class SSEClientTests: XCTestCase {
         let event = SSEEventDecoder.decode(eventType: "apperror", data: "{}")
 
         XCTAssertEqual(event, .error("The stream returned an error."))
-    }
-
-    func testMalformedAppErrorPayloadSurfacesExplicitError() {
-        let event = SSEEventDecoder.decode(eventType: "apperror", data: "{")
-
-        XCTAssertEqual(event, .error("The stream returned a malformed error event."))
     }
 
     func testUnknownStreamEventTypeIsIgnored() {

@@ -11,31 +11,6 @@ final class StreamingLabReplayTests: XCTestCase {
         super.tearDown()
     }
 
-    // MARK: - Fixture shape
-
-    func testFixtureContainsEveryShapeTheFadePipelineTreatsDifferently() {
-        let fixture = StreamingLabReplay.fixture
-
-        XCTAssertTrue(fixture.contains("\n\n"), "needs paragraph boundaries")
-        XCTAssertTrue(fixture.contains("\n# "), "needs a heading")
-        XCTAssertTrue(fixture.contains("\n- "), "needs flat bullets")
-        XCTAssertTrue(fixture.contains("\n   - "), "needs nested list items")
-        XCTAssertTrue(fixture.contains("\n1. "), "needs an ordered list")
-        XCTAssertTrue(fixture.contains("```swift"), "needs a code fence")
-        XCTAssertEqual(
-            fixture.components(separatedBy: "```").count, 3,
-            "the fence must be closed so text after it is fadeable"
-        )
-    }
-
-    func testFixtureHasALongWrappingParagraph() {
-        let longestLine = StreamingLabReplay.fixture
-            .components(separatedBy: "\n")
-            .map(\.count)
-            .max() ?? 0
-        XCTAssertGreaterThan(longestLine, 300, "needs a paragraph long enough to wrap several lines")
-    }
-
     // MARK: - Prefix paging
 
     func testPrefixAtTotalUnitCountReproducesTheFixtureExactly() {

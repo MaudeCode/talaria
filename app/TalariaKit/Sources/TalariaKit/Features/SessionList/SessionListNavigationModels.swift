@@ -17,16 +17,6 @@ public struct SidebarSectionVisibility: Equatable, Sendable {
         self.memory = memory
         self.insights = insights
     }
-
-    /// Show every row, primarily for previews and tests.
-    static let showAll = SidebarSectionVisibility(
-        tasks: true,
-        kanban: true,
-        skills: true,
-        memory: true,
-        insights: true
-    )
-
 }
 
 /// Pure, testable backing model for the session-list avatar's long-press server

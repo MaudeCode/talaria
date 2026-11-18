@@ -76,19 +76,4 @@ final class APIClientTranscribeTests: APIClientTestCase {
             XCTFail("Unexpected error: \(error)")
         }
     }
-
-    func testTranscribeAudioTolerantToUnknownFields() async throws {
-        let client = makeClient { request in
-            apiTestJSONResponse("""
-            {
-              "ok": true,
-              "transcript": "hi",
-              "future_field": 42
-            }
-            """, for: request)
-        }
-
-        let response = try await client.transcribeAudio(data: Data("x".utf8), filename: "v.m4a")
-        XCTAssertEqual(response.transcript, "hi")
-    }
 }

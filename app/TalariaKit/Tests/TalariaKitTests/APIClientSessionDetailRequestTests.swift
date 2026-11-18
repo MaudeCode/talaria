@@ -13,6 +13,7 @@ func testSessionRequestBuildsExpectedQuery() async throws {
         XCTAssertEqual(query["messages"], "1")
         XCTAssertEqual(query["msg_limit"], "25")
         XCTAssertEqual(query["msg_before"], "50")
+        XCTAssertNil(query["expand_renderable"] as Any?)
 
         return apiTestJSONResponse("""
         {
@@ -62,26 +63,6 @@ func testSessionColdLoadSendsExpandRenderableFlag() async throws {
         includeMessages: true,
         messageLimit: 50,
         expandRenderable: true
-    )
-}
-
-func testSessionLoadEarlierOmitsExpandRenderableFlag() async throws {
-    let client = makeClient { request in
-        let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
-        let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
-        XCTAssertEqual(query["msg_before"], "100")
-        XCTAssertNil(query["expand_renderable"] as Any?)
-
-        return apiTestJSONResponse("""
-        { "session": { "session_id": "abc123" } }
-        """, for: request)
-    }
-
-    _ = try await client.session(
-        id: "abc123",
-        includeMessages: true,
-        messageLimit: 50,
-        messageBefore: 100
     )
 }
 

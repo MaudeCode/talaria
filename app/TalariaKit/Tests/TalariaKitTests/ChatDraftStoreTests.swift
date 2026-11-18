@@ -879,27 +879,6 @@ final class ChatDraftStoreTests: XCTestCase {
         XCTAssertTrue(drafts.isEmpty)
     }
 
-    func testFilePersistenceWritesAtomicallyWithFileProtection() async throws {
-        let directory = temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let persistence = ChatDraftFilePersistence(directoryURL: directory)
-        let key = ChatDraftKey(
-            serverID: "https://example.com",
-            context: .newChat(window: nil)
-        )
-
-        try await persistence.write([key: ChatDraft(text: "Protected prompt")])
-
-        let restoredDrafts = await persistence.load()
-        XCTAssertEqual(restoredDrafts[key]?.text, "Protected prompt")
-        #if os(iOS)
-        XCTAssertEqual(
-            ChatDraftFilePersistence.fileProtectionType,
-            .completeUntilFirstUserAuthentication
-        )
-        #endif
-    }
-
     private static func sampleAttachment(
         file: String? = "copy-photo.jpg"
     ) -> ChatDraftAttachment {

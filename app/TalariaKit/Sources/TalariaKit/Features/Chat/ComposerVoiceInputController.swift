@@ -166,7 +166,7 @@ public final class ComposerVoiceInputController {
             return
         }
 
-        guard ComposerVoiceInputStartPolicy.canStart(appIsActive: PlatformHooks.isApplicationActive()) else {
+        guard PlatformHooks.isApplicationActive() else {
             fail(
                 ComposerVoiceInputError.appNotActive.localizedDescription,
                 logCategory: .appNotActive
@@ -219,7 +219,7 @@ public final class ComposerVoiceInputController {
             return
         }
 
-        guard ComposerVoiceInputStartPolicy.canStart(appIsActive: PlatformHooks.isApplicationActive()) else {
+        guard PlatformHooks.isApplicationActive() else {
             fail(
                 ComposerVoiceInputError.appNotActive.localizedDescription,
                 logCategory: .appNotActive
@@ -585,7 +585,7 @@ public final class ComposerVoiceInputController {
         stopAudio(cancelTask: true)
         logger.info("Voice input audio startup preparing")
 
-        guard ComposerVoiceInputStartPolicy.canStart(appIsActive: PlatformHooks.isApplicationActive()) else {
+        guard PlatformHooks.isApplicationActive() else {
             throw ComposerVoiceInputError.appNotActive
         }
 
@@ -920,10 +920,6 @@ enum VoiceInputFailureLogCategory: String {
 }
 
 enum ComposerVoiceInputStartPolicy {
-    static func canStart(appIsActive: Bool) -> Bool {
-        appIsActive
-    }
-
     static func validateAudioSessionInput(
         isInputAvailable: Bool,
         sampleRate: Double,

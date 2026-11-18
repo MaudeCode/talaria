@@ -1476,64 +1476,39 @@ extension ChatViewModelSendTests {
     // A detail without the `transcript_seq` key is read like `null`: the loaded turn
     // stays and the stream attaches live, with no replay.
     @MainActor
-    func testColdRelaunchWithoutCursorFieldAttachesLiveWithoutTrimmingTheLoadedTurn() async throws {
-        let streamClient = SpySSEStreamingClient()
-        let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, transcriptJSON: """
-        "pending_started_at": 1770000100,
-        "messages": [
-          { "role": "user", "content": "Earlier question", "timestamp": 1770000000, "message_id": "user-0" },
-          { "role": "assistant", "content": "Earlier answer.", "timestamp": 1770000001, "message_id": "assistant-0" },
-          { "role": "user", "content": "Tell me a tiger story", "timestamp": 1770000100, "message_id": "user-1" },
-          { "role": "assistant", "content": "Once Raj reached the river. ", "timestamp": 1770000101, "message_id": "assistant-1" }
-        ]
-        """)
-
-        await viewModel.loadMessages()
-        await viewModel.reconnectStreamIfNeeded()
-
-        let url = try XCTUnwrap(streamClient.startedURLs.last)
-        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        XCTAssertNil(queryItems.first(where: { $0.name == "replay" }))
-        XCTAssertNil(queryItems.first(where: { $0.name == "after_seq" }))
-        XCTAssertEqual(
-            viewModel.messages.compactMap(\.content),
-            ["Earlier question", "Earlier answer.", "Tell me a tiger story", "Once Raj reached the river. "]
-        )
-
-        streamClient.emit(.token("The snare broke."))
-
-        XCTAssertEqual(viewModel.messages.filter { $0.role == "assistant" }.compactMap(\.content), [
-            "Earlier answer.", "Once Raj reached the river. The snare broke."
-        ])
-    }
-
-    @MainActor
     func testColdRelaunchWithoutJournalRendersPersistedSegmentsAndRequestsNoReplay() async throws {
-        let streamClient = SpySSEStreamingClient()
-        let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, transcriptJSON: """
-        "transcript_seq": null,
-        "pending_started_at": 1770000100,
-        "messages": [
-          { "role": "user", "content": "Tell me a tiger story", "timestamp": 1770000100, "message_id": "user-1" },
-          { "role": "assistant", "content": "Once Raj reached the river. ", "timestamp": 1770000101, "message_id": "assistant-1" }
-        ]
-        """)
+        for cursor in [#""transcript_seq": null,"#, ""] {
+            let streamClient = SpySSEStreamingClient()
+            let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, transcriptJSON: """
+            \(cursor)
+            "pending_started_at": 1770000100,
+            "messages": [
+              { "role": "user", "content": "Earlier question", "timestamp": 1770000000, "message_id": "user-0" },
+              { "role": "assistant", "content": "Earlier answer.", "timestamp": 1770000001, "message_id": "assistant-0" },
+              { "role": "user", "content": "Tell me a tiger story", "timestamp": 1770000100, "message_id": "user-1" },
+              { "role": "assistant", "content": "Once Raj reached the river. ", "timestamp": 1770000101, "message_id": "assistant-1" }
+            ]
+            """)
 
-        await viewModel.loadMessages()
-        await viewModel.reconnectStreamIfNeeded()
+            await viewModel.loadMessages()
+            await viewModel.reconnectStreamIfNeeded()
 
-        let url = try XCTUnwrap(streamClient.startedURLs.last)
-        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        XCTAssertNil(queryItems.first(where: { $0.name == "replay" }))
-        XCTAssertNil(queryItems.first(where: { $0.name == "after_seq" }))
-        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Tell me a tiger story", "Once Raj reached the river. "])
+            let url = try XCTUnwrap(streamClient.startedURLs.last, cursor)
+            let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            XCTAssertNil(queryItems.first(where: { $0.name == "replay" }), cursor)
+            XCTAssertNil(queryItems.first(where: { $0.name == "after_seq" }), cursor)
+            XCTAssertEqual(
+                viewModel.messages.compactMap(\.content),
+                ["Earlier question", "Earlier answer.", "Tell me a tiger story", "Once Raj reached the river. "],
+                cursor
+            )
 
-        streamClient.emit(.token("The snare broke."))
+            streamClient.emit(.token("The snare broke."))
 
-        XCTAssertEqual(
-            viewModel.messages.compactMap(\.content),
-            ["Tell me a tiger story", "Once Raj reached the river. The snare broke."]
-        )
+            XCTAssertEqual(viewModel.messages.compactMap(\.content), [
+                "Earlier question", "Earlier answer.", "Tell me a tiger story", "Once Raj reached the river. The snare broke."
+            ], cursor)
+        }
     }
 
     @MainActor
