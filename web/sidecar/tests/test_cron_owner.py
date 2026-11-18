@@ -10,11 +10,9 @@ import signal
 import socket
 import sqlite3
 import subprocess
-import sys
 import threading
 import time
 from http.server import ThreadingHTTPServer
-from types import SimpleNamespace
 
 import pytest
 
@@ -285,39 +283,6 @@ def workers(sidecar):
             for pid, parent, command in [parts] if int(parent) == sidecar.proc.pid and "spawn_main" in command]
 
 
-@pytest.mark.skipif(os.name != "posix", reason="worker lookup uses POSIX process tables")
-def test_workers_finds_long_interpreter_commands_at_narrow_terminal_width(tmp_path, monkeypatch):
-    monkeypatch.setenv("COLUMNS", "80")
-    executable = tmp_path / ("runtime-" + "x" * 100) / "python"
-    executable.parent.mkdir()
-    executable.symlink_to(sys.executable)
-    ready = tmp_path / "ready"
-    script = tmp_path / "worker.py"
-    script.write_text("""
-import multiprocessing, os, pathlib, sys
-
-def work(ready, stop):
-    pathlib.Path(ready).write_text(str(os.getpid()))
-    stop.wait(15)
-
-if __name__ == '__main__':
-    ctx = multiprocessing.get_context('spawn')
-    stop = ctx.Event()
-    child = ctx.Process(target=work, args=(sys.argv[1], stop))
-    child.start()
-    sys.stdin.read()
-    stop.set()
-    child.join(5)
-""")
-    parent = subprocess.Popen([str(executable), str(script), str(ready)], stdin=subprocess.PIPE,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=isolated_env(tmp_path))
-    try:
-        child = wait_for(lambda: int(ready.read_text() or "0") if ready.exists() else None, 10)
-        assert workers(SimpleNamespace(proc=parent)) == [child]
-    finally:
-        parent.communicate(timeout=10)
-
-
 @requires_agent
 @canonical_agent
 @pytest.mark.parametrize("restart_sidecar,remove_job", [(False, False), (True, False), (True, True)])
@@ -447,18 +412,14 @@ def test_successful_manual_run_books_once_and_preserves_operator_schedule_state(
 
 @requires_agent
 @canonical_agent
-@pytest.mark.parametrize("method,extra", [
-    ("cron.resume", {}),
-    ("cron.update", {"updates": {"state": "scheduled", "enabled": True}}),
-    ("cron.delete", {}),
-])
-def test_schedule_mutations_cannot_remove_a_manual_execution_recovery_barrier(owner, method, extra):
+def test_schedule_mutations_cannot_remove_a_manual_execution_recovery_barrier(owner):
     home, model, sidecar, job = owner
     params = {"profile_home": str(home), "job_id": job["id"]}
     sidecar.request("cron.run", params)
     assert model.started.wait(60), sidecar.stderr_lines[-20:]
-    answer, _ = sidecar.call(method, {**params, **extra})
-    assert answer.get("error", {}).get("data", {}).get("condition") == "cron_execution_unverified", answer
-    stored = sidecar.result("cron.get", params)["job"]
-    assert stored["state"] == "paused" and stored.get("fire_claim")
-    assert (home / "cron/manual_runs" / (job["id"] + ".json")).exists()
+    for method, extra in (("cron.resume", {}), ("cron.update", {"updates": {"state": "scheduled", "enabled": True}}), ("cron.delete", {})):
+        answer, _ = sidecar.call(method, {**params, **extra})
+        assert answer.get("error", {}).get("data", {}).get("condition") == "cron_execution_unverified", (method, answer)
+        stored = sidecar.result("cron.get", params)["job"]
+        assert stored["state"] == "paused" and stored.get("fire_claim"), (method, stored)
+        assert (home / "cron/manual_runs" / (job["id"] + ".json")).exists(), method

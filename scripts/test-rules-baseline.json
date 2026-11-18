@@ -28,8 +28,6 @@
       "web/sidecar/tests/plugin_oauth_probe.py": 1,
       "web/sidecar/tests/review_cancel_probe.py": 1,
       "web/sidecar/tests/test_chat_finalize.py": 1,
-      "web/sidecar/tests/test_cron_child_exit.py": 1,
-      "web/sidecar/tests/test_cron_fire_claim.py": 1,
       "web/sidecar/tests/test_gateway_restart.py": 1,
       "web/sidecar/tests/test_oauth.py": 1,
       "web/sidecar/tests/test_process_completions.py": 1,
