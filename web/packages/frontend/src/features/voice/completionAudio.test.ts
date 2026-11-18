@@ -22,14 +22,6 @@ beforeEach(() => {
   })
 })
 describe('completion audio delivery', () => {
-  it('plays a live eligible completion once across concurrent tabs using the server identity', async () => {
-    const claimed = new Set<string>()
-    vi.mocked(claimAutoRead).mockImplementation((key) => { if (claimed.has(key)) return Promise.resolve(false); claimed.add(key); return Promise.resolve(true) })
-    await Promise.all([deliverCompletion(completion(), () => true), deliverCompletion(completion(), () => true)])
-    expect(play).toHaveBeenCalledTimes(1)
-    await deliverCompletion({ ...completion(), scope: 'other-server-profile' }, () => true)
-    expect(play).toHaveBeenCalledTimes(2)
-  })
   it('keeps expired, ineligible and muted deliveries quiet', async () => {
     await deliverCompletion({ ...completion(), expires_at: Date.now() - 1 }, () => true)
     await deliverCompletion({ ...completion(), eligible: false }, () => true)

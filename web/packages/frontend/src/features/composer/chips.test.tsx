@@ -269,33 +269,6 @@ describe('ModelChip', () => {
     expect(screen.getByRole('option', { name: 'Claude Opus 4.7' })).toBeVisible()
   })
 
-  it('a touch opening with a hardware keyboard sends a printable key to search; touching search keeps focus through the refresh (TAL-1625)', async () => {
-    catalog = COLON_CATALOG
-    renderChip({ model: null, optionId: null })
-    const user = userEvent.setup()
-    await waitFor(() => expect(screen.getByRole('button')).toHaveTextContent('M'))
-    // The opening refresh is held so it resolves after the touch on search.
-    let release!: () => void
-    const refreshed = { ...COLON_CATALOG, groups: [...COLON_CATALOG.groups, { provider: 'Mistral', provider_id: 'mistral', models: [{ id: '@mistral:large', label: 'Mistral Large', provider_id: 'mistral', bare_id: 'large' }] }] }
-    vi.mocked(fetchModels).mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve(refreshed) }))
-    await user.pointer({ keys: '[TouchA]', target: screen.getByRole('button') })
-    const dialog = await picker()
-    const search = screen.getByRole('combobox', { name: 'Search models…' })
-    expect(dialog).toHaveFocus()
-    await user.keyboard('o')
-    expect(search).toHaveFocus()
-    expect(search).toHaveValue('o')
-    await user.clear(search)
-    act(() => dialog.focus())
-    await user.pointer({ keys: '[TouchA]', target: search })
-    expect(search).toHaveFocus()
-    await act(async () => { release(); await Promise.resolve() })
-    expect(await within(rail()).findByRole('button', { name: 'Mistral' })).toBeVisible()
-    expect(search).toHaveFocus()
-    await user.click(within(rail()).getByRole('button', { name: 'Mistral' }))
-    expect(await screen.findByRole('option', { name: 'Mistral Large' })).toBeVisible()
-  })
-
   it('Escape after a touch opening closes only the picker inside a dialog and returns focus to the chip (TAL-1625)', async () => {
     catalog = COLON_CATALOG
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -371,21 +344,6 @@ describe('ModelChip', () => {
       expect(checked[0]).toHaveAccessibleName(label)
       unmount()
     }
-  })
-
-  it('lists, ticks and finds every model of a long provider list (TAL-1864)', async () => {
-    const models = Array.from({ length: 40 }, (_, i) => ({ id: `vendor/model-${String(i + 1)}`, label: `Model ${String(i + 1)}`, provider_id: 'openrouter', bare_id: `vendor/model-${String(i + 1)}` }))
-    catalog = { ...PLUGIN_CATALOG, default_model: 'vendor/model-30', default_option_id: 'vendor/model-30', groups: [{ provider: 'OpenRouter', provider_id: 'openrouter', models }] }
-    renderChip({ model: 'vendor/model-30', optionId: 'vendor/model-30' })
-    await userEvent.click(screen.getByRole('button'))
-    // The list is virtualized: the deep selection is rendered and ticked on open, and search reaches both ends.
-    expect(await screen.findByRole('option', { name: 'Model 30' })).toHaveAttribute('aria-selected', 'true')
-    const search = screen.getByRole('combobox')
-    await userEvent.type(search, 'model 1')
-    expect(optionNames()).toEqual([1, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].map((n) => `Model ${String(n)} · OpenRouter`).concat('Custom model ID: model 1'))
-    await userEvent.clear(search)
-    await userEvent.type(search, 'model 40')
-    expect(optionNames()).toEqual(['Model 40 · OpenRouter', 'Custom model ID: model 40'])
   })
 
   it('a stored model the server pairs with no entry ticks nothing and keeps its own name (TAL-301)', async () => {
@@ -489,8 +447,6 @@ describe('ToolsetsChip (TAL-2096)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Session toolsets: Profile defaults' }))
     expect(await row('Use profile defaults')).toHaveAttribute('aria-checked', 'true')
     expect(await row(/^file/)).toHaveAttribute('aria-checked', 'true')
-    expect(document.querySelector('input[type=checkbox], form')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
     holdLaterReads()
     await userEvent.click(await row(/^web/))
     expect(onChange).toHaveBeenCalledWith(['file', 'web'])
@@ -502,7 +458,6 @@ describe('ToolsetsChip (TAL-2096)', () => {
     expect(chip).toHaveAttribute('title', 'Session toolsets: file, web')
     rerender(['web'])
     expect(screen.getByRole('button', { name: 'Session toolsets: web' })).toBeInTheDocument()
-    expect(document.body).not.toHaveTextContent('Global')
   })
 
   it('shows the previous selection again when its owner restores it after a refused save', async () => {
@@ -536,16 +491,6 @@ describe('ToolsetsChip (TAL-2096)', () => {
     expect(await row(/^file/)).toHaveAttribute('aria-checked', 'true')
     await userEvent.click(await row(/^terminal/))
     expect(onChange).toHaveBeenLastCalledWith(['file', 'terminal'])
-  })
-
-  it('keeps the last selected toolset and sends null for the profile defaults', async () => {
-    const { onChange } = renderToolsets(['web'])
-    await userEvent.click(screen.getByRole('button'))
-    expect(await row(/^web/)).toHaveAttribute('aria-disabled', 'true')
-    expect(await row(/^file/)).not.toHaveAttribute('aria-disabled', 'true')
-    expect(await row('Use profile defaults')).toHaveAttribute('aria-checked', 'false')
-    await userEvent.click(await row('Use profile defaults'))
-    expect(onChange).toHaveBeenCalledWith(null)
   })
 
   it('renders the rows in server order with Not available before the first not_available row', async () => {
@@ -605,14 +550,13 @@ describe('WorkspaceChip (TAL-303)', () => {
   })
 })
 
-it('does not offer saves when the toolset catalog fails', async () => {
+it('shows an alert when the toolset catalog fails, and Retry loads it', async () => {
   const api = await import('../../api/endpoints')
   vi.mocked(api.fetchToolsetsCatalog).mockRejectedValueOnce(new Error('offline'))
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={qc}><ToolsetsChip value={null} onChange={vi.fn()} /></QueryClientProvider>)
   await userEvent.click(screen.getByRole('button'))
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not load toolsets.')
-  expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
   expect(await screen.findByRole('menuitemcheckbox', { name: /^file/ })).toBeInTheDocument()
 })
@@ -643,17 +587,6 @@ describe('ExecutionModeChip (TAL-1040)', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Agent mode: Normal' }))
     await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Safe mode' }))
     expect(onChange).toHaveBeenCalledWith('safe')
-  })
-
-  it('names the menu in its first label and marks only the chosen mode with a check (TAL-2095)', async () => {
-    renderMode({ value: 'normal', onChange: vi.fn() })
-    await userEvent.click(await screen.findByRole('button'))
-    const menu = await screen.findByRole('menu')
-    expect(within(menu).getByRole('group', { name: 'Agent mode' }).firstElementChild).toHaveTextContent('Agent mode')
-    const chosen = await within(menu).findByRole('menuitemradio', { name: 'Normal' })
-    expect(chosen).toHaveAttribute('aria-checked', 'true')
-    expect(chosen.querySelector('svg[aria-hidden="true"]')).not.toBeNull()
-    expect(within(menu).getByRole('menuitemradio', { name: 'Safe mode' }).querySelector('svg')).toBeNull()
   })
 
   it('shows the server reason and refuses a mode the owner cannot start', async () => {

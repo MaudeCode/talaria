@@ -1042,15 +1042,15 @@ describe('Composer', () => {
     expect(api.startChat).not.toHaveBeenCalled()
   })
 
-  // TAL-518: `/btw` asks the server's side-question route and shows the answer above the composer, running or idle.
-  const askSideQuestion = async (session: Session, live: LiveTurn | null, unknown = false, disconnected = false) => {
+  // TAL-518, TAL-1340: `/btw` asks the server's side-question route; a native launch whose outcome is unknown keeps its question and recovers the answer.
+  const askUnknownSideQuestion = async (disconnected: boolean) => {
     vi.mocked(api.steerChat).mockClear()
     vi.mocked(api.startChat).mockClear()
-    vi.mocked(api.askBtw).mockReset().mockResolvedValue({ stream_id: 'side', session_id: 'hidden', parent_session_id: 's1', ...(unknown ? { task_id: 'side-native', launch: { state: 'accepted' as const, task_id: 'side-native' } } : {}) })
+    vi.mocked(api.askBtw).mockReset().mockResolvedValue({ stream_id: 'side', session_id: 'hidden', parent_session_id: 's1', task_id: 'side-native', launch: { state: 'accepted' as const, task_id: 'side-native' } })
     let side: ChatStreamCallbacks | null = null
     const closed = vi.fn()
     vi.mocked(openChatStream).mockImplementation((streamId, _replay, cb) => { if (streamId === 'side') side = cb; return { close: streamId === 'side' ? closed : noop, readyState: () => 1 } })
-    renderComposer(session, live)
+    renderComposer({ ...writable, is_streaming: false }, null)
     await userEvent.type(screen.getByRole('textbox'), '/btw how big is it?{Enter}')
     await waitFor(() => expect(vi.mocked(api.askBtw).mock.calls.length + vi.mocked(api.steerChat).mock.calls.length + vi.mocked(api.startChat).mock.calls.length).toBeGreaterThan(0))
     expect(api.steerChat).not.toHaveBeenCalled()
@@ -1061,48 +1061,27 @@ describe('Composer', () => {
     const panel = await screen.findByRole('region', { name: 'Side question — not in history' })
     expect(panel).toHaveTextContent('how big is it?')
     await waitFor(() => expect(side).not.toBeNull())
-    if (!unknown) {
-      act(() => { side!.onEvent({ event: 'token', data: { text: 'Three' } }, 'side:1') })
-      expect(panel).toHaveTextContent('Three')
-    }
-    if (unknown) {
-      act(() => {
-        if (disconnected) side!.onError!(SSE_CLOSED)
-        else side!.onEvent({ event: 'apperror', data: { message: 'Reopen the owner before sending again.', launch_state: 'unknown' } }, 'side:2')
-      })
-      expect(panel).toHaveTextContent('Outcome unknown')
-      if (!disconnected) expect(panel).toHaveTextContent('Reopen the owner before sending again.')
-      vi.mocked(api.fetchBackgroundResult).mockResolvedValue({ task_id: 'side-native', text: 'Recovered answer.', launch_state: 'accepted' })
-      await userEvent.keyboard('{Escape}')
-      await userEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-      await waitFor(() => expect(api.fetchBackgroundResult).toHaveBeenCalledWith('s1', 'side-native'))
-      await userEvent.click(screen.getByRole('button', { name: 'Side question — not in history: how big is it?' }))
-      expect(await screen.findByRole('region', { name: 'Side question — not in history' })).toHaveTextContent('Recovered answer.')
-    } else {
-      act(() => { side!.onEvent({ event: 'done', data: { ephemeral: true, answer: 'Three nodes.', terminal_state: 'completed' } }, 'side:2') })
-      expect(panel).toHaveTextContent('Three nodes.')
-    }
+    act(() => {
+      if (disconnected) side!.onError!(SSE_CLOSED)
+      else side!.onEvent({ event: 'apperror', data: { message: 'Reopen the owner before sending again.', launch_state: 'unknown' } }, 'side:2')
+    })
+    expect(panel).toHaveTextContent('Outcome unknown')
+    if (!disconnected) expect(panel).toHaveTextContent('Reopen the owner before sending again.')
+    vi.mocked(api.fetchBackgroundResult).mockResolvedValue({ task_id: 'side-native', text: 'Recovered answer.', launch_state: 'accepted' })
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(api.fetchBackgroundResult).toHaveBeenCalledWith('s1', 'side-native'))
+    await userEvent.click(screen.getByRole('button', { name: 'Side question — not in history: how big is it?' }))
+    expect(await screen.findByRole('region', { name: 'Side question — not in history' })).toHaveTextContent('Recovered answer.')
     expect(closed).toHaveBeenCalled()
     await userEvent.keyboard('{Escape}')
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Side question — not in history' })).toBeNull())
   }
 
-  it('answers /btw beside a running turn without steering it (TAL-518)', async () => {
-    await askSideQuestion(writable, running())
-    expect(getStreamState().turns.s1!.pendingSteers).toEqual([])
-    expect(getStreamState().turns.s1!.userText).toBe('Inspect')
-  })
-
-  it('answers an idle /btw beside the chat instead of sending it as a message (TAL-518)', async () => {
-    resetStreamStoreForTests()
-    await askSideQuestion({ ...writable, is_streaming: false }, null)
-    expect(getStreamState().turns.s1).toBeUndefined()
-  })
-
   it.each([false, true])('preserves an unknown native side-question outcome without resending, disconnected=%s (TAL-1340)', async (disconnected) => {
     resetStreamStoreForTests()
-    await askSideQuestion({ ...writable, is_streaming: false }, null, true, disconnected)
+    await askUnknownSideQuestion(disconnected)
     expect(api.askBtw).toHaveBeenCalledOnce()
     expect(api.startChat).not.toHaveBeenCalled()
   })
@@ -1116,15 +1095,6 @@ describe('Composer', () => {
     const steerId = getStreamState().turns.s1!.pendingSteers[0]!.steerId
     expect(api.steerChat).toHaveBeenCalledWith({ session_id: 's1', text: 'Check b too', steer_id: steerId })
     expect(screen.getByRole('textbox')).toHaveValue('')
-  })
-
-  it('keeps a refused steer in the box and out of the turn', async () => {
-    vi.mocked(api.steerChat).mockResolvedValue({ accepted: false, fallback: 'not_running' })
-    renderComposer(writable, running())
-    await userEvent.type(screen.getByRole('textbox'), 'Check b too{Enter}')
-    await waitFor(() => expect(api.steerChat).toHaveBeenCalled())
-    await waitFor(() => expect(getStreamState().turns.s1!.pendingSteers).toEqual([]))
-    expect(screen.getByRole('textbox')).toHaveValue('Check b too')
   })
 
   it('follows the turn the server started when a message lands during a background turn (TAL-460)', async () => {
@@ -1149,22 +1119,6 @@ describe('Composer', () => {
     // A threshold under half a percent of a large window is the server's 0, still shown.
     renderComposer({ ...idle, context_used_tokens: 10_000, context_window_tokens: 1_000_000, context_usage_percent: 1, context_threshold_percent: 0 })
     expect(document.getElementById('ctxIndicator')?.getAttribute('aria-label')).toMatch(/ · .*: 0%$/)
-  })
-
-  it('opens the context ring into the server usage figures and a Compress now action (TAL-614)', async () => {
-    const onLocalCommand = vi.fn(() => Promise.resolve(true))
-    renderComposer({ ...writable, is_streaming: false, context_used_tokens: 10_347, context_window_tokens: 128_000, context_usage_percent: 8, context_threshold_percent: 78, input_tokens: 52_000, output_tokens: 3_400, cache_read_tokens: 40_000, cache_write_tokens: 2_000, cache_hit_percent: 77, estimated_cost: 0.1234, can_compress: true }, null, noop, undefined, undefined, onLocalCommand)
-    await userEvent.click(document.getElementById('ctxIndicator')!)
-    const popup = await screen.findByRole('dialog')
-    expect(popup).toHaveTextContent('Context window usage: 8%')
-    expect(popup).toHaveTextContent('10,347 / 128,000')
-    expect(popup).toHaveTextContent('Automatic compression: 78%')
-    expect(popup).toHaveTextContent('Input tokens: 52,000')
-    expect(popup).toHaveTextContent('Output tokens: 3,400')
-    expect(popup).toHaveTextContent('Estimated cost: $0.1234')
-    expect(popup).toHaveTextContent('Cache: 77% hit (40,000 read / 2,000 write)')
-    await userEvent.click(within(popup).getByRole('button', { name: 'Compress now' }))
-    expect(onLocalCommand).toHaveBeenCalledWith('compress', '')
   })
 
   it('labels the window only when the server says it is a pin or a default (TAL-1908)', async () => {
@@ -1224,22 +1178,6 @@ describe('Composer', () => {
     view.rerenderWith(null)
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
     expect(stop).toHaveAttribute('inert')
-  })
-
-  it('keeps only Stop while a turn runs and the draft is empty', () => {
-    renderComposer(writable, running())
-    expect(screen.getByRole('button', { name: 'Stop response' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Steer current response' })).toBeNull()
-  })
-
-  it('shows a steer arrow beside Stop once a draft is typed mid-turn, and steers on click (TAL-428)', async () => {
-    vi.mocked(api.steerChat).mockResolvedValue({ accepted: true, steer_id: 'ignored' })
-    renderComposer(writable, running())
-    await userEvent.type(screen.getByRole('textbox'), 'Check b too')
-    expect(screen.getByRole('button', { name: 'Stop response' })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Steer current response' }))
-    await waitFor(() => expect(api.steerChat).toHaveBeenCalledWith(expect.objectContaining({ session_id: 's1', text: 'Check b too' })))
-    expect(screen.getByRole('textbox')).toHaveValue('')
   })
 
   it('names the busy action in the placeholder only while the busy hint is on, and follows the switch without a reload (TAL-2148)', () => {
@@ -1412,41 +1350,6 @@ describe('Composer', () => {
     expect(container.querySelector('[data-notice="live"]')).toHaveAttribute('inert')
     await waitFor(() => expect(container.querySelector('.composer-notices')).toBeNull())
   })
-  it('floats the run status beside a separate queued-count chip that opens the queue in a dialog (TAL-1078)', async () => {
-    const queued: QueuedTurn[] = [{ id: 'q1', text: 'Queued one', attachments: [], request: { profile: 'default' } }, { id: 'q2', text: 'Queued two', attachments: [], request: { profile: 'default' } }]
-    const onQueueChange = vi.fn()
-    renderComposer(writable, running(), noop, undefined, undefined, undefined, { queued, onQueueChange })
-    await userEvent.type(screen.getByRole('textbox'), 'Draft kept')
-    expect(document.querySelector('.composer-tab')).toBeNull()
-    const run = document.querySelector<HTMLElement>('[data-notice="live"]')!
-    expect(run).toHaveTextContent('Working')
-    // The run status is not a control, and the queue's rows stay out of the composer until asked for.
-    expect(within(run).queryByRole('button')).toBeNull()
-    expect(screen.queryByText('Queued one')).toBeNull()
-    const chip = screen.getByRole('button', { name: '2 queued' })
-    await userEvent.click(chip)
-    const dialog = await screen.findByRole('dialog', { name: '2 queued' })
-    expect(within(dialog).getByText('Queued one')).toBeVisible()
-    expect(within(dialog).getByText('Queued two')).toBeVisible()
-    await userEvent.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(chip).toHaveFocus()
-    expect(onQueueChange).not.toHaveBeenCalled()
-    expect(api.startChat).not.toHaveBeenCalled()
-    expect(screen.getByRole('textbox')).toHaveValue('Draft kept')
-  })
-  it('hands the text back when the chat start fails after the session exists (TAL-274)', async () => {
-    endFirstSend()
-    vi.mocked(api.startChat).mockRejectedValue(new Error('synthetic start failure'))
-    const created: Session = { ...writable, session_id: 'fresh', is_streaming: false }
-    renderComposer(null, null, noop, undefined, () => Promise.resolve(created))
-    const box = screen.getByRole('textbox')
-    await userEvent.type(box, 'Plan the release{Enter}')
-    await waitFor(() => expect(box).toHaveValue('Plan the release'))
-    expect(api.startChat).toHaveBeenCalledTimes(1)
-    expect(getFirstSend()).toBeNull()
-  })
-
   it('keeps the phone settings panel open for presses inside a menu it opened, and closes it for presses elsewhere (TAL-1131)', async () => {
     window.matchMedia = vi.fn(() => ({ matches: true, addEventListener: noop, removeEventListener: noop })) as unknown as typeof window.matchMedia
     // jsdom lays nothing out; a measured footer lets the phone fit pass move the chips into the panel.

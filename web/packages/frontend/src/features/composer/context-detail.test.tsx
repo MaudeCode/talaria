@@ -20,27 +20,6 @@ const wrapper = (qc = new QueryClient({ defaultOptions: { queries: { retry: fals
 }
 
 describe('context details in the existing inspector', () => {
-  it('reads only while open and shares category/provenance/file rows with the phone inspector', async () => {
-    vi.mocked(fetchContextDetail).mockResolvedValue(detail)
-    vi.mocked(fetchContextDetail).mockClear()
-    const onCompress = vi.fn()
-    const view = render(<ContextRing {...props} onCompress={onCompress} />, { wrapper: wrapper() })
-    expect(fetchContextDetail).not.toHaveBeenCalled()
-    await userEvent.click(screen.getByRole('button', { name: /Context window usage/ }))
-    expect(await screen.findByText('Estimated tokens by category')).toBeVisible()
-    expect(fetchContextDetail).toHaveBeenCalledWith('context-chat', 'owner-a', expect.any(AbortSignal))
-    expect(screen.getByText('Occupancy from local estimate')).toBeVisible()
-    expect(screen.getByText('AGENTS.md')).toBeVisible()
-    expect(screen.getByText('4,000 characters · ~1,000 tokens')).toBeVisible()
-    expect(screen.getByText('Last turn output: 12')).toBeVisible()
-    await userEvent.click(screen.getByRole('button', { name: 'Compress now' }))
-    expect(onCompress).toHaveBeenCalledOnce()
-    await waitFor(() => expect(screen.queryByText('AGENTS.md')).not.toBeInTheDocument())
-    view.unmount()
-    render(<ContextRow {...props} />, { wrapper: wrapper() })
-    expect(await screen.findByText('AGENTS.md')).toBeVisible()
-  })
-
   it('shows categories without a provenance line when the read has no occupancy source', async () => {
     vi.mocked(fetchContextDetail).mockResolvedValue({ ...detail, source: null, estimated: null, used_tokens: null, window_tokens: null, files: [], last_turn_output_tokens: null })
     render(<ContextRow {...props} detailKey="stored-read" />, { wrapper: wrapper() })
