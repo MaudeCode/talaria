@@ -503,10 +503,11 @@ extension XCTestCase {
     }
 
     /// Pumps the run loop until `condition` holds or `timeout` passes, and reports whether it held. Network-driven
-    /// screens use it to wait for the in-process fixture's answers.
+    /// screens use it to wait for the in-process fixture's answers. It shares `awaitCondition`'s 10 s ceiling: a main
+    /// thread a loaded runner held for 5 s used up a shorter deadline before the answers could land (TAL-2351).
     @MainActor
     @discardableResult
-    func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
+    func waitUntil(timeout: TimeInterval = 10, _ condition: () -> Bool) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition() {
             if Date() >= deadline { return condition() }

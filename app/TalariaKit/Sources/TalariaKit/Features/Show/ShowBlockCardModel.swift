@@ -45,7 +45,8 @@ public final class ShowBlockCardModel {
                 imageData = try? await client.rawFileData(sessionID: block.sessionId, path: file.path)
             }
         } catch {
-            if block == nil { failed = true }
+            // A cancelled read is the screen leaving, not the block going away.
+            if block == nil, !APIError.isCancellation(error) { failed = true }
         }
     }
 }

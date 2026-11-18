@@ -13,6 +13,24 @@ final class ShowBlockHostedTests: XCTestCase {
     /// Answers the reads `transcript(_:holding:)` held, as a server that sends those blocks later.
     private var releaseHeldReads: () -> Void = {}
 
+    /// A process's first table and charts draw several times slower than the next ones, as a process's first chat does
+    /// (`HostedTestBundle`). On a hosted runner the first display's wait made no progress for 35 s while the other two
+    /// drew in a second each (TAL-2351). That first drawing belongs to the class, so it happens before its tests start.
+    override class func setUp() {
+        super.setUp()
+        MainActor.assumeIsolated {
+            // No test is running, so `hostWindow`'s teardown never runs; the same cleanup follows below.
+            let warmer = ShowBlockHostedTests()
+            let animated = UIView.areAnimationsEnabled
+            defer { UIView.setAnimationsEnabled(animated) }
+            guard let window = try? warmer.hostWindow(warmer.transcript(["table", "chart", "chart_line"])) else { return }
+            warmer.waitUntil(timeout: 60) { !HostedAccessibility.elements(in: window, labelContaining: "Max 2%").isEmpty }
+            window.isHidden = true
+            window.rootViewController = nil
+            MockURLProtocol.requestHandler = nil
+        }
+    }
+
     override func tearDown() {
         MockURLProtocol.requestHandler = nil
         DeferredMockURLProtocol.setOnRequest(nil, forHost: "show.test")

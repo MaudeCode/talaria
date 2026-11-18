@@ -235,21 +235,28 @@ final class ChatHostedTests: XCTestCase {
         let window = try XCTUnwrap(probe.window)
         var shownTops: [CGFloat] = []
         try await sampleCommittedLayouts {
+            guard probe.atCompletion == nil else { return }
             let current = probe.composer()
-            if probe.atCompletion == nil, current.opacity > 0 { shownTops.append(current.top) }
+            if current.opacity > 0 { shownTops.append(current.top) }
         } during: {
-            HostedAccessibility.activate(try await requireElement(in: window, label: "Open fixture chat"))
+            let open = try await requireElement(in: window, label: "Open fixture chat")
+            // UIKit animates a push only once the stack's root has appeared; a tap that came first pushed without a
+            // transition, so no frame ever showed the composer sliding in (TAL-2543).
+            await awaitDisplayUpdates(2, in: try XCTUnwrap(window.windowScene))
+            HostedAccessibility.activate(open)
             let finished = await awaitCondition { probe.atCompletion != nil }
             XCTAssertTrue(finished, "The chat push must finish")
         }
         let pushed = try XCTUnwrap(probe.atCompletion)
         XCTAssertEqual(pushed.opacity, 1, "The composer must be visible while the chat slides in")
+        XCTAssertFalse(shownTops.isEmpty, "The chat must slide in, with the composer drawn during the push")
         // Where the composer stood when it used to appear, once the push had finished.
         XCTAssertTrue(shownTops.allSatisfy { abs($0 - pushed.top) < 0.5 },
                       "The composer must never show at a provisional size: \(shownTops) against \(pushed.top)")
         // TAL-1998: the session load that starts once the push finishes adds the toolsets chip; the composer stays put.
         _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
-        settle(0.3)
+        let settled = await awaitRenderedQuiet(in: window) { probe.composer().top }
+        XCTAssertTrue(settled, "The loaded chat's composer must settle")
         attachHostedScreenshot(window, name: "composer-after-chat-load")
         XCTAssertEqual(probe.composer().top, pushed.top, accuracy: 0.5, "The composer moved once the chat had loaded")
     }

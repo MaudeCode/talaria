@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A table or chart that a reply shows no longer says it is unavailable when you leave and return to the chat while it loads.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
