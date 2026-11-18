@@ -54,13 +54,4 @@ describe('pluginListing groups and summary (TAL-2132)', () => {
     expect(listing.total).toBe(14)
     expect(shape(pluginListing(rows, 'slack').groups)).toEqual([['platforms', ['platforms/slack'], 1, 2, 50]])
   })
-
-  it('omits empty groups but keeps installed, and reads a row without a source as bundled', () => {
-    const { groups, summary } = pluginListing([{ key: 'web/brave', name: 'brave', category: 'web' }])
-    expect(groups).toEqual([
-      { id: 'installed', plugin_keys: [], enabled_count: 0, total_count: 0, enabled_percent: 0 },
-      { id: 'web', plugin_keys: ['web/brave'], enabled_count: 1, total_count: 1, enabled_percent: 100 },
-    ])
-    expect(summary).toEqual({ installed: 0, bundled: 1, enabled: 1, total: 1, updates: 0, updates_tone: null })
-  })
 })

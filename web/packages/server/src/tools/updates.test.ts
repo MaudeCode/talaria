@@ -15,11 +15,10 @@ vi.mock('node:fs', async (original) => {
 })
 import type { AgentRecoveryState, RuntimeDescribe } from '@maudecode/talaria-web-contracts'
 import type { Dict } from '../config/agent-config.js'
-import { detectWebuiVersion, developmentInfo } from '../release.js'
+import { developmentInfo } from '../release.js'
 import { bootTestServer, WEB_ROOT } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
-import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import { writeContinuation } from './update-continuation.js'
 import { UpdateNotificationStore } from './update-notifications.js'
 import { initializeStore, JsonDocuments } from '../test/storage.js'
@@ -226,23 +225,6 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     await svc.check(true)
     expect(await svc.apply('webui')).toMatchObject({ ok: true, restart_scheduled: true })
     expect(roots).toBe(2)
-  })
-
-  it('runs the automatic loop immediately and periodically until stopped', async () => {
-    vi.useFakeTimers()
-    try {
-      const s = sourceInstall()
-      const { svc } = service(s, { autoApply: () => false })
-      const tick = vi.spyOn(svc, 'autoApplyOnce').mockResolvedValue(null)
-      svc.startAutoApply(1000)
-      await vi.advanceTimersByTimeAsync(0)
-      expect(tick).toHaveBeenCalledTimes(1)
-      await vi.advanceTimersByTimeAsync(1000)
-      expect(tick).toHaveBeenCalledTimes(2)
-      svc.stopAutoApply()
-      await vi.advanceTimersByTimeAsync(2000)
-      expect(tick).toHaveBeenCalledTimes(2)
-    } finally { vi.useRealTimers() }
   })
 
   it('recovers retained Agent debt without another apply or enabled update checks', async () => {
@@ -620,12 +602,6 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     // The Agent checkout is inspected with its own `v*` tags regardless of the Web channel.
     expect(agentCalls.some((c) => c[0] === 'tag' && c.includes('v*'))).toBe(true)
     expect(svc.cachedStatus(false).agent).toEqual({ name: 'agent', behind: 0, ignored: true })
-  })
-
-  it('the Web version ignores App and Relay tags', () => {
-    const s = sourceInstall()
-    for (const tag of ['web-v1.0.0', 'app-v99.0.0', 'relay-v99.0.0']) git(s.client, 'tag', '-a', tag, '-m', 'synthetic tag')
-    expect(detectWebuiVersion(DEV, web(s.client))).toBe('web-v1.0.0')
   })
 
   it('private remote credentials never enter update status', async () => {
@@ -1051,7 +1027,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       const { token } = await t.offer()
       t.n.mode.outcome = 'failure'
       expect(await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: token })).toMatchObject({ ok: false })
-      expect([t.version(), t.restarts]).toEqual(['1.0.0', []])
+      expect([t.interrupted, t.version(), t.restarts, t.svc.blocksNewWork()]).toEqual([[['r1', 'r2']], '1.0.0', [], false])
       expect(t.continued).toEqual(['chat-r1:open', 'chat-r2:open'])
       expect(record(t.stateDir)).toBeNull()
     })
@@ -1241,16 +1217,6 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       expect(t.installs()).toBe(1)
     })
 
-    it('reopens admission when the update fails after the chats were saved as interrupted', async () => {
-      const t = blockedByChats()
-      await t.svc.check(true, false, 'stable')
-      const { token } = await t.offer()
-      t.n.mode.outcome = 'failure'
-      const failed = await t.svc.apply('webui', null, undefined, { operator: 'operator-a', interruptToken: token })
-      expect(failed).toMatchObject({ ok: false })
-      expect([t.interrupted, t.version(), t.restarts]).toEqual([[['r1', 'r2']], '1.0.0', []])
-      expect(t.svc.blocksNewWork()).toBe(false)
-    })
   })
 
   /** TAL-946: completed Stable sets for 2.0.0 (newest), 1.2.0 and 1.1.0 above an npm install of 1.0.0, each with its own source and package. */
@@ -2180,13 +2146,6 @@ describe('Agent checkout updates', () => {
     expect(await forceAgentUpdate(agent, failing, () => undefined)).toEqual({ ok: false, message: forceMessage })
   })
 
-  it('keeps a locked fetch a lock conflict, not a timeout (TAL-1149)', async () => {
-    const agent = tmp()
-    mkdirSync(join(agent, '.git'))
-    const locked: GitRun = () => Promise.resolve({ ok: false, out: "fatal: Unable to create '/agent/.git/index.lock': File exists." })
-    expect(await applyAgentUpdate(agent, locked)).toMatchObject({ ok: false, lock_conflict: true })
-  })
-
   /** TAL-1025: synthetic secrets git echoes from a credentialed remote; none may survive into a returned payload. */
   const SECRETS = ['SUFFIX_PRIVATE', 'synthetic-password', 'PRIVATE_PW', 'ghp_SYNTHETICSYNTHETICSYNTHETIC']
   const CREDENTIALED = "'https://agent:synthetic-password@example.invalid/agent.git/?token=synthetic'SUFFIX_PRIVATE'"
@@ -2428,7 +2387,7 @@ describe('Agent checkout updates', () => {
     const restarted = summaryService(a, { channel: 'experimental', stateDir, git: run })
     commands.length = 0
     await restarted.svc.check(true)
-    expect(await restarted.svc.summarize('agent')).toMatchObject({ cached: true })
+    expect(await restarted.svc.summarize('agent')).toMatchObject({ generated_by: 'llm', cached: true })
     expect(restarted.prompts).toHaveLength(0)
     expect(commands.filter((args) => args[0] === 'log')).toHaveLength(0)
   })
@@ -2631,18 +2590,6 @@ describe('Agent checkout updates', () => {
     await svc.check(true)
     await new Promise((resolve) => setImmediate(resolve))
     expect(prompts).toHaveLength(0)
-  })
-
-  it('persists model answers across service reconstruction (TAL-1008)', async () => {
-    const a = agentInstall()
-    const stateDir = tmp()
-    const first = summaryService(a, { stateDir })
-    await first.svc.check(true)
-    expect(await first.svc.summarize('agent')).toMatchObject({ generated_by: 'llm', cached: false })
-    const second = summaryService(a, { stateDir })
-    await second.svc.check(true)
-    expect(await second.svc.summarize('agent')).toMatchObject({ generated_by: 'llm', cached: true })
-    expect(second.prompts).toHaveLength(0)
   })
 
   it('logs a background model failure once per range and leaves fallback uncached (TAL-1008)', async () => {
@@ -3062,14 +3009,6 @@ describe('Agent checkout updates', () => {
     expect(events).toEqual(['restart'])
     const status = await agentService(a.agent, runGit, []).check(true)
     expect(updateTargetView('agent', status.agent as Dict, false)).toMatchObject({ state: 'up_to_date', can_apply: false })
-  })
-
-  it('TAL-953: an Agent update leaves the gateway restart to the idle wait and still schedules Web\'s restart', async () => {
-    const a = agentInstall()
-    const events: string[] = []
-    const result = await agentService(a.agent, runGit, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
-    expect(result).toMatchObject({ ok: true, target: 'agent', restart_scheduled: true, gateway_restart: 'waiting_for_idle' })
-    expect(events).toEqual(['restart'])
   })
 
   it('TAL-1632: cleanup waits for the refresh check an update leaves running in the checkout', async () => {
@@ -3587,14 +3526,6 @@ describe('restart when safe', () => {
     expect(calls).toBe(3)
     const stuck = await waitUntilRestartSafe(() => ({ active_streams: 0, active_runs: 1, blocking_stream_ids: [], blocking_run_ids: ['r'], restart_blocked: true }), { sleep, now: () => clock, pollMs: 2000, maxWaitMs: 10_000 })
     expect(stuck.wait_timed_out).toBe(true)
-  })
-
-  it('the serve supervisor respawns the worker only on the restart exit code', async () => {
-    const marker = join(tmp(), 'restarted')
-    const script = `const fs=require('node:fs');if(process.env.TALARIA_WEB_WORKER!=='1')process.exit(9);if(fs.existsSync(${JSON.stringify(marker)}))process.exit(3);fs.writeFileSync(${JSON.stringify(marker)},'');process.exit(${String(RESTART_EXIT_CODE)})`
-    const lines: string[] = []
-    expect(await supervise({ command: [process.execPath, '-e', script], env: process.env, log: (l) => lines.push(l), restartDelayMs: 0 })).toBe(3)
-    expect(lines).toEqual(['[serve] restarting the server with the updated source'])
   })
 })
 

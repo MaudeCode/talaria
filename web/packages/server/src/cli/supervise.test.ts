@@ -178,6 +178,16 @@ describe('self-update startup rollback', () => {
 })
 
 describe('supervisor worker environment', () => {
+  it('respawns the worker, marked TALARIA_WEB_WORKER=1, only on the restart exit code', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'talaria-supervise-restart-'))
+    roots.push(root)
+    const marker = join(root, 'restarted')
+    const script = `const fs=require('node:fs');if(process.env.TALARIA_WEB_WORKER!=='1')process.exit(9);if(fs.existsSync(${JSON.stringify(marker)}))process.exit(3);fs.writeFileSync(${JSON.stringify(marker)},'');process.exit(${String(RESTART_EXIT_CODE)})`
+    const lines: string[] = []
+    expect(await supervise({ command: [process.execPath, '-e', script], env: process.env, log: (l) => lines.push(l), restartDelayMs: 0 })).toBe(3)
+    expect(lines).toEqual(['[serve] restarting the server with the updated source'])
+  })
+
   it.each(['rotated', 'deleted'] as const)('reloads a %s home credential after restart while preserving operator variables', async (change) => {
     const root = mkdtempSync(join(tmpdir(), 'talaria-supervise-env-'))
     roots.push(root)

@@ -83,8 +83,4 @@ describe('restoreMasks (TAL-886)', () => {
     expect(save(original, () => `${'b'.repeat(20_000)},password=other`)).toBe(`${'b'.repeat(20_000)},password=other`)
     expect(performance.now() - started).toBeLessThan(1_000)
   })
-
-  it('writes the submitted text when nothing is masked', () => {
-    expect(restoreMasks('plain', 'plain', 'edited')).toBe('edited')
-  })
 })

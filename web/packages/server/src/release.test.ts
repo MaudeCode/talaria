@@ -26,6 +26,8 @@ describe('release info', () => {
     git('add', '.')
     git('-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@example.test', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'fixture')
     git('tag', 'web-v9.8.7')
+    // App and Relay tags on the same commit never name the Web version.
+    for (const tag of ['app-v99.0.0', 'relay-v99.0.0']) git('tag', tag)
     const dev = developmentInfo(WEB_ROOT)
     const indexPath = join(dir, '.git', 'index')
     const index = readFileSync(indexPath)
