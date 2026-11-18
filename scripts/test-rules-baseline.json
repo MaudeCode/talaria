@@ -37,7 +37,6 @@
       "app/TalariaTests/SessionListHostedTests.swift": 1,
       "app/TalariaTests/TranscriptHostedTests.swift": 6,
       "web/packages/server/src/app.test.ts": 1,
-      "web/packages/server/src/providers/env-write.agent.test.ts": 1,
       "web/packages/server/src/sessions/chat.test.ts": 1,
       "web/packages/server/src/sessions/compress.test.ts": 1
     }

@@ -13,18 +13,17 @@ const agentAvailable = existsSync(resolve(agentDir, 'run_agent.py')) && existsSy
 // Agents before v0.21.6 have no `.env` lock for a concurrent write to wait on.
 const agentLocksEnv = agentAvailable && spawnSync(python, ['-c', 'import sys; sys.path.insert(0, sys.argv[1]); from hermes_cli import config; print(hasattr(config, "_env_write_lock"))', agentDir], { encoding: 'utf8' }).stdout.trim() === 'True'
 
-// The Agent's own `save_env_value`, paused between its locked read and its atomic replace until `go` exists.
+// The Agent's own `save_env_value`, paused between its locked read and its atomic replace until the test writes a line
+// to its stdin (or the test exits and closes it).
 const PAUSED_AGENT_WRITE = `
-import os, sys, time
+import sys
 sys.path.insert(0, sys.argv[1])
 from hermes_cli import config
-ready, go = sys.argv[2], sys.argv[3]
+ready = sys.argv[2]
 original = config._write_env_lines
 def paused(*args, **kwargs):
     open(ready, "w").close()
-    deadline = time.monotonic() + 30
-    while not os.path.exists(go) and time.monotonic() < deadline:
-        time.sleep(0.02)
+    sys.stdin.readline()
     return original(*args, **kwargs)
 config._write_env_lines = paused
 config.save_env_value("AGENT_WRITTEN_KEY", "from-agent")
@@ -64,8 +63,7 @@ describe.skipIf(!agentLocksEnv)('provider key writes against the pinned Agent (T
     s = await bootTestServer({ sidecar: client, env: { HERMES_HOME: home, TALARIA_WEB_STATE_DIR: home } })
 
     const ready = join(home, 'agent-ready')
-    const go = join(home, 'agent-go')
-    const agent = spawn(python, ['-c', PAUSED_AGENT_WRITE, agentDir, ready, go], { env: { PATH: process.env.PATH, HOME: home, HERMES_HOME: home }, stdio: ['ignore', 'ignore', 'pipe'] })
+    const agent = spawn(python, ['-c', PAUSED_AGENT_WRITE, agentDir, ready], { env: { PATH: process.env.PATH, HOME: home, HERMES_HOME: home }, stdio: ['pipe', 'ignore', 'pipe'] })
     let agentErr = ''
     agent.stderr.on('data', (chunk: Buffer) => { agentErr += chunk.toString() })
     const agentExit = new Promise<number | null>((done) => { agent.on('exit', done) })
@@ -75,7 +73,7 @@ describe.skipIf(!agentLocksEnv)('provider key writes against the pinned Agent (T
     writeFileSync(attempts, '')
     const saved = s.get('/api/providers', { method: 'POST', body: JSON.stringify({ provider: 'deepseek', api_key: 'sk-deepseek-from-talaria' }), headers: { 'content-type': 'application/json' } })
     await expect.poll(() => readFileSync(attempts, 'utf8').split('\n').filter(Boolean).length, { timeout: 15_000 }).toBeGreaterThanOrEqual(2)
-    writeFileSync(go, '')
+    agent.stdin.end('go\n')
     const res = await saved
     expect(await agentExit, agentErr).toBe(0)
 
