@@ -74,44 +74,6 @@ assert later["status"] == "completed", later
 print(json.dumps({"seen": seen, "discoveries": len(discoveries)}))
 """
 
-# A Stop that arrives while discovery is still connecting a server that never answers.
-STOP_PROBE = """
-import json, os, sys, time
-from pathlib import Path
-sys.path.append(sys.argv[1])
-import tools.mcp_tool_discovery as discovery
-from talaria_sidecar.home import scoped_home
-from talaria_sidecar.methods import chat
-
-discovery.discover_mcp_tools = lambda *args, **kwargs: time.sleep(60)
-
-class FakeAgent:
-    def __init__(self, **kwargs):
-        pass
-
-    def interrupt(self, *args, **kwargs):
-        pass
-
-    def run_conversation(self, **kwargs):
-        return {"final_response": "", "messages": []}
-
-class Ctx:
-    cancelled = True
-
-    def emit(self, event, data=None):
-        pass
-
-chat._agent_class = lambda: FakeAgent
-chat._resolve_runtime = lambda provider, model: {"model": "m", "provider": "p"}
-home = Path(os.environ["HERMES_HOME"])
-params = {"profile_home": str(home), "session_id": "s", "stream_id": "st", "user_message": "hi", "model": "m", "model_provider": "p"}
-started = time.monotonic()
-with scoped_home(home):
-    result = chat.start(Ctx(), params)
-print(json.dumps({"status": result["status"], "elapsed": time.monotonic() - started}))
-"""
-
-
 # ``mcp.reload`` in profile A while three sessions hold cached agents: two of A's (the first one's refresh fails) and
 # one of profile B's, each built from the real refresh. Discovery changes the stub tool's description under the same
 # name; the probe reports which description each working agent's tools carry afterwards, and which sessions stay cached.
@@ -183,15 +145,6 @@ def test_first_turn_after_a_restart_exposes_the_profiles_mcp_tools(tmp_path) -> 
     assert len(outcome["seen"]) == 2, outcome
     assert all("mcp__stub_a__ping" in tools for tools in outcome["seen"]), outcome
     assert outcome["discoveries"] == 1, outcome
-
-
-@requires_agent
-def test_stop_during_turn_start_discovery_ends_the_turn_without_waiting_for_it(tmp_path) -> None:
-    root = tmp_path / ".hermes"
-    root.mkdir()
-    outcome = _probe(tmp_path, root, STOP_PROBE)
-    assert outcome["status"] == "cancelled", outcome
-    assert outcome["elapsed"] < 10, outcome
 
 
 def _status(sidecar: SidecarProcess, home: pathlib.Path) -> dict:

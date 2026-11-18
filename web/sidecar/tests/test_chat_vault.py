@@ -125,8 +125,9 @@ def probe(tmp_path, tool, outcome):
 
 
 @requires_agent
-@pytest.mark.parametrize("tool", ["unlock", "save_login", "code"])
-@pytest.mark.parametrize("outcome", ["submitted", "declined", "cancelled", "expired"])
+# Cancel and expiry hand every tool the same empty answer as a decline, so only unlock keeps them.
+@pytest.mark.parametrize("outcome, tool", [(o, t) for o in ("submitted", "declined", "cancelled", "expired")
+                                           for t in ("unlock", "save_login", "code") if o in ("submitted", "declined") or t == "unlock"])
 def test_vault_prompts_through_chat_start(tmp_path, tool, outcome):
     observed = probe(tmp_path, tool, outcome)
     result = observed["tool"][0]
