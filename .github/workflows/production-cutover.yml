@@ -116,18 +116,21 @@ jobs:
 
   # Holds workflow changes while the release runs (TAL-2516, RELEASES.md rule 6): fails the release-freeze commit
   # status on every open pull request that changes a workflow file, since one merged now would make GitHub refuse the
-  # release's tag writes. The thaw job passes it again however the release ends.
+  # release's tag writes. The release needs it, so a release that could not set the freeze publishes nothing. The thaw
+  # job passes the status again however the release ends.
   freeze:
     needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: { statuses: write, pull-requests: read, actions: read }
     steps:
-      - uses: MaudeCode/.github/actions/release-freeze@e3a3f4a5a3ee052259af8b7260234b7af12167ed
+      - uses: MaudeCode/.github/actions/release-freeze@20b180ba0237e316fcc65d83ed4e8f19ac5e16a7
         with: { mode: start, workflow: production-cutover.yml }
 
   release:
-    needs: preflight
+    # Every publishing job (relay-, web-, bridge- and app-publish, publish-set, tag) is in release-set.yml, so needing
+    # freeze here keeps all of them behind it.
+    needs: [preflight, freeze]
     permissions:
       contents: write
       actions: read
@@ -151,5 +154,5 @@ jobs:
     timeout-minutes: 5
     permissions: { statuses: write, pull-requests: read, actions: read }
     steps:
-      - uses: MaudeCode/.github/actions/release-freeze@e3a3f4a5a3ee052259af8b7260234b7af12167ed
+      - uses: MaudeCode/.github/actions/release-freeze@20b180ba0237e316fcc65d83ed4e8f19ac5e16a7
         with: { mode: end, workflow: production-cutover.yml }

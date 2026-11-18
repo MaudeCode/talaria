@@ -251,19 +251,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/main-ci-failure.py watch
 
-  release-freeze:
-    # Sets the release-freeze commit status (TAL-2516, releases/README.md): failure while a release runs and this pull
-    # request changes a workflow file, success otherwise. Not a suite and not in CI Gate's needs: the status is the block.
-    # Named apart from the status so a required "release-freeze" check matches only the status.
-    name: Set the release-freeze status
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions: { statuses: write, pull-requests: read, actions: read }
-    steps:
-      - uses: MaudeCode/.github/actions/release-freeze@e3a3f4a5a3ee052259af8b7260234b7af12167ed
-        with: { mode: pull-request, workflow: production-cutover.yml }
-
   gate:
     name: CI Gate
     needs: [changes, app, app-tooling, tooling, web, web-docker, relay, contracts]

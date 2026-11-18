@@ -601,25 +601,6 @@ class RealDiffTests(unittest.TestCase):
         permissions_head = self.commit("change global workflow permissions")
         self.assertEqual(self.classify(permissions_base, permissions_head), routing.WORKFLOWS["ci.yml"])
 
-    def test_adding_or_changing_only_the_ci_release_freeze_job_selects_tooling(self):
-        # The job only sets the release-freeze commit status (TAL-2516); no suite or CI Gate reads it.
-        original = ("name: CI\non: pull_request\njobs:\n  report:\n    runs-on: ubuntu-latest\n\n"
-                    "  gate:\n    needs: [report]\n")
-        freeze = "  release-freeze:\n    # The status.\n    runs-on: ubuntu-latest\n    steps:\n      - uses: old\n\n"
-        workflow = ".github/workflows/ci.yml"
-        self.write(workflow, original)
-        workflow_base = self.commit("fixture CI workflow")
-        added = original.replace("  gate:\n", freeze + "  gate:\n")
-        self.write(workflow, added)
-        added_head = self.commit("add the release-freeze job")
-        self.assertEqual(self.classify(workflow_base, added_head), {"tooling"})
-        self.write(workflow, added.replace("uses: old", "uses: new"))
-        changed_head = self.commit("change only the release-freeze job")
-        self.assertEqual(self.classify(added_head, changed_head), {"tooling"})
-        self.write(workflow, added.replace("needs: [report]", "needs: [report, release-freeze]"))
-        gated_head = self.commit("make CI Gate wait on it")
-        self.assertEqual(self.classify(added_head, gated_head), routing.WORKFLOWS["ci.yml"])
-
     def test_check_diff_rejects_whitespace_errors_in_the_checked_range(self):
         self.write("README.md", "base\n")
         base = self.commit("base")

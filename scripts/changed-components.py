@@ -57,6 +57,7 @@ WORKFLOWS = {
     "nightly.yml": {"tooling"},
     "web-experimental.yml": {"tooling"},
     "production-cutover.yml": {"tooling"},
+    "release-freeze.yml": {"tooling"},
     "ios-release-build.yml": {"tooling"},
     "inspect-testflight.yml": {"tooling"},
     "recover-cutover.yml": {"tooling"},
@@ -326,12 +327,10 @@ def workflow_overrides(base, head, paths):
         after = git("show", f"{head}:{path}").decode() if head else Path(path).read_text()
     except (OSError, subprocess.CalledProcessError):
         return {}
-    # A change confined to one of these jobs, including adding or removing it, cannot affect the App build or Web
-    # fixture handoff. release-freeze only sets a commit status (TAL-2516).
-    for name, suites in (("app-tooling", {"app_tooling", "tooling"}), ("release-freeze", {"tooling"})):
-        job = re.compile(rf"^  {name}:\n(?:[ \t]*\n| {{4}}[^\n]*(?:\n|\Z))*", re.MULTILINE)
-        if (job.search(before) or job.search(after)) and job.sub("", before) == job.sub("", after):
-            return {path: suites}
+    # A change confined to this job cannot affect the App build or Web fixture handoff.
+    job = re.compile(r"^  app-tooling:\n(?:[ \t]*\n| {4}[^\n]*(?:\n|\Z))*", re.MULTILINE)
+    if job.search(before) and job.search(after) and job.sub("", before) == job.sub("", after):
+        return {path: {"app_tooling", "tooling"}}
     return {}
 
 
