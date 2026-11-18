@@ -69,6 +69,7 @@ test('the Skills page lists a conversation’s skill loads and refreshes counts 
     await expect(tabs.getByRole('tab', { name: 'Files', exact: true })).toBeVisible()
     await expect(tabs.getByRole('tab', { name: 'Skills', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByText('No skills used in this chat yet.')).toBeVisible()
+    await expect(page.getByText('No skills used in this chat yet.')).toHaveAttribute('role', 'status')
 
     await page.goto(`${server.base}/session/${sid}`)
     await openPanel()

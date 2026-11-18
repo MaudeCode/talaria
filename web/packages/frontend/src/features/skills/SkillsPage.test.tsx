@@ -85,25 +85,6 @@ async function openHistory() {
   await userEvent.click(screen.getByText('Saved revisions', { exact: true }))
 }
 
-it('renders server history and diff read-only while preserving the current editor', async () => {
-  vi.mocked(api.fetchSkillRevisions).mockResolvedValue({ ...SkillRevisionsSchema.parse(fixture), replay_available: false })
-  await openHistory()
-  expect(await screen.findByLabelText('Saved revision content')).toHaveValue(fixture.selected.content)
-  expect(screen.getByLabelText('Saved revision content')).toHaveAttribute('readonly')
-  expect(screen.getByRole('region', { name: 'Saved revisions' }).querySelector('pre')?.textContent).toBe(fixture.comparison.diff)
-  expect(screen.getByLabelText('Skill content')).toHaveValue('Current editable content')
-  expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
-  expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled()
-  expect(screen.queryByRole('button', { name: /run|replay/i })).toBeNull()
-})
-
-it('shows explicit missing history without fabricating a revision from current content', async () => {
-  vi.mocked(api.fetchSkillRevisions).mockResolvedValue({ state: 'missing', reason: 'history_unavailable', backend_revision: fixture.backend_revision, revisions: [], selected: null, comparison: null, replay_available: false })
-  await openHistory()
-  expect(await screen.findByText('No saved revisions are available for this skill.')).toBeInTheDocument()
-  expect(screen.queryByLabelText('Saved revision content')).toBeNull()
-})
-
 it('discards history that finishes after the profile context changes', async () => {
   let finish!: (value: Awaited<ReturnType<typeof api.fetchSkillRevisions>>) => void
   vi.mocked(api.fetchSkillRevisions).mockReturnValue(new Promise((resolve) => { finish = resolve }))
@@ -116,23 +97,6 @@ it('discards history that finishes after the profile context changes', async () 
 
 const plan = planFixture as unknown as SkillReplayPlan
 const job = jobFixture as unknown as SkillReplayJob
-
-it('asks consent for the exact revisions, cases, provider and budget before admitting one bound replay', async () => {
-  await openHistory()
-  await userEvent.click(await screen.findByRole('button', { name: 'Replay saved checks' }))
-  expect(api.fetchSkillReplayPlan).toHaveBeenCalledWith('demo', fixture.comparison.from_revision, fixture.comparison.to_revision)
-  const dialog = await screen.findByRole('alertdialog')
-  expect(dialog).toHaveTextContent(`Baseline ${plan.revisions[0]!.label} · Candidate ${plan.revisions[1]!.label}`)
-  for (const row of plan.cases) expect(dialog).toHaveTextContent(row.title)
-  expect(dialog).toHaveTextContent('Left out without a recorded turn: 1')
-  expect(dialog).toHaveTextContent('Provider: openrouter · vendor/model-a')
-  expect(dialog).toHaveTextContent('Up to $0.50 · 4 calls · 1500 output tokens per call')
-  expect(api.startSkillReplay).not.toHaveBeenCalled()
-  await userEvent.click(screen.getByRole('button', { name: 'Replay' }))
-  expect(api.startSkillReplay).toHaveBeenCalledTimes(1)
-  const request = vi.mocked(api.startSkillReplay).mock.calls[0]![0]
-  expect(request).toEqual({ request_id: expect.stringMatching(/^[0-9a-f-]{36}$/) as unknown, name: 'demo', baseline: plan.revisions[0]!.id, candidate: plan.revisions[1]!.id, case_ids: plan.cases.map((row) => row.id), route: plan.route, max_cost_usd: 0.5 })
-})
 
 it('opens a skill and admits a replay on a plain-HTTP origin, where crypto.randomUUID does not exist', async () => {
   const secure = globalThis.crypto

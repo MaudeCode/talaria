@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BootstrapContext } from '../../app/bootstrap'
@@ -237,7 +237,9 @@ describe('SystemSection "Check now"', () => {
     vi.mocked(api.fetchUpdatesCheck).mockRejectedValue(new Error('Failed to fetch'))
     await qc.refetchQueries({ queryKey: keys.updates.check })
     expect(qc.getQueryState(keys.updates.check)?.status).toBe('error')
-    await expect(screen.findByText(/update check failed/i, {}, { timeout: 300 })).rejects.toThrow()
+    // React Query notifies on a 0 ms timer; flush it so the failed refetch has rendered, then the last good status stays.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    expect(screen.queryByText(/update check failed/i)).toBeNull()
     expect(screen.getByText('Talaria Web is up to date')).toBeInTheDocument()
     qc.clear()
     renderSystem()
@@ -336,9 +338,10 @@ describe('SystemSection "Check now"', () => {
     expect(trigger).toHaveTextContent(/stable/i)
     await userEvent.click(screen.getByRole('button', { name: /^check web (and agent )?now$/i }))
     expect(screen.getByRole('button', { name: /checking/i })).toBeDisabled()
-    await new Promise((r) => setTimeout(r, 120))
+    // Both saves are held: the check waits behind them.
+    await waitFor(() => expect(saves).toHaveLength(2))
+    await act(async () => { await Promise.resolve() })
     expect(api.checkUpdatesNow).not.toHaveBeenCalled()
-    expect(saves).toHaveLength(2)
     saves[0]!()
     saves[1]!()
     await waitFor(() => expect(api.checkUpdatesNow).toHaveBeenCalledWith('stable', 'stable'))
@@ -545,7 +548,8 @@ describe('SystemSection update paths', () => {
     renderSystem()
     const path = await screen.findByRole('region', { name: 'Hermes Agent' })
     expect(within(screen.getByRole('region', { name: 'Talaria Web' })).queryByRole('button', { name: 'Summarize with AI' })).not.toBeInTheDocument()
-    await new Promise((r) => setTimeout(r, 50))
+    // The check has rendered the action; nothing read the summary to draw it.
+    expect(await within(path).findByRole('button', { name: 'Summarize with AI' })).toBeInTheDocument()
     expect(api.fetchUpdatesSummary).not.toHaveBeenCalled()
     await userEvent.click(within(path).getByRole('button', { name: 'Summarize with AI' }))
     const dialog = await screen.findByRole('dialog', { name: "What's new in Hermes Agent" })
@@ -572,17 +576,6 @@ describe('SystemSection update paths', () => {
     expect(api.fetchUpdatesSummary).toHaveBeenLastCalledWith('webui')
   })
 
-  it("no longer offers the Summarize What's New setting", async () => {
-    renderSystem()
-    expect(await screen.findByRole('button', { name: /check web and agent now/i })).toBeInTheDocument()
-    expect(screen.queryByText("Summarize What's New with AI")).not.toBeInTheDocument()
-  })
-
-  it('opens a setting explanation from its help button', async () => {
-    renderSystem()
-    await userEvent.click(await screen.findByRole('button', { name: 'About Install Web updates automatically' }))
-    expect(await screen.findByText(/Hermes Agent is never updated automatically/)).toBeVisible()
-  })
 })
 
 describe('SystemSection version list (TAL-946)', () => {

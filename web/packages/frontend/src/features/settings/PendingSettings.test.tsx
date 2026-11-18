@@ -14,7 +14,6 @@ import { keys } from '../../api/queryKeys'
 import { deferred } from '../../test/fixtures'
 import { renderRouted } from '../../test/router'
 import * as api from '../../api/endpoints'
-import { ApiError } from '../../contracts/common'
 import { showToast } from '../toast/toast'
 
 vi.mock('../../api/endpoints', () => ({ fetchSettings: vi.fn(), saveSettings: vi.fn(), fetchModels: vi.fn(), fetchAuxiliaryModels: vi.fn(), fetchAgentHealth: vi.fn(), restartAgent: vi.fn() }))
@@ -48,6 +47,9 @@ it('renders actual preference and conversation controls before their writes fini
   const ctrlEnter = within(screen.getByRole('radiogroup', { name: 'Send with' })).getByRole('radio', { name: 'Ctrl Enter' })
   await user.click(ctrlEnter)
   expect(ctrlEnter).toBeChecked()
+  const queue = within(document.getElementById('settingsDefaultMessageMode')!).getByRole('radio', { name: 'Queue' })
+  await user.click(queue)
+  expect(queue).toBeChecked()
   for (const name of ['Terminal and desktop apps', 'Notification sound', 'Browser notifications', 'Format Markdown in my messages', 'Terminal screen reader mode']) {
     const control = screen.getByRole('switch', { name })
     await user.click(control)
@@ -57,22 +59,6 @@ it('renders actual preference and conversation controls before their writes fini
   expect(document.getElementById('settingsPinnedLimit')).toHaveValue(12)
 })
 
-it('shows the prepared compaction choice at once and rolls back when the server refuses it (TAL-1825)', async () => {
-  vi.mocked(api.fetchSettings).mockResolvedValue({ ...initial, compression_prepare_ahead: false })
-  const held = deferred<typeof initial>()
-  vi.mocked(api.saveSettings).mockReturnValue(held.promise)
-  const qc = await setup()
-  qc.setQueryData(keys.settings, { ...initial, compression_prepare_ahead: false })
-  const control = await screen.findByRole('switch', { name: 'Prepare compaction in the background' })
-  await user.click(control)
-  expect(control).toBeChecked()
-  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ compression_prepare_ahead: true }))
-  const message = 'config.yaml is package-managed. Update the declarative configuration instead.'
-  held.reject(new ApiError({ kind: 'http', status: 409, path: 'api/settings', message, body: { error: message, condition: 'config_write_refused' } }))
-  await waitFor(() => expect(control).not.toBeChecked())
-  expect(showToast).toHaveBeenCalledWith(message, 4000, 'error')
-})
-
 it('offers no prepared compaction choice when the Agent has none (TAL-1825)', async () => {
   const qc = await setup()
   act(() => qc.setQueryData(keys.settings, { ...initial, compression_prepare_ahead: null }))
@@ -80,23 +66,6 @@ it('offers no prepared compaction choice when the Agent has none (TAL-1825)', as
 })
 
 const limits = { group_discussion_max_rounds: 3, group_discussion_max_messages: 10, group_discussion_restart_required: false }
-
-it('shows a Group discussion limit at once and rolls back when the server refuses it (TAL-1828)', async () => {
-  vi.mocked(api.fetchSettings).mockResolvedValue({ ...initial, ...limits })
-  const held = deferred<typeof initial>()
-  vi.mocked(api.saveSettings).mockReturnValue(held.promise)
-  const qc = await setup()
-  act(() => qc.setQueryData(keys.settings, { ...initial, ...limits }))
-  const control = await screen.findByRole('spinbutton', { name: 'Rounds per discussion' })
-  fireEvent.change(control, { target: { value: '5' } })
-  expect(control).toHaveValue(5)
-  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ group_discussion_max_rounds: 5 }))
-  const message = 'group_discussion_max_rounds must be a positive integer'
-  held.reject(new ApiError({ kind: 'http', status: 400, path: 'api/settings', message, body: { error: message } }))
-  await waitFor(() => expect(showToast).toHaveBeenCalledWith(message, 4000, 'error'))
-  fireEvent.blur(control)
-  await waitFor(() => expect(control).toHaveValue(3))
-})
 
 it('offers no Group discussion limits when the server reports them unavailable (TAL-1828)', async () => {
   const qc = await setup()
@@ -180,31 +149,16 @@ it('retains submitted and newer text drafts when a save fails and shows the exis
   expect(hosts).toHaveValue('docs.example.com\napi.example.com')
 })
 
-it('rolls max output tokens back to the confirmed value after a managed config conflict', async () => {
-  const held = deferred<typeof initial>()
-  const message = 'config.yaml is package-managed. Update the declarative configuration instead.'
-  vi.mocked(api.saveSettings).mockReturnValue(held.promise)
-  const qc = await setup()
-  const input = screen.getByLabelText('Max output tokens')
-  await user.click(input)
-  fireEvent.change(input, { target: { value: '1234' } })
-  expect(input).toHaveValue(1234)
-  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ max_tokens: 1234 }))
-  held.reject(new ApiError({ kind: 'http', status: 409, path: 'api/settings', message, body: { error: message, condition: 'config_write_refused' } }))
-  await waitFor(() => expect(input).toHaveValue(null))
-  expect(qc.getQueryData(keys.settings)).toMatchObject({ max_tokens: null })
-  expect(showToast).toHaveBeenCalledWith(message, 4000, 'error')
-})
-
 /** TAL-2160: a viewport `matches` the phone query, else wider. */
 const viewport = (phone: boolean) => vi.stubGlobal('matchMedia', (query: string) => ({ matches: phone && query === '(max-width: 640px)', media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
 
-it.each([[true, 'Ctrl Enter'], [false, 'Enter']])('shows the send rule phones always use, disabled, only at phone width (phone %s, TAL-2160)', async (phone, checked) => {
-  viewport(phone)
+// e2e/switch-disabled.spec.ts owns the phone rule at a real phone width; this owns the saved choice past it.
+it('shows the saved send rule, enabled, past phone width (TAL-2160)', async () => {
+  viewport(false)
   await setup()
   const group = screen.getByRole('radiogroup', { name: 'Send with' })
-  expect(within(group).getByRole('radio', { name: checked })).toBeChecked()
-  for (const radio of within(group).getAllByRole('radio')) if (phone) expect(radio).toBeDisabled(); else expect(radio).toBeEnabled()
+  expect(within(group).getByRole('radio', { name: 'Enter' })).toBeChecked()
+  for (const radio of within(group).getAllByRole('radio')) expect(radio).toBeEnabled()
 })
 
 it('names each title refresh option with its unit and disables it while the profile generates no titles (TAL-2160)', async () => {

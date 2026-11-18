@@ -43,6 +43,7 @@ test('consents to one exact bounded replay, cancels it, and keeps its results', 
   const dialog = page.getByRole('alertdialog')
   await expect(dialog).toContainText(`Baseline ${plan.revisions[0]!.label} · Candidate ${plan.revisions[1]!.label}`)
   for (const row of plan.cases) await expect(dialog).toContainText(row.title)
+  await expect(dialog).toContainText('Left out without a recorded turn: 1')
   await expect(dialog).toContainText('Provider: openrouter · vendor/model-a')
   await expect(dialog).toContainText('Up to $0.50 · 4 calls · 1500 output tokens per call')
   expect(starts).toEqual([])

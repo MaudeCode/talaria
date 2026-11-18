@@ -104,7 +104,6 @@
       "web/packages/frontend/src/features/chat/ChatSidePanel.test.tsx": 3,
       "web/packages/frontend/src/features/composer/ComposerNotices.test.tsx": 1,
       "web/packages/frontend/src/features/composer/chips.test.tsx": 1,
-      "web/packages/frontend/src/features/settings/SystemSection.test.tsx": 2,
       "web/packages/server/src/api/auth-flows.test.ts": 1,
       "web/packages/server/src/api/automation.test.ts": 2,
       "web/packages/server/src/api/gateway-lifecycle.test.ts": 1,
