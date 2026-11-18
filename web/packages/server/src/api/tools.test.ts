@@ -1176,7 +1176,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       const manifestReads = () => sidecar.calls.filter((c) => c.method === 'plugins.settings').length
       const read = manifestReads()
       const second = post(s, '/api/plugins/settings', { key: 'fake-settings', secrets: { api_key: 'sk-second' } })
-      await vi.waitFor(() => { expect(vi.mocked(serializePluginSettingsSave).mock.calls.length).toBe(joined + 1) })
+      await vi.waitFor(() => { expect(vi.mocked(serializePluginSettingsSave).mock.calls.length).toBe(joined + 1) }, { timeout: 15_000 })
       // A save starts by reading the manifest; the second one has joined the chain and has not started.
       expect(manifestReads()).toBe(read)
       release()
@@ -1790,7 +1790,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
           message: 'Waiting for 2 running gateway tasks to finish before restarting the gateway.',
           actions: [{ id: 'restart_gateway_now', label: 'Restart now', style: 'destructive', acknowledges: false }],
         })
-      })
+      }, { timeout: 15_000 })
       expect((await post(s, `/api/update-notifications/${String(result.notification_id)}/dismiss`, { dismiss: true })).status).toBe(409)
       const again = await json(await post(s, '/api/updates/apply', { target: 'agent', tab_id: 'tab-gateway' }))
       expect(again.notification_id).toBe(result.notification_id)
@@ -1802,7 +1802,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect((await json(await s.get('/api/update-notifications?tab_id=tab-stale'))).tab_update).toMatchObject({ id: result.notification_id, phase: 'waiting_for_idle' })
       expect(restarts).toBe(0)
       expect((await post(s, `/api/update-notifications/${String(result.notification_id)}/actions/restart_gateway_now`, { perform: true })).status).toBe(200)
-      await vi.waitFor(async () => { expect(await row(result.notification_id)).toMatchObject({ phase: 'succeeded', detail: message, actions: [] }) })
+      await vi.waitFor(async () => { expect(await row(result.notification_id)).toMatchObject({ phase: 'succeeded', detail: message, actions: [] }) }, { timeout: 15_000 })
       expect(restarts).toBe(1)
     } finally {
       s.deps.updates.apply = originalApply

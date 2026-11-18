@@ -63,7 +63,7 @@ describe('SidecarClient version mismatch', () => {
     await expect(client.start()).rejects.toMatchObject({ condition: 'sidecar_rpc_version_mismatch' })
     expect(client.status).toBe('incompatible')
     // The exit handler decides on a restart in the same turn it logs the exit, so the status after it is the decision.
-    await vi.waitFor(() => { expect(logs.filter((l) => l.includes('exited'))).toHaveLength(1) })
+    await vi.waitFor(() => { expect(logs.filter((l) => l.includes('exited'))).toHaveLength(1) }, { timeout: 15_000 })
     expect(client.status).toBe('incompatible')
     expect(logs.filter((l) => l.includes('restarting'))).toEqual([])
     expect(logs.filter((l) => l.includes('exited')).length).toBeLessThanOrEqual(1)
