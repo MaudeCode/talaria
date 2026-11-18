@@ -43,7 +43,8 @@ FIXTURE_READERS = {
 JOBS = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend", "web_sidecar"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
 WORKFLOWS = {
-    # CI owns the App jobs and the Web contract probe's fixture handoff.
+    # CI owns the App jobs and the Web contract probe's fixture handoff; workflow_overrides narrows a change to the
+    # jobs it touches.
     "ci.yml": {"app", "app_tooling", "web_sidecar", "contracts", "tooling"},
     "app-tests.yml": {"app", "contracts", "tooling"},
     "app-test-diagnostics.yml": {"tooling"},
@@ -318,20 +319,58 @@ def git_deleted_workflows(base, head):
     return {os.fsdecode(path) for path in data.split(b"\0") if path}
 
 
+# What each part of ci.yml can break, so a change runs only those suites (TAL-2461). Path detection, the gate, the
+# failure report and the handoff run in full on every pull request, which the tooling checks join; concurrency only
+# schedules runs (scripts/test-ci-concurrency.py). The contract probe's fixture feeds the App package tests. Any other
+# part, path detection's outputs included since every job reads them, keeps the whole ci.yml route.
+CI_PARTS = {
+    ("key", "concurrency"): {"tooling"},
+    ("job", "changes"): {"tooling"},
+    ("job", "report"): {"tooling"},
+    ("job", "gate"): {"tooling"},
+    ("job", "alert"): {"tooling"},
+    ("job", "tooling"): {"tooling"},
+    ("job", "app-tooling"): {"app_tooling", "tooling"},
+    ("job", "app"): WORKFLOWS["app-tests.yml"],
+    ("job", "contracts"): {"app", "contracts", "tooling"},
+    ("job", "web"): WORKFLOWS["web-verify.yml"],
+    ("job", "web-docker"): WORKFLOWS["web-docker-smoke.yml"],
+    ("job", "relay"): WORKFLOWS["relay-verify.yml"],
+}
+
+
+def workflow_parts(text):
+    """ci.yml's top-level keys, its jobs and each job's outputs as text. Column-0 comments are left out: YAML has no
+    other column-0 line starting with #, since a block scalar's content is indented."""
+    parts, part, job = {}, None, None
+    for line in text.splitlines():
+        if line.startswith("#"):
+            continue
+        if line[:1].strip():
+            part, job = ("key", line.split(":")[0]), None
+        elif part in (("key", "jobs"), ("job", job), ("outputs", job)) and re.match(r"  [^\s#]", line):
+            job = line.split(":")[0].strip()
+            part = ("job", job)
+        elif job and re.match(r"    [^\s#]", line):
+            part = ("outputs" if line.split(":")[0].strip() == "outputs" else "job", job)
+        if part:
+            parts.setdefault(part, []).append(line)
+    return {part: "\n".join(lines).rstrip() for part, lines in parts.items()}
+
+
 def workflow_overrides(base, head, paths):
     path = ".github/workflows/ci.yml"
     if path not in paths:
         return {}
     try:
-        before = git("show", f"{base}:{path}").decode()
-        after = git("show", f"{head}:{path}").decode() if head else Path(path).read_text()
+        before = workflow_parts(git("show", f"{base}:{path}").decode())
+        after = workflow_parts(git("show", f"{head}:{path}").decode() if head else Path(path).read_text())
     except (OSError, subprocess.CalledProcessError):
         return {}
-    # A change confined to this job cannot affect the App build or Web fixture handoff.
-    job = re.compile(r"^  app-tooling:\n(?:[ \t]*\n| {4}[^\n]*(?:\n|\Z))*", re.MULTILINE)
-    if job.search(before) and job.search(after) and job.sub("", before) == job.sub("", after):
-        return {path: {"app_tooling", "tooling"}}
-    return {}
+    changed = {part for part in before.keys() | after.keys() if before.get(part) != after.get(part)}
+    if before.keys() != after.keys() or not changed <= CI_PARTS.keys():
+        return {}
+    return {path: set().union({"tooling"}, *(CI_PARTS[part] for part in changed))}
 
 
 def check_diff(base, head, merge_base=False):
