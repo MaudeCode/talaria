@@ -1,3 +1,4 @@
+import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { LOCALE_INFO, negotiateLocale, resolveLocale } from './locales.js'
 
@@ -24,8 +25,9 @@ describe('resolveLocale', () => {
     expect(resolveLocale('en;drop')).toBeNull()
     expect(resolveLocale(null)).toBeNull()
   })
-  it('exposes every legacy locale with a speech tag', () => {
-    expect(LOCALE_INFO.map((l) => l.code)).toEqual(['en', 'it', 'ja', 'ru', 'es', 'de', 'zh', 'zh-Hant', 'pt', 'ko', 'fr', 'cs', 'tr', 'pl', 'vi'])
+  it('negotiates exactly the locales the frontend ships a message catalog for, each with a speech tag', () => {
+    const catalogs = readdirSync(new URL('../../frontend/messages', import.meta.url)).filter((name) => name.endsWith('.json')).map((name) => name.slice(0, -'.json'.length))
+    expect(LOCALE_INFO.map((l) => l.code).sort()).toEqual(catalogs.sort())
     for (const l of LOCALE_INFO) expect(l.speech).toMatch(/^[a-z]{2}-[A-Z]{2}$/)
   })
 })
