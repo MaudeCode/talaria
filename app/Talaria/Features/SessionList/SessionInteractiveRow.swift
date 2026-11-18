@@ -16,7 +16,8 @@ struct SessionListRow: View {
 
     var body: some View {
         row.equatable()
-            .sidebarListRow()
+            // The List's own row background shows the row sliding as one shape, with its actions right behind it.
+            .sidebarListRow(paintsBackground: false)
             .id(row.session.id)
             .transition(SessionListMotion.sessionRowTransition(reduceMotion: reduceMotion))
             .swipeActions(edge: .leading, allowsFullSwipe: false) {

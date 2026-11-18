@@ -178,8 +178,8 @@ extension View {
     }
 
     /// A `SidebarList` row's List insets, hidden separator and background.
-    func sidebarListRow() -> some View {
-        sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+    func sidebarListRow(paintsBackground: Bool = true) -> some View {
+        sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12), paintsBackground: paintsBackground)
     }
 
     /// The shared selection chrome and VoiceOver trait, with optional List-specific insets.
