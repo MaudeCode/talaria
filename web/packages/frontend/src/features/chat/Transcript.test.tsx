@@ -589,4 +589,3 @@ it('resumes a sent message\'s landing when a new chat\'s first send moves to its
     expect(motion.reveals().map((call) => call.animation.currentTime)).toEqual([undefined, 120])
   } finally { motion.restore() }
 })
-
