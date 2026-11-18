@@ -529,7 +529,6 @@
  "tests/test_handoff_methods.py::test_an_explicit_model_without_a_credential_is_credential_missing": 1.908,
  "tests/test_handoff_methods.py::test_append_message_writes_one_row_and_bumps_message_count": 2.686,
  "tests/test_home.py::test_a_named_profiles_plugin_secret_source_reaches_its_scope_after_the_root_loaded_the_agent_on_the_installed_agent": 2.079,
- "tests/test_home.py::test_agent_0_21_3_mirrors_the_launch_profile_policy": 0.003,
  "tests/test_home.py::test_concurrent_profiles_resolve_only_their_own_credentials_on_the_installed_agent": 1.022,
  "tests/test_home.py::test_concurrent_scope_entries_share_one_build": 0.005,
  "tests/test_home.py::test_concurrent_turns_run_under_their_own_profiles_terminal_backend_on_the_installed_agent": 2.455,
