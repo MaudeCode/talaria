@@ -55,7 +55,7 @@ final class SessionListArchiveUndoTests: XCTestCase {
 
     private func makeViewModel(
         _ stub: StubServer,
-        archiveUndoLifetime: Duration = .seconds(60)
+        archiveUndoClock: any Clock<Duration> = ManualTestClock()
     ) throws -> SessionListViewModel {
         MockURLProtocol.requestHandler = stub.handle
         let configuration = URLSessionConfiguration.ephemeral
@@ -64,7 +64,7 @@ final class SessionListArchiveUndoTests: XCTestCase {
         return SessionListViewModel(
             server: server,
             client: APIClient(baseURL: server, session: URLSession(configuration: configuration)),
-            archiveUndoLifetime: archiveUndoLifetime
+            archiveUndoClock: archiveUndoClock
         )
     }
 
@@ -135,15 +135,14 @@ final class SessionListArchiveUndoTests: XCTestCase {
 
     func testTheUndoExpiresAfterItsLifetimeWithoutAnotherRequest() async throws {
         let stub = StubServer()
-        let viewModel = try makeViewModel(stub, archiveUndoLifetime: .milliseconds(50))
+        let clock = ManualTestClock()
+        let viewModel = try makeViewModel(stub, archiveUndoClock: clock)
         await viewModel.load()
         _ = await viewModel.archive(try session("session-abc", in: viewModel))
-        XCTAssertNotNil(viewModel.archiveUndo)
 
-        let deadline = ContinuousClock.now + .seconds(5)
-        while viewModel.archiveUndo != nil, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(20))
-        }
+        await clock.advance(by: SessionListViewModel.defaultArchiveUndoLifetime - .milliseconds(1))
+        XCTAssertNotNil(viewModel.archiveUndo, "The undo expired before its lifetime")
+        await clock.advance(by: .milliseconds(1))
         let didUndo = await viewModel.undoArchive()
 
         XCTAssertNil(viewModel.archiveUndo, "The undo did not expire")
@@ -160,15 +159,13 @@ final class SessionListArchiveUndoTests: XCTestCase {
         let archived = try session("session-abc", in: viewModel)
 
         let archiving = Task { await viewModel.archive(archived) }
-        let offerDeadline = ContinuousClock.now + .seconds(5)
-        while viewModel.archiveUndo == nil, ContinuousClock.now < offerDeadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        XCTAssertNotNil(viewModel.archiveUndo, "Undo was not offered while the reload was in flight")
+        await awaitObserved("Undo was not offered while the reload was in flight") { viewModel.archiveUndo != nil }
         let undoing = Task { await viewModel.undoArchive() }
-        // Lets Undo start while the reload is still held; the mock serves requests one at a
+        // Undo has started while the reload is still held; the mock serves requests one at a
         // time, so the unarchive itself only goes out once the reload is released.
-        try await Task.sleep(for: .milliseconds(100))
+        await awaitObserved("Undo did not start while the reload was in flight") {
+            viewModel.pendingChange(for: archived)?.label == "Restore"
+        }
         stub.releaseHeldLoad.signal()
         _ = await archiving.value
         let didUndo = await undoing.value
@@ -176,5 +173,16 @@ final class SessionListArchiveUndoTests: XCTestCase {
         XCTAssertTrue(didUndo, "Undo was dropped while the archive reload was in flight")
         XCTAssertEqual(stub.unarchivedIDs, ["session-abc"])
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["session-abc", "session-def"])
+    }
+
+    /// Waits for `condition` on the view model's own observation, under the shared five-second ceiling.
+    private func awaitObserved(_ message: String, _ condition: @escaping @MainActor () -> Bool) async {
+        while !condition() {
+            let changed = expectation(description: message)
+            withObservationTracking { _ = condition() } onChange: { changed.fulfill() }
+            guard await XCTWaiter.fulfillment(of: [changed], timeout: 5) == .completed else {
+                return XCTFail(message)
+            }
+        }
     }
 }

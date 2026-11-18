@@ -100,8 +100,8 @@ public final class SessionListViewModel {
     /// server omits the field — the Archived entry stays hidden then.
     public private(set) var archivedCount: Int?
     /// Server totals for the automated-session groups from the last successful list
-    /// load (TAL-482). nil until then or from an older server; the groups then count
-    /// the loaded rows instead.
+    /// load (TAL-482), kept in the response cache so the cached paint shows both groups.
+    /// nil until then; the groups then show no total.
     public private(set) var automatedSessionCounts: AutomatedSessionCounts? {
         didSet { cachedSessionGroups = nil }
     }
@@ -205,6 +205,8 @@ public final class SessionListViewModel {
     /// TAL-1479: the App's Needs you widget store; each list refresh also writes the server's waiting chats there.
     private let needsYouStore: NeedsYouSnapshotStore?
     private let archiveUndoLifetime: Duration
+    /// Times the archive undo's lifetime.
+    private let archiveUndoClock: any Clock<Duration>
     /// How long a chat archive stays undoable.
     public nonisolated static let defaultArchiveUndoLifetime: Duration = .seconds(5)
 
@@ -213,11 +215,13 @@ public final class SessionListViewModel {
         client: APIClient? = nil,
         responseCache: ResponseCache? = nil,
         needsYouStore: NeedsYouSnapshotStore? = nil,
-        archiveUndoLifetime: Duration = defaultArchiveUndoLifetime
+        archiveUndoLifetime: Duration = defaultArchiveUndoLifetime,
+        archiveUndoClock: any Clock<Duration> = ContinuousClock()
     ) {
         self.server = server
         self.needsYouStore = needsYouStore
         self.archiveUndoLifetime = archiveUndoLifetime
+        self.archiveUndoClock = archiveUndoClock
         cacheGeneration = ServerCacheGeneration.current(for: server)
         self.responseCache = responseCache
         let resolvedClient = client ?? APIClient(baseURL: server)
@@ -350,21 +354,13 @@ public final class SessionListViewModel {
         _ = automatedSessionCounts
         if let cachedSessionGroups { return cachedSessionGroups }
 
+        // The server files each row under its `sidebar_group` and counts each automated group (TAL-482, TAL-1534).
         var groups = ScheduledSessionGroups(
-            ordinary: candidates.filter { !$0.isCronSession && !$0.isWebhookSession },
-            scheduled: candidates.filter {
-                $0.isCronSession && !$0.isWebhookSession && $0.archived != true
-            },
-            webhook: candidates.filter { $0.isWebhookSession && $0.archived != true },
-            totalScheduledCount: automatedVisibility.showsCron
-                ? automatedSessionCounts?.scheduled
-                    // Old-server fallback (TAL-482): delete once every supported server ships the counts.
-                    ?? sessions.filter { $0.isCronSession && !$0.isWebhookSession && $0.archived != true }.count
-                : 0,
-            totalWebhookCount: automatedVisibility.showsWebhook
-                ? automatedSessionCounts?.webhook
-                    ?? sessions.filter { $0.isWebhookSession && $0.archived != true }.count
-                : 0
+            ordinary: candidates.filter { $0.sidebarGroup != "scheduled" && $0.sidebarGroup != "webhook" },
+            scheduled: candidates.filter { $0.sidebarGroup == "scheduled" },
+            webhook: candidates.filter { $0.sidebarGroup == "webhook" },
+            totalScheduledCount: automatedVisibility.showsCron ? automatedSessionCounts?.scheduled ?? 0 : 0,
+            totalWebhookCount: automatedVisibility.showsWebhook ? automatedSessionCounts?.webhook ?? 0 : 0
         )
         groups.scheduledCountIsPartial = automatedSessionCounts?.scheduledIsPartial ?? false
         groups.webhookCountIsPartial = automatedSessionCounts?.webhookIsPartial ?? false
@@ -377,8 +373,7 @@ public final class SessionListViewModel {
     /// server's. This is the expected-success window, so it stays out of offline mode.
     public func paintCachedStateIfEmpty(modelContext: ModelContext) {
         if sessions.isEmpty,
-           let cachedSessions = try? CacheStore.cachedSessions(serverURL: server, in: modelContext)
-            .filter(\.shouldAppearInSessionList),
+           let cachedSessions = try? CacheStore.cachedSessions(serverURL: server, in: modelContext),
            !cachedSessions.isEmpty {
             sessions = cachedSessions
             isShowingCachedPaint = true
@@ -392,6 +387,14 @@ public final class SessionListViewModel {
         if agentStorage == nil {
             agentStorage = responseCache?.entry(ResponseCache.Kind.agentStorage).load(AgentStorage.self)
         }
+        restoreCachedAutomatedSessionCounts()
+    }
+
+    /// A cache written before the counts were cached has none, and the groups then show no total.
+    private func restoreCachedAutomatedSessionCounts() {
+        guard automatedSessionCounts == nil else { return }
+        automatedSessionCounts = responseCache?.entry(ResponseCache.Kind.automatedSessionCounts)
+            .load(AutomatedSessionCounts.self)
     }
 
     /// Whether the rows are the cached paint, not yet replaced by a server answer. A failed load
@@ -484,16 +487,13 @@ public final class SessionListViewModel {
 
         // Resolved before the request, so a list in flight across a profile switch cannot cache for the new profile.
         let agentStorageEntry = responseCache?.entry(ResponseCache.Kind.agentStorage)
+        let countsEntry = responseCache?.entry(ResponseCache.Kind.automatedSessionCounts)
         do {
             let needsYouGeneration = NeedsYouSnapshotStore.generation
             let response = try await client.sessions(visibility: .showAll)
             guard generation == loadGeneration else { return true }
             let visibleSessions = (response.sessions ?? [])
-                .filter {
-                    Self.nonEmpty($0.sessionId) != nil
-                        && $0.archived != true
-                        && $0.shouldAppearInSessionList
-                }
+                .filter { Self.nonEmpty($0.sessionId) != nil && $0.archived != true }
             applySessions(
                 visibleSessions,
                 archivedCount: response.archivedCount,
@@ -501,6 +501,9 @@ public final class SessionListViewModel {
                 claimCountAtStart: claimCountAtStart
             )
             automatedSessionCounts = response.automatedSessionCounts
+            if let data = try? JSONEncoder().encode(response.automatedSessionCounts) {
+                countsEntry?.save(data)
+            }
             sidebarGroups = response.sidebarGroups
             agentStorage = response.agentStorage
             if let data = try? JSONEncoder().encode(response.agentStorage) {
@@ -540,9 +543,9 @@ public final class SessionListViewModel {
             if let reason = CacheFallbackPolicy.reason(for: error), let modelContext {
                 do {
                     let cachedSessions = try CacheStore.cachedSessions(serverURL: server, in: modelContext)
-                        .filter(\.shouldAppearInSessionList)
                     if !cachedSessions.isEmpty {
                         sessions = cachedSessions
+                        restoreCachedAutomatedSessionCounts()
                         cachedDataReason = reason
                         errorMessage = nil
                     } else {
@@ -804,12 +807,11 @@ public final class SessionListViewModel {
 
             let session = SessionSummary(from: sessionDetail)
             if session.archived != true,
-               session.shouldAppearInSessionList,
                !sessions.contains(where: { $0.sessionId == session.sessionId }) {
                 claimRow(session, inserting: true)
             }
 
-            if let modelContext, session.shouldAppearInSessionList {
+            if let modelContext {
                 do {
                     try writeCacheIfCurrent { try CacheStore.cacheSession(session, serverURL: server, in: modelContext) }
                 } catch {
@@ -890,10 +892,7 @@ public final class SessionListViewModel {
     /// stale actions until the next load. Only an existing row is
     /// replaced — opening a session never adds one to the list.
     private func refreshRow(with session: SessionSummary, modelContext: ModelContext?) {
-        guard claimRow(session, inserting: false),
-              let modelContext,
-              session.shouldAppearInSessionList
-        else { return }
+        guard claimRow(session, inserting: false), let modelContext else { return }
         do {
             try writeCacheIfCurrent { try CacheStore.cacheSession(session, serverURL: server, in: modelContext) }
         } catch {
@@ -971,8 +970,8 @@ public final class SessionListViewModel {
         archiveUndoOffers += 1
         let undo = SessionArchiveUndo(sessionID: sessionID, offer: archiveUndoOffers)
         archiveUndo = undo
-        archiveUndoTask = Task { [weak self, archiveUndoLifetime] in
-            try? await Task.sleep(for: archiveUndoLifetime)
+        archiveUndoTask = Task { [weak self, archiveUndoLifetime, archiveUndoClock] in
+            try? await archiveUndoClock.sleep(for: archiveUndoLifetime)
             guard !Task.isCancelled, let self, self.archiveUndo == undo else { return }
             self.archiveUndo = nil
         }
@@ -1559,15 +1558,13 @@ public final class SessionListViewModel {
                 return .failed(message, canRetry: false)
             }
 
-            if newSession.shouldAppearInSessionList {
-                claimRow(newSession, inserting: true)
+            claimRow(newSession, inserting: true)
 
-                if let modelContext {
-                    do {
-                        try writeCacheIfCurrent { try CacheStore.cacheSession(newSession, serverURL: server, in: modelContext) }
-                    } catch {
-                        cacheErrorMessage = error.localizedDescription
-                    }
+            if let modelContext {
+                do {
+                    try writeCacheIfCurrent { try CacheStore.cacheSession(newSession, serverURL: server, in: modelContext) }
+                } catch {
+                    cacheErrorMessage = error.localizedDescription
                 }
             }
 
@@ -1635,15 +1632,6 @@ public final class SessionListViewModel {
 
     public func clearActionError() {
         actionErrorMessage = nil
-    }
-
-    /// Drops any empty Untitled placeholders still held in memory. Used when
-    /// returning from the pending new-chat flow so stale rows cannot flash during
-    /// the navigation pop animation.
-    public func removeEmptySidebarPlaceholders() {
-        let filtered = sessions.filter(\.shouldAppearInSessionList)
-        guard filtered.count != sessions.count else { return }
-        sessions = filtered
     }
 
     private static func normalizedSearchQuery(_ value: String) -> String {

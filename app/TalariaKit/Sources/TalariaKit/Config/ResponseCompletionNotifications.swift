@@ -93,7 +93,6 @@ public struct ResponseCompletionNotificationTracker: Sendable {
 
 public protocol ResponseCompletionNotificationScheduling: Sendable {
     func authorizationStatus() async -> UNAuthorizationStatus
-    func requestAuthorization() async -> Bool
     func schedule(_ request: ResponseCompletionNotificationRequest) async
 }
 
@@ -150,10 +149,8 @@ public enum ResponseCompletionNotificationService {
         await scheduler.authorizationStatus()
     }
 
-    public static func requestAuthorization(
-        scheduler: any ResponseCompletionNotificationScheduling = UserNotificationResponseCompletionScheduler()
-    ) async -> Bool {
-        await scheduler.requestAuthorization()
+    public static func requestAuthorization() async -> Bool {
+        await UserNotificationResponseCompletionScheduler().requestAuthorization()
     }
 
     @discardableResult

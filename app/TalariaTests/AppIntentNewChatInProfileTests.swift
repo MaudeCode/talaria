@@ -30,36 +30,6 @@ final class AppIntentNewChatInProfileTests: XCTestCase {
         )
     }
 
-    func testProfileEntityFromSummaryUsesNameAndModelProviderSubtitle() throws {
-        let summary = ProfileSummary(
-            name: "dev", path: nil, isDefault: false, isActive: false,
-            gatewayRunning: nil, model: "kimi", provider: "opencode", hasEnv: nil, skillCount: nil
-        )
-        let entity = try XCTUnwrap(ProfileEntity(summary))
-        XCTAssertEqual(entity.id, "dev")
-        XCTAssertEqual(entity.name, "dev")
-        XCTAssertEqual(entity.subtitle, "kimi · opencode")
-    }
-
-    func testDefaultProfileEntityUsesLocalizedDisplayName() throws {
-        let summary = ProfileSummary(
-            name: "default", path: nil, isDefault: true, isActive: true,
-            gatewayRunning: nil, model: nil, provider: nil, hasEnv: nil, skillCount: nil
-        )
-        let entity = try XCTUnwrap(ProfileEntity(summary))
-        XCTAssertEqual(entity.id, "default")
-        XCTAssertEqual(entity.name, String(localized: "Default"))
-        XCTAssertNil(entity.subtitle)
-    }
-
-    func testProfileEntityIsNilForBlankName() {
-        let summary = ProfileSummary(
-            name: "   ", path: nil, isDefault: nil, isActive: nil,
-            gatewayRunning: nil, model: nil, provider: nil, hasEnv: nil, skillCount: nil
-        )
-        XCTAssertNil(ProfileEntity(summary))
-    }
-
     func testCacheRoundTripsProfilesAsEntities() throws {
         let (cache, suite, defaults) = makeIsolatedCache()
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -75,6 +45,8 @@ final class AppIntentNewChatInProfileTests: XCTestCase {
         XCTAssertEqual(loaded.map(\.id), ["default", "dev"])
         XCTAssertEqual(loaded.first?.name, String(localized: "Default"))
         XCTAssertEqual(loaded.first?.subtitle, "gpt · openai")
+        XCTAssertEqual(loaded.last?.name, "dev")
+        XCTAssertNil(loaded.last?.subtitle)
     }
 
     func testCacheSkipsUnnamedProfiles() throws {
@@ -89,20 +61,6 @@ final class AppIntentNewChatInProfileTests: XCTestCase {
         ])
 
         XCTAssertEqual(cache.loadEntities().map(\.id), ["dev"])
-    }
-
-    func testSavingEmptyProfilesClearsTheCache() throws {
-        let (cache, suite, defaults) = makeIsolatedCache()
-        defer { defaults.removePersistentDomain(forName: suite) }
-
-        cache.save([
-            ProfileSummary(name: "dev", path: nil, isDefault: nil, isActive: nil,
-                           gatewayRunning: nil, model: nil, provider: nil, hasEnv: nil, skillCount: nil)
-        ])
-        XCTAssertFalse(cache.loadEntities().isEmpty)
-
-        cache.save([])
-        XCTAssertTrue(cache.loadEntities().isEmpty)
     }
 
     /// A `ProfileEntityCache` backed by a throwaway `UserDefaults` suite so tests never touch

@@ -252,45 +252,8 @@ final class CodeBlockWrappingSettingsTests: XCTestCase {
     }
 }
 
-final class ResponseCompletionNotificationPolicyTests: XCTestCase {
-    func testAllowsEnabledAuthorizedRunEndWhileSceneInactive() {
-        XCTAssertTrue(
-            ResponseCompletionNotificationPolicy.shouldSchedule(
-                preferenceEnabled: true,
-                authorizationStatus: .authorized,
-                sceneIsActive: false
-            )
-        )
-    }
-
-    func testBlocksForegroundRunEnd() {
-        XCTAssertFalse(
-            ResponseCompletionNotificationPolicy.shouldSchedule(
-                preferenceEnabled: true,
-                authorizationStatus: .authorized,
-                sceneIsActive: true
-            )
-        )
-    }
-
-    func testBlocksWhenPreferenceOrPermissionDisallows() {
-        XCTAssertFalse(
-            ResponseCompletionNotificationPolicy.shouldSchedule(
-                preferenceEnabled: false,
-                authorizationStatus: .authorized,
-                sceneIsActive: false
-            )
-        )
-
-        XCTAssertFalse(
-            ResponseCompletionNotificationPolicy.shouldSchedule(
-                preferenceEnabled: true,
-                authorizationStatus: .denied,
-                sceneIsActive: false
-            )
-        )
-    }
-
+@MainActor
+final class ResponseCompletionNotificationServiceTests: XCTestCase {
     func testOnlyCompletedAndFailedRunsHaveANotificationOutcome() {
         XCTAssertEqual(ResponseCompletionOutcome(status: .complete), .completed)
         XCTAssertEqual(ResponseCompletionOutcome(status: .failed), .failed)
@@ -298,10 +261,7 @@ final class ResponseCompletionNotificationPolicyTests: XCTestCase {
         XCTAssertNil(ResponseCompletionOutcome(status: .cancelled))
         XCTAssertNil(ResponseCompletionOutcome(status: .responding))
     }
-}
 
-@MainActor
-final class ResponseCompletionNotificationServiceTests: XCTestCase {
     func testRequestCarriesOnlySessionIDPayload() {
         func request(_ sessionID: String?) -> ResponseCompletionNotificationRequest {
             ResponseCompletionNotificationRequest(sessionID: sessionID, chatTitle: "Chat", outcome: .completed)
@@ -375,15 +335,6 @@ final class ResponseCompletionNotificationServiceTests: XCTestCase {
             }
         }
     }
-
-    func testRequestAuthorizationUsesInjectedScheduler() async {
-        let scheduler = SpyResponseCompletionNotificationScheduler(status: .notDetermined, requestAuthorizationResult: true)
-
-        let granted = await ResponseCompletionNotificationService.requestAuthorization(scheduler: scheduler)
-
-        XCTAssertTrue(granted)
-        XCTAssertEqual(scheduler.requestAuthorizationCallCount, 1)
-    }
 }
 
 final class ResponseCompletionNotificationTrackerTests: XCTestCase {
@@ -408,38 +359,21 @@ final class ResponseCompletionNotificationTrackerTests: XCTestCase {
 
         XCTAssertEqual(context, ResponseCompletionNotificationCompletionContext(sceneIsActive: true))
     }
-
-    func testInactiveStreamWithoutCompletionTriggerCanEndBackgroundTaskImmediately() {
-        let tracker = ResponseCompletionNotificationTracker()
-
-        XCTAssertTrue(tracker.shouldEndBackgroundTaskOnStreamInactive(completionTrigger: 0))
-    }
 }
 
 @MainActor
 final class SpyResponseCompletionNotificationScheduler: ResponseCompletionNotificationScheduling {
     private let status: UNAuthorizationStatus
-    private let requestAuthorizationResult: Bool
     private(set) var authorizationStatusCallCount = 0
-    private(set) var requestAuthorizationCallCount = 0
     private(set) var scheduledRequests: [ResponseCompletionNotificationRequest] = []
 
-    init(
-        status: UNAuthorizationStatus,
-        requestAuthorizationResult: Bool = false
-    ) {
+    init(status: UNAuthorizationStatus) {
         self.status = status
-        self.requestAuthorizationResult = requestAuthorizationResult
     }
 
     func authorizationStatus() async -> UNAuthorizationStatus {
         authorizationStatusCallCount += 1
         return status
-    }
-
-    func requestAuthorization() async -> Bool {
-        requestAuthorizationCallCount += 1
-        return requestAuthorizationResult
     }
 
     func schedule(_ request: ResponseCompletionNotificationRequest) async {

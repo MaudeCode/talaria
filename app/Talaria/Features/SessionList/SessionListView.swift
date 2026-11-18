@@ -586,7 +586,6 @@ struct SessionListView: View {
                 SessionListReturnRefresh.run(
                     from: oldValue,
                     to: newValue,
-                    suppressEmptyPlaceholders: viewModel.removeEmptySidebarPlaceholders,
                     refreshSessions: refreshAfterReturningIfNeeded
                 )
             }
@@ -1485,7 +1484,7 @@ struct SessionListView: View {
                     title: String(localized: "Scheduled sessions"),
                     isEnabled: showsCronSessions,
                     emptySystemImage: "calendar.badge.clock",
-                    includes: { $0.isCronSession && !$0.isWebhookSession },
+                    includes: { $0.sidebarGroup == "scheduled" },
                     viewModel: viewModel,
                     selectedSessionID: navigationState.selectedSectionSession?.sessionId,
                     actions: sessionRowActions(in: .scheduled)
@@ -1495,7 +1494,7 @@ struct SessionListView: View {
                     title: String(localized: "Webhook sessions"),
                     isEnabled: showsWebhookSessions,
                     emptySystemImage: "bolt.horizontal.circle",
-                    includes: { $0.isWebhookSession },
+                    includes: { $0.sidebarGroup == "webhook" },
                     viewModel: viewModel,
                     selectedSessionID: navigationState.selectedSectionSession?.sessionId,
                     actions: sessionRowActions(in: .webhook)

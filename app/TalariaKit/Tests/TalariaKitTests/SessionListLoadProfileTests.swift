@@ -1,8 +1,5 @@
 import XCTest
-import AVFoundation
-import ImageIO
 import SwiftData
-import UniformTypeIdentifiers
 @testable import TalariaKit
 
 
@@ -635,7 +632,7 @@ extension SessionListMutationTests {
     }
 
     @MainActor
-    func testLoadFiltersEmptyUntitledPlaceholdersButKeepsRealUntitledRows() async throws {
+    func testLoadShowsEveryIdentifiedRowTheServerSends() async throws {
         let context = try makeContext()
         let serverURL = try XCTUnwrap(URL(string: "https://example.test"))
         let viewModel = try makeViewModel { request in
@@ -713,8 +710,12 @@ extension SessionListMutationTests {
 
         await viewModel.load(modelContext: context)
 
+        // The server decides which drafts the sidebar lists; the App drops only rows without an id.
         let expectedIDs = [
+            "empty-placeholder",
+            "empty-placeholder-missing-count",
             "contentful-untitled",
+            "recent-untitled",
             "streaming-untitled",
             "pending-untitled",
             "worktree-untitled",
@@ -760,7 +761,7 @@ extension SessionListMutationTests {
     }
 
     @MainActor
-    func testCreateSessionReturnsEmptyPlaceholderWithoutInsertingIntoSessionList() async throws {
+    func testCreatedSessionIsListedAndCachedWithoutAListReload() async throws {
         let context = try makeContext()
         let serverURL = try XCTUnwrap(URL(string: "https://example.test"))
         var requestedPaths: [String] = []
@@ -810,8 +811,9 @@ extension SessionListMutationTests {
         let created = await viewModel.createSession(modelContext: context)
 
         XCTAssertEqual(created?.sessionId, "new-123")
-        XCTAssertTrue(viewModel.sessions.isEmpty)
-        XCTAssertTrue(try CacheStore.cachedSessions(serverURL: serverURL, in: context).isEmpty)
+        // The user's own new chat shows at once; the next list load converges on the server's row.
+        XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["new-123"])
+        XCTAssertEqual(try CacheStore.cachedSessions(serverURL: serverURL, in: context).compactMap(\.sessionId), ["new-123"])
         XCTAssertEqual(requestedPaths, ["/api/workspaces", "/api/session/new"])
         XCTAssertFalse(viewModel.isCreatingSession)
         XCTAssertNil(viewModel.actionErrorMessage)

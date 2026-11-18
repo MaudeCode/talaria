@@ -61,8 +61,9 @@ final class AppIntentNewChatTests: XCTestCase {
     @MainActor
     func testRouterIgnoresNilDeepLink() {
         let router = AppIntentRouter.shared
+        router.requestDeepLink(TalariaDeepLink.newChatURL)
         router.requestDeepLink(nil)
-        XCTAssertNil(router.pendingDeepLink)
+        XCTAssertEqual(router.pendingDeepLink, TalariaDeepLink.newChatURL)
     }
 
     // MARK: - New Chat with Voice (issue #338)

@@ -119,6 +119,45 @@ extension SessionListMutationTests {
         XCTAssertEqual(relaunch.agentStorage, AgentStorage(state: .ok, reason: nil), "The server's answer replaces the cached state")
     }
 
+    /// The Scheduled and Webhook sections read the server's group counts, so a relaunch paints the last counts with
+    /// the cached rows instead of hiding both sections until the server answers.
+    func testRelaunchShowsTheLastAutomatedGroupCountsBeforeTheListLoads() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let cache = makeResponseCache(server: server)
+        let context = try makeContext()
+        let client = try makeClient(server: server) { request in
+            apiTestJSONResponse("""
+            {"sessions": [
+              {"session_id": "cron-1", "title": "Nightly", "source_kind": "cron", "sidebar_group": "scheduled"},
+              {"session_id": "hook-1", "title": "Deploy hook", "source_kind": "webhook", "sidebar_group": "webhook"}
+            ], "scheduled_session_count": 240, "scheduled_sessions_truncated": true,
+               "webhook_session_count": 3, "webhook_sessions_truncated": false}
+            """, for: request)
+        }
+        await SessionListViewModel(server: server, client: client, responseCache: cache).load(modelContext: context)
+
+        let relaunchClient = try makeClient(server: server) { request in
+            apiTestJSONResponse("""
+            {"sessions": [{"session_id": "cron-1", "title": "Nightly", "source_kind": "cron", "sidebar_group": "scheduled"}],
+             "scheduled_session_count": 1, "scheduled_sessions_truncated": false,
+             "webhook_session_count": 0, "webhook_sessions_truncated": false}
+            """, for: request)
+        }
+        let relaunch = SessionListViewModel(server: server, client: relaunchClient, responseCache: cache)
+        relaunch.paintCachedStateIfEmpty(modelContext: context)
+        let painted = relaunch.scheduledSessionGroups(searchText: "", selectedProjectID: nil)
+        XCTAssertEqual(painted.totalScheduledCount, 240)
+        XCTAssertTrue(painted.scheduledCountIsPartial)
+        XCTAssertEqual(painted.totalWebhookCount, 3)
+        XCTAssertTrue(painted.showsDisclosure(isSearchActive: false))
+        XCTAssertTrue(painted.showsWebhookDisclosure(isSearchActive: false))
+
+        await relaunch.load(modelContext: context)
+        let live = relaunch.scheduledSessionGroups(searchText: "", selectedProjectID: nil)
+        XCTAssertEqual(live.totalScheduledCount, 1, "The server's answer replaces the cached counts")
+        XCTAssertEqual(live.totalWebhookCount, 0)
+    }
+
     /// A list that was in flight across a profile switch keeps its storage state out of the new profile's cache.
     func testAListInFlightAcrossAProfileSwitchDoesNotCacheItsStorageStateForTheNewProfile() async throws {
         let server = try XCTUnwrap(URL(string: "https://tal830-profile-switch.test"))

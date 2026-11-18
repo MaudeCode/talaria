@@ -106,4 +106,16 @@ final class SidebarPresentationTests: XCTestCase {
             hasVerticalBar: true, storedChoice: true, drawerIsPresented: false)
         XCTAssertTrue(reconciled.showsColumn)
     }
+
+    func testSecondChatUsesTheSidebarDrawerEvenAcrossABookFold() {
+        for divided in [false, true] {
+            let presentation = SidebarPresentation(isRegularWidth: true, splitSize: CGSize(width: 951, height: 669),
+                hasVerticalBar: false, storedChoice: true, hidesSidebarColumn: true,
+                hasVerticalDivision: divided, hasSecondaryChat: true)
+            XCTAssertFalse(presentation.showsColumn, "The arrangement owns both fold regions")
+            XCTAssertFalse(presentation.columnIsForced)
+            XCTAssertTrue(presentation.drawerEnabled, "Sidebar access must still work beside a second chat")
+            XCTAssertEqual(presentation.toggleTarget, .drawer)
+        }
+    }
 }

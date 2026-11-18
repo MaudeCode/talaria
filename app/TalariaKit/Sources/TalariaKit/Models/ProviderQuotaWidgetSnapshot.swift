@@ -186,8 +186,7 @@ public struct ProviderQuotaWidgetSnapshotStore {
         updatedSourceIDs: Set<String>? = nil,
         serverID: String? = nil,
         profileID: String? = nil,
-        sourceGeneration: String? = nil,
-        at date: Date = Date()
+        sourceGeneration: String? = nil
     ) -> Bool {
         guard sources.allSatisfy({ $0.scopeID == scopeID }) else { return false }
         let previous = Dictionary(uniqueKeysWithValues: (load()?.sources ?? []).map { ($0.sourceID, $0) })
@@ -202,7 +201,7 @@ public struct ProviderQuotaWidgetSnapshotStore {
         }
         guard let defaults,
               let data = try? JSONEncoder().encode(
-                ProviderQuotaWidgetSnapshot(updatedAt: date, sources: persistedSources, serverID: serverID, profileID: profileID, sourceGeneration: sourceGeneration)
+                ProviderQuotaWidgetSnapshot(updatedAt: Date(), sources: persistedSources, serverID: serverID, profileID: profileID, sourceGeneration: sourceGeneration)
               )
         else {
             return false

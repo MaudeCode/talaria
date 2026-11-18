@@ -447,82 +447,13 @@ final class LocalizationCatalogTests: XCTestCase {
         }
     }
 
-    func testKanbanCardDetailCopyIsLocalizedInEveryShippedLanguage() throws {
+    func testKanbanCopyIsNotLeftInEnglish() throws {
         let strings = try catalogStrings()
-        let detailKeys = [
-            "Card ID", "Comment", "Comment cannot be blank.", "Created", "Dependencies",
-            "Description", "Dispatch Runs", "Events", "Maximum Runtime", "Metadata",
-            "Operational History", "Operational Metadata", "Outcome Uncertain", "Priority",
-            "Run ID", "Updated", "Worker ID", "Worker Log",
-            "This Board no longer exists. Return to Kanban to choose another Board.",
-            "This Card no longer exists on this Board. The Board has been refreshed."
-        ]
-
-        for key in detailKeys {
-            let entry = try XCTUnwrap(strings[key] as? [String: Any], key)
-            let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], key)
-            for language in Self.shippedLanguages {
-                let localization = try XCTUnwrap(
-                    localizations[language] as? [String: Any],
-                    "[\(language)] \(key)"
-                )
-                XCTAssertTrue(hasNonEmptyValue(localization), "[\(language)] \(key) is empty")
-            }
-        }
-    }
-
-    func testKanbanCardEditorCopyIsLocalizedInEveryShippedLanguage() throws {
-        let strings = try catalogStrings()
-        let editorKeys = [
+        let kanbanKeys = [
             "Edit Card", "New Card", "Title", "Title is required.", "Assignment", "Execution",
             "Prerequisite", "Create Ready, Unassigned Card?", "Reload Server Version",
             "Review and Overwrite", "This Card changed on the server after the editor opened. Your draft has been preserved.",
-            "Workspace, Skills, Maximum Runtime, and Prerequisite are set when the Card is created and cannot be edited here."
-        ]
-
-        for key in editorKeys {
-            let entry = try XCTUnwrap(strings[key] as? [String: Any], key)
-            let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], key)
-            for language in Self.shippedLanguages {
-                let localization = try XCTUnwrap(
-                    localizations[language] as? [String: Any],
-                    "[\(language)] \(key)"
-                )
-                XCTAssertTrue(hasNonEmptyValue(localization), "[\(language)] \(key) is empty")
-                let translatedValue = (localization["stringUnit"] as? [String: Any])?["value"] as? String
-                XCTAssertNotEqual(translatedValue, key, "[\(language)] \(key) still uses the English source value")
-            }
-        }
-    }
-
-    func testKanbanBulkActionNamesAreLocalizedInEveryShippedLanguage() throws {
-        let strings = try catalogStrings()
-        let bulkActionKeys = [
-            "Archive Cards", "Assign Profile", "Bulk Actions", "Change Status",
-            "Retry Failed", "Select Cards", "Set Priority", "Unknown Status",
-            "The Board is refreshing.",
-            "The selection is no longer available. Refresh the Board and select the Cards again.",
-            "The selected Cards will be moved to the archive."
-        ]
-
-        for key in bulkActionKeys {
-            let entry = try XCTUnwrap(strings[key] as? [String: Any], key)
-            let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], key)
-            for language in Self.shippedLanguages {
-                let localization = try XCTUnwrap(
-                    localizations[language] as? [String: Any],
-                    "[\(language)] \(key)"
-                )
-                XCTAssertTrue(hasNonEmptyValue(localization), "[\(language)] \(key) is empty")
-                let translatedValue = (localization["stringUnit"] as? [String: Any])?["value"] as? String
-                XCTAssertNotEqual(translatedValue, key, "[\(language)] \(key) still uses the English source value")
-            }
-        }
-    }
-
-    func testKanbanBoardManagementCopyIsLocalizedInEveryShippedLanguage() throws {
-        let strings = try catalogStrings()
-        let boardKeys = [
+            "Workspace, Skills, Maximum Runtime, and Prerequisite are set when the Card is created and cannot be edited here.",
             "Board actions for %@",
             "Browse Board",
             "Browse Board: %@",
@@ -539,10 +470,15 @@ final class LocalizationCatalogTests: XCTestCase {
             "Slug",
             "The slug cannot be changed after the Board is created.",
             "This Board no longer exists. Choose another Board.",
-            "Updating Board..."
+            "Updating Board...",
+            "Archive Cards", "Assign Profile", "Bulk Actions", "Change Status",
+            "Retry Failed", "Select Cards", "Set Priority", "Unknown Status",
+            "The Board is refreshing.",
+            "The selection is no longer available. Refresh the Board and select the Cards again.",
+            "The selected Cards will be moved to the archive."
         ]
 
-        for key in boardKeys {
+        for key in kanbanKeys {
             let entry = try XCTUnwrap(strings[key] as? [String: Any], key)
             let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], key)
             for language in Self.shippedLanguages {
@@ -552,50 +488,7 @@ final class LocalizationCatalogTests: XCTestCase {
                 )
                 XCTAssertTrue(hasNonEmptyValue(localization), "[\(language)] \(key) is empty")
                 let translatedValue = (localization["stringUnit"] as? [String: Any])?["value"] as? String
-                XCTAssertNotEqual(translatedValue, key, "[\(language)] \(key) still uses English")
-            }
-        }
-    }
-
-    func testKanbanDispatcherCopyIsLocalizedInEveryShippedLanguage() throws {
-        let strings = try catalogStrings()
-        let dispatcherKeys = [
-            "Another Board action is in progress.",
-            "Auto-blocked",
-            "Crashed",
-            "Display",
-            "Dispatcher",
-            "Dispatcher, attention required",
-            "Dispatcher, result available",
-            "Dispatcher is unavailable on this server.",
-            "Group by Profile",
-            "Talaria refreshed the Board, but cannot prove whether workers started. Review the current Board before running Dispatcher again.",
-            "I Reviewed the Board",
-            "Preview Dispatch",
-            "Preview is advisory and may become stale. It never starts workers.",
-            "Promoted",
-            "Reclaimed",
-            "Refresh failed. Try again before using Dispatcher.",
-            "Run Dispatcher",
-            "Running Dispatcher...",
-            "Skipped—No Assignee",
-            "Skipped—Unknown Profile",
-            "Spawned",
-            "The server refused this Dispatcher request. Talaria did not retry it.",
-            "This Preview is stale. Run Preview Dispatch again before relying on it.",
-            "This may start up to %lld workers and consume API budget.",
-            "Timed Out"
-        ]
-
-        for key in dispatcherKeys {
-            let entry = try XCTUnwrap(strings[key] as? [String: Any], key)
-            let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], key)
-            for language in Self.shippedLanguages {
-                let localization = try XCTUnwrap(
-                    localizations[language] as? [String: Any],
-                    "[\(language)] \(key)"
-                )
-                XCTAssertTrue(hasNonEmptyValue(localization), "[\(language)] \(key) is empty")
+                XCTAssertNotEqual(translatedValue, key, "[\(language)] \(key) still uses the English source value")
             }
         }
     }

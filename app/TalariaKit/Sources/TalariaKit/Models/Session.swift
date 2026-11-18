@@ -67,7 +67,7 @@ public struct SessionsResponse: Decodable, Sendable {
 
 /// `scheduled_session_count` / `webhook_session_count` and their `_truncated` flags: a
 /// partial count means more sessions of that kind exist than the server lists.
-public struct AutomatedSessionCounts: Equatable, Sendable {
+public struct AutomatedSessionCounts: Codable, Equatable, Sendable {
     public let scheduled: Int
     public let scheduledIsPartial: Bool
     public let webhook: Int
@@ -780,51 +780,9 @@ extension SessionSummary {
         sidebarGroup ?? (archived == true ? nil : pinned == true ? "pinned" : "recent")
     }
 
-    /// The time the row is labelled and date-bucketed by: the server's `sort_ts`, else
-    /// the same field chain for an older server that does not ship it.
-    public var sortTimestamp: Double? {
-        sortTs ?? lastMessageAt ?? updatedAt ?? createdAt
-    }
-
-    public var shouldAppearInSessionList: Bool {
-        !isEmptySidebarPlaceholder
-    }
-
-    /// Mirrors hermes-webui's visible-sidebar safety net for just-created
-    /// placeholders: hide only the known empty Untitled shape, while keeping rows
-    /// with content, pending work, streaming state, or explicit user/server state.
-    /// Sort timestamps such as ``lastMessageAt`` are intentionally ignored here —
-    /// ``compact()`` sets them from ``updated_at`` even for zero-message sessions.
-    var isEmptySidebarPlaceholder: Bool {
-        guard hasPlaceholderTitle else { return false }
-        guard !hasSidebarState else { return false }
-        guard !hasMessageActivity else { return false }
-
-        return (messageCount ?? 0) == 0 && (userMessageCount ?? 0) == 0
-    }
-
     public var isCronSession: Bool { sourceKind == .cron }
 
     public var isWebhookSession: Bool { sourceKind == .webhook }
-
-    private var hasPlaceholderTitle: Bool {
-        guard let normalizedTitle = Self.nonEmpty(title)?.lowercased() else { return true }
-        return normalizedTitle == "untitled" || normalizedTitle == "untitled session"
-    }
-
-    private var hasSidebarState: Bool {
-        pinned == true
-            || isStreaming == true
-            || hasPendingUserMessage == true
-            || pendingStartedAt != nil
-            || Self.nonEmpty(worktreePath) != nil
-    }
-
-    private var hasMessageActivity: Bool {
-        if let messageCount, messageCount > 0 { return true }
-        if let userMessageCount, userMessageCount > 0 { return true }
-        return false
-    }
 
     private static func nonEmpty(_ value: String?) -> String? {
         guard let value else { return nil }

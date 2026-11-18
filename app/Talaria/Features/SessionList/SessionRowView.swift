@@ -318,7 +318,7 @@ struct SessionRowView: View {
     }
 
     private var relativeDate: String? {
-        guard let timestamp = session.sortTimestamp, timestamp > 0 else { return nil }
+        guard let timestamp = session.sortTs, timestamp > 0 else { return nil }
 
         return SessionRelativeDateFormatter.shared.localizedString(
             for: Date(timeIntervalSince1970: timestamp),

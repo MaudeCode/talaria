@@ -125,7 +125,7 @@ final class PerSessionRelayActivityRegistration {
 
     /// True once the relay confirms `activityID`; false when its registration
     /// fails, observation stops, or nothing settles within `limit`.
-    func awaitRegistration(activityID: String, limit: Duration) async -> Bool {
+    func awaitRegistration(activityID: String, limit: Duration, clock: any Clock<Duration>) async -> Bool {
         switch handoff {
         case .confirmed(activityID): return true
         case .pending(activityID): break
@@ -133,7 +133,7 @@ final class PerSessionRelayActivityRegistration {
         }
         let waiterID = UUID()
         let timeout = Task { [weak self] in
-            try? await Task.sleep(for: limit)
+            try? await clock.sleep(for: limit)
             self?.resumeWaiter(waiterID, with: false)
         }
         defer { timeout.cancel() }

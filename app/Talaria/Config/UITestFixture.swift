@@ -1185,7 +1185,10 @@ final class UITestFixtureURLProtocol: URLProtocol {
             )
         }.filter { !removedIDs.contains($0["session_id"] as? String ?? "") }
         if ProcessInfo.processInfo.arguments.contains("--ui-test-scheduled-sessions") {
-            for index in sessions.indices { sessions[index]["source_kind"] = "cron" }
+            for index in sessions.indices {
+                sessions[index]["source_kind"] = "cron"
+                sessions[index]["sidebar_group"] = "scheduled"
+            }
         }
         if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.runMonitorArgument) {
             // The server lists active sessions first (TAL-306).
@@ -1205,7 +1208,12 @@ final class UITestFixtureURLProtocol: URLProtocol {
         let storage: [String: Any] = ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.corruptAgentStorageArgument)
             ? ["state": "corrupt", "reason": UITestFixtureEnvironment.corruptAgentStorageReason]
             : ["state": "ok", "reason": NSNull()]
-        return json(["sessions": sessions, "archived_count": 0, "agent_storage": storage])
+        let scheduledCount = sessions.filter { $0["sidebar_group"] as? String == "scheduled" }.count
+        return json([
+            "sessions": sessions, "archived_count": 0, "agent_storage": storage,
+            "scheduled_session_count": scheduledCount, "scheduled_sessions_truncated": false,
+            "webhook_session_count": 0, "webhook_sessions_truncated": false,
+        ])
     }
 
     /// The one archived row, which only the archived-sessions screen requests.
