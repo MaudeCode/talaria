@@ -132,10 +132,10 @@ struct BackgroundWorkSheet: View {
                     Button("Done") { close() }
                 }
             }
-            .alert(refusal ?? "", isPresented: Binding(get: { refusal != nil }, set: { if !$0 { refusal = nil } })) {
+            .alert(refusal ?? "", isPresented: refusalIsPresented) {
                 Button("OK", role: .cancel) {}
             }
-            .alert(String(localized: "Steer"), isPresented: Binding(get: { steering != nil }, set: { if !$0 { steering = nil } }), presenting: steering) { task in
+            .alert(String(localized: "Steer"), isPresented: steeringIsPresented, presenting: steering) { task in
                 TextField(String(localized: "Message for this agent"), text: steerDraft(task.taskId))
                 Button(String(localized: "Send")) { send(steerDrafts[task.taskId] ?? "", to: task) }
                 Button("Cancel", role: .cancel) {}
@@ -148,6 +148,15 @@ struct BackgroundWorkSheet: View {
         .onChange(of: tasks.isEmpty && Self.ownerNotice(ownerWork) == nil && delegationSummary == nil, initial: true) { _, isEmpty in
             if isEmpty { close() }
         }
+    }
+
+    // Properties, not inline in the sheet's modifier chain, where the type checker re-checked them (TAL-2470).
+    private var refusalIsPresented: Binding<Bool> {
+        Binding(get: { refusal != nil }, set: { if !$0 { refusal = nil } })
+    }
+
+    private var steeringIsPresented: Binding<Bool> {
+        Binding(get: { steering != nil }, set: { if !$0 { steering = nil } })
     }
 
     @ViewBuilder

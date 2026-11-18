@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The app's chat and chat list screens compile faster, which shortens every development and test build; nothing changes in how they work.",
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}

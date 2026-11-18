@@ -300,38 +300,43 @@ private struct SidebarSearchButton: View {
     var body: some View {
         let isArmed = pull.progress >= 1
         HapticButton(feedbackStyle: .medium) { pull.isSearchPresented = true } label: {
-            Group {
-                if isArmed && !hasVerticalBar {
-                    Label("Search", systemImage: "magnifyingglass")
-                        .labelStyle(.titleAndIcon)
-                } else {
-                    Image(systemName: "magnifyingglass")
-                }
-            }
-            .font(.body)
-            .frame(minWidth: 28, minHeight: 28)
-            .padding(.horizontal, isArmed && !hasVerticalBar ? 10 : 4)
-            .frame(minHeight: 36)
-            .foregroundStyle(isArmed ? Color.white : Color.primary)
-            .background(isArmed ? Color.accentColor : Color.clear, in: Capsule())
-            .overlay {
-                if !reduceMotion {
-                    Circle()
-                        .trim(from: 0, to: pull.progress)
-                        .stroke(Color.accentColor, lineWidth: 2)
-                        .rotationEffect(.degrees(-90))
-                        .frame(width: 34, height: 34)
-                        .opacity(isArmed ? 0 : 1)
-                        .accessibilityHidden(true)
-                }
-            }
-            .frame(minWidth: 44, minHeight: 44)
-            .contentShape(Rectangle())
+            searchLabel(isArmed: isArmed)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
         .accessibilityIdentifier(identifier)
         .animation(reduceMotion ? nil : .smooth, value: isArmed)
         .onToolbarVerticalEdgeChange { hasVerticalBar = $0 }
+    }
+
+    // Out of the button's label closure, where the type checker re-checked it hundreds of times (TAL-2470).
+    private func searchLabel(isArmed: Bool) -> some View {
+        Group {
+            if isArmed && !hasVerticalBar {
+                Label("Search", systemImage: "magnifyingglass")
+                    .labelStyle(.titleAndIcon)
+            } else {
+                Image(systemName: "magnifyingglass")
+            }
+        }
+        .font(.body)
+        .frame(minWidth: 28, minHeight: 28)
+        .padding(.horizontal, isArmed && !hasVerticalBar ? 10 : 4)
+        .frame(minHeight: 36)
+        .foregroundStyle(isArmed ? Color.white : Color.primary)
+        .background(isArmed ? Color.accentColor : Color.clear, in: Capsule())
+        .overlay {
+            if !reduceMotion {
+                Circle()
+                    .trim(from: 0, to: pull.progress)
+                    .stroke(Color.accentColor, lineWidth: 2)
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 34, height: 34)
+                    .opacity(isArmed ? 0 : 1)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
     }
 }

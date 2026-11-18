@@ -773,6 +773,41 @@ struct ChatView: View {
     /// The chat's session work and lifecycle, outside the companion page's wrap: the page's first split rebuilds only
     /// the chat's views, so it cannot cancel a first load and start another mid-run (TAL-1546).
     private func withLifecycle(_ chat: some View) -> some View {
+        withStreamEvents(withPromptLifecycle(chat))
+            .modifier(
+                ChatDraftSyncModifier(
+                    pendingAttachments: viewModel.pendingAttachments,
+                    composerSettings: currentComposerSettings,
+                    voiceNote: viewModel.pendingVoiceDraft,
+                    onAttachmentsChange: { syncDraftAttachments() },
+                    onSettingsChange: syncDraftSettings,
+                    onVoiceNoteChange: { note in
+                        guard didHydrateDraft else { return }
+                        draftStore.setVoiceNote(note, for: draftKey)
+                    }
+                )
+            )
+            .onReceive(NotificationCenter.default.publisher(for: .talariaReauthenticated)) { notification in
+                guard notification.object as? URL == server else { return }
+                Task { await loadMessages(appliesInitialFocus: false) }
+            }
+            .modifier(ChatLiveSync(viewModel: viewModel, server: server, sessionID: session.sessionId, onAPIError: onAPIError))
+            .modifier(VisibleChatTracking(chat: .init(server: server, sessionID: session.sessionId)))
+            .onChange(of: showsLiveActivityResponseExcerpts) {
+                viewModel.setShowsLiveActivityResponseExcerpts(showsLiveActivityResponseExcerpts)
+            }
+            .onChange(of: viewModel.isViewingCachedData) { _, _ in
+                if !viewModel.isViewingCachedData {
+                    acknowledgeViewedCompletions()
+                }
+            }
+            .onChange(of: TalariaCompletionStore.shared.completions) {
+                scheduleCompletionAcknowledgement()
+            }
+    }
+
+    // `withLifecycle`'s modifiers in three functions: one chain of them all took the type checker seconds (TAL-2470).
+    private func withPromptLifecycle(_ chat: some View) -> some View {
         chat
         .onChange(of: viewModel.clarificationPrompt?.requestID, initial: true) { _, requestID in
             guard requestID != nil else { return }
@@ -789,7 +824,11 @@ struct ChatView: View {
         }
         .delayedStatus(viewModel.isSyncingTranscript, isVisible: $showsSyncingPill,
                        resetGeneration: viewModel.transcriptSyncPresentationGeneration)
-        .onChange(of: scenePhase) {
+    }
+
+    private func withStreamEvents(_ chat: some View) -> some View {
+        chat
+            .onChange(of: scenePhase) {
                 handleScenePhaseChange(scenePhase)
             }
             // A banner's Allow, Deny or Reply answered this chat's prompt outside it (TAL-1469).
@@ -813,36 +852,6 @@ struct ChatView: View {
                 if newValue == nil {
                     applyInitialComposerFocusPolicyIfNeeded()
                 }
-            }
-            .modifier(
-                ChatDraftSyncModifier(
-                    pendingAttachments: viewModel.pendingAttachments,
-                    composerSettings: currentComposerSettings,
-                    voiceNote: viewModel.pendingVoiceDraft,
-                    onAttachmentsChange: { syncDraftAttachments() },
-                    onSettingsChange: syncDraftSettings,
-                    onVoiceNoteChange: { note in
-                        guard didHydrateDraft else { return }
-                        draftStore.setVoiceNote(note, for: draftKey)
-                    }
-                )
-            )
-            .onReceive(NotificationCenter.default.publisher(for: .talariaReauthenticated)) { notification in
-                guard notification.object as? URL == server else { return }
-                Task { await loadMessages(appliesInitialFocus: false) }
-            }
-            .modifier(ChatLiveSync(viewModel: viewModel, server: server, sessionID: session.sessionId, onAPIError: onAPIError))
-            .modifier(VisibleChatTracking(chat: .init(server: server, sessionID: session.sessionId)))
-            .onChange(of: showsLiveActivityResponseExcerpts) {
-                viewModel.setShowsLiveActivityResponseExcerpts(showsLiveActivityResponseExcerpts)
-            }
-            .onChange(of: viewModel.isViewingCachedData) {
-                if !viewModel.isViewingCachedData {
-                    acknowledgeViewedCompletions()
-                }
-            }
-            .onChange(of: TalariaCompletionStore.shared.completions) {
-                scheduleCompletionAcknowledgement()
             }
     }
 
@@ -1282,6 +1291,100 @@ struct ChatView: View {
         // Keep invalidation reasons in XCTest's console when this test-only probe is installed.
         let _ = recordBodyEvaluation == nil ? () : Self._printChanges()
 #endif
+        chatWithSheets
+            .alert(item: $gitAlert, content: gitAlertPresentation)
+            .sheet(isPresented: $showsGoalSheet) {
+                GoalSubmissionSheet(
+                    goalDraft: $goalDraft,
+                    isSubmitting: viewModel.isSubmittingGoal,
+                    onSubmit: { submittedGoal in
+                        Task { await submitGoalDraft(submittedGoal) }
+                    }
+                )
+            }
+            .sheet(isPresented: $showEditSheet, onDismiss: { isEditSheetOnScreen = false }) {
+                EditMessageSheet(
+                    originalText: editContext?.copyText ?? "",
+                    editDraft: $editDraft,
+                    onSubmit: {
+                        if let context = editContext {
+                            Task { await submitEdit(context) }
+                        }
+                    }
+                )
+            }
+            .onChange(of: viewModel.modelSwitchConfirmation?.id, initial: true) {
+                // UIKit can present the warning only after the model sheet finishes dismissing.
+                modelSwitchAlert = isModelPickerOnScreen ? nil : viewModel.modelSwitchConfirmation
+            }
+            .background {
+                // A warning's identity can change during dismissal. Keep its item presenter separate from Git's.
+                Color.clear
+                    .frame(width: 0, height: 0)
+                    .alert(item: $modelSwitchAlert, content: modelSwitchAlertPresentation)
+            }
+            .alert(
+                "Discard Later Messages?",
+                isPresented: deepTruncateConfirmationIsPresented,
+                presenting: viewModel.deepTruncateConfirmation
+            ) { confirmation in
+                Button("Cancel", role: .cancel) {
+                    viewModel.cancelDeepTruncate()
+                }
+                Button(
+                    confirmation.action == .regenerate
+                        ? String(localized: "Discard & Regenerate")
+                        : String(localized: "Discard & Edit"),
+                    role: .destructive
+                ) {
+                    ChatHaptics.destructiveConfirmationAccepted(isEnabled: isHapticsEnabled)
+                    Task { await submitDeepTruncate(confirmation) }
+                }
+            } message: { confirmation in
+                Text(deepTruncateWarningMessage(confirmation))
+            }
+            .alert(
+                "Clear this conversation?",
+                isPresented: clearConversationIsPresented
+            ) {
+                Button("Cancel", role: .cancel) {
+                    viewModel.cancelClearConversation()
+                }
+                Button("Clear", role: .destructive) {
+                    ChatHaptics.destructiveConfirmationAccepted(isEnabled: isHapticsEnabled)
+                    Task {
+                        await viewModel.confirmClearConversation()
+                        if let lastError = viewModel.lastError { onAPIError(lastError) }
+                    }
+                }
+            } message: {
+                Text("Messages are removed from the server for every device.")
+            }
+            .alert(
+                "Start New Session?",
+                isPresented: $showProfileNewSessionConfirmation
+            ) {
+                Button("Cancel", role: .cancel) {
+                    pendingProfileSelection = nil
+                }
+                Button("Start New Session", action: openPendingProfileChat)
+            } message: {
+                Text(profileSwitchWarningMessage)
+            }
+            .alert(
+                "Message Action Failed",
+                isPresented: messageActionErrorIsPresented
+            ) {
+                Button("OK") {
+                    viewModel.clearMessageActionError()
+                }
+            } message: {
+                Text(viewModel.messageActionErrorMessage ?? "")
+            }
+    }
+
+    // The body's modifiers in three properties: one chain of them all took the type checker seconds (TAL-2470).
+    private var chatWithNavigation: some View {
         withVisibility(withSidebarChatDrop(withCompanionPage(presentedChat)))
             .onChange(of: splitFilesInspector?.secondaryChat != nil) { wasOpen, isOpen in
                 if wasOpen && !isOpen { viewModel.setCompanionPageHidden(false) }
@@ -1293,18 +1396,12 @@ struct ChatView: View {
                 ChatView(session: session, server: server, onAPIError: onAPIError,
                          sessionListOwner: sessionActions?.viewModel, splitFilesInspector: splitFilesInspector)
             }
-            .navigationDestination(isPresented: Binding(
-                get: { openedDecisionReviewID != nil },
-                set: { if !$0 { openedDecisionReviewID = nil } }
-            )) {
+            .navigationDestination(isPresented: decisionReviewIsPresented) {
                 if let openedDecisionReviewID {
                     DecisionReviewView(reviewID: openedDecisionReviewID, server: server, onAPIError: onAPIError)
                 }
             }
-            .navigationDestination(isPresented: Binding(
-                get: { openedTerminal != nil },
-                set: { if !$0 { openedTerminal = nil } }
-            )) {
+            .navigationDestination(isPresented: terminalIsPresented) {
                 if let openedTerminal {
                     TerminalOutputView(model: openedTerminal)
                 }
@@ -1317,6 +1414,10 @@ struct ChatView: View {
                       let ids = notification.userInfo?[SessionListViewModel.removalSessionIDsKey] as? Set<String> else { return }
                 reconcileRemovedFork(ids)
             }
+    }
+
+    private var chatWithSheets: some View {
+        chatWithNavigation
             .fullScreenCover(item: $selectableResponseText) { selectableText in
                 SelectableTextPresentationView(selection: selectableText)
             }
@@ -1391,101 +1492,6 @@ struct ChatView: View {
                         onClose: { closedVaultPromptID = prompt.id }
                     )
                 }
-            }
-            .alert(item: $gitAlert, content: gitAlertPresentation)
-            .sheet(isPresented: $showsGoalSheet) {
-                GoalSubmissionSheet(
-                    goalDraft: $goalDraft,
-                    isSubmitting: viewModel.isSubmittingGoal,
-                    onSubmit: { submittedGoal in
-                        Task { await submitGoalDraft(submittedGoal) }
-                    }
-                )
-            }
-            .sheet(isPresented: $showEditSheet, onDismiss: { isEditSheetOnScreen = false }) {
-                EditMessageSheet(
-                    originalText: editContext?.copyText ?? "",
-                    editDraft: $editDraft,
-                    onSubmit: {
-                        if let context = editContext {
-                            Task { await submitEdit(context) }
-                        }
-                    }
-                )
-            }
-            .onChange(of: viewModel.modelSwitchConfirmation?.id, initial: true) {
-                // UIKit can present the warning only after the model sheet finishes dismissing.
-                modelSwitchAlert = isModelPickerOnScreen ? nil : viewModel.modelSwitchConfirmation
-            }
-            .background {
-                // A warning's identity can change during dismissal. Keep its item presenter separate from Git's.
-                Color.clear
-                    .frame(width: 0, height: 0)
-                    .alert(item: $modelSwitchAlert, content: modelSwitchAlertPresentation)
-            }
-            .alert(
-                "Discard Later Messages?",
-                isPresented: Binding(
-                    get: { viewModel.deepTruncateConfirmation != nil && !isEditSheetOnScreen },
-                    set: { if !$0 { viewModel.cancelDeepTruncate() } }
-                ),
-                presenting: viewModel.deepTruncateConfirmation
-            ) { confirmation in
-                Button("Cancel", role: .cancel) {
-                    viewModel.cancelDeepTruncate()
-                }
-                Button(
-                    confirmation.action == .regenerate
-                        ? String(localized: "Discard & Regenerate")
-                        : String(localized: "Discard & Edit"),
-                    role: .destructive
-                ) {
-                    ChatHaptics.destructiveConfirmationAccepted(isEnabled: isHapticsEnabled)
-                    Task { await submitDeepTruncate(confirmation) }
-                }
-            } message: { confirmation in
-                Text(deepTruncateWarningMessage(confirmation))
-            }
-            .alert(
-                "Clear this conversation?",
-                isPresented: Binding(
-                    get: { viewModel.isConfirmingClear },
-                    set: { if !$0 { viewModel.cancelClearConversation() } }
-                )
-            ) {
-                Button("Cancel", role: .cancel) {
-                    viewModel.cancelClearConversation()
-                }
-                Button("Clear", role: .destructive) {
-                    ChatHaptics.destructiveConfirmationAccepted(isEnabled: isHapticsEnabled)
-                    Task {
-                        await viewModel.confirmClearConversation()
-                        if let lastError = viewModel.lastError { onAPIError(lastError) }
-                    }
-                }
-            } message: {
-                Text("Messages are removed from the server for every device.")
-            }
-            .alert(
-                "Start New Session?",
-                isPresented: $showProfileNewSessionConfirmation
-            ) {
-                Button("Cancel", role: .cancel) {
-                    pendingProfileSelection = nil
-                }
-                Button("Start New Session", action: openPendingProfileChat)
-            } message: {
-                Text(profileSwitchWarningMessage)
-            }
-            .alert(
-                "Message Action Failed",
-                isPresented: messageActionErrorIsPresented
-            ) {
-                Button("OK") {
-                    viewModel.clearMessageActionError()
-                }
-            } message: {
-                Text(viewModel.messageActionErrorMessage ?? "")
             }
     }
 
@@ -3039,6 +3045,36 @@ struct ChatView: View {
         // A new chat's draft lives under the new-chat key until its session exists (TAL-636).
         session.sessionId == nil
             ? .newChat(server: server, window: newChatDraftWindow) : .session(server: server, session: session)
+    }
+
+    // The body's presentation bindings are properties: inline in its modifier chain, each took the type checker
+    // thousands of passes (TAL-2470).
+    private var decisionReviewIsPresented: Binding<Bool> {
+        Binding(
+            get: { openedDecisionReviewID != nil },
+            set: { if !$0 { openedDecisionReviewID = nil } }
+        )
+    }
+
+    private var terminalIsPresented: Binding<Bool> {
+        Binding(
+            get: { openedTerminal != nil },
+            set: { if !$0 { openedTerminal = nil } }
+        )
+    }
+
+    private var deepTruncateConfirmationIsPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.deepTruncateConfirmation != nil && !isEditSheetOnScreen },
+            set: { if !$0 { viewModel.cancelDeepTruncate() } }
+        )
+    }
+
+    private var clearConversationIsPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.isConfirmingClear },
+            set: { if !$0 { viewModel.cancelClearConversation() } }
+        )
     }
 
     private var messageActionErrorIsPresented: Binding<Bool> {

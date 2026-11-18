@@ -5,7 +5,13 @@
 # embedded, so the app group works and ShareExtensionUITests can hand content to the app (TAL-81). No index
 # store, debug info or coverage instrumentation: no test run reads them, and they took a tenth of the test build the
 # shards download (TAL-1891). A Swift warning from our sources fails the build (ci/check-swift-warnings).
+# A function body or expression that takes the type checker over type_check_limit_ms is one of those warnings, so a
+# slow SwiftUI chain cannot come back unnoticed (TAL-2470). The limit is 3x the slowest body on the hosted runner (722 ms
+# locally, 1.74x slower there by the build's SwiftCompile total), rounded up to 500 ms, so runner noise does not trip it.
 set -euo pipefail
+type_check_limit_ms=4000
+type_check_warnings="-Xfrontend -warn-long-function-bodies=${type_check_limit_ms}"
+type_check_warnings+=" -Xfrontend -warn-long-expression-type-checking=${type_check_limit_ms}"
 
 destination=${1:?usage: ci/build-for-testing DESTINATION}
 cd "$(dirname "$0")/.."
@@ -26,6 +32,8 @@ xcodebuild build-for-testing "${project[@]}" \
   CODE_SIGN_STYLE=Manual \
   PROVISIONING_PROFILE_SPECIFIER= \
   COMPILER_INDEX_STORE_ENABLE=NO \
-  GCC_GENERATE_DEBUGGING_SYMBOLS=NO 2>&1 | tee "${log}"
+  GCC_GENERATE_DEBUGGING_SYMBOLS=NO \
+  OTHER_SWIFT_FLAGS="\$(inherited) ${type_check_warnings}" \
+  2>&1 | tee "${log}"
 ci/check-swift-warnings "${log}"
 echo "- Package resolve: ${resolve_seconds}s; build for testing: $((SECONDS - start_seconds - resolve_seconds))s" | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"

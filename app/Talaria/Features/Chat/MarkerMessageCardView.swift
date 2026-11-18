@@ -129,19 +129,10 @@ struct BackgroundUpdateLinesView: View {
                     isExpanded.toggle()
                 }
             } label: {
-                HStack(alignment: .top, spacing: 8) {
-                    if message.talariaActivity != nil { SandalMark(height: 16, color: .secondary) }
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(update.lines.enumerated()), id: \.offset) { _, line in
-                        BackgroundLineRow(line: line, parentReview: update.reviewState)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                }
+                summary
             }
             .buttonStyle(.plain)
-            .accessibilityLabel((message.talariaActivity == nil ? "" : "Talaria. ") + update.lines.map { BackgroundLineRow.accessibilityText(for: $0, parentReview: update.reviewState) }.joined(separator: ", "))
+            .accessibilityLabel(summaryAccessibilityLabel)
             .accessibilityHint(isExpanded ? String(localized: "Double tap to collapse details.") : String(localized: "Double tap to expand details."))
             .accessibilityIdentifier("background-update-lines")
 
@@ -155,6 +146,26 @@ struct BackgroundUpdateLinesView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // The label and its spoken text are properties: inside the button's chain the type checker re-checked them
+    // hundreds of times (TAL-2470).
+    private var summary: some View {
+        HStack(alignment: .top, spacing: 8) {
+            if message.talariaActivity != nil { SandalMark(height: 16, color: .secondary) }
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(update.lines.enumerated()), id: \.offset) { _, line in
+                    BackgroundLineRow(line: line, parentReview: update.reviewState)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+    }
+
+    private var summaryAccessibilityLabel: String {
+        let lines = update.lines.map { BackgroundLineRow.accessibilityText(for: $0, parentReview: update.reviewState) }
+        return (message.talariaActivity == nil ? "" : "Talaria. ") + lines.joined(separator: ", ")
     }
 
     private var detail: some View {

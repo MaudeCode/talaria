@@ -87,9 +87,7 @@ struct ServerDetailView: View {
         .onChange(of: initials) { persistIdentity() }
         .onChange(of: colorHex) { persistIdentity() }
         .onDisappear { authManager.flushServerIdentityEdits() }
-        .task(id: "\(account.id)#\(authManager.authenticatedIdentityRevision)") {
-            if isActive { await authManager.refreshActivePerson() }
-        }
+        .task(id: "\(account.id)#\(authManager.authenticatedIdentityRevision)") { await refreshActivePersonIfActive() }
         .identitySaveErrorInset(authManager)
         .alert(removeAlertTitle, isPresented: $isConfirmingRemove) {
             Button("Cancel", role: .cancel) {}
@@ -114,6 +112,12 @@ struct ServerDetailView: View {
         } message: {
             Text(removeAlertMessage)
         }
+    }
+
+    // A method, not the closure's body: inside the view's modifier chain the type checker re-checked it hundreds of
+    // times (TAL-2470).
+    private func refreshActivePersonIfActive() async {
+        if isActive { await authManager.refreshActivePerson() }
     }
 
     private func personName(_ person: AuthManager.ActivePerson) -> String {
