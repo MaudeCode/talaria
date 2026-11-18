@@ -74,7 +74,6 @@ def test_main_model_turns_carry_service_tier_and_extra_body(tmp_path) -> None:
 
 
 @requires_agent
-@pytest.mark.skipif(AGENT_DIR is None or "def model_supports_ultrafast" not in (AGENT_DIR / "hermes_cli/models.py").read_text(), reason="GPT-6 and Ultrafast require Agent v0.21.6")
 @pytest.mark.parametrize("model,provider,tier,base_url,expected", [
     ("gpt-6-astra", "openai-codex", "ultrafast", "https://chatgpt.com/backend-api/codex", {"service_tier": "ultrafast"}),
     ("gpt-6-sol", "openai-codex", "priority", "https://chatgpt.com/backend-api/codex", {"service_tier": "priority"}),

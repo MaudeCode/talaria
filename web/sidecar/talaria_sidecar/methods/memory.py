@@ -51,8 +51,7 @@ def file_lock(path: Path, *, parent_fd=None):
     """The native memory lock, with an anchored opening for descriptor-relative publishers."""
     if parent_fd is None:
         from tools.memory_tool_store import MemoryStore
-        native = getattr(MemoryStore, '_file_lock', None)
-        with native(path) if native else _SAVE_LOCK:
+        with MemoryStore._file_lock(path):
             yield
         return
     import fcntl
@@ -75,7 +74,7 @@ def write(home: Path, section: str, base: str, content: str) -> dict:
     """Replace ``section``'s file with ``content`` only while its bytes still hash to ``base``, the server's read.
 
     Each file is checked and written under the Agent's own per-file lock (``<file>.lock``), so neither a memory tool
-    call nor a concurrent save can land between the two; an Agent without the lock helper gets this sidecar's lock.
+    call nor a concurrent save can land between the two.
     """
     from utils import atomic_write_text
 

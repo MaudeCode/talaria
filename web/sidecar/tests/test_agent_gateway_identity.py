@@ -170,8 +170,6 @@ try:
     original=path.read_text(); data=json.loads(original); data[field]=value; path.write_text(json.dumps(data))
     assert not ready(status._read_process_cmdline(child.pid)), (path,field)
     path.write_text(original)
-   with patch.dict(sys.modules,{'gateway.status_inline_source':None}):
-    assert not recovery_ready()
    alias=root/'named-link'; alias.symlink_to(home,target_is_directory=True)
    assert recovery._ready({**entry,'home':str(alias)},lambda *a: [])
    with patch.object(services,'_service_pid',return_value=(True,os.getpid())):

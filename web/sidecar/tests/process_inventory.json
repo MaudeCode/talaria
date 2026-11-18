@@ -187,14 +187,14 @@
     },
     "tests/test_agent_mutation.py::test_external_writer_is_quiesced_before_mutation_and_resumed_after_finish": {
       "layer": "process",
-      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "reason": "A real runtime.agent_mutation lease runs its worker child over stdio against a disposable Git checkout and a separate writer process; the writer process must ignore write requests while a real Git merge runs and resume after finish discharges the pause record on disk.",
       "cases": [
         ""
       ]
     },
     "tests/test_agent_mutation.py::test_pre_mutation_refusal_or_owner_exit_resumes_the_same_owned_set": {
       "layer": "process",
-      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "reason": "A real runtime.agent_mutation lease runs its worker child over stdio against a disposable Git checkout and a separate writer process; finish, stdin EOF and SIGKILL of the lease owner must each wake that child, which resumes the writer without moving source.",
       "cases": [
         "[finish]",
         "[eof]",
@@ -203,21 +203,21 @@
     },
     "tests/test_agent_mutation.py::test_unacknowledged_drain_never_mutates_source_and_retains_resume_debt": {
       "layer": "process",
-      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "reason": "A real runtime.agent_mutation lease runs its worker child over stdio against a disposable Git checkout and a separate writer process; a writer that refuses to drain must block begin, leaving the checkout untouched and resume_needed in the pause record the worker child wrote.",
       "cases": [
         ""
       ]
     },
     "tests/test_agent_mutation.py::test_a_failed_best_effort_checkpoint_cannot_authorize_a_stop_request": {
       "layer": "process",
-      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "reason": "A real runtime.agent_mutation lease runs its worker child over stdio against a disposable Git checkout and a separate writer process; when the worker child cannot persist its stop checkpoint, the writer process must receive no stop request and keep running.",
       "cases": [
         ""
       ]
     },
     "tests/test_agent_mutation.py::test_unverified_tree_or_resume_keeps_the_native_recovery_record": {
       "layer": "process",
-      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "reason": "A real runtime.agent_mutation lease runs its worker child over stdio against a disposable Git checkout and a separate writer process; a torn working tree or a refused writer resume at finish must leave resume_needed in the pause record on disk.",
       "cases": [
         "[torn]",
         "[refuse-resume]"
@@ -225,14 +225,14 @@
     },
     "tests/test_agent_mutation.py::test_failed_git_step_resumes_old_source_without_dropping_work": {
       "layer": "process",
-      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "reason": "A real runtime.agent_mutation lease runs its worker child over stdio against a disposable Git checkout and a separate writer process; a real Git step that fails must keep the lease, and finish must resume the writer on the unmoved source.",
       "cases": [
         ""
       ]
     },
     "tests/test_agent_mutation.py::test_dependency_failure_retains_the_pause_and_a_retry_resumes_it": {
       "layer": "process",
-      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "reason": "A real runtime.agent_mutation lease runs its worker child over stdio against a disposable Git checkout and a separate writer process; a failing venv_sync child, with or without broken imports, must retain the pause on disk, and a new lease must repair the dependencies and resume the writer.",
       "cases": [
         "[False]",
         "[True]"
@@ -240,21 +240,21 @@
     },
     "tests/test_agent_mutation.py::test_a_killed_supervisor_leaves_an_adoptable_native_resume_record": {
       "layer": "process",
-      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "reason": "A real runtime.agent_mutation lease runs its worker child over stdio against a disposable Git checkout and a separate writer process; SIGKILL of the worker child must leave a resume record on disk that a retry through the same sidecar adopts and completes.",
       "cases": [
         ""
       ]
     },
     "tests/test_agent_mutation.py::test_a_confirmed_legacy_target_can_recover_a_paused_broken_environment": {
       "layer": "process",
-      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "reason": "A real runtime.agent_mutation lease runs its worker child over stdio against a disposable Git checkout and a separate writer process; after a target whose venv_sync child fails, a retry onto a legacy target without venv_sync must reset Git and resume the writer.",
       "cases": [
         ""
       ]
     },
     "tests/test_agent_mutation.py::test_owner_death_stops_and_reaps_a_mutator_before_preserving_torn_tree_debt": {
       "layer": "process",
-      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "reason": "A real runtime.agent_mutation lease runs its worker child over stdio against a disposable Git checkout and a separate writer process; SIGKILL, cancellation or shutdown of the lease owner must reap the in-flight Git child (an fsmonitor hook) before the pause record becomes unowned torn-tree debt.",
       "cases": [
         "[kill]",
         "[cancel]",
@@ -263,28 +263,28 @@
     },
     "tests/test_agent_mutation.py::test_native_journal_accepts_a_complete_atomic_restore_at_an_unmoved_head": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native journal accepts a complete atomic restore at an unmoved head. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's unmodified hermes_cli.update_pause_record journal and update_cmd_pause_gate checkout gate, copied into a disposable checkout, must accept a complete atomic restore at an unmoved HEAD.",
       "cases": [
         ""
       ]
     },
     "tests/test_agent_mutation.py::test_native_journal_retains_a_killed_atomic_restore_at_an_unmoved_head": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native journal retains a killed atomic restore at an unmoved head. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's unmodified hermes_cli.update_pause_record journal and update_cmd_pause_gate checkout gate must keep restore debt after SIGKILL of a process mid-way through a half-written patch.",
       "cases": [
         ""
       ]
     },
     "tests/test_agent_services.py::test_native_snapshot_attests_a_barrier_controlled_child_exit": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native snapshot attests a barrier controlled child exit. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's gateway.status.get_process_start_time and psutil must exclude a real child that exits at the birth probe, and bind_processes/verify_processes must still pass.",
       "cases": [
         ""
       ]
     },
     "tests/test_agent_services.py::test_native_legacy_backend_identity_resolves_scoped_profile": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native legacy backend identity resolves scoped profile. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's hermes_cli.process_identity and dashboard_procs must resolve a legacy backend's scoped profile through a home alias without backfilling its ledger row.",
       "cases": [
         "[False]",
         "[True]"
@@ -292,7 +292,7 @@
     },
     "tests/test_agent_services.py::test_native_process_exit_between_liveness_and_identity_probes": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native process exit between liveness and identity probes. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's gateway.status._pid_exists and update_pause_record.identity must refuse a real anchor process that exits between the liveness and identity probes when not stopping, and accept it when stopping.",
       "cases": [
         "[False]",
         "[True]"
@@ -305,12 +305,11 @@
         ""
       ]
     },
-    "tests/test_agent_services.py::test_backend_recovery_covers_lease_exit_paths": {
+    "tests/test_agent_services.py::test_backend_recovery_restores_services_after_the_lease_owner_dies": {
       "layer": "compatibility",
-      "reason": "Actual EOF and SIGKILL of the lease owner must wake the recovery child and restore services from durable receipts, without changing source. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "reason": "SIGKILL of the lease owner collapses the drain deadline; the surviving worker child must restore the real gateway and dashboard from durable receipts without changing source. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
       "cases": [
-        "[eof]",
-        "[owner-kill]"
+        ""
       ]
     },
     "tests/test_agent_services.py::test_partial_pause_restores_only_the_services_it_stopped": {
@@ -336,7 +335,7 @@
     },
     "tests/test_agent_services.py::test_native_gated_dashboard_accepts_owner_local_retirement_session": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native gated dashboard accepts owner local retirement session. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's plugins.dashboard_auth.basic provider, hermes_cli.web_server, backend_retirement and env_loader must accept the owner-local lifecycle session for dotenv, config and exec credentials in the default and a named profile, and keep debt without leaking secrets on invalid credentials.",
       "cases": [
         "[dotenv-False]",
         "[dotenv-True]",
@@ -348,7 +347,7 @@
     },
     "tests/test_agent_services.py::test_native_lifecycle_credentials_are_scoped_and_preserve_decoding": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native lifecycle credentials are scoped and preserve decoding. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's plugins.dashboard_auth.basic provider, env_loader and agent.secret_scope must give the owner's credentials precedence with native secret decoding, without leaking updater credentials across thread-scoped secret scopes.",
       "cases": [
         ""
       ]
@@ -444,7 +443,7 @@
     },
     "tests/test_agent_services.py::test_native_gateway_startup_preserves_live_talaria_fence": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native gateway startup preserves live talaria fence. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's gateway.status.acquire_gateway_runtime_lock must refuse a replacement gateway while Talaria's runtime fence is held, and admit it after release.",
       "cases": [
         "[False]",
         "[True]"
@@ -1261,13 +1260,9 @@
     },
     "tests/test_dependency_sync.py::test_dependency_sync_rpc_owns_the_agent_subprocess": {
       "layer": "process",
-      "reason": "Actual child/grandchild execution, cancellation and process-group cleanup cannot be proved by fake Popen responses.",
+      "reason": "A sidecar whose Agent import fails must still launch the real venv_sync child through the dependency supervisor, with the checkout argv, HERMES_HOME and lazy installs disabled, and refuse another agent_dir.",
       "cases": [
-        "[success]",
-        "[exit]",
-        "[failed]",
-        "[invalid]",
-        "[legacy]"
+        ""
       ]
     },
     "tests/test_dependency_sync.py::test_dependency_sync_writer_stops_with_its_rpc_owner": {
@@ -1324,14 +1319,14 @@
     },
     "tests/test_evict_agent.py::test_cache_only_eviction_keeps_approval_state_and_a_live_runs_agent": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: cache only eviction keeps approval state and a live runs agent. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's tools.approval session grants and parked gateway approvals must survive a cache-only agent eviction and end on clear, in a disposable Agent interpreter.",
       "cases": [
         ""
       ]
     },
     "tests/test_gateway_mode.py::test_markers_report_parked_and_standalone_in_profiles_and_gateway_mode": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: markers report parked and standalone in profiles and gateway mode. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's profile_is_parked and profile_is_standalone marker helpers decide what profiles.list and gateway.mode report for each marker on disk.",
       "cases": [
         ""
       ]
@@ -1499,28 +1494,28 @@
     },
     "tests/test_home.py::test_concurrent_profiles_resolve_only_their_own_credentials_on_the_installed_agent": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: concurrent profiles resolve only their own credentials on the installed agent. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's agent.secret_scope must give concurrent profile scopes only their own credentials, in a disposable Agent interpreter.",
       "cases": [
         ""
       ]
     },
     "tests/test_home.py::test_concurrent_turns_run_under_their_own_profiles_terminal_backend_on_the_installed_agent": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: concurrent turns run under their own profiles terminal backend on the installed agent. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's tools.terminal_tool._get_env_config and sandbox task keys must follow each concurrent turn's own profile terminal backend.",
       "cases": [
         ""
       ]
     },
     "tests/test_home.py::test_the_launch_profiles_terminal_scope_keeps_its_launch_env_once_a_named_profile_runs_on_the_installed_agent": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the launch profiles terminal scope keeps its launch env once a named profile runs on the installed agent. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's tools.terminal_tool._get_env_config must keep the launch profile's environment after a named profile's scope has frozen its own.",
       "cases": [
         ""
       ]
     },
     "tests/test_home.py::test_a_named_profiles_plugin_secret_source_reaches_its_scope_after_the_root_loaded_the_agent_on_the_installed_agent": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a named profiles plugin secret source reaches its scope after the root loaded the agent on the installed agent. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's plugin discovery and agent.secret_scope must load a named profile's plugin secret source into its scope after the root profile already loaded the Agent.",
       "cases": [
         ""
       ]
@@ -1534,7 +1529,7 @@
     },
     "tests/test_import_bootstrap.py::test_agent_helpers_preserve_native_lazy_install_policy": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: agent helpers preserve native lazy install policy. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's pm.install.lazy_installs_allowed decides whether isolated_env and the sidecar's Agent helpers may lazily install packages.",
       "cases": [
         "[None-False]",
         "[0-True]"
@@ -1542,7 +1537,7 @@
     },
     "tests/test_import_bootstrap.py::test_chat_import_does_not_adopt_sync_or_exec_a_blessed_checkout": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: chat import does not adopt sync or exec a blessed checkout. Uses the real installed release, not a fabricated API response.",
+      "reason": "Importing the chat namespace must never adopt, sync or exec a blessed checkout through the release's hermes_cli.venv_sync and _launchers.",
       "cases": [
         "[False]",
         "[True]"
@@ -1585,14 +1580,14 @@
     },
     "tests/test_local_runtime.py::test_staged_ggufs_are_the_local_models": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: staged ggufs are the local models. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's managed llama.cpp provider must list the staged GGUFs as providers.local_models, with its server off.",
       "cases": [
         ""
       ]
     },
     "tests/test_local_runtime.py::test_a_turn_on_the_local_provider_with_its_server_off_is_local_runtime_unavailable": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a turn on the local provider with its server off is local runtime unavailable. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's provider resolution, from the config, the requested provider and HERMES_INFERENCE_PROVIDER, must report local_runtime_unavailable for a llama.cpp turn with its server off.",
       "cases": [
         ""
       ]
@@ -1690,28 +1685,28 @@
     },
     "tests/test_namespaces.py::test_every_namespace_answers_with_contract_shapes": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: every namespace answers with contract shapes. Uses the real installed release, not a fabricated API response.",
+      "reason": "Every registered RPC must answer its contract schema over the real installed release; record-fixtures.py records the server's replay fixtures from these scenarios.",
       "cases": [
         ""
       ]
     },
     "tests/test_namespaces.py::test_error_conditions_are_typed": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: error conditions are typed. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's provider resolution, kanban and cron stores, gateway ownership and command registry raise the errors the sidecar maps to typed conditions (credential_missing, not_found and the rest) over a real sidecar.",
       "cases": [
         ""
       ]
     },
     "tests/test_namespaces.py::test_config_round_trip_keeps_mode_and_key_order": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: config round trip keeps mode and key order. Uses the real installed release, not a fabricated API response.",
+      "reason": "config.set must write through the release's atomic_config_replace and the Agent interpreter's PyYAML, keeping the file mode and key order.",
       "cases": [
         ""
       ]
     },
     "tests/test_namespaces.py::test_config_rpcs_use_the_server_resolved_path": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: config rpcs use the server resolved path. Uses the real installed release, not a fabricated API response.",
+      "reason": "config.get and config.set must read and write the server-resolved config_path through the release's config writer, and refuse a relative path.",
       "cases": [
         ""
       ]
@@ -1725,28 +1720,28 @@
     },
     "tests/test_namespaces.py::test_config_set_writes_through_a_symlinked_config": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: config set writes through a symlinked config. Uses the real installed release, not a fabricated API response.",
+      "reason": "config.set must write through a symlinked config to its referent with the release's atomic_config_replace, keeping the link and the referent's mode.",
       "cases": [
         ""
       ]
     },
     "tests/test_namespaces.py::test_stdout_is_reserved_for_rpc_frames": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: stdout is reserved for rpc frames. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release prints on profiles.delete; the sidecar must keep its stdout for RPC frames across real Agent profile creation and deletion.",
       "cases": [
         ""
       ]
     },
     "tests/test_namespaces.py::test_image_mode_reads_the_profile_config": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: image mode reads the profile config. Uses the real installed release, not a fabricated API response.",
+      "reason": "text.image_mode must decide the mode from the profile config's vision overrides through the release's agent.image_routing (decide_image_input_mode, _lookup_supports_vision) for the requested provider.",
       "cases": [
         ""
       ]
     },
     "tests/test_namespaces.py::test_kanban_tasks_report_claim_liveness_and_completion_evidence": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: kanban tasks report claim liveness and completion evidence. Uses the real installed release, not a fabricated API response.",
+      "reason": "kanban.task must report claim liveness and stored completion evidence from the release's own kanban database schema.",
       "cases": [
         ""
       ]
@@ -2059,35 +2054,35 @@
     },
     "tests/test_profile_containment.py::test_profile_scans_skip_entries_that_escape_the_profiles_root": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: profile scans skip entries that escape the profiles root. Uses the real installed release, not a fabricated API response.",
+      "reason": "profiles.list and process.recover must skip symlinked profile entries that escape the profiles root, over the release's profile discovery.",
       "cases": [
         ""
       ]
     },
     "tests/test_profile_identity.py::test_profiles_list_reports_identity_and_canonical_bot_chat_per_profile": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: profiles list reports identity and canonical bot chat per profile. Uses the real installed release, not a fabricated API response.",
+      "reason": "profiles.list must read each profile's Bot Mode identity and canonical Bot Chat from a state.db the release's own SessionDB wrote, without writing to it.",
       "cases": [
         ""
       ]
     },
     "tests/test_profile_identity.py::test_set_meta_writes_only_the_passed_fields_and_reports_a_bot_mode_override": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: profiles.set_meta writes profile.yaml through the release's own write_profile_meta, so only the passed keys change. Uses the real installed release, not a fabricated API response.",
+      "reason": "profiles.set_meta writes profile.yaml through the release's own write_profile_meta, so only the passed keys change. Uses the real installed release, not a fabricated API response.",
       "cases": [
         ""
       ]
     },
     "tests/test_recovery_environment.py::test_recovery_enters_new_committed_generation_and_acknowledges_runtime": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: recovery enters new committed generation and acknowledges runtime. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's stdlib PM selector (pm/environments.py, _venv_entry.py, hermes_constants) copied unmodified must lead --recover-current into the newly committed venv, keeping the receipt until the runtime acknowledges.",
       "cases": [
         ""
       ]
     },
     "tests/test_recovery_environment.py::test_invalid_committed_environment_retains_recovery_debt": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: invalid committed environment retains recovery debt. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's unmodified PM selector must refuse a missing, malformed, foreign, unselected or ABI-mismatched committed environment, keeping recovery debt and never importing the Agent.",
       "cases": [
         "[missing]",
         "[malformed]",
@@ -2098,21 +2093,21 @@
     },
     "tests/test_recovery_environment.py::test_packaged_recovery_uses_native_environment_entry": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: packaged recovery uses native environment entry. Uses the real installed release, not a fabricated API response.",
+      "reason": "A packaged install must recover through the release's unmodified PM venv_command entry, not the redirector.",
       "cases": [
         ""
       ]
     },
     "tests/test_recovery_environment.py::test_dependency_repair_reselects_before_agent_import": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: dependency repair reselects before agent import. Uses the real installed release, not a fabricated API response.",
+      "reason": "Dependency repair must reselect the committed environment through the release's unmodified PM selector before any Agent import.",
       "cases": [
         ""
       ]
     },
     "tests/test_recovery_environment.py::test_legacy_recovery_keeps_its_venv": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: legacy recovery keeps its venv. Uses the real installed release, not a fabricated API response.",
+      "reason": "Without the release's PM package, recovery must keep the in-tree or legacy venv; the selector it falls back from is the release's own.",
       "cases": [
         "[True]",
         "[False]"
@@ -2120,7 +2115,7 @@
     },
     "tests/test_recovery_environment.py::test_recovery_retries_corrected_selection_without_discarding_debt": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: recovery retries corrected selection without discarding debt. Uses the real installed release, not a fabricated API response.",
+      "reason": "A selection the release's unmodified PM selector refuses must keep the debt bytes, and corrected selection facts must then complete recovery.",
       "cases": [
         ""
       ]
@@ -2134,21 +2129,21 @@
     },
     "tests/test_recovery_environment.py::test_competing_update_lock_keeps_selected_recovery_debt": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: competing update lock keeps selected recovery debt. Uses the real installed release, not a fabricated API response.",
+      "reason": "A real flock held by a competing updater must exclude recovery through the release's PM selector and keep the selected recovery debt.",
       "cases": [
         ""
       ]
     },
     "tests/test_recovery_environment.py::test_cancel_selected_recovery_stops_dependency_writer_and_retains_debt": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: cancel selected recovery stops dependency writer and retains debt. Uses the real installed release, not a fabricated API response.",
+      "reason": "Cancelling a recovery selected by the release's PM selector must reap the real helper and dependency writer before replying, and keep the debt.",
       "cases": [
         ""
       ]
     },
     "tests/test_recovery_environment.py::test_recovery_bootstrap_survives_retired_parent_venv_entry": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: recovery bootstrap survives retired parent venv entry. Uses the real installed release, not a fabricated API response.",
+      "reason": "Recovery started from a parent venv that a real PM rotation retired (a symlinked or anchored entry) must still bootstrap the release's selector with the Agent interpreter's ruamel.",
       "cases": [
         "[symlink]",
         "[anchored]"
@@ -2163,7 +2158,7 @@
     },
     "tests/test_runtime.py::test_handshake_reports_the_pinned_agent": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: handshake reports the pinned agent. Uses the real installed release, not a fabricated API response.",
+      "reason": "runtime.handshake must import the installed release and report its revision, version and pin fields in the contract shape.",
       "cases": [
         ""
       ]
@@ -2177,14 +2172,14 @@
     },
     "tests/test_runtime.py::test_drift_guard_refuses_a_changed_checkout": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: drift guard refuses a changed checkout. Uses the real installed release, not a fabricated API response.",
+      "reason": "A real Git clone of the release is imported, then a new commit must make runtime.ensure_current refuse with agent_runtime_stale.",
       "cases": [
         ""
       ]
     },
     "tests/test_runtime.py::test_config_reads_survive_agent_import_failure": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: config reads survive agent import failure. Uses the real installed release, not a fabricated API response.",
+      "reason": "With an Agent checkout whose import fails, config.get and config.set must still work through the Agent interpreter's PyYAML (the sidecar's own venv has none) and report config_invalid.",
       "cases": [
         ""
       ]
@@ -2567,8 +2562,7 @@
       "layer": "process",
       "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
       "cases": [
-        "[Popen]",
-        "[check_output]"
+        ""
       ]
     },
     "tests/test_suite_runner.py::test_cleanup_fixture_leaves_sibling_child_alive_and_detects_own_leak": {

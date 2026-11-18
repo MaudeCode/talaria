@@ -10,7 +10,6 @@ gateway, CLI and plugins also take, so concurrent writers never drop a key.
 
 from __future__ import annotations
 
-import contextlib
 import copy
 import dataclasses
 import importlib
@@ -226,12 +225,6 @@ def _env_refusal(agent_config, key: str, action: str) -> str | None:
     return f"Cannot {action} {key}: this Hermes installation manages it" if agent_config._env_write_blocked(key, action) else None
 
 
-def _env_lock(agent_config, path: Path):
-    """The Agent's ``<.env>.lock`` (Agent 0.21.6+); older Agents have none to share."""
-    lock = getattr(agent_config, "_env_write_lock", None)
-    return lock(path) if lock is not None else contextlib.nullcontext()
-
-
 def env_write(home: Path, updates) -> dict:
     """Upsert ``updates`` into ``home``'s ``.env`` (``None`` removes a key) with the Agent's own line helpers, under
     the lock its ``save_env_value`` / ``remove_env_value`` take, in one atomic replace.
@@ -266,7 +259,7 @@ def env_write(home: Path, updates) -> dict:
         try:
             agent_config.ensure_hermes_home()
             path = agent_config.get_env_path()
-            with _env_lock(agent_config, path):
+            with agent_config._env_write_lock(path):
                 existed = path.exists()
                 lines = agent_config._read_env_lines(path) if existed else []
                 before = list(lines)

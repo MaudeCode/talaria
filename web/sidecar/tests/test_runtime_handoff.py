@@ -1,4 +1,4 @@
-"""Runtime lifetime owns the optional native worker, never status/OAuth reads."""
+"""Runtime lifetime owns the native free-tier worker, never status/OAuth reads."""
 import sys
 from types import ModuleType, SimpleNamespace
 
@@ -22,25 +22,22 @@ def native(tmp_path, monkeypatch):
     return AgentRuntime(tmp_path / "home"), worker, events
 
 
-@pytest.mark.parametrize("all_profiles", [True, False], ids=["native-all-profiles", "launch-profile-only"])
-def test_worker_starts_once_and_retirement_prevents_restart(native, monkeypatch, all_profiles):
+def test_worker_starts_once_and_retirement_prevents_restart(native, monkeypatch):
     from talaria_sidecar import agent_mutation
     from talaria_sidecar import runtime as module
 
     runtime, worker, events = native
-    if all_profiles:  # Agent 0.22.5 retries every profile itself
-        worker.retry_all_profiles = lambda: []
     monkeypatch.setattr("talaria_sidecar.runtime.read_agent_revision", lambda *args: "a" * 40)
     runtime.load()
     runtime.load()
     runtime.describe()
     assert events == ["start"]
     tick = module._profile_handoff_thread
-    assert (tick is None) is all_profiles and (all_profiles or tick.is_alive())
+    assert tick.is_alive()
     runtime.retire()
     runtime.retire()
     assert events == ["start", ("stop", None)]
-    assert module._profile_handoff_thread is None and (tick is None or not tick.is_alive())
+    assert module._profile_handoff_thread is None and not tick.is_alive()
     described = runtime.describe()
     assert described["compatible"] is False, "retired runtime still advertises readiness to dependency recovery"
     assert described["stale"] is True

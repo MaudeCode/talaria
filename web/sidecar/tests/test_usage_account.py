@@ -43,6 +43,7 @@ AVAILABLE_FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "usage_account_
 def _fake_agent(monkeypatch, snapshot):
     module = types.ModuleType("agent.account_usage")
     module.fetch_account_usage = lambda provider, base_url=None, api_key=None: snapshot
+    module._USAGE_FETCHERS = {"anthropic": None, "openai-codex": None}
     monkeypatch.setitem(sys.modules, "agent", types.ModuleType("agent"))
     monkeypatch.setitem(sys.modules, "agent.account_usage", module)
 

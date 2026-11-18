@@ -38,18 +38,15 @@ RECOVERY_DRAIN_SECONDS = 300.0
 @contextlib.contextmanager
 def _native_home(home):
     """Resolve native per-profile configuration for one home in this single-purpose worker."""
+    from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+
     previous = os.environ.get('HERMES_HOME')
     os.environ['HERMES_HOME'] = str(home)
-    try:
-        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
-    except ImportError:  # Older Agents resolve the home from the environment alone.
-        set_hermes_home_override = None
-    token = set_hermes_home_override(home) if set_hermes_home_override else None
+    token = set_hermes_home_override(home)
     try:
         yield
     finally:
-        if token is not None:
-            reset_hermes_home_override(token)
+        reset_hermes_home_override(token)
         if previous is None:
             os.environ.pop('HERMES_HOME', None)
         else:
@@ -238,15 +235,12 @@ def snapshot(entry, *, records=None, expected=None):
 def _gateway_home_matches(home, runtime, pause):
     """Keep native identity policy, decoding only native-recognized inline launchers."""
     from gateway import status
+    from gateway.status_inline_source import command_line_runs_inline_source, inline_bootstrap_argv
     home = Path(home).resolve()
     observed = pause._home_of(runtime[0])
     command = status._read_process_cmdline(runtime[0])
     if not observed or Path(observed).resolve() != home or not command:
         return False
-    try:
-        from gateway.status_inline_source import command_line_runs_inline_source, inline_bootstrap_argv
-    except ImportError:
-        return False  # Older Agents cannot prove this launcher; retain recovery debt.
     try:
         tokens = [t.strip("\"'").replace('\\', '/') for t in shlex.split(command, posix=False)]
     except ValueError:
@@ -544,10 +538,7 @@ def _auth(entry):
 def _local_session(entry):
     """Mint a short-lived local lifecycle session from the owner's native basic-auth settings."""
     from hermes_cli.dashboard_procs import _pid_environ
-    try:
-        from plugins.dashboard_auth import basic
-    except ImportError:
-        return None
+    from plugins.dashboard_auth import basic
     from .home import scoped_home
     from agent import secret_scope
     from hermes_cli.env_loader import hydrate_profile_secret_sources
@@ -721,16 +712,11 @@ def _start(entry, pause):
         cmd = pause._manage_cmd(entry['scope'])
         if cmd is None:
             raise RuntimeError(f'{_name(entry)} cannot be resumed with current service privileges.')
-        try:
-            from hermes_cli.update_cmd_fleet_unit_budget import UNIT_JOB_STILL_RUNNING, run_unit_job
-        except ImportError:  # Before Agent v0.22.6 nothing can outwait systemd's own job.
-            from hermes_cli.update_cmd_fleet import _systemctl
-            result = _systemctl(cmd + ['start', entry['unit']], timeout=30)
-        else:
-            # A client timeout cancels nothing: systemd keeps running the job, so readiness decides.
-            result = run_unit_job(cmd, _systemd_scope_cmd(entry), 'start', entry['unit'], timeout=30)
-            if result.returncode == UNIT_JOB_STILL_RUNNING:
-                return
+        from hermes_cli.update_cmd_fleet_unit_budget import UNIT_JOB_STILL_RUNNING, run_unit_job
+        # A client timeout cancels nothing: systemd keeps running the job, so readiness decides.
+        result = run_unit_job(cmd, _systemd_scope_cmd(entry), 'start', entry['unit'], timeout=30)
+        if result.returncode == UNIT_JOB_STILL_RUNNING:
+            return
     if result.returncode:
         raise RuntimeError(f'{_name(entry)} supervisor failed to start its backend.')
 

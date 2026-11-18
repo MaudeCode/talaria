@@ -491,8 +491,7 @@ def test_workers_and_detached_children_cleaned_on_abort(project, failure, proc_e
             os.kill(int(pidfile.read_text()), signal.SIGKILL)
 
 
-@pytest.mark.parametrize('mocked_api', ['Popen', 'check_output'])
-def test_cleanup_fixture_runs_after_subprocess_mocks_are_restored(project, mocked_api):
+def test_cleanup_fixture_runs_after_subprocess_mocks_are_restored(project):
     review_process_cases(project, 'Proves the real process scan runs after subprocess mocks unwind and cache state stays test-local.',
                          'tests/test_mocks.py::test_mock', 'tests/test_mocks.py::test_next_cache')
     shutil.copy(SCRIPTS.parent / 'tests/conftest.py', project / 'tests/conftest.py')
@@ -506,7 +505,8 @@ def test_cleanup_fixture_runs_after_subprocess_mocks_are_restored(project, mocke
             chat._AGENT_CACHE['current'] = object()
             def mocked(*args, **kwargs):
                 raise AssertionError('subprocess mock survived into process cleanup')
-            monkeypatch.setattr(subprocess, {mocked_api!r}, mocked)
+            # Every subprocess helper the scan could use ends in Popen.
+            monkeypatch.setattr(subprocess, 'Popen', mocked)
         def test_next_cache():
             assert not chat._AGENT_CACHE
     """))

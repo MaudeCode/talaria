@@ -119,14 +119,9 @@ def _configured_key(api_key: str | None, env_vars: list[str] | None) -> str:
         return _usable_key(api_key)
     if not env_vars:
         return ""
-    try:
-        from hermes_cli.config import get_env_value_prefer_dotenv as get_env
-    except ImportError:  # older Agents still resolve through the installed profile secret scope
-        try:
-            from agent.secret_scope import get_secret as get_env
-        except ImportError:
-            return ""
-    for name in env_vars or []:
+    from hermes_cli.config import get_env_value_prefer_dotenv as get_env
+
+    for name in env_vars:
         key = _usable_key(get_env(name))
         if key:
             return key
@@ -138,13 +133,6 @@ def pool(provider: str, *, api_key: str | None = None) -> list[dict]:
     profile-resolved configured key, and no secrets."""
     agent_pool, entries = _pool(provider)
     configured = _usable_key(api_key)
-    try:
-        from agent.credential_pool import _exhausted_until
-    except Exception:  # noqa: BLE001 - an Agent without it cannot date an exhausted mark, so the entry reads as available
-        def _exhausted_until(entry, *, sole_credential=False):
-            return None
-    sole_fn = getattr(agent_pool, "_is_sole_credential", None)
-    sole = bool(sole_fn()) if callable(sole_fn) else len(entries) == 1
     rows = []
     for index, entry in enumerate(entries, start=1):
         credential_id = str(getattr(entry, "id", "") or "").strip()
@@ -153,7 +141,11 @@ def pool(provider: str, *, api_key: str | None = None) -> list[dict]:
         row = {"credential_id": credential_id, "label": _label(entry, index), "status": "available", "unavailable_reason": None, "retry_after": None,
                "matches_api_key": bool(configured) and _entry_key(entry) == configured}
         status = str(getattr(entry, "last_status", "") or "").strip().lower()
-        until = _exhausted_until(entry, sole_credential=sole) if status == "exhausted" else None
+        until = None
+        if status == "exhausted":
+            from agent.credential_pool import _exhausted_until
+
+            until = _exhausted_until(entry, sole_credential=agent_pool._is_sole_credential())
         if status == "dead":
             row.update(status="dead", unavailable_reason="Credential permanently revoked or invalid.")
         elif until is not None and time.time() < until:
@@ -387,9 +379,8 @@ def account(provider: str, *, base_url: str | None, api_key: str | None, credent
         from agent.account_usage import fetch_account_usage
     except Exception as exc:  # noqa: BLE001
         raise RpcError(f"account usage unavailable: {exc}", condition="usage_unavailable") from exc
-    # Without the Agent's table of built-in fetchers, only the built-ins the server reads skip the plugin owner check.
-    builtin = getattr(agent_usage, "_USAGE_FETCHERS", None) or ("anthropic", "openai-codex")
-    if provider not in builtin and not _own_plugin(provider):
+    # The Agent's built-in fetchers skip the plugin owner check.
+    if provider not in agent_usage._USAGE_FETCHERS and not _own_plugin(provider):
         # TAL-2187: any other provider reads through its plugin's own hook, and only this profile's plugin answers.
         return {"provider": provider, "available": False, "unavailable_reason": f"{provider} is not an enabled provider plugin in this profile.", "windows": [], "details": []}
     try:

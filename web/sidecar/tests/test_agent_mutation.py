@@ -27,11 +27,21 @@ def wait_for_agent_exit(root, home):
                              for _, _, _, args in process_snapshot()))
 
 
+# The Agent's home resolution as these synthetic writers use it: HERMES_HOME alone, so the override is a no-op.
+SYNTHETIC_CONSTANTS = '''import os
+from pathlib import Path
+def get_default_hermes_root(): return Path(os.environ['HERMES_HOME'])
+def set_hermes_home_override(path): return None
+def reset_hermes_home_override(token): pass
+'''
+
+
 def native_agent(tmp_path, *, git_history=True):
     root, home = tmp_path / 'agent', tmp_path / 'home'
     root.mkdir()
     home.mkdir()
     (root / 'run_agent.py').write_text('raise RuntimeError("not required for repair")\n')
+    (root / 'hermes_constants.py').write_text(SYNTHETIC_CONSTANTS)
     (root / 'writer.py').write_text('''import os, sys, time
 from pathlib import Path
 home=Path(sys.argv[1])
@@ -126,7 +136,8 @@ def _read_ledger(path):
  import json
  return json.loads(path.read_text()) if path.exists() else []
 def install_id(root): return 'synthetic-install'
-def _pid_alive_matches(pid,ct): return True
+def _entry_boot(entry,key): return None
+def _pid_alive_matches(pid,ct,**kw): return True
 ''',
         'update_cmd_posix_pause': '''import json, os
 from pathlib import Path
@@ -234,7 +245,6 @@ def native_journal_owner(tmp_path):
         shutil.copyfile(AGENT_DIR / 'hermes_cli' / name, root / 'hermes_cli' / name)
     with (root / 'hermes_cli/update_custody.py').open('a') as file:
         file.write('\ndef run_git(command,args,**kwargs): return subprocess.run([*command,*args],**kwargs)\n')
-    (root / 'hermes_constants.py').write_text("import os\nfrom pathlib import Path\ndef get_default_hermes_root(): return Path(os.environ['HERMES_HOME'])\n")
     (root / 'hermes_cli/_parser.py').write_text('def command_argv(argv): return argv\n')
     (root / 'hermes_cli/_early_recovery.py').write_text("def interrupted_pull_marker(root): return root / '.interrupted'\n")
     with (root / 'hermes_cli/update_lock.py').open('a') as file:
@@ -285,7 +295,7 @@ def supervised_inventory(tmp_path, monkeypatch):
     modules = {}
     for name in ['gateway', 'gateway.status', 'gateway.status_inline_source', 'hermes_cli', 'hermes_cli.gateway',
                  'hermes_cli.main_dashboard', 'hermes_cli.dashboard_procs', 'hermes_cli.update_inventory',
-                 'hermes_cli.update_receipt']:
+                 'hermes_cli.update_receipt', 'hermes_constants']:
         module = types.ModuleType(name)
         module.__path__ = []
         modules[name] = module
@@ -296,6 +306,9 @@ def supervised_inventory(tmp_path, monkeypatch):
     status._read_process_cmdline = lambda pid: 'hermes gateway run'
     modules['gateway.status_inline_source'].command_line_runs_inline_source = lambda tokens: False
     modules['gateway.status_inline_source'].inline_bootstrap_argv = lambda tokens: None
+    # Synthetic homes resolve through HERMES_HOME alone, so the native override is a no-op here.
+    modules['hermes_constants'].set_hermes_home_override = lambda path: None
+    modules['hermes_constants'].reset_hermes_home_override = lambda token: None
     status._pid_exists = lambda pid: pid in parent
     gateway = modules['hermes_cli.gateway']
     gateway._is_pid_ancestor_of_current_process = lambda pid: False

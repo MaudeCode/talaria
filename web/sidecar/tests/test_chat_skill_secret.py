@@ -17,7 +17,6 @@ from talaria_sidecar.home import scoped_home
 from talaria_sidecar.methods import Registry, chat
 
 outcome = sys.argv[2]
-supported = callable(getattr(skills_tool, "bind_turn_secret_capture", None))
 registry = Registry(runtime=None)
 chat.register(registry)
 root = pathlib.Path(os.environ["HERMES_HOME"])
@@ -49,7 +48,7 @@ class Agent:
         worker.start()
         worker.join(timeout=15)
         assert not worker.is_alive(), "secret waiter leaked"
-        if supported: callbacks_after.append(skills_tool._turn_secret_capture.get() is not None)
+        callbacks_after.append(skills_tool._turn_secret_capture.get() is not None)
         if outcome == "turn_error": raise RuntimeError("synthetic failed turn")
         return {"final_response": "Setup finished.", "messages": []}
 
@@ -101,7 +100,7 @@ def turn(name):
     with scoped_home(home):
         chat.start(ctx, {"profile_home": str(home), "session_id": name, "stream_id": "stream-" + name,
                          "user_message": "Set up synthetic", "model": "m", "model_provider": "p", **({"skill_secret": True} if outcome != "client_unsupported" else {})})
-        if supported: assert skills_tool._turn_secret_capture.get() is None
+        assert skills_tool._turn_secret_capture.get() is None
     for event, data in frames:
         if event == "clarify" and data.get("session_id") == name:
             assert registry.methods["clarify.respond"](ctx, {"stream_id": "stream-" + name, "clarify_id": data["clarify_id"], "response": "late-answer"}) == {"ok": False}
@@ -111,7 +110,7 @@ for t in threads:
     t.join(timeout=20)
     assert not t.is_alive(), "turn leaked"
 files = {name: (root / name / ".env").read_text() if (root / name / ".env").exists() else "" for name in names}
-print(json.dumps({"supported": supported, "frames": frames, "results": results, "acks": acks, "files": files,
+print(json.dumps({"frames": frames, "results": results, "acks": acks, "files": files,
                   "requests": requests, "process_secret": os.environ.get("TALARIA_TEST_SKILL_SECRET"), "callbacks_after": callbacks_after, "atomic_writes": atomic_writes, "live_secrets": live_secrets}))
 '''
 
@@ -125,10 +124,10 @@ def test_skill_secret_through_real_skill_and_worker(tmp_path, outcome):
     assert "Traceback" not in run.stderr, run.stderr[-4000:]
     observed = json.loads(run.stdout.strip().splitlines()[-1])
     assert len(observed["results"]) == len(observed["files"]), run.stderr[-4000:]
-    if not observed["supported"] or outcome == "client_unsupported":
+    if outcome == "client_unsupported":
         assert not observed["frames"] or all(event != "clarify" for event, _ in observed["frames"])
         assert not any(observed["files"].values())
-        assert observed["callbacks_after"] == ([False] if observed["supported"] else [])
+        assert observed["callbacks_after"] == [False]
         assert all(r["readiness_status"] == "setup_needed" for r in observed["results"])
         return
     prompts = [data for event, data in observed["frames"] if event == "clarify"]

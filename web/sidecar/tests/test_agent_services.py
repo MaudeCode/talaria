@@ -707,6 +707,7 @@ finally: server.server_close(); (home/'backend.pid').unlink(missing_ok=True)
 def _ledger_path(): return HOME/'ledger.json'
 def _read_ledger(path): return ledger()
 def install_id(root): return 'synthetic-install'
+def _entry_boot(entry,key): return None  # synthetic rows carry no boot id, so births match by epoch
 def _pid_alive_matches(pid,ct,**kw): return alive(pid,ct)
 ''',
       'gateway': '''from synthetic_services import *
@@ -874,7 +875,6 @@ def get_running_pid_identity_strict(path):
                 status.write(ast.unparse(function) + '\n')
     (root / 'gateway/host_rendezvous.py').write_text("ROLE_SERVE='serve'\ndef read_record(role): return None\n")
     (root / 'gateway/status_inline_source.py').write_text('def command_line_runs_inline_source(tokens): return False\ndef inline_bootstrap_argv(tokens): return None\n')
-    (root / 'hermes_constants.py').write_text("import os\nfrom pathlib import Path\ndef get_default_hermes_root(): return Path(os.environ['HERMES_HOME'])\n")
     for name in ['update_pause_record.py', 'update_cmd_pause_gate.py', 'update_cmd_commit.py', 'update_cmd_common.py', '_early_recovery.py']:
         (modules / name).write_bytes((AGENT_DIR / 'hermes_cli' / name).read_bytes())
     with (modules / '_launchers.py').open('a') as file:
@@ -958,8 +958,10 @@ def run_git(command,args,**kw):
     if runtime_importable:
         (root / 'run_agent.py').write_text('class AIAgent: pass\n')
         (modules / 'auth.py').write_text('')
-        # This workerless double must not borrow optional modules from the installed Agent's editable finder.
-        (modules / 'guest_handoff.py').write_text('raise ModuleNotFoundError(name=__name__)\n')
+        # The native free-tier worker, idle until retirement stops it; never borrowed from the installed Agent.
+        (modules / 'guest_handoff.py').write_text('import threading\n_stop = threading.Event()\n'
+            'def start_worker():\n    _stop.clear(); worker = threading.Thread(target=_stop.wait, daemon=True); worker.start(); return worker\n'
+            'def stop_worker(timeout=5.0): _stop.set()\n')
     if local_edit_file: (root / 'local.txt').write_text('baseline local content\n')
     git(root, 'add', '.')
     git(root, 'commit', '-qm', 'supervised native baseline')
@@ -1142,15 +1144,12 @@ def test_legacy_successor_identity_failure_keeps_recovery_debt(supervised_invent
     assert [e['label'] for e in json.loads(recovery.path.read_text())['entries']] == [entry['label']]
 
 
-@pytest.mark.parametrize('exit_path', ['eof', 'owner-kill'])
-def test_backend_recovery_covers_lease_exit_paths(tmp_path, exit_path):
+def test_backend_recovery_restores_services_after_the_lease_owner_dies(tmp_path):
+    # A lost lease collapses the drain deadline (agent_mutation._worker); EOF versus SIGKILL is the process keeper's.
     with supervised_agent(tmp_path) as (root, home, base, target, sidecar, configs):
         begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
         assert begun['ok'], begun
-        if exit_path == 'eof':
-            sidecar.proc.stdin.close()
-        else:
-            sidecar.proc.kill()
+        sidecar.proc.kill()
         wait_for(lambda: (home / 'active').exists() and (home / 'backend.pid').exists())
         wait_for(lambda: not list((home / '.talaria-agent-services').glob('*.json')))
         assert not (root / 'VERSION').exists()
@@ -1668,10 +1667,16 @@ def test_loaded_runtime_acknowledgement_is_required_before_repair_intent_is_clea
         assert not wrong['ok'] and marker.exists()
         held, _ = sidecar.call('runtime.ensure_current')
         assert held['error']['data']['condition'] == 'agent_runtime_stale'
-        recovered = sidecar.result('runtime.agent_recovery', {'complete_revision': base}, timeout=45)
-        assert recovered['ok'] and not recovered['owed'], recovered
-        assert not marker.exists()
-        assert sidecar.result('runtime.ensure_current')['current']
+        # The accepted lease retired this runtime with its native worker; only a freshly loaded one can acknowledge.
+        retired = sidecar.result('runtime.agent_recovery', {'complete_revision': base}, timeout=45)
+        assert not retired['ok'] and retired['owed'] and marker.exists(), retired
+        sidecar.close()
+        with contextlib.closing(SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH': str(home / 'bin') + os.pathsep + os.environ['PATH']})) as fresh:
+            fresh.result('runtime.handshake', {'rpc_version': __import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=45)
+            recovered = fresh.result('runtime.agent_recovery', {'complete_revision': base}, timeout=45)
+            assert recovered['ok'] and not recovered['owed'], recovered
+            assert not marker.exists()
+            assert fresh.result('runtime.ensure_current')['current']
 
 def test_loaded_service_is_never_booted_out_or_bootstrapped_again(supervised_inventory, monkeypatch):
     from talaria_sidecar import agent_services as services
@@ -2549,25 +2554,17 @@ def test_recovery_probe_rearms_on_retained_gateway_lifecycle_change(tmp_path, mo
     assert probe()['fingerprint'] != exited['fingerprint']
 
 
-@pytest.mark.parametrize('native, failure', [('still-running', None), ('refused', 'failed to start'), ('older-agent', None)])
+@pytest.mark.parametrize('native, failure', [('still-running', None), ('refused', 'failed to start')])
 def test_systemd_start_past_its_client_timeout_is_left_to_readiness(gateway_successor, monkeypatch, native, failure):
     import types
     from talaria_sidecar import agent_services as services
     recovery, entry, _, _, pause, _, _ = gateway_successor
     entry.update(kind='systemd', scope='user', unit=entry.pop('label'))
     pause._manage_cmd = lambda scope: ['systemctl', '--user']
-    fleet = types.ModuleType('hermes_cli.update_cmd_fleet')
-    def systemctl(argv, timeout):
-        # A slow job outlives the client on every Agent; only an older one has no way to outwait it.
-        if native != 'older-agent': raise subprocess.TimeoutExpired(argv, timeout)
-        return subprocess.CompletedProcess(argv, 0, '', '')
-    fleet._systemctl = systemctl
     budget = types.ModuleType('hermes_cli.update_cmd_fleet_unit_budget')
-    if native != 'older-agent':
-        budget.UNIT_JOB_STILL_RUNNING = 124
-        budget.run_unit_job = lambda manage, scope, verb, unit, *, timeout: subprocess.CompletedProcess(
-            manage + [verb, unit], {'still-running': 124, 'refused': 1}[native], '', '')
-    monkeypatch.setitem(sys.modules, fleet.__name__, fleet)
+    budget.UNIT_JOB_STILL_RUNNING = 124
+    budget.run_unit_job = lambda manage, scope, verb, unit, *, timeout: subprocess.CompletedProcess(
+        manage + [verb, unit], {'still-running': 124, 'refused': 1}[native], '', '')
     monkeypatch.setitem(sys.modules, budget.__name__, budget)
     monkeypatch.setattr(services, '_config_stamp', lambda entry: entry['config_stamp'])
     monkeypatch.setattr(services, '_service_pid', lambda entry: (False, None))
@@ -2669,6 +2666,10 @@ def backend_stop(supervised_inventory, monkeypatch):
     fleet._systemctl = lambda argv, **kwargs: (subprocess.CompletedProcess(argv, 0, model['configuration'], '')
         if 'cat' in argv else spawn())
     monkeypatch.setitem(sys.modules, 'hermes_cli.update_cmd_fleet', fleet)
+    budget = types.ModuleType('hermes_cli.update_cmd_fleet_unit_budget')
+    budget.UNIT_JOB_STILL_RUNNING = 124
+    budget.run_unit_job = lambda manage, scope, verb, unit, *, timeout: spawn()
+    monkeypatch.setitem(sys.modules, budget.__name__, budget)
     original_run = subprocess.run
 
     def command(argv, **kwargs):

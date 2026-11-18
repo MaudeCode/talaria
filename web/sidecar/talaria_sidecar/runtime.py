@@ -42,9 +42,8 @@ _O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
 _MARKER_SAFE_OPEN_AVAILABLE = bool(_O_NOFOLLOW) and bool(_O_NONBLOCK)
 
 
-# Agent 0.22.6 retries only the launch profile's free-tier handoffs; 0.22.5's ``retry_all_profiles`` covered every
-# profile. This tick retries the named profiles' due ones beside the native worker. The native lease (``_reserve``)
-# keeps the two from sending one record twice.
+# The native worker retries only the launch profile's free-tier handoffs. This tick retries the named profiles' due
+# ones beside it. The native lease (``_reserve``) keeps the two from sending one record twice.
 _PROFILE_HANDOFF_SECONDS = 60.0
 _profile_handoff_stop = threading.Event()
 _profile_handoff_thread: threading.Thread | None = None
@@ -110,8 +109,8 @@ class AgentIncompatible(RpcError):
         super().__init__(message, condition="agent_incompatible", data=data)
 
 
-def read_pin(path: Path = PIN_PATH) -> dict:
-    pin = json.loads(path.read_text(encoding="utf-8"))
+def read_pin() -> dict:
+    pin = json.loads(PIN_PATH.read_text(encoding="utf-8"))
     talaria = pin["x-talaria"]
     return {"version": talaria["version"], "source_revision": talaria["sourceRevision"], "image": pin["services"]["hermes-agent"]["image"]}
 
@@ -357,6 +356,7 @@ class AgentRuntime:
                 try:
                     handoff = importlib.import_module("hermes_cli.guest_handoff")
                 except ModuleNotFoundError as exc:
+                    # An older Agent still loads with only a warning; it has no free-tier worker to own.
                     if exc.name != "hermes_cli.guest_handoff":
                         raise
                 else:
@@ -366,8 +366,7 @@ class AgentRuntime:
                     self._handoff = handoff
                     if not handoff.start_worker().is_alive():
                         raise RuntimeError("Native handoff worker did not start")
-                    if not hasattr(handoff, "retry_all_profiles"):
-                        _start_profile_handoffs(handoff)
+                    _start_profile_handoffs(handoff)
             except Exception as exc:  # noqa: BLE001 - reported as a handshake condition
                 self._stop_handoff()
                 self.import_error = f"{type(exc).__name__}: {exc}"
