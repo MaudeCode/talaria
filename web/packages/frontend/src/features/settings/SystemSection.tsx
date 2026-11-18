@@ -159,8 +159,7 @@ export function SystemSection() {
             </Select>}
             action={canManage && agentUpdate?.can_apply ? <IconButton variant="default" label={applyAgent.isPending && !applyAgent.variables.version ? m.update_updating() : m.system_apply_agent_update()} onClick={() => applyAgent.mutate({})} disabled={applyAgent.isPending}><CircleArrowUp aria-hidden="true" /></IconButton> : null}
             folded={canManage ? agentUpdate?.versions.filter((v) => v.folded) : undefined} install={install(applyAgent)}
-            /* Before TAL-946 the server sent no `support_label`; `unsupported` answers only for one that predates `support` (TAL-350). */
-            support={agentUpdate?.can_apply ? agentSupport(agentUpdate) : null}
+            support={agentUpdate?.can_apply ? supportOf(agentUpdate) : null}
             installedNote={agentUpdate?.current_support === 'unchecked' ? m.system_agent_installed_unchecked() : null}
             summary={agentUpdate?.summary_available ? <UpdateSummary target="agent" name={AGENT} info={agentUpdate} /> : null} />
         </div></div>
@@ -209,13 +208,8 @@ interface ApplyRequest { refreshToken?: string; version?: string; confirmedRevis
 type Tone = 'update' | 'ok' | 'warn' | 'quiet'
 interface Support { label: string; unchecked: boolean }
 
-/** The newest Agent target's one-line support status. */
-function agentSupport(t: Target): Support | null {
-  const unchecked = (t.support ?? (t.unsupported === true ? 'unchecked' : 'supported')) === 'unchecked'
-  const label = t.support_label ?? (unchecked ? m.system_agent_unsupported_warning() : null)
-  return label ? { label, unchecked } : null
-}
-const versionSupport = (v: UpdateVersion): Support | null => (v.support_label ? { label: v.support_label, unchecked: v.support === 'unchecked' } : null)
+/** An Agent target's or version's one-line support status, as the server words it (TAL-946). */
+const supportOf = (v: Pick<UpdateVersion, 'support' | 'support_label'>): Support | null => (v.support_label ? { label: v.support_label, unchecked: v.support === 'unchecked' } : null)
 interface PathStatus { tone: Tone; text: string; target?: string | undefined; detail?: string | undefined }
 
 /** One component's update state in the words its channel uses: Stable names releases, Experimental counts commits. */
@@ -332,7 +326,7 @@ function UpdatePath({ id, title, icon, installed, installedNote, status, channel
         {next && open ? [...folded].reverse().map((v) => (
           <PathNode key={v.ref} tone="quiet">
             <div className="font-mono text-sm text-text break-all">{v.version}</div>
-            <SupportLine support={versionSupport(v)} />
+            <SupportLine support={supportOf(v)} />
             <div className="mt-2">{install(v)}</div>
           </PathNode>
         )) : null}

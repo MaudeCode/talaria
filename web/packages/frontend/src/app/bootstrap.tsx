@@ -56,12 +56,6 @@ export function subscribeBootstrap(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-export function setBootstrapForTests(data: Bootstrap): void {
-  current = { state: 'ready', data, requestedAt: Date.now() }
-  configureClient({ csrfToken: data.csrf_token, authEnabled: data.auth.auth_enabled, onUnauthorized: handleAuthExpired })
-  for (const l of listeners) l()
-}
-
 /**
  * TAL-1712: seed the queries the server shipped in `bootstrap.shell` (the bodies of `/api/settings`, `/api/profiles`,
  * `/api/workspaces` and `/api/projects`), so their hooks mount fresh and skip the first read. A query the client read

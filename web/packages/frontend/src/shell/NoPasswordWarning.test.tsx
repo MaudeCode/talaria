@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import * as api from '../api/endpoints'
 import { keys } from '../api/queryKeys'
 import { useSaveSettings } from '../app/settings'
-import { BootstrapContext, bootstrapStatus, setBootstrapForTests, subscribeBootstrap } from '../app/bootstrap'
+import { BootstrapContext, bootstrapStatus, loadBootstrap, subscribeBootstrap } from '../app/bootstrap'
 import { ApiError } from '../contracts'
 import { DEFAULT_BOOTSTRAP } from '../contracts/adapters/memory'
 import type { Bootstrap } from '../contracts/bootstrap'
@@ -18,7 +18,7 @@ import { closeMobileSidebar, toggleMobileSidebar, toggleSidebarCollapsed } from 
 vi.mock('../features/sessions/useNewChat', () => ({ useNewChat: () => vi.fn() }))
 vi.mock('../features/notifications/UpdateNotificationCenter', () => ({ UpdateNotificationCenterButton: () => null }))
 vi.mock('../extensions/registry', () => ({ useExtensionManifests: () => ({ data: { manifests: [] } }) }))
-vi.mock('../api/endpoints', async (original) => ({ ...await original<object>(), saveSettings: vi.fn(), fetchSettings: vi.fn() }))
+vi.mock('../api/endpoints', async (original) => ({ ...await original<object>(), saveSettings: vi.fn(), fetchSettings: vi.fn(), fetchBootstrap: vi.fn() }))
 vi.mock('../app/queries', async (original) => ({ ...await original<object>(), useDashboardStatusQuery: () => ({ data: {} }) }))
 
 type Layout = 'expanded' | 'rail' | 'drawer'
@@ -40,11 +40,17 @@ function AckWriter() {
   return <button type="button" onClick={() => { save.mutate({ auth_disabled_acknowledged: true }, { onError: () => undefined }) }}>Acknowledge</button>
 }
 
+// The server's answer to the next `/api/bootstrap` read, through the app's own loader.
+async function rereadBootstrap(boot: Bootstrap) {
+  vi.mocked(api.fetchBootstrap).mockResolvedValue(boot)
+  await act(async () => { await loadBootstrap() })
+}
+
 async function renderSidebar(layout: Layout, boot: Bootstrap, settings: Record<string, unknown> = {}) {
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: layout !== 'drawer' && query.includes('min-width'), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
   toggleSidebarCollapsed(layout === 'rail')
   if (layout === 'drawer') toggleMobileSidebar()
-  setBootstrapForTests(boot)
+  await rereadBootstrap(boot)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   client.setQueryData(keys.settings, { hidden_tabs: [], ...settings })
   const root = createRootRoute({ component: () => <QueryClientProvider client={client}><LiveBootstrap><Sidebar panel={null} /><AckWriter /></LiveBootstrap><Outlet /></QueryClientProvider> })
@@ -98,10 +104,10 @@ it('TAL-2158: this tab\'s acknowledgement shows at once, holds through its save,
   await act(async () => { save.resolve({ ok: true, auth_disabled_acknowledged: true }); await save.promise })
   await waitFor(() => expect(api.fetchSettings).toHaveBeenCalled())
   expect(tone()).toBe('warning')
-  act(() => { setBootstrapForTests(bootstrap({ no_password_warning: 'warning', auth_disabled_acknowledged: true })) })
+  await rereadBootstrap(bootstrap({ no_password_warning: 'warning', auth_disabled_acknowledged: true }))
   expect(tone()).toBe('warning')
   // From here the server decides, even against this tab's last write.
-  act(() => { setBootstrapForTests(bootstrap({ no_password_warning: 'error' })) })
+  await rereadBootstrap(bootstrap({ no_password_warning: 'error' }))
   expect(tone()).toBe('error')
 })
 
@@ -122,6 +128,6 @@ it('TAL-2158: no warning when the server reports none, whatever the raw auth fie
 it('TAL-2158: setting a password removes the warning when bootstrap is reread, without a reload', async () => {
   await renderSidebar('expanded', bootstrap({}))
   await screen.findByRole('link', { name: 'No password' })
-  act(() => { setBootstrapForTests(bootstrap({ auth_enabled: true, password_auth_enabled: true, no_password_warning: null })) })
+  await rereadBootstrap(bootstrap({ auth_enabled: true, password_auth_enabled: true, no_password_warning: null }))
   expect(warning()).toBeNull()
 })
