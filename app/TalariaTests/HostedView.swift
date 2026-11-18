@@ -483,6 +483,25 @@ extension XCTestCase {
         return unchanged >= quietHops
     }
 
+    /// Waits for `count` completed display updates in `scene`: each one has committed and drawn the work queued before
+    /// it, and an `afterUpdateComplete` update link registered earlier has run at least once by the second.
+    @MainActor
+    func awaitDisplayUpdates(_ count: Int, in scene: UIWindowScene) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            var remaining = count
+            var link: UIUpdateLink? = UIUpdateLink(windowScene: scene)
+            link?.addAction(to: .afterUpdateComplete) { _, _ in
+                remaining -= 1
+                guard remaining == 0 else { return }
+                link?.isEnabled = false
+                link = nil
+                continuation.resume()
+            }
+            link?.requiresContinuousUpdates = true
+            link?.isEnabled = true
+        }
+    }
+
     /// Pumps the run loop until `condition` holds or `timeout` passes, and reports whether it held. Network-driven
     /// screens use it to wait for the in-process fixture's answers.
     @MainActor

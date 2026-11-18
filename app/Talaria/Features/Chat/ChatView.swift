@@ -2464,13 +2464,11 @@ struct ChatView: View {
                                           hadRows ? .retained : .cache, rows: viewModel.messages.count)
         }
 
+        // State-heavy startup work waits until the navigation transition completes; cache
+        // preparation above stays synchronous so the transcript joins the first layout.
         // The appearance flip cancels this task and starts a fresh one; a cancelled task that
         // went on would replace that task's Git probe with one whose load fails as cancelled.
-        guard !Task.isCancelled, ChatInitialAppearancePolicy.shouldBeginAsyncWork(
-            hasCompletedAppearance: didCompleteInitialAppearance
-        ) else {
-            return
-        }
+        guard !Task.isCancelled, didCompleteInitialAppearance else { return }
 
         await beginSessionWork()
     }

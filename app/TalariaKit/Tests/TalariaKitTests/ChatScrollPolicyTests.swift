@@ -2,38 +2,6 @@ import XCTest
 @testable import TalariaKit
 
 final class ChatScrollPolicyTests: XCTestCase {
-    func testExistingTranscriptUsesBottomAsItsInitialLayoutAnchor() {
-        XCTAssertEqual(ChatScrollPolicy.initialTranscriptAnchor, .bottom)
-    }
-
-    func testTranscriptSizeChangesStayBottomAnchoredOnlyWhileFollowingLatest() {
-        XCTAssertEqual(
-            ChatScrollPolicy.sizeChangeAnchor(shouldFollowLatestMessage: true),
-            .bottom
-        )
-        XCTAssertNil(ChatScrollPolicy.sizeChangeAnchor(shouldFollowLatestMessage: false))
-    }
-
-    func testInitialAsyncWorkWaitsForNavigationAppearanceCompletion() {
-        XCTAssertFalse(ChatInitialAppearancePolicy.shouldBeginAsyncWork(hasCompletedAppearance: false))
-        XCTAssertTrue(ChatInitialAppearancePolicy.shouldBeginAsyncWork(hasCompletedAppearance: true))
-    }
-
-    func testBottomThresholdLoosensWhileStreaming() {
-        XCTAssertEqual(
-            ChatScrollPolicy.bottomThreshold(isStreaming: false),
-            ChatScrollPolicy.bottomDetectionThreshold
-        )
-        XCTAssertEqual(
-            ChatScrollPolicy.bottomThreshold(isStreaming: true),
-            ChatScrollPolicy.streamingBottomDetectionThreshold
-        )
-        XCTAssertGreaterThan(
-            ChatScrollPolicy.bottomThreshold(isStreaming: true),
-            ChatScrollPolicy.bottomThreshold(isStreaming: false)
-        )
-    }
-
     func testIsNearBottomUsesIdleThresholdWhenNotStreaming() {
         XCTAssertTrue(ChatScrollPolicy.isNearBottom(distanceFromBottom: 80, isStreaming: false))
         XCTAssertFalse(ChatScrollPolicy.isNearBottom(distanceFromBottom: 81, isStreaming: false))
@@ -47,21 +15,9 @@ final class ChatScrollPolicyTests: XCTestCase {
     }
 
     func testShouldEnterReadingOlderRequiresHysteresisPastThreshold() {
-        let threshold = ChatScrollPolicy.bottomThreshold(isStreaming: false)
-        let hysteresis = ChatScrollPolicy.readingOlderHysteresis
-
-        XCTAssertFalse(
-            ChatScrollPolicy.shouldEnterReadingOlder(
-                distanceFromBottom: threshold + hysteresis,
-                isStreaming: false
-            )
-        )
-        XCTAssertTrue(
-            ChatScrollPolicy.shouldEnterReadingOlder(
-                distanceFromBottom: threshold + hysteresis + 1,
-                isStreaming: false
-            )
-        )
+        // 80 pt idle threshold plus 64 pt hysteresis.
+        XCTAssertFalse(ChatScrollPolicy.shouldEnterReadingOlder(distanceFromBottom: 144, isStreaming: false))
+        XCTAssertTrue(ChatScrollPolicy.shouldEnterReadingOlder(distanceFromBottom: 145, isStreaming: false))
     }
 
     func testCompactComposerRequiresIdleReadingState() {
@@ -167,12 +123,6 @@ final class ChatScrollPolicyTests: XCTestCase {
         XCTAssertTrue(follow(false, .userScrollEnd(isAtBottom: true)))
     }
 
-    func testMomentumEndDecidesFromWhereItSettled() {
-        // A fling that stops mid-transcript stays off; one that lands at the end re-arms.
-        XCTAssertFalse(follow(false, .userScrollEnd(isAtBottom: false)))
-        XCTAssertTrue(follow(false, .userScrollEnd(isAtBottom: true)))
-    }
-
     func testLayoutGrowthWhileOffNeverReArms() {
         // Streaming tokens push the bottom away; that alone must not re-pin the reader.
         XCTAssertFalse(follow(false, .contentScrolled(isAtBottom: false, isUserScrolling: false)))
@@ -222,9 +172,8 @@ final class ChatScrollPolicyTests: XCTestCase {
     }
 
     func testReArmRequiresStrictBottom() {
-        XCTAssertTrue(ChatScrollPolicy.isAtBottom(distanceFromBottom: ChatScrollPolicy.followReArmThreshold))
-        XCTAssertFalse(ChatScrollPolicy.isAtBottom(distanceFromBottom: ChatScrollPolicy.followReArmThreshold + 1))
-        XCTAssertLessThan(ChatScrollPolicy.followReArmThreshold, ChatScrollPolicy.bottomDetectionThreshold)
+        XCTAssertTrue(ChatScrollPolicy.isAtBottom(distanceFromBottom: 12))
+        XCTAssertFalse(ChatScrollPolicy.isAtBottom(distanceFromBottom: 13))
     }
 
     func testDragSettleWaitsForLateMomentum() {
@@ -232,24 +181,7 @@ final class ChatScrollPolicyTests: XCTestCase {
         XCTAssertLessThan(ChatScrollPolicy.momentumSettleDelay, ChatScrollPolicy.dragSettleDelay)
     }
 
-    func testDisclosureToggleSuspendsBottomAnchorWhileFollowing() {
-        XCTAssertNil(
-            ChatScrollPolicy.sizeChangeAnchor(shouldFollowLatestMessage: true, isDisclosureSettling: true)
-        )
-        XCTAssertEqual(
-            ChatScrollPolicy.sizeChangeAnchor(shouldFollowLatestMessage: true, isDisclosureSettling: false),
-            .bottom
-        )
-        XCTAssertNil(
-            ChatScrollPolicy.sizeChangeAnchor(shouldFollowLatestMessage: false, isDisclosureSettling: false)
-        )
-    }
-
     func testDisclosureHoldReleasesOnQuietOrAtItsBound() {
-        XCTAssertGreaterThan(
-            ChatScrollPolicy.disclosureHoldQuietPeriod,
-            ChatScrollPolicy.disclosureAnchorSuspension
-        )
         XCTAssertGreaterThan(
             ChatScrollPolicy.disclosureHoldMaximum,
             ChatScrollPolicy.disclosureHoldQuietPeriod

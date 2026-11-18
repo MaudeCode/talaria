@@ -34,12 +34,15 @@ final class MarkdownMathLayoutCacheTests: XCTestCase {
             "> quote\n> continued",
             "| a | b |\n|---|---|\n| 1 | 2 |",
             "unicode: café — ünïcödé 😀 中文",
+            // Grouped assignments render as inline math on both the streaming and the settled path.
+            "Streaming $E=[4,-2]$ and settled $p=(3,4)$ agree.",
             "ab",
             ""
         ]
 
         for input in inputs {
             guard case .plain(let layout) = MarkdownMathLayoutCache.layout(for: input) else {
+                XCTFail("Expected a plain layout for \(input.debugDescription)")
                 continue
             }
             XCTAssertEqual(
@@ -95,17 +98,6 @@ final class MarkdownMathLayoutCacheTests: XCTestCase {
             "The settled path is expected to memoize."
         )
         XCTAssertEqual(uncached, cached, "Cached and uncached layouts must agree.")
-    }
-
-    func testEmptyAndShortContentStaysStable() {
-        XCTAssertEqual(
-            MarkdownMathLayoutCache.layout(for: ""),
-            MarkdownMathLayoutCache.layout(for: "")
-        )
-        XCTAssertEqual(
-            MarkdownMathLayoutCache.layout(for: "a"),
-            MarkdownMathLayoutCache.layout(for: "a")
-        )
     }
 
     /// Differential check over generated content: for every no-math input, the
@@ -174,6 +166,7 @@ final class MarkdownMathLayoutCacheTests: XCTestCase {
 
         for input in inputs {
             guard case .plain(let layout) = MarkdownMathLayoutCache.layout(for: input) else {
+                XCTFail("Expected a plain layout for \(input.debugDescription)")
                 continue
             }
             XCTAssertEqual(

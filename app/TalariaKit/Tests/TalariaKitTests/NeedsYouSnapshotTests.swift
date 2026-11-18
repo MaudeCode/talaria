@@ -85,7 +85,8 @@ final class NeedsYouSnapshotTests: APIClientTestCase {
     }
 
     func testSessionListRefreshSavesTheSameSnapshotAsTheRelayRefresh() async throws {
-        let listStore = makeStore()
+        let listSuite = "NeedsYouSnapshotTests.\(UUID().uuidString)"
+        let listStore = makeStore(suite: listSuite)
         let relayStore = makeStore()
         let json = summaryJSON
         let client = makeClient { request in
@@ -95,7 +96,8 @@ final class NeedsYouSnapshotTests: APIClientTestCase {
 
         let loaded = await viewModel.load()
         XCTAssertTrue(loaded)
-        for _ in 0..<200 where listStore.load() == nil { try await Task.sleep(for: .milliseconds(10)) }
+        // The list refreshes off its own queue; wait for the snapshot it saves.
+        try await waitUntil { NeedsYouSnapshotStore(defaults: UserDefaults(suiteName: listSuite)).load() != nil }
         let relaySaved = await relayStore.refresh(client: client, serverURL: server)
         XCTAssertTrue(relaySaved)
 
@@ -106,8 +108,7 @@ final class NeedsYouSnapshotTests: APIClientTestCase {
         XCTAssertEqual(list.rows.map(\.sessionID), ["s-9", "s-5", "s-2"])
     }
 
-    private func makeStore() -> NeedsYouSnapshotStore {
-        let suite = "NeedsYouSnapshotTests.\(UUID().uuidString)"
+    private func makeStore(suite: String = "NeedsYouSnapshotTests.\(UUID().uuidString)") -> NeedsYouSnapshotStore {
         addTeardownBlock { UserDefaults().removePersistentDomain(forName: suite) }
         return NeedsYouSnapshotStore(defaults: UserDefaults(suiteName: suite))
     }

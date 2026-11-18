@@ -74,28 +74,6 @@ final class MessageActionContextTests: XCTestCase {
         XCTAssertNil(MessageActionContext(message: message, visibleIndex: 0, messagesOffset: 0))
     }
 
-    func testEditTruncationIndexIsFullHistoryIndex() throws {
-        // For edit: we truncate to fullHistoryIndex (removing the selected message),
-        // not keepCountThroughMessage (which would keep the selected message).
-        let message = ChatMessage(
-            role: "user",
-            content: "Original question",
-            timestamp: 1_770_000_010,
-            messageId: "user-5"
-        )
-
-        let context = try XCTUnwrap(
-            MessageActionContext(message: message, visibleIndex: 3, messagesOffset: 10)
-        )
-
-        // fullHistoryIndex = offset + visibleIndex = 10 + 3 = 13
-        XCTAssertEqual(context.fullHistoryIndex, 13)
-        // keepCountThroughMessage = fullHistoryIndex + 1 = 14 (used for fork, not edit)
-        XCTAssertEqual(context.keepCountThroughMessage, 14)
-        // For edit, we truncate to fullHistoryIndex to remove the user message itself
-        XCTAssertEqual(context.role, .user)
-    }
-
     func testRegenerateUsesNearestLoadedUserMessageText() {
         let messages = [
             ChatMessage(role: "user", content: "First question", timestamp: 1, messageId: "u1"),

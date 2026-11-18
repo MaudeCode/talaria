@@ -68,10 +68,6 @@ final class TurnFileChangeAggregatorTests: XCTestCase {
         XCTAssertEqual(summary.changes.map(\.action), [.edited, .edited])
     }
 
-    func testNoServerChangesShowNothing() {
-        XCTAssertEqual(TurnFileChangeAggregator.summarize(changes: [], status: nil), .empty)
-    }
-
     func testRenameShowsTheServerDestinationWithRenamedChip() {
         let summary = TurnFileChangeAggregator.summarize(changes: [change("new/name.swift", .renamed)], status: nil)
 

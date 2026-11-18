@@ -48,61 +48,6 @@ final class MarkdownMathRendererTests: XCTestCase {
         let colors = foregroundColorSignatures(in: highlightedCode, userInterfaceStyle: .light)
         XCTAssertGreaterThan(colors.count, 1)
     }
-
-    func testMarkdownAttributedCodeFormatterPreservesForegroundColors() {
-        let attributedCode = NSMutableAttributedString(
-            string: "let value = true",
-            attributes: [
-                .font: UIFont.monospacedSystemFont(ofSize: 13, weight: .regular),
-                .foregroundColor: UIColor.label
-            ]
-        )
-        attributedCode.addAttributes(
-            [
-                .font: UIFont.monospacedSystemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: UIColor.systemPink
-            ],
-            range: NSRange(location: 0, length: 3)
-        )
-        attributedCode.addAttribute(
-            .foregroundColor,
-            value: UIColor.systemBlue,
-            range: NSRange(location: 12, length: 4)
-        )
-
-        let segments = MarkdownAttributedCodeFormatter.lines(in: attributedCode)
-            .flatMap(\.segments)
-
-        XCTAssertEqual(segments.map(\.attributedText.string), ["let value = true"])
-        XCTAssertGreaterThan(
-            foregroundColorSignatures(in: segments[0].attributedText, userInterfaceStyle: .light).count,
-            1
-        )
-
-        let firstFont = segments[0].attributedText.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
-        XCTAssertTrue(firstFont?.fontDescriptor.symbolicTraits.contains(.traitBold) ?? false)
-        XCTAssertEqual(
-            colorSignature(in: segments[0].attributedText, at: 0, userInterfaceStyle: .light),
-            colorSignature(for: .systemPink, userInterfaceStyle: .light)
-        )
-        XCTAssertEqual(
-            colorSignature(in: segments[0].attributedText, at: 12, userInterfaceStyle: .light),
-            colorSignature(for: .systemBlue, userInterfaceStyle: .light)
-        )
-    }
-
-    func testGroupedAssignmentSegmentationMatchesAcrossStreamingAndSettledPaths() {
-        let content = "Streaming $E=[4,-2]$ and settled $p=(3,4)$ agree."
-
-        XCTAssertEqual(
-            MarkdownMathLayoutCache.uncachedLayout(for: content),
-            MarkdownMathLayoutCache.layout(for: content)
-        )
-        XCTAssertEqual(
-            MarkdownMathLayoutCache.uncachedLayout(for: content),
-            .plain(MarkdownMathFormatter.replacingInlineMath(in: content))
-        )
-    }
 }
 
 private func foregroundColorSignatures(in attributedString: NSAttributedString, userInterfaceStyle: UIUserInterfaceStyle) -> Set<String> {
@@ -146,11 +91,4 @@ private func colorSignature(for color: UIColor?, userInterfaceStyle: UIUserInter
     }
 
     return nil
-}
-
-private func colorSignature(in attributedString: NSAttributedString, at location: Int, userInterfaceStyle: UIUserInterfaceStyle) -> String? {
-    colorSignature(
-        for: attributedString.attribute(.foregroundColor, at: location, effectiveRange: nil) as? UIColor,
-        userInterfaceStyle: userInterfaceStyle
-    )
 }

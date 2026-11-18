@@ -16,7 +16,7 @@ struct ChatTranscriptView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.openURL) private var openURL
-    @State private var scrollPositionController = ChatScrollPositionController(usesLazyLayout: true)
+    @State private var scrollPositionController = ChatScrollPositionController()
     @State private var initialScrollAnchor: UnitPoint? = .bottom
     @State private var previousViewportWidth: CGFloat?
     @State private var preparedWidthChange = false

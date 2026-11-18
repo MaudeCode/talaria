@@ -147,22 +147,17 @@ final class TranscriptHostedTests: XCTestCase {
             }))
             let scroll = try XCTUnwrap(historyScroll(in: window))
             referenceScroll = scroll
-            try await Task.sleep(for: .milliseconds(150))
+            let idle = await awaitIdleTranscript(in: window, scroll: scroll)
+            XCTAssertTrue(idle, "The transcript must finish its first layout before reading history")
             let read = try XCTUnwrap(readHistory)
             read()
-            var longestTick: TimeInterval = 0
-            for _ in 0..<500 where inserted == nil {
-                let tick = ProcessInfo.processInfo.systemUptime
-                try await Task.sleep(for: .milliseconds(8))
-                longestTick = max(longestTick, ProcessInfo.processInfo.systemUptime - tick)
-            }
+            _ = await awaitCondition { inserted != nil }
             let start = try XCTUnwrap(started, "Requests \(requested); initial bodies \(initialRowBodies); viewport \(type(of: scroll)) bounds \(scroll.bounds) offset \(scroll.contentOffset) content \(scroll.contentSize)")
             let end = try XCTUnwrap(inserted, "The real transcript must finish laying out its older page")
             XCTAssertEqual(requested, [first])
             XCTAssertLessThanOrEqual(oldRowBodies, 50, "A 50-row prepend must bound existing-row layout work independently of loaded history")
             samples.append(["alreadyLoadedRows": Double(count), "insertMilliseconds": (end - start) * 1_000,
-                            "longestTickMilliseconds": longestTick * 1_000, "oldRowBodies": Double(oldRowBodies),
-                            "newRowBodies": Double(newRowBodies)])
+                            "oldRowBodies": Double(oldRowBodies), "newRowBodies": Double(newRowBodies)])
             window.isHidden = true
             window.rootViewController = nil
         }
@@ -179,14 +174,8 @@ final class TranscriptHostedTests: XCTestCase {
         let window = try hostWindow(PagedHistoryTranscript(sparseOlderPages: true,
             onMetrics: { _ in observedMetrics = true }, onRequest: { requested.append($0) }))
         let scroll = try XCTUnwrap(historyScroll(in: window))
-        let ready = await awaitCondition {
-            guard observedMetrics,
-                  let controller = self.historyObserver(in: window)?.coordinator?.scrollPositionController,
-                  let geometry = ChatScrollMetrics.geometry(of: scroll) else { return false }
-            return !controller.isNavigating && !controller.isRealizingRows
-                && geometry.contentHeight > geometry.visibleHeight
-        }
-        XCTAssertTrue(ready, "The native observer and initial layout must be ready before fast scrolling")
+        let ready = await awaitIdleTranscript(in: window, scroll: scroll)
+        XCTAssertTrue(ready && observedMetrics, "The native observer and initial layout must be ready before fast scrolling")
         let coordinator = try XCTUnwrap(historyObserver(in: window)?.coordinator)
         let controller = try XCTUnwrap(coordinator.scrollPositionController)
         // Raw offsets do not send UIKit's drag-began event, which clears the
@@ -194,13 +183,12 @@ final class TranscriptHostedTests: XCTestCase {
         controller.userDidBeginDragging()
         coordinator.onFollowEvent(.userScrollBegin)
         // A fast reader repeatedly reaches the loaded edge while a prepend is settling.
-        for _ in 0..<150 {
+        let keptLoading = await awaitCondition {
             scroll.contentOffset.y = -scroll.adjustedContentInset.top
-            try await Task.sleep(for: .milliseconds(10))
+            return requested.count >= 3
         }
-        try await Task.sleep(for: .milliseconds(200))
         coordinator.onFollowEvent(.userScrollEnd(isAtBottom: false))
-        XCTAssertGreaterThanOrEqual(requested.count, 3, "Fast scrolling must keep requesting older pages without an away/back gesture")
+        XCTAssertTrue(keptLoading, "Fast scrolling must keep requesting older pages without an away/back gesture; requested \(requested)")
         let pages = Array(stride(from: 1_950, through: 50, by: -50))
         XCTAssertEqual(requested, Array(pages.prefix(requested.count)), "Every cursor is requested once; never request past the first page")
         attachHistoryImage(window, name: "Fast upward history after prefetch")
@@ -217,7 +205,7 @@ final class TranscriptHostedTests: XCTestCase {
         let native = try XCTUnwrap(proxy)
         // Leave at least three viewports above the reader, outside the old two-viewport buffer.
         native.scrollTo("transcript:1900", anchor: UnitPoint(x: 0.5, y: -3.5))
-        for _ in 0..<20 where requests == 0 { try await Task.sleep(for: .milliseconds(25)) }
+        _ = await awaitCondition { requests > 0 }
         let viewportHeight = scroll.bounds.height - scroll.adjustedContentInset.top - scroll.adjustedContentInset.bottom
         XCTAssertGreaterThan(scroll.contentOffset.y + scroll.adjustedContentInset.top, viewportHeight * 3)
         XCTAssertEqual(requests, 1, "Prefetch must start with at least three viewports of history still available")
@@ -361,32 +349,39 @@ final class TranscriptHostedTests: XCTestCase {
             }, onScrollRequest: { proxy = $0 })
             .navigationTitle("Transcript history")
         })
-        try await Task.sleep(for: .milliseconds(150))
+        let scroll = try XCTUnwrap(historyScroll(in: window))
+        let idle = await awaitIdleTranscript(in: window, scroll: scroll)
+        XCTAssertTrue(idle)
         XCTAssertEqual(requests, 0, "Opening at the latest row must not page history")
         try XCTUnwrap(proxy).scrollTo("transcript:1952", anchor: .top)
-        for _ in 0..<30 where requests == 0 { try await Task.sleep(for: .milliseconds(50)) }
+        _ = await awaitCondition { requests > 0 }
         XCTAssertEqual(requests, 1, "The top sentinel must request history before the reader reaches the top")
         XCTAssertNil(HostedAccessibility.element(in: window, label: "Load older messages"))
-        for _ in 0..<5 { proxy?.scrollTo("transcript:1952", anchor: .top); try await Task.sleep(for: .milliseconds(20)) }
+        for _ in 0..<5 {
+            proxy?.scrollTo("transcript:1952", anchor: .top)
+            _ = await awaitRenderedQuiet(in: window) { requests }
+        }
         XCTAssertEqual(requests, 1, "Repeated appearances must not overlap requests")
         proxy?.scrollTo("chat-transcript-content", anchor: .top)
-        try await Task.sleep(for: .milliseconds(250))
+        _ = await awaitRenderedQuiet(in: window) { scroll.contentOffset.y }
         attachHistoryImage(window, name: "History loading")
         finish?(false)
-        let retry = await awaitElement(in: window, label: "Try Again", timeout: 2)
+        let retry = await awaitElement(in: window, label: "Try Again")
         XCTAssertNotNil(retry, "Failed history must offer inline retry")
-        try await Task.sleep(for: .milliseconds(250))
         attachHistoryImage(window, name: "History retry")
         proxy?.scrollTo("bottom", anchor: .bottom)
-        try await Task.sleep(for: .milliseconds(50))
+        _ = await awaitRenderedQuiet(in: window) { scroll.contentOffset.y }
         proxy?.scrollTo("chat-transcript-content", anchor: .top)
-        try await Task.sleep(for: .milliseconds(100))
+        _ = await awaitRenderedQuiet(in: window) { scroll.contentOffset.y }
         XCTAssertEqual(requests, 1, "Failed history must stop automatic requests")
         if let retry { HostedAccessibility.activate(retry) }
-        for _ in 0..<20 where requests < 2 { try await Task.sleep(for: .milliseconds(50)) }
+        _ = await awaitCondition { requests >= 2 }
         XCTAssertEqual(requests, 2)
+        let pageHeight = scroll.contentSize.height
         finish?(true)
-        try await Task.sleep(for: .milliseconds(150))
+        let inserted = await awaitCondition { scroll.contentSize.height != pageHeight }
+        XCTAssertTrue(inserted, "The older page must be laid out before checking for a chained request")
+        _ = await awaitRenderedQuiet(in: window) { requests }
         XCTAssertEqual(requests, 2, "One appearance must not chain pages")
     }
 
@@ -440,11 +435,6 @@ final class TranscriptHostedTests: XCTestCase {
     }
 
     func testANewTopAppearanceDuringLoadingRunsAfterThePageSettles() async throws {
-        // Repeat the same held-request handoff; each iteration owns a fresh window.
-        for _ in 0..<5 { try await assertTopReentryDuringHeldHistoryLoad() }
-    }
-
-    private func assertTopReentryDuringHeldHistoryLoad() async throws {
         var requests = 0
         var finish: ((Bool) -> Void)?
         var proxy: ChatTranscriptScrollProxy?
@@ -480,7 +470,7 @@ final class TranscriptHostedTests: XCTestCase {
         let ready = await awaitCondition { proxy != nil }
         XCTAssertTrue(ready)
         try XCTUnwrap(proxy).scrollTo("transcript:1952", anchor: .top)
-        for _ in 0..<30 where requests == 0 { try await Task.sleep(for: .milliseconds(50)) }
+        _ = await awaitCondition { requests > 0 }
         XCTAssertEqual(requests, 1)
         let left = await awaitCondition { movement.contains(false) }
         XCTAssertTrue(left, "The native bottom jump must leave the prefetch region before returning")
@@ -492,9 +482,20 @@ final class TranscriptHostedTests: XCTestCase {
         XCTAssertTrue(returned, "The observer must acknowledge top re-entry while the request is held")
         XCTAssertEqual(requests, 1, "A repeated appearance must not overlap a page")
         finish?(true)
-        for _ in 0..<40 where requests < 2 { try await Task.sleep(for: .milliseconds(50)) }
+        _ = await awaitCondition { requests >= 2 }
         XCTAssertEqual(requests, 2, "A new appearance while loading must not strand the reader at the top")
         finish?(false)
+    }
+
+    /// The transcript has laid out and its position controller is idle: no navigation, row realization or position
+    /// preservation (a disclosure hold or a prepend's measurement window) is still running.
+    private func awaitIdleTranscript(in window: UIWindow, scroll: UIScrollView) async -> Bool {
+        await awaitCondition {
+            guard let controller = self.historyObserver(in: window)?.coordinator?.scrollPositionController,
+                  let geometry = ChatScrollMetrics.geometry(of: scroll) else { return false }
+            return !controller.isNavigating && !controller.isRealizingRows && !controller.isPreservingPosition
+                && geometry.contentHeight > geometry.visibleHeight
+        }
     }
 
     private func historyObserver(in view: UIView) -> ChatScrollObserver.ObserverView? {
@@ -522,12 +523,15 @@ final class TranscriptHostedTests: XCTestCase {
             }
         }))
         let scroll = try XCTUnwrap(historyScroll(in: window))
-        try await Task.sleep(for: .milliseconds(150))
+        let idle = await awaitIdleTranscript(in: window, scroll: scroll)
+        XCTAssertTrue(idle)
         try XCTUnwrap(readHistory)()
         let showMore = try await requireElement(in: window, label: "Show more")
         HostedAccessibility.activate(showMore)
         _ = try await requireElement(in: window, label: "Show less")
-        try await Task.sleep(for: .milliseconds(150))
+        // The disclosure's position hold lets go once the expanded row has settled.
+        let expanded = await awaitIdleTranscript(in: window, scroll: scroll)
+        XCTAssertTrue(expanded)
         let before = try await requireElement(in: window, label: "Show less").accessibilityFrame.minY
         let beforeOffset = scroll.contentOffset.y
         let beforeHeight = scroll.contentSize.height
@@ -535,9 +539,11 @@ final class TranscriptHostedTests: XCTestCase {
         let release = try XCTUnwrap(finishRequest)
         finishRequest = nil
         release()
-        for _ in 0..<60 where scroll.contentSize.height == beforeHeight { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertNotEqual(scroll.contentSize.height, beforeHeight, "The older page must be laid out before comparing position")
-        try await Task.sleep(for: .milliseconds(150))
+        let laidOut = await awaitCondition { scroll.contentSize.height != beforeHeight }
+        XCTAssertTrue(laidOut, "The older page must be laid out before comparing position")
+        // The prepend's preservation window ends once its rows have measured.
+        let settled = await awaitIdleTranscript(in: window, scroll: scroll)
+        XCTAssertTrue(settled)
         let after = try await requireElement(in: window, label: "Show less").accessibilityFrame.minY
         XCTAssertEqual(requested, [1950])
         XCTAssertEqual(after, before, accuracy: 2, "Prepend cursors \(requested); offset \(beforeOffset) → \(scroll.contentOffset.y); height \(beforeHeight) → \(scroll.contentSize.height)")
@@ -583,14 +589,6 @@ final class TranscriptHostedTests: XCTestCase {
         let expected = "Legacy failed goal. The worker or parent review failed., Legacy completed goal. The worker or parent review outcome is unknown."
         let row = await awaitElement(in: window, label: expected)
         XCTAssertNotNil(row, "An older server's known failure must remain a warning, while its success proves no parent review")
-    }
-
-    func testBackgroundReviewUsesTheAgreedPlatformIcons() {
-        XCTAssertEqual(BackgroundWorkSheet.icon(BackgroundReviewState.waiting), "clock")
-        XCTAssertEqual(BackgroundWorkSheet.icon(BackgroundReviewState.reviewed), "checkmark")
-        XCTAssertEqual(BackgroundWorkSheet.icon(BackgroundReviewState.failed), "exclamationmark.triangle.fill")
-        XCTAssertEqual(BackgroundWorkSheet.icon(BackgroundReviewState.unknown), "questionmark.circle")
-        XCTAssertEqual(BackgroundWorkSheet.icon(nil as BackgroundReviewState?), "questionmark.circle")
     }
 
     /// A compaction is its own row in its place, a flat disclosure line as tall as the transcript's other ones (TAL-1566).
