@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "On iPhone Duo and iPad, Open in New Window on a sidebar chat or section, or dragging a chat to the screen edge, opens it in its own window, and each window is named for its chat or section.",
+      "highlight": true,
+      "components": ["app"],
+      "announcement": {
+        "title": "Two Talaria windows",
+        "description": "Open a chat or section in its own window and use two side by side on iPhone Duo and iPad.",
+        "icon": "chat"
+      }
+    }
+  ]
+}

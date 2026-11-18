@@ -177,4 +177,6 @@ extension EnvironmentValues {
     @Entry var newChatDraftWindow: String?
     /// This window's scene session identifier, which the visible-chat registry and event routing key by (TAL-2388).
     @Entry var windowSceneID: String?
+    /// Opens a chat or section in its own window; nil where the device shows one window (TAL-2389).
+    @Entry var windowOpener: WindowOpener?
 }

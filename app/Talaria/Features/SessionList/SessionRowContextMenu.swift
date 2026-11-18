@@ -13,16 +13,18 @@ struct SessionRowContextMenu: View {
     let actions: SessionListRowActions
     var placement: Placement = .menu
     var openBeside: (() -> Void)?
+    var openInNewWindow: (() -> Void)?
     /// A list row hands over its current session and its own state; the chat's menu, given none, reads them from the list.
     private let rowState: (pendingChange: PendingResourceChange?, isMutating: Bool)?
 
     init(viewModel: SessionListViewModel, session: SessionSummary, actions: SessionListRowActions, placement: Placement = .menu,
-         openBeside: (() -> Void)? = nil, rowState: (pendingChange: PendingResourceChange?, isMutating: Bool)? = nil) {
+         openBeside: (() -> Void)? = nil, openInNewWindow: (() -> Void)? = nil, rowState: (pendingChange: PendingResourceChange?, isMutating: Bool)? = nil) {
         self.viewModel = viewModel
         originalSession = session
         self.actions = actions
         self.placement = placement
         self.openBeside = openBeside
+        self.openInNewWindow = openInNewWindow
         self.rowState = rowState
     }
 
@@ -67,7 +69,7 @@ struct SessionRowContextMenu: View {
         }
 
         if placement == .menu {
-            openBesideButton
+            windowButtons
             if SessionRowActionPolicy.canDuplicate(session) {
                 Button {
                     actions.duplicate(session)
@@ -136,10 +138,11 @@ struct SessionRowContextMenu: View {
     }
 
     @ViewBuilder
-    var openBesideButton: some View {
+    var windowButtons: some View {
         if let openBeside {
             Button(action: openBeside) { Label("Open Beside", systemImage: "rectangle.split.2x1") }
         }
+        if let openInNewWindow { OpenInNewWindowButton(action: openInNewWindow) }
     }
 
     private var isLiveServerSession: Bool {

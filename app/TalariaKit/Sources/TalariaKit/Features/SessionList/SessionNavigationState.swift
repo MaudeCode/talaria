@@ -55,6 +55,15 @@ public struct SessionNavigationState: Equatable, Sendable {
         return primaryID != secondaryID
     }
 
+    /// TAL-2389: the chat a sidebar row opens in a new window: any but those this window shows, and none on a device
+    /// that shows one window.
+    public func newWindowTarget(for session: SessionSummary, supportsMultipleWindows: Bool) -> OpenWindowTarget? {
+        guard supportsMultipleWindows, let id = Self.normalized(session.sessionId),
+              id != Self.normalized(displayedSessionID ?? selectedSessionID), id != Self.normalized(secondarySessionID)
+        else { return nil }
+        return .session(id)
+    }
+
     public mutating func openBeside(_ session: SessionSummary) {
         guard canOpenBeside(session) else { return }
         startedOpens += 1

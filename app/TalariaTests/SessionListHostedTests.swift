@@ -3295,6 +3295,89 @@ extension RegularSplitHostedTests {
         }
     }
 
+    /// TAL-2389: a sidebar with every section row shown, opened in an iPad landscape window with `opener`.
+    private func newWindowSidebar(opener: WindowOpener?) async throws -> UIWindow {
+        let keys = [SectionVisibilitySettings.tasksKey, SectionVisibilitySettings.kanbanKey,
+                    SectionVisibilitySettings.skillsKey, SectionVisibilitySettings.memoryKey, SectionVisibilitySettings.insightsKey]
+        let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
+        addTeardownBlock { @MainActor in
+            for (key, value) in zip(keys, previous) { UserDefaults.standard.set(value, forKey: key) }
+        }
+        for key in keys { UserDefaults.standard.set(true, forKey: key) }
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList().environment(\.windowOpener, opener), size: HostedSize.padLandscape) {
+            $0.horizontalSizeClass = .regular
+            $0.verticalSizeClass = .regular
+        }
+        try await openSidebar(in: window)
+        return window
+    }
+
+    private func newWindowAction(on label: String, in window: UIWindow) async throws -> UIAccessibilityCustomAction? {
+        let row = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix(label) == true }
+        return row.accessibilityCustomActions?.first { $0.name == "Open in New Window" }
+    }
+
+    private static let newWindowSections = ["Tasks", "Kanban", "Skills", "Memory", "Insights", "Decisions"]
+
+    /// TAL-2389: "Open in New Window" on a sidebar chat or section row opens that chat or section in a new window.
+    func testOpenInNewWindowOpensTheChatOrSection() async throws {
+        var opened: [OpenWindowTarget] = []
+        let window = try await newWindowSidebar(opener: WindowOpener { target, _, _ in opened.append(target) })
+        let chatAction = try await newWindowAction(on: "Fixture Session 01", in: window)
+        let chat = try XCTUnwrap(chatAction, "The sidebar session row offers no Open in New Window action")
+        XCTAssertTrue(chat.actionHandler?(chat) ?? false)
+        for label in Self.newWindowSections {
+            let found = try await newWindowAction(on: label, in: window)
+            let action = try XCTUnwrap(found, "\(label) offers no Open in New Window")
+            XCTAssertTrue(action.actionHandler?(action) ?? false)
+        }
+        XCTAssertEqual(opened, [.session("ui-fixture-session-1"), .section(.tasks), .section(.kanban), .section(.skills),
+                                .section(.memory), .section(.insights), .section(.decisions)])
+        attachHostedScreenshot(window, name: "open-in-new-window-sidebar")
+    }
+
+    /// TAL-2389: a device that shows one window offers no Open in New Window on any sidebar row.
+    func testOpenInNewWindowIsAbsentWhereOneWindowShows() async throws {
+        let window = try await newWindowSidebar(opener: nil)
+        for label in ["Fixture Session 01"] + Self.newWindowSections {
+            let action = try await newWindowAction(on: label, in: window)
+            XCTAssertNil(action, "A device that shows one window offers no new window on \(label)")
+        }
+    }
+
+    /// TAL-2389: Open in New Window on a chat another window shows brings that window forward and opens none.
+    func testOpenInNewWindowBringsForwardTheWindowShowingTheChat() async throws {
+        let previousBringForward = AppIntentRouter.shared.bringForward
+        var broughtForward: [String] = []
+        AppIntentRouter.shared.bringForward = { broughtForward.append($0) }
+        let shown = SessionNotificationRefresh.ShownChat(
+            try XCTUnwrap(SessionNotificationRefresh.VisibleChat(server: UITestFixtureEnvironment.serverURL,
+                                                                 sessionID: "ui-fixture-session-1")),
+            window: "other-window", isActive: false
+        )
+        SessionNotificationRefresh.updateVisibleChat(from: nil, to: shown)
+        defer {
+            SessionNotificationRefresh.updateVisibleChat(from: shown, to: nil)
+            AppIntentRouter.shared.bringForward = previousBringForward
+        }
+        var opened: [OpenWindowTarget] = []
+        let window = try await newWindowSidebar(opener: WindowOpener { target, _, _ in opened.append(target) })
+        let chatAction = try await newWindowAction(on: "Fixture Session 01", in: window)
+        let chat = try XCTUnwrap(chatAction)
+        XCTAssertTrue(chat.actionHandler?(chat) ?? false)
+        XCTAssertEqual(broughtForward, ["other-window"])
+        XCTAssertEqual(opened, [])
+    }
+
+    /// TAL-2389: a sidebar chat's drag carries the open-window activity only where it can open a window, so a drop on
+    /// the screen edge opens the chat in a new window.
+    func testSidebarChatDragCarriesTheOpenWindowActivity() {
+        let session = SessionSummary(sessionId: "ui-fixture-session-1")
+        XCTAssertTrue(SidebarChatDrag.provider(for: session, opensWindow: true).canLoadObject(ofClass: NSUserActivity.self))
+        XCTAssertFalse(SidebarChatDrag.provider(for: session).canLoadObject(ofClass: NSUserActivity.self))
+    }
+
     func testMakePrimaryKeepsALocallyPushedForkLoaded() async throws {
         try requireArrangement()
         let fixture = try FixtureApp([UITestFixtureEnvironment.forkSessionArgument], for: self)

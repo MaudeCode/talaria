@@ -8,6 +8,8 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
     let searchUsesBottomBar: Bool
     let isActive: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.windowOpener) private var windowOpener
+    @Environment(\.windowSceneID) private var windowSceneID
 
     @AppStorage(
         ProviderQuotaDisplaySettings.aliasesKey,
@@ -86,9 +88,12 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
         searchPull.isSearchPresented = true
     }
 
+    /// One list row each, since a List gives a row's context menu to its whole cell: each destination keeps its own
+    /// Open in New Window (TAL-2389).
     private var destinations: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 0) {
+        Group {
+            Color.clear.frame(height: 8).accessibilityHidden(true)
+            Group {
                 if sectionVisibility.tasks {
                     destinationRow(icon: "LucideCalendarClock", destination: .tasks)
                 }
@@ -107,29 +112,37 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
                 destinationRow(icon: "LucideScale", destination: .decisions)
             }
             .padding(.horizontal, 12)
-            .padding(.top, 8)
 
             if !quotaSources.isEmpty {
-                SidebarSectionHeader(title: String(localized: "Quotas"), isCompact: true) { EmptyView() }
                 VStack(spacing: 0) {
-                    ForEach(quotaSources) { quotaRow($0) }
+                    SidebarSectionHeader(title: String(localized: "Quotas"), isCompact: true) { EmptyView() }
+                    VStack(spacing: 0) {
+                        ForEach(quotaSources) { quotaRow($0) }
+                    }
+                    .padding(.horizontal, 12)
                 }
-                .padding(.horizontal, 12)
             }
         }
     }
 
     private func destinationRow(icon: String, destination: SessionListUtilityDestination) -> some View {
         let selected = selection == AppSection(destination)
+        let title = AppSection(destination)?.title ?? ""
+        let openWindow = OpenWindowTarget(section: destination, supportsMultipleWindows: windowOpener != nil)
+            .flatMap { target in windowOpener.map { opener in { opener.open(target, title, windowSceneID) } } }
         return destinationRow(destination: destination, isSelected: selected) {
             SidebarUtilityIcon(assetImage: icon, tint: selected ? .accentColor : .primary, size: 20)
         } label: {
             HStack {
-                Text(AppSection(destination)?.title ?? "").font(.body)
+                Text(title).font(.body)
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                 Spacer(minLength: 0)
             }
         }
+        // TAL-2389: the section as a new window's root, lifted in its selection shape.
+        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contextMenu { if let openWindow { OpenInNewWindowButton(action: openWindow) } }
+        .accessibilityActions { if let openWindow { OpenInNewWindowButton(action: openWindow) } }
     }
 
     /// Quotas and destinations share their target, insets and selection treatment.
