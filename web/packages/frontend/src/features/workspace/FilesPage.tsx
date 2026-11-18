@@ -272,7 +272,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
           <div className="flex items-center gap-1 border-b border-border-subtle px-2 py-1 text-xs">
             <Button variant="ghost" onClick={() => setFile(null)}><ArrowUp size={12} aria-hidden="true" /> {m.back()}</Button>
             <span className="min-w-0 flex-1 truncate font-mono text-muted">{fileName}</span>
-            {!managed && <a className="text-muted hover:text-text" href={rawUrl()} download aria-label={m.download_folder()}><Download size={14} aria-hidden="true" /></a>}
+            {!managed && <a className="text-muted hover:text-text" href={rawUrl()} download aria-label={m.ws_panel_download_file({ name: fileName ?? file })}><Download size={14} aria-hidden="true" /></a>}
           </div>
           {content.isPending && <LoadingState />}
           {content.isError && <ErrorState error={content.error} onRetry={() => { void content.refetch() }} />}

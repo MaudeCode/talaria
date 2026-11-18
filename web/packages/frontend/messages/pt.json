@@ -382,7 +382,6 @@
 	"dismiss": "Dispensar",
 	"done": "Done",
 	"double_click_rename": "Duplo clique para renomear",
-	"download_folder": "Pasta de downloads",
 	"download_transcript": "Baixar como Markdown",
 	"downloading": "Baixando {name}…",
 	"edit": "Editar",
@@ -2017,6 +2016,7 @@
 	"workspaces_empty_sub": "Escolha space da sidebar para ver arquivos e settings.",
 	"workspaces_empty_title": "Selecione um space",
 	"ws_no_results": "Nenhum espaço de trabalho encontrado",
+	"ws_panel_download_file": "Baixar {name}",
 	"ws_search_placeholder": "Buscar espaços de trabalho…",
 	"you": "Você"
 }
