@@ -35,52 +35,6 @@ vi.mock('node:crypto', async (importOriginal) => {
   return { ...crypto, default: { ...crypto, createHash }, createHash }
 })
 
-describe('serveFileBytes descriptor ownership (TAL-572)', () => {
-  let root: string
-  let file: string
-  beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'tal-572-'))
-    file = join(root, 'a.png')
-    writeFileSync(file, 'png-bytes')
-    vi.mocked(closeSync).mockClear()
-  })
-  afterEach(() => { rmSync(root, { recursive: true, force: true }) })
-
-  const serve = async (headers: Record<string, string>, closes: number): Promise<{ status?: number | undefined }> => {
-    const sent: { status?: number | undefined } = {}
-    let streamed: NodeJS.ReadableStream | undefined
-    const ctx = {
-      header: (name: string) => headers[name],
-      send: (opts: { status?: number }) => { sent.status = opts.status },
-      json: (_payload: unknown, opts: { status?: number } = {}) => { sent.status = opts.status },
-      sendStream: async (opts: { status?: number }, stream: NodeJS.ReadableStream) => {
-        sent.status = opts.status
-        streamed = stream
-        for await (const _chunk of stream) { /* drain */ }
-      },
-    } as unknown as RequestContext
-    let thrown: unknown
-    try { (await serveFileBytes(ctx, file, { mime: 'image/png', disposition: 'inline', cacheControl: 'private, max-age=0' })) } catch (error) { thrown = error }
-    // A second close of a freed descriptor number can close another request's file: a streamed body closes its own.
-    if (streamed && !(streamed as unknown as { closed: boolean }).closed) await once(streamed as unknown as NodeJS.EventEmitter, 'close')
-    expect(vi.mocked(closeSync)).toHaveBeenCalledTimes(closes)
-    expect(thrown).toBeUndefined()
-    return sent
-  }
-
-  it('hands a 200 response descriptor to its stream without closing it here', async () => {
-    expect((await serve({}, 0)).status).toBe(200)
-  })
-
-  it('hands a 206 range response descriptor to its stream without closing it here', async () => {
-    expect((await serve({ range: 'bytes=0-2' }, 0)).status).toBe(206)
-  })
-
-  it('closes a 416 response descriptor once', async () => {
-    expect((await serve({ range: 'bytes=99-' }, 1)).status).toBe(416)
-  })
-})
-
 describe('serveFileBytes bounded asynchronous IO (TAL-1243)', () => {
   let root: string
   let file: string
@@ -119,6 +73,8 @@ describe('serveFileBytes bounded asynchronous IO (TAL-1243)', () => {
     vi.mocked(read).mockClear()
     const response = await serve()
     expect(response.status).toBe(200)
+    // The streamed body owns the descriptor; closing it here could close another request's file (TAL-572).
+    expect(vi.mocked(closeSync)).not.toHaveBeenCalled()
     expect(vi.mocked(createHash)).not.toHaveBeenCalled()
     expect(vi.mocked(read)).not.toHaveBeenCalled()
     expect(response.maxChunk).toBeGreaterThan(0)

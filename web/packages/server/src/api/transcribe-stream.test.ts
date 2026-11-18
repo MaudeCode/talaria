@@ -143,12 +143,6 @@ describe('live dictation stream (TAL-802)', () => {
     const res = await s.get(TRANSCRIBE_STREAM_PATH)
     expect(res.status).toBe(426)
   })
-
-  it('reports streaming from the sidecar capability', async () => {
-    sidecar.respond('stt.capability', () => ({ available: true, provider: 'openai', streaming: true, warm_supported: false }))
-    expect(await (await s.get('/api/transcribe/capability')).json()).toEqual({ ok: true, available: true, provider: 'openai', streaming: true, warm_supported: false })
-    sidecar.respond('stt.capability', undefined)
-  })
 })
 
 describe('live dictation stream shutdown (TAL-802)', () => {

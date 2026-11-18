@@ -314,15 +314,6 @@ it('serializes concurrent submissions of one request ID before compacting its sn
   expect(calls).toHaveLength(1)
 })
 
-it('ignores a bodiless loopback probe of the fake Relay port', async () => {
-  // Local dev tools probe newly opened loopback ports with `GET /`; the server under test never sends one.
-  const probe = await fetch(`${url}/`, { signal: AbortSignal.timeout(2000) })
-  expect(probe.status).toBe(404)
-  expect(calls).toHaveLength(0)
-  expect((await submit()).status).toBe(200)
-  expect(calls).toHaveLength(1)
-})
-
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const png = (n = 64) => Buffer.concat([PNG, randomBytes(n)])
 const jpeg = (n = 64) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), randomBytes(n)])

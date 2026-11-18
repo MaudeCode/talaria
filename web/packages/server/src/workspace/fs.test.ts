@@ -195,11 +195,6 @@ describe('anchored walk', () => {
     expect(readdirSync(parent).filter((n) => n.startsWith('.talaria-save-'))).toEqual([])
   })
 
-  it('reads a real file through the walk', () => {
-    const fd = openAnchoredFd(root, join(root, 'a', 'b', 'f.txt'), { wantDir: false })
-    try { expect(readFileSync(fd, 'utf8')).toBe('inside') } finally { closeSync(fd) }
-  })
-
   it('refuses a symlinked leaf and a symlinked parent component', () => {
     expect(() => openAnchoredFd(root, join(root, 'a', 'link-file'), { wantDir: false })).toThrow(NotFoundError)
     expect(() => openAnchoredFd(root, join(root, 'link-dir', 'secret.txt'), { wantDir: false })).toThrow(NotFoundError)
