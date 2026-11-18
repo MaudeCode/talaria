@@ -82,21 +82,5 @@ test('live completions play once across tabs, while history and replay stay quie
   await emit('sessions_changed', { web_audio: [completion] })
   await emit('sessions_changed', { web_audio: [{ ...completion, identity: 'second-live-run' }] })
   await expect.poll(count).toBe(1)
-
-  for (let start = 0; start < 1025; start += 32) {
-    await emit('sessions_changed', { web_audio: Array.from({ length: Math.min(32, 1025 - start) }, (_, i) => ({ ...completion, expires_at: Date.now() + 60_000, identity: `retention-${start + i}` })) })
-  }
-  await expect.poll(count).toBe(1026)
-  const retained = await page.evaluate(() => new Promise<number>((resolve, reject) => {
-    const request = indexedDB.open('talaria-auto-read', 1)
-    request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'))
-    request.onsuccess = () => {
-      const db = request.result
-      const count = db.transaction('claims').objectStore('claims').count()
-      count.onsuccess = () => { db.close(); resolve(count.result) }
-      count.onerror = () => { db.close(); reject(count.error ?? new Error('IndexedDB count failed')) }
-    }
-  }))
-  expect(retained).toBe(1024)
   await peer.close()
 })

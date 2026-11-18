@@ -125,6 +125,8 @@ for (const [name, typed, answer] of [
       release()
       if (name === 'refused') await expect(page.getByText('Steer unavailable — draft restored')).toBeVisible()
       await expect(msg).toHaveValue(answer?.accepted ? 'Then summarize' : 'Then summarize\n\nCheck the backup logs too')
+      // A refused or failed steer leaves the turn: no steer bubble stays behind.
+      if (!answer?.accepted) await expect(page.locator('.steer-message')).toHaveCount(0)
       // The synthetic 500 is the point of the failed case.
       errors.splice(0, errors.length, ...errors.filter((e) => !/api\/chat\/steer|status of 500/.test(e)))
     } finally {

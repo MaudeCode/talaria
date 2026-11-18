@@ -102,7 +102,8 @@ test('a chat start that fails after the session exists returns the text to its c
   await page.route('**/api/session/new', (route) => route.fulfill({ json: { session: { session_id: 'start-fails', title: '', messages: [] } } }))
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'start-fails', title: '', messages: [] } } }))
   await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
-  await page.route('**/api/chat/start', (route) => route.fulfill({ status: 500, json: { error: 'synthetic start failure' } }))
+  let starts = 0
+  await page.route('**/api/chat/start', (route) => { starts += 1; return route.fulfill({ status: 500, json: { error: 'synthetic start failure' } }) })
   await page.goto('/')
   await page.locator('#msg').fill('Keep this draft')
   await page.locator('#btnSend').click()
@@ -110,6 +111,8 @@ test('a chat start that fails after the session exists returns the text to its c
   await expect(page).toHaveURL(/\/session\/start-fails$/)
   await expect(page.locator('#msg')).toHaveValue('Keep this draft')
   await expect(page.locator('#messages').getByText('Keep this draft')).toHaveCount(0)
+  // A start is not idempotent: a failed one is never sent again on its own.
+  expect(starts).toBe(1)
   // The synthetic 500 is the point of this test.
   errors.splice(0, errors.length, ...errors.filter((e) => !/api\/chat\/start|status of 500/.test(e)))
 })

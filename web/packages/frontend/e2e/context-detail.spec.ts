@@ -7,7 +7,7 @@ const detail = ContextDetailSchema.parse(fixture['chat.context_detail']![0]!.res
 
 test('the existing context inspector renders allocation and safe file metadata on desktop and mobile', async ({ page }, info) => {
   let reads = 0
-  let currentDetail = { ...detail, window_source: 'fallback' as const }
+  let currentDetail = { ...detail, window_source: 'fallback' as const, last_turn_output_tokens: 12 }
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
     session_id: 'context-detail', title: 'Context inspection', model: 'fixture-model', context_detail_key: 'synthetic-owner-context',
     messages: [{ role: 'user', content: 'Inspect the context allocation.' }, { role: 'assistant', content: 'Context metadata is available from the conversation control.' }],
@@ -25,6 +25,7 @@ test('the existing context inspector renders allocation and safe file metadata o
   await expect(inspector).toContainText('Estimated tokens by category')
   await expect(inspector).toContainText('AGENTS.md')
   await expect(inspector).toContainText('4,000 characters · ~1,000 tokens')
+  await expect(inspector).toContainText('Last turn output: 12')
   await expect(inspector.getByRole('button', { name: 'Compress now' })).toBeVisible()
   await expect.poll(() => reads).toBe(1)
   // TAL-1908: both window lines carry the label on one line, down to the phone width.
