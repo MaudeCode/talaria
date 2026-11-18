@@ -53,7 +53,8 @@ The webhook task starts a new thread for each report it accepts
    each at the failing commit with bounded repetitions, decide the cause from
    evidence, follow the defect loop in [testing.md](testing.md), and open one
    pull request per root cause. Each pull request has its own Kanvil ticket, and
-   its body and every commit carry `ci-repair-claim: <claim number>`.
+   its body and every commit carry `ci-repair-claim: <claim number>`; every commit
+   also carries `ci-repair-branch: <its branch>`.
 5. Read its pull requests only through `findings`, wait on them with
    `findings --wait`, and merge each with `land` at the exact head once CI Gate
    passed there.
@@ -73,7 +74,7 @@ lane: close the issue to let the next red run start a session.
 `land` merges only the session's own pull request: opened by its `gh` login,
 from a `fix/TAL-<number>-<slug>` branch of this repository, whose body carries
 its claim line and a regression proof, made only of commits it authored,
-committed and signed whose messages carry its claim line, read for the exact
+committed and signed whose messages carry its claim and branch lines, read for the exact
 head it merges, at a head where CI Gate passed. It reads the merge back on
 `main`.
 
