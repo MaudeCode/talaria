@@ -39,7 +39,7 @@ def xctest_log(path):
         yield suite, name, float(seconds)
 
 
-XCTEST_LOG = re.compile(r"Test Case '-\[\w+\.(\w+) (\w+)\]' (?:passed|failed) \((\d+(?:\.\d+)?) seconds\)")
+XCTEST_LOG = re.compile(r"Test Case '-\[\w+\.(\w+) (\w+)\]' (?:passed|failed|skipped) \((\d+(?:\.\d+)?) seconds\)")
 
 
 def cases(path):

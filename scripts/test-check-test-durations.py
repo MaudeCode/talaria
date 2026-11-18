@@ -65,6 +65,10 @@ class BudgetTests(unittest.TestCase):
                 self.assertEqual(self.run_check(name, within), 0)
                 self.assertEqual(self.run_check(name, over), 1)
 
+    def test_a_skipped_xctest_case_is_a_measured_case(self):
+        # A repeated contract test skips without its fixture; its log is still a report, not an empty one (TAL-2402).
+        self.assertEqual(self.run_check("attempt-1.log", "Test Case '-[TalariaKitTests.C testS]' skipped (0.001 seconds).\n"), 0)
+
     def test_a_report_with_no_test_cases_fails(self):
         self.assertEqual(self.run_check("junit.xml", "<testsuites/>"), 1)
         self.assertEqual(self.main([]), 1)
