@@ -1,4 +1,8 @@
-"""Native compatibility probe; all files and child hosts belong to the caller's disposable home."""
+"""Native compatibility probe; all files and child hosts belong to the caller's disposable home.
+
+Usage: probe_dashboard_plugins.py AGENT_DIR SCENARIO. ``hosts`` proves discovery, assets, requests and host isolation;
+``toggle-off`` and ``toggle-on`` each make one real switch, since each runs the Agent's admission transaction (TAL-2493).
+"""
 import base64
 from concurrent.futures import ThreadPoolExecutor
 import json
@@ -8,6 +12,8 @@ import sys
 from types import SimpleNamespace as NS
 
 sys.path.insert(0, sys.argv[1])
+scenario = sys.argv[2]
+assert scenario in ('hosts', 'toggle-off', 'toggle-on'), scenario
 from talaria_sidecar.methods import Registry, dashboard_plugins
 from talaria_sidecar.home import scoped_home
 from talaria_sidecar.errors import RpcError
@@ -33,8 +39,10 @@ async def identity(request: Request):
 secondary = 'talaria-secondary-probe'
 for home in (base, other):
     names = ['board'] + ([secondary] if home == other else [])
+    # toggle-on starts with the second profile's board switched off.
+    enabled = [name for name in names if not (scenario == 'toggle-on' and home == other and name == 'board')]
     home.mkdir(parents=True, exist_ok=True)
-    (home / 'config.yaml').write_text('plugins:\n  isolation: in_process\n  enabled: ' + json.dumps(names) + '\n')
+    (home / 'config.yaml').write_text('plugins:\n  isolation: in_process\n  enabled: ' + json.dumps(enabled) + '\n')
     for name in names:
         plugin = home / 'plugins' / name
         (plugin / 'dashboard/dist').mkdir(parents=True)
@@ -54,66 +62,75 @@ from hermes_cli.plugins import get_plugin_manager
 hosts = []
 request_params = dict(authenticated=True, path='/identity', method='GET', query='profile=wrong&token=secret&q=ok',
                       headers={'authorization':'secret', 'cookie':'secret'}, body='', websocket=False)
+def board_enabled(home):
+    return next(p for p in call('list', home)['plugins'] if p['name'] == 'board')['enabled']
 try:
-    assert secondary not in [p['name'] for p in call('list', base)['plugins']]
-    assert secondary in [p['name'] for p in call('list', other)['plugins']]
-    for home in (base, other):
-        row = next(p for p in call('list', home)['plugins'] if p['name'] == 'board')
-        assert row['panel'] == 'dist/index.html' and row['enabled'], row
-        asset = call('asset', home, name='board', path='dist/index.html')
-        assert base64.b64decode(asset['body']) == f'<p>{home.name}:board</p>'.encode(), asset
-        result = call('request', home, name='board', **request_params)
-        assert result['status'] == 200, result
-        identity = json.loads(base64.b64decode(result['body']))
-        assert Path(identity['home']).resolve() == home.resolve(), identity
-        assert Path(identity['source']).resolve() == (home / 'plugins/board/dashboard/api.py').resolve(), identity
-        assert identity['origin'] == identity['source'] == identity['loader_source'], identity
-        assert identity['resource'] == home.name + ':board', identity
-        assert identity['calls'] == 1, identity
-        assert identity['pid'] != os.getpid() and identity['credentials'] == [] and identity['query'] == 'q=ok', identity
-        with scoped_home(home, load_plugins=False):
-            host = get_plugin_manager()._plugin_host()
-            hosts.append(host)
-        # Same cached app, concurrent admitted/refused IPC calls. No HTTP marker grants admission.
-        root = (home / 'plugins/board/dashboard').resolve()
-        source_root, source_api = dashboard_plugins._api_source(str(root), 'api.py', (root / 'api.py').read_bytes())
-        def request(admitted):
-            result = host.asgi_request('board', source_root, source_api, 'GET', '/identity',
-                                      'authenticated=true', [('X-Hosted-Http-Authenticated','true')], b'', timeout=10, authenticated=admitted)
-            return result['status'], json.loads(result['body'])['calls'] if result['status'] == 200 else None
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            results = list(pool.map(request, [True, False, True, False]))
-            assert [status for status, _ in results] == [200, 401, 200, 401]
-            assert sorted(count for _, count in results if count is not None) == [2, 3], results
-    assert call('asset', base, name=secondary, path='dist/index.html')['status'] == 404
-    secondary_result = call('request', other, name=secondary, **request_params)
-    assert secondary_result['status'] == 200, secondary_result
-    secondary_identity = json.loads(base64.b64decode(secondary_result['body']))
-    assert Path(secondary_identity['source']).resolve() == (other / 'plugins' / secondary / 'dashboard/api.py').resolve(), secondary_identity
-    assert secondary_identity['pid'] == hosts[1].pid
-    assert secondary_identity['resource'] == other.name + ':' + secondary
-    call('toggle', other, name='board', enabled=False)
-    assert not next(p for p in call('list', other)['plugins'] if p['name'] == 'board')['enabled']
-    assert next(p for p in call('list', base)['plugins'] if p['name'] == 'board')['enabled']
-    # TAL-2055: the Agent's own refusal from its admission transaction is a typed refusal that writes nothing.
-    from hermes_cli import plugins_admission, plugins_cmd
-    assert set(dashboard_plugins._toggle_refusals()) == {plugins_cmd.PluginOperationError, plugins_admission.AdmissionRefused}
-    admit = plugins_admission.admit_plugin_set_change
-    def refuse(*args, **kwargs):
-        raise plugins_admission.AdmissionRefused('synthetic admission refusal')
-    plugins_admission.admit_plugin_set_change = refuse
-    try:
+    if scenario == 'hosts':
+        assert secondary not in [p['name'] for p in call('list', base)['plugins']]
+        assert secondary in [p['name'] for p in call('list', other)['plugins']]
+        for home in (base, other):
+            row = next(p for p in call('list', home)['plugins'] if p['name'] == 'board')
+            assert row['panel'] == 'dist/index.html' and row['enabled'], row
+            asset = call('asset', home, name='board', path='dist/index.html')
+            assert base64.b64decode(asset['body']) == f'<p>{home.name}:board</p>'.encode(), asset
+            result = call('request', home, name='board', **request_params)
+            assert result['status'] == 200, result
+            identity = json.loads(base64.b64decode(result['body']))
+            assert Path(identity['home']).resolve() == home.resolve(), identity
+            assert Path(identity['source']).resolve() == (home / 'plugins/board/dashboard/api.py').resolve(), identity
+            assert identity['origin'] == identity['source'] == identity['loader_source'], identity
+            assert identity['resource'] == home.name + ':board', identity
+            assert identity['calls'] == 1, identity
+            assert identity['pid'] != os.getpid() and identity['credentials'] == [] and identity['query'] == 'q=ok', identity
+            with scoped_home(home, load_plugins=False):
+                host = get_plugin_manager()._plugin_host()
+                hosts.append(host)
+            # Same cached app, concurrent admitted/refused IPC calls. No HTTP marker grants admission.
+            root = (home / 'plugins/board/dashboard').resolve()
+            source_root, source_api = dashboard_plugins._api_source(str(root), 'api.py', (root / 'api.py').read_bytes())
+            def request(admitted):
+                result = host.asgi_request('board', source_root, source_api, 'GET', '/identity',
+                                          'authenticated=true', [('X-Hosted-Http-Authenticated','true')], b'', timeout=10, authenticated=admitted)
+                return result['status'], json.loads(result['body'])['calls'] if result['status'] == 200 else None
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                results = list(pool.map(request, [True, False, True, False]))
+                assert [status for status, _ in results] == [200, 401, 200, 401]
+                assert sorted(count for _, count in results if count is not None) == [2, 3], results
+        assert call('asset', base, name=secondary, path='dist/index.html')['status'] == 404
+        secondary_result = call('request', other, name=secondary, **request_params)
+        assert secondary_result['status'] == 200, secondary_result
+        secondary_identity = json.loads(base64.b64decode(secondary_result['body']))
+        assert Path(secondary_identity['source']).resolve() == (other / 'plugins' / secondary / 'dashboard/api.py').resolve(), secondary_identity
+        assert secondary_identity['pid'] == hosts[1].pid
+        assert secondary_identity['resource'] == other.name + ':' + secondary
+        assert hosts[0].pid != hosts[1].pid
+        print('native profile discovery, credential stripping, host isolation and concurrent request-local admission passed')
+    elif scenario == 'toggle-off':
+        call('toggle', other, name='board', enabled=False)
+        assert not board_enabled(other)
+        assert board_enabled(base)
+        # TAL-2055: the Agent's own refusal from its admission transaction is a typed refusal that writes nothing.
+        from hermes_cli import plugins_admission, plugins_cmd
+        assert set(dashboard_plugins._toggle_refusals()) == {plugins_cmd.PluginOperationError, plugins_admission.AdmissionRefused}
+        admit = plugins_admission.admit_plugin_set_change
+        def refuse(*args, **kwargs):
+            raise plugins_admission.AdmissionRefused('synthetic admission refusal')
+        plugins_admission.admit_plugin_set_change = refuse
+        try:
+            call('toggle', other, name='board', enabled=True)
+            raise AssertionError('a refused admission enabled the plugin')
+        except RpcError as exc:
+            assert exc.data == {'condition': 'plugin_toggle_refused'} and str(exc) == 'synthetic admission refusal', exc.to_json()
+        finally:
+            plugins_admission.admit_plugin_set_change = admit
+        assert not board_enabled(other)
+        print('a real switch off persisted for one profile and a refused admission wrote nothing')
+    else:
+        assert not board_enabled(other)
         call('toggle', other, name='board', enabled=True)
-        raise AssertionError('a refused admission enabled the plugin')
-    except RpcError as exc:
-        assert exc.data == {'condition': 'plugin_toggle_refused'} and str(exc) == 'synthetic admission refusal', exc.to_json()
-    finally:
-        plugins_admission.admit_plugin_set_change = admit
-    assert not next(p for p in call('list', other)['plugins'] if p['name'] == 'board')['enabled']
-    call('toggle', other, name='board', enabled=True)
-    assert next(p for p in call('list', other)['plugins'] if p['name'] == 'board')['enabled']
-    assert hosts[0].pid != hosts[1].pid
-    print('native profile discovery, credential stripping, host isolation and concurrent request-local admission passed')
+        assert board_enabled(other)
+        assert board_enabled(base)
+        print('a real switch on persisted for one profile')
 finally:
     for host in hosts:
         host.shutdown()

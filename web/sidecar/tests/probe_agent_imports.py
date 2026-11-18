@@ -1,7 +1,6 @@
 """Real pinned native structured API and Talaria adapter, with disposable profile/source trees."""
 import dataclasses
 import json
-import os
 from pathlib import Path
 import shutil
 import sqlite3
@@ -20,6 +19,10 @@ home.mkdir(parents=True)
 plugin = home / 'plugins/agent-importers'
 plugin.parent.mkdir()
 reviewed = json.loads((Path(plugin_catalog.__file__).parents[2] / 'agent_importer.json').read_text())['revisions']
+# Each importer call rereads the in-tree catalog's ~2,400 YAML files. They cannot change during the probe, so it reads
+# them once and serves that list; the probe's own replacements below still win (TAL-2493).
+in_tree, read_catalog = catalog.load_catalog(), catalog.load_catalog
+catalog.load_catalog = lambda catalog_dir=None: read_catalog(catalog_dir) if catalog_dir else list(in_tree)
 entry = catalog.get_catalog_entry('agent-importers')
 # The revision this Agent's catalog pins; an unreviewed or missing pin installs any reviewed tree and must refuse.
 pin = entry.sha if entry is not None and entry.sha in reviewed else next(iter(reviewed))

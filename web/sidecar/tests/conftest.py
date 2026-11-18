@@ -28,7 +28,7 @@ SIDECAR_ROOT = pathlib.Path(__file__).resolve().parent.parent
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 sys.path.insert(0, str(SIDECAR_ROOT / "scripts"))
 pytest.register_assert_rewrite('suite_runner')
-from suite_runner import case_layer, process_snapshot
+from suite_runner import PM_STORE, case_layer, link_pm_store, process_snapshot
 
 pytest_plugins = ['suite_runner']
 
@@ -80,6 +80,13 @@ def isolated_env(hermes_home: pathlib.Path, *, home: pathlib.Path | None = None,
         env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
     env.update(extra)
     return env
+
+
+def share_pm_store(root: pathlib.Path) -> None:
+    """Link a disposable Hermes root's machine-scoped PM toolchain and uv cache into the store the runner warmed for
+    pm_store cases. Without one (a direct pytest run) the case downloads its own, which is slower and still correct."""
+    if store := os.environ.get(PM_STORE):
+        link_pm_store(root, pathlib.Path(store))
 
 
 def agent_script(home: pathlib.Path, code: str) -> None:

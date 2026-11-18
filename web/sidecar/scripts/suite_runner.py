@@ -36,6 +36,44 @@ def worker_count(value=None):
 
 
 DURATIONS = Path(__file__).resolve().parents[1] / 'tests/case_durations.json'
+# A case marked pm_store reaches a real PM admission or venv sync. PM keeps its toolchain and uv cache machine-scoped under
+# the default Hermes root, shared by every profile; a disposable root would download and fill them again in each case.
+# The runner warms one store before workers start and names it in PM_STORE; conftest.share_pm_store links a case's root
+# into it (TAL-2493).
+PM_STORE = 'TALARIA_PM_STORE'
+PM_SHARED = ('tools', 'cache/uv', 'cache/partials')
+WARM_PM_STORE = """
+import sys
+sys.path.insert(0, sys.argv[1])
+from hermes_constants import get_hermes_home
+from hermes_cli import plugins_admission
+plugin = get_hermes_home() / 'plugins/pm-warm'
+plugin.mkdir(parents=True)
+(plugin / 'plugin.yaml').write_text('name: pm-warm\\nversion: 0.0.1\\nkind: standalone\\n')
+(plugin / '__init__.py').write_text('def register(ctx):\\n    pass\\n')
+(get_hermes_home() / 'config.yaml').write_text('plugins:\\n  enabled: [pm-warm]\\n')
+plugins_admission.admit_plugin_set_change(set(), {'pm-warm'}, plugin='pm-warm')
+"""
+
+
+def link_pm_store(root, store):
+    """Point a Hermes root's machine-scoped PM toolchain and uv cache at ``store``."""
+    for name in PM_SHARED:
+        (store / name).mkdir(parents=True, exist_ok=True)
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).symlink_to(store / name, target_is_directory=True)
+
+
+def warm_pm_store(state):
+    """One real admission in a throwaway root linked to ``state/pm-store``, so the cases share its downloads."""
+    store, root = state / 'pm-store', state / 'pm-warm/home/.hermes'
+    link_pm_store(root, store)
+    env = {key: os.environ[key] for key in ('PATH', 'LD_LIBRARY_PATH') if key in os.environ}
+    env.update(HOME=str(root.parent), HERMES_HOME=str(root), TMPDIR=str(state / 'pm-warm'), HERMES_STATE_DB_GUARD_BYPASS='1',
+               TIRITH_ENABLED='0', HERMES_DISABLE_LAZY_INSTALLS='1')
+    agent = os.environ['TALARIA_WEB_AGENT_DIR']
+    subprocess.run([os.environ['TALARIA_WEB_PYTHON'], '-c', WARM_PM_STORE, agent], cwd=agent, env=env, check=True, timeout=600)
+    return store
 
 
 def family(nodeid):
@@ -77,7 +115,7 @@ def record_durations(report, destination=DURATIONS):
 
 # Pytest plugin hooks. The collection and execution journal is independent of
 # JUnit, which can contain an extra testcase for a teardown error.
-_collected, _started, _layers = [], [], {}
+_collected, _started, _layers, _pm_store = [], [], {}, []
 _inventory, _active_case, _harness_launch = {}, None, False
 _launches, _violations = [], []
 _active_phase = 'collection'
@@ -92,6 +130,7 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     global _inventory
+    config.addinivalue_line('markers', 'pm_store: the case reaches a real PM admission or venv sync and shares the warmed PM store')
     path = Path(config.rootpath) / 'tests/process_inventory.json'
     if path.exists():
         data = json.loads(path.read_text())
@@ -188,6 +227,8 @@ def pytest_collection_finish(session):
     _collected.extend(item.nodeid for item in session.items)
     for item in session.items:
         _layers[item.nodeid] = case_layer(item.nodeid)
+        if item.get_closest_marker('pm_store'):
+            _pm_store.append(item.nodeid)
     if os.environ.get('TALARIA_POLICY_CHECK_ALL') == '1':
         reviewed = {family + case
                     for family, entry in _inventory.items() for case in entry['cases']}
@@ -208,7 +249,8 @@ def pytest_sessionfinish(session):
         if session is not None:
             session.exitstatus = 1
     if path := os.environ.get('TALARIA_PYTEST_MANIFEST'):
-        Path(path).write_text(json.dumps({'collected': _collected, 'started': _started, 'layers': _layers, 'launches': _launches, 'violations': _violations}))
+        Path(path).write_text(json.dumps({'collected': _collected, 'started': _started, 'layers': _layers, 'pm_store': _pm_store,
+                                           'launches': _launches, 'violations': _violations}))
 
 
 def layer_arguments(args):
@@ -436,7 +478,7 @@ def run(args):
     diagnostics.mkdir(parents=True, exist_ok=True)
     # A unique invocation directory also prevents reusing evidence on retries.
     output = Path(tempfile.mkdtemp(prefix="run-", dir=diagnostics))
-    processes, streams = [], []
+    processes, streams, pm_store = [], [], None
     with tempfile.TemporaryDirectory(prefix="talaria-pytest-state-") as directory:
         state = Path(directory)
 
@@ -452,6 +494,9 @@ def run(args):
                 env.pop('TALARIA_WEB_AGENT_DIR', None)
                 env.pop('TALARIA_WEB_PYTHON', None)
             env['TALARIA_TEST_LAYER'] = layer or 'collection'
+            env.pop(PM_STORE, None)
+            if pm_store is not None:
+                env[PM_STORE] = str(pm_store)
             env['TALARIA_POLICY_CHECK_ALL'] = '1' if complete else '0'
             env.pop(SELECTION, None)
             if cases is not None:
@@ -492,6 +537,9 @@ def run(args):
                 expected = shard_cases(expected, collected['layers'], weights, *shard)
                 if not expected:
                     raise ValueError(f'shard {shard[0]}/{shard[1]} selected no cases')
+            if set(expected) & set(collected['pm_store']) and os.environ.get('TALARIA_WEB_PYTHON'):
+                pm_store = warm_pm_store(state)
+                print(f"Warmed the shared PM store: {pm_store}", flush=True)
             print(f"Collected {len(nodeids)} cases; selected {len(expected)} in {layers}"
                   f"{f' for shard {shard[0]}/{shard[1]}' if shard else ''}; diagnostics: {output}", flush=True)
             # Every layer's balanced groups share one pool of `selected` slots, longest estimate first.

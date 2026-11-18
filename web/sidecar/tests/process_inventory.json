@@ -123,9 +123,14 @@
       "reason": "Real Agent config loader and plugin discovery must surface the plugins.disabled_by_update record the Agent writes, read from a test-owned config.",
       "cases": [""]
     },
-    "tests/test_plugin_set_enabled.py::test_the_agent_turns_a_synthetic_plugin_on_and_off": {
+    "tests/test_plugin_set_enabled.py::test_the_agent_turns_a_synthetic_plugin_on": {
       "layer": "compatibility",
-      "reason": "Real Agent dashboard_set_agent_plugin_enabled must resolve, admit and persist a profile plugin's switch, and plugin discovery must report the new state and offer no switch for exclusive backends.",
+      "reason": "Real Agent dashboard_set_agent_plugin_enabled must resolve, admit through its real admission transaction and persist turning a profile plugin on, report a repeat as unchanged and an unknown key as a failed switch, and plugin discovery must report the new state and offer no switch for exclusive backends.",
+      "cases": [""]
+    },
+    "tests/test_plugin_set_enabled.py::test_the_agent_turns_a_synthetic_plugin_off": {
+      "layer": "compatibility",
+      "reason": "Real Agent dashboard_set_agent_plugin_enabled must admit through its real admission transaction and persist turning off a plugin the profile's config enables, report that a restart is required, and plugin discovery must report it off.",
       "cases": [""]
     },
     "tests/test_plugin_source.py::test_rows_carry_category_and_source": {
@@ -1347,14 +1352,26 @@
     },
     "tests/test_gateway_sessions.py::test_real_native_owner_shared_admission_and_detach": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility on one disposable owner, one peer run of eleven modes (the peer's report names each mode it ran or skipped): native admission, detach and display negotiation. [shared] also proves message.react persistence, toggle/removal, foreign-row refusal, another native viewer readback, compression-tip lineage and reset retirement against the actual owner and SessionDB; fakes cannot prove these owner storage semantics. [approval-tell] proves a steer rides on the denied tool result of the turn parked on that approval. [batch], [approval] and [clarify] prove parked prompts answered through Web on the actual owner. The detail mode proves actual reasoning callback installation, child lifecycle forwarding, turn-end usage and pre-build/resident context inspection on the owner WebSocket with a loopback model, including no extra provider call for inspection. [queued-controls] proves an actual native owner consumes steering in the running turn and replaces queued text before execution; boundary fakes cannot establish owner execution behavior. [model] proves the real native owner preserves a running-turn model mutation receipt and publishes its unstamped idle session.updated outcome; only the installed release proves this owner protocol. [voice-stop] proves a real native owner consumes a typed stop with no admission after another viewer enables voice, and the real Web HTTP boundary accepts its exact receipt, with no audio hardware or provider request. [connections] proves a real manage_connections card reaches Web's snapshot and watch through the private-field allowlist and that status, wake, foreign and stale refusals and an answer reach this exact owner; only the installed release proves this owner protocol. [work] proves Web's process and subagent list, tail, stop and steer reach the installed owner's session-scoped verbs by their actual names and parameters, with the owner's own not-found and rejected verdicts; only the installed release proves those verbs.",
+      "reason": "Supported-Agent API compatibility on one disposable owner served once per worker, one test per mode, each on its own sessions: native admission, detach and display negotiation. [shared] proves deduplicated and cancelled admissions, a detachable watch while inference is held, stale-revision refusal, compression, read-only exports and reset against the actual owner and SessionDB. [reactions] proves message.react persistence, toggle/removal, foreign-row refusal, another native viewer's reaction kept, the compression tip resolved through its logical owner and reset retirement; fakes cannot prove these owner storage semantics. [reaction-watch] proves a watching Web viewer reads another native viewer's reaction on its idle poll, since the owner emits no event for it, and the reaction survives the watch's cancel. [approval-tell] proves a steer rides on the denied tool result of the turn parked on that approval. [batch], [approval] and [clarify] prove parked prompts answered through Web on the actual owner. The detail mode proves actual reasoning callback installation, child lifecycle forwarding, turn-end usage and pre-build/resident context inspection on the owner WebSocket with a loopback model, including no extra provider call for inspection. [queued-controls] proves an actual native owner consumes steering in the running turn and replaces queued text before execution; boundary fakes cannot establish owner execution behavior. [model] proves the real native owner preserves a running-turn model mutation receipt and publishes its unstamped idle session.updated outcome; only the installed release proves this owner protocol. [voice-stop] proves a real native owner consumes a typed stop with no admission after another viewer enables voice, and the real Web HTTP boundary accepts its exact receipt, with no audio hardware or provider request. [connections] proves a real manage_connections card reaches Web's snapshot and watch through the private-field allowlist and that status, wake, foreign and stale refusals and an answer reach this exact owner; only the installed release proves this owner protocol. [work] proves Web's process and subagent list, tail, stop and steer reach the installed owner's session-scoped verbs by their actual names and parameters, with the owner's own not-found and rejected verdicts; only the installed release proves those verbs.",
       "cases": [
-        ""
+        "[shared]",
+        "[reactions]",
+        "[reaction-watch]",
+        "[batch]",
+        "[approval]",
+        "[approval-tell]",
+        "[clarify]",
+        "[detail]",
+        "[queued-controls]",
+        "[model]",
+        "[voice-stop]",
+        "[connections]",
+        "[work]"
       ]
     },
     "tests/test_gateway_sessions.py::test_real_native_owner_on_its_own_daemon": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility for modes needing owner state of their own, one disposable owner per case. [recovery] kills and replaces the owner to prove queued and unknown admissions recover. [secure] proves secure prompts and refusals against synthetic loopback owners. [profiles] uses two loopback peers and a real multiplexer to prove refusal on unverified boot revisions, or secondary policy, model, workspace, credential and transcript isolation during a concurrent primary LOCAL turn and after owner replacement. Fakes cannot establish the shared runner's actual execution policy. [dedicated] proves standalone profile owners refuse each other's sessions. [replay] proves the barrier daemon's replay gap reaches a watching viewer. [restart] delivers a real SIGUSR1 while an approval is parked: an owner that restarts when idle stays ready and admits Web's rename and follow-up, an older owner's after-turn wait refuses them; either exits only once the answered work ends. [reasoning] restarts the owner to prove a picked level outlives it. [session-open] loads a profile plugin before the owner boots to prove Web's snapshot, submit, steer and approval reach the owner as reconnects, so only the watch fires on_session_open and a slow consumer never holds a submitted turn; only the installed owner decides what it delivers as an open.",
+      "reason": "Supported-Agent API compatibility for modes needing owner state of their own, one disposable owner per case. [recovery] kills and replaces the owner to prove queued and unknown admissions recover. [secure] proves secure prompts and refusals against synthetic loopback owners. [profiles] uses two loopback peers and a real multiplexer to prove refusal on unverified boot revisions, or secondary policy, model, workspace, credential and transcript isolation during a concurrent primary LOCAL turn and after owner replacement. Fakes cannot establish the shared runner's actual execution policy. [dedicated] proves standalone profile owners refuse each other's sessions. [replay] proves the barrier daemon's replay gap reaches a watching viewer. [restart] delivers a real SIGUSR1 while an approval is parked: an owner that restarts when idle stays ready and admits Web's rename and follow-up, an older owner's after-turn wait refuses them; either exits only once the answered work ends. [reasoning] proves a chat's level follows the profile until picked, a pick holds through a profile edit, a busy pick waits for the turn, a stale fence changes nothing, a reset follows the profile again and a model pick carries its level. [reasoning-restart] restarts the owner to prove a picked level outlives it. [session-open] loads a profile plugin before the owner boots to prove Web's snapshot, submit, steer and approval reach the owner as reconnects, so only the watch fires on_session_open and a slow consumer never holds a submitted turn; only the installed owner decides what it delivers as an open.",
       "cases": [
         "[recovery]",
         "[secure]",
@@ -1363,6 +1380,7 @@
         "[replay]",
         "[restart]",
         "[reasoning]",
+        "[reasoning-restart]",
         "[session-open]"
       ]
     },
@@ -1375,9 +1393,14 @@
     },
     "tests/test_gateway_sessions.py::test_real_owner_diagnostic_execution_modes": {
       "layer": "compatibility",
-      "reason": "One real disposable owner, restarted once, with a loopback provider and an audit hook in every owner and worker interpreter: normal sessions read the whole profile, ignore_config drops only its config, and safe runs each turn in a fresh private worker that reads, imports and launches nothing from the profile, keeping that frozen policy across cancel, interrupt, provider failure and the restart. Only the installed owner's creation policy and managed worker prove this.",
+      "reason": "Real disposable owners with a loopback provider and an audit hook in every owner and worker interpreter, one per scenario. [controls] proves normal sessions read the whole profile and ignore_config drops only its config. [restart-config] proves an ignore_config session's frozen policy survives an owner restart; [restart-safe] proves the same for a safe session. [safe] proves a safe turn runs in a fresh private worker that reads, imports and launches nothing from the profile, beside an ordinary session on the same owner, across cancel and interrupt. [safe-sibling] proves a sibling profile's own owner keeps its profile, environment and credential while a safe turn runs. [safe-error] proves the turn after a provider failure is still safe. Only the installed owner's creation policy and managed worker prove this.",
       "cases": [
-        ""
+        "[controls]",
+        "[restart-config]",
+        "[restart-safe]",
+        "[safe]",
+        "[safe-sibling]",
+        "[safe-error]"
       ]
     },
     "tests/test_goals_dispatch.py::test_gate_runs_in_the_session_workspace": {
@@ -2414,6 +2437,14 @@
         ""
       ]
     },
+    "tests/test_suite_runner.py::test_the_pm_store_is_warmed_once_only_for_a_marked_case_and_reaches_every_worker": {
+      "layer": "process",
+      "reason": "Actual pytest collection and worker processes prove the runner warms the PM store once, before workers start, only when a selected case carries pm_store, and names it to every worker.",
+      "cases": [
+        "[True]",
+        "[False]"
+      ]
+    },
     "tests/test_suite_runner.py::test_a_slow_module_splits_across_workers": {
       "layer": "process",
       "reason": "Actual pytest worker processes prove a recorded-slow module splits its cases across concurrent workers and each case runs exactly once.",
@@ -2854,6 +2885,14 @@
       "reason": "Actual supported-Agent dashboard discovery (web_server_plugin_profiles), verified-source loading with original module/resource location, per-profile hermes_cli.plugin_host child execution and concurrent request-local authentication on one cached plugin app. Synthetic homes/plugins only. These native host and admission properties cannot be proved by boundary fakes.",
       "cases": [
         ""
+      ]
+    },
+    "tests/test_dashboard_host_compat.py::test_native_dashboard_toggle_runs_the_agent_admission": {
+      "layer": "compatibility",
+      "reason": "A dashboard switch runs the installed Agent's plugin admission transaction, which builds a real environment, and persists for one profile only. [off] also proves the Agent's own admission refusal reaches Web as a typed refusal that writes nothing; [on] turns on a board the profile's config left off. Synthetic homes/plugins only; only the release's admission and config writer prove this.",
+      "cases": [
+        "[off]",
+        "[on]"
       ]
     },
     "tests/test_mcp_cost_policy.py::test_native_mcp_cost_policy_and_budget_approval": {

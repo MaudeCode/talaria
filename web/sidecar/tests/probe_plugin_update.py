@@ -15,6 +15,13 @@ from hermes_cli import plugins_cmd as pc, plugins_cadence as cadence, plugins_tr
 from talaria_sidecar.methods import Registry, commands
 from talaria_sidecar.errors import RpcError
 from talaria_sidecar.home import scoped_home
+from hermes_cli import plugin_catalog
+
+# Offline: no live catalog fetch. Each update rereads the in-tree catalog's ~2,400 YAML files, which cannot change
+# during the probe, so it reads them once and serves that list (TAL-2493).
+plugin_catalog.fetch_live_catalog = lambda **_: None
+in_tree, read_catalog = plugin_catalog.load_catalog(), plugin_catalog.load_catalog
+plugin_catalog.load_catalog = lambda catalog_dir=None: read_catalog(catalog_dir) if catalog_dir else list(in_tree)
 
 registry = Registry(SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
 commands.register(registry)
