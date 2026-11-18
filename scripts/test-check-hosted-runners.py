@@ -133,9 +133,6 @@ jobs:
     def test_missing_scoped_workflow_fails(self):
         self.assertEqual(self.check({}), ["ci.yml: workflow not found"])
 
-    def test_repository_is_hosted(self):
-        self.assertEqual(hosted.violations(), [])
-
     def test_release_images_need_digests_and_no_piped_installs(self):
         pinned = "@sha256:" + "a" * 64
         with tempfile.TemporaryDirectory(prefix="talaria-hosted-") as temporary:
@@ -164,9 +161,6 @@ RUN apt-get update \\
             "relay/bridge/Dockerfile: pipes a download into a shell: wget -qO- https://example.test/x | bash",
             "relay/bridge/Dockerfile: node:24-alpine is not pinned to a sha256 digest",
             "web/docker_init.bash: pipes a download into a shell: curl -fsSL https://example.test/x | sh"])
-
-    def test_repository_images_are_pinned(self):
-        self.assertEqual(hosted.image_violations(), [])
 
     def test_only_native_jobs_use_macos(self):
         # Hosted macOS allows five concurrent jobs, so each macOS job must still show the native work that

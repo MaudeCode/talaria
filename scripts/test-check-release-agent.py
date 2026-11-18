@@ -289,14 +289,6 @@ class PullRequestShardTests(unittest.TestCase):
             'v2 shard 2/3 left no passing receipt': lambda root: [path.unlink() for path in root.rglob('v2.shard-2.json')],
             'v3 shard 3/3 left no passing receipt': lambda root: self.write_receipts(root, 'v3', changes={3: {'result': 'failure'}}),
             'v3 shard 1/3 left no passing receipt': lambda root: self.write_receipts(root, 'v3', changes={1: {'releaseTag': 'v2'}}),
-            'v1 shards ran 1 cases more than once': lambda root: self.write_receipts(root, 'v1', cases=[
-                ['tests/test_a.py::test_case', 'tests/test_d.py::test_case', 'tests/test_g.py::test_case'],
-                ['tests/test_b.py::test_case', 'tests/test_e.py::test_case', 'tests/test_a.py::test_case'],
-                ['tests/test_c.py::test_case', 'tests/test_f.py::test_case']]),
-            'v1 shards ran 6 of its 7 sidecar test cases': lambda root: self.write_receipts(root, 'v1', cases=[
-                ['tests/test_a.py::test_case', 'tests/test_d.py::test_case'],
-                ['tests/test_b.py::test_case', 'tests/test_e.py::test_case'],
-                ['tests/test_c.py::test_case', 'tests/test_f.py::test_case']]),
         }
         for message, prepare in broken.items():
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):

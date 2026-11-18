@@ -46,8 +46,8 @@ def listed(suite, name, over_budget):
     return False
 
 
-def main(paths, budget=None):
-    budget = budget or json.loads(BUDGET.read_text())
+def main(paths):
+    budget = json.loads(BUDGET.read_text())
     limit, over_budget = budget["budgetSeconds"], budget["overBudget"]
     if not paths:
         print("check-test-durations: no test report given", file=sys.stderr)
