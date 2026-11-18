@@ -9,7 +9,7 @@ import { useArrival } from '../arrival'
 /**
  * Reasoning / thinking on the legacy `.thinking-card` markup. Collapsed by default; a live block shows the latest title.
  * `disclosureKey` is the server's segment identity (TAL-1175): the live card and its settled row share one disclosure, as
- * tool cards do. Inline thinking has none, so its card keeps its own state.
+ * tool cards do. Inline thinking, native gateway reasoning frames and `:thinking` scene rows have none, so their card keeps its own state.
  */
 export function ReasoningBlock({ text, titles, disclosureKey, live = false, defaultOpen = false, arrivalKey }: { text: string; titles?: string[] | undefined; disclosureKey?: string | undefined; live?: boolean; defaultOpen?: boolean; /** Its row in a running turn, which opens as it arrives. */ arrivalKey?: string | undefined }) {
   const arrival = useArrival(arrivalKey)

@@ -103,7 +103,6 @@ describe('chat side panel (TAL-373)', () => {
     expect(api.fetchBackgroundTasks).toHaveBeenCalledWith('s1', 'delegation')
   })
 
-
   it('opens on the last chosen page when no agent is running, and remembers a choice', async () => {
     const { unmount } = render(<Panel />)
     await waitFor(() => { expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('aria-selected', 'true') })
