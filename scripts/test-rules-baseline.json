@@ -107,10 +107,6 @@
       "web/sidecar/tests/test_state_db_idle_release.py": 1,
       "web/sidecar/tests/test_turn_lease_busy.py": 1
     },
-    "retry-config": {
-      "web/packages/frontend/playwright.config.ts": 1,
-      "web/packages/frontend/vitest.config.ts": 1
-    },
     "unheld-clock": {
       "web/packages/server/src/api/feedback.test.ts": 2,
       "web/packages/server/src/api/sse-writer.test.ts": 1,
