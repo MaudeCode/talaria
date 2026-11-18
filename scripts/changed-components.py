@@ -198,6 +198,9 @@ def path_suites(path):
             return WEB_BUILD
         if local.startswith(("packages/frontend/", "static/dist/")):
             return {"web_frontend"}
+        # Contracts unit tests stay out of the package build (tsconfig.build.json); the server job's checks shard runs them.
+        if local.startswith("packages/contracts/src/") and local.endswith(".test.ts"):
+            return {"web_server"}
         # The sidecar's result schemas are generated from the contracts.
         if local.startswith("packages/contracts/"):
             return {"web_server", "web_frontend", "web_sidecar", "contracts"}

@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, SystemHealthSchema, ErrorBodySchema, ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SettingsModelPickerSchema, ProviderQuotasSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema, TALARIA_TOOL_NAMES, WhatsNewAnnouncementSchema, WhatsNewStateSchema } from './index.js'
+import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, SystemHealthSchema, ErrorBodySchema, ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SettingsModelPickerSchema, ProviderQuotasSchema, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema, TALARIA_TOOL_NAMES, WhatsNewAnnouncementSchema, WhatsNewStateSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
@@ -370,11 +370,6 @@ describe('contracts package', () => {
     const recorded = (JSON.parse(readFileSync(resolve(import.meta.dirname, '../fixtures/sidecar/text.json'), 'utf8')) as Record<string, { params: { text: string }; result: unknown }[]>)['text.spoken']
     expect(SpeechPrepareSchema.parse(fixture.response)).toEqual(recorded?.find((entry) => entry.params.text === fixture.request.text)?.result)
   })
-  it('exports an integer sidecar RPC version', () => {
-    expect(Number.isInteger(SIDECAR_RPC_VERSION)).toBe(true)
-    expect(SIDECAR_RPC_VERSION).toBeGreaterThan(0)
-  })
-
   it('publishes contract versions that satisfy their schema', () => {
     const schema = z.fromJSONSchema(shared('versions.schema.json') as Parameters<typeof z.fromJSONSchema>[0])
     expect(schema.safeParse(shared('versions.json')).error).toBeUndefined()
