@@ -22,7 +22,7 @@ agent = Path(os.environ["TALARIA_WEB_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
 from peer_phases import POLL_SECONDS, Phases, report_modes
 
-SCENARIOS = ["controls", "restart", "safe", "safe-error"]
+SCENARIOS = ["controls", "restart", "safe", "safe-sibling", "safe-error"]
 from local_recovery_probe import Model, child_env, daemon as owner_daemon, rpc, websocket
 from conftest import SidecarProcess
 
@@ -73,10 +73,11 @@ FORBIDDEN = ("config.yaml", ".env", "SOUL.md", "AGENTS.md", "/memories/", "/skil
 
 class Provider(Model):
     def do_POST(self):
-        self.server.authorization.append(self.headers.get("Authorization"))
         raw = self.rfile.read(int(self.headers["Content-Length"]))
         body = json.loads(raw)
         text = next((m.get("content", "") for m in reversed(body.get("messages", [])) if m["role"] == "user"), "")
+        # Keyed by the prompt it carries: concurrent owners' requests arrive in any order (test-audit rule fake).
+        self.server.authorization.append((text, self.headers.get("Authorization")))
         # A safe worker ignores the profile config, so it also names the chat from the held prompt. Holding that call too
         # would only make the stopped worker wait out its 10 s join of the title thread (TAL-1780).
         title = text == "BLOCK_STARTED" and body["messages"][0]["content"].startswith("You name chat sessions")
@@ -305,14 +306,14 @@ def probe_restart(home: Path, workspace: Path, witness: Path, peer, env):
         owner.sidecar.close()
 
 
-def probe_safe(home: Path, alpha: Path, workspace: Path, witness: Path, peer, env, alpha_env):
-    """Safe: a fresh private worker with no profile reads, imports or MCP launches, beside ordinary sessions on the same
-    owner and a sibling profile, keeping its policy across cancel and interrupt."""
+def probe_safe(home: Path, workspace: Path, witness: Path, peer, env):
+    """Safe: a fresh private worker with no profile reads, imports or MCP launches, beside an ordinary session on the same
+    owner, keeping its policy across cancel and interrupt."""
     owner, audit, ids = Owner(home, workspace, peer), Witness(witness / "audit.jsonl"), {}
     call, create, turn = owner.call, owner.create, owner.turn
     try:
-        with daemons((home, env), (alpha, alpha_env)) as [(_, desc), (_, alpha_desc)]:
-            natives(ids, workspace, [("normal", home, desc), ("alpha", alpha, alpha_desc)])
+        with daemons((home, env)) as [(_, desc)]:
+            natives(ids, workspace, [("normal", home, desc)])
             audit.take()
             safe = create("safe", "diagnostic-safe")
             assert safe["state"] == "attached" and safe["snapshot"]["messages"] == [], safe
@@ -324,15 +325,9 @@ def probe_safe(home: Path, alpha: Path, workspace: Path, witness: Path, peer, en
             blocked = call("submit", ids["safe"], request_id="safe-block", text="BLOCK_STARTED")
             assert blocked["receipt"], blocked
             assert peer.blocked.wait(30), "safe turn did not reach the provider"
-            # Concurrent ordinary sessions keep their behavior and environment: same owner and sibling profile.
+            # A concurrent ordinary session on the same owner keeps its behavior and environment.
             turn(ids["normal"], "CONCURRENT_NORMAL")
             assert sentinels_in(request_for(peer, "CONCURRENT_NORMAL")) == set(SENTINELS)
-            turn(ids["alpha"], "SIBLING_NORMAL", alpha)
-            # The workspace rules are shared; every profile-owned sentinel is alpha's own.
-            assert sentinels_in(request_for(peer, "SIBLING_NORMAL"), "ALPHA_") == set(SENTINELS) - {"RULES_SENTINEL"}
-            assert "RULES_SENTINEL" in sentinels_in(request_for(peer, "SIBLING_NORMAL"))
-            sibling = peer.requests.index(request_for(peer, "SIBLING_NORMAL")[0])
-            assert peer.authorization[sibling] == "Bearer alpha-only", peer.authorization
             queued = call("submit", ids["safe"], request_id="safe-queued", text="NEVER_RUN_CANCELLED")
             cancelled = call("cancel", ids["safe"], admission_id=queued["receipt"]["admission_id"])
             assert cancelled["receipt"]["status"] == "terminal" and cancelled["receipt"]["outcome"] == "cancelled", cancelled
@@ -350,6 +345,32 @@ def probe_safe(home: Path, alpha: Path, workspace: Path, witness: Path, peer, en
             assert sentinels_in(request_for(peer, "BLOCK_STARTED")) == set(), request_for(peer, "BLOCK_STARTED")
         released(home)
         print(json.dumps({"scenario": "safe", "sessions": ids, "provider_requests": len(peer.requests)}))
+    finally:
+        peer.release.set()
+        owner.sidecar.close()
+
+
+def probe_safe_sibling(home: Path, alpha: Path, workspace: Path, witness: Path, peer, env, alpha_env):
+    """A sibling profile's own owner keeps its behavior, environment and credential while a safe turn is running."""
+    owner, audit, ids = Owner(home, workspace, peer), Witness(witness / "audit.jsonl"), {}
+    try:
+        with daemons((home, env), (alpha, alpha_env)) as [_, (_, alpha_desc)]:
+            natives(ids, workspace, [("alpha", alpha, alpha_desc)])
+            safe = owner.create("safe", "diagnostic-safe")
+            assert safe["state"] == "attached" and safe["snapshot"]["messages"] == [], safe
+            ids["safe"] = safe["snapshot"]["session_id"]
+            blocked = owner.call("submit", ids["safe"], request_id="safe-block", text="BLOCK_STARTED")
+            assert blocked["receipt"], blocked
+            assert peer.blocked.wait(30), "safe turn did not reach the provider"
+            owner.turn(ids["alpha"], "SIBLING_NORMAL", alpha)
+            # The workspace rules are shared; every profile-owned sentinel is alpha's own.
+            assert sentinels_in(request_for(peer, "SIBLING_NORMAL"), "ALPHA_") == set(SENTINELS) - {"RULES_SENTINEL"}
+            assert "RULES_SENTINEL" in sentinels_in(request_for(peer, "SIBLING_NORMAL"))
+            assert {auth for text, auth in peer.authorization if text == "SIBLING_NORMAL"} == {"Bearer alpha-only"}, peer.authorization
+            peer.release.set()
+            settle(owner.call, ids["safe"])
+            gone({e["pid"] for e in audit.take() if e["worker"]})
+        print(json.dumps({"scenario": "safe-sibling", "sessions": ids, "provider_requests": len(peer.requests)}))
     finally:
         peer.release.set()
         owner.sidecar.close()
@@ -406,10 +427,11 @@ def main():
     ran = []
     try:
         with PHASES.probe(scenario):
-            if scenario == "safe":
-                probe_safe(home, alpha, workspace, witness, peer, env, alpha_env)
+            if scenario == "safe-sibling":
+                probe_safe_sibling(home, alpha, workspace, witness, peer, env, alpha_env)
             else:
-                {"controls": probe_controls, "restart": probe_restart, "safe-error": probe_safe_error}[scenario](home, workspace, witness, peer, env)
+                {"controls": probe_controls, "restart": probe_restart, "safe": probe_safe,
+                 "safe-error": probe_safe_error}[scenario](home, workspace, witness, peer, env)
         ran = [scenario]
     finally:
         report_modes(ran, {}, None if ran else scenario)

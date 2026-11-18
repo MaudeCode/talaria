@@ -94,14 +94,15 @@ def shared_owner(tmp_path_factory):
 
 
 @requires_agent
-@pytest.mark.parametrize("mode", ["shared", "reactions", "batch", "approval", "approval-tell", "clarify", "detail", "queued-controls",
-                                  "model", "voice-stop", "connections", "work"])
+@pytest.mark.parametrize("mode", ["shared", "reactions", "reaction-watch", "batch", "approval", "approval-tell", "clarify", "detail",
+                                  "queued-controls", "model", "voice-stop", "connections", "work"])
 def test_real_native_owner_shared_admission_and_detach(request, shared_owner, mode):
     shared_owner(request, mode)
 
 
 @requires_agent
-@pytest.mark.parametrize("mode", ["recovery", "secure", "profiles", "dedicated", "replay", "restart", "reasoning", "session-open"])
+@pytest.mark.parametrize("mode", ["recovery", "secure", "profiles", "dedicated", "replay", "restart", "reasoning", "reasoning-restart",
+                                  "session-open"])
 def test_real_native_owner_on_its_own_daemon(request, tmp_path, mode):
     run_owner_peer(request, tmp_path, "gateway_session_peer.py", [mode])
 
@@ -124,7 +125,7 @@ def test_diagnostic_creation_refuses_without_starting(tmp_path):
 
 
 @requires_agent
-@pytest.mark.parametrize("scenario", ["controls", "restart", "safe", "safe-error"])
+@pytest.mark.parametrize("scenario", ["controls", "restart", "safe", "safe-sibling", "safe-error"])
 def test_real_owner_diagnostic_execution_modes(request, tmp_path, scenario):
     run_owner_peer(request, tmp_path, "gateway_execution_peer.py", [scenario])
 

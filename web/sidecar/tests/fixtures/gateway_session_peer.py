@@ -20,7 +20,7 @@ agent = Path(os.environ["TALARIA_WEB_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
 from peer_phases import POLL_SECONDS, Phases, report_modes
 
-OWN_OWNER = {"recovery", "secure", "dedicated", "profiles", "replay", "restart", "reasoning", "session-open"}
+OWN_OWNER = {"recovery", "secure", "dedicated", "profiles", "replay", "restart", "reasoning", "reasoning-restart", "session-open"}
 # Longest the owner holds a claimed turn on a pending open (the Agent's _UNBOUNDED_TURN_WAIT_S).
 OPEN_TURN_WAIT_S = 5
 # A profile plugin logging each on_session_open delivery; it holds the delivery past OPEN_TURN_WAIT_S while the .slow
@@ -193,10 +193,9 @@ async def probe(home, peer, desc, *, require_gap=False):
 
 async def probe_reactions(home, peer, desc):
     """message.react on the actual owner and SessionDB: persistence, toggle and removal, a foreign session's refusal,
-    another native viewer's reaction read back by a watch, the compression tip resolved through its logical owner and
-    reset retiring the row."""
+    another native viewer's reaction kept, the compression tip resolved through its logical owner and reset retiring
+    the row."""
     sidecar = SidecarProcess(home)
-    viewer = SidecarProcess(home)
     try:
         async with websocket(home, desc) as native:
             created = await rpc(native, "session.create", request_id="reaction-create", source="cli", toolsets=[])
@@ -222,20 +221,8 @@ async def probe_reactions(home, peer, desc):
             foreign = (await rpc(native, "session.create", request_id="reaction-foreign", source="cli", toolsets=[]))["result"]["session_id"]
             refused = await rpc(native, "message.react", session_id=foreign, row_id=reaction_row, emoji="👍", author="user")
             assert "error" in refused, refused
-            # The owner emits no event for another viewer's reaction: the watch reads it on its idle poll.
-            reaction_watch = viewer.request("gateway.session", {"profile_home": str(home), "session_id": sid, "action": "watch"})
-            frame = await asyncio.to_thread(viewer.next_message, 20)
-            assert frame["params"]["event"] == "snapshot", frame
             changed = await rpc(native, "message.react", session_id=sid, row_id=reaction_row, emoji="🎉", author="agent")
             assert "result" in changed, changed
-            while True:
-                frame = await asyncio.to_thread(viewer.next_message, 20)
-                data = frame.get("params", {}).get("data", {})
-                if frame.get("params", {}).get("event") == "snapshot" and any(r.get("reactions") == [{"author": "agent", "emoji": "🎉"}] for r in data["snapshot"]["messages"]):
-                    break
-            viewer.request("rpc.cancel", {"id": reaction_watch})
-            while (await asyncio.to_thread(viewer.next_message, 20)).get("id") != reaction_watch:
-                pass
             restored = await asyncio.to_thread(call, "snapshot")
             assert any(r.get("reactions") == [{"author": "agent", "emoji": "🎉"}] for r in restored["snapshot"]["messages"]), restored
             compressed = await asyncio.to_thread(call, "mutate", request_id="reaction-compress", expected_revision=restored["snapshot"]["revision"],
@@ -256,6 +243,40 @@ async def probe_reactions(home, peer, desc):
             assert reset["state"] == "attached" and reset["snapshot"]["messages"] == [], reset
             retired = await asyncio.to_thread(call, "react", row_id=reaction_row, emoji="👍")
             assert retired["state"] == "refused", retired
+    finally:
+        sidecar.close()
+
+
+async def probe_reaction_watch(home, peer, desc):
+    """Another native viewer's reaction reaches a watching Web viewer and survives the watch's cancel. The owner emits
+    no event for it, so the watch reads it on its idle poll."""
+    sidecar = SidecarProcess(home)
+    viewer = SidecarProcess(home)
+    try:
+        async with websocket(home, desc) as native:
+            created = await rpc(native, "session.create", request_id="reaction-watch-create", source="cli", toolsets=[])
+            sid = created["result"]["session_id"]
+            def call(action, **params):
+                return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": action, **params})
+            await asyncio.to_thread(call, "submit", request_id="reaction-watch-turn", text="REACTION_WATCH")
+            final = await drained(call)
+            assert final["snapshot"].get("reactions_supported") is True, final
+            reaction_row = final["snapshot"]["messages"][-1]["row_id"]
+            reaction_watch = viewer.request("gateway.session", {"profile_home": str(home), "session_id": sid, "action": "watch"})
+            frame = await asyncio.to_thread(viewer.next_message, 20)
+            assert frame["params"]["event"] == "snapshot", frame
+            changed = await rpc(native, "message.react", session_id=sid, row_id=reaction_row, emoji="🎉", author="agent")
+            assert "result" in changed, changed
+            while True:
+                frame = await asyncio.to_thread(viewer.next_message, 20)
+                data = frame.get("params", {}).get("data", {})
+                if frame.get("params", {}).get("event") == "snapshot" and any(r.get("reactions") == [{"author": "agent", "emoji": "🎉"}] for r in data["snapshot"]["messages"]):
+                    break
+            viewer.request("rpc.cancel", {"id": reaction_watch})
+            while (await asyncio.to_thread(viewer.next_message, 20)).get("id") != reaction_watch:
+                pass
+            restored = await asyncio.to_thread(call, "snapshot")
+            assert any(r.get("reactions") == [{"author": "agent", "emoji": "🎉"}] for r in restored["snapshot"]["messages"]), restored
     finally:
         sidecar.close()
         viewer.close()
@@ -358,40 +379,53 @@ async def probe_model(home, peer, desc):
         viewer.close()
 
 
-async def probe_reasoning(home, peer, desc, proc, env):
-    """One chat's own level on a real owner: it follows the profile until picked, a pick holds through a profile edit and a
-    restart, a busy pick waits for the turn, a stale fence changes nothing, and a reset follows the profile again."""
-    sidecar = SidecarProcess(home)
+class ReasoningChat:
+    """One native chat's reasoning level, read and changed through a real sidecar."""
 
-    def profile_level(level):
-        config = json.loads((home / "config.yaml").read_text())
-        (home / "config.yaml").write_text(json.dumps({**config, "agent": {"reasoning_effort": level}}))
+    def __init__(self, home, sidecar, sid):
+        self.home, self.sidecar, self.sid = home, sidecar, sid
 
-    def call(action, **params):
-        return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": action, **params})
+    def profile_level(self, level):
+        config = json.loads((self.home / "config.yaml").read_text())
+        (self.home / "config.yaml").write_text(json.dumps({**config, "agent": {"reasoning_effort": level}}))
 
-    def current():
-        result = call("snapshot")
+    def call(self, action, **params):
+        return self.sidecar.result("gateway.session", {"profile_home": str(self.home), "session_id": self.sid, "action": action, **params})
+
+    def current(self):
+        result = self.call("snapshot")
         assert result["state"] == "attached", result
         return result["snapshot"]
 
-    def mutate(request, operation, payload):
-        snap = current()
-        return call("mutate", request_id=request, expected_revision=snap["revision"], execution_generation=snap["execution_generation"],
-                    operation=operation, payload=payload)
+    def mutate(self, request, operation, payload):
+        snap = self.current()
+        return self.call("mutate", request_id=request, expected_revision=snap["revision"], execution_generation=snap["execution_generation"],
+                         operation=operation, payload=payload)
 
-    def level():
-        return current()["info"].get("reasoning_effort")
+    def level(self):
+        return self.current()["info"].get("reasoning_effort")
 
-    async def settles_on(expected):
+    async def settles_on(self, expected):
         deadline = time.monotonic() + 30
-        while (found := await asyncio.to_thread(level)) != expected:
+        while (found := await asyncio.to_thread(self.level)) != expected:
             assert time.monotonic() < deadline, (expected, found)
             await asyncio.sleep(POLL_SECONDS)
 
+
+async def reasoning_chat(home, desc, sidecar, request_id):
+    async with websocket(home, desc) as native:
+        created = await rpc(native, "session.create", request_id=request_id, source="cli", toolsets=[])
+    return ReasoningChat(home, sidecar, created["result"]["session_id"])
+
+
+async def probe_reasoning(home, peer, desc):
+    """One chat's own level on a real owner: it follows the profile until picked, a pick holds through a profile edit, a
+    busy pick waits for the turn, a stale fence changes nothing, a reset follows the profile again, and a model pick
+    carries its level."""
+    sidecar = SidecarProcess(home)
     try:
-        async with websocket(home, desc) as native:
-            sid = (await rpc(native, "session.create", request_id="reasoning-create", source="cli", toolsets=[]))["result"]["session_id"]
+        chat = await reasoning_chat(home, desc, sidecar, "reasoning-create")
+        call, current, mutate, level, profile_level, settles_on = chat.call, chat.current, chat.mutate, chat.level, chat.profile_level, chat.settles_on
         profile_level("low")
         await settles_on("low")
         profile_level("medium")
@@ -426,16 +460,28 @@ async def probe_reasoning(home, peer, desc, proc, env):
         assert combined["receipt"]["operation"] == "model", combined
         assert (combined["snapshot"]["info"]["model"], combined["snapshot"]["info"]["reasoning_effort"]) == ("owner-fixture-picked", "high"), combined
         assert combined["snapshot"]["revision"] == before + 1, combined
+    finally:
+        peer.release.set()
+        sidecar.close()
 
+
+async def probe_reasoning_restart(home, peer, desc, proc, env):
+    """A picked level outlives an owner restart and still ignores a profile edit; a reset then follows the profile."""
+    sidecar = SidecarProcess(home)
+    try:
+        chat = await reasoning_chat(home, desc, sidecar, "reasoning-restart-create")
+        chat.profile_level("medium")
+        await chat.settles_on("medium")
+        picked = await asyncio.to_thread(chat.mutate, "reasoning-set", "reasoning", {"effort": "high"})
+        assert picked["state"] == "attached" and picked["snapshot"]["info"]["reasoning_effort"] == "high", picked
         proc.kill()
         proc.wait(timeout=10)
         with daemon(agent, home, env, barrier=False):
-            profile_level("low")
-            assert await asyncio.to_thread(level) == "high"
-            await asyncio.to_thread(mutate, "reasoning-reset-after-restart", "reasoning", {"effort": None})
-            await settles_on("low")
+            chat.profile_level("low")
+            assert await asyncio.to_thread(chat.level) == "high"
+            await asyncio.to_thread(chat.mutate, "reasoning-reset-after-restart", "reasoning", {"effort": None})
+            await chat.settles_on("low")
     finally:
-        peer.release.set()
         sidecar.close()
 
 
@@ -1346,6 +1392,8 @@ def run_on_owner(mode, home, peer, desc, proc, env):
         return probe_queued_controls(home, peer, desc)
     if mode == "reactions":
         return probe_reactions(home, peer, desc)
+    if mode == "reaction-watch":
+        return probe_reaction_watch(home, peer, desc)
     if mode == "detail":
         return probe_detail(home, peer, desc)
     if mode == "restart":
@@ -1355,7 +1403,9 @@ def run_on_owner(mode, home, peer, desc, proc, env):
     if mode == "voice-stop":
         return probe_voice_stop(home, peer, desc)
     if mode == "reasoning":
-        return probe_reasoning(home, peer, desc, proc, env)
+        return probe_reasoning(home, peer, desc)
+    if mode == "reasoning-restart":
+        return probe_reasoning_restart(home, peer, desc, proc, env)
     if mode == "profiles":
         return probe_profiles(home, peer, desc, proc, env)
     if mode in {"approval", "clarify"}:
