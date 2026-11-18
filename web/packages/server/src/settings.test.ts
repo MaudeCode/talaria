@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { open } from 'node:fs/promises'
 import { atomicWriteText, atomicWriteTextAsync, writeFully, writeFullyAsync } from './fs/atomic.js'
 import { RevisionConflict, type DocumentBackend } from './sessions/storage/backend.js'
-import { normalizeAppearance, QUOTA_THRESHOLD_DEFAULTS, SettingsStore, sidebarQuotaProjection } from './settings.js'
+import { QUOTA_THRESHOLD_DEFAULTS, SettingsStore, sidebarQuotaProjection } from './settings.js'
 
 let dir: string
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'talaria-settings-')) })
@@ -164,8 +164,10 @@ describe('load', () => {
   it.each([
     [{ theme: 'light' }, ['light', 'default']],
     [{ theme: 'light', skin: 'mono' }, ['light', 'mono']],
+    [{ theme: ' Light ', skin: 'MONO' }, ['light', 'mono']],
     [{ skin: 'mono' }, ['dark', 'mono']],
     [{ theme: 'slate' }, ['dark', 'slate']],
+    [{ theme: 'slate', skin: 'nope' }, ['dark', 'slate']],
     [{ theme: 'solarized' }, ['dark', 'poseidon']],
     [{ theme: 'monokai' }, ['dark', 'sisyphus']],
     [{ theme: 'nord' }, ['dark', 'slate']],
@@ -481,14 +483,6 @@ describe('provider quota thresholds (TAL-411)', () => {
     // A hand-edited file is read through the same validation.
     write({ provider_quota_thresholds_by_profile: { default: { warning_remaining_percent: 5, critical_remaining_percent: 9, pace_tolerance_percent: -1 } } })
     expect((await s.quotaThresholds('default'))).toEqual({ ...QUOTA_THRESHOLD_DEFAULTS, warning_remaining_percent: 5, critical_remaining_percent: 5, pace_tolerance_percent: 0 })
-  })
-})
-
-describe('normalizeAppearance', () => {
-  it('matches the Python table', () => {
-    expect(normalizeAppearance(' Light ', 'MONO')).toEqual(['light', 'mono'])
-    expect(normalizeAppearance(null, null)).toEqual(['dark', 'default'])
-    expect(normalizeAppearance('slate', 'nope')).toEqual(['dark', 'slate'])
   })
 })
 

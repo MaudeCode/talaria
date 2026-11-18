@@ -99,22 +99,6 @@ describe('startup environment order', () => {
   })
 })
 
-describe('serve argument precedence', () => {
-  it('explicit serve arguments win over the checkout .env host and port', () => {
-    const dir = scratch()
-    mkdirSync(join(dir, 'web'))
-    writeFileSync(join(dir, 'web', '.env'), 'TALARIA_WEB_PORT=9999\nTALARIA_WEB_HOST=0.0.0.0\n')
-    const env: Record<string, string | undefined> = {}
-    loadStartupEnv({ env, webRoot: join(dir, 'web'), home: dir })
-    const args = parseBootstrapArgs(['8123', '--host', '127.0.0.1'], env)
-    env.TALARIA_WEB_HOST = args.host
-    env.TALARIA_WEB_PORT = String(args.port)
-    expect(env).toMatchObject({ TALARIA_WEB_PORT: '8123', TALARIA_WEB_HOST: '127.0.0.1' })
-    const defaults = parseBootstrapArgs([], { TALARIA_WEB_PORT: '9999', TALARIA_WEB_HOST: '0.0.0.0' })
-    expect([defaults.port, defaults.host]).toEqual([9999, '0.0.0.0'])
-  })
-})
-
 describe('launcher', () => {
   it('bootstrap starts the server without running the Agent interpreter first', async () => {
     const home = scratch()
@@ -177,6 +161,7 @@ describe('launcher', () => {
   it('parses the bootstrap arguments and detects supervisors like bootstrap.py', () => {
     expect(parseBootstrapArgs(['9000', '--host', '0.0.0.0', '--no-browser', '--foreground'], {})).toEqual({ port: 9000, host: '0.0.0.0', noBrowser: true, skipAgentInstall: false, foreground: true })
     expect(parseBootstrapArgs([], { TALARIA_WEB_PORT: '8790', TALARIA_WEB_HOST: '::' })).toMatchObject({ port: 8790, host: '::' })
+    expect(parseBootstrapArgs(['8123', '--host', '127.0.0.1'], { TALARIA_WEB_PORT: '9999', TALARIA_WEB_HOST: '0.0.0.0' })).toMatchObject({ port: 8123, host: '127.0.0.1' })
     expect(() => parseBootstrapArgs(['--bogus'], {})).toThrow('unknown argument')
     expect(detectSupervisor({ INVOCATION_ID: 'abc' })).toBe('INVOCATION_ID')
     expect(detectSupervisor({ XPC_SERVICE_NAME: '0' })).toBeNull()

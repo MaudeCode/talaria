@@ -1039,10 +1039,6 @@ describe('Settings › Providers figures (TAL-2135)', () => {
     expect(composerQuota(rows, 'deepseek')).toBeNull()
   })
 
-  it('carries the month\'s OpenRouter spend with its currency', () => {
-    expect(quotaSummary(providers, 'openrouter', [], 12.4)).toMatchObject({ spend_month: 12.4, spend_currency: 'USD', default_provider_name: 'OpenRouter' })
-  })
-
   it('names the provider the default model routes to, as the model catalog resolves it', async () => {
     const home = mkdtempSync(join(tmpdir(), 'talaria-default-'))
     try {

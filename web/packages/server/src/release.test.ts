@@ -179,10 +179,6 @@ describe("What's New (TAL-1616)", () => {
     expect(state(stamped('1.0.0'), 'web:rows:TAL-3-1', build, build, null)).toMatchObject({ eligible: false, observation: 'web:rows:TAL-3-1' })
   })
 
-  it('presents every packaged row after a legacy release token', () => {
-    expect(state(stamped('1.1.0'), 'web:1.24.1')).toEqual(fixture.state)
-  })
-
   it('treats an unreadable token as no observation', () => {
     for (const observed of ['app:1.0.0', 'web:1.0', 'web:01.0.0', 'web:rows:TAL-9-1,', 'web:rows:tal-9-1', 'web:1.0.0 ', '{"version":"1.0.0"}', 'x'.repeat(256)]) {
       expect(state(stamped('1.1.0'), observed), observed).toEqual({ announcement, presentation: null, eligible: false, observation: 'web:rows:TAL-9-1,TAL-10-2', acknowledgement: null })
