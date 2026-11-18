@@ -99,8 +99,8 @@ test('the demo server shows seeded data on every data page', async ({ page }, in
   await dataPages(page, info, 'dark')
 })
 
-// The light passes repeat the dark passes' checks, so they run only to save the light screenshots. sidebar.spec.ts owns
-// picking the light theme in Settings › Appearance.
+// The light passes repeat the dark passes' checks, so they run only to save the light screenshots. Picking the light
+// theme in Settings › Appearance is checked by tool-row-outcomes.spec.ts and tool-row-raw-view.spec.ts.
 const LIGHT_SHOTS_ONLY = 'the light pass only saves screenshots (TOUR_SHOTS)'
 
 test('every data page shows its seeded data in the light theme', async ({ page }, info) => {
