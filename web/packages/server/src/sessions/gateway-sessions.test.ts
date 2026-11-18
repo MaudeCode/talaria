@@ -13,7 +13,9 @@ import { ReasoningTitleTracker } from './reasoning-titles.js'
 import { messageWindowForDisplay, messagesForLimitedPayload } from './window.js'
 import type { GatewaySubscriber, GatewayWatcher } from './gateway-watcher.js'
 import { TerminalSession } from '../tools/terminal.js'
-import { admission, attached, bootOwnerAttachment, fixture, nativeNotices, ownerHelpers, sid, snapshot } from '../test/gateway-owner.js'
+import { admission, attached, bootOwnerAttachment, fixture, ownerHelpers, sid, snapshot } from '../test/gateway-owner.js'
+
+const nativeNotices = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/web-native-notices.json', import.meta.url), 'utf8')) as { events: Record<string, unknown>[] }
 
 describe('gateway sidebar cache', () => {
   let s: TestServer

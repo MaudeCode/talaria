@@ -1,4 +1,4 @@
-import { JsonDocuments } from '../test/storage.js'
+import { JsonDocuments } from './storage/json-documents.js'
 import { testProfileIdentity } from '../test/storage.js'
 import { initializeStore } from '../test/storage.js'
 import { generateKeyPairSync } from 'node:crypto'

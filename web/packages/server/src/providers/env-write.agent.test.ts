@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -30,6 +30,23 @@ config._write_env_lines = paused
 config.save_env_value("AGENT_WRITTEN_KEY", "from-agent")
 `
 
+// Loaded into the sidecar through PYTHONPATH: logs each exclusive flock attempt on `.env.lock`. A second attempt is a
+// retry, which the Agent's lock helper makes only after the first attempt found the lock held.
+const LOCK_ATTEMPT_LOG = (lock: string, log: string): string => `
+import fcntl, os, sys
+def _log_env_lock_attempts(event, args):
+    if event != "fcntl.flock" or not args[1] & fcntl.LOCK_EX:
+        return
+    try:
+        held, lock = os.fstat(args[0]), os.stat(${JSON.stringify(lock)})
+    except OSError:
+        return
+    if (held.st_dev, held.st_ino) == (lock.st_dev, lock.st_ino):
+        with open(${JSON.stringify(log)}, "a") as f:
+            f.write("attempt\\n")
+sys.addaudithook(_log_env_lock_attempts)
+`
+
 describe.skipIf(!agentLocksEnv)('provider key writes against the pinned Agent (TAL-797)', () => {
   let s: TestServer | null = null
   let client: SidecarClient | null = null
@@ -38,7 +55,11 @@ describe.skipIf(!agentLocksEnv)('provider key writes against the pinned Agent (T
   it('keeps a key saved while the Agent rewrites the same .env', async () => {
     const home = mkdtempSync(join(tmpdir(), 'talaria-env-write-'))
     writeFileSync(join(home, '.env'), 'EXISTING=1\n', { mode: 0o600 })
-    client = new SidecarClient({ python, agentDir, sidecarDir, hermesHome: home, log: () => undefined })
+    const attempts = join(home, 'lock-attempts')
+    const hooks = join(home, 'sidecar-hooks')
+    mkdirSync(hooks)
+    writeFileSync(join(hooks, 'sitecustomize.py'), LOCK_ATTEMPT_LOG(join(home, '.env.lock'), attempts))
+    client = new SidecarClient({ python, agentDir, sidecarDir, hermesHome: home, env: { PYTHONPATH: hooks }, log: () => undefined })
     await client.start()
     s = await bootTestServer({ sidecar: client, env: { HERMES_HOME: home, TALARIA_WEB_STATE_DIR: home } })
 
@@ -50,9 +71,10 @@ describe.skipIf(!agentLocksEnv)('provider key writes against the pinned Agent (T
     const agentExit = new Promise<number | null>((done) => { agent.on('exit', done) })
     await expect.poll(() => existsSync(ready), { timeout: 15_000 }).toBe(true)
 
-    // Talaria's save lands inside the window the Agent holds between reading the file and replacing it.
+    // Talaria's save lands inside the window the Agent holds between reading the file and replacing it, and retries the lock.
+    writeFileSync(attempts, '')
     const saved = s.get('/api/providers', { method: 'POST', body: JSON.stringify({ provider: 'deepseek', api_key: 'sk-deepseek-from-talaria' }), headers: { 'content-type': 'application/json' } })
-    await new Promise((done) => setTimeout(done, 1_000))
+    await expect.poll(() => readFileSync(attempts, 'utf8').split('\n').filter(Boolean).length, { timeout: 15_000 }).toBeGreaterThanOrEqual(2)
     writeFileSync(go, '')
     const res = await saved
     expect(await agentExit, agentErr).toBe(0)

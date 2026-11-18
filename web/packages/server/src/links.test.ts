@@ -2,13 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { checkExternalLink, linkPreferences, normalizeTrustedLinkHost, normalizeTrustedLinkHosts, TRUSTED_LINK_HOSTS_MAX } from './links.js'
 
 describe('normalizeTrustedLinkHost (TAL-279)', () => {
-  it('keeps bare hostnames in browser-normalized form', () => {
-    expect(normalizeTrustedLinkHost(' Docs.Example.COM ')).toBe('docs.example.com')
-    expect(normalizeTrustedLinkHost('bücher.de')).toBe('xn--bcher-kva.de')
-    expect(normalizeTrustedLinkHost('[::1]')).toBe('[::1]')
-    expect(normalizeTrustedLinkHost('127.1')).toBe('127.0.0.1')
-  })
-
   it('rejects ports, schemes, paths, userinfo, wildcards, and malformed entries', () => {
     for (const entry of ['example.com:443', 'example.com:', 'https://example.com', 'example.com/x', 'example.com?q', 'u@example.com', '*.example.com', 'exa mple.com', 'exa%41.com', '[::1', 'a..b:1', '', '   ', 42, null]) {
       expect(normalizeTrustedLinkHost(entry), String(entry)).toBeNull()

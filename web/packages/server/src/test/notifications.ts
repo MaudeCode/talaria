@@ -5,7 +5,7 @@ import type { TestServer } from './harness.js'
 
 type Json = Record<string, unknown>
 /** The address the stubbed push service resolves to. */
-export const PUBLIC = '93.184.216.34'
+const PUBLIC = '93.184.216.34'
 
 /** A synthetic browser subscription whose private key stays in the test, so it can open every push. */
 export function browserKeys(): { p256dh: string; auth: string; decrypt: (body: Buffer) => Json } {
@@ -44,7 +44,7 @@ export function stubPushService(s: TestServer): { pushes: Push[]; statuses: numb
   return { pushes, statuses }
 }
 
-export interface Captured { method: string; url: string; body: Json; headers: Record<string, string> }
+interface Captured { method: string; url: string; body: Json; headers: Record<string, string> }
 export interface FakeRelay { calls: Captured[]; snapshotStatus: number; viewedStatus: number; failOnly: string | null; snapshots: () => Captured[]; views: () => Captured[]; publicKey: Buffer | null; fetch: typeof fetch }
 
 export function fakeRelay(): FakeRelay {

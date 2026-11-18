@@ -1,5 +1,5 @@
 import { initializeStore } from '../test/storage.js'
-import { JsonDocuments } from '../test/storage.js'
+import { JsonDocuments } from '../sessions/storage/json-documents.js'
 /** TAL-953: the post-update gateway restart waits for a synthetic gateway's `active_agents` to drain. */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

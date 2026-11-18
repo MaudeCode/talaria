@@ -203,13 +203,7 @@ describe('SidecarClient version mismatch', () => {
   })
 })
 
-describe('FakeSidecar', () => {
-  it('rejects a responder result that violates the contract', async () => {
-    const fake = new FakeSidecar()
-    fake.respond('runtime.ensure_current', () => ({ current: true, agent_revision: 42 as unknown as string }))
-    await expect(fake.call('runtime.ensure_current', {})).rejects.toThrow()
-  })
-
+describe('sidecarSpawnEnv', () => {
   it('forwards the configured environment to the sidecar while keeping its identity keys', () => {
     const env = sidecarSpawnEnv({ env: { HERMES_API_KEY: 'k', HTTPS_PROXY: 'http://proxy:3128', PYTHONPATH: '/extra', HERMES_HOME: '/spoofed' }, hermesHome: '/home/u/.hermes', agentDir: '/agent', sidecarDir: '/web/sidecar' })
     expect(env).toMatchObject({ HERMES_API_KEY: 'k', HTTPS_PROXY: 'http://proxy:3128', HERMES_HOME: '/home/u/.hermes', TALARIA_SIDECAR_AGENT_DIR: '/agent', PYTHONPATH: `/web/sidecar${delimiter}/extra`, PYTHONUNBUFFERED: '1' })
@@ -250,6 +244,15 @@ describe('FakeSidecar', () => {
 
   it('disables Agent lazy installs even when the configured environment enables them', () => {
     expect(sidecarSpawnEnv({ env: { HERMES_DISABLE_LAZY_INSTALLS: '0' }, hermesHome: '/h', agentDir: '/a', sidecarDir: '/s' }).HERMES_DISABLE_LAZY_INSTALLS).toBe('1')
+  })
+
+})
+
+describe('FakeSidecar fidelity', () => {
+  it('rejects a responder result that violates the contract', async () => {
+    const fake = new FakeSidecar()
+    fake.respond('runtime.ensure_current', () => ({ current: true, agent_revision: 42 as unknown as string }))
+    await expect(fake.call('runtime.ensure_current', {})).rejects.toThrow()
   })
 
   it('fails closed when not ready', async () => {

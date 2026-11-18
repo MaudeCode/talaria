@@ -10,9 +10,6 @@ import { bootTestServer, openStateDb, type TestServer } from './harness.js'
 // Shared by the gateway session test files. The canonical owner attachment tests are split across files so that CI
 // shards can balance them (TAL-1774).
 export const fixture = JSON.parse(readFileSync(new URL('./fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: Record<string, string>; diagnostic: Record<'safe' | 'ignore_config' | 'fresh', string>; schema: string[]; inserts: string[] }
-export const nativeNotices = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/web-native-notices.json', import.meta.url), 'utf8')) as { events: Record<string, unknown>[] }
-export const ownerEvents = JSON.parse(readFileSync(new URL('./fixtures/gateway-owner-events.json', import.meta.url), 'utf8')) as { events: Record<string, unknown>[] }
-export const cronRefusal = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/native-cron-refusal.json', import.meta.url), 'utf8')) as { completion: Record<string, unknown>; event: { event: string; data: Record<string, unknown> } }
 export const sid = fixture.sessions.cli!
 export const snapshot = (extra: Partial<GatewaySnapshot> = {}): GatewaySnapshot => ({ session_id: sid, stored_session_id: sid,
   messages: [{ role: 'user', content: 'native question' }, { role: 'assistant', content: 'owner answer' }], message_count: 2,
@@ -21,7 +18,7 @@ export const snapshot = (extra: Partial<GatewaySnapshot> = {}): GatewaySnapshot 
 export const attached = (snap: GatewaySnapshot): GatewaySessionResult => ({ state: 'attached', reason: null, receipt: null, snapshot: snap })
 export const admission = (status: 'queued' | 'started' | 'unknown' | 'terminal' = 'started') => ({ admission_id: 'native-input', sequence: 1, status, outcome: null, authority_epoch: 1, execution_generation: 1, text: 'native work', input_id: 'stable-input' })
 
-export interface OwnerAttachment { s: TestServer; db: DatabaseSync; sidecar: FakeSidecar }
+interface OwnerAttachment { s: TestServer; db: DatabaseSync; sidecar: FakeSidecar }
 
 /** Boots a server whose sidecar is fake and whose Agent state.db holds the canonical-ownership fixture. */
 export async function bootOwnerAttachment(): Promise<OwnerAttachment> {

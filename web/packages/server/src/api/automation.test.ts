@@ -1,4 +1,5 @@
-import { JsonDocuments, useJsonStorage, useSelectedStorage } from '../test/storage.js'
+import { useJsonStorage, useSelectedStorage } from '../test/storage.js'
+import { JsonDocuments } from '../sessions/storage/json-documents.js'
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

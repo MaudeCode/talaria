@@ -1,4 +1,5 @@
-import { JsonDocuments, useJsonStorage } from '../test/storage.js'
+import { useJsonStorage } from '../test/storage.js'
+import { JsonDocuments } from './storage/json-documents.js'
 import { testProfileIdentity } from '../test/storage.js'
 import { initializeStore } from '../test/storage.js'
 import { sessionDirectory, sessionPath } from '../test/storage.js'
@@ -9,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
-import { fakeRelay, type Captured, type FakeRelay } from '../test/notifications.js'
+import { fakeRelay, type FakeRelay } from '../test/notifications.js'
 import { StreamRegistry } from './streams.js'
 import * as atomic from '../fs/atomic.js'
 import { loadRelayConfig, saveRelayConfig, PRESENCE_FENCE_SECONDS, PRESENCE_LEASE_SECONDS, PRESENCE_MAX_LEASES, PresenceLeases, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
@@ -17,6 +18,7 @@ import { loadRelayConfig, saveRelayConfig, PRESENCE_FENCE_SECONDS, PRESENCE_LEAS
 useJsonStorage()
 
 type Json = Record<string, unknown>
+type Captured = FakeRelay['calls'][number]
 it('projects a live Web completion without pairing and keeps terminal failures quiet', async () => {
   const server = await bootTestServer()
   try {

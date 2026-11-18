@@ -1,5 +1,5 @@
 import { initializeStore } from '../test/storage.js'
-import { JsonDocuments } from '../test/storage.js'
+import { JsonDocuments } from '../sessions/storage/json-documents.js'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'

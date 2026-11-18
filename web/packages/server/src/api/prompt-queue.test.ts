@@ -28,7 +28,8 @@ it('persists an explicitly started queue spanning two chats without dispatching 
 import { vi } from 'vitest'
 import type { PromptQueueRun, SidecarParams, SidecarResultInput, GatewaySessionResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
-import { JsonDocuments, useJsonStorage } from '../test/storage.js'
+import { useJsonStorage } from '../test/storage.js'
+import { JsonDocuments } from '../sessions/storage/json-documents.js'
 import { PromptQueues } from '../sessions/prompt-queues.js'
 
 const completed = (params: SidecarParams<'chat.start'>): SidecarResultInput<'chat.start'> => ({

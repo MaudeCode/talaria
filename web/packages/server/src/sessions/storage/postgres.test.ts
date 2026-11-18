@@ -3,7 +3,7 @@ import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm'
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket'
 import pg from 'pg'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
-import { dropTestSchema, startTestPostgres, TEST_POSTGRES_PASSWORD, testSchema, type TestPostgres } from '../../test/postgres.js'
+import { dropTestSchema, startTestPostgres, testSchema, type TestPostgres } from '../../test/postgres.js'
 import type { Message } from '../session.js'
 import { RevisionConflict } from './backend.js'
 import { gunzipSync } from 'node:zlib'
@@ -185,7 +185,7 @@ it('never puts the connection password in an error or log line, including a fail
   cleanups.push(test.cleanup)
   test.storage.db.pool.emit('error', new Error(`connection to ${postgres.url} reset`), {})
   expect(logs.at(-1)).toMatch(/Postgres connection error/)
-  expect(logs.join('\n')).not.toContain(TEST_POSTGRES_PASSWORD)
+  expect(logs.join('\n')).not.toContain(new URL(postgres.url).password)
 })
 
 it('names the statement an administrator runs when the role may not create pg_trgm', async () => {
@@ -194,7 +194,7 @@ it('names the statement an administrator runs when the role may not create pg_tr
   const server = new PGLiteSocketServer({ db, port: 0, maxConnections: 4 })
   await server.start()
   try {
-    const url = `postgres://limited:${TEST_POSTGRES_PASSWORD}@${server.getServerConn()}/postgres`
+    const url = `postgres://limited:${new URL(postgres.url).password}@${server.getServerConn()}/postgres`
     await expect(PostgresStorage.open({ url, schema: 'talaria', poolMax: 1, sessionDir: '/nonexistent', stampingSince: () => 0 })).rejects.toThrow(`have a database administrator run: ${TRIGRAM_EXTENSION_SQL};`)
   } finally { await server.stop(); await db.close() }
 })

@@ -1,6 +1,6 @@
 import { testSessionDocuments } from '../../test/storage.js'
 import { testProfileIdentity } from '../../test/storage.js'
-import { JsonDocuments } from '../../test/storage.js'
+import { JsonDocuments } from './json-documents.js'
 import { createPrivateKey } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

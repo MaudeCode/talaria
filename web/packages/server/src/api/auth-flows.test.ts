@@ -1,4 +1,5 @@
-import { JsonDocuments, useJsonStorage } from '../test/storage.js'
+import { useJsonStorage } from '../test/storage.js'
+import { JsonDocuments } from '../sessions/storage/json-documents.js'
 import { FakeAuthenticator, b64u } from '../test/passkeys.js'
 import { createHash, generateKeyPairSync, randomBytes, sign as cryptoSign } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
