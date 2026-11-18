@@ -193,7 +193,7 @@
     },
     "unheld-clock": {
       "relay/tests/feedback.test.ts": 1,
-      "relay/tests/sharedContracts.test.ts": 6,
+      "relay/tests/sharedContracts.test.ts": 5,
       "web/packages/frontend/src/features/chat/VaultPromptCard.test.tsx": 1,
       "web/packages/frontend/src/features/chat/useTranscript.test.tsx": 1,
       "web/packages/frontend/src/features/notices/useRuntimeNotices.test.ts": 1,
