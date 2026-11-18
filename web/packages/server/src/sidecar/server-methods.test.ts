@@ -276,7 +276,22 @@ describe('server.session_new, server.session_send, server.session_wait, server.s
 
   it('session_wait times out on a running target, then ends with its reply, then finds nothing running', async () => {
     const target = await runningTarget()
-    expect(await ask('server.session_wait', { session_id: target, timeout_s: 1 })).toMatchObject({ result: { session_id: target, outcome: 'timeout', is_streaming: true, run_state: 'running' } })
+    await streaming(target)
+    // The wait arms its timeout when it enters waitForRun; a fake clock then reaches it without a real second.
+    const waitForRun = s.deps.turns.waitForRun.bind(s.deps.turns)
+    let entered: () => void = () => undefined
+    const waitEntered = new Promise<void>((resolve) => { entered = resolve })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      s.deps.turns.waitForRun = (...args: Parameters<typeof waitForRun>) => { const outcome = waitForRun(...args); entered(); return outcome }
+      const timedOut = ask('server.session_wait', { session_id: target, timeout_s: 1 })
+      await waitEntered
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(await timedOut).toMatchObject({ result: { session_id: target, outcome: 'timeout', is_streaming: true, run_state: 'running' } })
+    } finally {
+      vi.useRealTimers()
+      s.deps.turns.waitForRun = waitForRun
+    }
     const waiting = ask('server.session_wait', { session_id: target })
     await finish(target, 'All green')
     expect(await waiting).toEqual({ result: { session_id: target, outcome: 'ended', is_streaming: false, run_state: 'completed', last_assistant_message: 'All green', truncated: false } })

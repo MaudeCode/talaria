@@ -362,13 +362,12 @@ it('isolates identical run IDs in independent roots and rejects invalid IDs befo
 
 it('evicts the least recently used owner above 1000 entries and releases ownership on close', async () => {
   const journal = fixture()
-  for (let i = 0; i < 1000; i++) {
-    await writeRun(journal, 'session', `run${i}`)
-    expect(await journal.findRunSummary(`run${i}`)).toMatchObject({ session_id: 'session' })
-  }
+  // A run's first writer records its owner before any row lands, so only the two runs read back need a journal on disk.
+  await writeRun(journal, 'session', 'run0')
+  await writeRun(journal, 'session', 'run1')
+  for (let i = 2; i < 1000; i++) await (await journal.writer('session', `run${i}`)).close()
   await journal.findRunSummary('run0')
-  await writeRun(journal, 'session', 'run1000')
-  await journal.findRunSummary('run1000')
+  await (await journal.writer('session', 'run1000')).close()
   vi.clearAllMocks()
   expect(await journal.findRunSummary('run0')).toMatchObject({ run_id: 'run0' })
   expect(fsp.readdir).not.toHaveBeenCalled()
