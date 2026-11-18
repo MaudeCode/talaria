@@ -159,21 +159,6 @@ public enum TalariaShareDraft {
         return "\(trimmedDraft)\n"
     }
 
-    public static func savePendingDraft(
-        _ draft: String,
-        in directory: URL,
-        fileManager: FileManager = .default,
-        now: Date = Date()
-    ) throws {
-        try savePendingImport(
-            draft: draft,
-            attachments: [],
-            in: directory,
-            fileManager: fileManager,
-            now: now
-        )
-    }
-
     public static func savePendingImport(
         draft: String,
         attachments: [SharedAttachmentImport],
@@ -302,38 +287,6 @@ public enum TalariaShareDraft {
         } else {
             try fileManager.moveItem(at: reservedURL, to: pendingURL)
         }
-    }
-
-    static func loadPendingDraft(
-        from directory: URL,
-        fileManager: FileManager = .default,
-        removeAfterLoad: Bool = true
-    ) throws -> String? {
-        try loadPendingImport(
-            from: directory,
-            fileManager: fileManager,
-            removeAfterLoad: removeAfterLoad
-        )?.draft
-    }
-
-    static func loadPendingImport(
-        from directory: URL,
-        fileManager: FileManager = .default,
-        removeAfterLoad: Bool = true
-    ) throws -> SharedImport? {
-        guard let reservation = try reserveNextPendingImport(
-            from: directory,
-            fileManager: fileManager
-        ) else {
-            return nil
-        }
-
-        if removeAfterLoad {
-            try consume(reservation, from: directory, fileManager: fileManager)
-        } else {
-            try release(reservation, in: directory, fileManager: fileManager)
-        }
-        return reservation.sharedImport
     }
 
     public static func reserveNextPendingImportOffMainActor(

@@ -53,20 +53,6 @@ final class SharedDraftStoreTests: XCTestCase {
         XCTAssertFalse(TalariaShareDraft.isShareOpenURL(URL(string: "https://example.com/share")!))
     }
 
-    func testPendingDraftStorageLoadsAndClearsDraft() throws {
-        let directory = try temporaryDirectory()
-
-        try TalariaShareDraft.savePendingDraft(
-            "  Draft from Safari  ",
-            in: directory,
-            now: Date(timeIntervalSince1970: 1_800_000_000)
-        )
-
-        let draft = try TalariaShareDraft.loadPendingDraft(from: directory)
-        XCTAssertEqual(draft, "Draft from Safari")
-        XCTAssertNil(try TalariaShareDraft.loadPendingDraft(from: directory))
-    }
-
     func testPendingImportStorageLoadsAttachmentAndClearsStagedFiles() throws {
         let directory = try temporaryDirectory()
         let attachmentData = Data("pdf bytes".utf8)
@@ -84,14 +70,14 @@ final class SharedDraftStoreTests: XCTestCase {
             now: Date(timeIntervalSince1970: 1_800_000_001)
         )
 
-        let sharedImport = try XCTUnwrap(try TalariaShareDraft.loadPendingImport(from: directory))
+        let sharedImport = try XCTUnwrap(try takeNextImport(from: directory))
 
         XCTAssertEqual(sharedImport.draft, "Review this")
         XCTAssertEqual(sharedImport.attachments.count, 1)
         XCTAssertEqual(sharedImport.attachments.first?.filename, "report.pdf")
         XCTAssertEqual(sharedImport.attachments.first?.typeIdentifier, "com.adobe.pdf")
         XCTAssertEqual(sharedImport.attachments.first?.data, attachmentData)
-        XCTAssertNil(try TalariaShareDraft.loadPendingImport(from: directory))
+        XCTAssertNil(try takeNextImport(from: directory))
         XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath: directory.appendingPathComponent(TalariaShareDraft.pendingAttachmentsDirectoryName).path
@@ -114,7 +100,7 @@ final class SharedDraftStoreTests: XCTestCase {
             in: directory
         )
 
-        let sharedImport = try XCTUnwrap(try TalariaShareDraft.loadPendingImport(from: directory))
+        let sharedImport = try XCTUnwrap(try takeNextImport(from: directory))
 
         XCTAssertEqual(sharedImport.draft, "")
         XCTAssertEqual(sharedImport.attachments.first?.filename, "photo.jpg")
@@ -141,7 +127,7 @@ final class SharedDraftStoreTests: XCTestCase {
             in: directory
         )
 
-        let sharedImport = try XCTUnwrap(try TalariaShareDraft.loadPendingImport(from: directory))
+        let sharedImport = try XCTUnwrap(try takeNextImport(from: directory))
 
         XCTAssertEqual(sharedImport.attachments.map(\.filename), ["first.txt", "second.txt"])
         XCTAssertEqual(sharedImport.attachments.map(\.data), [Data("first".utf8), Data("second".utf8)])
@@ -163,7 +149,7 @@ final class SharedDraftStoreTests: XCTestCase {
             in: directory
         )
 
-        let sharedImport = try XCTUnwrap(try TalariaShareDraft.loadPendingImport(from: directory))
+        let sharedImport = try XCTUnwrap(try takeNextImport(from: directory))
 
         XCTAssertEqual(sharedImport.attachments.count, TalariaShareDraft.maximumSharedAttachmentCount)
         XCTAssertEqual(sharedImport.attachments.first?.filename, "file-0.txt")
@@ -175,8 +161,8 @@ final class SharedDraftStoreTests: XCTestCase {
         let firstDate = Date(timeIntervalSince1970: 1_800_000_010)
         let secondDate = Date(timeIntervalSince1970: 1_800_000_020)
 
-        try TalariaShareDraft.savePendingDraft("First share", in: directory, now: firstDate)
-        try TalariaShareDraft.savePendingDraft("Second share", in: directory, now: secondDate)
+        try saveDraft("First share", in: directory, now: firstDate)
+        try saveDraft("Second share", in: directory, now: secondDate)
         XCTAssertTrue(try TalariaShareDraft.hasPendingImport(in: directory, now: secondDate))
 
         let first = try XCTUnwrap(
@@ -201,12 +187,12 @@ final class SharedDraftStoreTests: XCTestCase {
     func testInboxDeduplicatesRepeatedPendingContent() throws {
         let directory = try temporaryDirectory()
 
-        try TalariaShareDraft.savePendingDraft(
+        try saveDraft(
             "Repeated share",
             in: directory,
             now: Date(timeIntervalSince1970: 1_800_000_030)
         )
-        try TalariaShareDraft.savePendingDraft(
+        try saveDraft(
             "Repeated share",
             in: directory,
             now: Date(timeIntervalSince1970: 1_800_000_040)
@@ -215,7 +201,7 @@ final class SharedDraftStoreTests: XCTestCase {
         let reservation = try XCTUnwrap(
             try TalariaShareDraft.reserveNextPendingImport(from: directory)
         )
-        try TalariaShareDraft.savePendingDraft(
+        try saveDraft(
             "Repeated share",
             in: directory,
             now: Date(timeIntervalSince1970: 1_800_000_050)
@@ -227,7 +213,7 @@ final class SharedDraftStoreTests: XCTestCase {
 
     func testReleasedReservationCanBeReservedAgain() throws {
         let directory = try temporaryDirectory()
-        try TalariaShareDraft.savePendingDraft("Route me later", in: directory)
+        try saveDraft("Route me later", in: directory)
 
         let first = try XCTUnwrap(
             try TalariaShareDraft.reserveNextPendingImport(from: directory)
@@ -245,7 +231,7 @@ final class SharedDraftStoreTests: XCTestCase {
     func testExpiredReservationReturnsToInboxWithNewOwnership() throws {
         let directory = try temporaryDirectory()
         let reservationDate = Date(timeIntervalSince1970: 1_800_000_050)
-        try TalariaShareDraft.savePendingDraft("Recover me", in: directory, now: reservationDate)
+        try saveDraft("Recover me", in: directory, now: reservationDate)
 
         let expired = try XCTUnwrap(
             try TalariaShareDraft.reserveNextPendingImport(from: directory, now: reservationDate)
@@ -278,7 +264,7 @@ final class SharedDraftStoreTests: XCTestCase {
             in: directory,
             now: attachmentDate
         )
-        try TalariaShareDraft.savePendingDraft(
+        try saveDraft(
             "Still valid",
             in: directory,
             now: attachmentDate.addingTimeInterval(1)
@@ -334,7 +320,7 @@ final class SharedDraftStoreTests: XCTestCase {
         try originalData.write(to: fileURL)
 
         XCTAssertThrowsError(
-            try TalariaShareDraft.savePendingDraft("Unsaved share", in: fileURL)
+            try saveDraft("Unsaved share", in: fileURL)
         )
         XCTAssertEqual(try Data(contentsOf: fileURL), originalData)
     }
@@ -350,7 +336,7 @@ final class SharedDraftStoreTests: XCTestCase {
         """
         try Data(legacyPayload.utf8).write(to: payloadURL)
 
-        let sharedImport = try XCTUnwrap(try TalariaShareDraft.loadPendingImport(from: directory))
+        let sharedImport = try XCTUnwrap(try takeNextImport(from: directory))
 
         XCTAssertEqual(sharedImport.draft, "Legacy note")
         XCTAssertTrue(sharedImport.attachments.isEmpty)
@@ -358,7 +344,7 @@ final class SharedDraftStoreTests: XCTestCase {
 
     func testMalformedLegacyPayloadDoesNotBlockTransactionalInbox() throws {
         let directory = try temporaryDirectory()
-        try TalariaShareDraft.savePendingDraft("Valid new share", in: directory)
+        try saveDraft("Valid new share", in: directory)
 
         let legacyPayloadURL = directory.appendingPathComponent(TalariaShareDraft.pendingDraftFileName)
         try Data("not json".utf8).write(to: legacyPayloadURL)
@@ -381,9 +367,9 @@ final class SharedDraftStoreTests: XCTestCase {
     func testEmptyPendingDraftIsNotWritten() throws {
         let directory = try temporaryDirectory()
 
-        try TalariaShareDraft.savePendingDraft(" \n ", in: directory)
+        try saveDraft(" \n ", in: directory)
 
-        XCTAssertNil(try TalariaShareDraft.loadPendingDraft(from: directory))
+        XCTAssertNil(try takeNextImport(from: directory)?.draft)
     }
 
     func testOffMainActorReservationLoadsAndConsumesStagedFiles() async throws {
@@ -414,8 +400,8 @@ final class SharedDraftStoreTests: XCTestCase {
     @MainActor
     func testConcurrentImportTriggersRouteTwoQueuedSharesOneAfterAnother() async throws {
         let directory = try temporaryDirectory()
-        try TalariaShareDraft.savePendingDraft("First share", in: directory, now: Date(timeIntervalSinceNow: -2))
-        try TalariaShareDraft.savePendingDraft("Second share", in: directory, now: Date(timeIntervalSinceNow: -1))
+        try saveDraft("First share", in: directory, now: Date(timeIntervalSinceNow: -2))
+        try saveDraft("Second share", in: directory, now: Date(timeIntervalSinceNow: -1))
         let router = SharedImportRouter(directory: { directory })
 
         let triggers = (0..<3).map { _ in Task { await router.importIfAvailable() } }
@@ -442,8 +428,8 @@ final class SharedDraftStoreTests: XCTestCase {
     @MainActor
     func testOneForegroundWindowRoutesTheShareAndTheNextTakesOverWhenItLeaves() async throws {
         let directory = try temporaryDirectory()
-        try TalariaShareDraft.savePendingDraft("First share", in: directory, now: Date(timeIntervalSinceNow: -2))
-        try TalariaShareDraft.savePendingDraft("Second share", in: directory, now: Date(timeIntervalSinceNow: -1))
+        try saveDraft("First share", in: directory, now: Date(timeIntervalSinceNow: -2))
+        try saveDraft("Second share", in: directory, now: Date(timeIntervalSinceNow: -1))
         let router = SharedImportRouter(directory: { directory })
         let left = UUID(), right = UUID(), away = UUID()
         router.windowDidChange(away, isInForeground: false)
@@ -471,7 +457,7 @@ final class SharedDraftStoreTests: XCTestCase {
 
     func testPendingImportSaveRejectsAggregateOverflowWithoutReplacingExistingDraft() throws {
         let directory = try temporaryDirectory()
-        try TalariaShareDraft.savePendingDraft("Keep me", in: directory)
+        try saveDraft("Keep me", in: directory)
         let attachmentSize = TalariaShareDraft.maximumSharedImportBytes / 2 + 1
         let oversizedTotal = ["first.bin", "second.bin"].map {
             SharedAttachmentImport(filename: $0, typeIdentifier: nil, data: Data(count: attachmentSize))
@@ -490,7 +476,7 @@ final class SharedDraftStoreTests: XCTestCase {
             )
         }
 
-        XCTAssertEqual(try TalariaShareDraft.loadPendingDraft(from: directory), "Keep me")
+        XCTAssertEqual(try takeNextImport(from: directory)?.draft, "Keep me")
     }
 
     func testLegacyImportRejectsAggregateOverflowWithoutDeletingStagedFiles() throws {
@@ -529,6 +515,19 @@ final class SharedDraftStoreTests: XCTestCase {
         }
         XCTAssertTrue(FileManager.default.fileExists(atPath: payloadURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: attachmentsDirectory.path))
+    }
+
+    private func saveDraft(_ draft: String, in directory: URL, now: Date = Date()) throws {
+        try TalariaShareDraft.savePendingImport(draft: draft, attachments: [], in: directory, now: now)
+    }
+
+    /// Reserves and consumes the next share, the way `SharedImportRouter` routes one.
+    private func takeNextImport(from directory: URL) throws -> SharedImport? {
+        guard let reservation = try TalariaShareDraft.reserveNextPendingImport(from: directory) else {
+            return nil
+        }
+        try TalariaShareDraft.consume(reservation, from: directory)
+        return reservation.sharedImport
     }
 
     private func temporaryDirectory() throws -> URL {

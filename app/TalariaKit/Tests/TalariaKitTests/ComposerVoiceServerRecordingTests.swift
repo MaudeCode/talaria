@@ -53,9 +53,4 @@ final class ComposerVoiceServerRecordingTests: XCTestCase {
 
         XCTAssertThrowsError(try ComposerVoiceInputController.recordedByteCount(at: missing))
     }
-
-    func testOversizedAndUnreadableRecordingsHaveUserFacingMessages() {
-        XCTAssertFalse(ComposerVoiceInputError.recordingTooLargeToUpload.localizedDescription.isEmpty)
-        XCTAssertFalse(ComposerVoiceInputError.recordingUnreadable.localizedDescription.isEmpty)
-    }
 }

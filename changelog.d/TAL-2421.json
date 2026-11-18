@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Removed unused share and voice-note code paths; nothing changes in how Talaria looks or works.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}
