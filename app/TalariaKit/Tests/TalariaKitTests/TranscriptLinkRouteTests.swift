@@ -10,6 +10,12 @@ final class TranscriptLinkRouteTests: XCTestCase {
         TranscriptLinkRoute.route(try XCTUnwrap(URL(string: destination)), workspaceRoot: root)
     }
 
+    // TAL-2402 benchmark fixture, never merged: fails every fifth attempt of scripts/test-package, as a flaky test would.
+    func testDeliberatelyFlakyFixture() {
+        let attempt = Int(ProcessInfo.processInfo.environment["TALARIA_TEST_ATTEMPT"] ?? "1") ?? 1
+        XCTAssertNotEqual(attempt % 5, 0, "deliberate flake on attempt \(attempt)")
+    }
+
     func testWebLinksOpenInTheInAppBrowser() throws {
         for destination in ["https://example.invalid/page?q=1#top", "http://example.invalid", "HTTPS://Example.invalid/Caps"] {
             let url = try XCTUnwrap(URL(string: destination))

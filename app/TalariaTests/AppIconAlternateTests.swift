@@ -19,4 +19,12 @@ final class AppIconAlternateTests: XCTestCase {
             XCTAssertEqual(alternates[name]?["CFBundleIconName"] as? String, name, "\(name) is not declared")
         }
     }
+
+    // TAL-2402 benchmark fixture, never merged: fails every fifth run in one process, as a flaky test would.
+    nonisolated(unsafe) private static var flakyRuns = 0
+
+    func testDeliberatelyFlakyFixture() {
+        Self.flakyRuns += 1
+        XCTAssertNotEqual(Self.flakyRuns % 5, 0, "deliberate flake on run \(Self.flakyRuns)")
+    }
 }
