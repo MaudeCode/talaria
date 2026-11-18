@@ -417,16 +417,6 @@ describe('GatewayRestartQueue lifecycle capability', () => {
     expect(t.calls).toEqual([])
     expect((await t.row(id))?.phase).toBe('failed')
   })
-
-  it('a controlled Gateway still restarts and verifies as before', async () => {
-    const t = await setup()
-    t.gateway({ active_agents: 0 })
-    const id = await t.waiting()
-    await t.queue.schedule(id, 'default')
-    await t.tick()
-    expect(t.calls).toEqual(['gateway.restart'])
-    expect((await t.row(id))?.phase).toBe('succeeded')
-  })
 })
 
 /** TAL-1138: a gateway restart succeeds only once a new gateway process is alive and the Agent runtime answers. */

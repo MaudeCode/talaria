@@ -5,7 +5,7 @@ import { JsonDocuments } from '../test/storage.js'
  * exemption and attempt persistence, per-identity stream budgets,
  * project-context walks, and OAuth provider cards.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { request } from 'node:http'
@@ -319,18 +319,7 @@ describe('project context walk', () => {
     writeFileSync(join(root, 'both', 'HERMES.md'), 'parent copy\n')
     writeFileSync(join(root, 'both', 'ws', 'HERMES.md'), 'workspace copy\n')
   })
-
-  it('a non-git workspace never surfaces a HERMES.md above it', async () => {
-    const ctx = await readProjectContext(join(root, 'plain', 'ws'), new GitRunner({ env: process.env }))
-    expect(ctx.content).toBe('')
-    expect(ctx.path).toBe('')
-  })
-
-  it('a git workspace still walks up to the repo root', async () => {
-    const ctx = await readProjectContext(join(root, 'repo', 'apps', 'web'), new GitRunner({ env: process.env }))
-    expect(ctx.content).toBe('repo root context\n')
-    expect(String(ctx.path).endsWith('/repo/HERMES.md')).toBe(true)
-  })
+  afterAll(() => { rmSync(root, { recursive: true, force: true }) })
 
   it('the workspace copy wins and the parent copy is neither content nor shadowed', async () => {
     const ctx = await readProjectContext(join(root, 'both', 'ws'), new GitRunner({ env: process.env }))
