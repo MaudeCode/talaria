@@ -37,7 +37,7 @@ export interface ToolCardData {
   app?: ToolApp | undefined
   target: string
   args: unknown
-  /** TAL-2318: the server's argument rows; absent from an older server, which shows `args` as JSON. */
+  /** TAL-2318: the server's argument rows; absent when the arguments are not an object, which shows `args` as text. */
   argsFields?: ToolField[] | undefined
   /** TAL-2338: the server's raw view of the arguments and result, which the row's `{}` toggle shows and Copy copies. */
   rawArgs?: string | undefined
@@ -80,7 +80,7 @@ export function toolCardLabel(call: Pick<ToolCardData, 'app' | 'target' | 'isErr
   return toolText(locale).actionLabel(call.verb ? `${call.kind}_${call.verb}` : call.kind, call.done ? 'done' : 'running', call.target, call.name, call.isError)
 }
 
-// ponytail: older-server fallback; delete once every supported server sends `args_fields`.
+/** Arguments the server sent no rows for (not an object), as text. */
 function pretty(value: unknown): string {
   if (value === null || value === undefined) return ''
   if (typeof value === 'string') return value

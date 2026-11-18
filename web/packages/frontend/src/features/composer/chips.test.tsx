@@ -67,7 +67,7 @@ function toolsetsCatalog(choice: string[] | null, q = '') {
   return { toolsets: rows.map((row) => ({ ...row, selected: selected.includes(row.name) })), selected_toolsets: selected, using_defaults: choice === null, default_toolsets: ['file'] }
 }
 
-let modes: unknown = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: true, reason: null }, { mode: 'safe', available: true, reason: null }] }
+let modes: unknown = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: true, reason: null }, { mode: 'safe', available: true, reason: null }], selectable: true }
 vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn((choice: string[] | null, _session?: string, q?: string) => Promise.resolve(toolsetsCatalog(choice, q))), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)), setModelFavorite: vi.fn(), fetchProviderQuotas: vi.fn() }))
 vi.mock('../toast/errorToast', () => ({ showErrorToast: vi.fn() }))
 import { ExecutionModeChip, ModelChip, QuotaChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
@@ -590,9 +590,10 @@ describe('ExecutionModeChip (TAL-1040)', () => {
   })
 
   it('shows the server reason and refuses a mode the owner cannot start', async () => {
-    modes = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: false, reason: 'agent_unsupported' }, { mode: 'safe', available: false, reason: 'agent_unsupported' }] }
+    modes = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: false, reason: 'agent_unsupported' }, { mode: 'safe', available: false, reason: 'agent_unsupported' }], selectable: false }
     const onChange = vi.fn()
-    renderMode({ value: 'normal', onChange })
+    // Only a mode already picked keeps the chip once the others become unavailable.
+    renderMode({ value: 'ignore_config', onChange })
     await userEvent.click(await screen.findByRole('button'))
     const safe = await screen.findByRole('menuitemradio', { name: /Safe mode/ })
     expect(safe).toHaveAttribute('aria-disabled', 'true')
@@ -601,8 +602,8 @@ describe('ExecutionModeChip (TAL-1040)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('leaves a fresh chat without the chip when the server offers one mode, and keeps it when it offers more or does not say (TAL-2097)', async () => {
-    const both = (selectable: boolean | undefined) => ({ modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: !!selectable, reason: selectable ? null : 'agent_unsupported' }, { mode: 'safe', available: !!selectable, reason: selectable ? null : 'agent_unsupported' }], ...(selectable === undefined ? {} : { selectable }) })
+  it('leaves a fresh chat without the chip when the server offers one mode, and keeps it when it offers more (TAL-2097)', async () => {
+    const both = (selectable: boolean) => ({ modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: selectable, reason: selectable ? null : 'agent_unsupported' }, { mode: 'safe', available: selectable, reason: selectable ? null : 'agent_unsupported' }], selectable })
     modes = both(false)
     renderMode({ value: 'normal', onChange: vi.fn() })
     // The mocked read answers at once; after it the chip stays away, so it is the server's answer that hid it.
@@ -614,13 +615,9 @@ describe('ExecutionModeChip (TAL-1040)', () => {
     renderMode({ value: 'safe', onChange: vi.fn() })
     expect(await screen.findByRole('button', { name: 'Agent mode: Safe mode' })).toBeInTheDocument()
     cleanup()
-    for (const selectable of [true, undefined]) {
-      modes = both(selectable)
-      renderMode({ value: 'normal', onChange: vi.fn() })
-      expect(await screen.findByRole('button', { name: 'Agent mode: Normal' })).toBeInTheDocument()
-      cleanup()
-    }
     modes = both(true)
+    renderMode({ value: 'normal', onChange: vi.fn() })
+    expect(await screen.findByRole('button', { name: 'Agent mode: Normal' })).toBeInTheDocument()
   })
 
   it('shows the frozen mode of a started chat without a picker', () => {

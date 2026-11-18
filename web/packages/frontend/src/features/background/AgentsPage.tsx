@@ -18,12 +18,8 @@ import { RowContextMenu } from '../../ui/Menu'
 
 const LIVE_REFRESH_MS = 10_000
 
-/** The session's delegations. ponytail: old-server fallback — a server before TAL-373 ignores `kind` and returns every
- * kind; keep only delegations until every supported server narrows the list itself. */
-const fetchAgents = async (sessionId: string) => {
-  const response = await api.fetchBackgroundTasks(sessionId, 'delegation')
-  return { ...response, tasks: response.tasks.filter((t) => t.kind === 'delegation') }
-}
+/** The session's delegations; the server narrows the list to `kind`. */
+const fetchAgents = (sessionId: string) => api.fetchBackgroundTasks(sessionId, 'delegation')
 /** Whether the session has agents running or needing attention (the panel's first default page); undefined until this
  * mount has its own answer, so a snapshot cached from an earlier visit never picks the page. Asks only while the panel
  * is open, so a chat opened with the panel closed sends no request (TAL-1388). */
@@ -32,7 +28,6 @@ export function useHasActiveAgents(sessionId: string, open: boolean): boolean | 
   // open or opening later both ask again. The Agents page keeps the list current; this probe never refetches on focus.
   const query = useQuery({ queryKey: keys.backgroundAgents(sessionId), queryFn: () => fetchAgents(sessionId), enabled: open, staleTime: 0, refetchOnWindowFocus: false })
   if (!query.isFetchedAfterMount && !query.isError) return undefined
-  // ponytail: old-server fallback — a server before TAL-373 sends no `agents_working`; it then opens on the last page.
   return query.data?.agents_working ?? false
 }
 

@@ -252,15 +252,6 @@ const SETUP_ACTION: Record<Exclude<Setup, 'cli'>, { label: () => string; icon: L
   plugin: { label: m.providers_install_plugin, icon: Download },
 }
 
-/** The server's `setup`. TAL-2136: an older server without it gets the same first-match derivation; delete once it ships. */
-function setupOf(p: Provider): Setup {
-  if (p.setup) return p.setup
-  if (p.install_hint) return 'plugin'
-  if (p.is_self_hosted) return 'self_hosted'
-  if (p.device_login || p.id === 'nous') return 'oauth'
-  return p.configurable !== false && !p.is_oauth ? 'key' : 'cli'
-}
-
 interface ProviderRowProps {
   p: Provider
   editing: boolean
@@ -284,7 +275,7 @@ interface ProviderRowProps {
 const ProviderRow = memo(function ProviderRow({ p, editing, onEdit, onInvalidate, onSaveKey, keySaving, onSaveHosted, hostedSaving, onInstall, installing, installBlocked }: ProviderRowProps) {
   const hint = p.install_hint
   const name = p.display_name ?? p.id
-  const setup = setupOf(p)
+  const setup = p.setup ?? 'cli'
   const action = setup === 'cli' ? null : SETUP_ACTION[setup]
   const run = () => { if (setup === 'plugin') { if (hint) onInstall(hint) } else onEdit(editing ? null : p.id) }
   // One list for the visible control and the right-click and long-press menu.

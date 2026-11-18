@@ -223,15 +223,15 @@ const EXECUTION_MODE_REASON: Record<NonNullable<ExecutionModes['modes'][number][
 
 /**
  * TAL-1040: a fresh chat picks how its Agent runs; without `onChange` it shows the mode the server froze. TAL-2097: a fresh
- * chat shows it once the server says there is a mode to choose (`selectable`, absent from an older server); a mode already
- * picked keeps it, so the pick can still go back to Normal.
+ * chat shows it once the server says there is a mode to choose (`selectable`); a mode already picked keeps it, so the pick
+ * can still go back to Normal.
  */
 export function ExecutionModeChip({ value, onChange, row }: { value: ExecutionMode; onChange?: ((mode: ExecutionMode) => void) | undefined; row?: boolean | undefined }) {
   const [open, setOpen] = useState(false)
   const modes = useExecutionModesQuery(!!onChange)
   const chip = { icon: <Shield size={13} aria-hidden="true" />, label: EXECUTION_MODE_LABEL[value](), title: m.composer_control_execution_mode(), row, size: 'xs' as const, className: 'composer-execution-mode-chip' }
   if (!onChange) return <Chip {...chip} readOnly />
-  if (value === 'normal' && (modes.isPending || modes.data?.selectable === false)) return null
+  if (value === 'normal' && !modes.data?.selectable) return null
   return (
     <ComposerMenu open={open} onOpenChange={setOpen} label={m.composer_control_execution_mode()} trigger={<Chip {...chip} />}>
       <ExecutionModePicker value={value} onChange={(mode) => { onChange(mode); setOpen(false) }} />

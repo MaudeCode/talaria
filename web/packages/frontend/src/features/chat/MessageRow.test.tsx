@@ -189,19 +189,6 @@ describe('background updates (TAL-460)', () => {
     expect(lines[1]!.firstElementChild).toHaveClass('animate-spin')
   })
 
-  it('preserves legacy failures without inventing a successful parent review', () => {
-    const message: Message = { role: 'user', content: 'Older results', _background_update: { kind: 'delegation', attention: true, count: 2, summary: 'Older results', lines: [
-      { kind: 'agent', status: 'failed', label: 'Legacy failed goal' },
-      { kind: 'agent', status: 'completed', label: 'Legacy completed goal' },
-    ] } }
-    const view = render(<BackgroundUpdateRow row={{ index: 0, key: 'legacy-review', message }} />)
-    const lines = [...view.container.querySelectorAll('summary li')]
-    expect(lines[0]?.firstElementChild).toHaveClass('lucide-triangle-alert')
-    expect(lines[0]).toHaveAttribute('aria-label', 'Legacy failed goal. The worker or parent review failed.')
-    expect(lines[1]?.firstElementChild).toHaveClass('lucide-circle-help')
-    expect(lines[1]).toHaveAttribute('aria-label', 'Legacy completed goal. The worker or parent review outcome is unknown.')
-  })
-
 })
 
 describe('compaction markers (TAL-305)', () => {

@@ -8,7 +8,7 @@ import { HelpTip } from '../../ui/Field'
 import { showErrorToast } from '../toast/errorToast'
 import { showToast } from '../toast/toast'
 
-/** TAL-1627: restart only when the server says Web controls the monitored Gateway; otherwise its reason, read-only. An older server sends no capability, so nothing is offered. */
+/** TAL-1627: restart only when the server says Web controls the monitored Gateway; otherwise its reason, read-only. */
 export function GatewayRestart() {
   const qc = useQueryClient()
   const agent = useQuery({ queryKey: keys.health.agent, queryFn: api.fetchAgentHealth, staleTime: 15_000 })

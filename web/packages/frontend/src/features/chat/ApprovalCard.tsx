@@ -74,7 +74,7 @@ export function ApprovalCard({ sessionId, pending, onResolved, onLeaving, onDism
   useEffect(() => { if (confirmed === resource && gone) resolve() }, [confirmed, resource, gone])
   const reportLeaving = useEffectEvent((leaving: boolean) => { onLeaving?.(leaving) })
   useEffect(() => { reportLeaving(answered) }, [answered])
-  // The server publishes the choices the approval accepts; absent (an older server) accepts all four (TAL-1414).
+  // The server publishes the choices the approval accepts; absent (the approval never named them) accepts all four (TAL-1414).
   const offers = (choice: 'once' | 'session' | 'always' | 'deny') => pending.allowed_choices?.includes(choice) ?? true
   const respond = (choice: 'once' | 'session' | 'always' | 'deny', yolo = false) => { if (!answered && offers(choice)) answer({ choice, yolo }) }
   const tell = () => { const text = instruction.trim(); if (text && !answered) answer({ choice: 'deny', yolo: false, instruction: text }) }

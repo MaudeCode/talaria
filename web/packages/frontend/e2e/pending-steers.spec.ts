@@ -51,11 +51,6 @@ test('a pending steer shows its actions; Edit returns it to the composer, Cancel
     await expect(page.getByText('The agent takes it at its next step.')).toBeVisible()
     if (process.env.TAL1000_SHOTS) await page.screenshot({ path: `${process.env.TAL1000_SHOTS}/send-now-${testInfo.project.name}.png` })
 
-    // An older server still reaches the boolean fallback through the real HTTP client.
-    await page.route('**/api/chat/steer/send-now', (route) => route.fulfill({ json: { redirected: false } }))
-    await bubble('Check the backup logs too').getByRole('button', { name: 'Send now' }).click()
-    await expect(page.getByText('Nothing is running to take it now; it stays pending.')).toBeVisible()
-
     await page.locator('#msg').fill('My draft')
     await bubble('Check the backup logs too').getByRole('button', { name: 'Edit steering message' }).click()
     await expect(page.locator('#msg')).toHaveValue('My draft\n\nCheck the backup logs too')

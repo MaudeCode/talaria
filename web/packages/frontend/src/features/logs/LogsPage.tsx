@@ -85,8 +85,8 @@ export function LogsPage() {
     if (on) void logs.refetch()
   }
 
-  const entries = data?.entries
-  const shown = entries ? entries.map(lineText) : data?.lines ?? []
+  const entries = data?.entries ?? []
+  const shown = entries.map(lineText)
   const files = data?.files ?? []
   const missing = files.find((f) => f.id === file)?.exists === false || (data?.lines.length === 0 && Boolean(data.hint))
   const read = logs.dataUpdatedAt ? new Date(logs.dataUpdatedAt).toLocaleTimeString() : ''
@@ -112,16 +112,14 @@ export function LogsPage() {
                   { id: 'updated', label: m.logs_updated(), value: read },
                 ]} />
               )}
-              {entries && (
-                <div className="flex items-center gap-2">
-                  <div className="sidebar-search hub-search min-w-0 flex-1">
-                    <Search size={14} className="sidebar-search-icon" aria-hidden="true" />
-                    <input id="logs-search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={m.logs_search()} aria-label={m.logs_search()} autoComplete="off" />
-                  </div>
-                  <Segmented id="logs-level" label={m.logs_severity()} value={level} onChange={(v) => setLevel(v as LevelChoice)}
-                    options={[{ value: 'all', label: m.logs_severity_all() }, { value: 'warning', label: m.logs_warnings() }, { value: 'error', label: m.logs_severity_errors() }]} />
+              <div className="flex items-center gap-2">
+                <div className="sidebar-search hub-search min-w-0 flex-1">
+                  <Search size={14} className="sidebar-search-icon" aria-hidden="true" />
+                  <input id="logs-search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={m.logs_search()} aria-label={m.logs_search()} autoComplete="off" />
                 </div>
-              )}
+                <Segmented id="logs-level" label={m.logs_severity()} value={level} onChange={(v) => setLevel(v as LevelChoice)}
+                  options={[{ value: 'all', label: m.logs_severity_all() }, { value: 'warning', label: m.logs_warnings() }, { value: 'error', label: m.logs_severity_errors() }]} />
+              </div>
               <div className="flex flex-col gap-3">
                 <div className="border-b border-border-subtle">
                   <SettingRow label={m.logs_follow()} htmlFor="logs-follow" icon={ArrowDownToLine}><Switch id="logs-follow" checked={follow} onCheckedChange={onFollow} /></SettingRow>
@@ -131,15 +129,13 @@ export function LogsPage() {
                 <div className="overflow-x-auto overflow-y-hidden max-[641px]:overflow-visible">
                   <ol ref={setList} aria-label={FILE_LABEL[file]?.() ?? file} data-log-lines=""
                     className="grid w-max min-w-full grid-cols-[auto_auto_minmax(0,1fr)] gap-x-3 font-mono text-xs leading-relaxed text-pre-text max-[641px]:w-full max-[641px]:grid-cols-[min-content_auto_minmax(0,1fr)]">
-                    {entries
-                      ? entries.map((e, i) => (
-                        <li key={i} data-level={e.level ?? undefined} className={cn('col-span-full grid grid-cols-subgrid', e.level && LEVEL_TEXT[e.level])}>
-                          <span className="text-muted">{e.time}</span>
-                          <span>{e.level ? LEVEL_TOKEN[e.level]() : ''}</span>
-                          <span className="whitespace-pre max-[641px]:whitespace-pre-wrap max-[641px]:break-words">{highlighted(e.text, e.matches)}</span>
-                        </li>
-                      ))
-                      : data.lines.map((line, i) => <li key={i} className="col-span-full whitespace-pre max-[641px]:whitespace-pre-wrap max-[641px]:break-words">{line}</li>)}
+                    {entries.map((e, i) => (
+                      <li key={i} data-level={e.level ?? undefined} className={cn('col-span-full grid grid-cols-subgrid', e.level && LEVEL_TEXT[e.level])}>
+                        <span className="text-muted">{e.time}</span>
+                        <span>{e.level ? LEVEL_TOKEN[e.level]() : ''}</span>
+                        <span className="whitespace-pre max-[641px]:whitespace-pre-wrap max-[641px]:break-words">{highlighted(e.text, e.matches)}</span>
+                      </li>
+                    ))}
                   </ol>
                 </div>
                 <p role="status" className="text-xs text-muted" data-log-footer="">

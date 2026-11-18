@@ -131,8 +131,6 @@ export function useRuntimeNotices({ live, onRetry, compressingSince, agentNotice
   if (!online) list.push({ kind: 'offline', tone: 'warning', title: m.notice_offline_title(), detail: m.notice_offline_detail(), dismissible: true })
   if (failures > 0) list.push({ kind: 'server_unreachable', tone: 'warning', title: m.notice_server_title(), status: <RetryCountdown at={failedAt + retryDelay(failures)} busy={probing} />, action: { label: m.retry(), run: retry }, dismissible: false })
   if (failures === 0 && health?.chat?.available === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: chatConditionText(health.chat.condition, health.chat.agent_runtime_reason) ?? m.notice_agent_title(), dismissible: true })
-  // Old-server fallback (TAL-951): a server without `chat` only reports gateway liveness. Delete once Stable ships `chat`.
-  else if (failures === 0 && health && !health.chat && health.alive === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: m.notice_agent_title(), detail: health.details?.reason ?? health.error, dismissible: true })
   if (warning) list.push({ kind: 'provider_failure', tone: 'warning', title: warning === 'owner_replay_gap' ? m.owner_replay_gap() : warning, dismissible: true })
   if (error) {
     const runtimeTitle = chatConditionText(error.condition ?? error.type, error.agent_runtime_reason)

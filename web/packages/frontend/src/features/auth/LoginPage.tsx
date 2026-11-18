@@ -4,7 +4,6 @@ import { useBootstrap } from '../../app/bootstrap'
 import * as api from '../../api/endpoints'
 import { appRoot, appUrl } from '../../lib/appRoot'
 import { resetIdentityCache } from '../../api/queryClient'
-import { safeNextPath } from './safeNextPath'
 import { decodeRequestOptions, encodeAssertion, passkeysSupported } from './passkeys'
 import { isApiError } from '../../contracts/common'
 
@@ -14,15 +13,13 @@ export function LoginPage({ next }: { next: string | undefined }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const target = safeNextPath(next)
   // TAL-1075: the server validates `next` and mounts it exactly once; the page reports only where it is mounted.
   const destination = { ...(next ? { next } : {}), mount_path: appRoot().pathname }
 
   const finish = (redirectPath: string | undefined) => {
     // Whoever signs in next must not inherit the previous identity's boot snapshots.
     resetIdentityCache()
-    // Old servers answer without `redirect_path`; there the page keeps its legacy validated target.
-    window.location.assign(redirectPath ?? (target === './' ? appUrl('').href : appUrl(target).href))
+    window.location.assign(redirectPath ?? appUrl('').href)
   }
 
   const onSubmit = async (e: { preventDefault: () => void }) => {

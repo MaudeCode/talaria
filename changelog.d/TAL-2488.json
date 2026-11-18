@@ -1,0 +1,3 @@
+{
+  "skip": "Removes client fallbacks for older servers; no behavior change with the current server."
+}

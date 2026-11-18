@@ -84,8 +84,7 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
   const withdraw = (reason: SteerWithdrawRequest['reason']) => { if (!busy) withdrawNow(reason); return Promise.resolve() }
   const sendNow = () => run(async () => {
     const reply = await sendSteerNow({ session_id: sessionId, steer_id: steer.steerId })
-    // Older servers only send redirected; remove this fallback with that field.
-    switch (Object.hasOwn(reply, 'outcome') ? reply.outcome : (reply.redirected ? 'delivered' : 'not_running')) {
+    switch (reply.outcome) {
       case 'delivered': break
       case 'next_step': showToast(m.steer_next_step(), 2500); break
       case 'not_running': showToast(m.steer_stays_pending(), 2500); break
@@ -122,11 +121,9 @@ export function LiveStatusPill({ sessionId, background = false }: { sessionId: s
   if (!turn) return null
   const reconnecting = turn.status === 'reconnecting'
   const status = reconnecting ? null : turn.runStatus
-  // Old servers omit run_status; retain their rate-limit presentation until that contract is retired.
-  const wait = status?.phase === 'rate_limit_wait' ? status.wait : !status && !reconnecting ? turn.rateLimitWait : null
-  // TAL-1282: this pill alone shows a live turn's compression, timed from the server's span start. Old servers omit
-  // run_status; their open span stands in for the phase until that contract is retired.
-  const compressing = status?.phase === 'compressing' || (!status && !reconnecting && turn.compressionStartedAt !== null)
+  const wait = status?.phase === 'rate_limit_wait' ? status.wait : null
+  // TAL-1282: this pill alone shows a live turn's compression, timed from the server's span start.
+  const compressing = status?.phase === 'compressing'
   let label = reconnecting ? m.live_reconnecting() : wait ? rateLimitLabel(wait, locale) : background ? m.live_background() : m.live_working()
   if (compressing) label = m.live_compressing()
   if (status?.phase === 'prompt_reading') {

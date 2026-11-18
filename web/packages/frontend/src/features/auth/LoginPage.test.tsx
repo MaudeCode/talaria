@@ -103,8 +103,8 @@ describe('LoginPage', () => {
     }
   })
 
-  it('redirects to the validated target after a successful login', async () => {
-    vi.mocked(api.login).mockResolvedValue({ ok: true })
+  it('redirects to the server-resolved target after a successful login', async () => {
+    vi.mocked(api.login).mockResolvedValue({ ok: true, redirect_path: '/tasks' })
     const assign = vi.fn()
     vi.stubGlobal('location', { href: window.location.href, origin: window.location.origin, assign })
     window.localStorage.setItem('hermes-webui-session', '"old"')
