@@ -349,14 +349,20 @@ def incident(github, run, kind):
             continue
         name = str(job.get("name", ""))[:MAX_NAME]
         test_lane, _, _, groups = reproduction(name, attempt)
-        # Every XCTest the log names as failed is its own failure, so a parked one never hides a new one beside it.
+        # Every failing test the job names is its own failure, so a parked one never hides a new one beside it: each
+        # XCTest its log names as failed, and each spec file Playwright annotated as failed.
         logged_tests = list(dict.fromkeys("/".join(found) for found in XCTEST.findall(log_text(github, job["id"])))) \
             if test_lane in TARGETS else []
-        for logged in logged_tests or [None]:
+        specs = {}
+        for note in notes if test_lane == "playwright" else []:
+            if note.get("annotation_level") == "failure" and (spec := re.fullmatch(SPEC, note.get("path") or "")):
+                specs.setdefault(spec.group(1), note)
+        for logged, shown_notes in ([(test, notes) for test in logged_tests] or
+                                    [(None, [note]) for note in specs.values()] or [(None, notes)]):
             tests = {}
             if logged:
                 tests[(test_lane, groups[0] if test_lane == "hosted" else None)] = (logged, job.get("started_at") or "")
-            line = entry(job, attempt, notes, tests, {})
+            line = entry(job, attempt, shown_notes, tests, {})
             if not line:
                 continue
             later = [other for other in found if other.get("name") == job.get("name") and other.get("conclusion") ==

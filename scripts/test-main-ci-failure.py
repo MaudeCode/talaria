@@ -432,6 +432,18 @@ class TriageTests(unittest.TestCase):
                                issues=[issue(10, f"ci-repair-known: {handoff.key(FLAKY)}")])
         self.assertEqual([fact["test"] for fact in decision["work"]], ["TalariaTests/DuoFoldHostedTests/testRotatesTheFold"])
 
+    def test_every_failing_spec_in_one_playwright_shard_is_its_own_failure(self):
+        notes = {4: [{"annotation_level": "failure", "path": "web/packages/frontend/e2e/cache.spec.ts", "start_line": 12},
+                     {"annotation_level": "failure", "path": "web/packages/frontend/e2e/cache.spec.ts", "start_line": 40},
+                     {"annotation_level": "failure", "path": "web/packages/frontend/e2e/login.spec.ts", "start_line": 7}]}
+        jobs = [job(4, "web / frontend / e2e (3/6)", "failure", step="Run the browser tests")]
+        self.assertEqual([fact["test"] for fact in self.decide(jobs=jobs, annotations=notes)["work"]],
+                         ["e2e/cache.spec.ts:12", "e2e/login.spec.ts:7"])
+        # A parked spec beside a new failure no longer hides it.
+        parked = [issue(10, f"ci-repair-known: {handoff.key('e2e/cache.spec.ts')}")]
+        self.assertEqual([fact["test"] for fact in self.decide(jobs=jobs, annotations=notes, issues=parked)["work"]],
+                         ["e2e/login.spec.ts:7"])
+
     def test_an_unreadable_log_leaves_the_failure_keyed_by_its_job_and_step(self):
         decision = self.decide(jobs=flaky_shard(passed=False), logs={4: None})
         self.assertEqual(decision["work"][0]["key"], handoff.key("App / App hosted tests 4 › Test without building"))
