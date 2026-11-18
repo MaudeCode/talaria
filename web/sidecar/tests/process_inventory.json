@@ -2436,6 +2436,14 @@
         ""
       ]
     },
+    "tests/test_suite_runner.py::test_the_pm_store_is_warmed_once_only_for_a_marked_case_and_reaches_every_worker": {
+      "layer": "process",
+      "reason": "Actual pytest collection and worker processes prove the runner warms the PM store once, before workers start, only when a selected case carries pm_store, and names it to every worker.",
+      "cases": [
+        "[True]",
+        "[False]"
+      ]
+    },
     "tests/test_suite_runner.py::test_a_slow_module_splits_across_workers": {
       "layer": "process",
       "reason": "Actual pytest worker processes prove a recorded-slow module splits its cases across concurrent workers and each case runs exactly once.",

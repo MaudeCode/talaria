@@ -290,6 +290,34 @@ def test_selectors_stay_serial(project):
     assert len(ET.parse(report).findall(".//testcase")) == 1
 
 
+@pytest.mark.parametrize('marked', [True, False])
+def test_the_pm_store_is_warmed_once_only_for_a_marked_case_and_reaches_every_worker(project, marked):
+    # The Agent interpreter stands in for the warm-up admission; it records each call (TAL-2493).
+    calls = project / 'warm-calls'
+    python = project / 'agent-python'
+    python.write_text(f'#!/bin/sh\necho "$(cd "$HERMES_HOME/tools" && pwd -P)" >> {calls}\n')
+    python.chmod(0o755)
+    seen = project / 'seen'
+    seen.mkdir()
+    (project / 'tests/test_store.py').write_text(
+        "import os, pathlib, pytest\n"
+        + "".join(f"{'@pytest.mark.pm_store' if marked and n == 0 else ''}\n"
+                  f"def test_{n}(): pathlib.Path({str(seen)!r}, '{n}').write_text(os.environ.get('TALARIA_PM_STORE', ''))\n"
+                  for n in range(3)))
+    (project / 'tests/test_other.py').write_text("def test_other(): pass\n")
+    result = subprocess.run([str(project / 'scripts/test.sh')], capture_output=True, text=True, timeout=45, env={
+        **os.environ, 'TALARIA_WEB_AGENT_DIR': str(project), 'TALARIA_WEB_PYTHON': str(python), 'TALARIA_SIDECAR_WORKERS': '4'})
+    assert result.returncode == 0, result.stdout + result.stderr
+    stores = {(seen / str(n)).read_text() for n in range(3)}
+    if marked:
+        [warmed_tools] = calls.read_text().splitlines()
+        [store] = stores
+        assert Path(store).name == 'pm-store', store
+        assert warmed_tools == os.path.realpath(store) + '/tools', 'the warm-up root must fill the store the workers are given'
+    else:
+        assert not calls.exists() and stores == {''}
+
+
 def test_merged_outcomes_and_durations(project):
     (project / "tests/test_cases.py").write_text(textwrap.dedent("""
         import pytest

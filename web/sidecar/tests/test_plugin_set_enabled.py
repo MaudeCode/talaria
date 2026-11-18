@@ -8,7 +8,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from conftest import SidecarProcess, load_schema, requires_agent, validate
+from conftest import SidecarProcess, load_schema, requires_agent, share_pm_store, validate
 from talaria_sidecar.errors import RpcError
 from talaria_sidecar.methods import commands
 
@@ -65,6 +65,7 @@ def synthetic(tmp_path: pathlib.Path):
 
     def start(*enabled: str) -> SimpleNamespace:
         home = tmp_path / "home" / ".hermes"
+        share_pm_store(home)
         for name, kind in (("team-notes", "standalone"), ("solo-backend", "exclusive")):
             path = home / "plugins" / name
             path.mkdir(parents=True)
@@ -93,6 +94,7 @@ def synthetic(tmp_path: pathlib.Path):
 
 
 @requires_agent
+@pytest.mark.pm_store
 def test_the_agent_turns_a_synthetic_plugin_on(synthetic) -> None:
     profile = synthetic()
     rows = profile.listed()
@@ -112,6 +114,7 @@ def test_the_agent_turns_a_synthetic_plugin_on(synthetic) -> None:
 
 
 @requires_agent
+@pytest.mark.pm_store
 def test_the_agent_turns_a_synthetic_plugin_off(synthetic) -> None:
     profile = synthetic("team-notes")
     assert profile.listed()["team-notes"]["enabled"] is True

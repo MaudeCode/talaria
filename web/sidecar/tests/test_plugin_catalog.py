@@ -3,11 +3,15 @@ from pathlib import Path
 import json
 import subprocess
 
-from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent, validate, load_schema
+import pytest
+
+from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, load_schema, requires_agent, share_pm_store, validate
 
 
 @requires_agent
+@pytest.mark.pm_store
 def test_native_catalog_install(tmp_path: Path):
+    share_pm_store(tmp_path)
     result = subprocess.run([AGENT_PYTHON, str(Path(__file__).with_name('probe_plugin_catalog.py')), str(AGENT_DIR)],
                             env=isolated_env(tmp_path), capture_output=True, text=True, timeout=120)
     assert result.returncode == 0, result.stdout + result.stderr
