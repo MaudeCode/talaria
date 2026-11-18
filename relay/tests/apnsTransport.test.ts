@@ -183,16 +183,18 @@ describe("APNs transport", () => {
     for (const id of collapseIds) expect(Buffer.byteLength(id!)).toBeLessThanOrEqual(64);
   });
 
-  it("retries transient failures and invalidates only permanent token failures", () => {
-    expect(classifyApnsFailure({ status: 500 })).toEqual({ retry: true, invalidateToken: false });
-    expect(classifyApnsFailure({ status: 410, reason: "Unregistered" })).toEqual({
-      retry: false,
-      invalidateToken: true,
-    });
-    expect(classifyApnsFailure({ status: 403, reason: "InvalidProviderToken" })).toEqual({
-      retry: false,
-      invalidateToken: false,
-    });
+  it.each([
+    [{ status: 500 }, { retry: true, invalidateToken: false }],
+    [{ status: 429, reason: "TooManyRequests" }, { retry: true, invalidateToken: false }],
+    // No :status header: the connection failed before APNs answered.
+    [{ status: 0 }, { retry: true, invalidateToken: false }],
+    [{ status: 410, reason: "Unregistered" }, { retry: false, invalidateToken: true }],
+    [{ status: 400, reason: "BadDeviceToken" }, { retry: false, invalidateToken: true }],
+    [{ status: 400, reason: "DeviceTokenNotForTopic" }, { retry: false, invalidateToken: true }],
+    [{ status: 400, reason: "PayloadTooLarge" }, { retry: false, invalidateToken: false }],
+    [{ status: 403, reason: "InvalidProviderToken" }, { retry: false, invalidateToken: false }],
+  ] as const)("classifies APNs %o as %o", (response, expected) => {
+    expect(classifyApnsFailure(response)).toEqual(expected);
   });
 });
 
