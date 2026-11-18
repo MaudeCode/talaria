@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { McpServerSchema, McpServersSchema } from '@maudecode/talaria-web-contracts'
 import { JoplinError, joplinSearch, McpService, notesSources, serverSummary } from './mcp.js'
 import { FakeSidecar } from '../sidecar/fake.js'
-import { McpHealthProber } from './mcp-health.js'
+import { McpHealthProber, probeServer } from './mcp-health.js'
 import type { AgentConfig, Dict } from '../config/agent-config.js'
 
 describe('MCP config updates', () => {
@@ -522,4 +522,12 @@ it('masks shared credential names in MCP headers and environment inventory', () 
     const row = serverSummary('mcp', cfg, null)
     expect(row.env ?? row.headers).toEqual({ ...Object.fromEntries(names.map((key) => [key, '••••••'])), ...('env' in cfg ? { PWD: '/home/app' } : {}) })
   }
+})
+
+describe('MCP health probe body cap', () => {
+  it('the MCP health probe stops reading past its body cap', async () => {
+    // A valid initialize reply padded past the 64 KiB cap is never parsed.
+    const oversized = Response.json({ jsonrpc: '2.0', id: 'hermes-webui-health', result: { protocolVersion: '2025-06-18', padding: 'x'.repeat(64 * 1024) } })
+    expect(await probeServer({ url: 'https://mcp.example/mcp' }, () => Promise.resolve(oversized))).toEqual(['unknown', 'unexpected initialize reply'])
+  })
 })

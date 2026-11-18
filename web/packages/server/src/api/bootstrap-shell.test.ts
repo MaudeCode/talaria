@@ -31,6 +31,11 @@ describe('bootstrap shell on an open server', () => {
     expect(boot.shell).toEqual(await routeBodies(s))
   })
 
+  it('the bootstrap feature flags come from runtime state', async () => {
+    const features = ((await (await s.get('/api/bootstrap')).json()) as { features: unknown }).features
+    expect(features).toEqual({ dashboard: false, terminal_remote_backend: false, extensions: false, single_profile_mode: false })
+  })
+
   it('omits the shell, still answering 200, when a loader fails', async () => {
     const load = vi.spyOn(s.deps.projects, 'load').mockRejectedValue(new Error('synthetic project store failure'))
     try {

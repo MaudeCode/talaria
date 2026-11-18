@@ -12,7 +12,6 @@ import { terminalGate } from './automation-router.js'
 import { checkSameOriginBrowserRequest, csrfRejectionError } from '../http/origin.js'
 import { str } from '../util.js'
 import { readCapped } from '../http/capped.js'
-import { stripPublicInternalFields } from '../redact.js'
 import { TerminalItemQueue } from '../tools/terminal.js'
 import { ifNoneMatchMatches } from '../workspace/media.js'
 
@@ -59,7 +58,7 @@ export async function handleKanbanEventsStream(ctx: RequestContext): Promise<voi
       if (idle <= 0) { sse.comment('keepalive'); lastWrite = Date.now(); continue }
       const batch = await sub.next(sse.waitMs(idle), abort.signal)
       if (!batch || sse.isClosed) continue
-      sse.event('events', { events: batch.events.map((e) => projectRunnerEventPayload(e)), cursor: batch.cursor }, String(batch.cursor))
+      sse.event('events', { events: batch.events, cursor: batch.cursor }, String(batch.cursor))
       lastWrite = Date.now()
     }
   } finally {
@@ -200,21 +199,6 @@ export async function handleDashboardPlugin(ctx: RequestContext): Promise<boolea
   if (file) (await sendPanelFile(ctx, file, true))
   else (await ctx.json({ error: 'not found' }, { status: 404 }))
   return true
-}
-
-/**
- * Python `_project_runner_event_payload`: runner events relay session snapshots (`session.messages`) or bare
- * message-shaped payloads (`messages`) to the browser; provider sidecars and row-id aliases never leave the server.
- */
-export function projectRunnerEventPayload<T>(payload: T): T {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload
-  const out: Record<string, unknown> = { ...(payload as Record<string, unknown>) }
-  const session = out.session
-  if (session && typeof session === 'object' && !Array.isArray(session) && Array.isArray((session as Record<string, unknown>).messages)) {
-    out.session = { ...(session as Record<string, unknown>), messages: stripPublicInternalFields((session as Record<string, unknown>).messages, { messageRecords: true }) }
-  }
-  if (Array.isArray(out.messages)) out.messages = stripPublicInternalFields(out.messages, { messageRecords: true })
-  return out as T
 }
 
 export function matchSidecarProxy(path: string): [string, string] | null {

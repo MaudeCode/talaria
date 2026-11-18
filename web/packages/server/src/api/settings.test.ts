@@ -3392,3 +3392,56 @@ it('refuses delegation configuration and hides other profile identities for a bo
     expect((await json(await server.get('/api/model/auxiliary', { headers }))).delegation).toMatchObject({ configured: 'profile_routes', route_count: 1, profile_routes: { profiles: [] } })
   } finally { await server.close() }
 })
+
+describe('speech settings', () => {
+  let s: TestServer
+  const SPEECH = { tts_enabled: false, tts_auto_read: false, tts_engine: 'browser', tts_voice: '', tts_rate: 1, tts_pitch: 1, voice_mode_button: false, voice_continuous: false, voice_silence_ms: 1800, raw_audio_mode: false }
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('GET /api/settings carries the speech defaults and no persisted speech keys', async () => {
+    const body = await json(await s.get('/api/settings'))
+    expect(body).toMatchObject(SPEECH)
+    expect(body.persisted_speech_keys).toEqual([])
+  })
+
+  it('all speech keys round-trip with string coercion and report as persisted', async () => {
+    const payload = { tts_enabled: true, tts_auto_read: true, tts_engine: 'openai', tts_voice: 'nova', tts_rate: '1.4', tts_pitch: '0', voice_mode_button: true, voice_continuous: true, voice_silence_ms: '2400', raw_audio_mode: true }
+    const res = await post(s, '/api/settings', payload)
+    expect(res.status).toBe(200)
+    const expected = { ...payload, tts_rate: 1.4, tts_pitch: 0, voice_silence_ms: 2400 }
+    expect(await json(res)).toMatchObject({ ...expected, persisted_speech_keys: Object.keys(payload).sort() })
+    expect(await json(await s.get('/api/settings'))).toMatchObject({ ...expected, persisted_speech_keys: Object.keys(payload).sort() })
+  })
+
+  it('invalid speech values keep the previous ones while unrelated settings still apply', async () => {
+    const res = await post(s, '/api/settings', { tts_engine: '', tts_voice: 'v'.repeat(201), tts_rate: 'nan', tts_pitch: 3, voice_silence_ms: 199, show_tps: true })
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body).toMatchObject({ tts_engine: 'openai', tts_voice: 'nova', tts_rate: 1.4, tts_pitch: 0, voice_silence_ms: 2400, show_tps: true })
+  })
+
+  it('only the keys present in settings.json are reported as persisted', async () => {
+    const other = await bootTestServer()
+    try {
+      writeFileSync(join(other.state, 'settings.json'), JSON.stringify({ tts_pitch: 0.5, voice_mode_button: true }))
+      const body = await json(await other.get('/api/settings'))
+      expect(body.persisted_speech_keys).toEqual(['tts_pitch', 'voice_mode_button'])
+      expect(body).toMatchObject({ tts_pitch: 0.5, voice_mode_button: true, tts_enabled: false })
+    } finally { await other.close() }
+  })
+})
+
+describe('onboarding probe cap (review round 16)', () => {
+  it('an unbounded model-list response is cut off at the cap instead of buffered', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar, deps: (deps) => {
+      (deps as { fetch: typeof fetch }).fetch = () => Promise.resolve(new Response(new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(64 * 1024)) } }), { status: 200, headers: { 'content-type': 'application/json' } }))
+      ;(deps.onboarding as unknown as { deps: { fetch?: typeof fetch } }).deps.fetch = deps.fetch
+    } })
+    try {
+      const res = await post(s, '/api/onboarding/probe', { provider: 'custom', base_url: 'http://127.0.0.1:9/v1' })
+      expect(await json(res)).toMatchObject({ ok: false, error: 'parse', detail: expect.stringContaining('exceeded') as unknown })
+    } finally { await s.close() }
+  })
+})

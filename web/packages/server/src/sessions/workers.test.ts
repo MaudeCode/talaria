@@ -1751,6 +1751,15 @@ describe('agent health', () => {
     writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', updated_at: local }))
     expect(await probe()).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
   })
+
+  it('the remote gateway health probe stops reading past its body cap', async () => {
+    // A gateway_state past the 64 KiB cap is never parsed.
+    const oversized = vi.fn(() => Promise.resolve(Response.json({ gateway_state: 'running', padding: 'x'.repeat(64 * 1024) })))
+    const result = await agentHealth({ env: { TALARIA_WEB_CHAT_BACKEND: 'gateway', TALARIA_WEB_GATEWAY_BASE_URL: 'https://gw-body-cap.example' }, hermesHome: '/nonexistent', profileHome: () => '/nonexistent', fetch: () => oversized, now: () => 1000 })
+    expect(oversized).toHaveBeenCalledWith('https://gw-body-cap.example/health/detailed', expect.anything())
+    expect(result).toMatchObject({ alive: true, details: { state: 'alive', reason: 'remote_gateway' } })
+    expect((result.details as Json).gateway_state).toBeUndefined()
+  })
 })
 
 describe('wakeup turns pass the user-turn admission (TAL-577)', () => {

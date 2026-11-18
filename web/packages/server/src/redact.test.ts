@@ -3,7 +3,7 @@ import { subscribe, unsubscribe } from 'node:diagnostics_channel'
 import { describe, expect, it, vi } from 'vitest'
 import { isRasterDataUri } from './raster-image.js'
 import { toolOutcome } from './sessions/merge.js'
-import { activityText, activityTool, mightContainSensitiveText, publicToolFrame, rawToolText, redactNestedMessageContainers, redactSensitive, redactSessionData, redactText } from './redact.js'
+import { activityText, activityTool, mightContainSensitiveText, publicToolFrame, rawToolText, redactNestedMessageContainers, redactSensitive, redactSessionData, redactText, stripPublicInternalFields } from './redact.js'
 import { MessageSchema } from '@maudecode/talaria-web-contracts'
 import { sanitizeShareMessage } from './sessions/shares.js'
 import { hydrateAnchorActivityScenes, withTurnIds } from './sessions/anchor.js'
@@ -1726,4 +1726,49 @@ it('shows a call\'s raw arguments and result redacted, JSON indented and text as
   expect(rawToolText('password=hunter2 and done', true)).toBe('password=*** and done')
   expect(rawToolText('{"api_key":"sk-live-0123456789abcdef"}', false)).toBe('{\n  "api_key": "sk-live-0123456789abcdef"\n}')
   for (const empty of [undefined, null, '', '  ', {}, []]) expect(rawToolText(empty, true)).toBeUndefined()
+})
+
+type Json = Record<string, unknown>
+
+describe('public projections strip internal replay fields', () => {
+  const message = { role: 'assistant', content: { text: 'visible', api_content: 'nested stays' }, api_content: 'provider only', _state_db_row_id: 7, _db_row_id: 8, state_db_row_id: 9 }
+
+  it('redaction strips api_content and row-id aliases from messages', () => {
+    const out = redactSessionData({ session_id: 'x', messages: [message] }, false)
+    const m = (out.messages as Json[])[0]!
+    expect(m).not.toHaveProperty('api_content')
+    for (const k of ['_state_db_row_id', '_db_row_id', 'state_db_row_id']) expect(m).not.toHaveProperty(k)
+  })
+
+  it('the aliases are stripped from context_messages and the runtime journal snapshot too', () => {
+    const out = redactSessionData({ session_id: 'x', messages: [message], context_messages: [message], runtime_journal_snapshot: { messages: [message] } }, false)
+    expect((out.context_messages as Json[])[0]).not.toHaveProperty('api_content')
+    expect(((out.runtime_journal_snapshot as Json).messages as Json[])[0]).not.toHaveProperty('_state_db_row_id')
+  })
+
+  it('alias-named keys inside message content survive while session tool_calls are scrubbed', () => {
+    const out = redactSessionData({ session_id: 'x', messages: [message], tool_calls: [{ name: 't', api_content: 'gone', _state_db_row_id: 1 }] }, false)
+    expect((out.messages as Json[])[0]!.content).toBe(JSON.stringify(message.content))
+    expect((out.tool_calls as Json[])[0]).not.toHaveProperty('api_content')
+  })
+
+  it('function arguments and args payloads are opaque to the scrubber', () => {
+    const args = JSON.stringify({ api_content: 'business', messages: [{ api_content: 'still business' }] })
+    const out = stripPublicInternalFields({ messages: [{ role: 'assistant', content: '', tool_calls: [{ id: 'c', type: 'function', function: { name: 'f', arguments: args } }] }], runtime_journal_snapshot: { messages: [{ role: 'tool', args: { messages: [{ api_content: 'kept' }] } }] } }) as Json
+    expect(((((out.messages as Json[])[0]!.tool_calls as Json[])[0]!.function as Json).arguments)).toBe(args)
+  })
+
+  it('workspace paths stay verbatim while api_content is stripped', () => {
+    const out = redactSessionData({ session_id: 'x', workspace: '/home/u/sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz0123-project', messages: [message] }, true)
+    expect(out.workspace).toContain('sk-ant-api03-')
+    expect((out.messages as Json[])[0]).not.toHaveProperty('api_content')
+  })
+
+  it('redaction strips the aliases from messages and context while keeping visible content', () => {
+    const out = redactSessionData({ session_id: 'x', messages: [{ ...message, content: 'visible' }], context_messages: [{ ...message, content: 'ctx' }] }, true)
+    expect((out.messages as Json[])[0]).toMatchObject({ content: 'visible' })
+    expect((out.messages as Json[])[0]).not.toHaveProperty('api_content')
+    expect((out.context_messages as Json[])[0]).toMatchObject({ content: 'ctx' })
+    expect((out.context_messages as Json[])[0]).not.toHaveProperty('_db_row_id')
+  })
 })

@@ -1362,6 +1362,12 @@ describe('published release sets (test_tal203_published_releases.py)', () => {
     }
   })
 
+  it('the release metadata fetch aborts past two megabytes', async () => {
+    const endless = (): Response => new Response(new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(64 * 1024)) } }), { status: 200, headers: { 'content-type': 'application/json' } })
+    const getJson = githubJson(() => Promise.resolve(endless()), {})
+    await expect(getJson('/repos/x/y/releases/latest', { asset: false })).rejects.toThrow(/download limit/)
+  })
+
   it('revalidates release pages with their ETag and answers a 304 from the parsed page (TAL-1692)', async () => {
     const s = sourceInstall()
     const page = '/releases?per_page=100&page=1'
