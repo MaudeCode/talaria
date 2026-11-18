@@ -41,6 +41,32 @@ def _spawn_grandchild(job, execution_home, result_queue, cancel_event):
     _time.sleep(60)
 
 
+def _wait_until(done, timeout: float) -> bool:
+    """Poll what another process decides (a file it writes, its exit) under one ceiling; the sleep is the poll interval."""
+    deadline = time.monotonic() + timeout
+    while not done():
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+    return True
+
+
+def _lost_once_written(path):
+    """A claim heartbeat that reports the claim lost once the worker wrote ``path``."""
+    def heartbeat(job_id, *, expected_owner) -> bool:
+        _wait_until(path.exists, 30)
+        return False
+    return heartbeat
+
+
+def _exited(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    return False
+
+
 def _stub_jobs(monkeypatch, *, owns: bool = True, heartbeat=lambda job_id, *, expected_owner: True, claim=None, record=None) -> dict:
     calls: dict = {"saved": [], "marked": []}
 
@@ -116,14 +142,7 @@ def test_completion_is_fenced_by_the_claim_owner(monkeypatch, tmp_path) -> None:
 
 def test_a_worker_that_ignores_terminate_is_killed_before_the_run_ends(monkeypatch, tmp_path) -> None:
     pid_file = tmp_path / "worker.pid"
-
-    def lost_once_the_worker_ignores_terminate(job_id, *, expected_owner) -> bool:
-        deadline = time.monotonic() + 30
-        while not pid_file.exists() and time.monotonic() < deadline:
-            time.sleep(0.05)
-        return False
-
-    calls = _stub_jobs(monkeypatch, heartbeat=lost_once_the_worker_ignores_terminate)
+    calls = _stub_jobs(monkeypatch, heartbeat=_lost_once_written(pid_file))
     monkeypatch.setattr(cron, "_child_main", _ignore_terminate)
     monkeypatch.setattr(cron, "_CLAIM_HEARTBEAT_SECONDS", 0.0)
     monkeypatch.setattr(cron, "_CLAIM_MISS_CONFIRM_SECONDS", 0.0)
@@ -137,12 +156,7 @@ def test_a_worker_that_ignores_terminate_is_killed_before_the_run_ends(monkeypat
         assert calls["saved"] == []
         assert calls["marked"] == [("job-1", False, "owner-1")]
         assert "job-1" not in cron._RUNNING
-        alive = True
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            alive = False
-        assert alive is False, f"worker {pid} still running after the run ended"
+        assert _exited(pid), f"worker {pid} still running after the run ended"
     finally:
         with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGKILL)
@@ -162,29 +176,14 @@ def test_an_unclaimable_terminal_job_still_runs_and_a_held_claim_refuses(monkeyp
 
 def test_stopping_a_run_ends_the_processes_its_worker_started(monkeypatch, tmp_path) -> None:
     pid_file = tmp_path / "grandchild.pid"
-
-    def lost_once_the_grandchild_runs(job_id, *, expected_owner) -> bool:
-        deadline = time.monotonic() + 30
-        while not pid_file.exists() and time.monotonic() < deadline:
-            time.sleep(0.05)
-        return False
-
-    _stub_jobs(monkeypatch, heartbeat=lost_once_the_grandchild_runs)
+    _stub_jobs(monkeypatch, heartbeat=_lost_once_written(pid_file))
     monkeypatch.setattr(cron, "_child_main", _spawn_grandchild)
     monkeypatch.setattr(cron, "_CLAIM_HEARTBEAT_SECONDS", 0.0)
     monkeypatch.setattr(cron, "_CLAIM_MISS_CONFIRM_SECONDS", 0.0)
     cron.run_tracked({"id": "job-1", "name": "Job", "no_agent": True, "pid_file": str(pid_file)}, tmp_path, None, _Ctx(), "owner-1")
     pid = int(pid_file.read_text(encoding="utf-8"))
     try:
-        deadline = time.monotonic() + 5
-        alive = True
-        while alive and time.monotonic() < deadline:
-            try:
-                os.kill(pid, 0)
-                time.sleep(0.1)
-            except ProcessLookupError:
-                alive = False
-        assert alive is False, f"grandchild {pid} still running after the run ended"
+        assert _wait_until(lambda: _exited(pid), 5), f"grandchild {pid} still running after the run ended"
     finally:
         with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGKILL)

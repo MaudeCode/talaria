@@ -24,7 +24,6 @@
       "web/sidecar/tests/fixtures/peer_phases.py": 5,
       "web/sidecar/tests/plugin_oauth_probe.py": 1,
       "web/sidecar/tests/test_oauth.py": 1,
-      "web/sidecar/tests/test_process_completions.py": 1,
       "web/sidecar/tests/test_worktree.py": 1
     },
     "clock-sleep": {
@@ -128,37 +127,25 @@
       "web/sidecar/tests/fixtures/gateway_session_peer.py": 21,
       "web/sidecar/tests/fixtures/group_peer.py": 5,
       "web/sidecar/tests/plugin_oauth_probe.py": 1,
-      "web/sidecar/tests/probe_cron_atomicity.py": 1,
       "web/sidecar/tests/review_cancel_probe.py": 4,
       "web/sidecar/tests/test_agent_gateway_identity.py": 1,
       "web/sidecar/tests/test_agent_mutation.py": 6,
       "web/sidecar/tests/test_agent_release.py": 3,
       "web/sidecar/tests/test_agent_services.py": 17,
-      "web/sidecar/tests/test_aux_funnel.py": 1,
       "web/sidecar/tests/test_chat_finalize.py": 1,
-      "web/sidecar/tests/test_chat_shell_hooks.py": 1,
       "web/sidecar/tests/test_chat_turn.py": 2,
       "web/sidecar/tests/test_connectors.py": 2,
-      "web/sidecar/tests/test_cron_fire_claim.py": 3,
-      "web/sidecar/tests/test_cron_health.py": 1,
-      "web/sidecar/tests/test_cron_owner.py": 3,
-      "web/sidecar/tests/test_cron_recovery.py": 3,
       "web/sidecar/tests/test_dependency_sync.py": 2,
-      "web/sidecar/tests/test_env_write.py": 2,
       "web/sidecar/tests/test_gateway_restart.py": 1,
       "web/sidecar/tests/test_namespaces.py": 1,
       "web/sidecar/tests/test_oauth.py": 2,
       "web/sidecar/tests/test_oauth_guest.py": 1,
       "web/sidecar/tests/test_plugin_providers.py": 2,
-      "web/sidecar/tests/test_process_recovery.py": 1,
-      "web/sidecar/tests/test_profile_skill_stats.py": 1,
       "web/sidecar/tests/test_recovery_environment.py": 2,
       "web/sidecar/tests/test_server_calls.py": 1,
       "web/sidecar/tests/test_state_db_idle_release.py": 1,
-      "web/sidecar/tests/test_stt_stream.py": 1,
       "web/sidecar/tests/test_suite_runner.py": 14,
-      "web/sidecar/tests/test_turn_lease_busy.py": 1,
-      "web/sidecar/tests/yolo_release_probe.py": 1
+      "web/sidecar/tests/test_turn_lease_busy.py": 1
     },
     "retry-config": {
       "web/packages/frontend/playwright.config.ts": 1,
@@ -176,5 +163,78 @@
       "web/packages/server/src/tools/project-os.test.ts": 1
     }
   },
-  "exceptions": []
+  "exceptions": [
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_aux_funnel.py",
+      "count": 1,
+      "reason": "The probe polls, under a 30 s ceiling, until the Agent's aux worker thread exists; nothing announces that thread, so the sleep is the poll interval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_chat_shell_hooks.py",
+      "count": 1,
+      "reason": "The test polls, under a 60 s ceiling, for the guard run that chat.refine's background review records, then asserts the count; the sleep is the poll interval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_cron_fire_claim.py",
+      "count": 1,
+      "reason": "_wait_until is the file's one ceiling-bounded poll for what another process decides (the worker's pid file, a grandchild's exit); the sleep is its poll interval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_cron_health.py",
+      "count": 1,
+      "reason": "_wait_for_file polls, under a 60 s ceiling, for the ready file a real cron script child writes; the sleep is its poll interval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_cron_owner.py",
+      "count": 2,
+      "reason": "wait_for is the file's ceiling-bounded poll helper, and the fixture gateway's hold_terminal polls for the release file the test touches; both sleeps are poll intervals across processes."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_cron_recovery.py",
+      "count": 2,
+      "reason": "The fake cron children simulate a slow cooperative exit and an unresponsive worker for the parent's settlement code under test."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_env_write.py",
+      "count": 2,
+      "reason": "The paused Agent writer polls for the test's go file and wait_for_mark polls for a child's mark file, both under a 30 s ceiling; the sleeps are poll intervals across processes."
+    },
+    {
+      "rule": "clock-elapsed",
+      "file": "web/sidecar/tests/test_process_completions.py",
+      "count": 1,
+      "reason": "The probe backdates a seeded ledger row against the Agent's wall clock, past its 60 s orphan threshold but inside its 300 s claim lease, which the sweep reads from time.time(); it measures no elapsed time."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_process_recovery.py",
+      "count": 1,
+      "reason": "_drain_until polls process.drain, the owner's record, under a 15 s ceiling until the exited process's completion appears; the sleep is its poll interval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_profile_skill_stats.py",
+      "count": 1,
+      "reason": "The test polls, under a 5 s ceiling, until three followers wait on the in-flight walk's condition, which signals no waiter; the sleep is the poll interval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_stt_stream.py",
+      "count": 1,
+      "reason": "_streaming polls the captured RPC output, under a 10 s ceiling, for the stream's ready event; the sleep is the poll interval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/yolo_release_probe.py",
+      "count": 1,
+      "reason": "_wait_parked polls the Agent's parked approvals under a 20 s ceiling inside the probe's Agent interpreter; the sleep is the poll interval."
+    }
+  ]
 }

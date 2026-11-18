@@ -105,8 +105,7 @@ def test_missing_receipt_is_definite_non_admission_without_resubmission(monkeypa
 def _cooperative(job, home, result_queue, cancel_event, execution_id, recovering):
     from pathlib import Path
     import time
-    while not cancel_event.is_set():
-        time.sleep(.01)
+    cancel_event.wait()
     Path(job["barrier"]).write_text(execution_id)
     time.sleep(.1)
     result_queue.put(("ok", (False, "", "", "cancelled")))
