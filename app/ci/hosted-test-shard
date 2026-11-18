@@ -62,12 +62,12 @@ WITHIN = 1.10  # The fewest shards predicted to finish within 10% of the fastest
 CONTENTION_POLICY = "observe"
 CONTENTION_MAX = 3
 STALE_SECONDS = 120
-# Repeats of a pull request's added and changed tests (TAL-2402), from its measurement: an attempt took 4.4 s for
-# SessionListHostedTests' deep-link test on a simulator after a 15 s warm-up, and 2.8 s for a TalariaKit method (one
-# `swift test` process). 90 s gives a hosted test like it about 17 attempts and 60 s a package method about 21, so a test
-# failing one run in five fails the pull request about 98% of the time; 50 attempts bound the cheap ones. A selective hosted shard's tests start about
-# 460 s after the build does, so 90 s ends near a small lane's own shard, and 60 s plus the package build fits beside
-# the App build.
+# Repeats of a pull request's added and changed tests (TAL-2402). The budgets keep the repeats inside the time a pull
+# request already spends: in benchmark run 44224379174 the 90 s repeat shard's test step took 156 s beside its lane
+# shard's 127 s, and the 60 s package repeat job finished with the App build (about 400 s each). There, a 15 s hosted
+# test got 6 attempts and a TalariaKit method 7 (8.5 s per `swift test` process), so a test failing one run in five fails
+# its pull request about three times in four; a test under 2 s reaches the 50-attempt cap. Raising either budget makes
+# every pull request with repeats slower by the same amount.
 REPEAT_ATTEMPTS = 50
 REPEAT_BUDGET = 90
 PACKAGE_REPEAT_ATTEMPTS = 50
