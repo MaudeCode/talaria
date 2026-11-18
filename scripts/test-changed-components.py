@@ -53,6 +53,8 @@ class RoutingTests(unittest.TestCase):
             (["web/packages/frontend/src/main.tsx", "web/static/dist/app.js", "changelog.d/TAL-123.json"], {"web_frontend"}),
             (["web/packages/contracts/src/router.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             (["web/packages/contracts/src/x.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            (["web/packages/contracts/src/openapi.test.ts"], {"web_server"}),
+            (["web/packages/contracts/src/sidecar/fixtures.test.ts"], {"web_server"}),
             (["web/packages/server/src/index.ts", "web/sidecar/talaria_sidecar/__main__.py"],
              {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             # Server-only changes skip the sidecar matrix (TAL-1161); only the server files the suite loads select it.
