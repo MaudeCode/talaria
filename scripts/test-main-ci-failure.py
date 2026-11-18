@@ -570,10 +570,5 @@ class CommandTests(unittest.TestCase):
         self.assertIn("python3 scripts/main-ci-failure.py send", alert)
 
 
-class ControlledFailure(unittest.TestCase):
-    def test_tal_2395_controlled_failure(self):
-        self.fail("TAL-2395 controlled failure: proves the PR failure report, reverted before merge")
-
-
 if __name__ == "__main__":
     unittest.main()
