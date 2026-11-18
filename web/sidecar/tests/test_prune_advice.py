@@ -8,7 +8,6 @@ import subprocess
 
 from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, SidecarProcess, isolated_env, load_schema, requires_agent, validate
 
-HAS_ADVISOR = AGENT_DIR is not None and (AGENT_DIR / "hermes_cli" / "prune_advisor.py").is_file()
 # Every filesystem reports 1 GiB free of 100 GiB, under the Agent's 2 GiB low-disk floor.
 LOW_DISK = """
 import collections, shutil
@@ -44,13 +43,7 @@ def test_a_low_disk_asks_the_agents_question_until_web_answers_it(tmp_path: path
     (patch / "sitecustomize.py").write_text(LOW_DISK, encoding="utf-8")
     proc = SidecarProcess(hermes_home, env={"PYTHONPATH": os.pathsep.join([str(patch), str(SIDECAR_ROOT)])})
     try:
-        advice = _advice(proc, hermes_home)
-        if not HAS_ADVISOR:
-            # Agents before v0.22.3 have no advisor: nothing to ask, and no /autoprune to run.
-            assert advice is None
-            assert _exec(proc, hermes_home, "/autoprune off")["error"]["data"]["condition"] == "command_not_found"
-            return
-        lines = advice["lines"]
+        lines = _advice(proc, hermes_home)["lines"]
         assert lines[0].startswith("Low disk space: 1.0 GB free of 100.0 GB. Your session history (state.db) uses "), lines
         assert lines[1].startswith("Auto-prune is off."), lines
         assert lines[-1] == COMMANDS

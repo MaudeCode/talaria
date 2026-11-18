@@ -169,9 +169,6 @@ def test_catalog_reports_profile_policy_and_preserves_unknown_selection(handshak
     assert next(r for r in clean['toolsets'] if r['name'] == 'todo')['available'] is True
 
 
-STRIP_REPORT = AGENT_DIR is not None and 'def toolsets_partially_stripped' in (AGENT_DIR / 'hermes_cli/tools_config.py').read_text()
-
-
 @requires_agent
 def test_catalog_names_tools_a_legacy_disabled_entry_strips(handshaken, hermes_home) -> None:
     """TAL-1813: ``search`` cuts ``web_search`` out of ``web``, and legacy ``vision_tools`` empties ``vision`` without naming it."""
@@ -181,11 +178,11 @@ def test_catalog_names_tools_a_legacy_disabled_entry_strips(handshaken, hermes_h
     def stripped(name):
         return rows[name].get('stripped_tools'), rows[name].get('stripped_by')
 
-    assert stripped('web') == ((['web_search'], ['search']) if STRIP_REPORT else ([], []))
+    assert stripped('web') == (['web_search'], ['search'])
     assert stripped('file') == ([], [])
-    # A wholly stripped toolset is reported by its reason, and Agents without the report keep the plain reading.
+    # A wholly stripped toolset is reported by its reason.
     assert stripped('vision') == ([], [])
-    assert rows['vision']['unavailable_reason'] == ('disabled' if STRIP_REPORT else 'unavailable')
+    assert rows['vision']['unavailable_reason'] == 'disabled'
     assert rows['search']['unavailable_reason'] == 'disabled' and stripped('search') == ([], [])
 
 

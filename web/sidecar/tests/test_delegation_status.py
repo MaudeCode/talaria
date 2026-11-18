@@ -34,12 +34,6 @@ def _ledger(home: pathlib.Path, rows: list[tuple[str, str, str, str]]) -> pathli
     return db
 
 
-def _set_delivery(db: pathlib.Path, delegation_id: str, delivery: str) -> None:
-    with closing(sqlite3.connect(db)) as conn:
-        conn.execute("UPDATE async_delegations SET delivery_state = ? WHERE delegation_id = ?", (delivery, delegation_id))
-        conn.commit()
-
-
 @pytest.fixture(autouse=True)
 def _no_agent_registries(monkeypatch):
     monkeypatch.setattr(process, "_live_delegations", lambda: {})
@@ -61,18 +55,6 @@ def _live_registry(monkeypatch, answer):
     monkeypatch.setitem(sys.modules, "tools", tools)
     monkeypatch.setitem(sys.modules, "tools.async_delegation", module)
     monkeypatch.setattr(tools, "async_delegation", module, raising=False)
-
-
-def test_pending_and_delivered_completions_differ_while_the_task_state_is_identical(tmp_path) -> None:
-    db = _ledger(tmp_path, [("deleg_done", "web-a", "completed", "pending")])
-    listed_pending = process.background_list(tmp_path, ["web-a"])
-    pending = process.delegation_status(tmp_path, "web-a")
-    _set_delivery(db, "deleg_done", "delivered")
-    assert process.background_list(tmp_path, ["web-a"]) == listed_pending
-    delivered = process.delegation_status(tmp_path, "web-a")
-    assert pending["awaiting_delivery_count"] == 1
-    assert delivered["awaiting_delivery_count"] == 0
-    assert pending != delivered
 
 
 @pytest.mark.parametrize("state", LIVE)

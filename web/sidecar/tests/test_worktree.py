@@ -1,6 +1,6 @@
-"""TAL-881: ``worktree.create`` never runs the target repository's own git filter programs. Agents from v0.21.6
-neutralize them in the checkout; older supported Agents get a refusal instead. TAL-1254: ``worktree.retain`` keeps a
-Talaria worktree's lock live for the Agent's own sweep after a restart. Real sidecar, disposable repos."""
+"""TAL-881: ``worktree.create`` never runs the target repository's own git filter programs: the Agent neutralizes them
+in the checkout. TAL-1254: ``worktree.retain`` keeps a Talaria worktree's lock live for the Agent's own sweep after a
+restart. Real sidecar, disposable repos."""
 
 from __future__ import annotations
 
@@ -30,11 +30,6 @@ def _repo(path: pathlib.Path) -> pathlib.Path:
     return path.resolve()
 
 
-def _agent_neutralizes_repo_filters(home: pathlib.Path) -> bool:
-    probe = "from hermes_cli._subprocess_compat import noninteractive_repo_git_env"
-    return subprocess.run([AGENT_PYTHON, "-c", probe], env=isolated_env(home, PYTHONPATH=str(AGENT_DIR)), capture_output=True, timeout=60).returncode == 0
-
-
 @pytest.mark.parametrize("source", ["repo config", "include on the new branch"])
 def test_a_repository_filter_program_never_runs(handshaken: SidecarProcess, hermes_home: pathlib.Path, source: str) -> None:
     repo = _repo(hermes_home.parent / "filtered")
@@ -52,10 +47,7 @@ def test_a_repository_filter_program_never_runs(handshaken: SidecarProcess, herm
     message, _ = handshaken.call("worktree.create", {"profile_home": str(hermes_home), "repo_root": str(repo)})
 
     assert not marker.exists(), f"repository filter ran: {marker.read_text().split()}"
-    if _agent_neutralizes_repo_filters(hermes_home):
-        assert pathlib.Path(message["result"]["path"]).is_dir(), message
-    else:
-        assert message["error"]["data"]["condition"] == "worktree_unsafe_repo", message
+    assert pathlib.Path(message["result"]["path"]).is_dir(), message
 
 
 def test_a_clean_repository_gets_a_worktree(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
@@ -93,10 +85,7 @@ def _abandoned(handshaken: SidecarProcess, hermes_home: pathlib.Path, repo: path
 
 _SWEEP = """
 import json, sys
-try:
-    from hermes_cli import worktree_sweep
-except ImportError:
-    print("null"); raise SystemExit
+from hermes_cli import worktree_sweep
 settings = worktree_sweep.sweep_settings()
 plan = worktree_sweep.plan_sweep(sys.argv[1], 24, settings)
 worktree_sweep.execute_plan(sys.argv[1], plan, settings)
@@ -117,6 +106,5 @@ def test_a_retained_worktree_survives_the_agents_sweep_after_a_restart(handshake
 
     assert (kept / "draft.txt").exists(), f"retained worktree was swept: {plan}"
     assert _lock_reason(kept) == f"hermes pid={handshaken.proc.pid}"
-    if plan is not None:  # v0.22.3 added the sweep; earlier releases never remove a dirty tree
-        assert plan == {kept.name: "skip-live-lock", control.name: "archive-remove"}, plan
-        assert not control.exists()
+    assert plan == {kept.name: "skip-live-lock", control.name: "archive-remove"}, plan
+    assert not control.exists()

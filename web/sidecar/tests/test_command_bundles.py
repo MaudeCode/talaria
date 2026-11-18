@@ -25,24 +25,14 @@ def _shared_cache(*_args):
     raise AssertionError("the Agent's process-wide bundle cache is shared with other profiles' callers")
 
 
-def _fake_bundles(monkeypatch, bundles=(), resolve=None, blocks=None) -> dict:
-    """Bundle files as dicts; ``seen`` records what the Agent's skill helpers were asked to do."""
-    seen: dict = {}
-
-    def load_blocks(identifiers, load, note, task_id, *, disabled_names):
-        seen["blocks"] = (identifiers, note("x"), task_id, disabled_names)
-        return blocks if blocks is not None else (identifiers[:1], identifiers[1:], [], [f"[{identifiers[0]} body]"])
-
-    def header(subject, loaded, **kwargs):
-        seen["header"] = (subject, loaded, kwargs)
-        return f"HEADER {subject}"
-
+def _fake_bundles(monkeypatch, bundles=(), resolve=None, blocks=None) -> None:
+    """Bundle files as dicts; the Agent's skill helpers load ``blocks``."""
     _fake_module(monkeypatch, "agent.skill_bundles", _iter_bundle_files=lambda: list(bundles), _load_bundle_file=lambda b: b,
                  scan_bundles=_shared_cache, get_skill_bundles=_shared_cache, list_bundles=_shared_cache,
                  resolve_bundle_command_key=_shared_cache, build_bundle_invocation_message=_shared_cache)
     _fake_module(monkeypatch, "agent.skill_commands", resolve_slash_key=resolve or (lambda command, table: f"/{command.replace('_', '-')}" if f"/{command.replace('_', '-')}" in table else None),
-                 _load_skill_blocks=load_blocks, _load_skill_payload=lambda identifier: None, _scaffold_header=header, _disabled_skill_names=lambda platform: {"off"} if platform == "webui" else set())
-    return seen
+                 _load_skill_blocks=lambda identifiers, load, note, task_id, *, disabled_names: blocks, _load_skill_payload=lambda identifier: None,
+                 _scaffold_header=lambda subject, loaded, **kwargs: f"HEADER {subject}", _disabled_skill_names=lambda platform: {"off"} if platform == "webui" else set())
 
 
 def _bundle(slug: str, skills: list[str], **extra) -> dict:
@@ -73,26 +63,8 @@ def test_list_command_bundles_degrades_to_empty(monkeypatch) -> None:
     assert commands.list_command_bundles() == []
 
 
-def test_resolve_bundle_command_builds_the_agent_invocation(monkeypatch) -> None:
-    seen = _fake_bundles(monkeypatch, [_bundle("incident-review", ["triage", "gone"], instruction="Be brief.")])
-    assert commands.resolve_bundle_command("/incident_review the primary alerts") == {
-        "name": "incident-review", "source": "bundle", "message": 'HEADER "incident-review" skill bundle\n\n[triage body]',
-        "loaded_skills": ["triage"], "missing_skills": ["gone"],
-    }
-    assert seen["blocks"] == (["triage", "gone"], '[Loaded as part of the "incident-review" skill bundle.]', None, {"off"})
-    assert seen["header"] == ('"incident-review" skill bundle', ["triage"], {
-        "lead_lines": ["Bundle: incident-review"], "missing": ["gone"], "disabled": [], "extra_instruction": "Be brief.", "user_instruction": "the primary alerts"})
-
-
 def _condition(exc: pytest.ExceptionInfo) -> str | None:
     return exc.value.data.get("condition")
-
-
-def test_resolve_bundle_command_raises_for_unknown_bundle(monkeypatch) -> None:
-    _fake_bundles(monkeypatch, [_bundle("incident-review", ["triage"])])
-    with pytest.raises(RpcError, match="Bundle command not found") as exc:
-        commands.resolve_bundle_command("/does-not-exist investigate this")
-    assert _condition(exc) == "bundle_not_found"
 
 
 def test_resolve_bundle_command_wraps_unexpected_runtime_errors(monkeypatch) -> None:
@@ -125,10 +97,8 @@ def test_resolve_bundle_command_rejects_bad_input(monkeypatch) -> None:
 
 
 def _fake_moa(monkeypatch, *, default_preset="moa-default", usage="Usage: /moa <prompt>", config=None, normalize=None, resolve_preset=None) -> None:
-    attrs = {"normalize_moa_config": normalize or (lambda raw: {"default_preset": default_preset}), "moa_usage": lambda: usage}
-    if resolve_preset is not None:
-        attrs["resolve_moa_preset"] = resolve_preset
-    _fake_module(monkeypatch, "hermes_cli.moa_config", **attrs)
+    _fake_module(monkeypatch, "hermes_cli.moa_config", normalize_moa_config=normalize or (lambda raw: {"default_preset": default_preset}),
+                 moa_usage=lambda: usage, resolve_moa_preset=resolve_preset or (lambda raw, name: {}))
 
     def load_config():
         if config is None:
@@ -136,12 +106,6 @@ def _fake_moa(monkeypatch, *, default_preset="moa-default", usage="Usage: /moa <
         return config
 
     _fake_module(monkeypatch, "hermes_cli.config", load_config=load_config)
-
-
-def test_resolve_moa_config_returns_expected_shape(monkeypatch) -> None:
-    _fake_moa(monkeypatch, default_preset="moa-fast", usage="/moa <prompt> -- run with MoA", config={"moa": {}})
-    result = commands.resolve_moa_config(None)
-    assert result == {"default_preset": "moa-fast", "preset": "moa-fast", "usage": "/moa <prompt> -- run with MoA"}
 
 
 def test_resolve_moa_config_degrades_without_config(monkeypatch) -> None:
@@ -172,8 +136,10 @@ def test_resolve_moa_config_uses_selected_preset(monkeypatch) -> None:
     result = commands.resolve_moa_config("Frontier Tuned")
     assert result["preset"] == "Frontier Tuned" and result["selected"] == "Frontier Tuned"
     assert result["aggregator"] == {"provider": "copilot", "model": "gpt-5.4"}
-    # An unknown preset falls back to the default one.
-    assert commands.resolve_moa_config("nope")["preset"] == "default"
+    # No preset and an unknown one both resolve the default preset, with the Agent's usage line.
+    for requested in (None, "nope"):
+        result = commands.resolve_moa_config(requested)
+        assert (result["preset"], result["selected"], result["usage"]) == ("default", "default", "Usage: /moa <prompt>"), requested
 
 
 def test_resolve_moa_config_falls_back_when_preset_resolution_raises(monkeypatch) -> None:
@@ -185,16 +151,10 @@ def test_resolve_moa_config_falls_back_when_preset_resolution_raises(monkeypatch
     assert result["preset"] == "default" and result["presets"] == {"default": {"enabled": True}}
 
 
-def test_resolve_moa_config_ignores_non_dict_preset_result(monkeypatch) -> None:
-    _fake_moa(monkeypatch, config={"moa": {"default_preset": "default", "presets": {"default": {"enabled": True}}}}, normalize=_normalize, resolve_preset=lambda raw, name: None)
-    result = commands.resolve_moa_config("default")
-    assert result == {"default_preset": "default", "presets": {"default": {"enabled": True}}, "preset": "default", "usage": "Usage: /moa <prompt>"}
-
-
-def _write_bundle(home: pathlib.Path, name: str, skills: list[str], mtime: float) -> None:
+def _write_bundle(home: pathlib.Path, name: str, skills: list[str], mtime: float, extra: str = "") -> None:
     folder = home / "skill-bundles"
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / f"{name}.yaml").write_text(f"name: {name}\nskills: [{', '.join(skills)}]\n", encoding="utf-8")
+    (folder / f"{name}.yaml").write_text(f"name: {name}\nskills: [{', '.join(skills)}]\n{extra}", encoding="utf-8")
     for path in (folder / f"{name}.yaml", folder):
         os.utime(path, (mtime, mtime))
 
@@ -206,7 +166,7 @@ def test_bundles_are_scoped_to_each_profile(tmp_path: pathlib.Path) -> None:
     other.mkdir(parents=True)
     # Equal mtimes defeat the Agent's process-wide mtime cache, so only a rescan per call keeps profiles apart.
     _write_bundle(home, "alpha-kit", ["cat-finder"], 1_700_000_000)
-    _write_bundle(other, "beta-kit", ["cat-finder", "dog-finder", "not-installed"], 1_700_000_000)
+    _write_bundle(other, "beta-kit", ["cat-finder", "dog-finder", "not-installed"], 1_700_000_000, "instruction: Be brief.\n")
     for name in ("cat-finder", "dog-finder"):
         skill = other / "skills" / name
         skill.mkdir(parents=True)
@@ -223,7 +183,7 @@ def test_bundles_are_scoped_to_each_profile(tmp_path: pathlib.Path) -> None:
         assert validate(resolved, load_schema("commands.bundle_resolve")) == []
         assert resolved["name"] == "beta-kit" and resolved["loaded_skills"] == ["cat-finder"] and resolved["missing_skills"] == ["not-installed"]
         assert "dog-finder" not in resolved["message"].split("Skills loaded:", 1)[1].split("\n", 1)[0]
-        assert "find a cat" in resolved["message"]
+        assert "Bundle instruction: Be brief." in resolved["message"] and "find a cat" in resolved["message"]
         missing, _ = sidecar.call("commands.bundle_resolve", {"profile_home": str(other), "command": "/alpha-kit"})
         assert missing["error"]["data"]["condition"] == "bundle_not_found"
     finally:

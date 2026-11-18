@@ -12,6 +12,7 @@ import json
 import os
 import pathlib
 import queue
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -291,6 +292,44 @@ def handshaken(sidecar: SidecarProcess):
     result = sidecar.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})
     assert result["compatible"], result
     return sidecar
+
+
+# Loaded as the sidecar's sitecustomize: a flock that has to wait for another holder connects to the test first.
+_FLOCK_WATCH = """
+import fcntl, os, socket
+_flock, _port = fcntl.flock, int(os.environ["TALARIA_TEST_FLOCK_WATCH_PORT"])
+def flock(fd, operation):
+    if operation & (fcntl.LOCK_NB | fcntl.LOCK_UN):
+        return _flock(fd, operation)
+    try:
+        return _flock(fd, operation | fcntl.LOCK_NB)
+    except BlockingIOError:
+        socket.create_connection(("127.0.0.1", _port)).close()
+        return _flock(fd, operation)
+fcntl.flock = flock
+"""
+
+
+@pytest.fixture
+def lock_watched(tmp_path: pathlib.Path, hermes_home: pathlib.Path):
+    """A handshaken sidecar whose ``lock_waited()`` returns once one of its flocks is queued behind another holder."""
+    from talaria_sidecar import SIDECAR_RPC_VERSION
+
+    if AGENT_DIR is None or AGENT_PYTHON is None:
+        pytest.skip("pinned Hermes Agent checkout with venv not found")
+    watch = tmp_path / "flock-watch"
+    watch.mkdir()
+    (watch / "sitecustomize.py").write_text(_FLOCK_WATCH, encoding="utf-8")
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        server.settimeout(30)
+        proc = SidecarProcess(hermes_home, env={"PYTHONPATH": os.pathsep.join([str(watch), str(SIDECAR_ROOT)]),
+                                                "TALARIA_TEST_FLOCK_WATCH_PORT": str(server.getsockname()[1])})
+        proc.lock_waited = lambda: server.accept()[0].close()
+        try:
+            assert proc.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})["compatible"]
+            yield proc
+        finally:
+            proc.close()
 
 
 def load_schema(method: str) -> dict:

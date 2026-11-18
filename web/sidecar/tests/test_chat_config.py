@@ -78,7 +78,8 @@ def test_turn_reads_config_once_and_refreshes_between_turns(monkeypatch, tmp_pat
             assert cfg == original, 'Agent kwargs mutated the shared read-only config'
         if index == 0:
             cfg['agent'] = {'disabled_toolsets': ['changed'] if configured else []}
-            cfg['checkpoints'] = {'enabled': configured, 'max_snapshots': 8 if configured else 3}
+            # Only a real true enables them: a quoted 'false' stays off.
+            cfg['checkpoints'] = {'enabled': True if configured else 'false', 'max_snapshots': 8 if configured else 3}
             original = copy.deepcopy(cfg)
 
 

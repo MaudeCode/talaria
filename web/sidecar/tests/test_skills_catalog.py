@@ -16,46 +16,35 @@ from talaria_sidecar.methods import skills
 def skill_helpers(monkeypatch):
     tool = types.ModuleType("tools.skills_tool")
     utils = types.ModuleType("agent.skill_utils")
+    usage = types.ModuleType("tools.skill_usage")
     utils.get_disabled_skill_names = lambda platform: set()
     utils.is_disabled_entry = lambda entry, disabled: False
-    utils.resolve_skill_catalog = lambda: []
-    utils.iter_skill_index_files = lambda root, filename: sorted(root.rglob(filename))
-    tool.MAX_DESCRIPTION_LENGTH = 1000
-    tool._EXCLUDED_SKILL_DIRS = set()
-    tool._parse_frontmatter = lambda text: ({}, text)
-    tool.skill_matches_platform = lambda frontmatter: True
-    for name, module in (("tools.skills_tool", tool), ("agent.skill_utils", utils)):
+    usage.is_locked = lambda name: False
+    usage.locked_skill_names = lambda: []
+    for name, module in (("tools.skills_tool", tool), ("agent.skill_utils", utils), ("tools.skill_usage", usage)):
         package = name.split(".")[0]
         monkeypatch.setitem(sys.modules, package, types.ModuleType(package))
         monkeypatch.setitem(sys.modules, name, module)
     return tool
 
 
-@pytest.mark.parametrize("catalog", [True, False], ids=["catalog", "legacy"])
-@pytest.mark.parametrize("spelling", ["public", "private", "both", "missing"])
-def test_skill_listing_helper_spellings(tmp_path, skill_helpers, catalog, spelling):
+@pytest.mark.parametrize("spelling", ["public", "private", "both"])
+def test_skill_listing_helper_spellings(tmp_path, skill_helpers, spelling):
     rows = [("zebra", None), ("beta", "z"), ("alpha", None)]
-    for name, category in rows:
-        folder = tmp_path / "skills" / (category or "") / name
-        folder.mkdir(parents=True)
-        (folder / "SKILL.md").write_text(name)
-    if catalog:
-        skill_helpers._skill_catalog = lambda **kwargs: [
-            {"load_name": name, "name": name, "category": category, "status": "unique", "tier": 0, "path": tmp_path / name / "SKILL.md"}
-            for name, category in rows
-        ]
-    expected = ["zebra", "beta", "alpha"] if spelling != "missing" else ["alpha", "zebra", "beta"]
+    skill_helpers._skill_catalog = lambda **kwargs: [
+        {"load_name": name, "name": name, "category": category, "status": "unique", "tier": 0, "path": tmp_path / name / "SKILL.md"}
+        for name, category in rows
+    ]
     sort = lambda items: sorted(items, key=lambda item: item["name"], reverse=True)
     if spelling in ("public", "both"):
         skill_helpers.sort_skills = sort
     if spelling in ("private", "both"):
         skill_helpers._sort_skills = sort if spelling == "private" else lambda _: pytest.fail("public helper must win")
     result = skills.list_skills(tmp_path)
-    assert [row["name"] for row in result["skills"]] == expected
+    assert [row["name"] for row in result["skills"]] == ["zebra", "beta", "alpha"]
     assert result["count"] == 3
-    if catalog:
-        assert result["categories"] == ["z"]
-        assert [row["name"] for row in skills.list_skills(tmp_path, "z")["skills"]] == ["beta"]
+    assert result["categories"] == ["z"]
+    assert [row["name"] for row in skills.list_skills(tmp_path, "z")["skills"]] == ["beta"]
 
 
 @pytest.mark.parametrize("spelling", ["public", "private", "both", "mixed"])
@@ -79,33 +68,19 @@ def test_canonical_skill_lookup_helper_spellings(tmp_path, skill_helpers, spelli
         setattr(skill_helpers, name if public else "_" + name, helper)
         if spelling == "both":
             setattr(skill_helpers, "_" + name, lambda *args: pytest.fail("public helper must win"))
-    assert skills.find_skill("pack:one", []) == (folder, folder / "SKILL.md")
+    assert skills.find_skill("pack:one") == (folder, folder / "SKILL.md")
     assert seen == [("pack:one", "pack/one", roots)]
     with pytest.raises(InvalidParams, match="Ambiguous skill name"):
-        skills.find_skill("ambiguous", [])
+        skills.find_skill("ambiguous")
     with pytest.raises(InvalidParams, match="unsafe path"):
-        skills.find_skill("../outside", [])
-    assert skills.find_skill("absent", []) == (None, None)
-
-
-@pytest.mark.parametrize("missing", ["locate_skill", "skill_lookup_path_error", "skill_search_dirs"])
-def test_incomplete_skill_lookup_helpers_keep_legacy_lookup(tmp_path, skill_helpers, missing):
-    folder = tmp_path / "legacy"
-    folder.mkdir()
-    (folder / "SKILL.md").write_text("legacy")
-    for name in ("locate_skill", "skill_lookup_path_error", "skill_search_dirs"):
-        if name != missing:
-            setattr(skill_helpers, name, lambda *args: pytest.fail("incomplete canonical API must not run"))
-    assert skills.find_skill("legacy", [tmp_path]) == (folder, folder / "SKILL.md")
+        skills.find_skill("../outside")
+    assert skills.find_skill("absent") == (None, None)
 
 
 @requires_agent
 def test_resolved_skill_catalog(hermes_home):
     code = r'''
 from agent import skill_utils
-if not hasattr(skill_utils, "resolve_skill_catalog"):
-    print("legacy-agent")
-    raise SystemExit(0)
 from tools import skills_tool
 from talaria_sidecar.methods.skills import list_skills, view_skill
 from talaria_sidecar.home import scoped_home
@@ -166,8 +141,6 @@ print("catalog-ok")
         env=isolated_env(hermes_home), text=True, capture_output=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    if "legacy-agent" in result.stdout:
-        pytest.skip("Agent predates resolved skill catalogs")
     assert "catalog-ok" in result.stdout
 
 
@@ -180,9 +153,6 @@ def test_skill_catalog_rpc_identity_and_profile_isolation(sidecar, hermes_home):
             (folder / "SKILL.md").write_text(f"---\nname: dup-demo\ndescription: {path}\n---\n{path}\n")
     params = {"profile_home": str(hermes_home)}
     rows = sidecar.result("skills.list", params)
-    if "load_name" not in rows["skills"][0]:
-        assert len(rows["skills"]) == 1  # Older Agents keep the legacy listing.
-        pytest.skip("Agent predates resolved skill catalogs")
     assert validate(rows, load_schema("skills.list")) == []
     found = sidecar.result("skills.find", {**params, "name": "one"})
     assert validate(found, load_schema("skills.find")) == []
@@ -196,14 +166,6 @@ def test_skill_catalog_rpc_identity_and_profile_isolation(sidecar, hermes_home):
     for invalid in ("../outside", "/etc/passwd", "a:../../outside"):
         reply, _ = sidecar.call("skills.find", {**params, "name": invalid})
         assert "error" in reply
-
-
-def test_agent_without_skill_lock_reports_it_unavailable(tmp_path, skill_helpers):
-    """v0.22.5's shape: a catalog but no ``tools.skill_usage.set_locked``."""
-    skill_md = tmp_path / "skills" / "demo" / "SKILL.md"
-    skill_helpers._skill_catalog = lambda **kwargs: [{"load_name": "demo", "name": "demo", "category": None, "status": "unique", "tier": 0, "path": skill_md}]
-    assert skills.list_skills(tmp_path)["skills"][0]["locked"] is None
-    assert skills.set_skill_lock(tmp_path, "demo", True) == {"status": "unavailable"}
 
 
 @requires_agent

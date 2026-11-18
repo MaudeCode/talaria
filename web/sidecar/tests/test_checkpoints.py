@@ -116,15 +116,6 @@ def test_a_default_restore_without_a_record_of_agent_writes_is_refused(handshake
     assert (workspace / "notes.txt").read_text() == "original text\n"
 
 
-def test_an_unknown_checkpoint_is_the_agents_refusal(handshaken: SidecarProcess, hermes_home: pathlib.Path, workspace: pathlib.Path) -> None:
-    _take_checkpoint(hermes_home, workspace, "before edit")
-    message, _ = handshaken.call("checkpoints.diff", {"profile_home": str(hermes_home), "workspace": str(workspace), "checkpoint": "0" * 40})
-    assert message["error"]["data"]["condition"] == "checkpoint_failed"
-    assert "not a checkpoint of this workspace" in message["error"]["message"]
-    message, _ = handshaken.call("checkpoints.restore", {"profile_home": str(hermes_home), "workspace": str(workspace), "checkpoint": "--patch"})
-    assert message["error"]["data"]["condition"] == "checkpoint_failed"
-
-
 def test_a_checkpoint_of_another_workspace_is_refused(handshaken: SidecarProcess, hermes_home: pathlib.Path, workspace: pathlib.Path) -> None:
     other = hermes_home.parent / "other"
     other.mkdir()
@@ -132,17 +123,16 @@ def test_a_checkpoint_of_another_workspace_is_refused(handshaken: SidecarProcess
     _take_checkpoint(hermes_home, other.resolve(), "before other edit")
     _take_checkpoint(hermes_home, workspace, "before edit")
     foreign = handshaken.result("checkpoints.list", {"profile_home": str(hermes_home), "workspace": str(other.resolve())})["checkpoints"][0]["hash"]
-    params = {"profile_home": str(hermes_home), "workspace": str(workspace), "checkpoint": foreign}
-    for method in ("checkpoints.diff", "checkpoints.restore"):
-        message, _ = handshaken.call(method, params)
-        assert message["error"]["data"]["condition"] == "checkpoint_failed", (method, message)
+    params = {"profile_home": str(hermes_home), "workspace": str(workspace)}
+    # Another workspace's hash, an unknown hash and an option-like id never reach the Agent's diff or checkout.
+    for method, checkpoint in (("checkpoints.diff", foreign), ("checkpoints.restore", foreign), ("checkpoints.diff", "0" * 40), ("checkpoints.restore", "--patch")):
+        message, _ = handshaken.call(method, {**params, "checkpoint": checkpoint})
+        assert message["error"]["data"]["condition"] == "checkpoint_failed", (method, checkpoint, message)
         assert "not a checkpoint of this workspace" in message["error"]["message"]
     assert sorted(p.name for p in workspace.iterdir()) == ["notes.txt"]
     assert (workspace / "notes.txt").read_text() == "original text\n"
 
 
-@pytest.mark.skipif(AGENT_DIR is None or "were not captured" not in (AGENT_DIR / "tools" / "checkpoint_manager.py").read_text(),
-                    reason="this Agent release predates the nested-repository restore refusal")
 def test_a_restore_over_an_uncaptured_nested_repository_is_refused(handshaken: SidecarProcess, hermes_home: pathlib.Path, workspace: pathlib.Path) -> None:
     nested = workspace / "vendor"
     nested.mkdir()
@@ -176,8 +166,8 @@ def llm(workspace: pathlib.Path):
         yield url
 
 
-@pytest.mark.parametrize("section, taken", [("checkpoints:\n  enabled: true\n", True), ("checkpoints: true\n", True), ("", False), ("checkpoints:\n  enabled: 'false'\n", False)],
-                         ids=["enabled", "legacy-bool", "default-off", "quoted-false"])
+@pytest.mark.parametrize("section, taken", [("checkpoints:\n  enabled: true\n", True), ("checkpoints: true\n", True), ("", False)],
+                         ids=["enabled", "legacy-bool", "default-off"])
 def test_a_web_turn_takes_a_checkpoint_only_when_the_profile_enables_them(hermes_home: pathlib.Path, workspace: pathlib.Path, llm: str, section: str, taken: bool) -> None:
     (hermes_home / "config.yaml").write_text(f"model:\n  provider: custom\n  default: stub-model\n  base_url: {llm}\n  api_key: sk-stub\n{section}")
     proc = SidecarProcess(hermes_home)

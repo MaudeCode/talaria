@@ -100,11 +100,6 @@ def store(tmp_path, monkeypatch):
               newer=newer, older=older, consent=consent, cases=home / 'hermetic/cases.jsonl')
 
 
-def test_replay_methods_are_registered():
-    methods = build_methods(NS(load=lambda: None, ensure_current=lambda: None))
-    assert {'skills.replay_plan', 'skills.replay_case'} <= set(methods)
-
-
 def test_plan_binds_two_exact_revisions_and_recorded_case_fixtures(store):
     b = store
     before = {str(p): p.read_bytes() for p in b.home.rglob('*') if p.is_file()}

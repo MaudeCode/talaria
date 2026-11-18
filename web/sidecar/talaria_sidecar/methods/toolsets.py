@@ -31,8 +31,7 @@ def catalog(override) -> dict:
     discover_profile_mcp_tools()
     definitions = get_all_toolsets()
     disabled = disabled_toolsets()
-    platform_policy = getattr(toolsets, "session_disabled_toolsets", None)
-    effective_disabled = platform_policy(disabled, "webui") if platform_policy else disabled
+    effective_disabled = toolsets.session_disabled_toolsets(disabled, "webui")
     defaults = _profile_toolsets()
     selected = defaults if override is None else list(dict.fromkeys(override))
     # Resolve once through the same Agent filter used at execution, before deferred-tool assembly.
@@ -41,9 +40,8 @@ def catalog(override) -> dict:
         quiet_mode=True, skip_tool_search_assembly=True,
     )}
     names = set(definitions) | set(selected)
-    # Agent v0.22.6+. The configured entries only: platform gating is not a setting the operator can repair.
-    strip_report = getattr(tools_config, 'toolsets_partially_stripped', None)
-    stripped = strip_report({'agent': {'disabled_toolsets': disabled}}, names) if strip_report else {}
+    # The configured entries only: platform gating is not a setting the operator can repair.
+    stripped = tools_config.toolsets_partially_stripped({'agent': {'disabled_toolsets': disabled}}, names)
     rows = []
     for name in sorted(names):
         available = name in definitions and name not in disabled and bool(set(resolve_toolset(name)) & tools)

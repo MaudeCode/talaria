@@ -10,14 +10,9 @@ import time
 
 import pytest
 
-from conftest import AGENT_DIR, SidecarProcess, requires_agent
+from conftest import SidecarProcess, requires_agent
 
 pytestmark = requires_agent
-
-# Agent v0.21.6 runs gates in the session workspace and lets control verbs keep trailing words.
-GATES_IN_WORKSPACE = AGENT_DIR is not None and "_gate_workspace" in (AGENT_DIR / "hermes_cli" / "goals.py").read_text()
-BARE_CONTROL_VERBS = AGENT_DIR is not None and "_BARE_CONTROL_VERBS" in (AGENT_DIR / "hermes_cli" / "goal_command.py").read_text()
-
 
 @pytest.fixture
 def goal(tmp_path, hermes_home):
@@ -37,7 +32,6 @@ def goal(tmp_path, hermes_home):
     proc.close()
 
 
-@pytest.mark.skipif(not GATES_IN_WORKSPACE, reason="this Agent runs gates outside the session workspace")
 def test_gate_runs_in_the_session_workspace(goal, tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -50,7 +44,6 @@ def test_gate_runs_in_the_session_workspace(goal, tmp_path):
     assert pathlib.Path(marker.read_text().strip()).resolve() == workspace.resolve()
 
 
-@pytest.mark.skipif(not GATES_IN_WORKSPACE, reason="this Agent runs gates outside the session workspace")
 def test_missing_workspace_pauses_with_the_agents_message(goal, tmp_path):
     goal("ship the release notes")
     goal("gate add true")
@@ -59,34 +52,6 @@ def test_missing_workspace_pauses_with_the_agents_message(goal, tmp_path):
     assert "message_key" not in decision, "a gate pause is not a budget pause"
 
 
-@pytest.mark.skipif(GATES_IN_WORKSPACE, reason="this Agent runs gates in the session workspace")
-def test_gate_add_is_refused_where_gates_would_leave_the_workspace(goal):
-    goal("ship the release notes")
-    refused = goal("gate add pwd")
-    assert refused["ok"] is False and refused["error"] == "gates_unsupported", refused
-    assert goal("gate list")["ok"], "listing and clearing gates still work"
-
-
-@pytest.mark.skipif(GATES_IN_WORKSPACE, reason="this Agent runs gates in the session workspace")
-def test_gates_from_a_newer_agent_pause_instead_of_running(goal, tmp_path, hermes_home):
-    """A gate set on Agent 0.21.6+ persists across a channel switch; this Agent would run it in its launch directory."""
-    import json
-
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    goal("ship the release notes")
-    snap = goal.proc.result("goals.snapshot", {"session_id": "s1", "profile_home": str(hermes_home)})["snapshot"]
-    state = json.loads(snap)
-    marker = tmp_path / "gate-ran.txt"
-    state["gates"] = [{"command": f"pwd > '{marker}'"}]
-    goal.proc.result("goals.restore", {"session_id": "s1", "profile_home": str(hermes_home), "snapshot": json.dumps(state)})
-    decision = goal.evaluate(workspace=str(workspace))
-    assert decision["status"] == "paused" and "quality gates not run" in decision["message"], decision
-    assert not marker.exists(), "the gate ran"
-    assert goal("status")["goal"]["status"] == "paused"
-
-
-@pytest.mark.skipif(not GATES_IN_WORKSPACE, reason="this Agent refuses gate add")
 def test_gate_list_and_clear(goal):
     goal("ship the release notes")
     goal("gate add true")
@@ -124,7 +89,6 @@ def test_get_reports_the_parked_barrier(goal, hermes_home):
     assert get().get("parked") is None, "a paused goal is paused, not parked"
 
 
-@pytest.mark.skipif(not BARE_CONTROL_VERBS, reason="this Agent treats a control verb with trailing words as goal text")
 def test_control_verbs_with_trailing_words_keep_the_goal(goal):
     goal("ship the release notes")
     paused = goal("pause for now")
