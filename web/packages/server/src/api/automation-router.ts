@@ -20,7 +20,7 @@ import { containsQuery, str } from '../util.js'
 
 const os = implement(automationContract).$context<ApiContext>().use(requestSessionIdGuard)
 
-export const TERMINAL_GATE_DENIED = 'Embedded terminal is only available from local networks when authentication is not configured. Configure a password/passkey, or set TALARIA_WEB_ONBOARDING_OPEN=1 to allow it on a deliberately-exposed server.'
+const TERMINAL_GATE_DENIED = 'Embedded terminal is only available from local networks when authentication is not configured. Configure a password/passkey, or set TALARIA_WEB_ONBOARDING_OPEN=1 to allow it on a deliberately-exposed server.'
 const REMOTE_TERMINAL_ERROR = { error: 'remote_terminal_backend_unsupported', message: 'Embedded terminal is only supported for local terminal backends.' }
 
 function failure(error: unknown): never {

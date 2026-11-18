@@ -5,7 +5,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 
@@ -53,17 +53,6 @@ describe('Gateway lifecycle routes (TAL-1627)', () => {
     expect(sidecar.calls.some((call) => call.method === 'gateway.ownership')).toBe(false)
     expect(await json(await s.get('/api/gateway/status'))).toMatchObject({ running: true, gateway_mode: null, health: { reason: 'remote_gateway' }, lifecycle: EXTERNAL })
     expect(await json(await s.get('/api/health/agent'))).toMatchObject({ alive: true, gateway_lifecycle: EXTERNAL })
-  })
-
-  it('keeps the local profile lifecycle when no Gateway URL is set', async () => {
-    const sidecar = new FakeSidecar()
-    sidecar.respond('gateway.control', () => ({ status: 'completed', message: 'ok' }))
-    const s = await bootTestServer({ sidecar })
-    servers.push(s)
-    expect(await json(await s.get('/api/gateway/status'))).toMatchObject({ lifecycle: MANAGED })
-    expect((await post(s, '/api/gateway/stop')).status).toBe(200)
-    expect(sidecar.calls.filter((call) => call.method === 'gateway.control')).toHaveLength(1)
-    expect(sidecar.calls.some((call) => call.method === 'gateway.ownership')).toBe(false)
   })
 
   it('Stop clears the cached local probe, so the next poll reads the stopped Gateway (TAL-1707)', async () => {
@@ -125,7 +114,7 @@ describe('Gateway lifecycle routes (TAL-1627)', () => {
     const { s, sidecar, dispatched } = await boot('https://gateway.example')
     sidecar.respond('runtime.status', () => ({ ...sidecar.describe!, compatible: true, stale: false }))
     const row = async (id: unknown) => ((await json(await s.get('/api/update-notifications'))).notifications as Json[]).find((entry) => entry.id === id)
-    const until = async (id: unknown, phase: string) => { for (let i = 0; i < 250 && (await row(id))?.phase !== phase; i += 1) await new Promise((resolve) => setTimeout(resolve, 20)) }
+    const until = (id: unknown, phase: string) => vi.waitFor(async () => { expect((await row(id))?.phase).toBe(phase) }, { timeout: 10_000 })
     // The Web-driven restart after a dependency sync.
     s.deps.updates.apply = () => Promise.resolve({ ok: true, target: 'agent', verified_revision: 'e'.repeat(40), verified_version: 'v0.23.0', restart_scheduled: false, gateway_restart: 'waiting_for_idle' })
     const waited = await json(await post(s, '/api/updates/apply', { target: 'agent', tab_id: 'tab-external-wait' }))

@@ -43,3 +43,27 @@ it('keeps a stream replaying history from holding back a stream already at the h
   live.close()
   replay.close()
 })
+
+it('streams on one board share one sidecar read per poll interval and each receives every event', async () => {
+  vi.useFakeTimers({ now: 0 })
+  const reads: number[] = []
+  let next: number | null = null
+  const sidecar = { call: (_method: string, params: { since: number }) => {
+    reads.push(Date.now())
+    const events = next === null ? [] : [{ id: next, task_id: 't_1', run_id: null, kind: 'created', payload: null, created_at: 1 }]
+    next = null
+    return Promise.resolve({ events, cursor: events[0]?.id ?? params.since, latest_event_id: 0, read_only: false })
+  } } as unknown as SidecarLike
+  const kanban = new KanbanService({ sidecar: () => sidecar, config: {} as never, settings: {} as never })
+  const subs = [1, 2, 3].map(() => kanban.subscribe('/home', null, 0))
+  const signal = new AbortController().signal
+  // Each event lands after all three streams joined; one read serves them all, so every stream gets each event.
+  for (const id of [5, 6]) {
+    await vi.advanceTimersByTimeAsync(1_000)
+    next = id
+    await vi.advanceTimersByTimeAsync(1_000)
+    for (const sub of subs) expect(await sub.next(0, signal)).toEqual({ cursor: id, events: [expect.objectContaining({ id })] })
+  }
+  expect(reads).toEqual([0, 1_000, 2_000, 3_000, 4_000])
+  for (const sub of subs) sub.close()
+})

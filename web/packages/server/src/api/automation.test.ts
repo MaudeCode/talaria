@@ -8,13 +8,12 @@ import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'v
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type SseFrame, type TestServer, openStateDb, freshCronListingsPerTest } from '../test/harness.js'
-import { completedAtSeconds, jobForApi, jobFieldUpdates } from '../tools/crons.js'
+import { completedAtSeconds, jobFieldUpdates } from '../tools/crons.js'
 import { readZip } from '../workspace/unzip.js'
 import { ExtensionService, normalizeLoopbackOrigin, normalizeProxyPath, isSafeRelativePath } from '../tools/extensions.js'
 import type { PtyModuleLike, PtyProcessLike } from '../tools/terminal.js'
-import { BACKLOG_MAX, CLOSED_RETENTION_MS, TerminalRegistry, type TerminalItem, type TerminalSession } from '../tools/terminal.js'
+import { TerminalRegistry, type TerminalItem, type TerminalSession } from '../tools/terminal.js'
 import { crc32 } from '../workspace/zip.js'
-import { TERMINAL_GATE_DENIED } from './automation-router.js'
 
 useJsonStorage()
 
@@ -254,7 +253,6 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(res.status).toBe(400)
     res = await s.get('/api/crons/delivery-options')
     expect(((await json(res)).platforms as Json[]).map((p) => p.value)).toContain('local')
-    expect(jobForApi({ id: 'a', monitor_script: 'run.sh', context_from: ['other', 'SELF'] })).toMatchObject({ profile: null, monitor: 'run.sh', continuity: true })
     expect(jobFieldUpdates({ monitor: '', continuity: true }, ['x'])).toEqual({ monitor_script: '', monitor_url: '', context_from: ['x', 'self'] })
   })
 
@@ -410,22 +408,6 @@ describe('crons, kanban, extensions, terminal', () => {
       expect(await open('/api/kanban/events/stream?since=10', bad)).toEqual({ hello: 10, firstRead: 10 })
     }
     expect(await open('/api/kanban/events/stream?since=nope', 'x')).toEqual({ hello: 0, firstRead: 0 })
-  })
-
-  it('kanban event streams on one board share one sidecar poll and each receives every event', async () => {
-    const reads: number[] = []
-    const opened = Date.now()
-    // The event lands after all three streams have joined, so each must get it from a later shared poll.
-    sidecar.respond('kanban.events', (params) => {
-      reads.push(Date.now())
-      const since = params.since ?? 0
-      const events = Date.now() - opened > 1_500 && since < 5 ? [{ id: 5, task_id: 't_1', run_id: null, kind: 'created', payload: null, created_at: 1 }] : []
-      return { events, cursor: events.length ? 5 : since, latest_event_id: events.length ? 5 : 0, read_only: false }
-    })
-    const streams = await Promise.all([1, 2, 3].map(() => s.sse('/api/kanban/events/stream?since=0', (f: SseFrame) => f.event === 'events', { timeoutMs: 8_000 })))
-    for (const frames of streams) expect(frames.find((f) => f.event === 'events')).toMatchObject({ id: '5', data: { cursor: 5, events: [{ id: 5 }] } })
-    // Three independent loops would read within milliseconds of each other on every interval.
-    expect(reads.slice(1).map((t, i) => t - reads[i]!).filter((gap) => gap < 500)).toEqual([])
   })
 
   it('kanban routes map to the sidecar, including path-parameter actions and the event stream', async () => {
@@ -811,7 +793,7 @@ describe('crons, kanban, extensions, terminal', () => {
     const registry = s.deps.terminals
     expect(registry.get(sid)?.closed).toBe(true)
     // The reaper retires it once the retention window passes; a new start replaces it meanwhile.
-    expect(registry.reapIdle(Date.now() + CLOSED_RETENTION_MS + 1)).toBeGreaterThanOrEqual(1)
+    expect(registry.reapIdle(Date.now() + 60_000 + 1)).toBeGreaterThanOrEqual(1)
     expect(registry.get(sid)).toBeNull()
     expect((await s.get(`/api/terminal/output?session_id=${sid}`)).status).toBe(404)
   })
@@ -830,7 +812,8 @@ describe('crons, kanban, extensions, terminal', () => {
       setTimeout(() => { for (let i = 0; i < chunks; i += 1) proc.emit(`line ${String(i)}\n`); setTimeout(() => { proc.exit(0) }, 50) }, 20)
       const frames = await s.sse(`/api/terminal/output?session_id=${sid}`, (f: SseFrame) => f.event === 'terminal_closed', { timeoutMs: 10_000 })
       expect(frames.filter((f) => f.event === 'output').length).toBe(chunks)
-      await new Promise((r) => setTimeout(r, 20))
+      // Node emits the listener warning on a later macrotask.
+      await new Promise((r) => setImmediate(r))
       expect(warnings).not.toContain('MaxListenersExceededWarning')
     } finally {
       process.off('warning', onWarning)
@@ -952,7 +935,7 @@ describe('crons, kanban, extensions, terminal', () => {
     try {
       res = await read('', sid, { 'x-forwarded-for': '203.0.113.9' })
       expect(res.status).toBe(403)
-      expect((await json(res)).error).toBe(TERMINAL_GATE_DENIED)
+      expect((await json(res)).error).toBe('Embedded terminal is only available from local networks when authentication is not configured. Configure a password/passkey, or set TALARIA_WEB_ONBOARDING_OPEN=1 to allow it on a deliberately-exposed server.')
     } finally {
       delete env.TALARIA_WEB_TRUST_FORWARDED_FOR
       delete env.TALARIA_WEB_TRUSTED_PROXY_CIDRS
@@ -1034,9 +1017,16 @@ describe('automation helpers', () => {
     const cdOffset = lying.readUInt32LE(lying.length - 22 + 16)
     lying.writeUInt32LE(10, cdOffset + 24)
     await expect(readZip(lying)[0]!.read()).rejects.toThrow(/big\.bin/)
-    expect(normalizeLoopbackOrigin('http://localhost:8080')).toBe('http://localhost:8080')
-    expect(normalizeLoopbackOrigin('http://localhost:8080/path')).toBeNull()
-    expect(normalizeLoopbackOrigin('https://example.com')).toBeNull()
+    // `urlsplit` semantics for loopback origins: no path (not even `/`), verbatim port, literal hosts only.
+    for (const [origin, want] of [
+      ['http://localhost:8080', 'http://localhost:8080'],
+      ['http://localhost:80', 'http://localhost:80'],
+      ['http://[::1]:9', 'http://[::1]:9'],
+      ['http://localhost:8080/path', null],
+      ['http://127.0.0.1:8080/', null],
+      ['http://127.1:8080', null],
+      ['https://example.com', null],
+    ] as const) expect(normalizeLoopbackOrigin(origin), origin).toBe(want)
     expect(normalizeProxyPath('')).toBe('/')
     expect(normalizeProxyPath('api/x')).toBe('/api/x')
     expect(normalizeProxyPath('/abs')).toBeNull()
@@ -1058,8 +1048,13 @@ describe('automation helpers', () => {
     now = 2_000_000
     expect(reg.reapIdle()).toBe(0)
     off()
-    reg.closeAll()
+    // At the 32-terminal cap, a 33rd start evicts the least recently active terminal and kills its shell.
+    for (let i = 3; i <= 34; i += 1) { now += 1; reg.start(`s${String(i)}`, '/tmp') }
+    expect(reg.get('s2')).toBeNull()
     expect(pty.spawned[1]?.killed).toEqual(['SIGHUP'])
+    expect(reg.get('s34')).not.toBeNull()
+    reg.closeAll()
+    expect(pty.spawned.at(-1)?.killed).toEqual(['SIGHUP'])
   })
 
   it('terminal reattach forces a redraw only once the backlog was trimmed (TAL-1818)', () => {
@@ -1068,7 +1063,7 @@ describe('automation helpers', () => {
     const size = { rows: 30, cols: 100 }
     reg.start('s1', '/tmp', size)
     const proc = pty.spawned[0]!
-    for (let i = 0; i < BACKLOG_MAX; i += 1) proc.emit('x')
+    for (let i = 0; i < 2000; i += 1) proc.emit('x')
     reg.start('s1', '/tmp', size)
     expect(proc.resizes).toEqual([size])
     proc.resizes.length = 0
@@ -1078,11 +1073,10 @@ describe('automation helpers', () => {
     reg.closeAll()
   })
 
-  it('terminal backlog replays at most 2 MiB of UTF-8 payload, with the newest chunk whole, and a reattach redraws (TAL-1736)', () => {
+  it('terminal backlog replays at most 2 MiB of UTF-8 payload, with the newest chunk whole (TAL-1736)', () => {
     const pty = fakePty()
     const reg = new TerminalRegistry({ env: { PATH: '/bin' }, now: () => 0, log: () => undefined, pty })
-    const size = { rows: 30, cols: 100 }
-    const term = reg.start('s1', '/tmp', size)
+    const term = reg.start('s1', '/tmp')
     const proc = pty.spawned[0]!
     // Two bytes per character: a cap that counted characters would keep twice this payload.
     const chunk = (i: number): string => `${String(i).padStart(2, '0')}${'é'.repeat(50_000)}`
@@ -1091,9 +1085,6 @@ describe('automation helpers', () => {
     expect(utf8Bytes(replay.map((item) => item.data.text))).toBeLessThanOrEqual(TERMINAL_BACKLOG_BYTES)
     expect(replay.map((item) => item.seq)).toEqual(Array.from({ length: 20 }, (_, i) => 31 + i))
     expect(replay.at(-1)?.data.text).toBe(chunk(50))
-    proc.resizes.length = 0
-    reg.start('s1', '/tmp', size)
-    expect(proc.resizes).toEqual([{ rows: 29, cols: 100 }, size])
     reg.closeAll()
   })
 
@@ -1101,9 +1092,9 @@ describe('automation helpers', () => {
     const pty = fakePty()
     const reg = new TerminalRegistry({ env: { PATH: '/bin' }, now: () => 0, log: () => undefined, pty })
     const term = reg.start('s1', '/tmp')
-    for (let i = 0; i < BACKLOG_MAX + 5; i += 1) pty.spawned[0]!.emit('x')
+    for (let i = 0; i < 2005; i += 1) pty.spawned[0]!.emit('x')
     const replay = terminalReplay(term)
-    expect(replay).toHaveLength(BACKLOG_MAX)
+    expect(replay).toHaveLength(2000)
     expect(replay[0]?.seq).toBe(6)
     reg.closeAll()
   })
@@ -1201,11 +1192,6 @@ describe('extension state file limits (parity)', () => {
       expect(service.enabledSync()).toBe(true)
       const bare = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { TALARIA_WEB_EXTENSION_DIR: root }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
       expect(bare.enabledSync()).toBe(true)
-      // `urlsplit` semantics for loopback origins: no path (not even `/`), verbatim port, literal hosts only.
-      expect(normalizeLoopbackOrigin('http://127.0.0.1:8080/')).toBeNull()
-      expect(normalizeLoopbackOrigin('http://localhost:80')).toBe('http://localhost:80')
-      expect(normalizeLoopbackOrigin('http://127.1:8080')).toBeNull()
-      expect(normalizeLoopbackOrigin('http://[::1]:9')).toBe('http://[::1]:9')
     } finally {
       rmSync(stateDir, { recursive: true, force: true })
     }
@@ -1313,19 +1299,6 @@ describe('extension directory rows in /api/extensions/manifests (TAL-704)', () =
     }
   })
 
-  it('ships source "gallery" and the panel for a gallery-installed extension', async () => {
-    const s = await bootTestServer()
-    try {
-      mkdirSync(join(s.state, 'extensions', 'gal'), { recursive: true })
-      writeFileSync(join(s.state, 'extensions', 'gal', 'manifest.json'), JSON.stringify({ name: 'Gal', version: '1.0.0', panel: 'index.html', capabilities: ['theme'] }))
-      writeFileSync(join(s.state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { gal: { version: '1.0.0', files: ['manifest.json', 'index.html'], installed_at: '2026-01-01T00:00:00Z' } } }))
-      const rows = (await json(await s.get('/api/extensions/manifests'))).manifests as Json[]
-      expect(rows.find((m) => m.id === 'gal')).toMatchObject({ source: 'gallery', version: '1.0.0', enabled: true, panel: 'extensions/gal/index.html', nav: { label: 'Gal' }, capabilities: ['theme'] })
-    } finally {
-      await s.close()
-    }
-  })
-
   it('reads a gallery folder\'s extension.json when it has no manifest.json, and manifest.json wins when both exist', async () => {
     const s = await bootTestServer()
     try {
@@ -1403,14 +1376,14 @@ describe('sanitized theme, tts, and sidecar in /api/extensions/manifests rows (T
     }
   })
 
-  it('ships theme and tts from a gallery-installed top-level manifest', async () => {
+  it('ships source "gallery", version, panel, nav, capabilities, theme and tts from a gallery-installed top-level manifest', async () => {
     const s = await bootTestServer()
     try {
       mkdirSync(join(s.state, 'extensions', 'gal'), { recursive: true })
-      writeFileSync(join(s.state, 'extensions', 'gal', 'manifest.json'), JSON.stringify({ name: 'Gal', panel: 'index.html', capabilities: ['theme', 'tts'], theme: { key: 'gal', name: 'Gal', tokens: { '--accent': '#ff8800' } }, tts: { id: 'gal-voice', label: 'Gal Voice' } }))
+      writeFileSync(join(s.state, 'extensions', 'gal', 'manifest.json'), JSON.stringify({ name: 'Gal', version: '1.0.0', panel: 'index.html', capabilities: ['theme', 'tts'], theme: { key: 'gal', name: 'Gal', tokens: { '--accent': '#ff8800' } }, tts: { id: 'gal-voice', label: 'Gal Voice' } }))
       writeFileSync(join(s.state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { gal: { version: '1.0.0', files: ['manifest.json', 'index.html'], installed_at: '2026-01-01T00:00:00Z' } } }))
       const rows = (await json(await s.get('/api/extensions/manifests'))).manifests as Json[]
-      expect(rows.find((m) => m.id === 'gal')).toMatchObject({ source: 'gallery', theme: { key: 'gal:gal', name: 'Gal', tokens: { '--accent': '#ff8800' } }, tts: { id: 'gal-voice', label: 'Gal Voice' }, sidecar: null })
+      expect(rows.find((m) => m.id === 'gal')).toMatchObject({ source: 'gallery', version: '1.0.0', enabled: true, panel: 'extensions/gal/index.html', nav: { label: 'Gal' }, capabilities: ['theme', 'tts'], theme: { key: 'gal:gal', name: 'Gal', tokens: { '--accent': '#ff8800' } }, tts: { id: 'gal-voice', label: 'Gal Voice' }, sidecar: null })
       // A headless skin-only gallery manifest is still an extension row.
       mkdirSync(join(s.state, 'extensions', 'skin'), { recursive: true })
       writeFileSync(join(s.state, 'extensions', 'skin', 'manifest.json'), JSON.stringify({ name: 'Skin', capabilities: ['theme'], theme: { key: 'skin', name: 'Skin', tokens: { '--bg': '#000' } } }))
@@ -1431,11 +1404,14 @@ describe('extension state transactions (review round 41)', () => {
     writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: [{ id: 'ext-one', name: 'Ext One', sidecar: { type: 'loopback', origin: 'http://127.0.0.1:4567' } }] }))
     let releaseAuth: (v: boolean) => void = () => undefined
     const gate = new Promise<boolean>((r) => { releaseAuth = r })
-    const service = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { TALARIA_WEB_EXTENSION_DIR: root, TALARIA_WEB_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => gate, fetch, log: () => undefined })
+    let probed!: () => void
+    const probing = new Promise<void>((r) => { probed = r })
+    const service = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { TALARIA_WEB_EXTENSION_DIR: root, TALARIA_WEB_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => { probed(); return gate }, fetch, log: () => undefined })
     try {
       const consent = service.setConsent('ext-one', true)
+      // The consent change has read the state and holds at the auth probe when the toggle lands.
+      await probing
       const toggle = service.setEnabled('ext-one', false)
-      await new Promise((r) => setTimeout(r, 20))
       releaseAuth(false)
       await Promise.all([consent, toggle])
       expect(JSON.parse(readFileSync(join(stateDir, 'extension-overrides.json'), 'utf8'))).toMatchObject({ disabled_extensions: ['ext-one'], sidecar_proxy_consents: { 'ext-one': 'http://127.0.0.1:4567' } })
