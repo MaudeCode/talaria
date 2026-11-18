@@ -33,8 +33,11 @@ public final class GitActionToastState {
     public private(set) var progress: GitActionProgress?
     public private(set) var success: GitActionSuccess?
     private var dismissTask: Task<Void, Never>?
+    private let clock: any Clock<Duration>
 
-    public init() {}
+    public init(clock: any Clock<Duration> = ContinuousClock()) {
+        self.clock = clock
+    }
 
     public func showProgress(_ value: GitActionProgress) {
         dismissTask?.cancel()
@@ -44,14 +47,15 @@ public final class GitActionToastState {
         }
     }
 
-    public func showSuccess(_ value: GitActionSuccess, autoDismissAfter duration: Duration = .seconds(6)) {
+    /// Shows `value` until `dismissSuccess()` or six seconds after the latest success.
+    public func showSuccess(_ value: GitActionSuccess) {
         dismissTask?.cancel()
         withAnimation(.easeInOut(duration: 0.18)) {
             progress = nil
             success = value
         }
-        dismissTask = Task { [weak self] in
-            try? await Task.sleep(for: duration)
+        dismissTask = Task { [weak self, clock] in
+            try? await clock.sleep(for: .seconds(6))
             guard !Task.isCancelled else { return }
             self?.dismissSuccess()
         }

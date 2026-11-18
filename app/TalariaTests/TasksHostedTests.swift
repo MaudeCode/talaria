@@ -68,21 +68,6 @@ final class TasksHostedTests: XCTestCase {
         XCTAssertFalse(HostedAccessibility.labels(in: window).contains { $0.hasPrefix("Scheduled tasks can't run") })
     }
 
-    /// Run Now on a job another process runs shows the server's `already_running` answer.
-    func testRunNowOnAJobRunningElsewhereSaysItIsAlreadyRunning() async throws {
-        let fixture = try FixtureApp([UITestFixtureEnvironment.unwritableCronStoreArgument], for: self)
-        let jobs = try await fixture.client.crons().jobs ?? []
-        let job = try XCTUnwrap(jobs.first { $0.jobId == UITestFixtureURLProtocol.cronRunningElsewhereJobID })
-        let viewModel = TaskDetailViewModel(job: job, runningElapsed: nil, isRunning: true, server: UITestFixtureEnvironment.serverURL)
-        XCTAssertTrue(viewModel.isRunning)
-
-        let didRun = await viewModel.runNow()
-
-        XCTAssertFalse(didRun)
-        XCTAssertEqual(viewModel.actionErrorMessage, "This task is already running.")
-        XCTAssertTrue(viewModel.isRunning)
-    }
-
     private func tasksList(_ fixture: FixtureApp) -> some View {
         NavigationStack {
             TasksView(

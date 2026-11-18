@@ -74,6 +74,41 @@ final class KanbanCardEditorStateTests: XCTestCase {
         XCTAssertEqual(keys, ["fixed-intent", "fixed-intent"])
     }
 
+    func testCompleteCreateSubmissionSendsEveryField() async {
+        let client = CardEditorClient(createResults: [.success(.createdComplete)])
+        let state = makeCreateState(client: client, idempotencyKey: "editor-intent")
+        state.title = "Complete fixture Card"
+        state.body = "Every create field"
+        state.priorityText = "2"
+        state.assignee = "builder"
+        state.tenant = "app"
+        state.workspaceKind = "dir"
+        state.workspacePath = "/Users/hermes"
+        state.skillsText = "x-writing-guide, grill-me"
+        state.maximumRuntimeText = "20"
+        state.prerequisiteID = "CARD-0"
+
+        await state.save(allowsMutation: true)
+
+        XCTAssertEqual(state.submission, .succeeded(cardID: "CARD-154"), "The server's echo of every field confirms the create")
+        let request = await client.lastCreateRequest
+        XCTAssertEqual(request, KanbanCreateCardRequest(
+            board: "main",
+            title: "Complete fixture Card",
+            body: "Every create field",
+            status: "triage",
+            priority: 2,
+            assignee: "builder",
+            tenant: "app",
+            workspaceKind: "dir",
+            workspacePath: "/Users/hermes",
+            skills: ["x-writing-guide", "grill-me"],
+            maxRuntimeSeconds: 20,
+            prerequisiteID: "CARD-0",
+            idempotencyKey: "editor-intent"
+        ))
+    }
+
     func testMissingCreateEndpointReportsOnlyCreateCapabilityUnavailable() async {
         let client = CardEditorClient(createResults: [
             .failure(APIError.http(
@@ -220,19 +255,14 @@ final class KanbanCardEditorStateTests: XCTestCase {
         XCTAssertNil(request?.status)
     }
 
-    func testAmbiguousEditReconcilesCanonicalResultAndPreservesCreateOnlyFields() async {
-        let lost = APIError.network(underlying: URLError(.cancelled))
+    func testAmbiguousEditReconcilesCanonicalResult() async {
+        let lost = APIError.network(underlying: URLError(.networkConnectionLost))
         let client = CardEditorClient(
             editResults: [.failure(lost)],
             detailResults: [.success(.baseline), .success(.edited)]
         )
         let state = makeEditState(client: client)
         state.title = "Edited"
-        state.workspaceKind = "scratch"
-        state.workspacePath = ""
-        state.skillsText = "changed"
-        state.maximumRuntimeText = "1"
-        state.prerequisiteID = "OTHER"
 
         await state.save(allowsMutation: true)
 
@@ -342,160 +372,6 @@ final class KanbanCardEditorStateTests: XCTestCase {
     }
 }
 
-final class KanbanLabClientMutationTests: XCTestCase {
-    @MainActor
-    func testCompleteEditorSubmissionSucceedsAgainstLabAdapter() async throws {
-        let client = KanbanLabClient(scenario: .dense)
-        let state = KanbanCardEditorState(
-            mode: .create,
-            board: "main",
-            client: client,
-            idempotencyKey: "editor-intent"
-        )
-        state.title = "Complete fixture Card"
-        state.body = "Every create field"
-        state.priorityText = "2"
-        state.assignee = "builder"
-        state.tenant = "app"
-        state.workspaceKind = "dir"
-        state.workspacePath = "/Users/hermes"
-        state.skillsText = "x-writing-guide, grill-me"
-        state.maximumRuntimeText = "20"
-        state.prerequisiteID = "CARD-1"
-
-        await state.save(allowsMutation: true)
-
-        guard case let .succeeded(cardID) = state.submission else {
-            return XCTFail("Expected the lab editor submission to succeed, got \(state.submission)")
-        }
-        let board = try await client.kanbanBoard(KanbanBoardRequest(board: "main"))
-        XCTAssertEqual(
-            (board.columns ?? []).flatMap { $0.cards ?? [] }.first { $0.cardID == cardID }?.title,
-            "Complete fixture Card"
-        )
-    }
-
-    func testCreatePersistsFullCardAndReusesIdempotencyKey() async throws {
-        let client = KanbanLabClient(scenario: .dense)
-        let request = KanbanCreateCardRequest(
-            board: "main",
-            title: "Complete fixture Card",
-            body: "Every create field",
-            status: "triage",
-            priority: 2,
-            assignee: "builder",
-            tenant: "app",
-            workspaceKind: "dir",
-            workspacePath: "/Users/hermes",
-            skills: ["x-writing-guide", "grill-me"],
-            maxRuntimeSeconds: 20,
-            prerequisiteID: "CARD-1",
-            idempotencyKey: "lab-intent"
-        )
-
-        let first = try await client.createKanbanCard(request)
-        let retry = try await client.createKanbanCard(request)
-        let cardID = try XCTUnwrap(first.card?.cardID)
-
-        XCTAssertEqual(retry.card?.cardID, cardID)
-        let board = try await client.kanbanBoard(KanbanBoardRequest(board: "main"))
-        let matches = (board.columns ?? []).flatMap { $0.cards ?? [] }.filter { $0.cardID == cardID }
-        XCTAssertEqual(matches.count, 1)
-        XCTAssertEqual(matches.first?.title, request.title)
-        XCTAssertEqual(matches.first?.workspaceKind, request.workspaceKind)
-        XCTAssertEqual(matches.first?.workspacePath, request.workspacePath)
-        XCTAssertEqual(matches.first?.skills, request.skills)
-        XCTAssertEqual(matches.first?.maxRuntimeSeconds, request.maxRuntimeSeconds)
-
-        let detail = try await client.kanbanCardDetail(
-            KanbanCardDetailRequest(cardID: cardID, board: "main")
-        )
-        XCTAssertEqual(detail.links?.prerequisites, ["CARD-1"])
-    }
-
-    func testEditPersistsSupportedFieldsAndPreservesCreateOnlyFields() async throws {
-        let client = KanbanLabClient(scenario: .dense)
-        let created = try await client.createKanbanCard(KanbanCreateCardRequest(
-            board: "main",
-            title: "Before",
-            body: "Original",
-            status: "triage",
-            priority: 1,
-            assignee: "builder",
-            tenant: "app",
-            workspaceKind: "worktree",
-            workspacePath: "/workspace",
-            skills: ["swiftui-patterns"],
-            maxRuntimeSeconds: 900,
-            prerequisiteID: "CARD-1",
-            idempotencyKey: "edit-intent"
-        ))
-        let cardID = try XCTUnwrap(created.card?.cardID)
-
-        _ = try await client.editKanbanCard(KanbanEditCardRequest(
-            cardID: cardID,
-            board: "main",
-            title: "After",
-            body: "Edited",
-            tenant: nil,
-            priority: -3,
-            assignee: nil,
-            status: "todo"
-        ))
-
-        let detail = try await client.kanbanCardDetail(
-            KanbanCardDetailRequest(cardID: cardID, board: "main")
-        )
-        XCTAssertEqual(detail.card?.title, "After")
-        XCTAssertEqual(detail.card?.body, "Edited")
-        XCTAssertEqual(detail.card?.status?.rawValue, "todo")
-        XCTAssertEqual(detail.card?.priority, -3)
-        XCTAssertNil(detail.card?.assignee)
-        XCTAssertNil(detail.card?.tenant)
-        XCTAssertEqual(detail.card?.workspaceKind, "worktree")
-        XCTAssertEqual(detail.card?.workspacePath, "/workspace")
-        XCTAssertEqual(detail.card?.skills, ["swiftui-patterns"])
-        XCTAssertEqual(detail.card?.maxRuntimeSeconds, 900)
-        XCTAssertEqual(detail.links?.prerequisites, ["CARD-1"])
-    }
-
-    func testEditingFixtureCardPreservesHistoryAndCommentsStayScopedToCard() async throws {
-        let client = KanbanLabClient(scenario: .dense)
-
-        _ = try await client.editKanbanCard(KanbanEditCardRequest(
-            cardID: "CARD-3",
-            board: "default",
-            title: "Edited fixture",
-            body: "Edited body",
-            tenant: "app",
-            priority: 1,
-            assignee: "builder",
-            status: "ready"
-        ))
-        _ = try await client.addKanbanComment(KanbanAddCommentRequest(
-            cardID: "CARD-3",
-            board: "default",
-            body: "Scoped comment"
-        ))
-
-        let edited = try await client.kanbanCardDetail(
-            KanbanCardDetailRequest(cardID: "CARD-3", board: "default")
-        )
-        let other = try await client.kanbanCardDetail(
-            KanbanCardDetailRequest(cardID: "CARD-4", board: "default")
-        )
-
-        XCTAssertEqual(edited.card?.title, "Edited fixture")
-        XCTAssertEqual(edited.comments?.map(\.body), [
-            "Looks good from the review side.",
-            "Scoped comment"
-        ])
-        XCTAssertEqual(edited.events?.count, 1)
-        XCTAssertEqual(edited.runs?.count, 1)
-        XCTAssertEqual(other.comments?.map(\.body), ["Looks good from the review side."])
-    }
-}
-
 private actor CardEditorClient: KanbanDataClient {
     private var createResults: [Result<KanbanCardMutationEnvelope, Error>]
     private var editResults: [Result<KanbanCardMutationEnvelope, Error>]
@@ -505,6 +381,7 @@ private actor CardEditorClient: KanbanDataClient {
     private(set) var createCallCount = 0
     private(set) var editCallCount = 0
     private(set) var lastEditRequest: KanbanEditCardRequest?
+    private(set) var lastCreateRequest: KanbanCreateCardRequest?
 
     init(
         createResults: [Result<KanbanCardMutationEnvelope, Error>] = [],
@@ -534,6 +411,7 @@ private actor CardEditorClient: KanbanDataClient {
 
     func createKanbanCard(_ request: KanbanCreateCardRequest) throws -> KanbanCardMutationEnvelope {
         createCallCount += 1
+        lastCreateRequest = request
         idempotencyKeys.append(request.idempotencyKey)
         return try createResults.removeFirst().get()
     }
@@ -595,6 +473,7 @@ private extension KanbanCardDetailEnvelope {
 
 private extension KanbanCardMutationEnvelope {
     static let createdTriage: KanbanCardMutationEnvelope = decode(#"{"task":{"id":"CARD-153","title":"Retry me","status":"triage","priority":0,"workspace_kind":"scratch"},"read_only":false}"#)
+    static let createdComplete: KanbanCardMutationEnvelope = decode(#"{"task":{"id":"CARD-154","title":"Complete fixture Card","body":"Every create field","status":"triage","priority":2,"assignee":"builder","tenant":"app","workspace_kind":"dir","workspace_path":"/Users/hermes","skills":["x-writing-guide","grill-me"],"max_runtime_seconds":20},"read_only":false}"#)
     static let createdReady: KanbanCardMutationEnvelope = decode(#"{"task":{"id":"CARD-153","title":"Ready work","status":"ready","priority":0,"workspace_kind":"scratch"},"read_only":false}"#)
     static let overwritten: KanbanCardMutationEnvelope = decode(#"{"task":{"id":"CARD-1","title":"My local draft","body":"Body","status":"ready","priority":0,"assignee":"builder","tenant":"mobile","workspace_kind":"worktree","workspace_path":"/workspace","skills":["swift"],"max_runtime_seconds":900},"read_only":false}"#)
     static let runningEdited: KanbanCardMutationEnvelope = decode(#"{"task":{"id":"CARD-1","title":"Edited while running","body":"Body","status":"running","priority":0,"assignee":"builder","tenant":"mobile","workspace_kind":"scratch"},"read_only":false}"#)

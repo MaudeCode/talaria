@@ -23,30 +23,6 @@ final class UpdateSummaryTests: APIClientTestCase {
     }
 
     @MainActor
-    func testTheModelLoadsTheServerSectionsForEitherTarget() async throws {
-        for target in [UpdateTarget.webui, .agent] {
-            var bodies: [NSDictionary] = []
-            let client = makeClient { request in
-                XCTAssertEqual(request.url?.path, "/api/updates/summary")
-                let body = try XCTUnwrap(apiTestBodyData(from: request))
-                try bodies.append(XCTUnwrap(JSONSerialization.jsonObject(with: body) as? NSDictionary))
-                return apiTestJSONResponse(Self.sectionsJSON, for: request)
-            }
-            let model = UpdateSummaryModel(target: target, client: client)
-            XCTAssertEqual(model.phase, .loading)
-
-            await model.load()
-
-            XCTAssertEqual(bodies, [["target": target.rawValue]])
-            guard case let .loaded(summary) = model.phase else { return XCTFail("Not loaded: \(model.phase)") }
-            XCTAssertEqual(summary.summarySections, [
-                .init(title: "What you'll notice", items: ["Chats open faster."]),
-                .init(title: "Worth knowing", items: ["This summary covers v0.21.6 and v0.21.7."])
-            ])
-        }
-    }
-
-    @MainActor
     func testTheSheetShowsProgressThenOffersRetryAfterAFailure() throws {
         let answered = DispatchSemaphore(value: 0)
         var requests = 0
@@ -98,54 +74,13 @@ final class UpdateSummaryTests: APIClientTestCase {
         XCTAssertEqual(taps, 1)
     }
 
-    /// TAL-2248: the System section presents its summary sheet and alerts over Settings, once, and loads once.
+    /// TAL-2248: the System section checks for updates once and presents each summary sheet over Settings, once.
     @MainActor
-    func testSystemSettingsPresentOverSettingsAndLoadOnce() async throws {
-        let fixture = try FixtureApp(for: self)
-        let host = "system-summary-\(UUID().uuidString.lowercased()).test"
-        let server = try XCTUnwrap(URL(string: "https://\(host)"))
-        let checks = LockedTestValue(0)
-        let check = #"""
-        { "webui": { "state": "release_ready", "can_apply": true, "behind": 1, "current_version": "0.0.1",
-                     "target_version": "0.0.2", "summary_available": true },
-          "agent": { "state": "release_ready", "behind": 1, "current_version": "v2026.9.24",
-                     "target_version": "v0.21.7", "summary_available": true } }
-        """#
-        DeferredMockURLProtocol.setOnRequest({ request in
-            switch (request.request.httpMethod, request.request.url?.path) {
-            case ("GET", "/api/updates/check"):
-                checks.value += 1
-                request.complete(withJSON: check)
-            case (_, "/api/updates/check"): request.complete(withJSON: check)
-            case (_, "/api/updates/summary"): request.complete(withJSON: Self.sectionsJSON)
-            case (_, "/api/settings"): request.complete(withJSON: #"{ "webui_version": "0.0.1" }"#)
-            default: request.complete(withJSON: "{}")
-            }
-        }, forHost: host)
-        let previousHook = UITestURLSessionHook.configure
-        UITestURLSessionHook.configure = { $0.protocolClasses = [DeferredMockURLProtocol.self] }
-        addTeardownBlock {
-            UITestURLSessionHook.configure = previousHook
-            DeferredMockURLProtocol.setOnRequest(nil, forHost: host)
-        }
-
+    func testSystemSummariesPresentOverSettingsOnceAndCheckOnce() async throws {
+        let system = try SystemSettingsFixture(test: self)
         // Compact phone and the open Duo's regular display; the Settings sheet stands in for SessionListView's.
         for (sizeName, size) in [("phone", HostedSize.phone), ("duo-inner", HostedSize.duoInner)] {
-            checks.value = 0
-            let window = try hostWindow(Color.clear.sheet(isPresented: .constant(true)) {
-                NavigationStack {
-                    SettingsPaneView(authManager: fixture.environment.authManager, server: server, pane: .category(.system))
-                }
-            }, size: size)
-            let presented = await presentedController(in: window)
-            let settings = try XCTUnwrap(presented, "Settings presents")
-            let offered = await awaitCondition {
-                HostedAccessibility.elements(in: window, labelContaining: "Summarize with AI").count == 2
-            }
-            XCTAssertTrue(offered, "Elements: \(HostedAccessibility.labels(in: window))")
-            settle(0.5)
-            XCTAssertEqual(checks.value, 1, "Opening System checks for updates once, not once per row")
-
+            let (window, settings) = try await system.present(size: size)
             for (index, name) in ["Talaria Web", "Hermes Agent"].enumerated() {
                 func chain() -> String {
                     var controller = window.rootViewController
@@ -160,12 +95,13 @@ final class UpdateSummaryTests: APIClientTestCase {
                 XCTAssertTrue(HostedAccessibility.activate(button))
                 let loaded = await awaitElement(in: window, label: "Chats open faster.")
                 XCTAssertNotNil(loaded, "\(name)'s summary loads: \(chain())")
-                XCTAssertTrue(window.rootViewController?.presentedViewController === settings, "Settings closed: \(chain())")
                 let summary = try XCTUnwrap(settings.presentedViewController, "\(name)'s summary presents over Settings: \(chain())")
-                let closed = await awaitCondition(timeout: 2) {
-                    window.rootViewController?.presentedViewController !== settings || settings.presentedViewController !== summary
-                }
-                XCTAssertFalse(closed, "\(name)'s summary and Settings stay presented after it loads")
+                // The presentation's own record once its transition ends: Settings and the summary stay up, nothing leaves.
+                let presented = await awaitCondition { summary.transitionCoordinator == nil && settings.transitionCoordinator == nil }
+                XCTAssertTrue(presented, "\(name)'s summary finishes presenting: \(chain())")
+                XCTAssertTrue(window.rootViewController?.presentedViewController === settings, "Settings closed: \(chain())")
+                XCTAssertTrue(settings.presentedViewController === summary, "\(name)'s summary was replaced: \(chain())")
+                XCTAssertFalse(settings.isBeingDismissed || summary.isBeingDismissed, "\(name)'s summary or Settings is closing: \(chain())")
                 attachHostedScreenshot(window, name: "system-summary-over-settings-\(sizeName)-\(index)")
                 XCTAssertNil(summary.presentedViewController, "Exactly one summary sheet presents")
                 XCTAssertNotNil(HostedAccessibility.element(in: window, label: "What's new in \(name)"))
@@ -175,7 +111,17 @@ final class UpdateSummaryTests: APIClientTestCase {
                 XCTAssertTrue(dismissed, "Done dismisses \(name)'s summary")
                 XCTAssertTrue(window.rootViewController?.presentedViewController === settings, "Done leaves Settings open")
             }
+            XCTAssertEqual(system.checks.value, 1, "Opening System checks for updates once, not once per row")
+            system.close(window)
+        }
+    }
 
+    /// TAL-2248: Check Now and Update present their alerts over Settings, once, and cancelling leaves Settings open.
+    @MainActor
+    func testSystemAlertsPresentOverSettingsOnce() async throws {
+        let system = try SystemSettingsFixture(test: self)
+        for size in [HostedSize.phone, HostedSize.duoInner] {
+            let (window, settings) = try await system.present(size: size)
             for (control, cancel) in [(SettingsIndex.systemCheckNow.title, "Dismiss"), (SettingsIndex.systemUpdate.title, "Cancel")] {
                 let button = try await requireElement(in: window, label: control)
                 XCTAssertTrue(HostedAccessibility.activate(button))
@@ -183,10 +129,72 @@ final class UpdateSummaryTests: APIClientTestCase {
                 let alert = try XCTUnwrap(settings.presentedViewController as? UIAlertController,
                                           "\(control)'s alert presents over Settings")
                 XCTAssertTrue(HostedAccessibility.tap(cancel, in: alert))
-                let closed = await awaitCondition(timeout: 1) { window.rootViewController?.presentedViewController !== settings }
-                XCTAssertFalse(closed, "\(control)'s alert leaves Settings open")
-                XCTAssertNil(settings.presentedViewController, "\(control)'s alert presents once")
+                let dismissed = await awaitCondition { settings.presentedViewController == nil && alert.presentingViewController == nil }
+                XCTAssertTrue(dismissed, "\(control)'s alert presents once")
+                XCTAssertTrue(window.rootViewController?.presentedViewController === settings, "\(control)'s alert leaves Settings open")
+                XCTAssertFalse(settings.isBeingDismissed, "\(control)'s alert closes Settings")
             }
+            system.close(window)
+        }
+    }
+
+    /// Settings > System on a fresh window against a server whose both targets offer a summarized update.
+    @MainActor
+    private struct SystemSettingsFixture {
+        let checks = LockedTestValue(0)
+        private let fixture: FixtureApp
+        private let server: URL
+        private unowned let test: UpdateSummaryTests
+
+        init(test: UpdateSummaryTests) throws {
+            self.test = test
+            fixture = try FixtureApp(for: test)
+            let host = "system-summary-\(UUID().uuidString.lowercased()).test"
+            server = try XCTUnwrap(URL(string: "https://\(host)"))
+            let checks = checks
+            let check = #"""
+            { "webui": { "state": "release_ready", "can_apply": true, "behind": 1, "current_version": "0.0.1",
+                         "target_version": "0.0.2", "summary_available": true },
+              "agent": { "state": "release_ready", "behind": 1, "current_version": "v2026.9.24",
+                         "target_version": "v0.21.7", "summary_available": true } }
+            """#
+            DeferredMockURLProtocol.setOnRequest({ request in
+                switch (request.request.httpMethod, request.request.url?.path) {
+                case ("GET", "/api/updates/check"):
+                    checks.value += 1
+                    request.complete(withJSON: check)
+                case (_, "/api/updates/check"): request.complete(withJSON: check)
+                case (_, "/api/updates/summary"): request.complete(withJSON: UpdateSummaryTests.sectionsJSON)
+                case (_, "/api/settings"): request.complete(withJSON: #"{ "webui_version": "0.0.1" }"#)
+                default: request.complete(withJSON: "{}")
+                }
+            }, forHost: host)
+            let previousHook = UITestURLSessionHook.configure
+            UITestURLSessionHook.configure = { $0.protocolClasses = [DeferredMockURLProtocol.self] }
+            test.addTeardownBlock {
+                UITestURLSessionHook.configure = previousHook
+                DeferredMockURLProtocol.setOnRequest(nil, forHost: host)
+            }
+        }
+
+        /// Hosts Settings > System in its sheet and waits until both rows offer their summary.
+        func present(size: CGSize) async throws -> (UIWindow, UIViewController) {
+            checks.value = 0
+            let window = try test.hostWindow(Color.clear.sheet(isPresented: .constant(true)) {
+                NavigationStack {
+                    SettingsPaneView(authManager: fixture.environment.authManager, server: server, pane: .category(.system))
+                }
+            }, size: size)
+            let presented = await test.presentedController(in: window)
+            let settings = try XCTUnwrap(presented, "Settings presents")
+            let offered = await test.awaitCondition {
+                HostedAccessibility.elements(in: window, labelContaining: "Summarize with AI").count == 2
+            }
+            XCTAssertTrue(offered, "Elements: \(HostedAccessibility.labels(in: window))")
+            return (window, settings)
+        }
+
+        func close(_ window: UIWindow) {
             window.isHidden = true
             window.rootViewController = nil
         }

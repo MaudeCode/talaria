@@ -20,17 +20,12 @@ final class KanbanBoardToolbarLayoutTests: XCTestCase {
     }
 
     func testWideBarKeepsFourTrailingControlsAndCapsTheName() throws {
-        let layout = KanbanBoardToolbarLayout.resolve(containerWidth: 750, controlWidth: 44)
+        for (containerWidth, nameWidth) in [(CGFloat(750), CGFloat(374)), (1024, 648)] {
+            let layout = KanbanBoardToolbarLayout.resolve(containerWidth: containerWidth, controlWidth: 44)
 
-        XCTAssertFalse(layout.usesOverflowMenu)
-        XCTAssertEqual(try XCTUnwrap(layout.boardNameWidth), 374, accuracy: 0.5)
-    }
-
-    func testRegularWidthCapsTheNameWellBelowTheBar() throws {
-        let layout = KanbanBoardToolbarLayout.resolve(containerWidth: 1024, controlWidth: 44)
-
-        XCTAssertFalse(layout.usesOverflowMenu)
-        XCTAssertEqual(try XCTUnwrap(layout.boardNameWidth), 648, accuracy: 0.5)
+            XCTAssertFalse(layout.usesOverflowMenu, "bar width \(containerWidth)")
+            XCTAssertEqual(try XCTUnwrap(layout.boardNameWidth), nameWidth, accuracy: 0.5, "bar width \(containerWidth)")
+        }
     }
 
     func testAccessibilityControlWidthNeverCollapsesTheBoardName() throws {

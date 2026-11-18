@@ -10,10 +10,16 @@ enum ServerEventSource {
         url: URL,
         handler: EventHandler,
         baseConfiguration: URLSessionConfiguration,
-        customHeaders: [CustomHeader]
+        customHeaders: [CustomHeader],
+        onConnectionError: (@Sendable (Error) -> Void)? = nil
     ) -> (source: EventSource, redirectPolicyHeader: String) {
         var config = EventSource.Config(handler: handler, url: url)
-        config.connectionErrorHandler = { @Sendable _ in .shutdown }
+        // `.shutdown` suppresses EventHandler.onError inside LDSwiftEventSource; a caller that owns
+        // status-based recovery receives the error through `onConnectionError` first.
+        config.connectionErrorHandler = { @Sendable error in
+            onConnectionError?(error)
+            return .shutdown
+        }
         let cookieStorage = ServerCookieStore.shared.storage(for: url)
         var builtInHeaders = [
             AppConfig.clientIdentityHeaderName: AppConfig.clientIdentity,

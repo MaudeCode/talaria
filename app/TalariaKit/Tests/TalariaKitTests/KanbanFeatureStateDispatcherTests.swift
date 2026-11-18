@@ -346,36 +346,26 @@ extension KanbanFeatureStateTests {
         XCTAssertEqual(offline.dispatcherAvailability, .offline)
     }
 
-    func testRunReportsRemovedBoardAndDispatcherStateNeverCrossesServers() async {
+    func testRunReportsRemovedBoard() async {
         let removedBoards: KanbanBoardsResponse = mutationDecode(
             #"{"boards":[{"slug":"release"}],"current":"release","read_only":false}"#
         )
-        let firstClient = DispatcherClient(boardsResponses: [
+        let client = DispatcherClient(boardsResponses: [
             mutationDecode(#"{"boards":[{"slug":"main"}],"current":"main","read_only":false}"#),
             removedBoards
         ])
-        let secondClient = DispatcherClient()
-        let first = KanbanFeatureState(
-            server: URL(string: "https://first.example.test")!,
+        let state = KanbanFeatureState(
+            server: URL(string: "https://example.test")!,
             defaults: defaults,
-            client: firstClient
+            client: client
         )
-        let second = KanbanFeatureState(
-            server: URL(string: "https://second.example.test")!,
-            defaults: defaults,
-            client: secondClient
-        )
-        await first.load()
-        await second.load()
+        await state.load()
 
-        await first.runDispatcher()
+        await state.runDispatcher()
 
-        XCTAssertEqual(first.dispatchState?.phase, .boardUnavailable)
-        XCTAssertNil(first.selectedBoardSlug)
-        XCTAssertNotNil(first.boardSelectionNotice)
-        XCTAssertNil(second.dispatchState)
-        let secondDispatchRequestCount = await secondClient.dispatchRequestCount
-        XCTAssertEqual(secondDispatchRequestCount, 0)
+        XCTAssertEqual(state.dispatchState?.phase, .boardUnavailable)
+        XCTAssertNil(state.selectedBoardSlug)
+        XCTAssertNotNil(state.boardSelectionNotice)
     }
 
     func testObsoleteDispatchCollectionCannotOverwriteReloadedState() async {

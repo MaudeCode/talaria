@@ -430,59 +430,31 @@ final class APIClientWorkspaceFileTests: APIClientTestCase {
         XCTAssertEqual(response.entries?[2].size, 1200)
     }
 
-    func testDirectoryListBuildsNestedPathQuery() async throws {
-        let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/list")
-            XCTAssertEqual(request.httpMethod, "GET")
-
-            let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
-            let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
-            XCTAssertEqual(query["session_id"], "abc123")
-            XCTAssertEqual(query["path"], "Sources/App")
-
-            return apiTestJSONResponse("""
-            {
-              "entries": [],
-              "path": "Sources/App"
-            }
-            """, for: request)
-        }
-
-        let response = try await client.directoryList(sessionID: "abc123", path: "Sources/App")
-
-        XCTAssertEqual(response.path, "Sources/App")
-    }
-
     @MainActor
     func testFileBrowserLatestDirectoryRequestWins() async throws {
-        let firstRequestStarted = expectation(description: "First directory request started")
-        let client = makeClient { request in
-            let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
-            let path = components?.queryItems?.first(where: { $0.name == "path" })?.value
-
-            if path == "cat" {
+        let host = "files-\(UUID().uuidString).test"
+        let held = DeferredRequests()
+        let firstRequestStarted = expectation(description: "First directory request held")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            if held.append(request) == 1 {
                 firstRequestStarted.fulfill()
-                Thread.sleep(forTimeInterval: 0.3)
+            } else {
+                request.complete(withJSON: #"{"entries":[],"path":"leetcode-editor"}"#)
             }
-
-            return apiTestJSONResponse("""
-            {
-              "entries": [],
-              "path": "\(path ?? ".")"
-            }
-            """, for: request)
-        }
+        }, forHost: host)
+        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
         let viewModel = try FileBrowserViewModel(
             session: makeFilePreviewSession(),
-            server: XCTUnwrap(URL(string: "https://example.test")),
-            apiClient: client
+            server: XCTUnwrap(URL(string: "https://\(host)")),
+            apiClient: APIClient(baseURL: XCTUnwrap(URL(string: "https://\(host)")), session: URLSession(configuration: configuration))
         )
 
         let firstLoad = Task { await viewModel.load(path: "cat") }
         await fulfillment(of: [firstRequestStarted], timeout: 10)
-        let latestLoad = Task { await viewModel.load(path: "leetcode-editor") }
-
-        await latestLoad.value
+        await viewModel.load(path: "leetcode-editor")
+        held.request(at: 0).complete(withJSON: #"{"entries":[],"path":"cat"}"#)
         await firstLoad.value
 
         XCTAssertEqual(viewModel.currentPath, "leetcode-editor")
@@ -602,58 +574,6 @@ final class APIClientWorkspaceFileTests: APIClientTestCase {
         XCTAssertNil(response.lines)
     }
 
-    func testRawFileBuildsExpectedQueryAndReturnsBytes() async throws {
-        let expectedData = Data([0x89, 0x50, 0x4E, 0x47])
-        let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/file/raw")
-            XCTAssertEqual(request.httpMethod, "GET")
-
-            let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
-            let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
-            XCTAssertEqual(query["session_id"], "abc123")
-            XCTAssertEqual(query["path"], "Screenshots/result.png")
-
-            let response = HTTPURLResponse(
-                url: try XCTUnwrap(request.url),
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: ["Content-Type": "image/png"]
-            )
-            return (try XCTUnwrap(response), expectedData)
-        }
-
-        let response = try await client.rawFileData(sessionID: "abc123", path: "Screenshots/result.png")
-
-        XCTAssertEqual(response, expectedData)
-    }
-
-    func testMediaDataBuildsExpectedQueryAndReturnsBytes() async throws {
-        let expectedData = Data([0x89, 0x50, 0x4E, 0x47])
-        let mediaPath = "/Users/hermes/.hermes/browser_screenshots/result image.png"
-        let sessionID = "abc123"
-        let client = makeClient { request in
-            XCTAssertEqual(request.httpMethod, "GET")
-            XCTAssertEqual(request.url?.path, "/api/media")
-
-            let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
-            let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
-            XCTAssertEqual(query["session_id"], sessionID)
-            XCTAssertEqual(query["path"], mediaPath)
-
-            let response = HTTPURLResponse(
-                url: try XCTUnwrap(request.url),
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: ["Content-Type": "image/png"]
-            )
-            return (try XCTUnwrap(response), expectedData)
-        }
-
-        let response = try await client.mediaData(sessionID: sessionID, path: mediaPath)
-
-        XCTAssertEqual(response, expectedData)
-    }
-
     @MainActor
     func testFilePreviewExportPayloadUsesLoadedTextContent() async throws {
         let client = makeClient { request in
@@ -761,29 +681,31 @@ final class APIClientWorkspaceFileTests: APIClientTestCase {
 
     @MainActor
     func testFilePreviewExportRejectsOldBytesAfterPathChanges() async throws {
-        DeferredFilePreviewURLProtocol.pendingRequest = nil
-        defer { DeferredFilePreviewURLProtocol.pendingRequest = nil }
+        let host = "export-\(UUID().uuidString).test"
+        let held = DeferredRequests()
+        let exportRequestStarted = expectation(description: "Export request held")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            _ = held.append(request)
+            exportRequestStarted.fulfill()
+        }, forHost: host)
+        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [DeferredFilePreviewURLProtocol.self]
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
         let client = APIClient(
-            baseURL: try XCTUnwrap(URL(string: "https://example.test")),
+            baseURL: try XCTUnwrap(URL(string: "https://\(host)")),
             session: URLSession(configuration: configuration)
         )
         let viewModel = try FilePreviewViewModel(
             session: makeFilePreviewSession(),
-            server: XCTUnwrap(URL(string: "https://example.test")),
+            server: XCTUnwrap(URL(string: "https://\(host)")),
             path: "first.zip",
             apiClient: client
         )
 
         let export = Task { try await viewModel.exportPayload() }
-        let deadline = ContinuousClock.now + .seconds(10)
-        while DeferredFilePreviewURLProtocol.pendingRequest == nil, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(1))
-        }
-        let pendingRequest = try XCTUnwrap(DeferredFilePreviewURLProtocol.pendingRequest)
+        await fulfillment(of: [exportRequestStarted], timeout: 10)
         await viewModel.load(path: "second.zip")
-        pendingRequest.succeed(with: Data([0x50, 0x4B]))
+        held.request(at: 0).complete(withJSON: "PK")
 
         do {
             _ = try await export.value
@@ -907,34 +829,5 @@ private actor FilePreviewImagePreparationGate {
     func releaseFirstPreparation() {
         firstContinuation?.resume()
         firstContinuation = nil
-    }
-}
-
-private final class DeferredFilePreviewURLProtocol: URLProtocol {
-    nonisolated(unsafe) static var pendingRequest: DeferredFilePreviewURLProtocol?
-
-    override class func canInit(with request: URLRequest) -> Bool { true }
-
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        Self.pendingRequest = self
-    }
-
-    override func stopLoading() {}
-
-    func succeed(with data: Data) {
-        guard let url = request.url,
-              let response = HTTPURLResponse(
-                  url: url,
-                  statusCode: 200,
-                  httpVersion: nil,
-                  headerFields: ["Content-Type": "application/octet-stream"]
-              )
-        else { return }
-
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
     }
 }

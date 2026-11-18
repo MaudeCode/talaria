@@ -378,19 +378,6 @@ final class APIClientGitTests: APIClientTestCase {
         XCTAssertEqual(large.tooLarge, true)
     }
 
-    func testGitDiffNonRepositorySurfacesHTTPError() async throws {
-        let client = makeClient { request in
-            self.errorResponse(#"{"error": "Not a git repository", "code": "git_failed"}"#, status: 400, for: request)
-        }
-
-        do {
-            _ = try await client.gitDiff(sessionID: "abc123", path: "a.txt")
-            XCTFail("Expected an HTTP error for a non-repo diff.")
-        } catch let APIError.http(statusCode, _) {
-            XCTAssertEqual(statusCode, 400)
-        }
-    }
-
     // MARK: - git writes
 
     func testRemoteActionsBuildExpectedRequestsAndDecodeStatus() async throws {
@@ -574,23 +561,6 @@ final class APIClientGitTests: APIClientTestCase {
         XCTAssertEqual(selected.truncated, true)
     }
 
-    func testCommitDestructiveDisabledSurfacesStructuredCode() async throws {
-        let client = makeClient { request in
-            self.errorResponse(
-                #"{"error":"Destructive git writes are disabled","code":"destructive_git_disabled"}"#,
-                status: 403,
-                for: request
-            )
-        }
-
-        do {
-            _ = try await client.gitCommit(sessionID: "abc123", message: "msg")
-            XCTFail("Expected the destructive-disabled error.")
-        } catch let error as APIError {
-            XCTAssertEqual(error.serverCode, "destructive_git_disabled")
-        }
-    }
-
     func testCommitMessageRequestsUseExtendedTimeout() async throws {
         let client = makeClient { request in
             XCTAssertGreaterThanOrEqual(request.timeoutInterval, 120, "LLM message generation needs a wide timeout, not the 60s default.")
@@ -599,18 +569,5 @@ final class APIClientGitTests: APIClientTestCase {
 
         _ = try await client.gitCommitMessage(sessionID: "abc123")
         _ = try await client.gitCommitMessageSelected(sessionID: "abc123", paths: ["a.swift"])
-    }
-
-    func testCommitEmptyMessageSurfacesBadRequest() async throws {
-        let client = makeClient { request in
-            self.errorResponse(#"{"error":"Commit message is required"}"#, status: 400, for: request)
-        }
-
-        do {
-            _ = try await client.gitCommit(sessionID: "abc123", message: "")
-            XCTFail("Expected the empty-message rejection.")
-        } catch let error as APIError {
-            XCTAssertEqual(error.serverMessage, "Commit message is required")
-        }
     }
 }

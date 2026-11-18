@@ -502,11 +502,11 @@ final class AuxiliaryModelsTests: APIClientTestCase {
     }
 
     @MainActor
-    func testViewModelReplacesEverySlotWhenTheProfileChanges() async throws {
+    func testViewModelReplacesEverySlotOnReload() async throws {
         var load = 0
         let client = makeClient { request in
             load += 1
-            // The second read answers another profile: nothing from the first may survive.
+            // The second read answers different slots: nothing from the first may survive.
             let body = load == 1 ? Self.auxiliaryJSON(["title_generation": Self.pinnedBeta]) : Self.auxiliaryJSON(["vision": Self.offCatalogVision])
             return apiTestJSONResponse(body, for: request)
         }

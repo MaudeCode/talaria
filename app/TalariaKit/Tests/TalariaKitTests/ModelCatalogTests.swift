@@ -51,7 +51,7 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertEqual(groups.first?.models.first?.id, "@openai:gpt-5.5")
         XCTAssertEqual(groups.first?.models.first?.displayName, "GPT-5.5")
         XCTAssertEqual(groups.first?.models.first?.providerID, "openai")
-        XCTAssertEqual(response.displayName(for: "@openai:gpt-5.4"), "GPT-5.4")
+        XCTAssertEqual(groups.first?.models.last?.displayName, "GPT-5.4")
     }
 
     func testSharedModelLimitsFixtureDecodesRateLimitsAndQuotaLevels() throws {
@@ -116,7 +116,7 @@ final class ModelCatalogTests: XCTestCase {
 
         XCTAssertEqual(group.models.count, 40)
         XCTAssertEqual(group.models.last?.id, "@nous:vendor/model-40")
-        XCTAssertEqual(response.displayName(for: "@nous:vendor/model-40"), "Model 40")
+        XCTAssertEqual(group.models.last?.displayName, "Model 40")
     }
 
     // MARK: - /api/models/live (issue #236)
@@ -345,6 +345,11 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertFalse(bare.isSelected(optionID: nil, modelID: "flash", providerID: "google"))
         XCTAssertTrue(bare.isSelected(optionID: nil, modelID: "flash", providerID: "gemini"))
         XCTAssertEqual([prefixed, bare].firstSelected(optionID: nil, modelID: "flash", providerID: nil)?.displayName, "Bare")
+
+        let openAI = ModelCatalogOption(id: "shared/model", displayName: "OpenAI Shared", providerID: "openai")
+        let anthropic = ModelCatalogOption(id: "shared/model", displayName: "Anthropic Shared", providerID: "anthropic")
+        XCTAssertEqual([openAI, anthropic].firstSelected(optionID: nil, modelID: "shared/model", providerID: "anthropic"), anthropic)
+        XCTAssertNil([openAI, anthropic].firstSelected(optionID: nil, modelID: "shared/model", providerID: "openrouter"))
     }
 
     /// A tap records the row's id and provider. The previous stored default

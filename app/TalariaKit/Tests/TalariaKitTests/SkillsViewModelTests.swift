@@ -52,28 +52,38 @@ final class SkillsViewModelTests: APIClientTestCase {
     }
 
     @MainActor
-    func testToggleSkillRevertsOnFailure() async throws {
-        var shouldFailToggle = false
-        let client = makeClient { request in
-            switch request.url?.path {
+    func testToggleSkillShowsTheChoiceAtOnceAndRollsBackOnFailure() async throws {
+        let host = "skills-\(UUID().uuidString).test"
+        let held = DeferredRequests()
+        let toggleStarted = expectation(description: "toggle held")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            switch request.path {
             case "/api/skills":
-                return apiTestJSONResponse("""
-                {"skills": [{"name": "swift-refactor", "category": "coding", "disabled": false}]}
-                """, for: request)
+                request.complete(withJSON: #"{"skills": [{"name": "swift-refactor", "category": "coding", "disabled": false}]}"#)
             case "/api/skills/toggle":
-                shouldFailToggle = true
-                throw URLError(.notConnectedToInternet)
+                _ = held.append(request)
+                toggleStarted.fulfill()
             default:
-                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
-                return apiTestJSONResponse("{}", for: request)
+                XCTFail("Unexpected path: \(request.path)")
+                request.fail(with: URLError(.badURL))
             }
-        }
-        let model = SkillsViewModel(client: client)
-
+        }, forHost: host)
+        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let model = SkillsViewModel(client: APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://\(host)")),
+            session: URLSession(configuration: configuration)
+        ))
         await model.load()
-        await model.setSkill(try XCTUnwrap(model.skills.first), enabled: false)
 
-        XCTAssertTrue(shouldFailToggle)
+        let toggle = Task { await model.setSkill(try XCTUnwrap(model.skills.first), enabled: false) }
+        await fulfillment(of: [toggleStarted], timeout: 10)
+        XCTAssertEqual(model.skills.first?.disabled, true, "The switch shows the choice before the server answers")
+
+        held.request(at: 0).fail(with: URLError(.notConnectedToInternet))
+        try await toggle.value
+
         XCTAssertEqual(model.skills.first?.disabled, false)
         XCTAssertNotNil(model.lastError)
     }

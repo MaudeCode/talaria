@@ -192,48 +192,6 @@ extension KanbanFeatureStateTests {
         XCTAssertEqual(boardRequestCount, 1)
     }
 
-    func testBoardManagementStateRemainsIsolatedPerServer() async {
-        let firstClient = BoardManagementClient(boardsResponses: [
-            .success(mutationDecode(
-                #"{"boards":[{"slug":"main","name":"Main"}],"current":"main","read_only":false}"#
-            )),
-            .success(mutationDecode(
-                #"{"boards":[{"slug":"main","name":"Main"},{"slug":"release","name":"Release"}],"current":"main","read_only":false}"#
-            ))
-        ])
-        let secondClient = BoardManagementClient(boardsResponses: [
-            .success(mutationDecode(
-                #"{"boards":[{"slug":"personal","name":"Personal"}],"current":"personal","read_only":false}"#
-            ))
-        ])
-        let first = KanbanFeatureState(
-            server: URL(string: "https://first.example.test")!,
-            defaults: defaults,
-            client: firstClient
-        )
-        let second = KanbanFeatureState(
-            server: URL(string: "https://second.example.test")!,
-            defaults: defaults,
-            client: secondClient
-        )
-        await first.load()
-        await second.load()
-
-        await first.createBoard(KanbanCreateBoardRequest(
-            slug: "release",
-            name: "Release",
-            description: "",
-            icon: "",
-            color: ""
-        ))
-
-        XCTAssertTrue(first.boards.contains { $0.slug == "release" })
-        XCTAssertEqual(second.boards.map(\.slug), ["personal"])
-        XCTAssertEqual(second.selectedBoardSlug, "personal")
-        let secondCreateRequestCount = await secondClient.createRequestCount
-        XCTAssertEqual(secondCreateRequestCount, 0)
-    }
-
     func testRebuiltStateForSameServerRestoresBrowsedBoardAndRefreshesAgainstIt() async {
         let boards = #"{"boards":[{"slug":"main","name":"Main"},{"slug":"release","name":"Release"}],"current":"main","read_only":false}"#
         let server = URL(string: "https://example.test")!

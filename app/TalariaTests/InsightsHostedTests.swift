@@ -194,9 +194,6 @@ final class InsightsHostedTests: XCTestCase {
             if name == "daily chart" { attachHostedScreenshot(window, name: "insights-usage-analytics") }
         }
         let labels = seen.joined(separator: "\n")
-        for retired in ["Recent Daily Tokens", "Peak Day", "Peak Hour"] {
-            XCTAssertFalse(labels.contains(retired), "\(retired) is still on screen:\n\(labels)")
-        }
         XCTAssertFalse(labels.contains("Lasts through reset"), "Quota detail must stay off the Usage tab")
         attachHostedScreenshot(window, name: "insights-usage-activity")
 

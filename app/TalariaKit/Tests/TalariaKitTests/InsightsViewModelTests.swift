@@ -32,52 +32,6 @@ final class InsightsViewModelTests: XCTestCase {
     }
 
     @MainActor
-    func testInsightsNeverAggregatesRowsWithoutUsableIDs() async throws {
-        let now = Date().timeIntervalSince1970
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let response = try decoder.decode(SessionsResponse.self, from: Data("""
-        {
-          "sessions": [
-            {
-              "title": "Missing identity",
-              "created_at": \(now - 60),
-              "message_count": 4,
-              "input_tokens": 10,
-              "output_tokens": 20,
-              "estimated_cost": 0.12
-            },
-            {
-              "session_id": "   ",
-              "title": "Blank identity",
-              "created_at": \(now - 120),
-              "message_count": 2,
-              "input_tokens": 5,
-              "output_tokens": 7,
-              "estimated_cost": 0.03
-            }
-          ]
-        }
-        """.utf8))
-        let client = StubInsightsClient(
-            insightsResult: .failure(StubInsightsError()),
-            sessionsResult: .success(response)
-        )
-        let viewModel = InsightsViewModel(client: client)
-        viewModel.selectedTimeframe = .last7Days
-
-        await viewModel.load()
-
-        XCTAssertEqual(viewModel.sessionCount, 0)
-        XCTAssertEqual(viewModel.totalMessages, 0)
-        XCTAssertEqual(viewModel.totalTokens, 0)
-        XCTAssertEqual(viewModel.estimatedCost, 0)
-        XCTAssertEqual(client.sessionRequests, 0)
-        XCTAssertFalse(viewModel.hasLoadedAnalytics)
-        XCTAssertEqual(viewModel.errorMessage, "Server insights unavailable")
-    }
-
-    @MainActor
     func testLoadUsesServerInsightsWhenAvailable() async throws {
         let client = StubInsightsClient(
             insightsResult: .success(try decodeInsights("""
@@ -92,8 +46,7 @@ final class InsightsViewModelTests: XCTestCase {
               "total_cache_read_tokens": 80,
               "total_cache_hit_percent": 64.2
             }
-            """)),
-            sessionsResult: .failure(StubInsightsError())
+            """))
         )
         let viewModel = InsightsViewModel(client: client)
 
@@ -391,23 +344,15 @@ final class InsightsViewModelTests: XCTestCase {
 @MainActor
 private final class StubInsightsClient: InsightsDataClient {
     private let insightsResult: Result<InsightsResponse, Error>
-    private let sessionsResult: Result<SessionsResponse, Error>
     private(set) var requestedDays: [Int] = []
-    private(set) var sessionRequests = 0
 
-    init(insightsResult: Result<InsightsResponse, Error>, sessionsResult: Result<SessionsResponse, Error>) {
+    init(insightsResult: Result<InsightsResponse, Error>) {
         self.insightsResult = insightsResult
-        self.sessionsResult = sessionsResult
     }
 
     func insights(days: Int) async throws -> InsightsResponse {
         requestedDays.append(days)
         return try insightsResult.get()
-    }
-
-    func sessions() async throws -> SessionsResponse {
-        sessionRequests += 1
-        return try sessionsResult.get()
     }
 }
 
@@ -435,10 +380,6 @@ private final class DelayedInsightsClient: InsightsDataClient {
         return try await withCheckedThrowingContinuation { continuation in
             pendingContinuation = continuation
         }
-    }
-
-    func sessions() async throws -> SessionsResponse {
-        throw StubInsightsError()
     }
 
     func waitForPendingRequest() async {

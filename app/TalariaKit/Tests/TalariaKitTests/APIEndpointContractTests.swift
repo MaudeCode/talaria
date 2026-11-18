@@ -293,12 +293,6 @@ final class ContractReadinessTests: APIClientTestCase {
                 path: "/api/file/raw",
                 query: ["session_id": "session-123", "path": "Assets/icon.png"]
             ),
-            .init(
-                name: "media",
-                endpoint: .media(sessionID: "session-123", path: "Assets/icon.png"),
-                path: "/api/media",
-                query: ["session_id": "session-123", "path": "Assets/icon.png"]
-            ),
             .init(name: "models", endpoint: .models, path: "/api/models"),
             .init(name: "models live", endpoint: .modelsLive, path: "/api/models/live"),
             .init(name: "commands", endpoint: .commands, path: "/api/commands"),

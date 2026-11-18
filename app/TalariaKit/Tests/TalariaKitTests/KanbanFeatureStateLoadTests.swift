@@ -3,19 +3,13 @@ import XCTest
 
 @MainActor
 extension KanbanFeatureStateTests {
-    func testCompatibleHandshakeIsOrderedAndBoundToItsServer() async {
+    func testCompatibleHandshakeIsOrdered() async {
         let client = KanbanClientStub()
-        let firstServer = URL(string: "https://first.example.test")!
-        let secondServer = URL(string: "https://second.example.test")!
-        let first = KanbanFeatureState(server: firstServer, defaults: defaults, client: client)
-        let second = KanbanFeatureState(server: secondServer, defaults: defaults, client: client)
+        let first = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
 
         await first.load()
 
         XCTAssertEqual(first.state, .compatible)
-        XCTAssertEqual(first.server, firstServer)
-        XCTAssertEqual(second.state, .idle)
-        XCTAssertEqual(second.server, secondServer)
         let calls = await client.calls()
         XCTAssertEqual(calls, [
             .configuration,

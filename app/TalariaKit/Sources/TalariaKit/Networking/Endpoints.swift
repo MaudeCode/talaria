@@ -84,7 +84,6 @@ public enum Endpoint: Sendable {
     case directoryList(sessionID: String, path: String?)
     case file(sessionID: String, path: String)
     case rawFile(sessionID: String, path: String)
-    case media(sessionID: String, path: String)
     case gitInfo(sessionID: String)
     case gitStatus(sessionID: String)
     case gitBranches(sessionID: String)
@@ -349,8 +348,6 @@ public enum Endpoint: Sendable {
             return "/api/file"
         case .rawFile:
             return "/api/file/raw"
-        case .media:
-            return "/api/media"
         case .gitInfo:
             return "/api/git-info"
         case .gitStatus:
@@ -709,11 +706,6 @@ public enum Endpoint: Sendable {
             return [URLQueryItem(name: "prefix", value: prefix)]
         case let .file(sessionID, path),
             let .rawFile(sessionID, path):
-            return [
-                URLQueryItem(name: "session_id", value: sessionID),
-                URLQueryItem(name: "path", value: path)
-            ]
-        case let .media(sessionID, path):
             return [
                 URLQueryItem(name: "session_id", value: sessionID),
                 URLQueryItem(name: "path", value: path)

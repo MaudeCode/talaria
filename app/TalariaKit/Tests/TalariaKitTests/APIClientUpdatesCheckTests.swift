@@ -63,15 +63,6 @@ final class APIClientUpdatesCheckTests: APIClientTestCase {
         XCTAssertEqual(response.forcedCheckOutcome, .updateAvailable(behind: 2))
     }
 
-    func testForcedCheckOutcomeIsDisabledWhenChecksOff() throws {
-        let response = try decodeUpdatesCheck("""
-        { "disabled": true }
-        """)
-
-        // Distinct from `.error`: the popup wording differs (checks off vs failure).
-        XCTAssertEqual(response.forcedCheckOutcome, .disabled)
-    }
-
     func testForcedCheckOutcomeIsErrorWithoutAServerState() throws {
         // Every supported server sends `state` (TAL-559); a webui block without it is not trusted.
         let cases = [
@@ -105,6 +96,8 @@ final class APIClientUpdatesCheckTests: APIClientTestCase {
         XCTAssertEqual(response.disabled, true)
         XCTAssertNil(response.webui)
         XCTAssertEqual(response.webuiUpdateState, .unavailable)
+        // Distinct from `.error`: the popup wording differs (checks off vs failure).
+        XCTAssertEqual(response.forcedCheckOutcome, .disabled)
     }
 
     func testServerStateDecidesTheOutcome() throws {
@@ -113,6 +106,7 @@ final class APIClientUpdatesCheckTests: APIClientTestCase {
             (#"{ "behind": 3, "state": "commits_behind", "can_apply": true }"#, .updateAvailable(behind: 3)),
             (#"{ "behind": 0, "metadata_repair": true, "state": "finish", "can_apply": true }"#, .updateAvailable(behind: 0)),
             (#"{ "behind": 0, "state": "up_to_date", "can_apply": false }"#, .upToDate),
+            (#"{ "behind": 0, "state": "off", "can_apply": false }"#, .disabled),
             (#"{ "behind": 2, "manual_update": true, "state": "manual", "can_apply": false }"#, .manual),
             (#"{ "behind": 1, "dirty": true, "state": "local_changes", "can_apply": false }"#, .manual),
             (#"{ "behind": 0, "error": "fetch failed", "state": "check_failed", "can_apply": false }"#, .error),

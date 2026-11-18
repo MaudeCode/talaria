@@ -23,7 +23,7 @@ public enum FeedbackVideoEncoder: Sendable {
     }
 
     /// The average bitrate, in bits per second, that keeps a clip of `duration` seconds within 90% of `maxBytes`.
-    public static func bitrate(duration: Double, maxBytes: Int) -> Int {
+    static func bitrate(duration: Double, maxBytes: Int) -> Int {
         Int(min(maxBitrate, 0.9 * Double(maxBytes) * 8 / max(duration, 1)))
     }
 

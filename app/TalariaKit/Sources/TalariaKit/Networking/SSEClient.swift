@@ -54,53 +54,18 @@ public final class SSEClient: SSEStreamingClient {
                 onEvent(event)
             }
         )
-        var config = EventSource.Config(handler: handler, url: url)
-        // `.shutdown` suppresses EventHandler.onError inside LDSwiftEventSource;
-        // forward once so ChatStreamCoordinator can own status-based recovery.
-        config.connectionErrorHandler = { @Sendable error in
-            handler.onError(error: error)
-            return .shutdown
-        }
-        // Custom headers merged underneath the built-ins so the built-ins win on
-        // collision, including immutable client identity.
-        let cookieStorage = ServerCookieStore.shared.storage(for: url)
-        var builtInHeaders = [
-            AppConfig.clientIdentityHeaderName: AppConfig.clientIdentity,
-            "Accept": "text/event-stream",
-            "Cache-Control": "no-cache, no-transform",
-            "Accept-Encoding": "identity"
-        ]
-        if let cookie = HTTPCookie.requestHeaderFields(
-            with: cookieStorage.cookies(for: url) ?? []
-        )["Cookie"] {
-            builtInHeaders["Cookie"] = cookie
-        }
-        config.headers = customHeaders.merged(under: builtInHeaders)
-
-        let configuration = baseConfiguration.copy() as? URLSessionConfiguration ?? .default
-        #if DEBUG
-        UITestURLSessionHook.configure(configuration)
-        #endif
-        configuration.httpCookieStorage = cookieStorage
-        configuration.httpCookieAcceptPolicy = .always
-        configuration.httpShouldSetCookies = true
-        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        let policyHeader = CrossOriginRedirectGuardURLProtocol.register(
-            configuration: configuration,
-            baseURL: url,
+        // ChatStreamCoordinator owns status-based recovery, so connection errors reach the handler.
+        let made = ServerEventSource.make(
+            url: url,
+            handler: handler,
+            baseConfiguration: baseConfiguration,
             customHeaders: customHeaders,
-            builtInHeaders: builtInHeaders
+            onConnectionError: { handler.onError(error: $0) }
         )
-        redirectPolicyHeader = policyHeader
-        configuration.protocolClasses = [CrossOriginRedirectGuardURLProtocol.self]
-            + (configuration.protocolClasses ?? []).filter { $0 != CrossOriginRedirectGuardURLProtocol.self }
-        config.headers[policyHeader] = "1"
-        config.urlSessionConfiguration = configuration
-
-        let source = EventSource(config: config)
+        redirectPolicyHeader = made.redirectPolicyHeader
         eventHandler = handler
-        eventSource = source
-        source.start()
+        eventSource = made.source
+        made.source.start()
     }
 
     public func stop() {

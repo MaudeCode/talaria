@@ -34,8 +34,6 @@ extension UITestFixtureURLProtocol {
             body = #"{"running": false, "elapsed": 0}"#
         case "/api/crons/status":
             body = #"{"running": {}}"#
-        case "/api/crons/run" where request.httpMethod == "POST":
-            body = #"{"ok": false, "job_id": "\#(cronRunningElsewhereJobID)", "status": "already_running", "elapsed": 42}"#
         case "/api/crons/history":
             body = #"{"runs": [], "total": 0, "offset": 0}"#
         case "/api/crons/recent":

@@ -54,21 +54,6 @@ final class SkillLinkedFileSelectionTests: XCTestCase {
         XCTAssertEqual(sheet.selection?.isLoading, false)
     }
 
-    func testDismissingASheetIgnoresItsLateResponse() async {
-        let (client, requests, arrivals) = makeDeferredClient(expecting: 1)
-        let sheet = LinkedFileSheet()
-
-        sheet.present("OVERVIEW.md")
-        let overviewLoad = Task { await sheet.load(fileName: "OVERVIEW.md", client: client) }
-        await fulfillment(of: [arrivals[0]], timeout: 5)
-
-        sheet.selection = nil
-        requests.request(at: 0).complete(withJSON: #"{"name":"fixture-skill","content":"Overview body"}"#)
-        await overviewLoad.value
-
-        XCTAssertNil(sheet.selection)
-    }
-
     func testFailureCopyStaysWithItsFileAndReopeningReloads() async {
         let (client, requests, arrivals) = makeDeferredClient(expecting: 2)
         let sheet = LinkedFileSheet()

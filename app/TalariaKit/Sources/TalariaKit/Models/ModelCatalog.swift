@@ -118,14 +118,6 @@ extension ModelsResponse {
     public var catalogGroups: [ModelCatalogGroup] {
         ModelCatalogParser.parseGroups(from: self)
     }
-
-    func displayName(for modelID: String?) -> String? {
-        guard let modelID else { return nil }
-        return catalogGroups
-            .flatMap(\.models)
-            .first(where: { $0.id == modelID })?
-            .displayName
-    }
 }
 
 /// Response of `GET /api/models/live`: the uncached model list for one provider.
