@@ -242,3 +242,4 @@ test('an approval card stays above the composer at heights over 480 px', async (
     await expect.poll(async () => { const box = (await card.boundingBox())!; return box.y + box.height }, JSON.stringify(viewport)).toBeLessThanOrEqual((await page.locator('.composer-box').boundingBox())!.y)
   }
 })
+// TAL-2391 CI measurement (old path, spec-only diff); never merged.
