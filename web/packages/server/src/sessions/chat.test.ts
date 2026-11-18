@@ -2414,12 +2414,17 @@ describe('chat turns through the sidecar', () => {
     // of this run's steers is another surface's.
     sidecar.respond('chat.interrupt', () => ({ ok: true, pending_steer: 'from elsewhere\nnever applied\nalso held' }))
     let starts = 0
+    let running!: () => void
+    const agentRunning = new Promise<void>((resolve) => { running = resolve })
     sidecar.respond('chat.start', (params, _emit, opts) => new Promise((resolve) => {
       starts += 1
       opts.signal?.addEventListener('abort', () => { resolve({ ...completed([{ role: 'user', content: str(params.user_message) }]), status: 'cancelled' }) })
+      running()
     }))
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'long task' }))
     const streamId = String(start.stream_id)
+    // The steers and the Stop reach a running Agent turn; a Stop before it starts never starts it.
+    await agentRunning
     expect((await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'never applied', display_text: 'Never applied', steer_id: 'steer-x' }))).accepted).toBe(true)
     expect((await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'also held', steer_id: 'steer-y' }))).accepted).toBe(true)
     const withdrawn = [
