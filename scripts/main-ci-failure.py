@@ -65,8 +65,16 @@ class GitHub:
 
     def log(self, job_id):
         # The job-log API serves a completed job while its siblings still run; `gh run view --log` waits for the run.
-        return subprocess.run(["gh", "api", "--allow-escape-sequences", f"repos/{REPOSITORY}/actions/jobs/{job_id}/logs"],
-                              capture_output=True, text=True, check=True).stdout
+        # Newer gh refuses to print a log's escape sequences without --allow-escape-sequences, which gh 2.96 (CI's
+        # runners) does not know, so a gh that rejects the flag is asked again without it.
+        path = f"repos/{REPOSITORY}/actions/jobs/{job_id}/logs"
+        try:
+            return subprocess.run(["gh", "api", "--allow-escape-sequences", path], capture_output=True, text=True,
+                                  check=True).stdout
+        except subprocess.CalledProcessError as error:
+            if "unknown flag" not in (error.stderr or ""):
+                raise
+            return subprocess.run(["gh", "api", path], capture_output=True, text=True, check=True).stdout
 
 def jobs(github, run_id, attempts="latest"):
     found, page = [], 1
@@ -341,39 +349,42 @@ def incident(github, run, kind):
             continue
         name = str(job.get("name", ""))[:MAX_NAME]
         test_lane, _, _, groups = reproduction(name, attempt)
-        tests = {}
-        if test_lane in TARGETS and (logged := XCTEST.search(log_text(github, job["id"]))):
-            tests[(test_lane, groups[0] if test_lane == "hosted" else None)] = ("/".join(logged.groups()),
-                                                                                 job.get("started_at") or "")
-        line = entry(job, attempt, notes, tests, {})
-        if not line:
-            continue
-        later = [other for other in found if other.get("name") == job.get("name") and other.get("conclusion") ==
-                 "success" and int(other.get("run_attempt", 1)) > int(attempt)]
-        step = next((item.get("number") for item in job.get("steps") or [] if item.get("conclusion") == "failure"), None)
-        test, shown = cross("test", line["test"]), cross("name", name)
-        label = test and re.sub(r":\d+$", "", test) or f"{shown or 'job ' + str(cross('job', job.get('id')))}" + (
-            f" › step {cross('step', step)}" if cross("step", step) else "")
-        fact = {"job": cross("job", job.get("id")), "name": shown, "attempt": cross("attempt", attempt),
-                "kind": cross("kind", line["kind"]), "test": test, "step": cross("step", step),
-                "url": cross("url", job.get("html_url")), "passed": cross("attempt", later[0].get("run_attempt"))
-                if later else None,
-                # The trusted table builds the command from the validated test or the name's validated groups.
-                "command": reproduction(name, attempt)[1] if shown and not test else line["command"] if test
-                else f"scripts/check {COMPONENTS.get(name.split(' / ')[0], 'all')}",
-                "label": label, "completed": job.get("completed_at") or "",
-                # A Playwright failure's line moves with each edit and attempt: its spec file keys the incident.
-                "key": key(re.sub(r":\d+$", "", line["test"]) if line["test"]
-                           else f"{ci_name(name)} › {(line['step'] or line['kind'])[:MAX_NAME]}"),
-                "raw_test": line["test"]}
-        if name in GATES:
-            gates.append(fact)
-        elif kind == "release" and not RELEASE_TESTS.match(name):
-            routed.append(fact | {"route": "release publication"})
-        elif line["kind"] == "infrastructure":
-            routed.append(fact | {"route": "runner fault"})
-        else:
-            actionable.append(fact)
+        # Every XCTest the log names as failed is its own failure, so a parked one never hides a new one beside it.
+        logged_tests = list(dict.fromkeys("/".join(found) for found in XCTEST.findall(log_text(github, job["id"])))) \
+            if test_lane in TARGETS else []
+        for logged in logged_tests or [None]:
+            tests = {}
+            if logged:
+                tests[(test_lane, groups[0] if test_lane == "hosted" else None)] = (logged, job.get("started_at") or "")
+            line = entry(job, attempt, notes, tests, {})
+            if not line:
+                continue
+            later = [other for other in found if other.get("name") == job.get("name") and other.get("conclusion") ==
+                     "success" and int(other.get("run_attempt", 1)) > int(attempt)]
+            step = next((item.get("number") for item in job.get("steps") or [] if item.get("conclusion") == "failure"), None)
+            test, shown = cross("test", line["test"]), cross("name", name)
+            label = test and re.sub(r":\d+$", "", test) or f"{shown or 'job ' + str(cross('job', job.get('id')))}" + (
+                f" › step {cross('step', step)}" if cross("step", step) else "")
+            fact = {"job": cross("job", job.get("id")), "name": shown, "attempt": cross("attempt", attempt),
+                    "kind": cross("kind", line["kind"]), "test": test, "step": cross("step", step),
+                    "url": cross("url", job.get("html_url")), "passed": cross("attempt", later[0].get("run_attempt"))
+                    if later else None,
+                    # The trusted table builds the command from the validated test or the name's validated groups.
+                    "command": reproduction(name, attempt)[1] if shown and not test else line["command"] if test
+                    else f"scripts/check {COMPONENTS.get(name.split(' / ')[0], 'all')}",
+                    "label": label, "completed": job.get("completed_at") or "",
+                    # A Playwright failure's line moves with each edit and attempt: its spec file keys the incident.
+                    "key": key(re.sub(r":\d+$", "", line["test"]) if line["test"]
+                               else f"{ci_name(name)} › {(line['step'] or line['kind'])[:MAX_NAME]}"),
+                    "raw_test": line["test"]}
+            if name in GATES:
+                gates.append(fact)
+            elif kind == "release" and not RELEASE_TESTS.match(name):
+                routed.append(fact | {"route": "release publication"})
+            elif line["kind"] == "infrastructure":
+                routed.append(fact | {"route": "runner fault"})
+            else:
+                actionable.append(fact)
     # A gate that failed in an attempt a person cancelled a job of names nothing to fix.
     if not actionable and not routed:
         actionable = [fact for fact in gates if fact["attempt"] not in cancelled]
@@ -998,10 +1009,13 @@ command below as `python3 "$S" <command>`.
 4. Run `claim --lane <lane> --run-id <run ID>`, with the lane triage named. On `stop`, reply with one line and go to \
 step 8. Keep the claim number: you hold the lane until step 7, and CI starts no other session for it meanwhile.
 5. Make your own working copy and work only there: `W={WORKTREE} && git worktree add --detach "$W" origin/{BRANCH}`.
-6. Repair what triage's message lists, as it says. Then, for the {BRANCH} lane, read the newest finished {BRANCH} run: \
-`gh run list --repo {REPOSITORY} --workflow ci.yml --branch {BRANCH} --event push --status completed --limit 1 \
---json databaseId,conclusion`. If it failed and you have not handled it, run `triage --run-id <its ID> --claim <claim \
-number>` and repair what that lists the same way. Repeat until the newest finished run passes or lists nothing new.
+6. Repair what triage's message lists, as it says. Then catch up with the runs CI left to you while you held the \
+lane. For {BRANCH}, read the newest finished run: `gh run list --repo {REPOSITORY} --workflow ci.yml --branch \
+{BRANCH} --event push --status completed --limit 1 --json databaseId,conclusion`. For a release, read every release \
+run that finished since your claim: `gh run list --repo {REPOSITORY} --workflow production-cutover.yml --branch \
+{BRANCH} --status completed --limit 10 --json databaseId,conclusion,updatedAt`. For each one that failed and you have \
+not handled, run `triage --run-id <its ID> --claim <claim number>` and repair what that lists the same way. Repeat \
+until none lists anything new.
 7. Run `release --claim <claim number>`. A failure you parked stays open on its own issue.
 8. Last, whatever happened, even after an error: if you hold a claim you have not released, release it; if "$W" \
 exists, `git worktree remove --force "$W"`; then call `t3_thread_organize` with `action: "settle"` on your own \

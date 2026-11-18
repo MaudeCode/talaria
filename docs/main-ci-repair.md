@@ -57,8 +57,10 @@ The webhook task starts a new thread for each report it accepts
 5. Read its pull requests only through `findings`, wait on them with
    `findings --wait`, and merge each with `land` at the exact head once CI Gate
    passed there.
-6. Before it finishes, read the newest finished `main` run and repair whatever
-   new still fails there (`triage --claim` ignores its own claim).
+6. Before it finishes, catch up with what CI left to it while it held the lane:
+   the newest finished `main` run, or every release run that finished since its
+   claim, repairing whatever new still fails there (`triage --claim` ignores its
+   own claim).
 7. `park` each failure it cannot repair: a needs-a-person issue carrying
    `ci-repair-known: <key>` with what it found. That failure starts no session
    until a person closes the issue.

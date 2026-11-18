@@ -422,6 +422,16 @@ class TriageTests(unittest.TestCase):
             decision = self.decide(jobs=flaky_shard(shard=name), logs={4: log})
             self.assertEqual(decision["work"][0]["test"], test, name)
 
+    def test_every_failing_test_in_one_shard_is_its_own_failure(self):
+        second = FLAKY_LOG.replace("testAnExpandedDisclosureStaysExpandedAcrossClosingAndOpening", "testRotatesTheFold")
+        decision = self.decide(jobs=flaky_shard(passed=False), logs={4: FLAKY_LOG + second + FLAKY_LOG})
+        self.assertEqual([fact["test"] for fact in decision["work"]],
+                         [FLAKY, "TalariaTests/DuoFoldHostedTests/testRotatesTheFold"])
+        # A parked test beside a new failure no longer hides it.
+        decision = self.decide(jobs=flaky_shard(passed=False), logs={4: FLAKY_LOG + second},
+                               issues=[issue(10, f"ci-repair-known: {handoff.key(FLAKY)}")])
+        self.assertEqual([fact["test"] for fact in decision["work"]], ["TalariaTests/DuoFoldHostedTests/testRotatesTheFold"])
+
     def test_an_unreadable_log_leaves_the_failure_keyed_by_its_job_and_step(self):
         decision = self.decide(jobs=flaky_shard(passed=False), logs={4: None})
         self.assertEqual(decision["work"][0]["key"], handoff.key("App / App hosted tests 4 › Test without building"))
@@ -448,6 +458,23 @@ class TriageTests(unittest.TestCase):
         held = [issue(7, "ci-repair-lock: main")]
         self.assertEqual(self.triage(issues=held)["action"], "stop")
         self.assertEqual(self.triage(issues=held, claim=7)["action"], "work")
+
+
+class LogTests(unittest.TestCase):
+    def test_a_gh_without_the_escape_flag_is_asked_again_without_it(self):
+        calls = []
+
+        def run(command, **_):
+            calls.append(command)
+            if "--allow-escape-sequences" in command:
+                raise subprocess.CalledProcessError(1, command, stderr="unknown flag: --allow-escape-sequences")
+            return subprocess.CompletedProcess(command, 0, stdout=FLAKY_LOG)
+
+        original = handoff.subprocess.run
+        handoff.subprocess.run = run
+        self.addCleanup(setattr, handoff.subprocess, "run", original)
+        self.assertEqual(handoff.GitHub().log(4), FLAKY_LOG)
+        self.assertEqual(calls[-1], ["gh", "api", f"repos/{REPO}/actions/jobs/4/logs"])
 
 
 class SenderTests(unittest.TestCase):
@@ -1225,8 +1252,10 @@ class CommandTests(unittest.TestCase):
                 "never edit, check out, stash, reset or clean anything there",
                 "git show origin/main:scripts/main-ci-failure.py > \"$S\"", "Run `triage --run-id <run ID>`",
                 "Run `claim --lane <lane> --run-id <run ID>`", "CI starts no other session for it meanwhile",
-                "git worktree add --detach \"$W\" origin/main", "If it failed and you have not handled it, run "
-                "`triage --run-id <its ID> --claim <claim number>`", "Run `release --claim <claim number>`",
+                "git worktree add --detach \"$W\" origin/main",
+                "For a release, read every release run that finished since your claim",
+                "--workflow production-cutover.yml", "run `triage --run-id <its ID> --claim <claim number>`",
+                "Run `release --claim <claim number>`",
                 "Last, whatever happened, even after an error", "`git worktree remove --force \"$W\"`",
                 "call `t3_thread_organize` with `action: \"settle\"` on your own thread"):
             self.assertIn(required, prompt)
