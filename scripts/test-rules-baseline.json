@@ -107,24 +107,14 @@
       "web/sidecar/tests/fixtures/gateway_session_peer.py": 21,
       "web/sidecar/tests/fixtures/group_peer.py": 5,
       "web/sidecar/tests/plugin_oauth_probe.py": 1,
-      "web/sidecar/tests/review_cancel_probe.py": 4,
-      "web/sidecar/tests/test_agent_gateway_identity.py": 1,
-      "web/sidecar/tests/test_agent_mutation.py": 6,
       "web/sidecar/tests/test_agent_release.py": 3,
-      "web/sidecar/tests/test_agent_services.py": 17,
-      "web/sidecar/tests/test_chat_finalize.py": 1,
-      "web/sidecar/tests/test_chat_turn.py": 2,
       "web/sidecar/tests/test_connectors.py": 2,
-      "web/sidecar/tests/test_dependency_sync.py": 2,
       "web/sidecar/tests/test_gateway_restart.py": 1,
       "web/sidecar/tests/test_namespaces.py": 1,
       "web/sidecar/tests/test_oauth.py": 2,
       "web/sidecar/tests/test_oauth_guest.py": 1,
       "web/sidecar/tests/test_plugin_providers.py": 2,
-      "web/sidecar/tests/test_recovery_environment.py": 2,
-      "web/sidecar/tests/test_server_calls.py": 1,
       "web/sidecar/tests/test_state_db_idle_release.py": 1,
-      "web/sidecar/tests/test_suite_runner.py": 14,
       "web/sidecar/tests/test_turn_lease_busy.py": 1
     },
     "retry-config": {
@@ -215,6 +205,84 @@
       "file": "web/sidecar/tests/yolo_release_probe.py",
       "count": 1,
       "reason": "_wait_parked polls the Agent's parked approvals under a 20 s ceiling inside the probe's Agent interpreter; the sleep is the poll interval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/review_cancel_probe.py",
+      "count": 1,
+      "reason": "settled polls, under a 3 s ceiling inside the probe's Agent interpreter, for the interrupt the Agent's off-thread bg-review-cancel delivers to the fork; the sleep is the poll interval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_agent_mutation.py",
+      "count": 1,
+      "reason": "wait_for is the file's ceiling-bounded poll for what the sidecar and its synthetic Agent processes record (marker files, pause records, process_snapshot rows); the sleep is its poll interval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_agent_mutation.py",
+      "count": 5,
+      "reason": "The synthetic native-Agent double's gateway writer, lock release gate, resume readiness check, fsmonitor mutator and hung git apply simulate running, gated or wedged Agent processes for the mutation owner under test."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_agent_services.py",
+      "count": 2,
+      "reason": "Stand-in serve and gateway children the probes resolve identities of: one idles until the probe terminates it, the other until the probe touches its exit marker."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_agent_services.py",
+      "count": 15,
+      "reason": "The synthetic service manager, supervisor and gateway writer simulate launchd/systemd services for the custody code under test: their main loop, the hold gates the tests open, and their ceiling-bounded readiness, stop and successor waits poll every 10 ms."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_chat_finalize.py",
+      "count": 1,
+      "reason": "The test polls, under a 15 s ceiling, for the archived.json the profile plugin's hook writes inside the sidecar process; the sleep is the poll interval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_dependency_sync.py",
+      "count": 2,
+      "reason": "The synthetic dependency-sync writer and its grandchild keep writing to simulate a running venv sync for the RPC owner's reaping, and _wait is the file's ceiling-bounded poll for their pid files and exit; the sleeps are their pacing and poll interval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_recovery_environment.py",
+      "count": 1,
+      "reason": "The synthetic venv_sync writer loops until the cancelled recovery reaps it, simulating a running dependency writer for the recovery owner's child cleanup under test."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_server_calls.py",
+      "count": 1,
+      "reason": "The peer fixture polls, under a 5 s ceiling, until the peer's serve_forever thread has taken the RPC channel, which nothing announces; the sleep is the poll interval."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_suite_runner.py",
+      "count": 2,
+      "reason": "wait_for and the post-abort liveness check are the test's ceiling-bounded polls for a worker's pid file and a reaped child's exit; the sleeps are poll intervals."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_suite_runner.py",
+      "count": 7,
+      "reason": "Synthetic test and wrapper files the runner executes poll, under ceilings, for markers sibling workers or the test write (overlap barriers, the abort gate, child startup, orphan reaping); the sleeps are poll intervals."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_suite_runner.py",
+      "count": 4,
+      "reason": "Stand-in long-lived children and tests that hold a worker busy until the runner aborts it, its leak fixture kills them, or the test releases them."
+    },
+    {
+      "rule": "clock-sleep",
+      "file": "web/sidecar/tests/test_suite_runner.py",
+      "count": 1,
+      "reason": "The pool test's synthetic cases hold their active marker briefly so a third concurrent worker, which the bounded pool must never start, would see it."
     }
   ]
 }
