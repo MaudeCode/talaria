@@ -34,3 +34,4 @@ describe('bootLocale', () => {
     expect(document.documentElement.lang).toBe('en-US')
   })
 })
+// TAL-2391 CI measurement (new path, unit-only diff); never merged.
