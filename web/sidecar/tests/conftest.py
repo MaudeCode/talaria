@@ -12,7 +12,6 @@ import json
 import os
 import pathlib
 import queue
-import shutil
 import sqlite3
 import subprocess
 import sys
@@ -80,6 +79,15 @@ def isolated_env(hermes_home: pathlib.Path, *, home: pathlib.Path | None = None,
         env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
     env.update(extra)
     return env
+
+
+def agent_script(home: pathlib.Path, code: str) -> None:
+    """Run ``code`` on the Agent's interpreter in ``home``'s isolated environment, with the Agent checkout on its path."""
+    result = subprocess.run(
+        [AGENT_PYTHON, "-c", "import sys; sys.path.insert(0, sys.argv[1]);\n" + code, str(AGENT_DIR)],
+        env=isolated_env(home), capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def ledger_row(home: pathlib.Path, job_id: str) -> dict:

@@ -9,14 +9,10 @@ from __future__ import annotations
 import json
 import pathlib
 
-import pytest
-
-from conftest import AGENT_DIR, SidecarProcess, load_schema, requires_agent, validate
+from conftest import SidecarProcess, load_schema, requires_agent, validate
 
 SIDE = "register_auxiliary_task('side_task', display_name='Side model', description='side summaries', inherit_from='compression')"
 ALPHA = "register_auxiliary_task('alpha_task', display_name='Alpha model', description='alpha scoring', defaults={'timeout': 7})"
-# TAL-1285: an Agent with ``_aux_task_takes_reasoning`` says which slots honour an effort; an older one says nothing (None).
-TAKES = None if AGENT_DIR is None or "_aux_task_takes_reasoning" not in (AGENT_DIR / "hermes_cli/main_provider_setup.py").read_text() else True
 
 
 def _plugin(home: pathlib.Path, name: str, call: str) -> None:
@@ -37,12 +33,13 @@ def _rows(sidecar: SidecarProcess, home: pathlib.Path) -> dict[str, dict]:
 
 
 @requires_agent
-@pytest.mark.skipif(AGENT_DIR is None or "inherit_from" not in (AGENT_DIR / "hermes_cli/plugins.py").read_text(), reason="voice_chat and inheriting plugin tasks require Agent v0.21.6")
 def test_slots_follow_the_agent_with_plugin_tasks_per_profile(tmp_path: pathlib.Path) -> None:
     home = tmp_path / "home" / ".hermes"
     _plugin(home, "side", SIDE)
     _plugin(home, "alpha_plugin", ALPHA)
-    config = {"plugins": {"enabled": ["side", "alpha_plugin"]}, "auxiliary": {"compression": {"provider": "openrouter", "model": "vendor/model-a"}}}
+    # From v0.23.2 a plugin task inherits a built-in slot's route only under the operator's grant; earlier releases ignore it.
+    config = {"plugins": {"enabled": ["side", "alpha_plugin"], "entries": {"side": {"llm": {"allow_task_override": True}}}},
+              "auxiliary": {"compression": {"provider": "openrouter", "model": "vendor/model-a"}}}
     (home / "config.yaml").write_text(json.dumps(config))
     other = home / "profiles" / "b"
     other.mkdir(parents=True)
@@ -53,11 +50,11 @@ def test_slots_follow_the_agent_with_plugin_tasks_per_profile(tmp_path: pathlib.
         keys = list(rows)
         # The Agent's built-ins in its order, then this profile's plugin tasks, then the delegation row (TAL-1273).
         assert keys[:4] == ["vision", "compression", "approval", "mcp"] and keys[-3:] == ["alpha_task", "side_task", "delegation"], keys
-        assert rows["voice_chat"] == {"key": "voice_chat", "label": "Voice chat", "description": "spoken voice-mode replies", "inherit_from": None, "reasoning_effort": "none", "effective": None, "takes_reasoning": TAKES}
+        assert rows["voice_chat"] == {"key": "voice_chat", "label": "Voice chat", "description": "spoken voice-mode replies", "inherit_from": None, "reasoning_effort": "none", "effective": None, "takes_reasoning": True}
         assert rows["compression"]["reasoning_effort"] == ""
         # A slot without a reasoning default (memory_query_rewrite) and review, which runs on delegation's effort, ignore one.
-        assert {key: rows[key]["takes_reasoning"] for key in ("compression", "memory_query_rewrite", "review")} == {"compression": TAKES, "memory_query_rewrite": TAKES and False, "review": TAKES and False}
-        assert rows["alpha_task"] == {"key": "alpha_task", "label": "Alpha model", "description": "alpha scoring", "inherit_from": None, "reasoning_effort": "", "effective": None, "takes_reasoning": TAKES}
+        assert {key: rows[key]["takes_reasoning"] for key in ("compression", "memory_query_rewrite", "review")} == {"compression": True, "memory_query_rewrite": False, "review": False}
+        assert rows["alpha_task"] == {"key": "alpha_task", "label": "Alpha model", "description": "alpha scoring", "inherit_from": None, "reasoning_effort": "", "effective": None, "takes_reasoning": True}
         # An unpinned inheriting task runs on its base slot's route.
         assert rows["side_task"]["inherit_from"] == "compression"
         assert rows["side_task"]["effective"] == {"provider": "openrouter", "model": "vendor/model-a", "base_url": ""}
@@ -80,7 +77,6 @@ def test_slots_follow_the_agent_with_plugin_tasks_per_profile(tmp_path: pathlib.
 
 
 @requires_agent
-@pytest.mark.skipif(AGENT_DIR is None or "_DELEGATION_TASK_KEY" not in (AGENT_DIR / "hermes_cli/main_provider_setup.py").read_text(), reason="the picker's delegation row requires Agent v0.22.0")
 def test_delegation_row_follows_the_top_level_section(tmp_path: pathlib.Path) -> None:
     """TAL-1273: the ``hermes model`` picker's subagent row comes last and reads top-level ``delegation``, never ``auxiliary.delegation``."""
     home = tmp_path / "home" / ".hermes"
@@ -91,6 +87,6 @@ def test_delegation_row_follows_the_top_level_section(tmp_path: pathlib.Path) ->
     try:
         rows = _rows(sidecar, home)
         assert list(rows)[-1] == "delegation"
-        assert rows["delegation"] == {"key": "delegation", "label": "Delegation", "description": "subagent model (delegate_task)", "inherit_from": None, "reasoning_effort": "low", "effective": None, "takes_reasoning": TAKES}
+        assert rows["delegation"] == {"key": "delegation", "label": "Delegation", "description": "subagent model (delegate_task)", "inherit_from": None, "reasoning_effort": "low", "effective": None, "takes_reasoning": True}
     finally:
         sidecar.close()

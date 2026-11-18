@@ -5,12 +5,9 @@ from __future__ import annotations
 import os
 import pathlib
 import subprocess
-import threading
 import time
 
-import pytest
-
-from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, SidecarProcess, isolated_env, requires_agent
 
 # The Agent's own ``save_env_value``, paused between its locked read and its atomic replace until ``go`` exists.
 PAUSED_AGENT_WRITE = """
@@ -18,8 +15,6 @@ import os, sys, time
 sys.path.insert(0, sys.argv[1])
 from hermes_cli import config
 ready, go = sys.argv[2], sys.argv[3]
-if not hasattr(config, "_env_write_lock"):
-    sys.exit(3)
 original = config._write_env_lines
 def paused(*args, **kwargs):
     open(ready, "w").close()
@@ -32,15 +27,20 @@ config.save_env_value("AGENT_WRITTEN_KEY", "from-agent")
 """
 
 
+def wait_for_mark(mark: pathlib.Path, proc: subprocess.Popen) -> None:
+    """Wait, under one shared ceiling, until ``proc`` creates ``mark``; it must still be running then."""
+    deadline = time.monotonic() + 30
+    while not mark.exists():
+        assert proc.poll() is None, f"exited {proc.returncode} before {mark.name}: {proc.stderr.read() if proc.stderr else ''}"
+        assert time.monotonic() < deadline, f"{mark.name} never appeared"
+        time.sleep(0.02)
+    assert proc.poll() is None
+
+
 def paused_agent_write(home: pathlib.Path) -> tuple[subprocess.Popen, pathlib.Path]:
     ready, go = home / "agent-ready", home / "agent-go"
     proc = subprocess.Popen([AGENT_PYTHON, "-c", PAUSED_AGENT_WRITE, str(AGENT_DIR), str(ready), str(go)], env=isolated_env(home), stderr=subprocess.PIPE, text=True)
-    deadline = time.monotonic() + 30
-    while not ready.exists():
-        if proc.poll() == 3:
-            pytest.fail("supported Agent is missing the required locked .env writer")
-        assert proc.poll() is None and time.monotonic() < deadline, proc.stderr.read() if proc.stderr else ""
-        time.sleep(0.02)
+    wait_for_mark(ready, proc)
     return proc, go
 
 
@@ -48,18 +48,37 @@ def env_lines(home: pathlib.Path) -> list[str]:
     return (home / ".env").read_text().splitlines()
 
 
+# ``env_write`` in the Agent interpreter, marking ``contending`` when it asks for the Agent's ``.env`` lock.
+CONTENDING_WRITE = """
+import os, sys
+from pathlib import Path
+from hermes_cli import auth
+from talaria_sidecar.methods.config import env_write
+home, contending = Path(os.environ["HERMES_HOME"]), Path(sys.argv[1])
+original = auth._file_lock
+def observed(path, *args, **kwargs):
+    if Path(path).resolve() == (home / ".env.lock").resolve():
+        contending.touch()
+    return original(path, *args, **kwargs)
+auth._file_lock = observed
+env_write(home, {"TALARIA_WRITTEN_KEY": "from-talaria"})
+"""
+
+
 @requires_agent
-def test_env_write_waits_for_a_concurrent_agent_write(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+def test_env_write_waits_for_a_concurrent_agent_write(hermes_home: pathlib.Path) -> None:
     (hermes_home / ".env").write_text("EXISTING=1\n")
     agent, go = paused_agent_write(hermes_home)
-    answer: dict = {}
-    writer = threading.Thread(target=lambda: answer.update(handshaken.call("config.env_write", {"profile_home": str(hermes_home), "updates": {"TALARIA_WRITTEN_KEY": "from-talaria"}})[0]))
-    writer.start()
-    time.sleep(1)
-    go.touch()
-    writer.join(timeout=30)
-    assert agent.wait(timeout=30) == 0
-    assert "error" not in answer, answer
+    contending = hermes_home / "talaria-contending"
+    writer = subprocess.Popen([AGENT_PYTHON, "-c", CONTENDING_WRITE, str(contending)], env=isolated_env(hermes_home,
+        PYTHONPATH=str(SIDECAR_ROOT) + os.pathsep + str(AGENT_DIR)), stderr=subprocess.PIPE, text=True)
+    try:
+        # The Agent holds the lock mid-write: once the write has asked for it, it cannot finish before the Agent's.
+        wait_for_mark(contending, writer)
+    finally:
+        go.touch()
+        assert agent.wait(timeout=30) == 0
+        assert writer.wait(timeout=30) == 0, writer.stderr.read() if writer.stderr else ""
     assert set(env_lines(hermes_home)) >= {"EXISTING=1", "AGENT_WRITTEN_KEY=from-agent", "TALARIA_WRITTEN_KEY=from-talaria"}
 
 
@@ -100,34 +119,8 @@ def test_env_write_refuses_an_administrator_managed_key_before_writing(hermes_ho
     assert env_lines(hermes_home) == ["EXISTING=1"]
 
 
-def test_env_write_reports_a_held_lock(hermes_home: pathlib.Path, monkeypatch) -> None:
-    import contextlib
-    import sys
-    import types
-    from talaria_sidecar.errors import RpcError
-    from talaria_sidecar.methods import config
-
-    (hermes_home / ".env").write_text("EXISTING=1\n")
-
-    @contextlib.contextmanager
-    def held(path):
-        assert path == hermes_home / '.env'
-        raise TimeoutError('synthetic held Agent lock')
-        yield
-
-    agent = types.SimpleNamespace(env_write_refusal=lambda *args: None, ensure_hermes_home=lambda: None,
-        get_env_path=lambda: hermes_home / '.env', _env_write_lock=held)
-    monkeypatch.setitem(sys.modules, 'hermes_cli', types.SimpleNamespace(config=agent))
-    monkeypatch.setattr(config, 'scoped_home', lambda home: contextlib.nullcontext(home))
-    with pytest.raises(RpcError) as raised:
-        config.env_write(hermes_home, {'LATE_KEY': 'value'})
-    assert raised.value.data['condition'] == 'env_locked'
-    assert env_lines(hermes_home) == ['EXISTING=1']
-
-
 @requires_agent
 def test_native_lock_timeout_maps_to_env_locked(hermes_home: pathlib.Path) -> None:
-    from conftest import SIDECAR_ROOT
     (hermes_home / '.env').write_text('EXISTING=1\n')
     holder, go = paused_agent_write(hermes_home)
     script = '''import os

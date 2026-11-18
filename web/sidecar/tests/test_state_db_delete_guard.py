@@ -42,87 +42,6 @@ def _rows(home, sql: str) -> list:
         return [row[0] for row in db.execute(sql).fetchall()]
 
 
-def _load_retained_runtime(home):
-    data = json.loads((Path(__file__).parent / 'fixtures/terminal-runtime.json').read_text())
-    with closing(sqlite3.connect(home / 'state.db')) as db:
-        db.executescript('\n'.join(data['sql']))
-
-
-@pytest.mark.skipif(AGENT_DIR is None or (AGENT_DIR / 'hermes_state_mutation_retirement.py').exists(), reason='requires a legacy Agent without canonical retirement')
-@pytest.mark.parametrize('target', ['cli-root', 'cli-tip', 'worker-child', 'worker-only-parent', 'reset', 'compressed', 'empty', 'multiple', 'malformed'])
-def test_legacy_agent_refuses_retained_runtime_history(hermes_home, target):
-    """Real v0.22.1 writes survive deletion attempts by an unmodified older/candidate Agent."""
-    if target.startswith(('cli-', 'worker-')):
-        _load_retained_runtime(hermes_home)
-        sid = target
-    else:
-        _agent(hermes_home, 'pass')
-        fixture = SIDECAR_ROOT.parent / 'packages/server/src/test/fixtures/local-reset.json'
-        data = json.loads(fixture.read_text())['snapshots']['multiple' if target == 'malformed' else target]
-        with closing(sqlite3.connect(hermes_home / 'state.db')) as db, db:
-            for table, records in [('sessions', data['sessions']), ('messages', data['messages']), ('state_meta', data['meta'])]:
-                keys = list(records[0])
-                db.executemany(f"INSERT INTO {table} ({','.join(keys)}) VALUES ({','.join('?' for _ in keys)})", [tuple(r.values()) for r in records])
-            if target == 'malformed':
-                db.execute("UPDATE state_meta SET value='{malformed' WHERE key GLOB 'gateway.local_policy.v1:*'")
-        sid = data['sessions'][-1]['id']
-    # Account for the installed Agent's normal open-time schema reconciliation before comparison.
-    _agent(hermes_home, 'pass')
-    def snapshot():
-        with closing(sqlite3.connect(hermes_home / 'state.db')) as db:
-            tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '%fts%' ORDER BY name")]
-            return {table: db.execute(f'SELECT * FROM "{table}"').fetchall() for table in tables}
-    sessions = hermes_home / 'sessions'
-    sessions.mkdir(exist_ok=True)
-    artifact = sessions / f'{sid}.json'
-    artifact.write_text('synthetic transcript')
-    proc = SidecarProcess(hermes_home)
-    try:
-        # Open through the real sidecar so normal Agent FTS initialization precedes the snapshot.
-        assert proc.result('state_db.sync_start', {'profile_home': str(hermes_home), 'session_id': sid}) == {'ok': True}
-        before = snapshot()
-        result = proc.result('state_db.delete_cli_session', {'profile_home': str(hermes_home), 'session_id': sid, 'include_compression_lineage': True})
-        assert result == {'ok': False, 'refused': 'runtime_history_unsupported'}
-        assert_matches('state_db.delete_cli_session', result)
-    finally:
-        proc.close()
-    assert snapshot() == before
-    assert artifact.read_text() == 'synthetic transcript'
-    assert list(sessions.glob('.cleanup_manifest*')) == []
-    # Unrelated fresh legacy sessions remain deletable even in an upgraded database.
-    _seed(hermes_home, 'fresh-legacy')
-    proc = SidecarProcess(hermes_home)
-    try:
-        assert _delete(proc, hermes_home, 'fresh-legacy') == {'ok': True}
-    finally:
-        proc.close()
-
-
-@pytest.mark.skipif(AGENT_DIR is None or (AGENT_DIR / 'hermes_state_mutation_retirement.py').exists(), reason='requires a legacy Agent without canonical retirement')
-@pytest.mark.parametrize('marker', ['_branched_from', '_delegate_from', '_reset_from'])
-@pytest.mark.parametrize('source', ['cli', 'subagent'])
-def test_legacy_deletion_keeps_mismatched_marker_history_separate(hermes_home, marker, source):
-    _load_retained_runtime(hermes_home)
-    _agent(hermes_home, f'''
-        db.create_session('separate-parent', source={source!r})
-        db.end_session('separate-parent', 'compression')
-        db._execute_write(lambda conn: conn.execute(
-            "UPDATE sessions SET parent_session_id=?, source=?, model_config=?, started_at=(SELECT ended_at FROM sessions WHERE id='separate-parent') WHERE id=?",
-            ('separate-parent', {source!r}, '{{"{marker}":"another-owner"}}', 'cli-root')))
-    ''')
-    with closing(sqlite3.connect(hermes_home / 'state.db')) as db:
-        before = {table: db.execute(f'SELECT * FROM {table}').fetchall() for table in ('session_admissions', 'worker_executions', 'worker_receipts')}
-    proc = SidecarProcess(hermes_home)
-    try:
-        result = proc.result('state_db.delete_cli_session', {'profile_home': str(hermes_home), 'session_id': 'separate-parent', 'include_compression_lineage': True})
-        assert result == {'ok': True, 'deleted_ids': ['separate-parent']}
-    finally:
-        proc.close()
-    assert 'cli-root' in _rows(hermes_home, 'SELECT id FROM sessions')
-    with closing(sqlite3.connect(hermes_home / 'state.db')) as db:
-        assert {table: db.execute(f'SELECT * FROM {table}').fetchall() for table in before} == before
-
-
 def _delete(proc: SidecarProcess, home, session_id: str, *, lineage: bool = False) -> dict:
     params = {"profile_home": str(home), "session_id": session_id, **({"include_compression_lineage": True} if lineage else {})}
     result = proc.result("state_db.delete_cli_session", params)
@@ -175,8 +94,8 @@ def test_an_expired_guard_is_reclaimed_and_the_delete_proceeds(hermes_home) -> N
 
 
 def test_the_lineage_is_resolved_and_guarded_inside_the_delete_transaction(hermes_home) -> None:
-    """The sidecar finds the compression continuations itself, in the delete transaction: a tip the caller never
-    named (a compression that finished after the caller looked) is guarded and deleted with its root."""
+    """The Agent's canonical targets find the compression continuations in the delete transaction: a tip the caller
+    never named (a compression that finished after the caller looked) is guarded and deleted with its root."""
     _seed(hermes_home, "cli-root")
     _agent(hermes_home, f"""
         db.end_session("cli-root", "compression")
@@ -250,12 +169,6 @@ def test_the_legacy_name_of_a_live_prefixed_session_is_its_own_transcript(hermes
     assert sorted(p.name for p in sessions.iterdir()) == ["session_cli-a.json"]
 
 
-requires_ledger = pytest.mark.skipif(
-    AGENT_DIR is None or not (AGENT_DIR / "hermes_state_mutation_retirement.py").exists(),
-    reason="Agent predates runtime-ledger retirement",
-)
-
-
 def _settled(home, sid="cli-a") -> None:
     _agent(home, f"""
         import hermes_state_runtime as rt
@@ -269,7 +182,6 @@ def _settled(home, sid="cli-a") -> None:
     """)
 
 
-@requires_ledger
 def test_terminal_ledger_retirement_cleans_files_and_fences_retries(hermes_home) -> None:
     _seed(hermes_home, "cli-a")
     _seed(hermes_home, "cli-b")
@@ -314,7 +226,6 @@ def test_terminal_ledger_retirement_cleans_files_and_fences_retries(hermes_home)
     """)
 
 
-@requires_ledger
 @pytest.mark.parametrize("state", ["queued", "started", "unknown", "registered_worker", "running_worker", "unknown_worker"])
 def test_live_ledger_obligations_refuse_the_entire_delete(hermes_home, state) -> None:
     _seed(hermes_home, "cli-a", delegate="cli-child")
@@ -347,7 +258,6 @@ def test_live_ledger_obligations_refuse_the_entire_delete(hermes_home, state) ->
     assert sorted(p.name for p in sessions.iterdir()) == ["session_cli-a.json"]
 
 
-@requires_ledger
 @pytest.mark.parametrize("target", ["root", "tip"])
 def test_canonical_compression_targets_include_delegates_and_preserve_forks(hermes_home, target) -> None:
     _seed(hermes_home, "root")
@@ -384,7 +294,6 @@ def test_canonical_compression_targets_include_delegates_and_preserve_forks(herm
     assert _rows(other_profile, "SELECT id FROM sessions") == ["root"]
 
 
-@requires_ledger
 @pytest.mark.parametrize("tip", [False, True])
 def test_receipt_backed_reset_conversation_deletes_from_either_end(hermes_home, tip) -> None:
     _agent(hermes_home, """
@@ -428,7 +337,6 @@ def test_receipt_backed_reset_conversation_deletes_from_either_end(hermes_home, 
     assert _rows(hermes_home, "SELECT key FROM state_meta WHERE key GLOB 'gateway.local_policy.v1:*'") == []
 
 
-@requires_ledger
 @pytest.mark.parametrize("failure", ["manifest", "artifact", "media"])
 def test_runtime_delete_cleanup_failure_recovers_after_restart(hermes_home, failure) -> None:
     _seed(hermes_home, "cli-a")
@@ -472,7 +380,6 @@ def test_runtime_delete_cleanup_failure_recovers_after_restart(hermes_home, fail
     assert list(sessions.iterdir()) == []
 
 
-@requires_ledger
 def test_terminal_worker_receipts_keep_only_the_closing_result(hermes_home) -> None:
     _seed(hermes_home, "cli-a")
     _agent(hermes_home, """
@@ -506,8 +413,6 @@ def test_terminal_worker_receipts_keep_only_the_closing_result(hermes_home) -> N
     """)
 
 
-@pytest.mark.skipif(AGENT_DIR is None or "def emit_session_deleted" not in (AGENT_DIR / "hermes_state_common.py").read_text(),
-                    reason="Agent predates the on_session_delete plugin hook")
 @pytest.mark.parametrize("mode", ["record", "raises"])
 def test_the_delete_fires_the_profile_on_session_delete_hook_once(hermes_home, mode) -> None:
     """TAL-1262: a profile plugin hears one ``on_session_delete`` for the whole compression chain, after the commit; a

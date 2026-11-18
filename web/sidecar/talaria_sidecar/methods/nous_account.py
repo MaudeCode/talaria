@@ -58,10 +58,8 @@ def read(home: Path, completed: Any = None) -> dict | None:
 
 def _read(home: Path, completed: Any = None) -> dict | None:
     """No provisioning, refresh, drain, or retry dispatch."""
-    try:
-        from hermes_cli import guest_handoff as native
-    except ImportError:
-        return None  # older Agents keep generic success
+    from hermes_cli import guest_handoff as native
+
     try:
         identity = _identity(home)
     except Exception:  # no current identity proof means no cached account may be displayed
@@ -74,23 +72,12 @@ def _read(home: Path, completed: Any = None) -> dict | None:
         if status.get("state") == "idle" and completed is not None:
             status = getattr(completed, "handoff_status", None) or status
         state = status.get("state") if status.get("state") in _STATES else "unknown"
-        if not hasattr(native, "_account_bound_to"):
-            # Agent 0.22.6 binds a record to its profile, not an account: a retry claims for whichever account the
-            # profile holds. Its claimed result names the account the apps went to; without proof that it is this
-            # one, the result is another account's and nothing this account has to report.
-            received_by = status.get("account_email")
-            if state == "claimed" and not (isinstance(received_by, str) and raw_email and received_by.casefold() == raw_email.casefold()):
-                status, state = {"state": "idle"}, "idle"
-        # Agent 0.22.5's public read only fences *active* records. Prove terminal ownership
-        # with the same native selector/binding helper before exposing any old app names.
-        elif state not in {"idle", "unknown", "paused"}:
-            records = native._load(native._records_path())["records"].values()
-            mine = [r for r in records if native._home_key() in r.get("profiles", ())]
-            record = max(mine, key=lambda r: str(r.get("updated_at") or "")) if mine else None
-            if record is not None and native._status_of(record) != status:
-                raise RuntimeError("Native handoff changed during read")
-            if record is None or native._account_bound_to(record) is None:
-                state = "paused" if record else "unknown"
+        # The Agent binds a record to its profile, not an account: a retry claims for whichever account the profile
+        # holds. Its claimed result names the account the apps went to; without proof that it is this one, the result
+        # is another account's and nothing this account has to report.
+        received_by = status.get("account_email")
+        if state == "claimed" and not (isinstance(received_by, str) and raw_email and received_by.casefold() == raw_email.casefold()):
+            status, state = {"state": "idle"}, "idle"
         safe = {"state": state, "account_email": email,
                 "connectors_kind": status.get("connectors_kind") if status.get("connectors_kind") in {"moved", "swapped", "none", "conflict"} else None,
                 "moved_toolkits": _apps(status.get("moved_toolkits")) if state == "claimed" else [],

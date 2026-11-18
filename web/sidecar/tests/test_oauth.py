@@ -57,6 +57,8 @@ def provider(monkeypatch):
     monkeypatch.setattr(oauth, "scoped_home", scoped)
     monkeypatch.setattr(oauth, "_FLOWS", {})
     monkeypatch.setattr(oauth, "_GENERATIONS", {})
+    # Each test installs its own provider steps; the module's table is restored afterwards.
+    monkeypatch.setattr(oauth, "PROVIDERS", dict(oauth.PROVIDERS))
     monkeypatch.setattr(provider_methods, "installed_plugin_profiles", lambda: [])
     return p
 
@@ -79,7 +81,18 @@ def wait_until(condition, *, timeout: float = 5.0) -> None:
 
 
 def start(provider: Provider, home, name: str = "openai-codex") -> dict:
-    return oauth.start(pathlib.Path(home), name, providers={name: provider.steps()})
+    oauth.PROVIDERS[name] = provider.steps()
+    return oauth.start(pathlib.Path(home), name)
+
+
+def worker(flow_id: str) -> threading.Thread:
+    """The flow's own worker thread, taken while it still waits on the provider."""
+    return next(t for t in threading.enumerate() if t.name == f"oauth-{flow_id[:6]}")
+
+
+def finished(thread: threading.Thread) -> bool:
+    thread.join(5)
+    return not thread.is_alive()
 
 
 def test_an_approved_flow_saves_the_credential_under_its_own_home(provider, tmp_path):
@@ -189,9 +202,10 @@ def test_an_agent_denial_code_and_an_expiry_are_classified(provider, tmp_path):
 
 def test_a_cancel_wins_over_an_approval_that_arrives_after_it(provider, tmp_path):
     flow = start(provider, tmp_path)
+    run = worker(flow["flow_id"])
     assert oauth.cancel(tmp_path, flow["flow_id"])["status"] == "cancelled"
     provider.answer.set()  # the user approves in the browser after cancelling here
-    time.sleep(0.1)
+    assert finished(run)
     assert oauth.poll(tmp_path, flow["flow_id"])["status"] == "cancelled"
     assert provider.saved == []
     # A cancelled flow's next provider call stops instead of polling on.
@@ -201,11 +215,12 @@ def test_a_cancel_wins_over_an_approval_that_arrives_after_it(provider, tmp_path
 
 def test_a_pending_flow_past_its_code_expiry_ends_expired_and_cannot_save_later(provider, tmp_path, monkeypatch):
     flow = start(provider, tmp_path)
-    monkeypatch.setattr(oauth.time, "time", lambda: oauth._FLOWS[flow["flow_id"]].expires_at + oauth._EXPIRY_GRACE + 1)
-    assert oauth.poll(tmp_path, flow["flow_id"])["status"] == "expired"
-    monkeypatch.undo()
+    run = worker(flow["flow_id"])
+    with monkeypatch.context() as clock:
+        clock.setattr(oauth.time, "time", lambda: oauth._FLOWS[flow["flow_id"]].expires_at + oauth._EXPIRY_GRACE + 1)
+        assert oauth.poll(tmp_path, flow["flow_id"])["status"] == "expired"
     provider.answer.set()
-    time.sleep(0.1)
+    assert finished(run)
     assert provider.saved == []
 
 
@@ -235,17 +250,19 @@ def test_a_new_start_supersedes_the_pending_flow_for_the_same_home_and_provider(
 
 def test_the_old_flow_is_cancelled_before_the_new_code_request(provider, tmp_path):
     first = start(provider, tmp_path)
+    run = worker(first["flow_id"])
     seen = []
 
     def begin():
         seen.append(oauth.poll(tmp_path, first["flow_id"])["status"])
         raise RuntimeError("provider unavailable")
 
+    oauth.PROVIDERS["openai-codex"] = (begin, None, None)
     with pytest.raises(RpcError):
-        oauth.start(tmp_path, "openai-codex", providers={"openai-codex": (begin, None, None)})
+        oauth.start(tmp_path, "openai-codex")
     assert seen == ["cancelled"]
     provider.answer.set()  # the old code is approved after the replacement began
-    time.sleep(0.1)
+    assert finished(run)
     assert provider.saved == []
 
 
@@ -261,10 +278,11 @@ def test_overlapping_starts_publish_only_the_newest(provider, tmp_path):
 
     def older():
         try:
-            oauth.start(tmp_path, "openai-codex", providers={"openai-codex": (slow_begin, *provider.steps()[1:])})
+            oauth.start(tmp_path, "openai-codex")
         except RpcError as exc:
             outcome["error"] = exc
 
+    oauth.PROVIDERS["openai-codex"] = (slow_begin, *provider.steps()[1:])
     thread = threading.Thread(target=older)
     thread.start()
     assert entered.wait(5)
@@ -285,20 +303,22 @@ def test_an_unknown_provider_and_a_failed_start_are_errors(provider, tmp_path):
     def begin():
         raise RuntimeError("OpenAI rejected the device-code login request.\n(HTTP 400)")
 
+    oauth.PROVIDERS["openai-codex"] = (begin, None, None)
     with pytest.raises(RpcError) as failed:
-        oauth.start(tmp_path, "openai-codex", providers={"openai-codex": (begin, None, None)})
+        oauth.start(tmp_path, "openai-codex")
     assert str(failed.value) == "OpenAI rejected the device-code login request."
     assert failed.value.data["condition"] == "oauth_failed"
 
     def hostile():
         return {"user_code": "ABCD-1234", "verification_url": "javascript:alert(1)", "expires_in": 900, "interval": 1}, {}
 
+    oauth.PROVIDERS["openai-codex"] = (hostile, None, None)
     with pytest.raises(RpcError, match="invalid sign-in link"):
-        oauth.start(tmp_path, "openai-codex", providers={"openai-codex": (hostile, None, None)})
+        oauth.start(tmp_path, "openai-codex")
     assert oauth._FLOWS == {}
 
 
-# ── TAL-985 / TAL-991: the real Nous steps against stub Agent modules of either release shape ──
+# ── TAL-985 / TAL-991: the real Nous steps against a stub of the Agent's native sign-in ──
 
 
 def state(kind: str, *, ok: bool = False, precondition: bool = False, copy: str = "", **fields) -> types.SimpleNamespace:
@@ -310,32 +330,36 @@ CODE = state("code", link="https://portal.example.test/claim/GUEST-42", code="GU
 
 
 class SignIn:
-    """A scripted ``anon_auth.run_sign_in``: yields ``first``, waits for the user's answer, then yields ``ending`` or
-    persists through the caller's guard, waits for the account to settle and yields ``settled`` (``completed`` by
-    default). Cancels reach it only through that guard and the ``cancelled`` callable it was handed, as after a
-    connector transfer."""
+    """A scripted ``anon_auth.run_sign_in`` with the supported Agents' declaration: yields ``first``, waits for the
+    user's answer, then yields ``ending`` or persists through the caller's guard, waits for the account to settle and
+    yields ``settled`` (``completed`` by default). Cancels reach it only through that guard and the ``cancelled``
+    callable it was handed, as after a connector transfer."""
 
     def __init__(self, first=CODE, ending=None, settled=None):
         self.first, self.ending = first, ending
         self.settled = settled or state("completed", ok=True)
         self.answer = threading.Event()
         self.settle = threading.Event()
+        # Set once the flow's worker drives the sign-in past its code, so the flow is bound into its cancel check.
+        self.waiting = threading.Event()
         self.kwargs: dict = {}
         self.persisted: list = []
         self.closed = False
         self.settled_count = 0
 
-    def __call__(self, *, cancelled, cancel_wins_after_promotion, persist_guard, scope):
-        self.kwargs = dict(cancelled=cancelled, cancel_wins_after_promotion=cancel_wins_after_promotion, persist_guard=persist_guard, scope=scope)
-        return self.run(**self.kwargs)
+    def __call__(self, *, cancelled, persist_guard, scope, replace_account=False):
+        assert replace_account is True
+        self.kwargs = dict(cancelled=cancelled, persist_guard=persist_guard, scope=scope, replace_account=replace_account)
+        return self.run(cancelled=cancelled, persist_guard=persist_guard, scope=scope)
 
-    def run(self, *, cancelled, cancel_wins_after_promotion, persist_guard, scope):
+    def run(self, *, cancelled, persist_guard, scope):
         try:
             with scope():
                 pass
             yield self.first
             if self.first.kind != "code":
                 return
+            self.waiting.set()
             yield state("waiting")
             assert self.answer.wait(5)
             if self.ending is not None:
@@ -354,104 +378,24 @@ class SignIn:
             self.closed = True
 
 
-class PlainSignIn(SignIn):
-    """The v0.22.5 declaration rejects the retired promotion keyword."""
-
-    def __call__(self, *, cancelled, persist_guard, scope):
-        self.kwargs = dict(cancelled=cancelled, persist_guard=persist_guard, scope=scope)
-        return self.run(cancel_wins_after_promotion=True, **self.kwargs)
-
-
-class ModernSignIn(SignIn):
-    def __call__(self, *, cancelled, persist_guard, scope, replace_account=False):
-        assert replace_account is True
-        self.kwargs = dict(cancelled=cancelled, persist_guard=persist_guard, scope=scope, replace_account=replace_account)
-        return self.run(cancel_wins_after_promotion=True, cancelled=cancelled, persist_guard=persist_guard, scope=scope)
-
-
-@pytest.fixture(params=[SignIn, PlainSignIn, ModernSignIn], ids=["promotion", "plain-device", "modern-replacement"])
-def sign_in_factory(request):
-    return request.param
-
-
-def stub_agent(monkeypatch, *, guest: bool, shape: str, sign_in: SignIn | None = None) -> list[tuple]:
-    """Installs ``hermes_cli.anon_auth`` shaped like v0.22.0 (``guest_allowed``, ``run_sign_in``) or v0.21.x
-    (``guest_enabled`` only) and a ``hermes_cli.auth`` whose device-code request and plain save are recorded."""
+def stub_agent(monkeypatch, sign_in: SignIn) -> None:
+    """Installs a ``hermes_cli.anon_auth`` whose ``run_sign_in`` is ``sign_in``; the account read is the projection's."""
     anon_auth = types.ModuleType("hermes_cli.anon_auth")
-    anon_auth.has_guest = lambda: guest
-    if shape == "0.22":
-        anon_auth.guest_allowed = lambda: True
-        anon_auth.run_sign_in = sign_in or SignIn()
-    else:
-        anon_auth.guest_enabled = lambda: True
-    requests: list[tuple] = []
-
-    def request_device_code(client, portal, client_id, scope):
-        requests.append((portal, client_id, scope))
-        return {"user_code": "NOUS-1234", "verification_uri_complete": "https://portal.example.test/device?code=NOUS-1234", "expires_in": 900, "interval": 5, "device_code": "synthetic-device"}
-
-    auth = types.ModuleType("hermes_cli.auth")
-    auth.PROVIDER_REGISTRY = {"nous": types.SimpleNamespace(portal_base_url="https://portal.example.test/", client_id="synthetic-client", scope="inference")}
-    auth._request_device_code = request_device_code
-    auth.refresh_nous_oauth_from_state = lambda auth_state, **kwargs: auth_state
-    auth.persist_nous_credentials = lambda full_state: requests.append(("plain save", full_state))
-    anon_auth.settle_after_upgrade = lambda full_state: None
+    anon_auth.run_sign_in = sign_in
     package = types.ModuleType("hermes_cli")
-    package.anon_auth, package.auth = anon_auth, auth
+    package.anon_auth = anon_auth
     monkeypatch.setitem(sys.modules, "hermes_cli", package)
     monkeypatch.setitem(sys.modules, "hermes_cli.anon_auth", anon_auth)
-    monkeypatch.setitem(sys.modules, "hermes_cli.auth", auth)
-    monkeypatch.setattr(oauth, "_client", lambda timeout: contextlib.nullcontext(object()))
-    monkeypatch.delenv("HERMES_PORTAL_BASE_URL", raising=False)
-    monkeypatch.delenv("NOUS_PORTAL_BASE_URL", raising=False)
-    return requests
+    monkeypatch.setattr(oauth.nous_account, "read", lambda *args: None)
 
 
-@pytest.mark.parametrize("handoff", ["drains", "fails", "absent"])
-def test_plain_nous_save_hands_a_replaced_free_tier_over_right_after_the_save(monkeypatch, handoff):
-    requests = stub_agent(monkeypatch, guest=False, shape="0.22")
-    sys.modules["hermes_cli.anon_auth"].settle_after_upgrade = lambda full_state: requests.append(("settle",))
-
-    def drain():
-        requests.append(("drain",))
-        if handoff == "fails":  # a busy records lock never undoes the saved sign-in; the retry worker picks it up
-            raise TimeoutError("busy")
-        return []
-
-    native = None
-    if handoff != "absent":
-        native = types.ModuleType("hermes_cli.guest_handoff")
-        native.drain = drain
-    monkeypatch.setitem(sys.modules, "hermes_cli.guest_handoff", native)
-    oauth._nous_save(None, {"portal": "https://portal.example.test", "client_id": "synthetic-client", "scope": "inference"},
-                     {"access_token": "synthetic-token"})
-    assert [request[0] for request in requests] == ["plain save", *(["drain"] if native else []), "settle"]
-
-
-@pytest.mark.parametrize("shape", ["0.22", "0.21"])
-def test_nous_without_a_guest_requests_a_device_code(monkeypatch, shape):
-    requests = stub_agent(monkeypatch, guest=False, shape=shape)
-    display, state = oauth._nous_begin()
-    assert requests == [("https://portal.example.test", "synthetic-client", "inference")]
-    assert display == {"user_code": "NOUS-1234", "verification_url": "https://portal.example.test/device?code=NOUS-1234", "expires_in": 900, "interval": 5}
-    assert state["device_code"] == "synthetic-device"
-
-
-def test_nous_over_a_guest_on_an_agent_without_run_sign_in_is_refused_with_the_upgrade_hint(monkeypatch):
-    requests = stub_agent(monkeypatch, guest=True, shape="0.21")
-    with pytest.raises(RpcError) as refused:
-        oauth._nous_begin()
-    assert refused.value.data["condition"] == "oauth_unsupported"
-    assert "`hermes auth upgrade`" in str(refused.value)
-    assert requests == []
-
-
-def test_nous_over_a_guest_signs_in_through_the_agent_and_keeps_its_connected_apps(sign_in_factory, provider, monkeypatch, tmp_path):
-    sign_in = sign_in_factory()
-    requests = stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
+def test_nous_signs_in_through_the_agent_and_a_cancel_after_the_save_cannot_undo_it(provider, monkeypatch, tmp_path):
+    sign_in = SignIn()
+    stub_agent(monkeypatch, sign_in)
     flow = oauth.start(tmp_path, "nous")
     assert flow == {"flow_id": flow["flow_id"], "provider": "nous", "status": "pending", "user_code": "GUEST-42", "verification_url": "https://portal.example.test/claim/GUEST-42", "expires_in": 600, "interval": 2}
-    assert sign_in.kwargs.get("cancel_wins_after_promotion") is (True if sign_in_factory is SignIn else None)
+    # A signed-in profile signs in again through the same native sign-in.
+    assert sign_in.kwargs["replace_account"] is True
     sign_in.answer.set()
     wait_until(lambda: sign_in.persisted)
     assert sign_in.persisted == [tmp_path]  # under the flow's own home
@@ -461,15 +405,14 @@ def test_nous_over_a_guest_signs_in_through_the_agent_and_keeps_its_connected_ap
     assert sign_in.kwargs["cancelled"]() is False
     sign_in.settle.set()
     assert settle(tmp_path, flow["flow_id"]) == {"flow_id": flow["flow_id"], "provider": "nous", "status": "approved", "error": None}
-    assert requests == []  # neither a plain device code nor the plain save
     assert sign_in.closed and sign_in.settled_count == 1
     assert oauth.poll(tmp_path, flow["flow_id"])["status"] == "approved"
     assert sign_in.settled_count == 1
 
 
-def test_a_guest_sign_in_that_fails_to_settle_after_the_save_ends_in_error(sign_in_factory, provider, monkeypatch, tmp_path):
-    sign_in = sign_in_factory(settled=state("failed", copy="Sign-in didn't finish. Try again whenever you're ready."))
-    stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
+def test_a_nous_sign_in_that_fails_to_settle_after_the_save_ends_in_error(provider, monkeypatch, tmp_path):
+    sign_in = SignIn(settled=state("failed", copy="Sign-in didn't finish. Try again whenever you're ready."))
+    stub_agent(monkeypatch, sign_in)
     flow = oauth.start(tmp_path, "nous")
     sign_in.answer.set()
     sign_in.settle.set()
@@ -481,21 +424,21 @@ def test_a_guest_sign_in_that_fails_to_settle_after_the_save_ends_in_error(sign_
     (state("declined", copy="No problem, you're still on the free Nous service."), "denied", "Sign-in was declined."),
     (state("timed_out", copy="That sign-in link has expired."), "expired", "The sign-in code expired before it was approved."),
 ])
-def test_a_guest_sign_in_that_ends_without_an_account_is_the_flows_ending(sign_in_factory, provider, monkeypatch, tmp_path, ending, status, error):
-    sign_in = sign_in_factory(ending=ending)
-    requests = stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
+def test_a_nous_sign_in_that_ends_without_an_account_is_the_flows_ending(provider, monkeypatch, tmp_path, ending, status, error):
+    sign_in = SignIn(ending=ending)
+    stub_agent(monkeypatch, sign_in)
     flow = oauth.start(tmp_path, "nous")
     sign_in.answer.set()
     assert settle(tmp_path, flow["flow_id"]) == {"flow_id": flow["flow_id"], "provider": "nous", "status": status, "error": error}
-    assert sign_in.persisted == [] and requests == []
+    assert sign_in.persisted == []
 
 
 @pytest.mark.parametrize("stop", ["cancel", "expire", "supersede"])
-def test_a_cancelled_guest_sign_in_persists_nothing(sign_in_factory, provider, monkeypatch, tmp_path, stop):
-    sign_in = sign_in_factory()
-    requests = stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
+def test_a_cancelled_nous_sign_in_persists_nothing(provider, monkeypatch, tmp_path, stop):
+    sign_in = SignIn()
+    stub_agent(monkeypatch, sign_in)
     flow = oauth.start(tmp_path, "nous")
-    time.sleep(0.1)  # the worker is draining the sign-in
+    assert sign_in.waiting.wait(5)  # the worker is draining the sign-in
     assert sign_in.kwargs["cancelled"]() is False
     status = "expired" if stop == "expire" else "cancelled"
     if stop == "cancel":
@@ -504,23 +447,23 @@ def test_a_cancelled_guest_sign_in_persists_nothing(sign_in_factory, provider, m
         oauth._FLOWS[flow["flow_id"]].expires_at = time.time() - oauth._EXPIRY_GRACE - 1
         assert oauth.poll(tmp_path, flow["flow_id"])["status"] == status
     else:
-        newer = oauth.start(tmp_path, "nous", providers={"nous": provider.steps()})
+        newer = start(provider, tmp_path, "nous")
         provider.answer.set()
         assert settle(tmp_path, newer["flow_id"])["status"] == "approved"
     assert sign_in.kwargs["cancelled"]() is True
     sign_in.answer.set()  # the transfer completes in the browser after the cancel
     wait_until(lambda: sign_in.closed)
     assert oauth.poll(tmp_path, flow["flow_id"])["status"] == status
-    assert sign_in.persisted == [] and requests == []
+    assert sign_in.persisted == []
 
 
 @pytest.mark.parametrize(("first", "condition"), [
     (state("already_signed_in", ok=True, precondition=True, copy="Already signed in."), "oauth_unsupported"),
     (state("failed", copy="The Nous service couldn't be reached."), "oauth_failed"),
 ])
-def test_a_guest_sign_in_that_cannot_start_is_refused(sign_in_factory, provider, monkeypatch, tmp_path, first, condition):
-    sign_in = sign_in_factory(first=first)
-    stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
+def test_a_nous_sign_in_that_cannot_start_is_refused(provider, monkeypatch, tmp_path, first, condition):
+    sign_in = SignIn(first=first)
+    stub_agent(monkeypatch, sign_in)
     with pytest.raises(RpcError) as refused:
         oauth.start(tmp_path, "nous")
     assert refused.value.data["condition"] == condition
@@ -528,19 +471,9 @@ def test_a_guest_sign_in_that_cannot_start_is_refused(sign_in_factory, provider,
     assert sign_in.closed and oauth._FLOWS == {}
 
 
-def test_modern_plain_sign_in_uses_native_completion_even_without_a_guest(provider, monkeypatch, tmp_path):
-    native = ModernSignIn()
-    requests = stub_agent(monkeypatch, guest=False, shape="0.22", sign_in=native)
-    flow = oauth.start(tmp_path, "nous")
-    native.answer.set()
-    native.settle.set()
-    assert settle(tmp_path, flow["flow_id"])["status"] == "approved"
-    assert native.kwargs["replace_account"] is True and requests == []
-
-
 def test_native_completion_cannot_adopt_an_account_replaced_during_settlement(provider, monkeypatch, tmp_path):
-    native = ModernSignIn()
-    stub_agent(monkeypatch, guest=False, shape="0.22", sign_in=native)
+    native = SignIn()
+    stub_agent(monkeypatch, native)
     current = ["original-account"]
     monkeypatch.setattr(oauth.nous_account, "read", lambda *args: {"account_id": current[0]})
     flow = oauth.start(tmp_path, "nous")
@@ -554,8 +487,8 @@ def test_native_completion_cannot_adopt_an_account_replaced_during_settlement(pr
 def test_native_start_errors_use_safe_copy(provider, monkeypatch, tmp_path, caplog):
     first = state("failed", copy="Sign-in didn't finish. Try again whenever you're ready.")
     first.copy_terminal = "Sign-in failed: credential=synthetic-secret"
-    native = ModernSignIn(first=first)
-    stub_agent(monkeypatch, guest=False, shape="0.22", sign_in=native)
+    native = SignIn(first=first)
+    stub_agent(monkeypatch, native)
     with pytest.raises(RpcError) as refused:
         oauth.start(tmp_path, "nous")
     assert str(refused.value) == first.copy

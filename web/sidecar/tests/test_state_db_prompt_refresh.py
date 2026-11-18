@@ -3,11 +3,10 @@ session rebuilds its stored system prompt on its next turn. Real sidecar, each s
 
 from __future__ import annotations
 
-import pathlib
 import sqlite3
 from contextlib import closing
 
-from conftest import AGENT_DIR, SidecarProcess, assert_matches, requires_agent
+from conftest import SidecarProcess, assert_matches, requires_agent
 from test_handoff_methods import _seed
 
 pytestmark = requires_agent
@@ -28,10 +27,6 @@ def test_each_request_advances_the_epoch_on_an_agent_that_has_it(hermes_home) ->
         _seed(hermes_home, "webui-1")
         result = proc.result("state_db.request_prompt_refresh", params)
         assert_matches("state_db.request_prompt_refresh", result)
-        if not (pathlib.Path(AGENT_DIR) / "hermes_state_prompt_refresh.py").exists():  # before v0.22.6
-            assert result == {"ok": False}
-            assert _epoch(hermes_home) is None
-            return
         assert result == {"ok": True}
         assert _epoch(hermes_home) == 1
         assert proc.result("state_db.request_prompt_refresh", params) == {"ok": True}

@@ -62,17 +62,6 @@ def test_transcribe_drops_silence_hallucinations_and_keeps_speech(hermes_home):
         sidecar.close()
 
 
-def test_transcribe_without_the_agent_filter_keeps_the_transcript(monkeypatch):
-    tools = ModuleType("tools")
-    transcription = ModuleType("tools.transcription_tools")
-    transcription.transcribe_audio = lambda path: {"success": True, "transcript": "Thank you."}
-    monkeypatch.setitem(sys.modules, "tools", tools)
-    monkeypatch.setitem(sys.modules, "tools.transcription_tools", transcription)
-    # An Agent release before the filter: importing it raises ImportError.
-    monkeypatch.setitem(sys.modules, "tools.voice_mode_transcript", None)
-    assert stt.transcribe(AUDIO, ".m4a") == {"transcript": "Thank you.", "filtered": False}
-
-
 @requires_agent
 def test_transcribe_reports_a_clean_empty_command_provider_run_as_no_speech(hermes_home, tmp_path):
     """TAL-1608: a command provider that exits 0 and writes nothing answers an empty transcript, not ``stt_failed``.
@@ -108,7 +97,6 @@ def _agent_transcribing(monkeypatch, result):
     transcription.transcribe_audio = lambda path: result
     monkeypatch.setitem(sys.modules, "tools", tools)
     monkeypatch.setitem(sys.modules, "tools.transcription_tools", transcription)
-    monkeypatch.setitem(sys.modules, "tools.voice_mode_transcript", None)
 
 
 @pytest.mark.parametrize("error", [

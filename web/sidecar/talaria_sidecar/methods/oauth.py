@@ -11,7 +11,6 @@ Flows live in this process only.
 from __future__ import annotations
 
 import contextlib
-import inspect
 import logging
 import os
 import secrets
@@ -62,7 +61,7 @@ class Flow:
     cancelled: threading.Event = field(default_factory=threading.Event)
     # Serialises the cancel check with the credential save: a cancel cannot land between them.
     lock: threading.Lock = field(default_factory=threading.Lock)
-    # The credential is saved but the sign-in has not finished (a guest sign-in still settles the account): a cancel or
+    # The credential is saved but the sign-in has not finished (a Nous sign-in still settles the account): a cancel or
     # an expiry can no longer undo it, and the flow stays pending until its own ending.
     committed: bool = False
     nous_account_id: str | None = None
@@ -157,33 +156,12 @@ def _verify() -> Any:
 
 
 def _nous_begin() -> tuple[dict, dict]:
+    """The Agent's own sign-in (``anon_auth.run_sign_in``, as its dashboard runs it), over a guest or a signed-in
+    account alike (``replace_account``): it moves a guest's connected apps to the account, then persists and settles
+    the account itself. Its cancel check, persist guard and home scope read the flow ``_nous_wait`` binds into the
+    state; before that only ``start``'s first step runs, already under the flow's home."""
     from hermes_cli import anon_auth
-    from hermes_cli.auth import PROVIDER_REGISTRY, _request_device_code
 
-    # v0.22.0 replaced ``guest_enabled`` with ``guest_allowed``; 0.21.x releases only have the former.
-    guest_gate = getattr(anon_auth, "guest_allowed", None) or getattr(anon_auth, "guest_enabled")
-    native = getattr(anon_auth, "run_sign_in", None)
-    if native and "replace_account" in inspect.signature(native).parameters:
-        return _nous_sign_in(anon_auth)
-    if guest_gate() and anon_auth.has_guest():
-        # The native sign-in owns the guest's connector handoff for its installed protocol.
-        if hasattr(anon_auth, "run_sign_in"):
-            return _nous_sign_in(anon_auth)
-        hint = getattr(anon_auth, "UPGRADE_HINT", None) or "Sign in from Hermes with `hermes auth upgrade`."
-        raise RpcError(f"This profile uses the Nous free tier. {hint}", condition="oauth_unsupported")
-    pconfig = PROVIDER_REGISTRY["nous"]
-    portal = (os.getenv("HERMES_PORTAL_BASE_URL") or os.getenv("NOUS_PORTAL_BASE_URL") or pconfig.portal_base_url).rstrip("/")
-    with _client(15.0) as client:
-        data = _request_device_code(client, portal, pconfig.client_id, pconfig.scope)
-    display = {"user_code": str(data["user_code"]), "verification_url": str(data["verification_uri_complete"]), "expires_in": int(data["expires_in"]), "interval": int(data["interval"])}
-    return display, {"portal": portal, "client_id": pconfig.client_id, "scope": pconfig.scope, "device_code": str(data["device_code"])}
-
-
-def _nous_sign_in(anon_auth: Any) -> tuple[dict, dict]:
-    """Over a guest, the Agent's own sign-in (``anon_auth.run_sign_in``, as its dashboard runs it): it moves the guest's
-    connected apps to the account, then persists and settles the account itself. Its cancel check, persist guard and
-    home scope read the flow ``_nous_wait`` binds into the state; before that only ``start``'s first step runs, already
-    under the flow's home."""
     state: dict = {}
 
     def cancelled() -> bool:
@@ -192,7 +170,7 @@ def _nous_sign_in(anon_auth: Any) -> tuple[dict, dict]:
 
     @contextlib.contextmanager
     def persist_guard():
-        # As ``_run`` does for a plain save, the final cancel check and the save share the flow's lock; the flow ends
+        # As ``_run`` does for a provider's save, the final cancel check and the save share the flow's lock; the flow ends
         # approved only when the Agent has also settled the account, through ``_run``.
         flow = state["flow"]
         with flow.lock:
@@ -208,11 +186,7 @@ def _nous_sign_in(anon_auth: Any) -> tuple[dict, dict]:
         flow = state.get("flow")
         return scoped_home(flow.home) if flow is not None else contextlib.nullcontext()
 
-    # Older Agents use promotion; v0.22.5 removed its option in favor of plain device login and native handoff.
-    options = {"cancel_wins_after_promotion": True} if "cancel_wins_after_promotion" in inspect.signature(anon_auth.run_sign_in).parameters else {}
-    if "replace_account" in inspect.signature(anon_auth.run_sign_in).parameters:
-        options["replace_account"] = True
-    sign_in = anon_auth.run_sign_in(cancelled=cancelled, persist_guard=persist_guard, scope=scope, **options)
+    sign_in = anon_auth.run_sign_in(cancelled=cancelled, persist_guard=persist_guard, scope=scope, replace_account=True)
     first = next(sign_in)
     if first.kind != "code":
         sign_in.close()
@@ -222,7 +196,7 @@ def _nous_sign_in(anon_auth: Any) -> tuple[dict, dict]:
 
 
 class _SignInEnded(Exception):
-    """A guest sign-in that ended without an account; ``code`` lets ``_ending`` classify a decline and an expiry."""
+    """A Nous sign-in that ended without an account; ``code`` lets ``_ending`` classify a decline and an expiry."""
 
     def __init__(self, ended: Any):
         super().__init__(ended.copy)
@@ -230,54 +204,22 @@ class _SignInEnded(Exception):
 
 
 def _nous_wait(flow: Flow, state: dict) -> dict:
-    sign_in = state.get("sign_in")
-    if sign_in is not None:
-        state["flow"] = flow
-        try:
-            for ended in sign_in:  # the generator always ends on one terminal state
-                pass
-        finally:
-            sign_in.close()
-        if not ended.ok:
-            raise _SignInEnded(ended)
-        with scoped_home(flow.home):
-            nous_account.read(flow.home, ended)
-        return {}
-    from hermes_cli.auth import _poll_for_token
-
-    with _client(15.0) as client:
-        return _poll_for_token(client=_Watched(client, flow), portal_base_url=state["portal"], client_id=state["client_id"], device_code=state["device_code"],
-                               expires_in=_remaining(flow), poll_interval=flow.interval)
+    sign_in = state["sign_in"]
+    state["flow"] = flow
+    try:
+        for ended in sign_in:  # the generator always ends on one terminal state
+            pass
+    finally:
+        sign_in.close()
+    if not ended.ok:
+        raise _SignInEnded(ended)
+    with scoped_home(flow.home):
+        nous_account.read(flow.home, ended)
+    return {}
 
 
 def _nous_save(flow: Flow, state: dict, token_data: dict) -> None:
-    if "sign_in" in state:  # the guest sign-in persisted and settled the account itself
-        return
-    from hermes_cli import anon_auth
-    from hermes_cli.auth import persist_nous_credentials, refresh_nous_oauth_from_state
-
-    now = datetime.now(timezone.utc)
-    ttl = int(token_data.get("expires_in") or 0)
-    auth_state = {
-        "portal_base_url": state["portal"], "inference_base_url": token_data.get("inference_base_url"), "client_id": state["client_id"],
-        "scope": token_data.get("scope") or state["scope"], "token_type": token_data.get("token_type", "Bearer"),
-        "access_token": token_data["access_token"], "refresh_token": token_data.get("refresh_token"), "obtained_at": now.isoformat(),
-        "expires_at": datetime.fromtimestamp(now.timestamp() + ttl, tz=timezone.utc).isoformat() if ttl else None, "expires_in": ttl,
-    }
-    full_state = refresh_nous_oauth_from_state(auth_state, timeout_seconds=15.0, force_refresh=False)
-    persist_nous_credentials(full_state)
-    try:
-        from hermes_cli.guest_handoff import drain
-    except ImportError:
-        pass  # Agents before 0.22.5 have no free-tier handoff
-    else:
-        # Agent 0.22.6 sign-ins drain right after the save (0.22.5 already drained inside it). A failed attempt stays
-        # due for the retry worker and never undoes the saved account.
-        try:
-            drain()
-        except Exception:  # noqa: BLE001
-            log.warning("Free-tier handoff after the Nous sign-in failed; the retry worker resumes it", exc_info=True)
-    anon_auth.settle_after_upgrade(full_state)
+    """Nothing to save: the Agent's sign-in persisted and settled the account itself."""
 
 
 def _codex_begin() -> tuple[dict, dict]:
@@ -490,7 +432,7 @@ def _run(flow: Flow, wait: Callable[[Flow, dict], dict], save: Callable[[Flow, d
 
 
 def _discard(state: dict) -> None:
-    """Releases a begun sign-in that is never published: a guest sign-in's generator holds its HTTP client."""
+    """Releases a begun sign-in that is never published: a Nous sign-in's generator holds its HTTP client."""
     if "sign_in" in state:
         state["sign_in"].close()
     plugin_oauth.discard(state)
@@ -529,8 +471,8 @@ def _pending(home: Path, provider: str) -> list[Flow]:
         return [f for f in _FLOWS.values() if f.provider == provider and f.status == "pending" and _same_home(f.home, home)]
 
 
-def start(home: Path, provider: str, *, providers: dict[str, Provider] | None = None) -> dict:
-    steps = (providers or PROVIDERS).get(provider) or plugin_oauth.steps(provider)
+def start(home: Path, provider: str) -> dict:
+    steps = PROVIDERS.get(provider) or plugin_oauth.steps(provider)
     if steps is None:
         with scoped_home(home):
             steps = _provider_steps(provider)
