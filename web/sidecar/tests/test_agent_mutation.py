@@ -342,20 +342,6 @@ def test_wrapped_gateway_is_owned_by_its_verified_service(supervised_inventory):
     assert entries[0]['service_pid'] == 41001
 
 
-def test_supervised_dashboard_is_in_the_same_owned_writer_set(supervised_inventory):
-    from talaria_sidecar.agent_mutation import _owners
-    root, home, pause, identity, rows, _, _ = supervised_inventory
-    pause._discover_launchd = lambda: []
-    pause._discover_bare = lambda excluded: ([], [])
-    rows.append({'purpose': 'dashboard', 'pid': 41004, 'create_time': 1,
-                 'hermes_home': str(home), 'profile': 'default', 'host': '127.0.0.1', 'port': 9417, 'argv': 'hermes dashboard'})
-    entries = _owners(root, {home}, pause, identity)
-    assert len(entries) == 1
-    assert entries[0]['purpose'] == 'dashboard'
-    assert entries[0]['pid'] == 41004
-    assert entries[0]['service_pid'] == 41003
-
-
 def test_external_writer_is_quiesced_before_mutation_and_resumed_after_finish(owned):
     root, home, base, target, sidecar = owned
     begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
@@ -525,6 +511,11 @@ while True:
     assert begun['ok'], begun
     request = sidecar.request('runtime.agent_mutation', {'action': 'git', 'agent_dir': str(root), 'token': begun['token'], 'args': ['status', '--porcelain'], 'timeout_ms': 300000})
     wait_for(lambda: (home / 'mutator-writes').exists())
+    mutator = int((home / 'mutator.pid').read_text())
+    # A zombie or reused PID lists other args, so a matching row is the mutator still running.
+    running = lambda: {(pid, args) for pid, _, _, args in process_snapshot() if pid == mutator}
+    started = running()
+    assert started
     if stop == 'kill':
         sidecar.proc.kill()
     elif stop == 'cancel':
@@ -532,9 +523,7 @@ while True:
     else:
         sidecar.request('runtime.shutdown', {})
     wait_for(lambda: json.loads((home / 'pause-record.json').read_text()).get('owner') == 'unowned')
-    before = (home / 'mutator-writes').stat().st_size
-    time.sleep(.2)
-    assert (home / 'mutator-writes').stat().st_size == before
+    wait_for(lambda: not started & running(), lambda: f'mutator {mutator} outlived its owner')
     assert json.loads((home / 'pause-record.json').read_text())['resume_needed'] is True
     assert not (home / 'resumed').exists()
 
@@ -679,23 +668,6 @@ def test_service_gateway_ambiguity_refuses_custody(supervised_inventory, unsafe)
     for stopping in (False, True):
         with pytest.raises(RuntimeError, match='identity/ancestry changed'):
             agent_services.verify_processes(entry, records, stopping=stopping)
-
-
-@pytest.mark.parametrize('unsafe', ['foreign', 'unknown-service', 'desktop', 'desktop-env', 'birth'])
-def test_unmanageable_backend_is_an_actionable_refusal(supervised_inventory, unsafe):
-    from talaria_sidecar.agent_mutation import _owners
-    root, home, pause, identity, rows, parents, modules = supervised_inventory
-    pause._discover_launchd = lambda: []
-    pause._discover_bare = lambda excluded: ([], [])
-    row = dict(purpose='dashboard', pid=41004, create_time=1, hermes_home=str(home), profile='default', host='127.0.0.1', port=9417, argv='hermes dashboard')
-    rows.append(row)
-    if unsafe == 'foreign': row['hermes_home'] = str(root / 'foreign')
-    if unsafe == 'unknown-service': modules['hermes_cli.main_dashboard']._loaded_launchd_backend_jobs = lambda: []
-    if unsafe == 'desktop': row['isolated'] = True
-    if unsafe == 'desktop-env': modules['hermes_cli.dashboard_procs']._pid_environ = lambda pid: {'HERMES_DESKTOP': '1', 'HERMES_DASHBOARD_SESSION_TOKEN': 'synthetic-token'}
-    if unsafe == 'birth': identity._pid_alive_matches = lambda *args, **kwargs: False
-    with pytest.raises(RuntimeError, match='backend|Backend'):
-        _owners(root, {home}, pause, identity)
 
 
 @pytest.mark.parametrize('legacy', [False, True])

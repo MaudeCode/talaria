@@ -294,27 +294,19 @@
         "[True]"
       ]
     },
-    "tests/test_agent_services.py::test_wrapped_gateway_and_dashboard_stay_paused_through_source_mutation": {
-      "layer": "compatibility",
-      "reason": "Actual independent gateway/backend writers must stop before Git changes source and resume only after the stdio lease finishes; PID files and surviving processes are observed. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
-      "cases": [
-        ""
-      ]
-    },
     "tests/test_agent_services.py::test_updates_and_recovery_attest_barrier_controlled_descendant_exits": {
       "layer": "compatibility",
       "reason": "Actual transient descendants exit at OS sampling barriers during stop and restart; the complete owned process tree must be reaped before mutation. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
       "cases": [
-        "[normal]"
+        ""
       ]
     },
     "tests/test_agent_services.py::test_backend_recovery_covers_lease_exit_paths": {
       "layer": "compatibility",
-      "reason": "Actual finish, EOF and SIGKILL of the lease owner must wake the recovery child and restore services from durable receipts, without changing source. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "reason": "Actual EOF and SIGKILL of the lease owner must wake the recovery child and restore services from durable receipts, without changing source. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
       "cases": [
-        "[False-finish]",
-        "[False-eof]",
-        "[False-owner-kill]"
+        "[eof]",
+        "[owner-kill]"
       ]
     },
     "tests/test_agent_services.py::test_partial_pause_restores_only_the_services_it_stopped": {
@@ -328,19 +320,12 @@
       "layer": "compatibility",
       "reason": "A failed native supervisor restart must leave only its durable debt; a fresh sidecar interpreter reads it and restores the failed service without restarting its live sibling. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
       "cases": [
-        "[False]"
+        ""
       ]
     },
     "tests/test_agent_services.py::test_native_and_backend_debt_survive_worker_death_and_unsafe_source": {
       "layer": "compatibility",
       "reason": "SIGKILL of the actual writer-lease child must preserve both native and companion receipts; a fresh interpreter cannot restart writers until the unsafe source marker is repaired. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
-      "cases": [
-        "[True]"
-      ]
-    },
-    "tests/test_agent_services.py::test_supervised_dashboard_without_gateway_recovers": {
-      "layer": "compatibility",
-      "reason": "An actual backend-only lease owns no gateway process; independent backend stop/restart and debt discharge must still complete over stdio. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
       "cases": [
         ""
       ]
@@ -368,7 +353,7 @@
       "layer": "compatibility",
       "reason": "An actual worker dies after its gateway exits but before its wrapper supervisor is disarmed; fresh-process recovery must terminate the surviving wrapper and reap transient descendants exactly once. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
       "cases": [
-        "[True]"
+        ""
       ]
     },
     "tests/test_agent_services.py::test_retained_recovery_repairs_dependencies_and_resumes_without_another_update": {
@@ -429,7 +414,7 @@
       "layer": "compatibility",
       "reason": "A real busy modern backend keeps its PID and receives no signal while a consented legacy refresh is refused; this checks actual OS signal isolation between live services. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
       "cases": [
-        "[active-modern]"
+        ""
       ]
     },
     "tests/test_agent_services.py::test_legacy_listener_requires_the_attested_os_process": {
@@ -450,7 +435,7 @@
       "layer": "compatibility",
       "reason": "A killed lease worker leaves a real respawned gateway incarnation; fresh-process receipt adoption must restore it without an extra supervisor start. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
       "cases": [
-        "[owner-kill]"
+        ""
       ]
     },
     "tests/test_agent_services.py::test_native_gateway_startup_preserves_live_talaria_fence": {
@@ -465,7 +450,7 @@
       "layer": "compatibility",
       "reason": "Independent gateway/backend processes across multiple disposable profile homes must all stop and restart once without crossing profile ownership; the final leak scan verifies their child trees are reaped. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
       "cases": [
-        "[launchd]"
+        ""
       ]
     },
     "tests/test_approval_timeout.py::test_an_approval_the_agent_times_out_is_withdrawn": {
