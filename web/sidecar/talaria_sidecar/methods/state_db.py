@@ -152,11 +152,7 @@ def release_all() -> None:
 
 def request_prompt_refresh(home: Path) -> bool:
     """Every continuing session in ``home`` rebuilds its stored system prompt once, on its next turn. False without a
-    state.db, or on an Agent before v0.22.6, which has no refresh."""
-    from hermes_state import SessionDB
-
-    if not hasattr(SessionDB, "request_prompt_refresh"):
-        return False
+    state.db."""
     return _write(home, "request a prompt refresh", lambda db: db.request_prompt_refresh(), level=logging.WARNING)
 
 
@@ -370,13 +366,10 @@ def _delete_locked(sid: str, home: Path) -> dict:
 
 def _write_guard_check(agent_db):
     """The Agent's own user-delete guard, ``(conn, ids) -> bool``: true when a live turn lease or compression lock protects
-    any id; expired or dead-holder guards are reclaimed. ``_guarded_ids`` from v0.21.6, the per-row check before it."""
+    any id; expired or dead-holder guards are reclaimed. None, refusing the delete, on an Agent without that guard."""
     guarded_ids = getattr(agent_db, "_guarded_ids", None)
     if guarded_ids is not None:
         return lambda conn, ids: bool(guarded_ids(conn, ids))
-    rejects = getattr(agent_db, "_write_guards_reject", None)
-    if rejects is not None:
-        return lambda conn, ids: any(rejects(conn, i, allow_closed_compression_parent=True) for i in ids)
     return None
 
 
@@ -469,11 +462,9 @@ def delete_cli_session(home: Path, sid: str) -> dict:
 
 def prune_advice(home: Path) -> dict | None:
     """The Agent's low-disk session auto-prune question for ``home`` (v0.22.3 ``hermes_cli.prune_advisor``) in its own
-    words; None while the Agent would not ask (disk not low, ``sessions.auto_prune`` set, snoozed) or has no advisor."""
-    try:
-        from hermes_cli import prune_advisor
-    except ImportError:
-        return None
+    words; None while the Agent would not ask (disk not low, ``sessions.auto_prune`` set, snoozed)."""
+    from hermes_cli import prune_advisor
+
     advice, stale = prune_advisor.cached_advice(home)
     if advice is None and not stale:
         return None

@@ -274,9 +274,8 @@ def test_pool_lists_each_account_with_its_local_state(hermes_home: pathlib.Path)
     assert providers == ["zai"]
 
 
-@pytest.mark.parametrize("agent_resolver", [True, False])
 @pytest.mark.parametrize("resolved", ["sk-synthetic-scoped", "op://v/i/f", ""])
-def test_balance_and_pool_resolve_keys_inside_profile_scope(tmp_path, monkeypatch, agent_resolver, resolved):
+def test_balance_and_pool_resolve_keys_inside_profile_scope(tmp_path, monkeypatch, resolved):
     from contextlib import contextmanager
     from talaria_sidecar.methods import Registry
 
@@ -301,12 +300,7 @@ def test_balance_and_pool_resolve_keys_inside_profile_scope(tmp_path, monkeypatc
         looked_up.append(name)
         return resolved if name == "OPENROUTER_API_KEY" else "op://v/missing/f"
 
-    if agent_resolver:
-        config.get_env_value_prefer_dotenv = get_env
-    secrets = types.ModuleType("agent.secret_scope")
-    secrets.get_secret = get_env
-    monkeypatch.setitem(sys.modules, "agent", types.ModuleType("agent"))
-    monkeypatch.setitem(sys.modules, "agent.secret_scope", secrets)
+    config.get_env_value_prefer_dotenv = get_env
     monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
     monkeypatch.setitem(sys.modules, "hermes_cli.config", config)
     monkeypatch.setattr(usage, "scoped_home", scope)
@@ -403,14 +397,14 @@ print(json.dumps({'seen': seen, 'requests': requests, 'revisions': revisions}))
     assert len(work) == len(home) == 64
 
 
-def test_missing_scoped_resolvers_never_read_ambient_key(monkeypatch):
+def test_an_agent_without_the_scoped_resolver_never_reads_the_ambient_key(monkeypatch):
+    """An older Agent still loads; without its profile-scoped resolver the read fails rather than use the launch env."""
     monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
     monkeypatch.setitem(sys.modules, "hermes_cli.config", types.ModuleType("hermes_cli.config"))
-    monkeypatch.setitem(sys.modules, "agent.secret_scope", None)
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-launch-must-not-leak")
     requests = _stub_http(monkeypatch, {})
-    result = usage.balance("openrouter", credential_id=None, api_key=None, env_vars=["OPENROUTER_API_KEY"])
-    assert result["status"] == "no_key"
+    with pytest.raises(ImportError):
+        usage.balance("openrouter", credential_id=None, api_key=None, env_vars=["OPENROUTER_API_KEY"])
     assert requests == []
 
 

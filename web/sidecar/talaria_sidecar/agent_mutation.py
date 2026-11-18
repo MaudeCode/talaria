@@ -527,7 +527,7 @@ def _owners(root, homes, pause, identity, windows=None):
             if service is not None:
                 entry.update(kind="windows-service", service=str(service.name), profile=str(service.profile),
                              service_pid=int(service.service_pid), service_ct=float(service.service_create_time),
-                             descendants=list(getattr(service, "descendant_identities", ())))
+                             descendants=list(service.descendant_identities))
                 if entry["service_pid"] <= 0 or entry["service_ct"] <= 0:
                     raise RuntimeError("A Windows gateway service's process identity could not be proved.")
         if any(not entry["argv"] and not entry.get("kind") for entry in entries):
@@ -567,16 +567,14 @@ def _writer_ledger(root, identity):
         complete = json.loads(raw)
         if not isinstance(complete, list) or not all(isinstance(row, dict) for row in complete):
             raise RuntimeError("Agent process ownership evidence is malformed.")
-    # Agents from v0.22.6 record boot ticks, which still identify a live writer after a clock step.
-    entry_boot = getattr(identity, "_entry_boot", None)
     found = []
     for entry in ledger:
         if entry.get("purpose") in {"gateway", "serve", "dashboard"} and not entry.get("install"):
             raise RuntimeError("Agent process ownership evidence is incomplete.")
         if entry.get("install") != identity.install_id(root) or entry.get("purpose") not in {"gateway", "serve", "dashboard"}:
             continue
-        birth = {"boot": entry_boot(entry, "boot_start")} if entry_boot else {}
-        live = identity._pid_alive_matches(entry.get("pid"), entry.get("create_time"), **birth)
+        # Boot ticks still identify a live writer after a clock step.
+        live = identity._pid_alive_matches(entry.get("pid"), entry.get("create_time"), boot=identity._entry_boot(entry, "boot_start"))
         if live is not False:
             found.append((entry, live))
     return found

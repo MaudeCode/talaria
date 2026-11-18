@@ -101,7 +101,7 @@ def test_root_profile_keeps_single_profile_semantics(tmp_path, monkeypatch, scop
 
 
 @pytest.mark.parametrize('context_local', [False, True])
-def test_read_only_profile_scope_can_skip_process_recovery(tmp_path, monkeypatch, scope_calls, context_local):
+def test_profile_scope_can_skip_process_recovery(tmp_path, monkeypatch, scope_calls, context_local):
     root = tmp_path / 'root'
     root.mkdir()
     monkeypatch.setattr(home_module, '_PROCESS_HOME', root)

@@ -138,10 +138,8 @@ def _client(timeout: float, **kwargs: Any) -> Any:
 
 
 def _verify() -> Any:
-    try:
-        from agent.ssl_verify import resolve_httpx_verify
-    except ImportError:  # an Agent without it keeps httpx's default
-        return True
+    from agent.ssl_verify import resolve_httpx_verify
+
     verify = resolve_httpx_verify()
     # The resolver hands over the platform store alone when SSL_CERT_FILE/SSL_CERT_DIR is set; httpx's default trusted
     # that bundle, so keep it, on top of the platform store the resolver installed (as ``platform_ssl_context`` does).

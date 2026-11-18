@@ -9,41 +9,76 @@ from conftest import SidecarProcess, assert_matches, process_snapshot
 from talaria_sidecar import SIDECAR_RPC_VERSION
 
 
-@pytest.mark.parametrize('mode', ['success', 'exit', 'failed', 'invalid', 'legacy'])
-def test_dependency_sync_rpc_owns_the_agent_subprocess(tmp_path, mode):
+def test_dependency_sync_rpc_owns_the_agent_subprocess(tmp_path):
     agent = tmp_path / 'agent'
     home = tmp_path / 'home'
     agent.mkdir()
     home.mkdir()
     (agent / 'run_agent.py').write_text('raise RuntimeError("dependencies missing")\n')
-    if mode != 'legacy':
-        package = agent / 'hermes_cli'
-        package.mkdir()
-        (package / '__init__.py').write_text('')
-        (package / 'venv_sync.py').write_text(f'''
+    package = agent / 'hermes_cli'
+    package.mkdir()
+    (package / '__init__.py').write_text('')
+    (package / 'venv_sync.py').write_text('''
 import json, os, sys
 from pathlib import Path
-Path('called.json').write_text(json.dumps({{'args': sys.argv[1:], 'home': os.environ['HERMES_HOME'], 'lazy': os.environ['HERMES_DISABLE_LAZY_INSTALLS']}}))
-print('invalid' if {mode!r} == 'invalid' else json.dumps({{'ok': {mode!r} == 'success', 'detail': 'synthetic sync failure'}}))
-sys.exit(1 if {mode!r} == 'exit' else 0)
+Path('called.json').write_text(json.dumps({'args': sys.argv[1:], 'home': os.environ['HERMES_HOME'], 'lazy': os.environ['HERMES_DISABLE_LAZY_INSTALLS']}))
+print(json.dumps({'ok': True, 'detail': ''}))
 ''')
     proc = SidecarProcess(home, agent_dir=agent, python=sys.executable)
     try:
         assert proc.result('runtime.handshake', {'rpc_version': SIDECAR_RPC_VERSION})['compatible'] is False
         message, _ = proc.call('runtime.sync_dependencies', {'agent_dir': str(agent)})
         assert 'result' in message, message
-        result = message['result']
-        assert_matches('runtime.sync_dependencies', result)
-        assert result['ok'] is (mode in ('success', 'legacy')), result
-        assert result['skipped'] is (mode == 'legacy')
-        if mode != 'legacy':
-            assert json.loads((agent / 'called.json').read_text()) == {
-                'args': ['--project-root', str(agent), '--json'], 'home': str(home), 'lazy': '1',
-            }
+        assert_matches('runtime.sync_dependencies', message['result'])
+        assert message['result'] == {'ok': True, 'skipped': False, 'detail': ''}
+        assert json.loads((agent / 'called.json').read_text()) == {
+            'args': ['--project-root', str(agent), '--json'], 'home': str(home), 'lazy': '1',
+        }
         message, _ = proc.call('runtime.sync_dependencies', {'agent_dir': str(tmp_path / 'another-agent')})
         assert message['error']['code'] == -32602
     finally:
         proc.close()
+
+
+@pytest.mark.parametrize('mode, returncode, output, expected', [
+    ('exit', 1, b'{"ok": false, "detail": "synthetic sync failure"}', {'ok': False, 'skipped': False}),
+    ('failed', 0, b'{"ok": false, "detail": "synthetic sync failure"}', {'ok': False, 'skipped': False, 'detail': 'synthetic sync failure'}),
+    ('invalid', 0, b'invalid', {'ok': False, 'skipped': False, 'detail': 'Agent dependency sync returned an invalid result.'}),
+    ('legacy', None, None, {'ok': True, 'skipped': True, 'detail': ''}),
+], ids=['exit', 'failed', 'invalid', 'legacy'])
+def test_dependency_sync_maps_the_writer_result(tmp_path, monkeypatch, mode, returncode, output, expected):
+    """The supervisor's exit status and JSON line become the RPC result; an Agent without venv_sync is skipped."""
+    import subprocess
+    import threading
+    import types
+    from talaria_sidecar.methods import Registry, runtime as runtime_methods
+
+    agent = tmp_path / 'agent'
+    (agent / 'hermes_cli').mkdir(parents=True)
+    if mode != 'legacy':
+        (agent / 'hermes_cli' / 'venv_sync.py').write_text('')
+    launched = []
+
+    class Supervisor:
+        def __init__(self, argv, *, stdout, stdin, **kwargs):
+            launched.append(argv)
+            stdout.write(output)
+            self.returncode, self.stdin = returncode, types.SimpleNamespace(close=lambda: None)
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self):
+            return self.returncode
+
+    monkeypatch.setattr(subprocess, 'Popen', Supervisor)
+    registry = Registry(runtime=types.SimpleNamespace(agent_dir=agent, hermes_home=tmp_path / 'home', retire=lambda: None))
+    runtime_methods.register(registry)
+    ctx = types.SimpleNamespace(check_cancelled=lambda: None, cancel_event=threading.Event())
+    result = registry.methods['runtime.sync_dependencies'](ctx, {'agent_dir': str(agent)})
+    assert_matches('runtime.sync_dependencies', result)
+    assert {key: result[key] for key in expected} == expected
+    assert len(launched) == (0 if mode == 'legacy' else 1)
 
 
 def _looping_agent(tmp_path):
