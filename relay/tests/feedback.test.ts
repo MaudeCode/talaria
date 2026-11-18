@@ -19,13 +19,19 @@ const hour = 60 * 60 * 1_000;
 const day = 24 * hour;
 const start = 1_800_000_000_000;
 let clock = start;
+// Moves the test-owned clock; fake timers also hold convex-test's scheduler and the APNs workpool.
+const setClock = (at: number) => {
+  clock = at;
+  vi.setSystemTime(at);
+};
 
 beforeEach(() => {
+  vi.useFakeTimers({ now: start });
   clock = start;
-  vi.spyOn(Date, "now").mockImplementation(() => clock);
   process.env.FEEDBACK_OPERATOR_TOKEN_SHA256 = createHash("sha256").update(operatorToken).digest("hex");
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   delete process.env.FEEDBACK_OPERATOR_TOKEN_SHA256;
 });
@@ -168,13 +174,13 @@ describe("feedback budgets", () => {
   it("limits one unverified install to five reports an hour", async () => {
     const { submit } = await relay();
     for (let index = 0; index < 5; index += 1) expect((await submit(report())).status).toBe(202);
-    clock += 10 * 60 * 1_000;
+    setClock(clock + 10 * 60 * 1_000);
     const limited = await submit(report());
     expect(limited.status).toBe(429);
     expect(await limited.json()).toEqual({ error: "rate_limited" });
     expect(retryAfter(limited)).toBe(50 * 60);
     expect((await submit(report({ installId: uuid() }))).status).toBe(202);
-    clock = start + hour;
+    setClock(start + hour);
     expect((await submit(report())).status).toBe(202);
   });
 
@@ -193,7 +199,7 @@ describe("feedback budgets", () => {
       const installId = uuid();
       for (let index = 0; index < 5; index += 1) expect((await submit(report({ installId }))).status).toBe(202);
     }
-    clock += hour;
+    setClock(clock + hour);
     const limited = await submit(report({ installId: uuid() }));
     expect(limited.status).toBe(429);
     expect(retryAfter(limited)).toBe(23 * 3_600);
@@ -208,7 +214,7 @@ describe("feedback budgets", () => {
     expect((await signedSubmit(report())).status).toBe(202);
     expect((await signedSubmit(report())).status).toBe(429);
     expect((await submit(report())).status).toBe(429);
-    clock = start + day;
+    setClock(start + day);
     expect((await submit(report())).status).toBe(202);
   });
 
@@ -265,7 +271,7 @@ describe("feedback operator queue", () => {
     for (const send of [queue.submit, queue.signedSubmit, queue.submit]) {
       const response = await send(report({ installId: uuid() }));
       ids.push(((await response.json()) as { reportId: string }).reportId);
-      clock += 1_000;
+      setClock(clock + 1_000);
     }
     const pending = async (query = "") => {
       const response = await queue.operator(`/v1/feedback/pending${query}`);
@@ -501,7 +507,7 @@ describe("feedback attachments", () => {
     await unauthorized(put(first.reportId, 0, token, image));
     expect(await blobs()).toHaveLength(1);
 
-    clock += 30 * 60 * 1_000;
+    setClock(clock + 30 * 60 * 1_000);
     const expired = await put(other.reportId, 0, other.attachments[0]!.uploadToken!, image);
     expect(expired.status).toBe(410);
     expect(await expired.json()).toEqual({ error: "upload_expired" });
@@ -605,7 +611,7 @@ describe("feedback attachments", () => {
     const original = await accepted(signedSubmit(payload));
     expect((await put(original.reportId, 0, original.attachments[0]!.uploadToken!, first)).status).toBe(200);
     const charged = await budgets();
-    clock += 60_000;
+    setClock(clock + 60_000);
     const replay = await accepted(signedSubmit(payload));
     expect(replay.reportId).toBe(original.reportId);
     expect(replay.attachments).toEqual([
@@ -629,7 +635,7 @@ describe("feedback attachments", () => {
     expect(await pending()).toEqual([]);
     const scheduled = await backend.run(async (ctx) => await ctx.db.system.query("_scheduled_functions").collect());
     expect(scheduled).toEqual([expect.objectContaining({ name: "feedback:closeUploads", scheduledTime: start + 30 * 60 * 1_000 })]);
-    clock += 30 * 60 * 1_000;
+    setClock(clock + 30 * 60 * 1_000);
     await backend.mutation(internal.feedback.closeUploads, { reportId: admission.reportId as never });
     const [listed] = await pending();
     expect(listed?.attachments).toEqual([
@@ -637,10 +643,10 @@ describe("feedback attachments", () => {
       { index: 1, ...entry(never, "image/jpeg"), status: "missing" },
     ]);
 
-    clock = start + 7 * day - 1;
+    setClock(start + 7 * day - 1);
     await backend.mutation(internal.cleanup.prune, {});
     expect(await blobs()).toHaveLength(1);
-    clock = start + 7 * day + 1;
+    setClock(start + 7 * day + 1);
     await backend.mutation(internal.cleanup.prune, {});
     expect(await blobs()).toEqual([]);
     expect(await storedBytes()).toBe(0);
@@ -648,7 +654,7 @@ describe("feedback attachments", () => {
       { index: 0, ...entry(kept), status: "missing" },
       { index: 1, ...entry(never, "image/jpeg"), status: "missing" },
     ]);
-    clock = start + 30 * day + 1;
+    setClock(start + 30 * day + 1);
     await backend.mutation(internal.cleanup.prune, {});
     expect(await rows()).toEqual([]);
     expect(await backend.run(async (ctx) => await ctx.db.query("feedbackAttachments").collect())).toEqual([]);
