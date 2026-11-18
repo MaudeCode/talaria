@@ -74,8 +74,9 @@ PACKAGE_REPEAT_ATTEMPTS = 50
 PACKAGE_REPEAT_BUDGET = 60
 CANCELED = "Testing was canceled"
 # Classes whose tests await the simulator's notification server. Only a shard that runs one waits for the server in
-# preparation (TAL-2352); the catch-all shard always does.
-NOTIFICATION_CLASSES = ("NotificationAnswerTests",)
+# preparation (TAL-2352); the catch-all shard always does. The screen gallery's Notifications page shows the
+# authorization status the server answers (TAL-2468).
+NOTIFICATION_CLASSES = ("NotificationAnswerTests", "ScreenGalleryHostedTests")
 RESULT = re.compile(r"(?P<class>[A-Za-z_]\w*)/(?P<method>[A-Za-z_]\w*)(?:\(\))?$")
 LOGGED = re.compile(r"Test Case '-\[(\w+)\.(\w+) (\w+)\]' (?:passed|failed|skipped) \(")
 

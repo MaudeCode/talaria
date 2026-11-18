@@ -83,11 +83,14 @@ class PlanTests(unittest.TestCase):
 
     def test_only_a_shard_running_notification_tests_waits_for_the_notification_server(self):
         # Shard 1 died waiting for a server none of its tests call (TAL-2352); a catch-all shard may run any class.
-        table = {**TABLE, "classes": {**TABLE["classes"], "NotificationAnswerTests": 300.0}}
-        result = shard.plan(lane("Heavy1", "NotificationAnswerTests"), table=table)
-        options = {tuple(entry["planned"]): shard.prepare_options(entry) for entry in result["shards"]}
-        self.assertEqual(options, {("TalariaTests/Heavy1",): ["--without-notifications"],
-                                   ("TalariaTests/NotificationAnswerTests",): []})
+        # The screen gallery's Notifications page waits on the server's authorization status (TAL-2468).
+        for waiting in ("NotificationAnswerTests", "ScreenGalleryHostedTests"):
+            with self.subTest(waiting):
+                table = {**TABLE, "classes": {**TABLE["classes"], waiting: 300.0}}
+                result = shard.plan(lane("Heavy1", waiting), table=table)
+                options = {tuple(entry["planned"]): shard.prepare_options(entry) for entry in result["shards"]}
+                self.assertEqual(options, {("TalariaTests/Heavy1",): ["--without-notifications"],
+                                           (f"TalariaTests/{waiting}",): []})
         full = shard.plan({"mode": "full", "identifiers": ["TalariaTests"]}, table=TABLE, classes=["Heavy1", "Heavy2"])
         self.assertEqual([shard.prepare_options(entry) for entry in full["shards"]], [["--without-notifications"], []])
 
