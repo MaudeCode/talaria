@@ -22,10 +22,32 @@ import { VirtualHistory, type HistoryVirtualizer } from './VirtualHistory'
 import { firstRowPast, nextBoxed, readerAnchorRow, revealQuestion, rowBoxes } from './viewportAnchor'
 import { LIVE_INDEX, Outline } from './Outline'
 import { enterTranscript } from '../../lib/motion'
+import { useMarkdownRendererReady } from './render/Markdown'
+import { TranscriptSkeleton } from './TranscriptSkeleton'
 
 const VIRTUALIZE_AT = 200
 const NO_ACTIONS: RowActions = {}
 const NO_ATTACHMENTS: Attachment[] = []
+const NO_ROWS: VisibleMessage[] = []
+
+/**
+ * TAL-2410: an entry lays the history out from the top and then jumps to the end, so the rows that land on screen were
+ * skipped at their 300px placeholder (chat.css) and would resize a frame after the first paint, a frame before the
+ * follow can catch up. The tail covering the pane and the browser's look-ahead above it lays out for real before the
+ * jump instead; each row remembers that height once painted, so the override goes after the next frame.
+ */
+function layOutTail(pane: HTMLElement): void {
+  const rows = pane.querySelectorAll<HTMLElement>('.messages-history > .msg-row')
+  const revealed: HTMLElement[] = []
+  const reach = pane.clientHeight + 2 * window.innerHeight
+  for (let i = rows.length - 1, covered = 0; i >= 0 && covered < reach; i--) {
+    const row = rows[i]
+    if (!row) break
+    if (!row.style.contentVisibility) { row.style.contentVisibility = 'visible'; revealed.push(row) }
+    covered += row.offsetHeight
+  }
+  if (revealed.length) requestAnimationFrame(() => requestAnimationFrame(() => { for (const row of revealed) row.style.removeProperty('content-visibility') }))
+}
 /** How long after a wheel or touch move a scroll still counts as the reader's own. */
 const HAND_SCROLL_MS = 250
 
@@ -83,9 +105,15 @@ export interface TranscriptProps {
  * virtualized with TanStack Virtual.
  */
 export function Transcript(props: TranscriptProps) {
-  const { rows: rawRows, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, loadedFrom, onLoadOlder, loadingOlder, olderError = false, emptyState, pendingUserText, showJumpButtons, virtualizeLongTranscripts, endlessScroll = true } = props
+  const { assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, loadedFrom, onLoadOlder, loadingOlder, olderError = false, emptyState, pendingUserText, showJumpButtons, virtualizeLongTranscripts, endlessScroll = true } = props
   const subscribedLive = useLiveTurn(props.subscribeToStream ? sessionId ?? null : null)
   const live = props.subscribeToStream ? subscribedLive : props.live
+  // TAL-2410: a history that arrives before the renderer chunk keeps the skeleton until the chunk settles, so its rows
+  // mount once at their rendered height instead of reflowing from raw text under the reader. Only the persisted history
+  // waits: the user's own message and the live turn below it render at once.
+  const hasHistory = props.rows.length > 0
+  const holding = !useMarkdownRendererReady(hasHistory) && hasHistory
+  const rawRows = holding ? NO_ROWS : props.rows
   const scrollRef = useRef<HTMLDivElement>(null)
   const prependRef = useRef<{ from: number; anchors: { key: string; top: number; height: number }[]; height: number; offset: number } | null>(null)
   const [pinned, setPinned] = useState(true)
@@ -213,6 +241,7 @@ export function Transcript(props: TranscriptProps) {
   const scrollToBottom = (smooth = false) => {
     const el = scrollRef.current
     if (!el) return
+    if (settlingRef.current) layOutTail(el)
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
     // Record our own jump now: a reader scroll merged into the same scroll event must still read as upward.
     if (!smooth) lastTopRef.current = el.scrollTop
@@ -223,7 +252,7 @@ export function Transcript(props: TranscriptProps) {
   // Follow while pinned: track every size change of the content (each streamed line, each
   // folding disclosure) and of the pane itself before paint, instead of catching up in jumps.
   const innerRef = useRef<HTMLDivElement>(null)
-  const empty = rows.length === 0 && !truncated && !showLive && !pending && !liveUserText
+  const empty = rows.length === 0 && (holding || !truncated) && !showLive && !pending && !liveUserText
   // The disclosure provider below is keyed by this scope, so a new session brings a new pane to observe.
   const scope = props.disclosureScope ?? sessionId
   useLayoutEffect(() => {
@@ -427,14 +456,14 @@ export function Transcript(props: TranscriptProps) {
     <div className="messages-shell relative flex flex-1 min-h-0">
       {sessionId && actions.onQuoteSelection && <QuoteSelection key={`${scope ?? ''}:${sessionId}`} transcript={scrollRef} onQuote={actions.onQuoteSelection} />}
       <div ref={scrollRef} onScroll={onScroll} onWheel={(e) => { if (e.deltaY !== 0) onReaderScroll() }} onTouchMove={onReaderScroll} onPointerDown={onReaderInput} onKeyDown={onReaderInput} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 min-w-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
-        {empty ? emptyState : (
+        {empty ? (holding ? <TranscriptSkeleton /> : emptyState) : (
           <div ref={innerRef} className="messages-inner mx-auto w-full max-w-(--msg-max) pt-5 pb-[calc(var(--composer-h,0px)+2rem)] max-[641px]:pt-3 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
-            {truncated && (
+            {truncated && !holding && (
               <div ref={sentinelRef} className="flex h-11 shrink-0 items-center justify-center" data-history-sentinel>
                 {loadingOlder ? <LoadingState compact /> : olderError ? <div role="alert" className="flex items-center gap-2 text-sm text-muted">{m.error_generic()}<Button variant="ghost" className="min-h-11" onClick={() => requestOlder(true)}>{m.retry()}</Button></div> : endlessScroll ? null : <IconButton variant="ghost" label={m.transcript_load_earlier()} onClick={() => { requestOlder() }}><CircleArrowUp aria-hidden="true" /></IconButton>}
               </div>
             )}
-            {virtualize ? (
+            {holding ? <TranscriptSkeleton /> : virtualize ? (
               <VirtualHistory rows={rows} estimateSize={estimateSize} handle={virtualizerRef} renderRow={renderRow} anchorKey={() => readerAnchor.current?.key ?? null} onCommit={restoreReaderAnchor} />
             ) : <div className="messages-inner messages-history">{renderedRows}</div>}
             {(pending || showLiveUser) && <UserMessageRow row={liveUserRow} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={NO_ACTIONS} pending arrive={pending} />}

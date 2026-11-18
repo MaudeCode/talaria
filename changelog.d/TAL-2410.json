@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening a long chat or a shared chat in Talaria Web no longer makes the latest messages jump while code blocks and formatting load, even on a slow connection.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

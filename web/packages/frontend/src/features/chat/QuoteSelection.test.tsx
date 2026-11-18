@@ -1,10 +1,13 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Transcript, type TranscriptProps } from './Transcript'
+import { preloadMarkdownRenderer } from './render/Markdown'
 
 Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
 
 afterEach(() => { cleanup(); window.getSelection()?.removeAllRanges() })
+// The client entry preloads the renderer before any history arrives; a transcript holds its rows until then (TAL-2410).
+beforeAll(() => preloadMarkdownRenderer())
 const props = (sessionId = 's1', onQuoteSelection = vi.fn()): TranscriptProps => ({
   rows: [{ key: 'u1', index: 0, message: { role: 'user', content: 'Displayed café 🦜\nsecond line' } }],
   sessionId, actions: { onQuoteSelection }, live: null, assistantName: 'Assistant', mode: 'compact_worklog',

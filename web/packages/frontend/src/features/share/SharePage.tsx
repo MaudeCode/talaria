@@ -9,11 +9,16 @@ import { SectionHeader } from '../../ui/List'
 import { Toaster } from '../toast/Toaster'
 import { m } from '../../paraglide/messages.js'
 import { SharedTranscript } from './SharedTranscript'
+import { useMarkdownRendererReady } from '../chat/render/Markdown'
 
 /** Public read-only snapshot (`/share/$token`). Unauthenticated; server marks it noindex. */
 export function SharePage({ token }: { token: string }) {
   const share = useQuery({ queryKey: keys.share(token), queryFn: () => api.fetchShare(token), retry: false })
   const data = share.data?.share
+  // TAL-2410: the messages wait for the renderer, as a session's history does, so none reflows from raw text in view.
+  const hasMessages = !!data?.messages?.length
+  const rendererReady = useMarkdownRendererReady(hasMessages)
+  const loading = share.isPending || (hasMessages && !rendererReady)
   const title = data?.title ?? (share.isError ? m.share_unavailable_title() : m.loading())
   const copy = () => { copyWithToast(window.location.href) }
   return (
@@ -45,14 +50,14 @@ export function SharePage({ token }: { token: string }) {
         </section>
         <SectionHeader className="mt-5">{m.transcript()}</SectionHeader>
         <section className="share-transcript mt-3" id="shareTranscript">
-          {share.isPending && <div className="px-4 py-10 text-center text-muted">{m.loading()}</div>}
+          {loading && <div className="px-4 py-10 text-center text-muted">{m.loading()}</div>}
           {share.isError && (
             <div className="px-4 py-10 text-center text-muted" role="alert">
               <strong className="text-text">{m.share_error_title()}</strong>
               <div className="mt-2">{m.share_error_detail()}</div>
             </div>
           )}
-          {data && <SharedTranscript messages={data.messages ?? []} />}
+          {data && !loading && <SharedTranscript messages={data.messages ?? []} />}
         </section>
         <div className="mt-4 border-t border-border pt-4 text-xs leading-relaxed text-muted">{m.share_footer()}</div>
       </main>

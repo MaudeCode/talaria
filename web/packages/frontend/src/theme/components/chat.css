@@ -38,6 +38,9 @@
 .messages-inner > .msg-row[data-role="user"]{width:fit-content;margin-inline-start:auto}
 /* Keep live and latest persisted replies measured across streaming and settlement, and the sent row as it lands (TAL-1753). */
 .msg-row:is(.live-turn,[data-latest="1"],[data-live-user]){content-visibility:visible;contain:content}
+/* TAL-2410: Streamdown's inline `content-visibility:auto` paints a code block at its 200px placeholder for a frame, and the
+   pinned transcript jumps when it grows. Rows already skip off-screen layout, so code blocks lay out at their own height. */
+[data-streamdown="code-block"]{content-visibility:visible !important}
 .msg-row+.msg-row{border-top:none}
 .msg-role{font-size:12px;font-weight:500;letter-spacing:.01em;margin-bottom:8px;display:flex;align-items:center;gap:8px}
 .msg-role.user{color:var(--msg-role-user-fg)}

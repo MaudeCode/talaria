@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { AssistantMessageRow, BackgroundUpdateRow, NoticeRow, UserMessageRow } from './MessageRow'
 import { Transcript } from './Transcript'
+import { preloadMarkdownRenderer } from './render/Markdown'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Message } from '../../contracts'
@@ -13,6 +14,8 @@ import { dispatch, resetStreamStoreForTests } from '../../stream/store'
 import { queryWrapper } from '../../test/fixtures'
 
 afterEach(cleanup)
+// The client entry preloads the renderer before any history arrives; a transcript holds its rows until then (TAL-2410).
+beforeAll(() => preloadMarkdownRenderer())
 
 describe('server-issued activity rows', () => {
   it('renders future kinds and peer senders through the shared branded line without leaking model instructions', () => {

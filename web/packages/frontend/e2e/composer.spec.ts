@@ -169,10 +169,9 @@ test('opening a session paints every frame at its end', async ({ page }) => {
     return seen
   })
   try {
-    await expect(page.locator('[data-message-key]')).toHaveCount(50)
-    // Until the renderer arrives each answer shows its raw text (TAL-1693), never rendered Markdown.
-    await expect(page.locator('.hermes-prose').last()).toContainText('entry answer 25.')
-    await expect(page.locator('.hermes-prose p')).toHaveCount(0)
+    // Until the renderer arrives the session's history waits behind the skeleton (TAL-2410).
+    await expect(page.getByText('Entry', { exact: true }).filter({ visible: true }).first()).toBeVisible()
+    await expect(page.getByTestId('transcript-skeleton')).toBeVisible()
   } finally { loading.release() }
   await expect(page.locator('.hermes-prose p').last()).toContainText('entry answer 25.')
   const frames = await sampling

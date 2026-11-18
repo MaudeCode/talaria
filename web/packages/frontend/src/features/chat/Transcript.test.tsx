@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { Transcript, type TranscriptProps } from './Transcript'
+import { preloadMarkdownRenderer } from './render/Markdown'
 import { projectMessages } from './useTranscript'
 import { dispatch, getStreamState, resetStreamStoreForTests } from '../../stream/store'
 import { sessionFixture } from '../../test/fixtures'
@@ -11,6 +12,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import * as api from '../../api/endpoints'
 
 vi.mock('../../api/endpoints', async (original) => ({ ...await original<typeof import('../../api/endpoints')>(), fetchSessionOutline: vi.fn() }))
+// The client entry preloads the renderer before any history arrives; a transcript holds its rows until then (TAL-2410).
+beforeAll(() => preloadMarkdownRenderer())
 
 let intersect: IntersectionObserverCallback
 let resized: ResizeObserverCallback
