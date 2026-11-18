@@ -8,8 +8,8 @@ describe('formatElapsed (TAL-2321)', () => {
     expect(formatElapsed('en-US', seconds)).toBe(text)
   })
 
-  it('drops the seconds past a minute for a live timer', () => {
-    expect(formatElapsed('en-US', 61, false)).toBe('1m')
+  it('drops the seconds past a minute and starts at 0s for a live timer', () => {
+    expect([formatElapsed('en-US', 61, false), formatElapsed('en-US', 0, false, true)]).toEqual(['1m', '0s'])
   })
 
   it('uses the locale\'s narrow units', () => {

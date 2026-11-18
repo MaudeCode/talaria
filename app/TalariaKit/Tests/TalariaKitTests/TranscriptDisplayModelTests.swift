@@ -748,7 +748,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         XCTAssertEqual(elapsed(359), "5m", "Minutes drop the seconds")
         XCTAssertEqual(elapsed(3_600), "1h 0m")
         XCTAssertEqual(elapsed(5_400), "1h 30m")
-        XCTAssertEqual(elapsed(-5), "<1s", "A clock behind the run start reads as just started")
+        XCTAssertEqual(elapsed(-5), "0s", "A clock behind the run start reads as just started")
         XCTAssertNil(ChatActiveRunStatusPresentation(kind: .active).elapsedTime(now: start))
     }
 
@@ -760,6 +760,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             XCTAssertEqual(ChatActiveRunStatusPresentation.elapsedText(seconds: seconds, showSeconds: true, locale: english), text, "\(seconds)s")
         }
         XCTAssertEqual(ChatActiveRunStatusPresentation.elapsedText(seconds: 61, locale: english), "1m", "The run chip drops the seconds past a minute")
+        XCTAssertEqual(ChatActiveRunStatusPresentation.elapsedText(seconds: 0, counting: true, locale: english), "0s", "A counting timer starts at 0s")
         let german = Locale(identifier: "de_DE")
         XCTAssertEqual([0.04, 61].map { ChatActiveRunStatusPresentation.elapsedText(seconds: $0, showSeconds: true, locale: german) }, ["<1s", "1min 1s"])
         XCTAssertEqual(ChatActiveRunStatusPresentation.accessibilityElapsedText(seconds: 0.04, locale: english), "less than 1 second")

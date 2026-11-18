@@ -6,9 +6,10 @@ export function formatDurationUnits(locale: string, ...parts: [number, DurationU
 }
 
 /** TAL-2321: seconds rounded to whole narrow units: `<1s`, `42s`, `3m 5s` (`3m` without `showSeconds`, and when the seconds
- *  are 0) or `1h 4m`; formatting only, the seconds are the caller's. */
-export function formatElapsed(locale: string, totalSeconds: number, showSeconds = true): string {
-  if (!(totalSeconds >= 1)) return `<${formatDurationUnits(locale, [1, 'second'])}`
+ *  are 0) or `1h 4m`; formatting only, the seconds are the caller's. A `counting` timer starts at `0s` instead, so its
+ *  first tick keeps its width. */
+export function formatElapsed(locale: string, totalSeconds: number, showSeconds = true, counting = false): string {
+  if (!(totalSeconds >= 1)) return counting ? formatDurationUnits(locale, [0, 'second']) : `<${formatDurationUnits(locale, [1, 'second'])}`
   const seconds = Math.round(totalSeconds)
   const minutes = Math.floor(seconds / 60)
   if (seconds < 60) return formatDurationUnits(locale, [seconds, 'second'])

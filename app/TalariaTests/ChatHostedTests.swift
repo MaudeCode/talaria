@@ -2561,7 +2561,7 @@ final class ChatHostedTests: XCTestCase {
             size: CGSize(width: 390, height: 400)
         )
         let labels = { HostedAccessibility.elements(in: window).compactMap { $0.accessibilityLabel } }
-        let expected = ["1 of 3 done · 1 failed", "Done, Write docs, Docs written., 1m 15s", "Failed, Write tests, 4s", "Running, Run tests"]
+        let expected = ["1 of 3 done · 1 failed", "Done, Write docs, Docs written., 1 minute, 15 seconds", "Failed, Write tests, 4 seconds", "Running, Run tests"]
         let drawn = await awaitCondition(timeout: 5) { expected.allSatisfy { label in labels().contains { $0.contains(label) } } }
         XCTAssertTrue(drawn, "\(labels())")
         attachHostedScreenshot(window, name: "tool-delegate-agents")

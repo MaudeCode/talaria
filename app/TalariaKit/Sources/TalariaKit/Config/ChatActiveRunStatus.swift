@@ -151,16 +151,17 @@ public struct ChatActiveRunStatusPresentation: Equatable, Sendable {
     /// How long the run has gone on as of `now`, shown after the label in T3 Code's units (TAL-922):
     /// "42s" under a minute, "5m" under an hour, then "1h 30m". Nil when the chip shows no elapsed time.
     public func elapsedTime(now: Date, locale: Locale = .autoupdatingCurrent) -> String? {
-        elapsedSeconds(now: now).map { Self.elapsedText(seconds: TimeInterval($0), locale: locale) }
+        elapsedSeconds(now: now).map { Self.elapsedText(seconds: TimeInterval($0), counting: true, locale: locale) }
     }
 
     /// TAL-2321: every elapsed time on the App in whole narrow units, rounded: "<1s" under a second, "42s", then
     /// "5m" ("5m 3s" with `showSeconds`), then "1h 30m". The chip, a running tool row and a finished call read it.
-    public static func elapsedText(seconds: TimeInterval, showSeconds: Bool = false, locale: Locale = .autoupdatingCurrent) -> String {
+    /// A `counting` timer starts at "0s" instead, so its first tick keeps the chip's width and the status row's layout.
+    public static func elapsedText(seconds: TimeInterval, showSeconds: Bool = false, counting: Bool = false, locale: Locale = .autoupdatingCurrent) -> String {
         func narrow(_ seconds: Int, _ units: Set<Duration.UnitsFormatStyle.Unit>) -> String {
             Duration.seconds(seconds).formatted(.units(allowed: units, width: .narrow, zeroValueUnits: .show(length: 1)).locale(locale))
         }
-        guard seconds >= 1 else { return "<\(narrow(1, [.seconds]))" }
+        guard seconds >= 1 else { return counting ? narrow(0, [.seconds]) : "<\(narrow(1, [.seconds]))" }
         let whole = Int(seconds.rounded())
         guard whole >= 60 else { return narrow(whole, [.seconds]) }
         guard whole < 3_600 else { return narrow(whole / 60 * 60, [.hours, .minutes]) }
