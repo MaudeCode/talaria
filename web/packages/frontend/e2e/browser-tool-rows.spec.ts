@@ -35,6 +35,9 @@ test('browser and computer-use calls show their verbs, code, screenshots and row
   await exec.locator('.tool-card-header').click()
   await expect(exec.locator('.tool-file-excerpt')).toContainText('goto("https://example.com/pricing")')
   await expect(exec.locator('.tool-card-result')).toContainText('Pricing: $10/month')
+  // The code sits above its output, and an excerpt with no file offers no Open.
+  await expect(exec.locator('.tool-file-excerpt + pre')).toHaveText('Pricing: $10/month')
+  await expect(exec.locator('.tool-file-excerpt button')).toHaveCount(0)
   const fill = page.locator('[data-tool-id="call-fill"]')
   await fill.locator('.tool-card-header').click()
   await expect(fill.locator('.tool-card-result')).toContainText('Filled 2 fields on https://example.com')
@@ -49,6 +52,7 @@ test('browser and computer-use calls show their verbs, code, screenshots and row
   await expect.poll(() => capture.locator('.tool-card-media img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0)
   await capture.locator('.tool-card-header').click()
   await expect(capture.locator('.tool-card-result')).toContainText('Pricing · 2 elements')
+  await expect(capture.locator('.tool-card-result')).not.toContainText('capture mode=som')
   await expect(page.locator('[data-tool-id="call-click"] .tool-card-name')).toHaveText('Clicked on the screen')
   await shot('computer-tool-rows')
   expect(new Set(media)).toEqual(new Set(['/srv/hermes/cache/browser-use/workspace/default/pricing.png', '/srv/hermes/cache/computer_use/cap_1.png']))

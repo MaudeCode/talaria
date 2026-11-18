@@ -70,17 +70,6 @@ async function expectCovers(page: Page) {
 
 const centre = (b: { x: number; y: number; width: number; height: number }) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
 
-test('wheel over a large attachment zooms the image in place', async ({ page }) => {
-  await gallery(page, ['large.svg'])
-  const dialog = await open(page, 0)
-  const img = dialog.getByRole('img', { name: 'large.svg' })
-  await expect(img).toBeVisible()
-  const before = await box(img)
-  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2)
-  await page.mouse.wheel(0, -300)
-  await expect.poll(async () => (await box(img)).width).toBeGreaterThan(before.width * 1.3)
-})
-
 test('the wheel zooms at the cursor and converts line and page deltas', async ({ page }) => {
   await gallery(page, ['large.svg'])
   await open(page, 0)

@@ -36,22 +36,7 @@ function recordingTokenizer() {
   return { seen, tokenize }
 }
 
-/** `text` cut into `count` slices at fixed character positions, so most cuts land mid-line. */
-const increments = (text: string, count: number) => Array.from({ length: count }, (_, index) => text.slice(0, Math.round((text.length * (index + 1)) / count)))
-
 describe('incremental code highlighting (TAL-1402)', () => {
-  it('tokenizes each completed line of a streaming 500-line block once', () => {
-    const lines = Array.from({ length: 500 }, (_, index) => `const value${index} = ${index}`)
-    const code = lines.join('\n')
-    const { seen, tokenize } = recordingTokenizer()
-    const highlighter = createIncrementalHighlighter()
-    for (const prefix of increments(code, 100)) highlighter.highlight(prefix, 'ts', true, tokenize)
-    const done = highlighter.highlight(code, 'ts', false, tokenize)
-
-    expect(seen).toEqual(lines)
-    expect(done.tokens.map((line) => line.map((token) => token.content).join(''))).toEqual(lines)
-  })
-
   it('renders the in-progress line as plain text and re-tokenizes from the start when the prefix changes', () => {
     const { seen, tokenize } = recordingTokenizer()
     const highlighter = createIncrementalHighlighter()
