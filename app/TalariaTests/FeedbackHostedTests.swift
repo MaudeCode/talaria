@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 import XCTest
 @testable import Talaria
 @testable import TalariaKit
@@ -38,19 +39,25 @@ final class FeedbackHostedTests: XCTestCase {
         }
     }
 
+    /// Pastes `count` synthetic photos through the sheet's paste control, as its PasteButton hands them over. The
+    /// providers are the test's own: the simulator's general pasteboard is a shared service, and on a loaded runner it
+    /// once failed to load the image it held, so the paste reached the sheet with nothing to attach (TAL-2546).
+    private func paste(_ count: Int, in window: UIWindow) throws {
+        let paste = try XCTUnwrap(window.firstView(ofType: UIPasteControl.self),
+                                 "Feedback must offer a native image paste action")
+        let providers = (0..<count).map { _ in
+            NSItemProvider(item: syntheticPhoto() as NSData, typeIdentifier: UTType.jpeg.identifier)
+        }
+        try XCTUnwrap(paste.target).paste?(itemProviders: providers)
+    }
+
     func testPastingClipboardPhotosUsesTheFeedbackAttachmentPipeline() async throws {
         let model = model(attachments: true)
         await model.loadAttachmentOptions()
-        let previousItems = UIPasteboard.general.items
-        defer { UIPasteboard.general.items = previousItems }
-        UIPasteboard.general.images = [try XCTUnwrap(UIImage(data: syntheticPhoto()))]
         let window = try hostWindow(FeedbackSheet(model: model))
         _ = try await requireElement(in: window, label: "Add Photo or Video")
         attachHostedScreenshot(window, name: "feedback-before-paste")
-        let paste = try XCTUnwrap(window.firstView(ofType: UIPasteControl.self),
-                                 "Feedback must offer a native image paste action")
-        let target = try XCTUnwrap(paste.target)
-        target.paste?(itemProviders: UIPasteboard.general.itemProviders)
+        try paste(1, in: window)
         let uploaded = await awaitCondition { model.attachments.first?.attachmentId != nil }
         XCTAssertTrue(uploaded, "The clipboard image must pass through compression and staging")
         XCTAssertEqual(model.attachments.count, 1)
@@ -58,8 +65,7 @@ final class FeedbackHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "Remove attachment Photo")
         attachHostedScreenshot(window, name: "feedback-after-paste")
 
-        UIPasteboard.general.images = Array(repeating: try XCTUnwrap(UIImage(data: syntheticPhoto())), count: 2)
-        target.paste?(itemProviders: UIPasteboard.general.itemProviders)
+        try paste(2, in: window)
         let batchUploaded = await awaitCondition {
             model.attachments.count == 3 && model.attachments.allSatisfy { $0.attachmentId != nil }
         }
@@ -126,13 +132,9 @@ final class FeedbackHostedTests: XCTestCase {
         await model.loadAttachmentOptions()
         await model.addImage(syntheticPhoto())?.value
         let original = model.attachments
-        let previousItems = UIPasteboard.general.items
-        defer { UIPasteboard.general.items = previousItems }
-        UIPasteboard.general.images = Array(repeating: try XCTUnwrap(UIImage(data: syntheticPhoto())), count: 5)
         let window = try hostWindow(FeedbackSheet(model: model))
         _ = try await requireElement(in: window, label: "Add Photo or Video")
-        let paste = try XCTUnwrap(window.firstView(ofType: UIPasteControl.self))
-        try XCTUnwrap(paste.target).paste?(itemProviders: UIPasteboard.general.itemProviders)
+        try paste(5, in: window)
         _ = try await requireElement(in: window, label: "Attach up to 5 files.")
         XCTAssertEqual(model.attachments, original, "An oversized paste must not partially add its images")
         attachHostedScreenshot(window, name: "feedback-paste-limit")
