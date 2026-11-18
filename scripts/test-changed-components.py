@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """Exercise routing with synthetic paths and disposable Git history."""
 
+from collections import Counter
+from contextlib import redirect_stdout
 import importlib.util
 from copy import deepcopy
+import io
 import json
 import os
 import re
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SCRIPT = Path(__file__).with_name("changed-components.py")
 spec = importlib.util.spec_from_file_location("routing", SCRIPT)
@@ -724,6 +729,31 @@ class AppPlanTests(unittest.TestCase):
                 for path, old, new in edits:
                     self.edit(path, old, new)
                 self.assertEqual(self.lanes(self.committed()), expected)
+
+    def test_a_many_line_change_scans_each_name_set_once(self):
+        # Every changed line inside one helper seeds the same names, so the reach fixpoint runs once for them (TAL-2473).
+        self.edit("app/TalariaTests/Hosted.swift", "        1\n", "        0 +\n            0 +\n            0 +\n            1\n")
+        head = self.commit("change")
+        options = [f"--base={self.base}", f"--head={head}", "--merge-base", "--app-plan", "json"]
+        expected = self.plan(*options[:-2])
+        sys.path.insert(0, str(SCRIPT.parent))
+        self.addCleanup(sys.path.remove, str(SCRIPT.parent))
+        import app_test_plan
+        scans, reach = [], app_test_plan.Universe.reach
+
+        def counted(universe, names):
+            scans.append((universe.target, frozenset(names)))
+            return reach(universe, names)
+
+        output, directory = io.StringIO(), os.getcwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, directory)
+        with mock.patch.object(app_test_plan.Universe, "reach", counted), mock.patch.object(sys, "argv", [str(SCRIPT), *options]), \
+                mock.patch.dict(os.environ, self.env), redirect_stdout(output):
+            routing.main()
+        self.assertEqual(json.loads(output.getvalue()), expected)
+        self.assertIn(("TalariaTests", frozenset({"titleMenu"})), scans)
+        self.assertEqual([scan for scan, count in Counter(scans).items() if count > 1], [])
 
     def test_local_changes_plan_exactly_as_the_committed_diff(self):
         # Staged, unstaged and untracked changes together: the local dry run and CI's committed diff agree.
