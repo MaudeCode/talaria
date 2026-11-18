@@ -291,4 +291,3 @@ describe("apns.sendJob", () => {
     expect(await send()).not.toBe(first);
   });
 });
-
