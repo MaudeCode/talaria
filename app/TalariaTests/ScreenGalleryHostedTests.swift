@@ -279,7 +279,8 @@ final class ScreenGalleryHostedTests: XCTestCase {
         }
     }
 
-    func testAdditionalSettings() async throws {
+    // One test per Settings page over `page(...)` (TAL-2545), as above.
+    func testDefaultModelPicker() async throws {
         try await page("settings-default-model", title: "Default Model", prepare: { window in
             let row = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Default Model") == true }
             XCTAssertTrue(HostedAccessibility.activate(row))
@@ -287,14 +288,23 @@ final class ScreenGalleryHostedTests: XCTestCase {
         }) {
             ModelsSettingsView(server: server)
         }
+    }
+
+    func testAuxiliaryModels() async throws {
         try await page("settings-auxiliary-models", title: "Auxiliary Models") {
             AuxiliaryModelsSettingsView(server: server)
         }
+    }
+
+    func testAuxiliaryTaskEditor() async throws {
         try await page("settings-auxiliary-task-editor", title: "Vision", prepare: { window in
             let row = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true }
             XCTAssertTrue(HostedAccessibility.activate(row))
             _ = try await self.requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "auxiliary-edit-reasoning" }
         }) { AuxiliaryModelsSettingsView(server: server) }
+    }
+
+    func testAuxiliaryModelPicker() async throws {
         try await page("settings-auxiliary-model-picker", title: "Model", prepare: { window in
             let row = try await self.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true }
             XCTAssertTrue(HostedAccessibility.activate(row))
@@ -304,12 +314,21 @@ final class ScreenGalleryHostedTests: XCTestCase {
         }) {
             AuxiliaryModelsSettingsView(server: server)
         }
+    }
+
+    func testQuotaWidgetCustomization() async throws {
         try await page("settings-quota-widget", title: "Customization") {
             SettingsPaneView(authManager: fixture.environment.authManager, server: server, pane: .providerQuotaWidget)
         }
+    }
+
+    func testSidebarQuotas() async throws {
         try await page("settings-sidebar-quotas", title: "Sidebar Quotas") {
             ProviderQuotaSidebarDisplayView()
         }
+    }
+
+    func testWidgetProfiles() async throws {
         let profile = try XCTUnwrap(ProviderQuotaWidgetProfileStore.saveCurrent(name: "Fixture Widget Profile"))
         defer { ProviderQuotaWidgetProfileStore.delete(id: profile.id) }
         try await page("settings-widget-profiles", title: "Widget Profiles") {
@@ -373,30 +392,46 @@ final class ScreenGalleryHostedTests: XCTestCase {
         }
     }
 
-    func testWorkspaceAndKanbanEditors() async throws {
+    // One test per editor over `page(...)` (TAL-2545): together they ran near the one-minute hung-test allowance.
+    func testWorkspaceManagerAndAddSheet() async throws {
         let registry = WorkspaceRegistryViewModel(client: fixture.client)
         await registry.load()
         try await page("workspace-manager", title: "Manage Workspaces") {
             WorkspaceManagerView(viewModel: registry, onRegistryChanged: {})
         }
         try await page("workspace-add", title: "Add Workspace") { WorkspaceAddSheet(viewModel: registry) }
+    }
+
+    func testWorkspacePicker() async throws {
         try await page("workspace-picker", title: "Choose Workspace") {
             ComposerWorkspacePickerSheet(workspaceRoots: [], selectedWorkspacePath: nil, suggestions: [],
                                          onLoadSuggestions: { _ in }, onSelect: { _ in })
         }
+    }
+
+    func testKanbanCardEditor() async throws {
         let card = try JSONDecoder().decode(KanbanCard.self, from: Data(#"{"card_id":"gallery-card","status":"running","title":"Fixture card"}"#.utf8))
         let editor = KanbanCardEditorState(mode: .edit(cardID: "gallery-card"), board: "fixture", client: fixture.client, card: card)
         try await page("kanban-card-editor", title: "Edit Card") {
             KanbanCardEditorView(state: editor, allowsMutation: true, onSaved: {})
         }
+    }
+
+    func testKanbanBoardEditorAndManager() async throws {
         let model = KanbanFeatureState(server: server, defaults: defaults, onAPIError: { XCTFail("\($0)") })
         await model.loadIfNeeded()
         try await page("kanban-board-editor", title: "Create") { KanbanBoardEditorView(model: model, mode: .create) }
         try await page("kanban-board-manager", title: "Manage") { KanbanBoardManagementView(model: model) }
+    }
+
+    func testTaskEditor() async throws {
         try await page("task-editor", title: "New Task") {
             CronJobEditorSheet(title: "New Task", client: fixture.client, draft: CronJobEditorDraft(),
                                saveTitle: "Create", isSaving: false, errorMessage: nil, onSave: { _ in false })
         }
+    }
+
+    func testContextCost() async throws {
         let snapshot = try JSONDecoder().decode(ContextWindowSnapshot.self, from: Data(#"{"estimated_cost":0.455}"#.utf8))
         try await renderHostedPage("context-cost") {
             ContextWindowPopover(snapshot: snapshot)

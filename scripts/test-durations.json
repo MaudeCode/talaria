@@ -2,9 +2,7 @@
   "budgetSeconds": 30,
   "overBudget": {
     "ChatStreamTickPerformanceTests::testStreamTicksAndKeystrokesStayWithinTheWorkBudget": "TAL-2405: 26.2 s in PR CI 44292221045 after TAL-2534",
-    "ScreenGalleryHostedTests::testWorkspaceAndKanbanEditors": "TAL-2405: 56.9 s on main",
     "session-entry.spec.ts::off-screen history halves long tasks during a 200-token stream": "TAL-2405: 56.0 s on main",
-    "ScreenGalleryHostedTests::testAdditionalSettings": "TAL-2405: 55.0 s on main",
     "demo-tour.spec.ts::every Settings section and Tools tab shows its heading without horizontal overflow": "TAL-2405: 37.1 s on main",
     "feedback-media.spec.ts::video is re-encoded smaller, without audio, at most 1280 px wide and within maxVideoBytes": "TAL-2405: 30.6 s on main",
     "tests.test_gateway_sessions::test_real_native_owner_on_its_own_daemon[profiles]": "TAL-2405: 23.6 s on CI run 44288546624 (TAL-2526: two real owner boots plus secondary isolation)",

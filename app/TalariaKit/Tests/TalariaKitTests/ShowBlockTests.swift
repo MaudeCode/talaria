@@ -85,4 +85,22 @@ final class ShowBlockTests: XCTestCase {
         XCTAssertEqual(raw.path, "/talaria/api/file/raw")
         XCTAssertEqual(URLComponents(url: raw, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "path" }?.value, "reports/week-45.xlsx")
     }
+
+    /// A screen that leaves while the block reads cancels the read; the section must not call the block gone.
+    @MainActor
+    func testACancelledReadDoesNotMarkTheBlockUnavailable() async throws {
+        let host = "show-cancel-\(UUID().uuidString).test"
+        let started = expectation(description: "the block read reached the server")
+        DeferredMockURLProtocol.setOnRequest({ _ in started.fulfill() }, forHost: host)
+        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [DeferredMockURLProtocol.self]
+        let model = ShowBlockCardModel(blockID: "sb_0a1b2c3d4e5f", client: APIClient(baseURL: URL(string: "https://\(host)")!, session: URLSession(configuration: config)))
+        let read = Task { await model.load() }
+        await fulfillment(of: [started], timeout: 10)
+        read.cancel()
+        await read.value
+        XCTAssertNil(model.block)
+        XCTAssertFalse(model.failed)
+    }
 }

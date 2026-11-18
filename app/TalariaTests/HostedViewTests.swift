@@ -722,26 +722,38 @@ final class SettingsPlacementHostedTests: XCTestCase {
         XCTAssertTrue(loaded, "The Settings fixture must finish loading before inspecting its rows")
     }
 
+    /// Every row the page's list realizes, paged half a screen at a time. Each step lays the list out and runs one
+    /// run-loop pass instead of drawing the window: a drawn frame per step was most of this class's window
+    /// snapshots, and the run that hung here had the simulator's render server at 6.4 GB on a 7 GB runner
+    /// (TAL-2542). The scan ends at the list's end, or once a step neither moves the list nor finds a new row, so a
+    /// list that keeps growing cannot hold it.
     private func allSettingsRows(in window: UIWindow) -> (labels: Set<String>, identifiers: Set<String>) {
         var labels = Set<String>()
         var identifiers = Set<String>()
         let scroll = window.firstView(ofType: UICollectionView.self)
         let top = -(scroll?.adjustedContentInset.top ?? 0)
-        var offset = top
-        repeat {
+        func show(_ offset: CGFloat) {
             scroll?.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
-            settle(window: window)
+            window.layoutIfNeeded()
+            RunLoop.current.run(until: Date())
+        }
+        var offset = top
+        var reached: CGFloat?
+        while true {
+            show(offset)
+            let found = labels.count + identifiers.count
             for element in HostedAccessibility.elements(in: window) {
                 if let label = element.accessibilityLabel { labels.insert(label) }
                 if let identifier = HostedAccessibility.identifier(of: element) { identifiers.insert(identifier) }
             }
             guard let scroll else { break }
+            let stalled = reached == scroll.contentOffset.y && labels.count + identifiers.count == found
+            reached = scroll.contentOffset.y
             let bottom = max(top, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
-            if offset >= bottom { break }
+            if offset >= bottom || stalled { break }
             offset = min(bottom, offset + max(1, scroll.bounds.height / 2))
-        } while true
-        scroll?.setContentOffset(CGPoint(x: 0, y: top), animated: false)
-        settle(window: window)
+        }
+        show(top)
         return (labels, identifiers)
     }
 
