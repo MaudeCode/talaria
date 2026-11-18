@@ -780,6 +780,17 @@ extension SessionSummary {
         sidebarGroup ?? (archived == true ? nil : pinned == true ? "pinned" : "recent")
     }
 
+    /// The automated group (`scheduled` or `webhook`) the row files under: the server's `sidebar_group`
+    /// (TAL-1534). `/api/session` omits that field, so a row the list adds from session detail (a deep link, a
+    /// created or duplicated chat) files by its server `source_kind` until `GET /api/sessions` serves it. TAL-2518 ships
+    /// the field on session detail; this fallback goes with it.
+    public var automatedSidebarGroup: String? {
+        if let sidebarGroup {
+            return sidebarGroup == "scheduled" || sidebarGroup == "webhook" ? sidebarGroup : nil
+        }
+        return isCronSession ? "scheduled" : isWebhookSession ? "webhook" : nil
+    }
+
     public var isCronSession: Bool { sourceKind == .cron }
 
     public var isWebhookSession: Bool { sourceKind == .webhook }

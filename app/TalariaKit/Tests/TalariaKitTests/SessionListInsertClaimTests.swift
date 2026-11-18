@@ -127,6 +127,33 @@ extension SessionListMutationTests {
         )
     }
 
+    /// `/api/session` omits `sidebar_group`, so a deep-linked automated chat the list has not served yet files
+    /// under its source kind's group, not under Chats (TAL-2514).
+    func testDeepLinkedAutomatedSessionsFileUnderTheirGroupUntilTheListServesThem() async throws {
+        let host = "tal2514-deep-link-group.test"
+        DeferredMockURLProtocol.setOnRequest({ request in
+            let query = request.request.url?.query ?? ""
+            switch (request.request.url?.path, query.contains("cron-1")) {
+            case ("/api/session", true):
+                request.complete(withJSON: #"{"session":{"session_id":"cron-1","title":"Nightly","archived":false,"source_kind":"cron"}}"#)
+            case ("/api/session", false):
+                request.complete(withJSON: #"{"session":{"session_id":"hook-1","title":"Hook","archived":false,"source_kind":"webhook"}}"#)
+            default:
+                XCTFail("unexpected request \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let viewModel = try makeDeferredViewModel(host: host)
+
+        _ = await viewModel.loadSessionForDeepLink(id: "cron-1")
+        _ = await viewModel.loadSessionForDeepLink(id: "hook-1")
+
+        let groups = viewModel.scheduledSessionGroups(searchText: "", selectedProjectID: nil)
+        XCTAssertEqual(groups.scheduled.compactMap(\.sessionId), ["cron-1"])
+        XCTAssertEqual(groups.webhook.compactMap(\.sessionId), ["hook-1"])
+        XCTAssertEqual(groups.ordinary.compactMap(\.sessionId), [])
+    }
+
     /// Archiving or deleting the inserted row ends its claim: the earlier
     /// response must not bring back a chat the server has just removed.
     func testArchivedOrDeletedInsertIsNotRestoredByAnEarlierListResponse() async throws {

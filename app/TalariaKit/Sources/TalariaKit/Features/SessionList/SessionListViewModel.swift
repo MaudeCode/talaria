@@ -356,9 +356,9 @@ public final class SessionListViewModel {
 
         // The server files each row under its `sidebar_group` and counts each automated group (TAL-482, TAL-1534).
         var groups = ScheduledSessionGroups(
-            ordinary: candidates.filter { $0.sidebarGroup != "scheduled" && $0.sidebarGroup != "webhook" },
-            scheduled: candidates.filter { $0.sidebarGroup == "scheduled" },
-            webhook: candidates.filter { $0.sidebarGroup == "webhook" },
+            ordinary: candidates.filter { $0.automatedSidebarGroup == nil },
+            scheduled: candidates.filter { $0.automatedSidebarGroup == "scheduled" },
+            webhook: candidates.filter { $0.automatedSidebarGroup == "webhook" },
             totalScheduledCount: automatedVisibility.showsCron ? automatedSessionCounts?.scheduled ?? 0 : 0,
             totalWebhookCount: automatedVisibility.showsWebhook ? automatedSessionCounts?.webhook ?? 0 : 0
         )
