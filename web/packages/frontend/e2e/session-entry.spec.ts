@@ -12,6 +12,23 @@ const transcript = (sid: string, turns: number, from = 0) => Array.from({ length
 ]).flat()
 
 const distance = (page: Page) => page.locator('#messages').evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)
+/**
+ * Waits until the pane's scroll position and height hold for 30 frames: longer than the transcript's own frame-driven
+ * settling (12 restore passes after a prepend, two frames before a laid-out tail returns to containment); about half a
+ * second at 60 fps.
+ */
+const still = (page: Page) => page.locator('#messages').evaluate((pane) => new Promise<void>((resolve, reject) => {
+  let last = '', same = 0, frames = 0
+  const sample = () => {
+    const now = `${pane.scrollTop}/${pane.scrollHeight}`
+    same = now === last ? same + 1 : 0
+    last = now
+    if (same >= 30) resolve()
+    else if (++frames > 600) reject(new Error(`#messages still moving after 600 frames at ${now}`))
+    else requestAnimationFrame(sample)
+  }
+  requestAnimationFrame(sample)
+}))
 const withoutContainment = 'html.without-containment .msg-row{content-visibility:visible!important;contain:none!important}html.without-containment .messages-inner{display:flex!important;flex-direction:column}html.without-containment .messages-inner > .msg-row[data-role="user"]{width:auto;margin-inline-start:0}'
 
 /** Retain native entries as well as their count so batching cannot hide task duration. */
@@ -64,23 +81,23 @@ for (const rows of [600, 1_200]) {
     // Read near the tail, with off-screen rows under their default content-visibility containment.
     const reader = page.locator(`[data-message-key="${rows - 10}"]`)
     await reader.evaluate((el) => el.scrollIntoView({ block: 'start' }))
-    await page.waitForTimeout(300)
-    // One reader capture: count row rect reads apart from the elapsed time of the frame that holds them.
-    const capture = await page.locator('#messages').evaluate((pane) => new Promise<{ reads: number; ms: number }>((resolve) => {
+    // The jump's own anchor capture and any relayout it starts finish before the counted scroll.
+    await still(page)
+    // One reader capture: count row rect reads over the frames that hold it.
+    const capture = await page.locator('#messages').evaluate((pane) => new Promise<{ reads: number }>((resolve) => {
       const rect = Object.getOwnPropertyDescriptor(Element.prototype, 'getBoundingClientRect')!.value as (this: Element) => DOMRect
       let reads = 0
       Element.prototype.getBoundingClientRect = function (this: Element) {
         if (this instanceof HTMLElement && this.dataset.messageKey !== undefined) reads += 1
         return rect.call(this)
       }
-      const start = performance.now()
       pane.scrollTop -= 1
       requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => {
         Element.prototype.getBoundingClientRect = rect
-        resolve({ reads, ms: performance.now() - start })
+        resolve({ reads })
       })))
     }))
-    testInfo.annotations.push({ type: 'reader capture', description: `${capture.reads} row rect reads, ${capture.ms.toFixed(1)} ms over three frames` })
+    testInfo.annotations.push({ type: 'reader capture', description: `${capture.reads} row rect reads over three frames` })
     expect(capture.reads, 'the scroll captured a reader anchor').toBeGreaterThan(0)
     expect(capture.reads, 'row rect reads in one capture').toBeLessThanOrEqual(rows === 600 ? 24 : 28)
     // The captured anchor still holds the reader through growth above it.
@@ -165,57 +182,56 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
     const samples: number[] = []
     const timings: Record<string, number>[] = []
     const taskTimings: Record<string, number>[] = []
-    // Fixed paired repetitions keep one scheduling outlier from deciding a threshold-count benchmark.
-    for (let trial = 0; trial < 3; trial++) {
-      for (const baseline of [true, false]) {
-        history.run.stream?.end()
-        history.run.stream = undefined
-        await page.goto(`/session/${sid}`)
-        await expect(page.locator('[data-message-key="600"] .msg-body p').first()).toBeAttached()
-        // History Markdown renders newest first, a batch per task (TAL-1637); measure only once all of it has.
-        await expect(page.locator('[data-message-key="2"] .msg-body p').first()).toBeAttached()
-        await expect(page.locator('[data-message-key]')).toHaveCount(600)
-        await expect.poll(() => !!history.run.stream).toBe(true)
-        await expect.poll(() => distance(page)).toBeLessThan(2)
-        // Only this test can disable containment; no benchmark switch ships in the app.
-        await page.addStyleTag({ content: withoutContainment })
-        await page.evaluate((disabled) => document.documentElement.classList.toggle('without-containment', disabled), baseline)
-        await page.waitForTimeout(500)
-        // Changing containment can resize the history; both phases must start in the same follow mode.
-        await page.locator('#messages').evaluate((el) => { el.scrollTop = el.scrollHeight; el.dispatchEvent(new Event('scroll', { bubbles: true })) })
-        await expect.poll(() => distance(page)).toBeLessThan(2)
-        await expect(page.locator('.scroll-to-bottom-btn')).toHaveCount(0)
-        // Keep the disabled-containment baseline above the long-task threshold on fast hosts.
-        await cpu.send('Emulation.setCPUThrottlingRate', { rate: 10 })
-        const before = await readTimings()
-        await page.evaluate(() => {
-          const w = window as unknown as LongTaskProbe
-          w.longTasks = []
-          w.observer = new PerformanceObserver((list) => { w.longTasks.push(...list.getEntries()) })
-          w.observer.observe({ type: 'longtask' })
-        })
-        for (let token = 0; token < 200; token++) {
-          history.run.stream!.write(`event: token\ndata: ${JSON.stringify({ text: 'word ' })}\n\n`)
-          await page.waitForTimeout(30)
-        }
-        await expect(page.locator('.live-turn .msg-body')).toContainText('word '.repeat(200).trim())
-        await expect.poll(() => distance(page)).toBeLessThan(2)
-        await page.waitForTimeout(100)
-        const tasks = await page.evaluate(() => {
-          const w = window as unknown as LongTaskProbe
-          w.longTasks.push(...w.observer.takeRecords())
-          w.observer.disconnect()
-          return w.longTasks.map((entry) => entry.duration)
-        })
-        samples.push(tasks.length)
-        taskTimings.push({ totalMs: tasks.reduce((sum, duration) => sum + duration, 0), blockingMs: tasks.reduce((sum, duration) => sum + Math.max(0, duration - 50), 0), maxMs: Math.max(0, ...tasks) })
-        const after = await readTimings()
-        timings.push(Object.fromEntries(['TaskDuration', 'ScriptDuration', 'LayoutDuration', 'RecalcStyleDuration', 'LayoutCount', 'RecalcStyleCount'].map((name) => [name, (after[name] ?? 0) - (before[name] ?? 0)])))
-        await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+    // Each token renders as its own frame, so the counts are steady; one paired run measures both modes.
+    for (const baseline of [true, false]) {
+      history.run.stream?.end()
+      history.run.stream = undefined
+      await page.goto(`/session/${sid}`)
+      await expect(page.locator('[data-message-key="600"] .msg-body p').first()).toBeAttached()
+      // History Markdown renders newest first, a batch per task (TAL-1637); measure only once all of it has.
+      await expect(page.locator('[data-message-key="2"] .msg-body p').first()).toBeAttached()
+      await expect(page.locator('[data-message-key]')).toHaveCount(600)
+      await expect.poll(() => !!history.run.stream).toBe(true)
+      await expect.poll(() => distance(page)).toBeLessThan(2)
+      // Only this test can disable containment; no benchmark switch ships in the app.
+      await page.addStyleTag({ content: withoutContainment })
+      await page.evaluate((disabled) => document.documentElement.classList.toggle('without-containment', disabled), baseline)
+      await still(page)
+      // Changing containment can resize the history; both phases must start in the same follow mode.
+      await page.locator('#messages').evaluate((el) => { el.scrollTop = el.scrollHeight; el.dispatchEvent(new Event('scroll', { bubbles: true })) })
+      await expect.poll(() => distance(page)).toBeLessThan(2)
+      await expect(page.locator('.scroll-to-bottom-btn')).toHaveCount(0)
+      // Keep the disabled-containment baseline above the long-task threshold on fast hosts.
+      await cpu.send('Emulation.setCPUThrottlingRate', { rate: 10 })
+      const before = await readTimings()
+      await page.evaluate(() => {
+        const w = window as unknown as LongTaskProbe
+        w.longTasks = []
+        w.observer = new PerformanceObserver((list) => { w.longTasks.push(...list.getEntries()) })
+        w.observer.observe({ type: 'longtask' })
+      })
+      for (let token = 0; token < 200; token++) {
+        history.run.stream!.write(`event: token\ndata: ${JSON.stringify({ text: 'word ' })}\n\n`)
+        // Each token renders before the next is sent, so tokens arrive as separate frames rather than one coalesced chunk.
+        await page.waitForFunction((count) => (document.querySelector('.live-turn .msg-body')?.textContent?.match(/word/g)?.length ?? 0) > count, token, { polling: 'raf' })
       }
+      await expect(page.locator('.live-turn .msg-body')).toContainText('word '.repeat(200).trim())
+      await expect.poll(() => distance(page)).toBeLessThan(2)
+      const tasks = await page.evaluate(async () => {
+        // A frame painted after the last token's render: its long task has ended and is recorded.
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+        const w = window as unknown as LongTaskProbe
+        w.longTasks.push(...w.observer.takeRecords())
+        w.observer.disconnect()
+        return w.longTasks.map((entry) => entry.duration)
+      })
+      samples.push(tasks.length)
+      taskTimings.push({ totalMs: tasks.reduce((sum, duration) => sum + duration, 0), blockingMs: tasks.reduce((sum, duration) => sum + Math.max(0, duration - 50), 0), maxMs: Math.max(0, ...tasks) })
+      const after = await readTimings()
+      timings.push(Object.fromEntries(['TaskDuration', 'ScriptDuration', 'LayoutDuration', 'RecalcStyleDuration', 'LayoutCount', 'RecalcStyleCount'].map((name) => [name, (after[name] ?? 0) - (before[name] ?? 0)])))
+      await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
     }
-    const median = (offset: number) => samples.filter((_, i) => i % 2 === offset).toSorted((a, b) => a - b)[1]!
-    const baseline = median(0), contained = median(1)
+    const [baseline, contained] = samples as [number, number]
     console.info('Long-task samples', { baseline, contained, samples, tokens: 200, timings, taskTimings })
     await testInfo.attach('long-task-counts', { body: JSON.stringify({ baseline, contained, samples, tokens: 200, timings, taskTimings }), contentType: 'application/json' })
     expect(baseline, 'baseline must exercise long tasks').toBeGreaterThan(0)
@@ -282,7 +298,7 @@ test('a message deep link wins over the entry jump to the bottom', async ({ page
   const target = page.locator('[data-message-key="5"]')
   await expect(target).toBeInViewport()
   await expect.poll(() => distance(page)).toBeGreaterThan(200)
-  await page.waitForTimeout(500)
+  await still(page)
   await expect(target).toBeInViewport()
 })
 
@@ -298,7 +314,7 @@ test('a message deep link loads older rows until it finds its message', async ({
   await page.goto('/session/entry-deep?msg=5')
   const target = page.locator('[data-message-key="5"]')
   await expect(target).toBeInViewport()
-  await page.waitForTimeout(500)
+  await still(page)
   await expect(target).toBeInViewport()
 })
 
@@ -359,7 +375,7 @@ test('loading older rows keeps the reader where they are', async ({ page }) => {
   await expect.poll(() => distance(page)).toBeLessThan(2)
   await page.locator('#messages').evaluate((el) => { el.scrollTop = 0 })
   await expect(page.getByText('entry-older question 1', { exact: true })).toBeAttached()
-  await page.waitForTimeout(300)
+  await still(page)
   expect(await distance(page)).toBeGreaterThan(200)
 })
 
@@ -568,7 +584,8 @@ for (const ios of [false, true]) {
       const frames = await visibleFrames(page, 3_000, async () => {
         for (let i = 0; i < 25; i++) {
           await page.mouse.wheel(0, -500)
-          await page.waitForTimeout(40)
+          // One painted frame per step, so the sampler sees the gesture move rather than one jump.
+          await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())))
         }
       })
       // Scrolling up carries every row down the screen; a row rising between two frames moved against the gesture.

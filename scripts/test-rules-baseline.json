@@ -2,8 +2,6 @@
   "counts": {
     "clock-elapsed": {
       "app/TalariaTests/ChatViewModelSendTests.swift": 1,
-      "web/packages/frontend/e2e/composer.spec.ts": 2,
-      "web/packages/frontend/e2e/session-entry.spec.ts": 1,
       "web/packages/frontend/src/app/bootstrap.test.tsx": 1,
       "web/packages/frontend/src/features/chat/useTranscript.test.tsx": 1,
       "web/packages/frontend/src/features/voice/completionAudio.test.ts": 1,
@@ -68,10 +66,6 @@
       "app/TalariaTests/ReplayCatchUpPerformanceTests.swift": 1,
       "app/TalariaTests/SessionListHostedTests.swift": 1,
       "app/TalariaTests/TranscriptHostedTests.swift": 26,
-      "web/packages/frontend/e2e/composer.spec.ts": 4,
-      "web/packages/frontend/e2e/session-entry.spec.ts": 8,
-      "web/packages/frontend/e2e/session-switch.spec.ts": 7,
-      "web/packages/frontend/e2e/worklog.spec.ts": 6,
       "web/packages/frontend/src/app/settings.test.tsx": 1,
       "web/packages/frontend/src/features/chat/ChatSidePanel.test.tsx": 3,
       "web/packages/frontend/src/features/composer/ComposerNotices.test.tsx": 1,

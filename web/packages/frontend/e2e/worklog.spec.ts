@@ -1,6 +1,7 @@
 import sceneCases from '../src/features/chat/__fixtures__/activity-scene-boundaries.json' with { type: 'json' }
 import canonicalScene from '../src/features/chat/__fixtures__/activity-scene.json' with { type: 'json' }
 import { createServer, type ServerResponse } from 'node:http'
+import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import { deferred } from '../src/test/fixtures'
 import { REVEAL_MS } from '../src/lib/motion'
@@ -12,6 +13,19 @@ import { reasoningProjection } from '../../server/dist/sessions/reasoning-displa
 const asServer = (messages: unknown[]): unknown[] => redactSessionData({ messages: hydrateAnchorActivityScenes(withTurnIds(messages), {}) }, true).messages as unknown[]
 
 test.use({ serviceWorkers: 'block' })
+
+/** Resolves once the page has drawn `quiet` frames in a row with no finite animation running, so a frame sampler has
+ *  recorded the motion's settled end. Endless loops (the working pulse) do not count as motion. */
+const motionSettled = (page: Page, quiet = 3) => page.evaluate((quiet) => new Promise<void>((done) => {
+  let still = 0
+  const tick = () => {
+    const moving = document.getAnimations().some((a) => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity)
+    still = moving ? 0 : still + 1
+    if (still >= quiet) done()
+    else requestAnimationFrame(tick)
+  }
+  requestAnimationFrame(tick)
+}), quiet)
 
 test('expanded worklog and tool details are visually readable', async ({ page }, testInfo) => {
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
@@ -611,16 +625,18 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
     })
     send('reasoning', { text: 'Compare the ports.' })
     send('token', { text: 'Reading both files.' })
-    send('tool', { id: 'a', name: 'read_file', args: { path: 'a.toml' } }); await page.waitForTimeout(150)
-    send('tool', { id: 'b', name: 'read_file', args: { path: 'b.toml' } }); await page.waitForTimeout(150)
+    // Each frame lands once the page has drawn the one before it, so the stream spreads over many sampled frames.
+    send('tool', { id: 'a', name: 'read_file', args: { path: 'a.toml' } }); await expect(page.locator('.live-turn [data-tool-id="a"]')).toBeAttached()
+    send('tool', { id: 'b', name: 'read_file', args: { path: 'b.toml' } }); await expect(page.locator('.live-turn [data-tool-id="b"]')).toBeAttached()
     send('tool_complete', { id: 'a', name: 'read_file', result_view: { text: 'port = 8080' } }); send('tool_complete', { id: 'b', name: 'read_file', result_view: { text: 'port = 8080' } })
-    for (const word of answer.split(/(?<= )/)) { send('token', { text: word }); await page.waitForTimeout(40) }
-    await page.waitForTimeout(300)
+    let streamed = ''
+    for (const word of answer.split(/(?<= )/)) { send('token', { text: word }); streamed += word; await expect(page.locator('.live-turn')).toContainText(streamed.trim()) }
+    await motionSettled(page)
     await page.evaluate(() => { (window as unknown as { phase: string }).phase = 'settle' })
     finished = true
     send('done', { session: { session_id: sid, title: 'Steady', messages: asServer(messages) } })
     await expect(page.locator('.live-turn')).toHaveCount(0)
-    await page.waitForTimeout(700)
+    await motionSettled(page)
     const samples = await page.evaluate(() => (window as unknown as { samples: { below: number; old: number; body: number; dock: number; cover: number; t: number; phase: string }[] }).samples)
     // Streamed lines never stay hidden below a pinned viewport for more than a couple of frames.
     let run = 0, longest = 0
@@ -707,7 +723,7 @@ test('a sent message lands at its own height while a pinned transcript keeps its
     const stream = await connected.promise
     stream.write(`id: landing-run:2\nevent: tool\ndata: ${JSON.stringify({ id: 'a', name: 'read_file', args: { path: 'login.spec.ts' } })}\n\n`)
     await expect(page.locator('.live-turn [data-tool-id="a"]')).toBeVisible()
-    await page.waitForTimeout(600)
+    await motionSettled(page)
     const samples = await page.evaluate(() => (window as unknown as { samples: { below: number; user: number }[] }).samples)
     const heights = samples.map((sample) => Math.round(sample.user))
     const final = heights.at(-1)!
