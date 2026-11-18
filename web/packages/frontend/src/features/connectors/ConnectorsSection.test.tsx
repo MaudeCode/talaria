@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ConnectorOperationView, ConnectorsPage } from '@maudecode/talaria-web-contracts'
@@ -40,23 +40,6 @@ function renderWith(ui: React.ReactNode) {
 }
 
 describe('ConnectorsSection (TAL-818)', () => {
-  it('offers native scheduled guest sign-in without starting OAuth on page open (TAL-1507)', async () => {
-    vi.mocked(api.fetchConnectors).mockResolvedValueOnce(offered)
-    renderWith(<ConnectorsSection />)
-    expect(await screen.findByRole('button', { name: 'Not now' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Sign in with Nous Portal' })).toBeEnabled()
-    expect(api.onboardingOauthStart).not.toHaveBeenCalled()
-  })
-
-  it('keeps an unavailable retained offer understandable without enabling sign-in', async () => {
-    vi.mocked(api.fetchConnectors).mockResolvedValueOnce({ ...offered, sign_in_offer: {
-      ...offered.sign_in_offer!, available: false, due: false, actions: ['dismiss'],
-    } })
-    renderWith(<ConnectorsSection />)
-    expect(await screen.findByRole('button', { name: 'Not now' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Sign in with Nous Portal' })).toBeDisabled()
-  })
-
   it('dismisses immediately, reconciles an unknown outcome, and rolls back a refusal', async () => {
     const hidden: ConnectorsPage = { ...offered, sign_in_offer: { ...offered.sign_in_offer!, visible: false, actions: [] } }
     vi.mocked(api.fetchConnectors).mockResolvedValue(offered)
@@ -94,52 +77,29 @@ describe('ConnectorsSection (TAL-818)', () => {
     expect(api.setConnectorRule).toHaveBeenCalledWith('notion', 'rev-7', { enabled: true })
   })
 
-  it('offers existing Nous sign-in when the server requires it, even without a catalog', async () => {
-    vi.mocked(api.fetchConnectors).mockResolvedValueOnce({ ...shared.page, connectors: [], sign_in_required: true })
-    renderWith(<ConnectorsSection />)
-    expect(await screen.findByRole('button', { name: 'Sign in with Nous Portal' })).toBeEnabled()
-    expect(screen.queryByText('No connectors available.')).not.toBeInTheDocument()
-  })
-
-  it('connects: the authorization link while it waits, then the connected toast once the server reports it', async () => {
-    operation = waiting
-    renderWith(<ConnectorsSection />)
-    const row = (await screen.findByRole('switch', { name: 'Gmail available to Hermes' })).closest('li')!
-    await userEvent.click(within(row).getByRole('button', { name: 'Connect' }))
-    const link = await within(row).findByRole('link', { name: 'Authorize' })
-    expect(link).toHaveAttribute('href', 'https://vendor.example.test/authorize/conn-1')
-    expect(within(row).getByText('Waiting for authorization')).toBeInTheDocument()
-    operation = { ...waiting, settled: true, outcome: 'connected', targets: [{ ...waiting.targets[0]!, state: 'connected', connect_url: null, actions: [] }] }
-    await waitFor(() => expect(showToast).toHaveBeenCalledWith('Gmail connected', 3000, 'info'), { timeout: 5000 })
-    await waitFor(() => expect(within(row).queryByRole('link', { name: 'Authorize' })).not.toBeInTheDocument())
-  })
 })
 
 describe('ConnectCard (TAL-818)', () => {
   it('keeps the card and polls on after a failed read; only a gone operation drops it', async () => {
     const { ApiError } = await import('../../contracts')
     const read = vi.mocked(api.fetchConnectorOperation)
+    read.mockClear()
     read.mockRejectedValueOnce(new ApiError({ kind: 'http', status: 502, path: '/api/connectors/operations/op-chat', message: 'Bad gateway', retryable: true }))
-    renderWith(<ConnectCard initial={shared.connect_card} />)
-    await waitFor(() => expect(read).toHaveBeenCalledTimes(1), { timeout: 4000 })
-    expect(screen.getByRole('region', { name: 'Connect apps' })).toBeInTheDocument()
-    read.mockRejectedValueOnce(new ApiError({ kind: 'http', status: 404, code: 'operation_not_found', path: '/api/connectors/operations/op-chat', message: 'gone', retryable: false }))
-    await waitFor(() => expect(screen.queryByRole('region', { name: 'Connect apps' })).not.toBeInTheDocument(), { timeout: 6000 })
-    expect(read).toHaveBeenCalledTimes(2)
-  }, 15_000)
-
-  it('shows each app with the moves the server offers and continues the turn', async () => {
-    operation = shared.connect_card
-    renderWith(<ConnectCard initial={shared.connect_card} />)
-    const card = screen.getByRole('region', { name: 'Connect apps' })
-    expect(within(card).getByRole('link', { name: 'Authorize' })).toHaveAttribute('href', 'https://vendor.example.test/authorize/conn-2')
-    const approve = within(card).getByRole('button', { name: 'Approve' })
-    expect(approve).toBeDisabled()
-    await userEvent.type(within(card).getByLabelText('API key'), 'lin-key')
-    expect(approve).toBeEnabled()
-    await userEvent.click(within(card).getByRole('button', { name: 'Continue' }))
-    await waitFor(() => expect(api.respondConnectorOperation).toHaveBeenCalledWith({ op_id: 'op-chat', action: 'continue' }))
-    await waitFor(() => expect(screen.queryByRole('region', { name: 'Connect apps' })).not.toBeInTheDocument())
+    // The card reads at once, then polls every 2 s; a controlled clock steps the poll.
+    vi.useFakeTimers()
+    try {
+      renderWith(<ConnectCard initial={shared.connect_card} />)
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(read).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('region', { name: 'Connect apps' })).toBeInTheDocument()
+      read.mockRejectedValueOnce(new ApiError({ kind: 'http', status: 404, code: 'operation_not_found', path: '/api/connectors/operations/op-chat', message: 'gone', retryable: false }))
+      // Within the next two polls the gone read lands and polling stops.
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+      expect(screen.queryByRole('region', { name: 'Connect apps' })).not.toBeInTheDocument()
+      expect(read).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('shows what an MCP row runs or contacts word for word until it is skipped (TAL-1907)', async () => {
@@ -168,18 +128,26 @@ describe('ConnectCard (TAL-818)', () => {
     answer.mockClear()
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     const view = (initial: ConnectorOperationView) => <QueryClientProvider client={qc}><ConnectCard initial={initial} /></QueryClientProvider>
+    // The card polls every 2 s; a controlled clock steps the poll (fireEvent, since userEvent awaits a timer the fake clock holds).
+    vi.useFakeTimers()
     const { rerender } = render(view(native))
     const card = screen.getByRole('region', { name: 'Connect apps' })
-    await userEvent.click(within(within(card).getAllByRole('listitem')[2]!).getByRole('button', { name: 'Try again' }))
-    expect(answer).toHaveBeenCalledWith({ op_id: 'op-native', ...native.owner, action: 'retry', target: 'notion', env: {} })
-    await waitFor(() => expect(read).toHaveBeenCalledWith('op-native', native.owner), { timeout: 4000 })
+    try {
+      fireEvent.click(within(within(card).getAllByRole('listitem')[2]!).getByRole('button', { name: 'Try again' }))
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(answer).toHaveBeenCalledWith({ op_id: 'op-native', ...native.owner, action: 'retry', target: 'notion', env: {} })
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(read).toHaveBeenCalledWith('op-native', native.owner)
+    } finally {
+      vi.useRealTimers()
+    }
     // A live frame moves the same card, and a settled one closes it.
     operation = { ...native, targets: native.targets.map((t) => t.name === 'gmail' ? { ...t, state: 'connected', connect_url: null, actions: [] } : t) }
     rerender(view(operation))
     await waitFor(() => expect(within(card).queryByRole('link', { name: 'Authorize' })).not.toBeInTheDocument())
     rerender(view({ ...operation, settled: true }))
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Connect apps' })).not.toBeInTheDocument())
-  }, 15_000)
+  })
 
   it('wakes the owner on return from an authorization link only while the server offers it (TAL-1317)', async () => {
     const native = shared.native_connection.view

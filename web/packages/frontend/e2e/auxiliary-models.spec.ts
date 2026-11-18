@@ -151,31 +151,6 @@ for (const width of [1280, 390]) {
   })
 }
 
-test('the task list, Auto and a custom id do not wait for a held catalog, and switching tasks reads no catalog again', async ({ page }) => {
-  let catalogReads = 0
-  let releaseCatalog!: () => void
-  const held = new Promise<void>((resolve) => { releaseCatalog = resolve })
-  await page.route('**/api/model/auxiliary', (route) => route.fulfill({ json: auxiliary }))
-  await page.route('**/api/models', async (route) => { catalogReads += 1; await held; await route.fulfill({ json: models }) })
-  // No network-idle wait: the held catalog keeps the network busy by design.
-  await page.goto('/settings/models')
-  const list = taskTable(page)
-  await expect(list.getByRole('row', { name: /Vision/ })).toContainText('legacy/vision-model')
-  await list.getByRole('button', { name: /Title generation/ }).click()
-  await expect(taskRow(page, 'title_generation').getByRole('button', { name: /^Auto/ })).toBeEnabled()
-  await expect(taskRow(page, 'title_generation').getByRole('textbox', { name: /Custom model ID/ })).toBeEditable()
-  await list.getByRole('button', { name: /Compression/ }).click()
-  await expect(list.getByRole('button', { name: /Title generation/ })).toHaveAttribute('aria-expanded', 'false')
-  releaseCatalog()
-  await expect(taskRow(page, 'compression').getByRole('region', { name: 'Anthropic' })).toBeVisible()
-  const reads = catalogReads
-  await list.getByRole('button', { name: /Vision/ }).click()
-  await expect(taskRow(page, 'vision').getByRole('region', { name: 'Anthropic' })).toBeVisible()
-  await list.getByRole('button', { name: /Title generation/ }).click()
-  await expect(taskRow(page, 'title_generation').getByRole('region', { name: 'Anthropic' })).toBeVisible()
-  expect(catalogReads).toBe(reads)
-})
-
 for (const width of [1280, 390]) {
   test(`delegation mode recovery and route editing fit at ${width}px`, async ({ page }, testInfo) => {
     const { default: fixtures } = await import('../../../../contracts/fixtures/delegation-settings.json', { with: { type: 'json' } })

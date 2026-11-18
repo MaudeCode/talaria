@@ -66,6 +66,7 @@ const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, outc
     await page.screenshot({ path: testInfo.outputPath(`connectors-${shot}-connecting.png`) })
     connected = true
     await expect(gmail.getByRole('list', { name: 'Gmail accounts' })).toContainText('me@example.test', { timeout: 10_000 })
+    await expect(page.getByText('Gmail connected', { exact: true })).toBeVisible()
     await expect(authorize).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath(`connectors-${shot}-connected.png`) })
   })
@@ -95,6 +96,7 @@ test('an unsigned Connectors page offers sign-in and adopts an external account 
   await settle(page)
   await expect(page.getByRole('button', { name: 'Sign in with Nous Portal' })).toBeVisible()
   await expect(page.locator('[data-connector]')).toHaveCount(0)
+  await expect(page.getByText('No apps', { exact: true })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath(`sign-in-only-${testInfo.project.name}.png`) })
   publicCatalog = true
   await page.reload()
@@ -283,6 +285,7 @@ test('an MCP row keeps a long command in a bounded box with every argument reach
   await page.keyboard.press('End')
   await expect.poll(() => box.evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 1)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath(`launch-line-${testInfo.project.name}-end.png`) })
+  await expect(row.getByRole('button', { name: 'Approve' })).toBeDisabled()
   await row.locator('input').fill('lin-key')
   await expect(row.getByRole('button', { name: 'Approve' })).toBeEnabled()
 })

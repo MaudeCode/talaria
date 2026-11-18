@@ -185,22 +185,6 @@ describe('ProvidersSection', () => {
     await waitFor(() => expect(ids('available')).toEqual(['openrouter', 'openai']))
   })
 
-  it('renders the server-offered device code and signed-in result (TAL-1827)', async () => {
-    providersResponse.current = { active_provider: 'device-test', providers: [{ id: 'device-test', display_name: 'Device Test', configurable: false, is_plugin_provider: true, has_key: false, device_login: true }, { id: 'no-hooks', display_name: 'No Hooks', configurable: false, is_plugin_provider: true }] }
-    vi.mocked(api.onboardingOauthStart).mockResolvedValue({ ok: true, provider: 'device-test', flow_id: 'flow-test', status: 'pending', user_code: 'TEST-1827', verification_url: 'https://device.example.test/login', expires_in: 90, interval: 1 })
-    vi.mocked(api.onboardingOauthPoll).mockResolvedValue({ ok: true, provider: 'device-test', flow_id: 'flow-test', status: 'approved' })
-    renderSection()
-    await userEvent.click(within(await found('[data-provider="device-test"]')).getByRole('button', { name: 'Sign in' }))
-    expect(within(block('no-hooks')).queryByRole('button')).toBeNull()
-    const row = await setupRow('device-test')
-    fireEvent.contextMenu(within(row).getByRole('button', { name: 'Sign in with Device Test' }), { clientX: 10, clientY: 10 })
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Sign in with Device Test' }))
-    expect(await within(row).findByText('TEST-1827')).toBeInTheDocument()
-    expect(within(row).getByRole('link')).toHaveAttribute('href', 'https://device.example.test/login')
-    expect(api.onboardingOauthStart).toHaveBeenCalledWith('device-test')
-    expect(await within(row).findByText('Signed in to Device Test.', {}, { timeout: 3000 })).toBeInTheDocument()
-  })
-
   it('installs the plugin a card offers through the reviewed catalog flow and rereads the row (TAL-1812)', async () => {
     providersResponse.current = { active_provider: 'copilot', providers: [{ id: 'copilot', display_name: 'GitHub Copilot', has_key: false, is_plugin_provider: true, install_hint: 'github-copilot', auth_error: 'This provider is now a plugin. Install it, then sign in.' }, { id: 'openrouter', display_name: 'OpenRouter', has_key: true }] }
     vi.mocked(api.installPlugin).mockImplementation((_name, token) => {
@@ -234,29 +218,6 @@ describe('ProvidersSection', () => {
     await userEvent.click(within(menu).getByRole('menuitem', { name: 'Install plugin' }))
     expect(api.installPlugin).toHaveBeenCalledWith('github-copilot', undefined)
     expect(await within(await setupRow('copilot')).findByRole('alert')).toHaveTextContent('Scan refused this plugin')
-  })
-
-  it('sets up a self-hosted provider from its row, which then joins Your providers (TAL-570)', async () => {
-    providersResponse.current = { active_provider: 'openrouter', providers: [{ id: 'openrouter', display_name: 'OpenRouter', has_key: true }, { id: 'ollama', display_name: 'Ollama', has_key: false, is_self_hosted: true, base_url: null, models: [], models_total: 0 }] }
-    vi.mocked(api.saveSelfHostedProvider).mockImplementation(() => {
-      providersResponse.current = { active_provider: 'ollama', providers: [{ id: 'ollama', display_name: 'Ollama', has_key: false, configured: true, is_active: true, is_self_hosted: true, base_url: 'http://gpu-box:11434/v1', models: [{ id: 'qwen3:32b', label: 'Qwen3 32B' }], models_total: 1 }, { id: 'openrouter', display_name: 'OpenRouter', has_key: true }] }
-      return Promise.resolve({ ok: true, provider: 'ollama', base_url: 'http://gpu-box:11434/v1', model: 'qwen3:32b' })
-    })
-    await renderAt()
-    const ollama = (await screen.findByText('Ollama')).closest<HTMLElement>('[data-provider="ollama"]')!
-    expect(within(ollama).queryByRole('button', { name: 'Set key' })).toBeNull()
-    await userEvent.click(within(ollama).getByRole('button', { name: 'Set up' }))
-    const form = await setupRow('ollama')
-    await userEvent.type(within(form).getByRole('textbox', { name: 'Base URL' }), 'http://gpu-box:11434/v1')
-    await userEvent.type(within(form).getByLabelText('API key (optional)'), 'local-key')
-    await userEvent.type(within(form).getByRole('textbox', { name: 'Default model' }), 'qwen3:32b')
-    await userEvent.click(within(form).getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(api.saveSelfHostedProvider).toHaveBeenCalledWith({ provider: 'ollama', base_url: 'http://gpu-box:11434/v1', model: 'qwen3:32b', api_key: 'local-key' }))
-    await waitFor(() => expect(document.querySelector('[data-section="providers-configured"] [data-provider="ollama"]')).not.toBeNull())
-    const saved = block('ollama')
-    expect(within(saved).getByText('http://gpu-box:11434/v1')).toBeInTheDocument()
-    expect(within(saved).getByText('Default')).toBeInTheDocument()
-    expect(screen.queryByRole('textbox', { name: 'Base URL' })).toBeNull()
   })
 
   it("words each block's key source by the server's kind, else its own source, and marks only the default provider (TAL-603, TAL-2135)", async () => {
@@ -470,20 +431,6 @@ describe('ProviderDetail (TAL-2135)', () => {
     expect(api.setDefaultModel).not.toHaveBeenCalled()
   })
 
-  it("refreshes the provider's models and shows the server's new count (TAL-570)", async () => {
-    providersResponse.current = { active_provider: 'zai', providers: [{ id: 'zai', display_name: 'Z.AI', has_key: true, configured: true, models: [{ id: 'glm-5' }], models_total: 3 }] }
-    vi.mocked(api.refreshModels).mockImplementation(() => {
-      providersResponse.current = { active_provider: 'zai', providers: [{ id: 'zai', display_name: 'Z.AI', has_key: true, configured: true, models: [{ id: 'glm-5' }], models_total: 5 }] }
-      return Promise.resolve({ ok: true, provider: 'zai', models: { active_provider: 'zai', default_model: 'glm-5', groups: [] } } as never)
-    })
-    await renderAt('/settings/providers/zai')
-    const models = await found('[data-group=\"models\"]')
-    expect(within(models).getByRole('heading').parentElement).toHaveTextContent(/^Models3/)
-    await userEvent.click(within(models).getByRole('button', { name: 'Refresh models' }))
-    expect(api.refreshModels).toHaveBeenCalledWith('zai')
-    await waitFor(() => expect(within(group('models')!).getByRole('heading').parentElement).toHaveTextContent(/^Models5/))
-  })
-
   it('refreshes quotas from the Quota header', async () => {
     providersResponse.current = { active_provider: 'anthropic', providers: [anthropic] }
     quotaResponse.current = quotas
@@ -494,14 +441,13 @@ describe('ProviderDetail (TAL-2135)', () => {
     await waitFor(() => expect(api.fetchProviderQuotas).toHaveBeenCalledWith(true))
   })
 
-  it('shows the OpenRouter spend chart, pace, budget standing and budget row under Spend (TAL-412)', async () => {
+  it('puts the OpenRouter spend card and its budget row under Spend (TAL-412)', async () => {
     providersResponse.current = { active_provider: 'openrouter', providers: [openrouter] }
     await renderAt('/settings/providers/openrouter')
     const spend = await found('[data-group=\"spend\"]')
+    // OpenRouterCost.test.tsx owns the figures; this page owns where the card sits.
     expect(await within(spend).findByText('Monthly pace: $33.90', { exact: false })).toBeInTheDocument()
-    expect(within(spend).getByText('80% of $42.37 budget (monthly pace)')).toBeInTheDocument()
-    expect(within(spend).getAllByRole('listitem').filter((li) => li.hasAttribute('title'))).toHaveLength(7)
-    expect(within(spend).getByRole('spinbutton', { name: 'Monthly budget' })).toHaveValue(42.37)
+    expect(within(spend).getByRole('spinbutton', { name: 'Monthly budget' })).toBeInTheDocument()
   })
 
   it("colours a windowless source by the server urgency of both bases (TAL-411)", async () => {

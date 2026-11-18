@@ -32,18 +32,14 @@ test('plugin updates show Agent scan consent and block dangerous revisions', asy
   await settle(page)
   const section = page.locator('[data-section="plugins"]')
   await expect(section.getByText(/^Weather/)).toBeVisible()
-  if (process.env.TALARIA_PLUGIN_BEFORE === '1') {
-    await page.screenshot({ path: `/tmp/TAL-1275-evidence/before-${testInfo.project.name}.png` })
-    return
-  }
   await expect(section.getByText('Update available', { exact: true })).toBeVisible()
   await expect(section.getByRole('button', { name: 'Update', exact: true })).toHaveCount(1)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await page.screenshot({ path: `/tmp/TAL-1275-evidence/after-${testInfo.project.name}.png` })
+  await page.screenshot({ path: testInfo.outputPath('after.png') })
   await section.getByRole('button', { name: 'Update', exact: true }).click()
   const consent = page.getByRole('alertdialog')
   await expect(consent).toContainText('Review outbound network access')
-  await page.screenshot({ path: `/tmp/TAL-1275-evidence/consent-${testInfo.project.name}.png` })
+  await page.screenshot({ path: testInfo.outputPath('consent.png') })
   await consent.getByRole('button', { name: 'Cancel', exact: true }).click()
   expect(calls).toEqual([{ key: 'weather', accept_caution: false }])
   await section.getByRole('button', { name: 'Update', exact: true }).click()
@@ -60,7 +56,7 @@ test('plugin updates show Agent scan consent and block dangerous revisions', asy
   await section.getByRole('button', { name: 'Update', exact: true }).click()
   await expect(section.getByRole('alert')).toContainText('Credential exfiltration')
   await expect(consent).toHaveCount(0)
-  await page.screenshot({ path: `/tmp/TAL-1275-evidence/blocked-${testInfo.project.name}.png` })
+  await page.screenshot({ path: testInfo.outputPath('blocked.png') })
 })
 
 test('TAL-1829: a long update reason stays on its plugin row without widening the page', async ({ page }, testInfo) => {
@@ -75,7 +71,8 @@ test('TAL-1829: a long update reason stays on its plugin row without widening th
   await page.goto('/settings/tools?tab=plugins')
   await settle(page)
   const section = page.locator('[data-section="plugins"]')
-  await expect(section.locator('li', { hasText: 'Weather' })).toContainText('Turned off by the last update: the dependency environment no longer builds with it')
+  await expect(section.locator('li', { hasText: 'Weather' })).toContainText(`Turned off by the last update: ${reason}; retried on the next update`)
+  await expect(section.locator('li', { hasText: 'Notes' })).not.toContainText('Turned off by the last update')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath(`after-${testInfo.project.name}.png`) })
 })

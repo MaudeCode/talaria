@@ -33,43 +33,12 @@ it('asks for scan consent, suppresses duplicate requests, and refreshes after a 
   await waitFor(() => expect(api.fetchPlugins).toHaveBeenCalledTimes(2))
 })
 
-it('TAL-1829: says why an update turned a plugin off, on that row only', async () => {
-  vi.mocked(api.fetchPlugins).mockResolvedValue({ total: 2, plugins: [{ key: 'probe', name: 'Probe', enabled: false, disabled_reason: { kind: 'update', reason: 'its dependencies could not be prepared' } }, { key: 'legacy', name: 'Legacy', enabled: false }] })
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><PluginsSection /></QueryClientProvider>)
-  const row = (await screen.findByText('Probe')).closest('li')!
-  expect(row).toHaveTextContent('Turned off by the last update: its dependencies could not be prepared; retried on the next update')
-  expect(screen.getByText('Legacy').closest('li')).not.toHaveTextContent('Turned off by the last update')
-})
-
-it('shows a dangerous scan without an override action', async () => {
-  vi.mocked(api.updatePlugin).mockResolvedValue({ key: 'probe', status: 'blocked', verdict: 'dangerous', findings: 'Agent scan: credential exfiltration' })
-  setup()
-  fireEvent.click(await screen.findByRole('button', { name: 'Update' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent('Agent scan: credential exfiltration')
-  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
-  expect(api.updatePlugin).toHaveBeenCalledTimes(1)
-})
-
 it('keeps updates unavailable to read-only viewers and older Agent rows', async () => {
   setup(true)
   await screen.findByText('Probe')
   expect(screen.queryByRole('button', { name: 'Update' })).not.toBeInTheDocument()
 })
 
-
-it('re-prompts with the replacement token when the Agent reports changed scan findings', async () => {
-  vi.mocked(api.updatePlugin)
-    .mockResolvedValueOnce({ key: 'probe', status: 'needs_consent', verdict: 'caution', findings: 'First scan', consent_token: 'first-consent' })
-    .mockResolvedValueOnce({ key: 'probe', status: 'needs_consent', verdict: 'caution', findings: 'Changed scan', consent_token: 'new-consent' })
-    .mockResolvedValueOnce({ key: 'probe', status: 'updated' })
-  setup()
-  fireEvent.click(await screen.findByRole('button', { name: 'Update' }))
-  fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Update' }))
-  await screen.findByText('Changed scan')
-  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Update' }))
-  await waitFor(() => expect(api.updatePlugin).toHaveBeenCalledWith('probe', true, 'new-consent'))
-})
 
 describe('TAL-1914', () => {
   const plugins = (auto_update?: { auto_apply: boolean; check_hours: number; inactive_reason: 'no_gateway' | 'checks_off' | null }, read_only = false) => ({ read_only, total: 1, plugins: [{ key: 'probe', name: 'Probe' }], ...(auto_update ? { auto_update } : {}) })

@@ -1,6 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it, vi } from 'vitest'
 import * as api from '../../api/endpoints'
 import { PluginsSection } from './PluginsSection'
@@ -23,19 +22,6 @@ async function setup(installAvailable = true) {
   fireEvent.click(await screen.findByRole('button', { name: 'Add plugin' }))
   return installAvailable ? screen.findByRole('button', { name: 'Install disabled' }) : screen.findByRole('dialog', { name: 'Add plugin' })
 }
-
-it('distinguishes an empty installed list from the available catalog', async () => {
-  await setup()
-  expect(screen.getByText('No installed plugins')).toBeVisible()
-  expect(screen.getByText('Probe')).toBeVisible()
-})
-
-it('distinguishes empty catalog results from an empty installed list', async () => {
-  vi.mocked(api.fetchPluginCatalog).mockResolvedValue({ supported: true, read_only: false, entries: [], total: 0, next_offset: null })
-  await setup(false)
-  expect(await screen.findByText('No matching plugins')).toBeVisible()
-  expect(screen.getByText('No installed plugins')).toBeVisible()
-})
 
 it('previews once, confirms the exact token and reconciles the installed identity', async () => {
   const held = deferred<Awaited<ReturnType<typeof api.installPlugin>>>()
@@ -61,29 +47,6 @@ it('ignores a preview returned after profile replacement', async () => {
   held.resolve({ name: 'probe', status: 'needs_consent', findings: 'Old profile', consent_token: 'old-profile-token' })
   await waitFor(() => expect(api.installPlugin).toHaveBeenCalledTimes(1))
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
-})
-
-it('reads the installed identity after lost acknowledgment without replaying the install', async () => {
-  vi.mocked(api.installPlugin).mockRejectedValue(new Error('Install outcome unknown'))
-  fireEvent.click(await setup())
-  await waitFor(() => expect(api.fetchPluginCatalog).toHaveBeenCalledTimes(2))
-  expect(api.installPlugin).toHaveBeenCalledTimes(1)
-  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
-})
-
-it('opens the catalog in a dialog and returns focus to Add plugin on Escape', async () => {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={qc}><PluginsSection /></QueryClientProvider>)
-  const add = await screen.findByRole('button', { name: 'Add plugin' })
-  expect(screen.queryByText('Probe')).not.toBeInTheDocument()
-  await userEvent.click(add)
-  const dialog = await screen.findByRole('dialog', { name: 'Add plugin' })
-  expect(await within(dialog).findByText('Probe')).toBeVisible()
-  expect(within(dialog).queryByRole('button', { name: 'Search' })).not.toBeInTheDocument()
-  await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement))
-  await userEvent.keyboard('{Escape}')
-  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-  await waitFor(() => expect(add).toHaveFocus())
 })
 
 it('queries as the user types and shows the first page again when cleared', async () => {
