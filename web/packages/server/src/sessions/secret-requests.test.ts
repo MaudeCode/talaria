@@ -87,11 +87,16 @@ describe('request_secret (TAL-1969)', () => {
     const second = sidecar.serverRequest('server.secret_request', { ...fixture.params, caller_session_id: other })
     const [a, b] = [await prompted(), await vi.waitFor(() => { const head = s.deps.pending.clarifyPending(other).pending; expect(head).not.toBeNull(); return head! })]
     const post = (sid: string, clarifyId: unknown, secret: string) => s.get('/api/clarify/respond', { method: 'POST', body: JSON.stringify({ session_id: sid, clarify_id: clarifyId, answers: { secret } }), headers: { 'content-type': 'application/json' } })
-    const statuses = (await Promise.all([post(CALLER, a.clarify_id, SECRET), post(other, b.clarify_id, 'Yt7uW3kQ9zR5mP2xL6')])).map((res) => res.status)
-    expect(statuses).toEqual([200, 409])
-    expect(await first).toMatchObject({ result: { outcome: 'saved' } })
-    expect(condition(await second)).toBe('env_name_changed')
-    expect(env().FOO_API_KEY).toBe(SECRET)
+    const secrets = [SECRET, 'Yt7uW3kQ9zR5mP2xL6']
+    // Two concurrent requests reach the server in either order (defect rule unheld): whichever lands first saves the
+    // name, the other is refused without overwriting it.
+    const statuses = (await Promise.all([post(CALLER, a.clarify_id, secrets[0]!), post(other, b.clarify_id, secrets[1]!)])).map((res) => res.status)
+    expect(statuses.toSorted()).toEqual([200, 409])
+    const winner = statuses.indexOf(200)
+    const results = [await first, await second]
+    expect(results[winner]).toMatchObject({ result: { outcome: 'saved' } })
+    expect(condition(results[1 - winner])).toBe('env_name_changed')
+    expect(env().FOO_API_KEY).toBe(secrets[winner])
   })
 
   it('refuses a malformed or reserved name before any prompt', async () => {

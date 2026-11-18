@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { BODY_EXCERPT_LIMIT, truncateToolArgs, assistantReplyAddedAfterCurrentTurn, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, messageIdentity, messagesHavePrefix, normalizeAssistantDisplay, sessionLacksFinalAssistantAnswer, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withFinalAssistantAnswer } from './merge.js'
+import { BODY_EXCERPT_LIMIT, truncateToolArgs, assistantReplyAddedAfterCurrentTurn, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, messageIdentity, messagesHavePrefix, normalizeAssistantDisplay, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withFinalAssistantAnswer, withPendingUserTurn, withoutRunningTurnOutput } from './merge.js'
 
 describe('withFinalAssistantAnswer (TAL-1030)', () => {
   const opts = { previousContext: [], msgText: 'question', prompt: { role: 'user', content: 'question', api_content: 'Expanded prompt' }, streamedText: 'Streamed prose', toolLimitReached: false }
@@ -715,5 +715,69 @@ describe('tool argument content cap', () => {
     const out = truncateToolArgs({ command: 'c'.repeat(9000) })
     expect(String(out.command).endsWith('...')).toBe(true)
     expect(String(out.command)).toHaveLength(4003)
+  })
+})
+
+
+describe('model-facing history (Python `_sanitize_messages_for_api`)', () => {
+  it('drops display-only rows, orphaned tool traffic and a stale cancelled prompt, keeps API-safe keys', () => {
+    const history = sanitizeMessagesForApi([
+      { role: 'user', content: 'A', timestamp: 1, _recovered: true },
+      { role: 'user', content: 'B', timestamp: 2, attachments: [{ path: '/x' }], api_content: 'B + recall' },
+      { role: 'assistant', content: '', reasoning: 'thinking only', timestamp: 3 },
+      { role: 'assistant', content: 'partial', _partial: true, timestamp: 4 },
+      { role: 'assistant', content: '', _error: true, timestamp: 5 },
+      { role: 'tool', content: 'orphan', tool_call_id: 'nope', timestamp: 6 },
+      { role: 'assistant', content: 'calls', tool_calls: [{ id: 't1', function: { name: 'f' } }, { id: 't2', function: { name: 'g' } }], timestamp: 7 },
+      { role: 'tool', content: 'ok', tool_call_id: 't1', timestamp: 8 },
+      { role: 'assistant', content: 'one [OUT-OF-BAND USER MESSAGE - note]\nsecret[/OUT-OF-BAND USER MESSAGE] two', timestamp: 9 },
+      { role: 'user', content: 'C', timestamp: 10, _recovered: true },
+      { role: 'assistant', content: 'after C', timestamp: 11 },
+    ])
+    expect(history.map((m) => [m.role, m.content])).toEqual([
+      ['user', 'B'], ['assistant', 'partial'], ['assistant', 'calls'], ['tool', 'ok'], ['assistant', 'one  two'], ['user', 'C'], ['assistant', 'after C'],
+    ])
+    // The recovered prompt A had no assistant on both sides (stale), C separates two assistant turns and stays (marker gone).
+    expect(history.every((m) => !('_recovered' in m) && !('attachments' in m) && !('timestamp' in m) && !('api_content' in m))).toBe(true)
+    expect((history[2]?.tool_calls as { id: string }[]).map((t) => t.id)).toEqual(['t1'])
+  })
+
+  it('turn history keeps the reasoning carriers the Agent replays on assistant rows; other projections strip them (TAL-927)', () => {
+    const issued = { reasoning_details: [{ type: 'reasoning.encrypted', data: 'sig' }], codex_reasoning_items: [{ type: 'reasoning', encrypted_content: 'enc' }], codex_message_items: [{ type: 'message', id: 'msg_1' }] }
+    const carriers = { reasoning: 'r', finish_reason: 'stop', ...issued }
+    const rows = [{ role: 'user', content: 'hi', timestamp: 10, ...carriers }, { role: 'assistant', content: 'yo', reasoning_content: 'rc', timestamp: 11, ...carriers }]
+    const [user, assistant] = sanitizeMessagesForApi(rows, { preserveApiContent: true, issuedReasoningSince: 11 })
+    expect(assistant).toEqual({ role: 'assistant', content: 'yo', reasoning_content: 'rc', timestamp: 11, ...carriers })
+    expect(user).toEqual({ role: 'user', content: 'hi', timestamp: 10 })
+    // Provider-issued carriers from before the turn provider took over, or of unknown provenance, stay home.
+    for (const since of [12, null]) expect(sanitizeMessagesForApi(rows, { preserveApiContent: true, issuedReasoningSince: since })[1]).toEqual({ role: 'assistant', content: 'yo', reasoning_content: 'rc', timestamp: 11, reasoning: 'r', finish_reason: 'stop' })
+    expect(sanitizeMessagesForApi(rows)).toEqual([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'yo', reasoning_content: 'rc' }])
+  })
+})
+
+describe('the running turn in a session detail (TAL-368)', () => {
+  it('keeps a checkpointed prompt and the server\'s steer rows, and drops the rest of the turn', () => {
+    const turn = { localCount: 4, turnId: 'run1', startedAt: 100, activeTurnToken: 'run1:100' }
+    const rows = [
+      { role: 'user', content: 'earlier', timestamp: 1 }, { role: 'assistant', content: 'earlier reply', timestamp: 2 },
+      { role: 'user', content: 'prompt', timestamp: 100, _turn_id: 'run1', _active_turn_token: 'run1:100' },
+      { role: 'user', content: 'steer', timestamp: 103, _turn_id: 'run1', _steer: { steer_id: 's1' } },
+      { role: 'user', content: 'prompt', timestamp: 101 }, { role: 'assistant', content: 'partial', timestamp: 102 },
+    ]
+    expect(withoutRunningTurnOutput(rows, turn).map((m) => m.content)).toEqual(['earlier', 'earlier reply', 'prompt', 'steer'])
+    // Deferred save: no checkpointed prompt, so the turn starts at its first state.db row past the sidecar.
+    const deferred = [rows[0]!, rows[1]!, rows[4]!, rows[5]!]
+    expect(withoutRunningTurnOutput(deferred, { ...turn, localCount: 2 }).map((m) => m.content)).toEqual(['earlier', 'earlier reply', 'prompt'])
+    // Nothing of the turn persisted yet: the transcript is unchanged.
+    expect(withoutRunningTurnOutput([rows[0]!, rows[1]!], { ...turn, localCount: 2 })).toHaveLength(2)
+  })
+
+  it('projects an attachment-only prompt ahead of the turn\'s first Agent row', () => {
+    const turn = { localCount: 2, turnId: 'run1', startedAt: 100, activeTurnToken: 'run1:100', prompt: { role: 'user', content: '', attachments: [{ name: 'a.png' }] } }
+    const rows = [{ role: 'user', content: 'earlier', timestamp: 1 }, { role: 'assistant', content: 'reply', timestamp: 2 }]
+    expect(withPendingUserTurn(rows, turn).at(-1)).toMatchObject({ role: 'user', content: '', attachments: [{ name: 'a.png' }] })
+    // An Agent row of the turn already past the sidecar: the prompt opens the turn ahead of it.
+    const withOutput = [...rows, { role: 'assistant', content: 'partial', timestamp: 101 }]
+    expect(withPendingUserTurn(withOutput, turn).map((m) => m.content)).toEqual(['earlier', 'reply', '', 'partial'])
   })
 })

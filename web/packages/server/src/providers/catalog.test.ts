@@ -134,6 +134,36 @@ describe('shared admission catalog discovery (TAL-1196)', () => {
     expect(catalog.sessionModelRepair(other, 'other-model', 'ollama')).toEqual(['other-model', 'deepseek'])
   })
 
+  it('does not join a live lookup started before config.yaml or .env changed', async () => {
+    const pending: ((ids: string[]) => void)[] = []
+    sidecar.respond('providers.model_ids', (p) => new Promise((resolve) => { pending.push((ids) => { resolve({ provider: p.provider, model_ids: ids }) }) }))
+    const first = catalog.liveModelIds(home, 'deepseek')
+    writeFileSync(join(home, '.env'), 'TALARIA_TEST_EDIT=2\n')
+    const second = catalog.liveModelIds(home, 'deepseek')
+    await vi.waitFor(() => { expect(pending).toHaveLength(2) })
+    pending[1]?.(['ds-new'])
+    expect(await second).toEqual(['ds-new'])
+    pending[0]?.(['ds-old'])
+    expect(await first).toEqual([])
+    expect(await catalog.liveModelIds(home, 'deepseek')).toEqual(['ds-new'])
+  })
+
+  it('ignores a live-lookup failure from before config.yaml or .env changed', async () => {
+    const pending: { resolve: (ids: string[]) => void; reject: (error: Error) => void }[] = []
+    sidecar.respond('providers.model_ids', (p) => (p.provider === 'deepseek' ? new Promise((resolve, reject) => { pending.push({ resolve: (ids) => { resolve({ provider: p.provider, model_ids: ids }) }, reject }) }) : { provider: p.provider, model_ids: [] }))
+    const old = catalog.liveModelIds(home, 'deepseek')
+    writeFileSync(join(home, '.env'), 'TALARIA_TEST_EDIT=3\n')
+    const current = catalog.liveModelIds(home, 'deepseek')
+    await vi.waitFor(() => { expect(pending).toHaveLength(2) })
+    pending[1]?.resolve(['ds-ok'])
+    await current
+    // The lookup against the old credential fails after the current one succeeded.
+    pending[0]?.reject(new SidecarError('old credential refused', { condition: 'sidecar_error' }))
+    await old
+    await catalog.warmSessionModelRepair(home)
+    expect(catalog.sessionModelRepair(home, 'ds-ok', 'ollama')).toEqual(['ds-ok', 'deepseek'])
+  })
+
   describe('read caching (TAL-1715)', () => {
     const count = (method: string): number => sidecar.calls.filter((c) => c.method === method).length
 

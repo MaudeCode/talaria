@@ -91,9 +91,18 @@ describe('GET /api/session/outline (TAL-2152)', () => {
   })
 
   it('reads only the start of a huge one-line question', () => {
-    const started = performance.now()
-    expect(outlineExcerpt({ role: 'user', content: `**Huge** ${'b'.repeat(16_000_000)}` })).toBe(`Huge ${'b'.repeat(114)}…`)
-    expect(performance.now() - started).toBeLessThan(250)
+    // This thread's CPU time in milliseconds for an excerpt of a full and a quarter-size question (the TAL-1834 pattern in
+    // redact.test.ts): reading only the start costs the same for both, reading the whole line about four times as much.
+    const cost = (content: string): number => {
+      // The first excerpt flattens the built string; only the second, the read itself, is measured.
+      expect(outlineExcerpt({ role: 'user', content })).toBe(`Huge ${'b'.repeat(114)}…`)
+      const started = process.threadCpuUsage()
+      outlineExcerpt({ role: 'user', content })
+      const { user, system } = process.threadCpuUsage(started)
+      return (user + system) / 1000
+    }
+    const quarterCost = cost(`**Huge** ${'b'.repeat(4_000_000)}`)
+    expect(cost(`**Huge** ${'b'.repeat(16_000_000)}`)).toBeLessThan(2 * quarterCost + 5)
   })
 
   it('names the files of an attachment-only question', () => {

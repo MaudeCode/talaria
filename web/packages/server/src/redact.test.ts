@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { crc32 } from 'node:zlib'
 import { subscribe, unsubscribe } from 'node:diagnostics_channel'
 import { describe, expect, it, vi } from 'vitest'
@@ -661,6 +663,16 @@ describe('redactSensitive cost', () => {
 })
 
 describe('publicToolFrame', () => {
+  const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../contracts/fixtures/focus-path.json'), 'utf8')) as Record<'tool_a' | 'tool_b' | 'shell', { data: Record<string, unknown> }>
+
+  it('stamps each live frame with the shared fixture\'s focus path', () => {
+    for (const key of ['tool_a', 'tool_b', 'shell'] as const) {
+      // The frame as the sidecar sends it, before the server stamps its display fields.
+      const raw = Object.fromEntries(Object.entries(fixture[key].data).filter(([field]) => !['kind', 'target', 'focus_path', 'args_fields', 'raw_args'].includes(field)))
+      expect(publicToolFrame(raw, true), key).toEqual(fixture[key].data)
+    }
+  })
+
   it('masks argument values whose key names a credential', () => {
     const frame = publicToolFrame({ name: 'login', args: { user: 'bob', password: 'hunter2', auth: { apiKey: 'opaque', token: 12345 } } }, true)
     expect(frame.args).toEqual({ user: 'bob', password: '***', auth: { apiKey: '***', token: '***' } })

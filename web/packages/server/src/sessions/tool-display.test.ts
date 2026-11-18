@@ -504,11 +504,9 @@ describe('media and analysis sections (TAL-2325)', () => {
   const view = (name: string, result: unknown) => toolOutcome(typeof result === 'string' ? result : JSON.stringify(result), name).result_view
   const local = (path: string) => `./api/media?${new URLSearchParams({ path }).toString()}`
 
-  it('maps each media tool to its kind and presentation', () => {
-    expect(Object.fromEntries(['image_generate', 'text_to_speech', 'video_generate', 'xai_video_edit', 'xai_video_extend', 'vision_analyze', 'video_analyze'].map((name) => [name, TOOL_PRESENTATIONS[name]]))).toEqual({
-      image_generate: { kind: 'image', presentation: 'media' }, text_to_speech: { kind: 'audio', presentation: 'media' }, video_generate: { kind: 'video', presentation: 'media' },
-      xai_video_edit: { kind: 'video', presentation: 'media' }, xai_video_extend: { kind: 'video', presentation: 'media' },
-      vision_analyze: { kind: 'image_analysis', presentation: 'analysis' }, video_analyze: { kind: 'video_analysis', presentation: 'analysis' },
+  it('maps each media tool to its kind', () => {
+    expect(Object.fromEntries(['image_generate', 'text_to_speech', 'video_generate', 'xai_video_edit', 'xai_video_extend', 'vision_analyze', 'video_analyze'].map((name) => [name, toolKind(name)]))).toEqual({
+      image_generate: 'image', text_to_speech: 'audio', video_generate: 'video', xai_video_edit: 'video', xai_video_extend: 'video', vision_analyze: 'image_analysis', video_analyze: 'video_analysis',
     })
     // A media call reads as its kind's phrase, and its media stays out of a folded run.
     expect(toolDisplay('image_generate', { prompt: 'a cat', aspect_ratio: 'square' })).toEqual({ kind: 'image', target: '', focus_path: null, shows_card: true })
@@ -574,10 +572,10 @@ describe('media and analysis sections (TAL-2325)', () => {
 describe('memory, skills, session search, scheduled job, connection and clarify rows (TAL-2326)', () => {
   const view = (name: string, result: Record<string, unknown>, args?: Record<string, unknown>) => toolOutcome(JSON.stringify(result), name, false, args).result_view
 
-  it('gives each tool its kind and presentation from the table', () => {
-    expect(['memory', 'skills_list', 'skill_view', 'skill_manage', 'session_search', 'cronjob_manage', 'manage_connections', 'clarify'].map((name) => [name, toolKind(name), TOOL_PRESENTATIONS[name]?.presentation])).toEqual([
-      ['memory', 'memory', 'rows'], ['skills_list', 'skill', 'rows'], ['skill_view', 'skill', 'rows'], ['skill_manage', 'skill', 'rows'],
-      ['session_search', 'session', 'rows'], ['cronjob_manage', 'schedule', 'rows'], ['manage_connections', 'connection', 'rows'], ['clarify', 'question', 'clarify'],
+  it('gives each tool its kind', () => {
+    expect(['memory', 'skills_list', 'skill_view', 'skill_manage', 'session_search', 'cronjob_manage', 'manage_connections', 'clarify'].map((name) => [name, toolKind(name)])).toEqual([
+      ['memory', 'memory'], ['skills_list', 'skill'], ['skill_view', 'skill'], ['skill_manage', 'skill'],
+      ['session_search', 'session'], ['cronjob_manage', 'schedule'], ['manage_connections', 'connection'], ['clarify', 'question'],
     ])
     expect(toolDisplay('session_search', { query: 'release notes' })).toMatchObject({ kind: 'session', target: 'release notes' })
     expect(toolDisplay('cronjob_manage', { action: 'pause', job_id: 'j1' })).toMatchObject({ kind: 'schedule', target: 'j1' })
@@ -703,15 +701,14 @@ describe('Kanban rows (TAL-2327)', () => {
   const view = (name: string, result: Record<string, unknown>, args?: Record<string, unknown>) => toolOutcome(JSON.stringify(result), name, false, args).result_view
   const task = (id: string, board?: string) => ({ kind: 'kanban_task', id, ...(board ? { board } : {}) })
 
-  it('gives every kanban tool the kanban kind, the rows presentation and its verb, and names the task it acts on', () => {
-    const names = Object.keys(TOOL_PRESENTATIONS).filter((name) => name.startsWith('kanban_'))
-    expect(names).toHaveLength(15)
-    for (const name of names) expect([name, TOOL_PRESENTATIONS[name]?.kind, TOOL_PRESENTATIONS[name]?.presentation]).toEqual([name, 'kanban', 'rows'])
-    expect(Object.fromEntries(names.map((name) => [name, toolDisplay(name, {}).verb]))).toEqual({
+  it('gives every kanban tool the kanban kind and its verb, and names the task it acts on', () => {
+    const verbs = {
       kanban_attach: 'update', kanban_attach_url: 'update', kanban_attachments: 'view', kanban_block: 'block', kanban_comment: 'comment', kanban_complete: 'complete',
       kanban_create: 'create', kanban_heartbeat: 'update', kanban_link: 'update', kanban_list: 'list', kanban_request_changes: 'update', kanban_request_review: 'update',
       kanban_schedule: 'update', kanban_show: 'view', kanban_unblock: 'update',
-    })
+    }
+    expect(Object.fromEntries(Object.keys(verbs).map((name) => [name, toolDisplay(name, {}).verb]))).toEqual(verbs)
+    expect(new Set(Object.keys(verbs).map(toolKind))).toEqual(new Set(['kanban']))
     expect(toolDisplay('kanban_create', { title: 'Write release notes', assignee: 'scout' })).toMatchObject({ kind: 'kanban', verb: 'create', target: 'Write release notes' })
     expect(toolDisplay('kanban_complete', { task_id: 't_1', summary: 'done' })).toMatchObject({ kind: 'kanban', verb: 'complete', target: 't_1' })
     expect(toolDisplay('kanban_list', { status: 'ready' })).toMatchObject({ kind: 'kanban', verb: 'list', target: '' })
@@ -763,9 +760,6 @@ describe('browser and computer-use calls (TAL-2328)', () => {
   const shotMedia = (path: string) => [{ url: `./api/media?${new URLSearchParams({ path }).toString()}`, name: path.split('/').pop(), mime: 'image/png', kind: 'image' }]
 
   it('gives the browser tools the browser kind and computer_use the computer kind, each with its verb', () => {
-    expect(Object.fromEntries(['browser_exec', 'browser_cdp', 'browser_dialog', 'browser_vault', 'computer_use'].map((name) => [name, [TOOL_PRESENTATIONS[name]?.kind, TOOL_PRESENTATIONS[name]?.presentation]]))).toEqual({
-      browser_exec: ['browser', 'code'], browser_cdp: ['browser', 'rows'], browser_dialog: ['browser', 'rows'], browser_vault: ['browser', 'rows'], computer_use: ['computer', 'rows'],
-    })
     expect(toolDisplay('browser_exec', { code: '# Open the pricing page\ngoto("https://example.com")' })).toMatchObject({ kind: 'browser', verb: 'run', target: 'Open the pricing page' })
     expect(toolDisplay('browser_cdp', { method: 'Page.navigate', params: { url: 'https://example.com' } })).toMatchObject({ kind: 'browser', verb: 'send', target: 'Page.navigate' })
     expect(toolDisplay('browser_dialog', { action: 'accept' })).toMatchObject({ kind: 'browser', verb: 'answer', target: '' })
@@ -897,10 +891,10 @@ describe('MCP and connector calls (TAL-2330)', () => {
   })
 
   it('classifies a name in neither form exactly as before', () => {
-    for (const name of ['mcp__github', 'mcp__github__', 'connectors__gmail', 'connectors____send', 'connectors__gmail__', 'my_mcp__read_file', 'read_file']) {
+    for (const [name, kind] of [['mcp__github', 'unknown'], ['mcp__github__', 'unknown'], ['connectors__gmail', 'unknown'], ['connectors____send', 'unknown'], ['connectors__gmail__', 'unknown'], ['my_mcp__read_file', 'read'], ['read_file', 'read']]) {
       const display = toolDisplay(name, { path: 'a.txt' })
       expect(display, name).not.toHaveProperty('app')
-      expect(display.kind, name).toBe(tokenToolKind(name))
+      expect(display.kind, name).toBe(kind)
     }
   })
 })

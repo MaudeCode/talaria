@@ -73,13 +73,16 @@ describe('context detail read boundary', () => {
     const s = await bootTestServer({ sidecar })
     try {
       const session = await s.deps.sessions.create({ model: 'fixture-model' })
-      const pending: ((value: typeof detail) => void)[] = []
-      sidecar.respond('chat.context_detail', () => new Promise((resolve) => { pending.push(resolve) }))
+      let open!: () => void
+      const gate = new Promise<void>((resolve) => { open = resolve })
+      sidecar.respond('chat.context_detail', async () => { await gate; return detail })
       const key = String((await s.deps.sessions.wireRow(session)).context_detail_key)
+      // Each read looks up the sidecar in the synchronous step that joins or starts the one flight.
+      const lookups = vi.spyOn(s.deps.sessions.deps, 'sidecar')
       const reads = [s.deps.sessions.contextDetail(session.session_id, key), s.deps.sessions.contextDetail(session.session_id, key)]
-      await vi.waitFor(() => { expect(pending.length).toBeGreaterThan(0) })
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      for (const finish of pending) finish(detail)
+      await vi.waitFor(() => { expect(lookups).toHaveBeenCalledTimes(2) })
+      lookups.mockRestore()
+      open()
       await expect(Promise.all(reads)).resolves.toEqual([detail, detail])
       expect(sidecar.calls.filter((c) => c.method === 'chat.context_detail')).toHaveLength(1)
       // A settled read leaves nothing behind: the next one asks again.

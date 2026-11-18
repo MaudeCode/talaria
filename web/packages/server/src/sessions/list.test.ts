@@ -2,11 +2,12 @@ import { mkdirSync, readFileSync, readdirSync, unlinkSync, utimesSync, writeFile
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { allSessions, buildSessionListPayload, sessionListResponse, type ListParams, type ListPayload, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, sanitizeSessionRow, sessionListResponse, type ListParams, type ListPayload, type Row, type RuntimeOverlay } from './list.js'
 import * as sessionRows from './storage/row.js'
 import { bootTestServer, openStateDb, type TestServer } from '../test/harness.js'
 import { sessionDirectory, sessionIndexPath, sessionPath, useJsonStorage, useSelectedStorage } from '../test/storage.js'
 import { Session } from './session.js'
+import { SessionStore, type SessionStoreDeps } from './store.js'
 import { str } from '../util.js'
 
 useJsonStorage()
@@ -90,6 +91,19 @@ describe('session-list row validation (TAL-1218)', () => {
       expect(sanitize.mock.calls.filter(([value]) => value === replacement)).toHaveLength(1)
       expect(replacement).toMatchObject({ title: {}, message_count: '2', read_only: 'unknown' })
     } finally { vi.restoreAllMocks(); await server.close() }
+  })
+
+  it('normalizes only unambiguous schema scalars and rejects unusable identities', () => {
+    const logs: string[] = []
+    const store = new SessionStore({ log: (line: string) => { logs.push(line) } } as unknown as SessionStoreDeps)
+    const raw = { session_id: 'row-types', message_count: '2', archived: 'false', pinned: ' true ', workspace: {}, updated_at: 'bad', model: '123', profile: 42, read_only: 'unknown', pre_compression_snapshot: 'false' }
+    const bytes = JSON.stringify(raw)
+    expect(sanitizeSessionRow(raw, store)).toEqual({ session_id: 'row-types', title: '', message_count: 2, archived: false, pinned: true, model: '123', profile: '42', read_only: true, pre_compression_snapshot: false })
+    for (const value of [false, 'false', 0, '0']) expect(sanitizeSessionRow({ session_id: 'row-types', read_only: value }, store)?.read_only).toBe(false)
+    for (const value of [true, 'true', 1, '1', null, {}]) expect(sanitizeSessionRow({ session_id: 'row-types', read_only: value }, store)?.read_only).toBe(true)
+    expect(JSON.stringify(raw)).toBe(bytes)
+    for (const row of [null, [], {}, { session_id: 42 }, { session_id: '   ' }, { session_id: '../bad' }, { session_id: 'different-file' }]) expect(sanitizeSessionRow(row, store, 'invalid.json')).toBeNull()
+    expect(logs.filter((line) => line.includes('invalid.json'))).toHaveLength(1)
   })
 })
 

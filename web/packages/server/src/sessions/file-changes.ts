@@ -25,7 +25,7 @@ const PATH_MAX = 240
 const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
 
 /** A tool path as the recap shows it, or null to drop it: unwrapped, without `~/` or `./`, and not a URL or ignored tree. */
-export function normalizeChangedPath(raw: string): string | null {
+function normalizeChangedPath(raw: string): string | null {
   let path = raw.replace(WRAPPING, '')
   if (!path || Array.from(path).length > PATH_MAX || path.includes('://')) return null
   if (path.startsWith('~/')) path = path.slice(2)
