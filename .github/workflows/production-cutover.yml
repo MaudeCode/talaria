@@ -114,8 +114,38 @@ jobs:
             echo "- Component tags, created after publication: $(printf '%s' "$result" | jq -r '.request.tags | to_entries | map(.value) | join(", ")')"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  release:
+  # Holds workflow changes while the release runs (TAL-2516, RELEASES.md rule 6): fails the release-freeze commit
+  # status on every open pull request that changes a workflow file, since one merged now would make GitHub refuse the
+  # release's tag writes. The release needs it, so a release that could not set the freeze publishes nothing. The thaw
+  # job passes the status again however the release ends.
+  freeze:
     needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: { contents: read, statuses: write, pull-requests: read, actions: read }
+    steps:
+      - uses: MaudeCode/.github/actions/release-freeze@20b180ba0237e316fcc65d83ed4e8f19ac5e16a7
+        with: { mode: start, workflow: production-cutover.yml }
+      # A workflow change that merged between preflight's check and the freeze would still break the tags, so compare
+      # again now that no other can merge.
+      - name: Check that main's workflows still match the release's commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE: ${{ needs.preflight.outputs.sha }}
+        run: |
+          set -euo pipefail
+          tree() { gh api "repos/${GITHUB_REPOSITORY}/contents/.github?ref=$1" --jq '.[] | select(.name == "workflows") | .sha'; }
+          source_tree=$(tree "$SOURCE")
+          main_tree=$(tree main)
+          if [[ -z "$source_tree" || "$source_tree" != "$main_tree" ]]; then
+            echo "::error::A workflow file changed on main after preflight checked it, so GitHub would refuse this release's tags. Nothing has published: dispatch the same version again from a later commit."
+            exit 1
+          fi
+
+  release:
+    # Every publishing job (relay-, web-, bridge- and app-publish, publish-set, tag) is in release-set.yml, so needing
+    # freeze here keeps all of them behind it.
+    needs: [preflight, freeze]
     permissions:
       contents: write
       actions: read
@@ -131,3 +161,13 @@ jobs:
       dry_run: false
       release_tag: ${{ needs.preflight.outputs.tag }}
       checks: ${{ needs.preflight.outputs.checks }}
+
+  thaw:
+    needs: [preflight, freeze, release]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: { statuses: write, pull-requests: read, actions: read }
+    steps:
+      - uses: MaudeCode/.github/actions/release-freeze@20b180ba0237e316fcc65d83ed4e8f19ac5e16a7
+        with: { mode: end, workflow: production-cutover.yml }

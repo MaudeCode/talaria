@@ -57,6 +57,7 @@ WORKFLOWS = {
     "nightly.yml": {"tooling"},
     "web-experimental.yml": {"tooling"},
     "production-cutover.yml": {"tooling"},
+    "release-freeze.yml": {"tooling"},
     "ios-release-build.yml": {"tooling"},
     "inspect-testflight.yml": {"tooling"},
     "recover-cutover.yml": {"tooling"},
