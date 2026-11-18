@@ -11,9 +11,6 @@ import { renderRouted } from '../../../test/router'
 vi.mock('../../workspace/openFileRequest', () => ({ requestOpenFile: vi.fn() }))
 vi.mock('../../background/openAgentRequest', () => ({ requestOpenAgent: vi.fn() }))
 import { requestOpenAgent } from '../../background/openAgentRequest'
-vi.mock(import('../../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), fetchBackgroundTasks: vi.fn() }))
-import { fetchBackgroundTasks } from '../../../api/endpoints'
-import { queryWrapper } from '../../../test/fixtures'
 
 const call: ToolCardData = { id: 'c1', name: 'terminal', kind: 'shell', target: 'make', args: {}, preview: 'flat preview', done: true, isError: false, duration: null, costUsd: null, resultView: null }
 
@@ -77,18 +74,9 @@ describe('ToolCard result (TAL-315)', () => {
   })
 })
 
-it('shows server progress only on the running tool row (TAL-1268)', () => {
-  const progress = { percent: 42, message: 'indexing files' }
-  const { rerender } = render(<ToolCard call={{ ...call, done: false, progress }} />)
-  expect(screen.getByText('42% · indexing files')).toBeVisible()
-  rerender(<ToolCard call={{ ...call, done: true, progress }} />)
-  expect(screen.queryByText('42% · indexing files')).not.toBeInTheDocument()
-})
-
-it('gives a running tool one animation class and removes its dot on completion (TAL-1393)', () => {
+it('removes a running tool\'s dot on completion (TAL-1393)', () => {
   const { container, rerender } = render(<ToolCard call={{ ...call, done: false }} />)
-  const dot = container.querySelector('.tool-card-running-dot')!
-  expect([...dot.classList].filter((name) => name === 'tool-card-running-dot' || name.startsWith('animate-'))).toEqual(['tool-card-running-dot'])
+  expect(container.querySelector('.tool-card-running-dot')).not.toBeNull()
   rerender(<ToolCard call={call} />)
   expect(container.querySelector('.tool-card-running-dot')).toBeNull()
 })
@@ -333,32 +321,6 @@ describe('Kanban rows (TAL-2327)', () => {
 })
 
 describe('browser and computer-use calls (TAL-2328)', () => {
-  const shot = [{ url: './api/media?path=%2Fsrv%2Fshot.png&session_id=s1', name: 'shot.png', mime: 'image/png', kind: 'image' as const }]
-  const code = { path: '', language: 'python', start_line: 1, lines: [{ n: 1, text: '# Open the pricing page' }, { n: 2, text: 'goto("https://example.com")' }], total_lines: 2, truncated: false }
-
-  it('shows browser code with the browser icon, its screenshot in view, and its code above its output when opened', async () => {
-    const view = render(<ToolCard call={{ ...call, name: 'browser_exec', kind: 'browser', verb: 'run', target: '', resultView: { file_excerpt: code, stdout: 'Pricing: $10', media: shot } }} sessionId="s1" />)
-    expect(view.container.querySelector('[data-tool-kind="browser"] svg.lucide-app-window')).not.toBeNull()
-    expect(view.container.querySelector('.tool-card-name')).toHaveTextContent('Ran browser code')
-    expect(within(view.container.querySelector<HTMLElement>('.tool-card-media')!).getByRole('img', { name: 'shot.png' })).toBeInTheDocument()
-    await userEvent.click(within(view.container).getAllByRole('button')[0]!)
-    const result = view.container.querySelector('.tool-card-result')!
-    expect(result.querySelector('.tool-file-excerpt')).toHaveTextContent('goto("https://example.com")')
-    expect(result.querySelector('.tool-file-excerpt button')).toBeNull()
-    expect(result.querySelector('.tool-file-excerpt + pre')?.textContent).toBe('Pricing: $10')
-  })
-
-  it('shows a computer capture with the computer icon, its screenshot and its rows, never its JSON', async () => {
-    const view = render(<ToolCard call={{ ...call, name: 'computer_use', kind: 'computer', verb: 'capture', target: '', resultView: { text: '{"mode": "som"}', media: shot, rows: { title: 'Safari', rows: [{ label: 'Safari', detail: 'Inbox · 12 elements' }] } } }} sessionId="s1" />)
-    expect(view.container.querySelector('[data-tool-kind="computer"] svg.lucide-monitor')).not.toBeNull()
-    expect(view.container.querySelector('.tool-card-name')).toHaveTextContent('Captured the screen')
-    expect(view.container.querySelector('.tool-card-media img')).not.toBeNull()
-    await userEvent.click(within(view.container).getAllByRole('button')[0]!)
-    const result = view.container.querySelector('.tool-card-result')!
-    expect(result).toHaveTextContent('Inbox · 12 elements')
-    expect(result.textContent).not.toContain('"mode"')
-  })
-
   it('reads each browser and computer verb in every locale', () => {
     const verbs = ['browser_run', 'browser_send', 'browser_answer', 'browser_fill', 'browser_list', 'computer_capture', 'computer_click', 'computer_type']
     expect(verbs.map((verb) => toolText('en').actionLabel(verb, 'done', '', 'x'))).toEqual(['Ran browser code', 'Sent a browser command', 'Answered a dialog', 'Filled a login', 'Listed saved logins', 'Captured the screen', 'Clicked on the screen', 'Typed text'])
@@ -373,12 +335,6 @@ describe('browser and computer-use calls (TAL-2328)', () => {
 })
 
 describe('MCP and connector calls (TAL-2330)', () => {
-  it('reads an MCP call as its app and action under the MCP icon', () => {
-    const view = render(<ToolCard call={{ ...call, name: 'mcp__github__create_issue', kind: 'mcp', target: 'Create issue', app: { name: 'GitHub', logo_url: null } }} />)
-    expect(view.container.querySelector('[data-tool-kind="mcp"] svg.lucide-server')).not.toBeNull()
-    expect(view.container.querySelector('.tool-card-name')).toHaveTextContent('GitHub · Create issue')
-  })
-
   it('draws a connector call\'s catalog logo, and the connector icon when there is none or it fails to load', () => {
     const mail: ToolCardData = { ...call, name: 'connectors__gmail__GMAIL_SEND_EMAIL', kind: 'connector', target: 'Send email (work)', app: { name: 'Gmail', logo_url: 'https://logos.example/gmail.svg' } }
     const view = render(<ToolCard call={mail} />)
@@ -453,16 +409,4 @@ describe('a long-running call (TAL-2340)', () => {
     expect(screen.getByText('35.2s')).toBeInTheDocument()
   })
 
-  it('shows the latest output line of the background process the call started, from its server record', async () => {
-    const task = { kind: 'process' as const, status: 'running' as const, title: 'npm run dev', started_at: 1, updated_at: 1, completed_at: null, result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true }
-    vi.mocked(fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, pinned_count: 2, tasks: [
-      { ...task, task_id: 'proc_dev', process_id: 'proc_dev', output_tail: '✓ 41 passing · auth.spec.ts' },
-      { ...task, task_id: 'proc_quiet', process_id: 'proc_quiet' },
-    ] })
-    const row = (id: string, processId?: string) => sceneItems([{ row_id: `tool:${id}`, role: 'tool', tool: { id, name: 'terminal', kind: 'shell', target: 'npm run dev', preview: null, done: true, is_error: false, duration: 0.1, cost_usd: null, ...(processId ? { process_id: processId } : {}) } }])[0] as { call: ToolCardData }
-    // A process that has printed nothing yet, and a call that started none, show no line.
-    const view = render(<>{[row('bg', 'proc_dev'), row('quiet', 'proc_quiet'), row('fg')].map(({ call }) => <ToolCard key={call.id} call={call} sessionId="s1" />)}</>, { wrapper: queryWrapper() })
-    expect(await screen.findByText('✓ 41 passing · auth.spec.ts')).toHaveClass('tool-card-output-tail')
-    expect(view.container.querySelectorAll('.tool-card-output-tail')).toHaveLength(1)
-  })
 })

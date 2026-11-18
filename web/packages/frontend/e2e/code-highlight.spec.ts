@@ -28,18 +28,6 @@ async function openFences(page: Page) {
   await page.goto('/session/code-highlight')
 }
 
-test('code fences are highlighted, including lines inside multi-line comments and strings', async ({ page }, testInfo) => {
-  await openFences(page)
-  const blocks = page.locator('[data-final-answer="1"] [data-streamdown="code-block-body"]')
-  await expect(blocks).toHaveCount(4)
-  await expect.poll(() => lineColors(blocks.nth(0))).toEqual([true, true, true, true, true, true])
-  await expect.poll(() => lineColors(blocks.nth(1))).toEqual([true])
-  await expect.poll(() => lineColors(blocks.nth(2))).toEqual([true])
-  await expect(blocks.nth(3)).toContainText('plain fence')
-  await page.locator('[data-final-answer="1"]').scrollIntoViewIfNeeded()
-  await page.screenshot({ path: testInfo.outputPath(`code-highlight-${testInfo.project.name}.png`), fullPage: true })
-})
-
 test('a streaming code fence highlights each line as it completes', async ({ page }, testInfo) => {
   const fixture = JSON.parse(readFileSync(new URL('../../server/src/test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: { cli: string }; schema: string[]; inserts: string[] }
   const sid = fixture.sessions.cli
@@ -101,7 +89,11 @@ test('code tokens take the app theme\'s Shiki colors and fences agree on line nu
   await openFences(page)
   const blocks = page.locator('[data-final-answer="1"] [data-streamdown="code-block-body"]')
   await expect(blocks).toHaveCount(4)
+  // Every labeled fence's grammar loads in the built bundle, lines inside a multi-line comment and string included.
   await expect.poll(() => lineColors(blocks.nth(0))).toEqual([true, true, true, true, true, true])
+  await expect.poll(() => lineColors(blocks.nth(1))).toEqual([true])
+  await expect.poll(() => lineColors(blocks.nth(2))).toEqual([true])
+  await expect(blocks.nth(3)).toContainText('plain fence')
   // The browser prefers dark (playwright.config.ts), so the light theme proves the app's .dark class decides, not the OS.
   for (const [scheme, skin] of [['light', 'default'], ['dark', 'default'], ['light', 'catppuccin'], ['dark', 'catppuccin']] as const) {
     await page.evaluate(([dark, name]) => { document.documentElement.classList.toggle('dark', dark); document.documentElement.dataset.skin = name }, [scheme === 'dark', skin] as const)

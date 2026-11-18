@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Markdown from './MarkdownRenderer'
 import { stubAnimate } from '../../../test/animate'
@@ -57,8 +57,17 @@ describe('external link confirmation (TAL-279)', () => {
     unmount()
 
     render(<LinkCheckContext value={() => new Promise<LinkCheck>(() => undefined)}><Markdown text={markdown} /></LinkCheckContext>)
-    await userEvent.click(await screen.findByRole('button', { name: 'docs' }))
-    await screen.findByRole('dialog', { name: 'Open external link?' }, { timeout: 2000 })
+    const link = await screen.findByRole('button', { name: 'docs' })
+    vi.useFakeTimers()
+    try {
+      // fireEvent, not userEvent: Testing Library's async wrapper awaits a timer that Vitest's fake clock holds.
+      fireEvent.click(link)
+      // The server check never answers; the link waits out its deadline, then warns.
+      await act(async () => { await vi.advanceTimersByTimeAsync(700) })
+      expect(screen.getByRole('dialog', { name: 'Open external link?' })).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
     expect(open).not.toHaveBeenCalled()
   })
 })

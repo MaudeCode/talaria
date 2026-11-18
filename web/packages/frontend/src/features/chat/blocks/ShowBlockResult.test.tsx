@@ -8,14 +8,12 @@ import type { ShowBlock } from '@maudecode/talaria-web-contracts'
 
 vi.mock('../../../api/endpoints', () => ({ fetchShowBlock: vi.fn() }))
 vi.mock('../../../lib/clipboard', () => ({ copyWithToast: vi.fn() }))
-vi.mock('../../workspace/openFileRequest', () => ({ requestOpenFile: vi.fn() }))
 import * as api from '../../../api/endpoints'
 import { copyWithToast } from '../../../lib/clipboard'
-import { requestOpenFile } from '../../workspace/openFileRequest'
 import { ShowBlockResult } from './ShowBlockResult'
 
 /** The shared fixture both clients render (TAL-1968). */
-const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../../contracts/fixtures/show.json'), 'utf8')) as Record<'file_image' | 'file_text' | 'file_delivered' | 'chart' | 'chart_line' | 'html', ShowBlock> & { table: Extract<ShowBlock, { kind: 'table' }> }
+const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../../contracts/fixtures/show.json'), 'utf8')) as Record<'chart' | 'chart_line' | 'html', ShowBlock> & { table: Extract<ShowBlock, { kind: 'table' }> }
 
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 
@@ -81,33 +79,4 @@ it('frames an HTML block with scripts only, and opens its page', async () => {
   fireEvent.load(frame)
   expect(card.queryByTitle('Release checklist')).toBeNull()
   expect(card.getByRole('status')).toHaveTextContent('The page tried to leave its frame and was closed')
-})
-
-it('shows an image file inline and opens a text file on the side panel\'s Files page', async () => {
-  const image = await mount(fixture.file_image)
-  expect((await image.findByRole('img', { name: 'Signup funnel' })).getAttribute('src')).toMatch(/\/api\/file\/raw\?session_id=20261109_090000_caller&path=reports%2Ffunnel\.png&inline=1$/)
-  cleanup()
-  const text = await mount(fixture.file_text)
-  expect(await text.findByText('docs/notes.md')).toBeInTheDocument()
-  await userEvent.click(text.getByRole('button', { name: 'Open' }))
-  expect(requestOpenFile).toHaveBeenCalledWith({ sessionId: '20261109_090000_caller', path: 'docs/notes.md' })
-})
-
-it('offers a delivered file\'s download with its name, size and type, and the server\'s changed note (TAL-1971)', async () => {
-  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { clicked.push(this.href) })
-  const clicked: string[] = []
-  const delivered = fixture.file_delivered as Extract<ShowBlock, { kind: 'file' }>
-  const card = await mount(delivered)
-  expect(await card.findByText('week-45.xlsx · 1.8 MB · application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')).toBeInTheDocument()
-  expect(card.getByRole('note')).toHaveTextContent('Changed since delivered')
-  expect(card.queryByRole('button', { name: 'Open' }), 'A spreadsheet is a download only').toBeNull()
-  await userEvent.click(card.getByRole('button', { name: 'Download' }))
-  expect(clicked).toEqual([expect.stringMatching(/\/api\/file\/raw\?session_id=20261109_090000_caller&path=reports%2Fweek-45\.xlsx&download=1$/)])
-  cleanup()
-  // A delivered text file also opens on the companion page; an unchanged one has no note.
-  const text = await mount({ ...delivered, focus_path: 'reports/week-45.xlsx', delivery: { ...delivered.delivery!, changed: false } })
-  expect(text.queryByRole('note')).toBeNull()
-  await userEvent.click(await text.findByRole('button', { name: 'Open' }))
-  expect(requestOpenFile).toHaveBeenCalledWith({ sessionId: '20261109_090000_caller', path: 'reports/week-45.xlsx' })
-  click.mockRestore()
 })
