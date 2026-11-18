@@ -59,6 +59,7 @@ for (const width of [1280, 390]) {
     await github.getByRole('switch', { name: 'github' }).click()
     await expect(github).toContainText('Disabled')
     await expect(github).not.toContainText('Needs sign-in')
+    await expect(github.getByRole('switch', { name: 'github' })).not.toBeChecked()
     expect(patches).toEqual([{ method: 'PATCH', name: 'notes', body: { enabled: true } }, { method: 'PATCH', name: 'github', body: { enabled: false } }])
     await page.screenshot({ path: testInfo.outputPath(`mcp-${String(width)}-toggled.png`) })
 

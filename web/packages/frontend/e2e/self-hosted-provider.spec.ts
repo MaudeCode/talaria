@@ -36,12 +36,13 @@ test('adds a self-hosted provider, refreshes its models, and picks its model', a
   await row.getByRole('button', { name: 'Set up' }).click()
   const form = page.locator('[data-provider-setup="lmstudio"]')
   await form.getByRole('textbox', { name: 'Base URL' }).fill(URL)
+  await form.getByRole('textbox', { name: 'API key (optional)' }).fill('local-key')
   await form.getByRole('textbox', { name: 'Default model' }).fill(entry.id)
   await form.screenshot({ path: testInfo.outputPath('self-hosted-form.png') })
 
   const saved = page.waitForRequest((r) => r.url().endsWith('/api/providers/self-hosted'))
   await form.getByRole('button', { name: 'Save' }).click()
-  expect((await saved).postDataJSON()).toEqual({ provider: 'lmstudio', base_url: URL, model: entry.id })
+  expect((await saved).postDataJSON()).toEqual({ provider: 'lmstudio', base_url: URL, model: entry.id, api_key: 'local-key' })
   // The configured endpoint joins Your providers as the default, and opens its own page.
   const block = page.locator('[data-section="providers-configured"] [data-provider="lmstudio"]')
   await expect(block.getByText('Default', { exact: true })).toBeVisible()

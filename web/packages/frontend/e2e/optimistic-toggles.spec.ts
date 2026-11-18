@@ -1,57 +1,41 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { expect, settle, test } from './fixtures'
-import type { ConnectorsPage } from '@maudecode/talaria-web-contracts'
 
 test.use({ serviceWorkers: 'block' })
-const shared = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts/fixtures/connectors.json'), 'utf8')) as { page: ConnectorsPage }
 
-for (const kind of ['skill', 'mcp', 'extension', 'connector'] as const) {
-  test(`${kind} flips at once and stays usable while the write is held`, async ({ page }, testInfo) => {
-    let release!: () => void
-    let started!: () => void
-    const held = new Promise<void>((done) => { release = done })
-    const writing = new Promise<void>((done) => { started = done })
-    let enabled = false
-    const names = ['alpha', 'beta']
-    await page.route('**/api/skills', (route) => route.fulfill({ json: { skills: names.map((name) => ({ name, description: 'Review changes', category: null, disabled: name === 'alpha' ? !enabled : true, tier: 0 })) } }))
-    await page.route('**/api/skills/usage', (route) => route.fulfill({ json: { usage: {} } }))
-    await page.route('**/api/mcp/servers', (route) => route.fulfill({ json: { toggle_supported: true, reload_required: true, servers: names.map((name) => ({ name, enabled: name === 'alpha' && enabled, can_toggle: true, transport: 'stdio', status: 'configured', health: 'unhealthy', tool_count: 0 })) } }))
-    await page.route('**/api/mcp/tools*', (route) => route.fulfill({ json: { tools: [], total: 0 } }))
-    await page.route('**/api/extensions/registry', (route) => route.fulfill({ json: { entries: [], total: 0 } }))
-    await page.route('**/api/extensions/manifests', (route) => route.fulfill({ json: { protocol_version: 1, total: names.length, enabled_count: enabled ? 1 : 0, manifests: names.map((id) => ({ id, name: id, enabled: id === 'alpha' && enabled, can_toggle: true, source: 'manifest', description: 'Review changes', panel: null, nav: null, capabilities: [], permissions: {}, settings_schema: [], theme: null, tts: null, sidecar: null, legacy_injection: false, warnings: [] })) } }))
-    await page.route('**/api/connectors', (route) => route.fulfill({ json: { ...shared.page, connectors: names.map((slug) => ({ ...shared.page.connectors.find((c) => c.slug === 'notion')!, slug, name: slug, enabled: slug === 'alpha' && enabled, logo_url: null, accounts: [], connected: false, rules_editable: true })) } }))
-    const endpoint = { skill: '**/api/skills/toggle', mcp: '**/api/mcp/servers/alpha', extension: '**/api/extensions/toggle', connector: '**/api/connectors/alpha/policy' }[kind]
-    await page.route(endpoint, async (route) => {
-      started()
-      await held
-      enabled = true
-      await route.fulfill({ json: { ok: true, name: 'alpha', enabled: true, revision: 'rev-8' } })
-    })
-    await page.route('**/api/connectors/available', (route) => route.fulfill({ json: { available: true } }))
-    await page.goto({ skill: '/skills', mcp: '/settings/tools?tab=mcp', extension: '/settings/extensions', connector: '/settings/tools?tab=connectors' }[kind])
-    await settle(page)
-    // MCP and connectors share the Tools page, so each kind's switch is found in its own group or page.
-    const scope = kind === 'skill' ? page.locator('body') : page.locator({ mcp: '[data-section="mcp-servers"]', extension: '[data-section="extensions"]', connector: '[data-group="connectors"]' }[kind])
-    const toggle = scope.getByRole('switch', { name: /^alpha(?:[: ]|$)/ })
-    await toggle.scrollIntoViewIfNeeded()
-    if (kind === 'extension') {
-      const label = page.locator('[data-extension-id="alpha"] label')
-      expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(44)
-      await label.getByText('Disabled', { exact: true }).click()
-    } else await toggle.click()
-    await writing
-    try {
-      await expect(toggle).toBeChecked({ timeout: 1000 })
-      await expect(toggle).not.toHaveAttribute('aria-busy', 'true')
-      await expect(toggle).toBeEnabled()
-      await expect(page.getByText(/^Pending/)).toHaveCount(0)
-      await expect(scope.getByRole('switch', { name: /^beta(?:[: ]|$)/ })).toBeEnabled()
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    } finally {
-      await page.screenshot({ path: testInfo.outputPath(`${kind}-shown.png`), animations: 'disabled' })
-      release()
-    }
-    await expect(toggle).toBeChecked()
+// OptimisticToggles.test.tsx owns the shared optimistic toggle (shown at once, never busy, peers usable, rollback) for every
+// kind; this browser check owns what jsdom cannot lay out: the extension row's whole-label hit target.
+test('an extension flips from its 44 px label at once and stays usable while the write is held', async ({ page }, testInfo) => {
+  let release!: () => void
+  let started!: () => void
+  const held = new Promise<void>((done) => { release = done })
+  const writing = new Promise<void>((done) => { started = done })
+  let enabled = false
+  const names = ['alpha', 'beta']
+  await page.route('**/api/extensions/registry', (route) => route.fulfill({ json: { entries: [], total: 0 } }))
+  await page.route('**/api/extensions/manifests', (route) => route.fulfill({ json: { protocol_version: 1, total: names.length, enabled_count: enabled ? 1 : 0, manifests: names.map((id) => ({ id, name: id, enabled: id === 'alpha' && enabled, can_toggle: true, source: 'manifest', description: 'Review changes', panel: null, nav: null, capabilities: [], permissions: {}, settings_schema: [], theme: null, tts: null, sidecar: null, legacy_injection: false, warnings: [] })) } }))
+  await page.route('**/api/extensions/toggle', async (route) => {
+    started()
+    await held
+    enabled = true
+    await route.fulfill({ json: { ok: true, name: 'alpha', enabled: true } })
   })
-}
+  await page.goto('/settings/extensions')
+  await settle(page)
+  const scope = page.locator('[data-section="extensions"]')
+  const toggle = scope.getByRole('switch', { name: /^alpha(?:[: ]|$)/ })
+  await toggle.scrollIntoViewIfNeeded()
+  const label = page.locator('[data-extension-id="alpha"] label')
+  expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+  await label.getByText('Disabled', { exact: true }).click()
+  await writing
+  try {
+    await expect(toggle).toBeChecked()
+    await expect(toggle).not.toHaveAttribute('aria-busy', 'true')
+    await expect(scope.getByRole('switch', { name: /^beta(?:[: ]|$)/ })).toBeEnabled()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  } finally {
+    await page.screenshot({ path: testInfo.outputPath('extension-shown.png'), animations: 'disabled' })
+    release()
+  }
+  await expect(toggle).toBeChecked()
+})

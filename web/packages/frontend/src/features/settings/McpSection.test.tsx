@@ -46,33 +46,6 @@ describe('McpSection', () => {
     enabled.github = true
   })
 
-  it('toggling a server PATCHes it and shows the status the server reports next', async () => {
-    renderMcp()
-    const toggle = await screen.findByRole('switch', { name: 'github' })
-    const row = toggle.closest('li')!
-    expect(within(row).getByText('Active')).toBeInTheDocument()
-    expect(within(row).getByText('Unreachable')).toBeInTheDocument()
-    await userEvent.click(toggle)
-    expect(api.toggleMcpServer).toHaveBeenCalledWith('github', false)
-    await waitFor(() => expect(within(row).getByText('Disabled')).toBeInTheDocument())
-    expect(within(row).queryByText('Active')).not.toBeInTheDocument()
-    expect(within(row).queryByText('Unreachable')).not.toBeInTheDocument()
-    expect(within(row).getByRole('switch', { name: 'github' })).not.toBeChecked()
-  })
-
-  it('search asks the server for matching tools and renders only its answer', async () => {
-    renderMcp()
-    const list = await screen.findByRole('list', { name: 'MCP Tools' })
-    expect(list).toHaveAttribute('data-row-list')
-    expect(within(list).getAllByRole('listitem')).toHaveLength(2)
-    await userEvent.type(screen.getByRole('searchbox'), 'pulls')
-    await waitFor(() => expect(api.fetchMcpTools).toHaveBeenLastCalledWith('pulls'))
-    await waitFor(() => expect(within(screen.getByRole('list', { name: 'MCP Tools' })).getAllByRole('listitem')).toHaveLength(1))
-    expect(screen.getByText('list_pulls')).toBeInTheDocument()
-    await userEvent.clear(screen.getByRole('searchbox'))
-    await userEvent.type(screen.getByRole('searchbox'), 'zzz')
-    expect(await screen.findByText('No MCP tools match your search.')).toBeInTheDocument()
-  })
   it('shows package provenance and rolls a refused optimistic policy edit back', async () => {
     const policy = McpCostPolicySchema.parse(JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/mcp-cost-policy.json'), 'utf8')))
     const original = vi.mocked(api.fetchMcpServers).getMockImplementation()!

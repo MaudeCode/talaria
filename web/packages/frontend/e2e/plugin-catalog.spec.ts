@@ -7,7 +7,6 @@ const entry = { name: 'calendar-probe', title: 'Calendar', description: 'Calenda
 test('catalog previews, confirms a disabled install and reconciles a lost acknowledgment', async ({ page, errors }, testInfo) => {
   let installed = false
   const calls: unknown[] = []
-  const evidence = '/tmp/TAL-1331-evidence'
   await routePlugins(page, () => ({ read_only: false, plugins: [{ key: 'notes', name: 'Notes', version: '1.0.0', description: 'Read and write project notes', enabled: true, activation: 'enabled' }, ...(installed ? [{ key: 'calendar-native', name: 'Calendar', version: '1.0.0', description: 'Calendar tools', enabled: false, activation: 'disabled' }] : [])] }))
   await page.route('**/api/plugins/catalog?*', (route) => route.fulfill({ json: { supported: true, read_only: false, entries: [{ ...entry, installed_key: installed ? 'calendar-native' : null, installed_sha: installed ? entry.sha : null, can_install: !installed }], total: 1, next_offset: null } }))
   await page.route('**/api/plugins/install', (route) => {
@@ -22,24 +21,20 @@ test('catalog previews, confirms a disabled install and reconciles a lost acknow
   await settle(page)
   const section = page.locator('[data-section="plugins"]')
   await expect(section.getByText(/^Notes/)).toBeVisible()
-  if (process.env.TALARIA_CATALOG_BEFORE === '1') {
-    await page.screenshot({ path: `${evidence}/before-${testInfo.project.name}.png` })
-    return
-  }
   await page.getByRole('button', { name: 'Add plugin', exact: true }).click()
   const catalog = page.getByRole('dialog', { name: 'Add plugin' })
   await expect(catalog.getByText('Calendar tools for a local test profile', { exact: true })).toBeVisible()
   await expect(catalog.getByRole('button', { name: 'Details', exact: true })).toHaveCount(0)
-  await page.screenshot({ path: `${evidence}/results-${testInfo.project.name}.png` })
+  await page.screenshot({ path: testInfo.outputPath('results.png') })
   await catalog.getByRole('button', { name: /^Calendar/ }).click()
   await expect(catalog.getByText('Environment: CALENDAR_CLIENT_ID', { exact: true })).toBeVisible()
   await expect(catalog.getByText('verified · tools', { exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await page.screenshot({ path: `${evidence}/after-${testInfo.project.name}.png` })
+  await page.screenshot({ path: testInfo.outputPath('after.png') })
   await catalog.getByRole('button', { name: 'Install disabled', exact: true }).click()
   const dialog = page.getByRole('alertdialog')
   await expect(dialog).toContainText('No dependency, host capability or sidecar permission is granted')
-  await page.screenshot({ path: `${evidence}/confirm-${testInfo.project.name}.png` })
+  await page.screenshot({ path: testInfo.outputPath('confirm.png') })
   await dialog.getByRole('button', { name: 'Install disabled', exact: true }).click()
   await expect(catalog.getByText('Installed', { exact: true })).toBeVisible()
   await expect(catalog.getByRole('button', { name: 'Install disabled', exact: true })).toHaveCount(0)
@@ -48,7 +43,7 @@ test('catalog previews, confirms a disabled install and reconciles a lost acknow
   const expected = /^503 POST .*\/api\/plugins\/install$/
   expect(errors.filter((error) => expected.test(error))).toHaveLength(1)
   errors.splice(0, errors.length, ...errors.filter((error) => !expected.test(error)))
-  await page.screenshot({ path: `${evidence}/installed-${testInfo.project.name}.png` })
+  await page.screenshot({ path: testInfo.outputPath('installed.png') })
   await page.keyboard.press('Escape')
   await expect(catalog).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Add plugin', exact: true })).toBeFocused()
@@ -66,17 +61,12 @@ test('catalog and installed empty states identify their own list', async ({ page
   await page.getByRole('button', { name: 'Add plugin', exact: true }).click()
   const catalog = page.getByRole('dialog', { name: 'Add plugin' })
   await expect(catalog.getByText('Calendar', { exact: true })).toBeVisible()
-  if (process.env.TALARIA_CATALOG_BEFORE === '1') {
-    await expect(section.getByText('No plugins found.', { exact: true })).toBeVisible()
-    await page.screenshot({ path: `/tmp/TAL-1331-evidence/empty-before-${testInfo.project.name}.png` })
-    return
-  }
   await expect(section.getByText('No installed plugins', { exact: true })).toBeVisible()
-  await page.screenshot({ path: `/tmp/TAL-1331-evidence/empty-installed-${testInfo.project.name}.png` })
+  await page.screenshot({ path: testInfo.outputPath('empty-installed.png') })
   await catalog.getByRole('searchbox', { name: 'Search plugins' }).fill('absent')
   await expect(catalog.getByText('No matching plugins', { exact: true })).toBeVisible()
   await expect(catalog.getByRole('button', { name: 'Search', exact: true })).toHaveCount(0)
   await expect(section.getByText('No installed plugins', { exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await page.screenshot({ path: `/tmp/TAL-1331-evidence/empty-catalog-${testInfo.project.name}.png` })
+  await page.screenshot({ path: testInfo.outputPath('empty-catalog.png') })
 })

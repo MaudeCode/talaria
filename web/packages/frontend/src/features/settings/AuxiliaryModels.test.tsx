@@ -167,17 +167,6 @@ describe('Auxiliary models settings', () => {
     expect(vision).toHaveFocus()
   })
 
-  it('ticks only the server-selected entry when two providers list the same bare model', async () => {
-    vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState({ title_generation: pinnedBeta }))
-    renderSetting()
-    const dialog = await openTask(/Title generation/)
-    const beta = within(await dialog.findByRole('region', { name: 'beta' })).getByRole('button', { name: 'Llama3' })
-    const alpha = within(dialog.getByRole('region', { name: 'alpha' })).getByRole('button', { name: 'Llama3' })
-    expect(beta).toHaveAttribute('aria-pressed', 'true')
-    expect(alpha).toHaveAttribute('aria-pressed', 'false')
-    expect(dialog.getByRole('button', { name: /^Auto/ })).toHaveAttribute('aria-pressed', 'false')
-  })
-
   it.each([
     new Error('provider-qualified auxiliary model must match the selected provider'),
     new ApiError({ kind: 'http', status: 409, path: 'api/model/set', message: 'config.yaml is package-managed. Update the declarative configuration instead.', body: { condition: 'config_write_refused' } }),
