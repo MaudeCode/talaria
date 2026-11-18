@@ -1014,3 +1014,38 @@ def test_the_agents_failed_and_partial_results_reach_the_server(monkeypatch) -> 
         "truncated": ("completed", False, True, False, "Stopped after invalid tool calls."),
     }
     assert all(r["token_sent"] and r["messages"] == history for r in results.values())
+
+
+@pytest.mark.parametrize("trusted", [True, False], ids=["trusted", "untrusted-config"])
+def test_an_agent_without_sync_from_config_still_wires_the_profiles_shell_hook_guards(monkeypatch, tmp_path, trusted) -> None:
+    # Security, fail closed: an older Agent still loads with only a warning, and a consented fail_closed hook must still
+    # guard its tool calls. A trusted config replaces the home's hooks; an untrusted one only ever adds them.
+    calls: list[str] = []
+    configured = {"hooks": {"pre_tool_call": [{"command": "/bin/guard"}]}} if trusted else {}
+
+    def module(name: str, **attrs):
+        made = types.ModuleType(name)
+        made.__dict__.update(attrs)
+        return made
+
+    shell_registered: set = set()
+    shell_hooks = module(
+        "agent.shell_hooks", _registered=shell_registered, _registered_lock=threading.Lock(),
+        allowlist_path=lambda: tmp_path / "missing-allowlist.json",
+        iter_configured_hooks=lambda cfg: [entry for entries in (cfg.get("hooks") or {}).values() for entry in entries],
+        register_from_config=lambda cfg, accept_hooks: calls.append(f"register:{len(cfg.get('hooks') or {})}"),
+        _forget_home_registrations=lambda registered, lock: calls.append(
+            "forget-shell" if registered is shell_registered else "forget-webhooks"))
+    outbound = module("agent.outbound_webhooks", _registered=set(), _registered_lock=threading.Lock(),
+                      register_from_config=lambda cfg: calls.append("webhooks"))
+    manager = types.SimpleNamespace(_hooks={})
+    monkeypatch.setitem(sys.modules, "agent", module("agent", shell_hooks=shell_hooks, outbound_webhooks=outbound))
+    monkeypatch.setitem(sys.modules, "agent.shell_hooks", shell_hooks)
+    monkeypatch.setitem(sys.modules, "agent.outbound_webhooks", outbound)
+    monkeypatch.setitem(sys.modules, "hermes_cli.plugins", module("hermes_cli.plugins", get_plugin_manager=lambda: manager))
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", module("hermes_cli.config", load_config=lambda: configured))
+
+    chat._register_profile_hooks(tmp_path)
+
+    hooks = ["forget-shell", "register:1"] if trusted else ["register:0"]
+    assert calls == [*hooks, "forget-webhooks", "webhooks"]

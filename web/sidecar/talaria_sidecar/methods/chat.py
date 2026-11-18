@@ -972,10 +972,52 @@ def _drop_home_callbacks(*modules) -> None:
             manager._hooks[event] = [cb for cb in callbacks if not getattr(cb, "__name__", "").startswith(prefixes)]
 
 
+def _hook_state_trusted(shell_hooks, cfg: dict) -> bool:
+    """``sync_from_config``'s removal guard for Agents without it: an empty (failed-open) config, an unreadable
+    allowlist or a ``hooks:`` entry the Agent could not parse must never disarm a registered guard."""
+    if not cfg:
+        return False
+    try:
+        allowlist = json.loads(shell_hooks.allowlist_path().read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        allowlist = {"approvals": []}
+    except (OSError, ValueError):
+        return False
+    if not isinstance(allowlist, dict) or not isinstance(allowlist.get("approvals"), list):
+        return False
+    hooks = cfg.get("hooks")
+    if hooks is None:
+        return True
+    if not isinstance(hooks, dict):
+        return False
+    events = [entries for event, entries in hooks.items() if event not in ("output_spill", "outbound") and entries is not None]
+    if not all(isinstance(entries, list) for entries in events):
+        return False
+    return len(shell_hooks.iter_configured_hooks(cfg)) == sum(len(entries) for entries in events)
+
+
+def _replace_shell_hooks(shell_hooks, cfg: dict) -> None:
+    """Agents without ``sync_from_config``: wire the home's consented hooks from ``cfg`` and drop the rest, so a hook
+    removed from config or revoked stops, as it does on v0.22.3. The stale callbacks go only after the current set is
+    wired, so a concurrent turn's tool call always meets its guard. Add-only when the hook state is not trusted."""
+    if not _hook_state_trusted(shell_hooks, cfg):
+        shell_hooks.register_from_config(cfg, accept_hooks=False)
+        return
+    from hermes_cli.plugins import get_plugin_manager
+
+    manager = get_plugin_manager()
+    stale = [cb for callbacks in manager._hooks.values() for cb in callbacks if getattr(cb, "__name__", "").startswith("shell_hook[")]
+    shell_hooks._forget_home_registrations(shell_hooks._registered, shell_hooks._registered_lock)
+    shell_hooks.register_from_config(cfg, accept_hooks=False)
+    with shell_hooks._registered_lock:
+        for event, callbacks in list(manager._hooks.items()):
+            manager._hooks[event] = [cb for cb in callbacks if not any(cb is old for old in stale)]
+
+
 def _register_profile_hooks(home: Path) -> None:
     """Wire the profile's consented shell hooks and current outbound webhooks before the turn's tools run, like the
     gateway on every session open (TAL-1258). Hooks added or approved since the last call join this one; hooks removed
-    from config or revoked stop, through ``sync_from_config``. Outbound webhooks
+    from config or revoked stop, through ``sync_from_config`` or its sidecar twin for older Agents. Outbound webhooks
     are add-only on every Agent, so each call replaces the home's set with the configured one (a concurrent turn's
     notification can miss that instant; webhooks only observe). Consent comes from the allowlist or an opt-in in
     force: stdin is the RPC pipe, so nothing prompts. A failure is logged and never blocks the turn."""
@@ -984,7 +1026,11 @@ def _register_profile_hooks(home: Path) -> None:
         from hermes_cli.config import load_config
 
         with _HOOKS_LOCK:
-            shell_hooks.sync_from_config(load_config)
+            sync = getattr(shell_hooks, "sync_from_config", None)
+            if sync is not None:
+                sync(load_config)
+            else:
+                _replace_shell_hooks(shell_hooks, load_config())
             _drop_home_callbacks(outbound_webhooks)
             outbound_webhooks.register_from_config(load_config())
     except Exception:  # noqa: BLE001
