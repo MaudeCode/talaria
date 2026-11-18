@@ -333,15 +333,21 @@ final class WhatsNewHostedTests: XCTestCase {
             profileEntityCache: ProfileEntityCache(defaults: nil),
             serverRegistry: ServerRegistry(keychain: keychain, identityDefaults: registryDefaults)
         )
-        let presenter = WhatsNewPresenter(pending: announcement(), defaults: defaults)
+        let clock = ManualTestClock()
+        let presenter = WhatsNewPresenter(pending: announcement(), defaults: defaults, clock: clock)
         let windows = try (0..<2).map { _ in try hostLaunch(authManager: authManager, presenter: presenter) }
         func showing() -> [UIWindow] {
             windows.filter { HostedAccessibility.element(in: $0, label: WhatsNewSheet.title) != nil }
         }
 
+        // Both windows' offers wait on the presenter's clock, and wake in the same turn.
+        let waiting = await awaitCondition { clock.sleeperCount == 2 }
+        XCTAssertTrue(waiting, "Each window offers it")
+        await clock.advance(by: .seconds(1))
+        XCTAssertEqual(clock.sleeperCount, 0, "Neither window waits to offer it again")
         let offered = await awaitCondition { !showing().isEmpty }
         XCTAssertTrue(offered)
-        settle(1.5)
+        await awaitDisplayUpdates(2, in: try XCTUnwrap(windows[0].windowScene))
         XCTAssertEqual(showing().count, 1, "What's New presents in one window only")
     }
 

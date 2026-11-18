@@ -203,10 +203,12 @@ final class WhatsNewPresenter {
     private(set) var presentingWindow: UUID?
     @ObservationIgnored private var pending: WhatsNewAnnouncement?
     @ObservationIgnored let defaults: UserDefaults
+    @ObservationIgnored private let clock: any Clock<Duration>
 
-    init(pending: WhatsNewAnnouncement?, defaults: UserDefaults = .standard) {
+    init(pending: WhatsNewAnnouncement?, defaults: UserDefaults = .standard, clock: any Clock<Duration> = ContinuousClock()) {
         self.pending = pending
         self.defaults = defaults
+        self.clock = clock
     }
 
     /// Presents the pending announcement once no window is presenting a sheet, alert or sign-in of its own. The
@@ -214,14 +216,15 @@ final class WhatsNewPresenter {
     // ponytail: polls once a second; SwiftUI and UIKit post nothing when another presentation closes.
     func offerWhenNothingIsPresented(in window: UUID, interval: Duration = .seconds(1)) async {
         while pending != nil {
-            try? await Task.sleep(for: interval)
-            guard !Task.isCancelled else { return }
+            try? await clock.sleep(for: interval)
+            // Another window's offer may have presented it during this wait (TAL-2387).
+            guard !Task.isCancelled, let announcement = pending else { return }
             // A Settings replay can acknowledge it while it waits behind Settings.
-            if pending?.isAcknowledged(defaults: defaults) == true {
+            if announcement.isAcknowledged(defaults: defaults) {
                 pending = nil
             } else if Self.nothingIsPresented() {
                 presentingWindow = window
-                presented = pending
+                presented = announcement
                 pending = nil
             }
         }

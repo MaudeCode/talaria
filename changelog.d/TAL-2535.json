@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "What's New appears once when the app restores two windows at launch, instead of sometimes appearing in neither.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

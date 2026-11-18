@@ -101,8 +101,7 @@ final class ScriptedSSEStreamingClient: SSEStreamingClient {
 @MainActor
 extension XCTestCase {
     /// A real `ChatViewModel` wired to a scripted SSE client and a mocked HTTP
-    /// backend — the shared seam for reconnect/replay tests and for the replay
-    /// catch-up performance budget (TAL-75).
+    /// backend — the shared seam for reconnect/replay tests.
     func makeScriptedChatViewModel(
         streamClient: ScriptedSSEStreamingClient,
         flushesEachEvent: Bool = true,

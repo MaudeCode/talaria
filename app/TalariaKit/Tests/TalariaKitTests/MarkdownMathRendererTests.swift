@@ -551,6 +551,18 @@ final class MarkdownMathRendererTests: XCTestCase {
                        [MarkdownCodeSourceLine(text: "x", separator: "\r\n"), MarkdownCodeSourceLine(text: "", separator: "")])
     }
 
+    /// TAL-1396: a streaming block grows only at its end, so each finished group stays equal and its view can skip.
+    func testCodeLineGroupsKeepFinishedGroupsEqualAsLinesArrive() {
+        let code = (0..<70).map { "let value\($0) = compute(\($0))\n" }.joined()
+        let more = code + (70..<200).map { "let value\($0) = compute(\($0))\n" }.joined()
+
+        let before = MarkdownCodeLineGroup.groups(in: code, colorsDiffLines: false)
+        let after = MarkdownCodeLineGroup.groups(in: more, colorsDiffLines: false)
+
+        XCTAssertEqual(Array(after.prefix(1)), Array(before.prefix(1)), "The finished group changed when lines arrived")
+        XCTAssertNotEqual(after[1], before[1], "The open group takes the new lines")
+    }
+
     func testCodeLineGroupsKeepEachLinesDiffKindAcrossGroups() {
         // A file header split across the first group boundary still needs the next group's `+++ ` line.
         let lines = (0..<63).map { " context \($0)" } + ["--- a/file", "+++ b/file", "@@ -1 +1 @@", "-old", "+new"]

@@ -309,7 +309,7 @@ final class ChatScrollPositionController {
         let top = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
         let minY = rowID.flatMap { rowMinY[$0] }
         let height = rowID.flatMap { rowFrames[$0]?.height }
-        holdPosition(anchorRowID: isFollowingLatest ? nil : rowID, resync: {})
+        holdPosition(anchorRowID: isFollowingLatest ? nil : rowID)
         guard isPreservingPosition else { return }
         preservesEndForWidthChange = isFollowingLatest
         if !isFollowingLatest, let minY, let height, height > 0 {
@@ -352,12 +352,6 @@ final class ChatScrollPositionController {
     private var layoutWaiter: CheckedContinuation<Void, Never>?
     private var quietReleaseTask: Task<Void, Never>?
     private var isApplyingCompensation = false
-    /// Set when a hold had to undo an offset SwiftUI applied. SwiftUI's own
-    /// notion of the offset is then stale, and lazy rows it believes are
-    /// off-screen stop hit-testing until a scroll it performed itself resyncs
-    /// it; `resyncAfterHold` is that scroll.
-    private var didRevertSwiftUIOffset = false
-    private var resyncAfterHold: (() -> Void)?
     private var holdCompletion: (() -> Void)?
     /// True from a content-size change until the end of the same run-loop
     /// turn: an offset change in that window is SwiftUI re-anchoring, not a
@@ -581,11 +575,7 @@ final class ChatScrollPositionController {
     /// been quiet for `ChatScrollPolicy.disclosureHoldQuietPeriod`, or after
     /// `disclosureHoldMaximum` at the latest. No-op while the user is moving the
     /// transcript; their gesture owns the position.
-    func holdPosition(anchorRowID: String?, resync: @escaping () -> Void) {
-        holdPosition(anchorRowID: anchorRowID, resync: resync, completion: {})
-    }
-
-    func holdPosition(anchorRowID: String?, resync: @escaping () -> Void, completion: @escaping () -> Void) {
+    func holdPosition(anchorRowID: String?, completion: @escaping () -> Void = {}) {
         cancelNativeScroll()
         // Inside a prepend window, rows inserted above the reader may still be
         // measuring. The pin keeps following them through its anchor: the tapped
@@ -609,45 +599,23 @@ final class ChatScrollPositionController {
         if let holdAnchor { snapshotRowViewport(holdAnchor.rowID, in: scrollView) }
         anchor = holdAnchor
         prependWindowEnd = carriedPrependWindowEnd
-        resyncAfterHold = resync
         beginPreservation(mode: .hold, scrollView: scrollView, window: ChatScrollPolicy.disclosureHoldMaximum)
         scheduleQuietRelease()
     }
 
     /// A server projection changed row heights. Reuse the disclosure hold around the row nearest the viewport top.
-    func holdVisiblePosition(resync: @escaping () -> Void) {
+    func holdVisiblePosition() {
         guard !isPreservingPosition, !isUserInteracting, let scrollView else { return }
         let top = scrollView.contentOffset.y
         let visible = rowMinY.filter { $0.value >= top && $0.value < top + scrollView.bounds.height }
         let row = visible.min { $0.value < $1.value } ?? rowMinY.filter { $0.value < top }.max { $0.value < $1.value }
-        holdPosition(anchorRowID: row?.key, resync: resync)
+        holdPosition(anchorRowID: row?.key)
     }
 
-    /// Hold ran to completion (quiet or capped): let go, then resync SwiftUI
-    /// if the hold had to fight it. A hold ended by a gesture or a deliberate
-    /// scroll needs no resync; that scroll does it.
+    /// Hold ran to completion (quiet or capped): let go.
     private func finishHold() {
         applyCompensation()
-        let resync = Self.shouldResync(
-            didRevertSwiftUIOffset: didRevertSwiftUIOffset,
-            heldOffsetY: scrollView.flatMap(compensatedOffsetY(in:)),
-            minimumOffsetY: scrollView.map { -$0.adjustedContentInset.top }
-        ) ? resyncAfterHold : nil
         cancelPreservation()
-        resync?()
-    }
-
-    /// The resync is a SwiftUI scroll to the transcript's top, so it only
-    /// describes the held position when that position is the top. Anchor
-    /// re-application has only been seen there (after a status-bar scroll);
-    /// anywhere else, leave SwiftUI alone rather than hop.
-    nonisolated private static func shouldResync(
-        didRevertSwiftUIOffset: Bool,
-        heldOffsetY: CGFloat?,
-        minimumOffsetY: CGFloat?
-    ) -> Bool {
-        guard didRevertSwiftUIOffset, let heldOffsetY, let minimumOffsetY else { return false }
-        return heldOffsetY <= minimumOffsetY + 0.5
     }
 
     /// Ends a disclosure pin early: the transcript is about to scroll on
@@ -738,8 +706,6 @@ final class ChatScrollPositionController {
         completionTask = nil
         quietReleaseTask?.cancel()
         quietReleaseTask = nil
-        didRevertSwiftUIOffset = false
-        resyncAfterHold = nil
         contentSizeChangedThisTurn = false
         lastObservedContentHeight = nil
         baselineContentHeight = nil
@@ -944,9 +910,6 @@ final class ChatScrollPositionController {
         guard abs(scrollView.contentOffset.y - targetY) > 0.5 else {
             if prependUpdateLink == nil { acknowledgeRestoredReader() }
             return
-        }
-        if mode == .hold {
-            didRevertSwiftUIOffset = true
         }
         isApplyingCompensation = true
         var offset = scrollView.contentOffset

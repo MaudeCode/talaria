@@ -289,9 +289,7 @@ struct ChatTranscriptView: View {
                     ChatBodyEvaluationRecorder.record("excerptHold")
 #endif
                     guard !shouldFollowLatestMessage else { return }
-                    scrollPositionController.holdVisiblePosition {
-                        proxy.scrollTo(transcriptContentID, anchor: .top)
-                    }
+                    scrollPositionController.holdVisiblePosition()
                 }
                 .onChange(of: messages.count) {
                     if latestTranscriptMessageRole == "user" {
@@ -383,17 +381,13 @@ struct ChatTranscriptView: View {
 
     /// A tapped row is about to grow or shrink. Pin the reader to that row's top
     /// so a default anchor SwiftUI re-applies on the size change (seen at the
-    /// exact top after a status-bar scroll) cannot move them. If the pin had to
-    /// undo SwiftUI, finish with a native scroll to the same content fraction so
-    /// its own offset model, and hit-testing of the visible rows, catch up.
-    private func pinReaderForDisclosure(proxy: ScrollViewProxy, anchorRowID: String?) {
+    /// exact top after a status-bar scroll) cannot move them.
+    private func pinReaderForDisclosure(anchorRowID: String?) {
         scrollDestination = nil
         scrollDestinationNeedsMount = false
         let completion = onDisclosureToggle()
         let nearReader = scrollPositionController.realizedRowsNearViewport
-        scrollPositionController.holdPosition(anchorRowID: anchorRowID, resync: {
-            proxy.scrollTo(transcriptContentID, anchor: .top)
-        }, completion: completion)
+        scrollPositionController.holdPosition(anchorRowID: anchorRowID, completion: completion)
         if scrollPositionController.isPreservingPosition {
             pinnedRowIDs = nearReader
             if let anchorRowID { pinnedRowIDs.insert(anchorRowID) }
@@ -403,7 +397,7 @@ struct ChatTranscriptView: View {
     /// Reports the row's content-space top so position preservation can tell
     /// growth above it from growth below, and pins on this row when one of its
     /// disclosures toggles.
-    private func positionAnchoredRow(_ row: some View, id: String, proxy: ScrollViewProxy) -> some View {
+    private func positionAnchoredRow(_ row: some View, id: String) -> some View {
         let controller = scrollPositionController
         let revision = historyLayoutRevision
         return row
@@ -417,7 +411,7 @@ struct ChatTranscriptView: View {
             .onAppear { controller.rowDidAppear(id) }
             .onDisappear { controller.forgetRow(id) }
             .chatDisclosureToggled {
-                pinReaderForDisclosure(proxy: proxy, anchorRowID: id)
+                pinReaderForDisclosure(anchorRowID: id)
             }
     }
 
@@ -452,7 +446,7 @@ struct ChatTranscriptView: View {
                 if let branchedFrom { branchedFromButton(branchedFrom) }
                 if hasOlderMessages { historyIndicator }
                 if !displayedTranscriptMessages.isEmpty {
-                    windowedTranscriptRows(proxy: proxy, viewportFrame: viewportFrame)
+                    windowedTranscriptRows(viewportFrame: viewportFrame)
                 } else {
                     VStack(spacing: transcriptMessageSpacing) { transcriptTailContent }
                         .id(Self.emptyContainerID)
@@ -466,7 +460,7 @@ struct ChatTranscriptView: View {
             .frame(width: viewportWidth)
             .clipped()
             .chatDisclosureToggled {
-                pinReaderForDisclosure(proxy: proxy, anchorRowID: nil)
+                pinReaderForDisclosure(anchorRowID: nil)
             }
             .id(transcriptContentID)
             .environment(\.chatMessageMenuRegistry, menuRegistry)
@@ -512,7 +506,7 @@ struct ChatTranscriptView: View {
         }
     }
 
-    private func windowedTranscriptRows(proxy: ScrollViewProxy, viewportFrame: CGRect) -> some View {
+    private func windowedTranscriptRows(viewportFrame: CGRect) -> some View {
         let ids = displayedTranscriptMessages.map { Self.containerID(for: $0.renderID) }
         var pins = pinnedRowIDs
         if let target = scrollDestination?.id { pins.insert(target) }
@@ -533,7 +527,7 @@ struct ChatTranscriptView: View {
                                           isPinned: pins.contains(id), isTail: index == ids.count - 1,
                                           allowsRealization: !isAdmittingHistory,
                                           willRealize: preserveReaderForRealization) {
-                            transcriptRow(displayedTranscriptMessages[index], index: index, proxy: proxy)
+                            transcriptRow(displayedTranscriptMessages[index], index: index)
                         }
                     case let .gap(_, _, height):
                         Color.clear.frame(height: max(0, height))
@@ -553,7 +547,7 @@ struct ChatTranscriptView: View {
         if abs(top - rowViewportTop) >= max(100, height / 2) { rowViewportTop = top }
     }
 
-    private func transcriptRow(_ transcriptMessage: TranscriptMessage, index: Int, proxy: ScrollViewProxy) -> some View {
+    private func transcriptRow(_ transcriptMessage: TranscriptMessage, index: Int) -> some View {
         positionAnchoredRow(VStack(spacing: transcriptMessageSpacing) {
             // Scope live-streaming state to the row that actually displays it.
             // Non-anchor / non-streaming rows receive stable empty/nil values so
@@ -612,7 +606,7 @@ struct ChatTranscriptView: View {
             row
 
             if index == displayedTranscriptMessages.count - 1 { transcriptTailContent }
-        }, id: Self.containerID(for: transcriptMessage.renderID), proxy: proxy)
+        }, id: Self.containerID(for: transcriptMessage.renderID))
     }
 
     nonisolated static let emptyContainerID = "chat-bottom-anchor"

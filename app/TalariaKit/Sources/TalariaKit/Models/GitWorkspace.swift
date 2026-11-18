@@ -48,19 +48,13 @@ public struct GitStatus: Decodable, Equatable, Sendable {
     /// `true` when the file list was capped (server limit is 500 changed files).
     public let truncated: Bool?
 
-    /// Changed files excluding ignored entries (e.g. `.DS_Store`), which the server
-    /// includes in `files[]` but excludes from `totals.changed`.
-    public var trackedFiles: [GitFile] {
-        (files ?? []).filter { !$0.isIgnoredFile }
-    }
+    /// The server's changed files; it lists no ignored entries.
+    public var trackedFiles: [GitFile] { files ?? [] }
 
-    /// Changed-file count, preferring the server's `totals.changed` and falling back to
-    /// the non-ignored file count so the header never disagrees with the list.
-    public var changedCount: Int {
-        totals?.changed ?? trackedFiles.count
-    }
+    /// The server's `totals.changed`; a non-repo status sends neither totals nor files.
+    public var changedCount: Int { totals?.changed ?? 0 }
 
-    /// Total additions/deletions across non-ignored files.
+    /// Total additions/deletions across the changed files.
     public var totalAdditions: Int { trackedFiles.reduce(0) { $0 + ($1.additions ?? 0) } }
     public var totalDeletions: Int { trackedFiles.reduce(0) { $0 + ($1.deletions ?? 0) } }
 }
@@ -78,13 +72,12 @@ public struct GitFile: Decodable, Equatable, Identifiable, Sendable {
     public let path: String?
     let oldPath: String?
     public let workspacePath: String?
-    /// Raw git status code (`M/A/D/R/C/T/U`, `"??"`, two-char conflicts, or `"Ignored"`).
+    /// Raw git status code (`M/A/D/R/C/T/U`, `"??"`, or two-char conflicts).
     /// Prefer the booleans below for display; treat this as a fallback label.
     public let status: String?
     public let staged: Bool?
     let unstaged: Bool?
     public let untracked: Bool?
-    let ignored: Bool?
     let conflict: Bool?
     public let additions: Int?
     public let deletions: Int?
@@ -98,7 +91,6 @@ public struct GitFile: Decodable, Equatable, Identifiable, Sendable {
         case staged
         case unstaged
         case untracked
-        case ignored
         case conflict
         case additions
         case deletions
@@ -114,7 +106,6 @@ public struct GitFile: Decodable, Equatable, Identifiable, Sendable {
         staged = container.decodeLossyBoolIfPresent(forKey: .staged)
         unstaged = container.decodeLossyBoolIfPresent(forKey: .unstaged)
         untracked = container.decodeLossyBoolIfPresent(forKey: .untracked)
-        ignored = container.decodeLossyBoolIfPresent(forKey: .ignored)
         conflict = container.decodeLossyBoolIfPresent(forKey: .conflict)
         additions = container.decodeLossyIntIfPresent(forKey: .additions)
         deletions = container.decodeLossyIntIfPresent(forKey: .deletions)
@@ -145,13 +136,11 @@ extension GitFile {
         case deleted
         case renamed
         case modified
-        case ignored
         case unknown
     }
 
     public var changeKind: ChangeKind {
         if conflict == true { return .conflict }
-        if isIgnoredFile { return .ignored }
         if untracked == true { return .untracked }
 
         switch (status ?? "").uppercased().first {
@@ -186,10 +175,6 @@ extension GitFile {
     public var displayPath: String {
         let trimmed = (path ?? workspacePath ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? (oldPath ?? "") : trimmed
-    }
-
-    var isIgnoredFile: Bool {
-        ignored == true || (status ?? "").caseInsensitiveCompare("Ignored") == .orderedSame
     }
 }
 
@@ -347,6 +332,6 @@ public struct GitDiff: Decodable, Equatable, Sendable {
         additions = try container.decode(Int.self, forKey: .additions)
         deletions = try container.decode(Int.self, forKey: .deletions)
         diff = try container.decodeIfPresent(String.self, forKey: .diff)
-        hunks = DiffHunk.resolved(try container.decodeIfPresent(JSONValue.self, forKey: .hunks), diff: diff ?? "")
+        hunks = DiffHunk.resolved(try container.decodeIfPresent(JSONValue.self, forKey: .hunks))
     }
 }

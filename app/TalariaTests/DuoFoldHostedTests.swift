@@ -124,15 +124,15 @@ final class DuoFoldHostedTests: XCTestCase {
         let window = folding.window
         try await sendFromComposer("Run the deterministic fixture", in: window)
         _ = try await requireElement(in: window, label: "Waiting for control input.")
-        try await Task.sleep(for: .milliseconds(500))
+        _ = await awaitRenderedQuiet(in: window) { self.chatRequests() }
         let before = chatRequests()
 
         for closed in [true, false] {
             let moment = closed ? "Closing" : "Opening"
             fold(folding, closed: closed)
             _ = try await requireElement(in: window, label: "Stop response", "\(moment) the Duo lost the running response")
-            // Sleeping, not `settle()`, so the rebuilt chat's main-actor tasks get to send anything they would.
-            try await Task.sleep(for: .seconds(1))
+            // Runs the rebuilt chat's main-actor tasks until its requests stop changing, so it sends anything it would.
+            _ = await awaitRenderedQuiet(in: window) { self.chatRequests() }
             XCTAssertEqual(Array(chatRequests().dropFirst(before.count)), [], "\(moment) the Duo fetched the chat again")
             let pinned = await awaitCondition { (try? self.transcriptScrollView(in: window, timeout: 0)).map(self.isAtBottom) == true }
             XCTAssertTrue(pinned, "\(moment) the Duo moved a transcript that followed the response off the latest message")
@@ -164,8 +164,10 @@ final class DuoFoldHostedTests: XCTestCase {
             let moment = closed ? "Closing" : "Opening"
             fold(folding, closed: closed)
             _ = try await requireElement(in: window, label: "1 queued", "\(moment) the Duo lost the queue")
-            // Sleeping, not `settle()`, so a release the handover failed to cancel gets to run.
-            try await Task.sleep(for: .seconds(1))
+            // Runs the main-actor work the fold queued, so a release the handover failed to cancel gets to run.
+            _ = await awaitRenderedQuiet(in: window) {
+                [HostedAccessibility.element(in: window, label: "1 queued") == nil ? "" : "queued", self.composerDraftText(in: window) ?? ""]
+            }
             XCTAssertNotNil(HostedAccessibility.element(in: window, label: "1 queued"), "\(moment) the Duo emptied the queue")
             XCTAssertEqual(composerDraftText(in: window), "", "\(moment) the Duo moved the queue into the draft")
         }
@@ -174,7 +176,8 @@ final class DuoFoldHostedTests: XCTestCase {
     /// TAL-850: leaving the chat moves its queued message into the draft, and returning sends nothing.
     func testAQueuedMessageBecomesTheDraftOnLeaving() async throws {
         let window = try await openChatWithAQueuedMessage().window
-        let starts = UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/chat/start" }.count }
+        func starts() -> Int { UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/chat/start" }.count } }
+        let startsBefore = starts()
         try await openSidebar(in: window)
         HostedAccessibility.activate(try await requireElement(in: window, label: "New Chat"))
         let left = await awaitNoElement(in: window) { $0.accessibilityLabel == "1 queued" }
@@ -188,9 +191,8 @@ final class DuoFoldHostedTests: XCTestCase {
         settle(0.3)
         attachHostedScreenshot(window, name: "queued-message-restored-as-draft")
         XCTAssertNil(HostedAccessibility.element(in: window, label: "1 queued"))
-        try await Task.sleep(for: .seconds(1))
-        let startsAfter = UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/chat/start" }.count }
-        XCTAssertEqual(startsAfter, starts, "Returning sent the queued message")
+        _ = await awaitRenderedQuiet(in: window) { starts() }
+        XCTAssertEqual(starts(), startsBefore, "Returning sent the queued message")
     }
 
     func testTheReadersRowStaysAtTheTopAcrossClosingAndOpening() async throws {

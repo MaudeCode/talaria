@@ -13,14 +13,13 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         )
     }
 
-    private static let statusWithIgnored = """
+    private static let dirtyStatus = """
     {
       "git": {
         "is_git": true, "branch": "main",
         "totals": {"changed": 1},
         "files": [
-          {"path": "a.swift", "status": "M", "unstaged": true, "additions": 3, "deletions": 1, "ignored": false},
-          {"path": ".DS_Store", "status": "Ignored", "ignored": true, "additions": 0, "deletions": 0}
+          {"path": "a.swift", "status": "M", "unstaged": true, "additions": 3, "deletions": 1, "ignored": false}
         ],
         "truncated": false
       }
@@ -33,7 +32,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
     func testRefreshReplacesStaleData() async throws {
         var dirty = true
         let client = makeClient { request in
-            let json = dirty ? Self.statusWithIgnored : #"{"git": {"is_git": true, "branch": "main", "files": [], "totals": {"changed": 0}}}"#
+            let json = dirty ? Self.dirtyStatus : #"{"git": {"is_git": true, "branch": "main", "files": [], "totals": {"changed": 0}}}"#
             return apiTestJSONResponse(json, for: request)
         }
         let viewModel = GitWorkspaceViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
@@ -479,8 +478,8 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
 
     // MARK: - Diff hunks (TAL-604)
 
-    private func hunks(_ json: String, diff: String = "") throws -> [DiffHunk] {
-        DiffHunk.resolved(try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8)), diff: diff)
+    private func hunks(_ json: String) throws -> [DiffHunk] {
+        DiffHunk.resolved(try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8)))
     }
 
     func testServerHunksDecodeNumberedWithTheirLabels() throws {
@@ -493,7 +492,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
           {"kind": "deletion", "old_line": 9, "new_line": null, "text": "-z"}]},
          {"header": "", "old_start": null, "new_start": null, "new_end": null, "additions": 1, "deletions": 0, "lines": [
           {"kind": "addition", "old_line": null, "new_line": null, "text": "+x"}]}]
-        """, diff: "ignored when the server sends hunks")
+        """)
 
         XCTAssertEqual(decoded.map(\.id), [0, 1, 2])
         XCTAssertEqual(decoded.map(\.displayLabel), ["Lines 1-2", "Line 9", "Patch 3 of 3"])
@@ -501,91 +500,6 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertEqual(decoded[0].lines.map(\.kind), [.deletion, .addition, .context])
         XCTAssertEqual(decoded.flatMap { $0.lines.map(\.id) }, [0, 1, 2, 3, 4], "Line ids never repeat across hunks.")
         XCTAssertEqual(decoded[0].lines.map(\.gutterLabel), ["1", "1", "2"])
-        XCTAssertEqual(try hunks("[]", diff: "@@ -1 +1 @@\n-a\n+b"), [], "An empty server list is no change, never re-parsed.")
-    }
-
-    // Old-server fallback (TAL-697): a Web from before TAL-604 sends no hunks, so the App parses the diff.
-
-    func testDiffParserDropsPreambleAndClassifiesLines() {
-        let raw = """
-        diff --git a/App.swift b/App.swift
-        index 1234567..89abcde 100644
-        --- a/App.swift
-        +++ b/App.swift
-        @@ -1,3 +1,3 @@
-         context line
-        -removed line
-        +added line
-        """
-        let hunks = DiffHunk.resolved(nil, diff: raw)
-
-        XCTAssertEqual(hunks.count, 1)
-        let hunk = try! XCTUnwrap(hunks.first)
-        XCTAssertEqual(hunk.header, "@@ -1,3 +1,3 @@")
-        XCTAssertEqual(hunk.lines.count, 3)
-        XCTAssertEqual(hunk.lines[0].kind, .context)
-        XCTAssertEqual(hunk.lines[1].kind, .deletion)
-        XCTAssertEqual(hunk.lines[2].kind, .addition)
-        XCTAssertEqual(hunk.lines[2].text, "+added line")
-    }
-
-    func testDiffParserHandlesMultipleHunks() {
-        let raw = """
-        @@ -1,1 +1,1 @@
-        -a
-        +b
-        @@ -10,2 +10,3 @@
-         keep
-        +new
-        """
-        let hunks = DiffHunk.resolved(nil, diff: raw)
-
-        XCTAssertEqual(hunks.count, 2)
-        XCTAssertEqual(hunks[0].id, 0)
-        XCTAssertEqual(hunks[1].id, 1)
-        XCTAssertEqual(hunks[1].header, "@@ -10,2 +10,3 @@")
-        XCTAssertEqual(hunks[1].lines.map(\.kind), [.context, .addition])
-        XCTAssertEqual(hunks[1].displayLabel, "Lines 10-12")
-        XCTAssertEqual(hunks[1].lines[0].newLineNumber, 10)
-        XCTAssertEqual(hunks[1].lines[1].newLineNumber, 11)
-    }
-
-    func testDiffParserKeepsTheNextFilesHeaderOutOfAMultiFileDiff() {
-        // The Agent's multi-file patch result joins each file's diff with a blank line (TAL-448).
-        let raw = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n\n--- a/b.txt\n+++ b/b.txt\n@@ -0,0 +1 @@\n+added\n"
-        let hunks = DiffHunk.resolved(nil, diff: raw)
-
-        XCTAssertEqual(hunks.map(\.additions), [1, 1])
-        XCTAssertEqual(hunks.map(\.deletions), [1, 0])
-        XCTAssertEqual(hunks[0].lines.map(\.text), ["-old", "+new"])
-    }
-
-    func testDiffParserCreatesSyntheticPatchWithoutHunkHeader() {
-        let hunks = DiffHunk.resolved(nil, diff: "--- a/a.txt\n+++ b/a.txt\n-old\n+new")
-
-        XCTAssertEqual(hunks.count, 1)
-        XCTAssertEqual(hunks[0].displayLabel, "Patch 1 of 1")
-        XCTAssertEqual(hunks[0].additions, 1)
-        XCTAssertEqual(hunks[0].deletions, 1)
-    }
-
-    func testSyntheticDiffParserKeepsChangedLinesBeginningWithHeaderLikePrefixes() {
-        let hunks = DiffHunk.resolved(nil, diff: "--- a/a.txt\n+++ b/a.txt\n---actual content\n+++actual content")
-
-        XCTAssertEqual(hunks.count, 1)
-        XCTAssertEqual(hunks[0].lines.map(\.text), ["---actual content", "+++actual content"])
-        XCTAssertEqual(hunks[0].lines.map(\.kind), [.deletion, .addition])
-    }
-
-    func testDiffParserNumbersMultipleSyntheticPatches() {
-        let hunks = DiffHunk.resolved(nil, diff: "diff --git a/a b/a\n-a\n+b\ndiff --git a/b b/b\n-c\n+d")
-
-        XCTAssertEqual(hunks.map(\.displayLabel), ["Patch 1 of 2", "Patch 2 of 2"])
-    }
-
-    func testDiffParserEmptyInputReturnsNoHunks() {
-        XCTAssertTrue(DiffHunk.resolved(nil, diff: "").isEmpty)
-        XCTAssertTrue(DiffHunk.resolved(nil, diff: "diff --git a/x b/x\nindex 1..2\n").isEmpty, "No hunk header → nothing to show.")
     }
 
     @MainActor

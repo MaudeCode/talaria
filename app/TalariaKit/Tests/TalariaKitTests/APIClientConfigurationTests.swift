@@ -572,15 +572,15 @@ final class APIClientConfigurationTests: APIClientTestCase {
 
     func testSwitchProfileBuildsExpectedBodyAndDecodesResponse() async throws {
         let persistenceCount = OSAllocatedUnfairLock(initialState: 0)
-        let widgetDefaults = try XCTUnwrap(
-            UserDefaults(suiteName: ProviderQuotaWidgetSnapshotStore.appGroupIdentifier)
-        )
-        defer { widgetDefaults.removeObject(forKey: ProviderQuotaWidgetSnapshotStore.storageKey) }
+        let suite = "APIClientConfigurationTests.\(UUID().uuidString)"
+        let widgetDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { widgetDefaults.removePersistentDomain(forName: suite) }
         widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
         let ownerResets = OSAllocatedUnfairLock(initialState: 0)
         let client = makeClient(
             cookiePersistence: { persistenceCount.withLock { $0 += 1 } },
-            forgetProfileOwner: { ownerResets.withLock { $0 += 1 } }
+            forgetProfileOwner: { ownerResets.withLock { $0 += 1 } },
+            quotaSnapshotDefaults: widgetDefaults
         ) { request in
             XCTAssertEqual(request.url?.path, "/api/profile/switch")
             XCTAssertEqual(request.httpMethod, "POST")
@@ -617,15 +617,15 @@ final class APIClientConfigurationTests: APIClientTestCase {
 
     func testRejectedProfileSwitchKeepsWidgetSnapshot() async throws {
         let persistenceCount = OSAllocatedUnfairLock(initialState: 0)
-        let widgetDefaults = try XCTUnwrap(
-            UserDefaults(suiteName: ProviderQuotaWidgetSnapshotStore.appGroupIdentifier)
-        )
-        defer { widgetDefaults.removeObject(forKey: ProviderQuotaWidgetSnapshotStore.storageKey) }
+        let suite = "APIClientConfigurationTests.\(UUID().uuidString)"
+        let widgetDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { widgetDefaults.removePersistentDomain(forName: suite) }
         widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
         let ownerResets = OSAllocatedUnfairLock(initialState: 0)
         let client = makeClient(
             cookiePersistence: { persistenceCount.withLock { $0 += 1 } },
-            forgetProfileOwner: { ownerResets.withLock { $0 += 1 } }
+            forgetProfileOwner: { ownerResets.withLock { $0 += 1 } },
+            quotaSnapshotDefaults: widgetDefaults
         ) { request in
             apiTestJSONResponse(#"{"error":"profile unavailable"}"#, for: request)
         }
@@ -640,14 +640,14 @@ final class APIClientConfigurationTests: APIClientTestCase {
 
     func testSwitchProfileSurfacesFailureToForgetProfileOwner() async throws {
         struct OwnerForgetFailure: Error {}
-        let widgetDefaults = try XCTUnwrap(
-            UserDefaults(suiteName: ProviderQuotaWidgetSnapshotStore.appGroupIdentifier)
-        )
-        defer { widgetDefaults.removeObject(forKey: ProviderQuotaWidgetSnapshotStore.storageKey) }
+        let suite = "APIClientConfigurationTests.\(UUID().uuidString)"
+        let widgetDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { widgetDefaults.removePersistentDomain(forName: suite) }
         widgetDefaults.set(Data([1]), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
         let client = makeClient(
             cookiePersistence: {},
-            forgetProfileOwner: { throw OwnerForgetFailure() }
+            forgetProfileOwner: { throw OwnerForgetFailure() },
+            quotaSnapshotDefaults: widgetDefaults
         ) { request in
             apiTestJSONResponse(#"{"active":"work","profiles":[]}"#, for: request)
         }
