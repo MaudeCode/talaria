@@ -22,7 +22,6 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: false,
   workers: 1,
-  retries: process.env.CI ? 1 : 0,
   // CI's per-test run-time budget reads each test's time from TALARIA_TEST_REPORT (scripts/check-test-durations.py).
   reporter: [
     ...(process.env.CI ? [['github'] as const] : []),
