@@ -15,6 +15,10 @@ SCRIPT = Path(__file__).with_name("changed-components.py")
 spec = importlib.util.spec_from_file_location("routing", SCRIPT)
 routing = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(routing)
+spec = importlib.util.spec_from_file_location("web_browser_plan", SCRIPT.with_name("web_browser_plan.py"))
+browser = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(browser)
+MAX_SPECS = browser.MAX_SPECS
 ALL = {"app", "app_tooling", "web_server", "web_frontend", "web_sidecar", "docker", "relay", "contracts", "tooling"}
 CONSUMERS = {"app", "web_server", "web_frontend", "web_sidecar", "relay", "contracts"}
 FIXTURE_SUITES = {"web_server", "web_frontend", "contracts"}
@@ -132,6 +136,9 @@ class RoutingTests(unittest.TestCase):
             (["web/packages/frontend/src/main.tsx", "relay/tests/crypto.test.ts"], {"web_frontend", "relay"}),
             (["scripts/check-web-server"], {"web_server", "tooling"}),
             (["scripts/check-web-browser"], {"web_frontend", "tooling"}),
+            # The browser plan and the Playwright job's steps change what the e2e jobs run (TAL-2391).
+            (["scripts/web_browser_plan.py"], {"web_frontend", "tooling"}),
+            ([".github/actions/web-browser/action.yml"], {"web_frontend", "tooling"}),
             (["scripts/check-docker.py"], {"docker", "tooling"}),
             (["scripts/stamp-release.py", "scripts/test-stamp-release.py"], {"tooling"}),
             (["scripts/check-agent-compatibility.py"], {"web_server", "web_sidecar", "docker", "tooling"}),
@@ -774,6 +781,154 @@ class AppPlanTests(unittest.TestCase):
         self.assertEqual((outputs["app"], outputs["app_package"], outputs["app_hosted"]), ("true", "empty", "full"))
         self.assertEqual(json.loads(outputs["app_plan"])["lanes"]["TalariaTests"]["mode"], "full")
         self.assertIn("app/Talaria/View.swift: no reviewed rule bounds its consumers.", result.stderr)
+
+
+FRONTEND = "web/packages/frontend/"
+BROWSER_SOURCES = {
+    "src/main.tsx": "export const x = 1\n",
+    "src/test/fixtures.ts": "export const session = {}\n",
+    "src/i18n/runtime.test.ts": "import { x } from '../main'\n",
+    "src/lib/shared.test.ts": "export const shared = 1\n",
+    "playwright.config.ts": "export default { testDir: './e2e', globalSetup: './e2e/global-setup.ts' }\n",
+    "e2e/global-setup.ts": "export default async () => {}\n",
+    "e2e/fixtures.ts": "export { session } from '../src/test/fixtures'\n",
+    "e2e/approval-card.spec.ts": "import { session } from './fixtures'\n",
+    "e2e/composer.spec.ts": "import { test } from '@playwright/test'\n",
+    "e2e/shared.spec.ts": "export const s = 1\n",
+    "e2e/uses-shared.spec.ts": "import { s } from './shared.spec'\n",
+    "e2e/uses-unit.spec.ts": "import { shared } from '../src/lib/shared.test.js'\n",
+}
+
+
+class BrowserPlanTests(unittest.TestCase):
+    """The pull request's Playwright plan on a synthetic frontend package (TAL-2391)."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(prefix="talaria-browser-plan-")
+        self.root = Path(self.directory.name)
+        self.env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        for path, text in BROWSER_SOURCES.items():
+            self.write(FRONTEND + path, text)
+        self.write("web/packages/server/src/x.ts", "export const y = 1\n")
+        self.git("init", "-b", "main")
+        self.base = self.commit("base")
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    write = AppPlanTests.write
+    git = AppPlanTests.git
+    commit = AppPlanTests.commit
+
+    def plan(self, *options):
+        if not options:
+            options = (f"--base={self.base}", f"--head={self.commit('change')}", "--merge-base")
+        result = subprocess.run([os.sys.executable, str(SCRIPT), *options, "--browser-plan"], cwd=self.root,
+                                env=self.env, text=True, capture_output=True, check=True)
+        outputs = dict(line.split("=", 1) for line in result.stdout.splitlines())
+        return outputs["web_frontend"], outputs["web_browser"], json.loads(outputs["web_browser_specs"]), result.stderr
+
+    def test_changes_choose_no_browser_job_their_specs_or_every_shard(self):
+        imported = "is imported by " + FRONTEND
+        cases = [
+            ("a Vitest test alone starts no browser job", {"src/i18n/runtime.test.ts": "// edited\n"}, ("none", []), None),
+            ("a spec alone runs that file", {"e2e/approval-card.spec.ts": "// edited\n"},
+             ("specs", ["e2e/approval-card.spec.ts"]), None),
+            ("a mixed diff runs the union", {"src/i18n/runtime.test.ts": "// edited\n", "e2e/composer.spec.ts": "// edited\n",
+                                             "e2e/approval-card.spec.ts": "// edited\n", "../../../changelog.d/TAL-1.json": "{}\n"},
+             ("specs", ["e2e/approval-card.spec.ts", "e2e/composer.spec.ts"]), None),
+            ("a spec name with regular-expression characters", {"e2e/a+b (1)[x].spec.ts": "// new\n"},
+             ("specs", ["e2e/a+b (1)[x].spec.ts"]), None),
+            ("a spec another spec imports is shared", {"e2e/shared.spec.ts": "// edited\n"}, ("full", []),
+             imported + "e2e/uses-shared.spec.ts"),
+            ("a Vitest file a spec imports is a browser input", {"src/lib/shared.test.ts": "// edited\n"}, ("full", []),
+             imported + "e2e/uses-unit.spec.ts"),
+            ("an e2e helper", {"e2e/fixtures.ts": "// edited\n"}, ("full", []), "e2e/fixtures.ts reaches the browser suite"),
+            ("global setup", {"e2e/global-setup.ts": "// edited\n"}, ("full", []), "reaches the browser suite"),
+            ("the Playwright config", {"playwright.config.ts": "// edited\n"}, ("full", []), "reaches the browser suite"),
+            ("test support the specs load", {"src/test/fixtures.ts": "// edited\n"}, ("full", []), "reaches the browser suite"),
+            ("application code", {"src/main.tsx": "// edited\n"}, ("full", []), "reaches the browser suite"),
+            ("server code", {"../server/src/x.ts": "// edited\n"}, ("full", []), "reaches the browser suite"),
+            (f"more than {MAX_SPECS} specs", {f"e2e/new-{index}.spec.ts": "// new\n" for index in range(MAX_SPECS + 1)},
+             ("full", []), "changed specs"),
+        ]
+        for name, edits, expected, reason in cases:
+            with self.subTest(name):
+                self.git("reset", "-q", "--hard", self.base)
+                self.git("clean", "-qfd")
+                for path, text in edits.items():
+                    self.write(FRONTEND + path, text)
+                frontend, mode, specs, log = self.plan()
+                self.assertEqual((frontend, mode, specs), ("true", *expected))
+                if reason:
+                    self.assertIn(reason, log)
+
+    def test_renamed_and_deleted_specs_run_only_what_the_tested_revision_has(self):
+        self.git("mv", FRONTEND + "e2e/approval-card.spec.ts", FRONTEND + "e2e/approval-panel.spec.ts")
+        self.assertEqual(self.plan()[1:3], ("specs", ["e2e/approval-panel.spec.ts"]))
+        self.git("rm", "-q", FRONTEND + "e2e/composer.spec.ts")
+        self.base = self.git("rev-parse", "HEAD")
+        self.assertEqual(self.plan()[1:3], ("none", []))
+
+    def test_uncertainty_runs_every_shard(self):
+        # A computed import in the browser suite could load any spec.
+        self.write(FRONTEND + "e2e/fixtures.ts", "export const load = (name) => import(name)\n")
+        self.base = self.commit("computed")
+        self.write(FRONTEND + "e2e/approval-card.spec.ts", "// edited\n")
+        frontend, mode, _, log = self.plan()
+        self.assertEqual(mode, "full")
+        self.assertIn("loads a module by a computed name", log)
+        # A base that cannot be read, and a run with no diff, plan every shard too.
+        self.assertEqual(self.plan("--base=0123456789012345678901234567890123456789", "--head=HEAD")[1], "full")
+        self.assertEqual(self.plan("--base=HEAD", "--head=HEAD")[1], "full")
+
+    def test_local_changes_plan_as_the_committed_diff(self):
+        self.write(FRONTEND + "e2e/approval-card.spec.ts", "// staged\n")
+        self.git("add", "-A")
+        self.write(FRONTEND + "e2e/composer.spec.ts", "// unstaged\n")
+        self.write(FRONTEND + "e2e/added.spec.ts", "// untracked\n")
+        local = self.plan("--local", f"--base={self.base}")
+        self.assertEqual(local[1:3], ("specs", ["e2e/added.spec.ts", "e2e/approval-card.spec.ts", "e2e/composer.spec.ts"]))
+        self.assertEqual(self.plan()[1:3], local[1:3])
+
+    def test_filters_match_exactly_the_selected_files(self):
+        for path in ("e2e/a+b (1)[x].spec.ts", "e2e/xa+b (1)[x].spec.ts", "e2e/sub/e2e/a.spec.ts", "e2e/a.spec.ts",
+                     "e2e/fixtures.ts"):
+            self.write(path, "")
+        root = os.path.realpath(self.root)
+        selected = ["e2e/a+b (1)[x].spec.ts", "e2e/a.spec.ts"]
+        filters = browser.filters(self.root, selected)
+        files = [f"{root}/{path}" for path in ("e2e/a+b (1)[x].spec.ts", "e2e/xa+b (1)[x].spec.ts", "e2e/sub/e2e/a.spec.ts",
+                                               "e2e/a.spec.ts")]
+        # Playwright reads /pattern/ with no flags as one case-sensitive regular expression over the absolute path.
+        matched = [[file for file in files if re.search(pattern[1:-1], file)] for pattern in filters]
+        self.assertEqual(matched, [[files[0]], [files[3]]])
+        for specs in ([], ["e2e/missing.spec.ts"], ["e2e/fixtures.ts"], ["e2e/../e2e/a.spec.ts"], ["e2e/a.spec.ts"] * 2):
+            with self.subTest(specs=specs), self.assertRaises(ValueError):
+                browser.filters(self.root, specs)
+
+    def test_receipts_require_every_selected_spec_on_every_project_and_nothing_else(self):
+        def report(*suites):
+            path = self.root / "report.xml"
+            path.write_text("<testsuites>" + "".join(
+                f'<testsuite name="{name}" hostname="{project}" tests="{tests}" skipped="{skipped}"/>'
+                for name, project, tests, skipped in suites) + "</testsuites>")
+            return path
+        specs = ["e2e/approval-card.spec.ts"]
+        # A test the mobile project skips still reports its case.
+        self.assertEqual(browser.receipts(report(("approval-card.spec.ts", "desktop", 2, 0),
+                                                 ("approval-card.spec.ts", "mobile", 2, 2)), specs), 4)
+        failures = [
+            ("a missing project", [("approval-card.spec.ts", "desktop", 2, 0)], "ran no test on mobile"),
+            ("no case on a project", [("approval-card.spec.ts", "desktop", 2, 0), ("approval-card.spec.ts", "mobile", 0, 0)],
+             "ran no test on mobile"),
+            ("an unselected file", [("approval-card.spec.ts", "desktop", 1, 0), ("approval-card.spec.ts", "mobile", 1, 0),
+                                    ("composer.spec.ts", "desktop", 1, 0)], "composer.spec.ts on desktop was not selected"),
+            ("no case at all", [], "ran no test on desktop"),
+        ]
+        for name, suites, message in failures:
+            with self.subTest(name), self.assertRaisesRegex(ValueError, re.escape(message)):
+                browser.receipts(report(*suites), specs)
 
 
 if __name__ == "__main__":

@@ -64,6 +64,8 @@ WORKFLOWS = {
 SCRIPTS = {
     "changed-components.py": {"tooling"},
     "app_test_plan.py": {"tooling"},
+    # The browser plan also selects check-web-browser's filters and receipts (TAL-2391).
+    "web_browser_plan.py": {"web_frontend", "tooling"},
     "check-ui-rules.mjs": {"app_tooling", "web_frontend", "tooling"},
     "test-changed-components.py": {"tooling"},
     "check-web-server": {"web_server", "tooling"},
@@ -164,6 +166,8 @@ def path_suites(path):
         return {"docker", "tooling"}  # Compose/Buildx setup for the Docker smoke.
     if path == ".github/actions/app-package-tests/action.yml":
         return WORKFLOWS["app-tests.yml"]  # The package tests' steps, called only from app-tests.yml.
+    if path == ".github/actions/web-browser/action.yml":
+        return {"web_frontend", "tooling"}  # The Playwright job's steps, called only from web-verify.yml.
     if path == ".github/actions/setup-bash/action.yml":
         return {"app", "app_tooling", "tooling"}  # bash 5 for the App's scripts in the macOS App and App tooling jobs.
     if path == ".github/actions/setup-xcode/action.yml":
@@ -394,15 +398,19 @@ def main():
                         help="Compare the working tree, untracked files included, with its merge-base with --base (default origin/main).")
     parser.add_argument("--app-plan", nargs="?", const="outputs", choices=("outputs", "json", "text"),
                         help="Also plan the App tests (TAL-2390): Actions outputs (default), the plan's JSON or a readable plan.")
+    parser.add_argument("--browser-plan", action="store_true",
+                        help="Also print the pull request's Playwright plan (TAL-2391): none, the changed specs or full.")
     parser.add_argument("--tested-worktree", action="store_true",
                         help="Read test identifiers from the checked-out working tree (CI's tested checkout) rather than --head.")
     args = parser.parse_args()
     os.chdir(git("rev-parse", "--show-toplevel").decode().strip())
-    if args.app_plan:
-        # The App test plan beside this router (TAL-2390); loaded only when asked, so the router runs on its own.
+    if args.app_plan or args.browser_plan:
+        # The App and browser test plans beside this router (TAL-2390, TAL-2391); loaded only when asked, so the router
+        # runs on its own.
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        global app_test_plan
+        global app_test_plan, web_browser_plan
         import app_test_plan
+        import web_browser_plan
     if args.self_test:
         subprocess.run([sys.executable, str(Path(__file__).with_name("test-changed-components.py"))], check=True)
         return
@@ -425,7 +433,7 @@ def main():
             changed = True
         print(f"web_artifact={str(changed).lower()}")
         return
-    selected, app_plan = set(SUITES), None
+    selected, app_plan, browser_plan = set(SUITES), None, None
     try:
         if args.local:
             base = git("merge-base", revision(args.base or "origin/main"), "HEAD").decode().strip()
@@ -439,9 +447,12 @@ def main():
             if args.app_plan and paths:
                 tree = app_test_plan.Tree(None if head is None or args.tested_worktree else head)
                 app_plan = app_test_plan.plan(paths, base, head, tree, selected, path_suites, deleted)
+            if args.browser_plan and paths:
+                tree = app_test_plan.Tree(None if head is None or args.tested_worktree else head, web_browser_plan.FRONTEND)
+                browser_plan = web_browser_plan.plan(paths, tree, path_suites)
     except (OSError, ValueError, subprocess.CalledProcessError):
         print("Could not classify the complete diff; running all suites.", file=sys.stderr)
-        selected, app_plan = set(SUITES), None
+        selected, app_plan, browser_plan = set(SUITES), None, None
     if args.app_plan and app_plan is None:
         app_plan = app_test_plan.full_plan("Every suite runs: no diff, or one that could not be classified.")
     if args.app_plan == "json":
@@ -452,6 +463,11 @@ def main():
         return
     for suite in sorted(SUITES):
         print(f"{suite}={str(suite in selected).lower()}")
+    if args.browser_plan:
+        browser_plan = browser_plan or web_browser_plan.full("No diff, or one that could not be classified.")
+        print(web_browser_plan.describe(browser_plan), file=sys.stderr)
+        print(f"web_browser={browser_plan['mode']}")
+        print(f"web_browser_specs={json.dumps(browser_plan['specs'], separators=(',', ':'))}")
     if args.app_plan:
         print(app_test_plan.describe(app_plan), file=sys.stderr)
         for target, name in ((app_test_plan.PACKAGE, "app_package"), (app_test_plan.HOSTED, "app_hosted")):

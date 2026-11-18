@@ -394,14 +394,14 @@ def git(*args, data=None):
 
 
 class Tree:
-    """A revision's files under app/, or the working tree's (tracked and untracked, not ignored)."""
+    """A revision's files under root (app/ by default), or the working tree's (tracked and untracked, not ignored)."""
 
-    def __init__(self, revision=None):
+    def __init__(self, revision=None, root="app"):
         self.revision = revision
         if revision:
-            listing = git("ls-tree", "-r", "-z", "--name-only", revision, "--", "app").split(b"\0")
+            listing = git("ls-tree", "-r", "-z", "--name-only", revision, "--", root).split(b"\0")
         else:
-            listing = git("ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "app").split(b"\0")
+            listing = git("ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", root).split(b"\0")
         self.paths = sorted({path for path in (os.fsdecode(item) for item in listing if item) if revision or os.path.isfile(path)})
         self.cache = {}
 

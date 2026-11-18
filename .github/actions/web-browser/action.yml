@@ -1,0 +1,98 @@
+name: Talaria Web Playwright
+description: >-
+  Playwright end-to-end, desktop and mobile, on the Node server with the fixture replay sidecar: one shard of the suite,
+  or only the spec files a pull request's browser plan selected (TAL-2391). Called from web-verify.yml after checkout.
+inputs:
+  shard:
+    description: The shard to run, such as 1/6. Empty when specs are given.
+    default: ""
+  specs:
+    description: A JSON array of spec paths under web/packages/frontend to run alone, on every project.
+    default: "[]"
+  name:
+    description: Names the failed tests' artifact.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Set up Node
+      uses: actions/setup-node@v7
+      with:
+        node-version-file: web/.nvmrc
+        cache: npm
+        cache-dependency-path: web/package-lock.json
+
+    - name: Clean install (workspace lockfile is authoritative)
+      shell: bash
+      working-directory: web
+      run: npm ci --no-audit --no-fund
+
+    - name: Build contracts and server
+      shell: bash
+      working-directory: web
+      run: npm run build -w packages/contracts && npm run build -w packages/server
+
+    # check-web-browser installs Chromium into this directory and, in CI on Linux, its system libraries.
+    - name: Restore the Playwright browsers
+      uses: actions/cache@v6
+      with:
+        path: web/.codex-tmp/playwright
+        key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+
+    # Chromium's system packages (fonts, mesa, xvfb) come from the runner's apt mirror, which has taken over eight minutes
+    # for 32 MB (TAL-432). Their .debs are cached per runner image and installed offline on a hit.
+    # Reuse that image's packages when an unrelated dependency changes the lockfile.
+    - name: Name the runner image for the system-package cache
+      id: runner-image
+      shell: bash
+      run: echo "id=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+
+    - name: Restore Chromium's system packages
+      uses: actions/cache@v6
+      with:
+        path: web/.codex-tmp/playwright-apt
+        key: playwright-apt-${{ steps.runner-image.outputs.id }}-${{ hashFiles('web/package-lock.json') }}
+        restore-keys: |
+          playwright-apt-${{ steps.runner-image.outputs.id }}-
+
+    # A spec selection runs each file on every project and then requires those receipts (scripts/web_browser_plan.py).
+    - name: Playwright end-to-end on the Node server with the fixture replay sidecar (desktop + mobile)
+      shell: bash
+      working-directory: web/packages/frontend
+      env:
+        SHARD: ${{ inputs.shard }}
+        SPECS: ${{ inputs.specs }}
+        PLAYWRIGHT_APT_CACHE: ${{ github.workspace }}/web/.codex-tmp/playwright-apt
+        TALARIA_TEST_REPORT: ${{ runner.temp }}/test-report.xml
+      run: |
+        set -euo pipefail
+        args=()
+        if [[ -n "$SHARD" ]]; then args+=("--shard=$SHARD"); fi
+        list=$(jq -r '.[]' <<< "$SPECS")
+        if [[ -n "$list" ]]; then
+          while IFS= read -r spec; do args+=("--spec=$spec"); done <<< "$list"
+        fi
+        if (( ${#args[@]} != 1 )) && [[ -n "$SHARD" ]]; then
+          echo "A shard and specs cannot run together." >&2
+          exit 1
+        fi
+        if (( ${#args[@]} == 0 )); then
+          echo "Neither a shard nor specs to run." >&2
+          exit 1
+        fi
+        ../../../scripts/check-web-browser "${args[@]}"
+
+    - name: Hold each test inside the run-time budget (TAL-2403)
+      shell: bash
+      working-directory: web/packages/frontend
+      run: python3 ../../../scripts/check-test-durations.py "$RUNNER_TEMP/test-report.xml"
+
+    # A failed test keeps its screenshot, error context and trace here (TAL-1883).
+    - name: Retain the failed tests' results
+      if: failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: frontend-e2e-test-results-${{ inputs.name }}-${{ github.run_attempt }}
+        path: web/packages/frontend/test-results
+        retention-days: 7
+        if-no-files-found: ignore
