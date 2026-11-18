@@ -100,7 +100,8 @@ describe('live dictation stream (TAL-802)', () => {
   })
 
   it('cancels the session when the client hangs up before the end of speech', async () => {
-    const done = await dictate(s, [pcm(1600)], { hangUp: (ws) => { setTimeout(() => { ws.close() }, 50) } })
+    // The first partial shows the session open and hearing audio; the client leaves without the end frame.
+    const done = await dictate(s, [pcm(1600)], { hangUp: (ws) => { ws.once('message', () => { ws.close() }) } })
     expect(done.events.every((event) => event.type === 'partial')).toBe(true)
     await until(() => session.cancelled)
   })

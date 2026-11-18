@@ -70,9 +70,10 @@ it('refuses a source changed during generation or at the locked write boundary',
   expect(readFileSync(file, 'utf8')).toBe('Concurrent writer')
 })
 
-it('rejects expired, tampered, and foreign-profile receipts without writes', async () => {
+it('rejects expired, tampered, and another server\'s receipts without writes', async () => {
   const p = await (await preview()).json() as { receipt: string }
   expect((await apply(p.receipt + 'x')).status).toBe(409)
+  // Another server signs with its own key, so its signature check refuses this receipt.
   const other = await bootTestServer({ sidecar: new FakeSidecar() })
   try {
     const res = await other.get('/api/memory/compaction/apply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ receipt: p.receipt }) })

@@ -67,6 +67,13 @@ describe('LLM wiki', () => {
       expect([...(await new WikiPages({ maxFiles: 50 }).pageFilesUncached(wiki)).keys()]).toEqual([join(wiki, 'concepts', 'a.md')])
     })
 
+    it('never resolves or stats a section under a system root', async () => {
+      vi.clearAllMocks()
+      expect([...(await new WikiPages().pageFilesUncached('/etc')).keys()]).toEqual([])
+      const touched = [fsp.realpath, fsp.stat, fsp.lstat, fsp.readdir, fsp.opendir].flatMap((fn) => vi.mocked(fn).mock.calls.map(([path]) => String(path)))
+      expect(touched.filter((path) => path.startsWith('/etc/'))).toEqual([])
+    })
+
     it('expires after the TTL [py:test_wiki_page_files_cache_expires_after_ttl]', async () => {
       write(join(wiki, 'concepts', 'one.md'))
       const ticks = [100_000, 100_500, 101_500]

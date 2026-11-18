@@ -4,7 +4,7 @@
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -428,13 +428,6 @@ describe('notes and wiki routes', () => {
       write(join(tmp, 'wiki', 'concepts', 'big.md'), 'y'.repeat(2 * 1024 * 1024 + 10))
       s.deps.config.env.WIKI_PATH = join(tmp, 'wiki')
       expect(((await json(await s.get('/api/wiki/page?path=concepts/big.md'))).content as string).length).toBe(2 * 1024 * 1024)
-    })
-
-    it('refuses to walk a system root', async () => {
-      s.deps.config.env.WIKI_PATH = '/etc'
-      expect(await browse()).toEqual([])
-      expect(await json(await s.get('/api/wiki/status'))).toMatchObject({ status: 'empty', page_count: 0, raw_source_count: 0 })
-      expect(existsSync('/etc')).toBe(true)
     })
   })
 })

@@ -1,7 +1,7 @@
 import { useJsonStorage } from '../test/storage.js'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { writeEnvFile } from '../test/env-file.js'
@@ -143,47 +143,73 @@ describe('model favorites', () => {
     expect((await post('/api/models/favorite', { provider_id: 'anthropic', model: 'x' })).status).toBe(400)
   })
 
-  it('filters the Settings picker and persists profile-owned hiding independently of stars (TAL-2193)', async () => {
+  /** TAL-2193: the Settings picker filters server-side, and hiding is profile-owned and independent of stars. */
+  describe('Settings picker hiding', () => {
     const picker = async (query = '', headers: Record<string, string> = {}): Promise<Json> => {
       const response = await s.get(`/api/models/picker${query}`, { headers })
       expect(response.status, 'Settings model picker projection must be available').toBe(200)
       return await response.json() as Json
     }
     const rows = (value: Json): Entry[] => (value.groups as Catalog['groups']).flatMap((g) => g.models)
-    const before = await picker()
-    expect((before.providers as { id: string }[]).map((p) => p.id)).toContain('anthropic')
-    await star('anthropic', 'shared-model', true)
-    const hidden = await post('/api/models/hidden', { provider_id: 'anthropic', model: 'shared-model', hidden: true })
-    expect(hidden.status).toBe(200)
-    expect(rows(await picker('?provider=anthropic')).some((m) => m.bare_id === 'shared-model')).toBe(false)
-    expect((await picker()).visible_favorite_models, 'The picker must supply the visible Favorites rows').toEqual(expect.any(Array))
-    expect((await picker('?provider=anthropic')).visible_favorite_models, 'Hidden favorites must stay out of the mixed Favorites section').not.toContainEqual(expect.objectContaining({ bare_id: 'shared-model' }))
-    expect((await picker('?provider=openrouter')).visible_favorite_models, 'Provider filtering must also filter mixed favorite rows').not.toContainEqual(expect.objectContaining({ provider_id: 'anthropic' }))
-    for (const live of [false, true]) {
+    const hide = (model: string, hidden: boolean): Promise<Response> => post('/api/models/hidden', { provider_id: 'anthropic', model, hidden })
+
+    // The default profile stars anthropic/shared-model and hides it.
+    beforeEach(async () => {
+      await star('anthropic', 'shared-model', true)
+      const hidden = await hide('shared-model', true)
+      expect(hidden.status).toBe(200)
+    })
+    afterEach(async () => {
+      for (const model of ['shared-model', 'claude-opus-4-7']) await hide(model, false)
+      await star('anthropic', 'shared-model', false)
+    })
+
+    it('drops a hidden model from its provider rows and the mixed Favorites, which follow the provider filter', async () => {
+      expect(((await picker()).providers as { id: string }[]).map((p) => p.id)).toContain('anthropic')
+      expect(rows(await picker('?provider=anthropic')).some((m) => m.bare_id === 'shared-model')).toBe(false)
+      expect((await picker()).visible_favorite_models, 'The picker must supply the visible Favorites rows').toEqual(expect.any(Array))
+      expect((await picker('?provider=anthropic')).visible_favorite_models, 'Hidden favorites must stay out of the mixed Favorites section').not.toContainEqual(expect.objectContaining({ bare_id: 'shared-model' }))
+      expect((await picker('?provider=openrouter')).visible_favorite_models, 'Provider filtering must also filter mixed favorite rows').not.toContainEqual(expect.objectContaining({ provider_id: 'anthropic' }))
+    })
+
+    it.each([false, true])('shows a hidden favorite when asked to show hidden favorites, live=%s', async (live) => {
       const projection = await picker(`?provider=anthropic&favorites=true&show_hidden=true&q=shared&live=${String(live)}`)
       const shown = rows(projection)
       expect(shown).toHaveLength(1)
       expect(shown[0]).toMatchObject({ provider_id: 'anthropic', bare_id: 'shared-model', favorite: true, hidden: true, preferences_editable: true })
       expect(projection.visible_favorite_models).toEqual(shown)
-    }
-    expect((await post('/api/models/favorite', { provider_id: 'anthropic', model: 'shared-model', favorite: false, profile: 'work' })).status).toBe(409)
-    expect(await (await s.get('/api/settings')).json()).not.toHaveProperty('model_hidden_by_profile')
-    expect(rows(await picker('?provider=openrouter&q=shared'))).toHaveLength(1)
-    expect(rows(await picker('?provider=anthropic&q=shared', { cookie }))).toHaveLength(1)
-    expect((await catalog()).favorites).toContainEqual({ provider_id: 'anthropic', model: 'shared-model' })
-    await Promise.all(['shared-model', 'claude-opus-4-7'].map((model) => post('/api/models/hidden', { provider_id: 'anthropic', model, hidden: true })))
-    expect((await s.deps.settings.readRaw()).model_hidden_by_profile).toEqual({ default: [
-      { provider_id: 'anthropic', model: 'shared-model' }, { provider_id: 'anthropic', model: 'claude-opus-4-7' },
-    ] })
-    await post('/api/models/hidden', { provider_id: 'anthropic', model: 'shared-model', hidden: false })
-    expect(rows(await picker('?provider=anthropic&favorites=true&q=shared'))).toHaveLength(1)
-    expect((await post('/api/models/hidden', { provider_id: '', model: 'x', hidden: true })).status).toBe(400)
-    await post('/api/models/hidden', { provider_id: 'anthropic', model: 'claude-opus-4-7', hidden: false })
-    await star('anthropic', 'shared-model', false)
-    const overflow = vi.spyOn(s.deps.settings, 'setModelHidden').mockRejectedValueOnce(new RangeError('A profile keeps at most 200 hidden models'))
-    try {
-      const refused = await post('/api/models/hidden', { provider_id: 'anthropic', model: 'overflow', hidden: true })
-      expect(refused.status, 'A bounded preference refusal must be a client error, not an unknown server failure').toBe(400)
-    } finally { overflow.mockRestore() }
+    })
+
+    it('refuses a favorite write aimed at another profile', async () => {
+      expect((await post('/api/models/favorite', { provider_id: 'anthropic', model: 'shared-model', favorite: false, profile: 'work' })).status).toBe(409)
+    })
+
+    it('hides only that provider pair, only for its profile, and keeps the star', async () => {
+      expect(await (await s.get('/api/settings')).json()).not.toHaveProperty('model_hidden_by_profile')
+      expect(rows(await picker('?provider=openrouter&q=shared'))).toHaveLength(1)
+      expect(rows(await picker('?provider=anthropic&q=shared', { cookie }))).toHaveLength(1)
+      expect((await catalog()).favorites).toContainEqual({ provider_id: 'anthropic', model: 'shared-model' })
+    })
+
+    it('persists hidden models under their profile in hiding order', async () => {
+      await Promise.all(['shared-model', 'claude-opus-4-7'].map((model) => hide(model, true)))
+      expect((await s.deps.settings.readRaw()).model_hidden_by_profile).toEqual({ default: [
+        { provider_id: 'anthropic', model: 'shared-model' }, { provider_id: 'anthropic', model: 'claude-opus-4-7' },
+      ] })
+    })
+
+    it('returns an unhidden favorite to the Favorites filter', async () => {
+      await hide('shared-model', false)
+      expect(rows(await picker('?provider=anthropic&favorites=true&q=shared'))).toHaveLength(1)
+    })
+
+    it('refuses a malformed or over-limit hide as a client error', async () => {
+      expect((await post('/api/models/hidden', { provider_id: '', model: 'x', hidden: true })).status).toBe(400)
+      const overflow = vi.spyOn(s.deps.settings, 'setModelHidden').mockRejectedValueOnce(new RangeError('A profile keeps at most 200 hidden models'))
+      try {
+        const refused = await post('/api/models/hidden', { provider_id: 'anthropic', model: 'overflow', hidden: true })
+        expect(refused.status, 'A bounded preference refusal must be a client error, not an unknown server failure').toBe(400)
+      } finally { overflow.mockRestore() }
+    })
   })
 })

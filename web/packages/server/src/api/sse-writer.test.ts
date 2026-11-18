@@ -165,8 +165,7 @@ describe('SseWriter backpressure on a real socket', () => {
     await written
     client.destroy()
     expect(await ready).toBe(false)
-    await new Promise((r) => setTimeout(r, 50))
-    expect(slots.active).toBe(0)
+    await vi.waitFor(() => { expect(slots.active).toBe(0) })
     expect(slots.claim('reader')).not.toBeNull()
     await server.close()
   })
@@ -197,19 +196,30 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     await w?.close()
   }
 
+  /** Waits for a writer whose feed called `ready()` and now waits for its paused reader to drain the socket; nothing more is read or written until it does. */
+  const onStall = (): { writer: () => Promise<{ ctx: RequestContext }>; restore: () => void } => {
+    const ready = vi.spyOn(SseWriter.prototype, 'ready')
+    return {
+      writer: () => vi.waitFor(() => {
+        const stalled = (ready.mock.contexts as unknown as { ctx: RequestContext }[]).find((w) => w.ctx.res.writableNeedDrain)
+        if (!stalled) throw new Error('no feed waits for its reader yet')
+        return stalled
+      }),
+      restore: () => { ready.mockRestore() },
+    }
+  }
+
   it('a replay to a paused reader keeps unsent data near the socket high-water mark, then delivers every frame', async () => {
     await run('run-paused', 4000)
-    const spy = vi.spyOn(SseWriter.prototype, 'event')
+    const stall = onStall()
     try {
       const client = read(`${s.base}/api/chat/stream?stream_id=run-paused&replay=1`, true)
-      await client.opened
-      await new Promise((r) => setTimeout(r, 300))
-      const writer = spy.mock.contexts.at(-1) as { ctx: RequestContext }
+      const writer = await stall.writer()
       expect(writer.ctx.res.writableLength).toBeLessThan(1024 * 1024)
       client.resume()
       expect(ids(await frames(client))).toEqual(expectedIds('run-paused', 4001))
     } finally {
-      spy.mockRestore()
+      stall.restore()
     }
   })
 
@@ -235,10 +245,10 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     await write()
     const parse = vi.spyOn(JSON, 'parse')
     const event = vi.spyOn(SseWriter.prototype, 'event')
+    const stall = onStall()
     try {
       const client = read(`${s.base}/api/chat/stream?stream_id=${runId}&replay=1`, true)
-      await client.opened
-      await new Promise((r) => setTimeout(r, 300))
+      await stall.writer()
       const parsedRows = parse.mock.calls.filter(([text]) => typeof text === 'string' && text.includes(`"run_id":"${runId}"`)).length
       expect(parsedRows - readsPerRow * event.mock.calls.length).toBeLessThan(2500)
       client.resume()
@@ -246,6 +256,7 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     } finally {
       parse.mockRestore()
       event.mockRestore()
+      stall.restore()
     }
   })
 
