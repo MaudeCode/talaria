@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { SessionChannels, StreamChannel, nextSessionItem } from './streams.js'
+import { CANCEL_UNWIND_CEILING_S, SessionChannels, StreamChannel, StreamRegistry, nextSessionItem } from './streams.js'
 
 afterEach(() => { vi.useRealTimers() })
 
@@ -95,4 +95,11 @@ describe('ephemeral MCP progress snapshots', () => {
       expect(next.queue.some((row) => row[0] === 'tool_progress')).toBe(false)
     }
   })
+})
+
+it('a run that has been cancelling past the unwind ceiling with no live channel no longer blocks the session', () => {
+  const registry = new StreamRegistry()
+  registry.registerActiveRun({ stream_id: 'stuck-run', session_id: 'stuck-session', phase: 'cancelling', cancelled_at: 1_000, started_at: 900 } as never)
+  expect(registry.activeRunStreamForSession('stuck-session', 1_000 + 60)).toBe('stuck-run')
+  expect(registry.activeRunStreamForSession('stuck-session', 1_000 + CANCEL_UNWIND_CEILING_S)).toBeNull()
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeChangedPath, turnFileChanges } from './file-changes.js'
+import { turnFileChanges } from './file-changes.js'
 
 const call = (name: string, args: unknown) => ({ tool: { name, args } })
 
@@ -46,17 +46,15 @@ describe('turnFileChanges', () => {
     const paths = ['node_modules/lib/index.js', '.git/config', 'dist/bundle.js', 'build/output.o', '.venv/lib/site.py', 'pkg/__pycache__/mod.pyc', 'src/keep.swift']
     expect(turnFileChanges(paths.map((path) => call('write_file', { path })))).toEqual([{ path: 'src/keep.swift', action: 'edited' }])
   })
-})
 
-describe('normalizeChangedPath', () => {
   it.each([
     ['~/Sources/App.swift', 'Sources/App.swift'], ['./README.md', 'README.md'], ['././nested/file.swift', 'nested/file.swift'],
     ['"quoted.swift"', 'quoted.swift'], ['`code.swift`', 'code.swift'], ['  spaced.swift  ', 'spaced.swift'], ['/abs/path.swift', '/abs/path.swift'],
-  ])('%s is %s', (raw, path) => {
-    expect(normalizeChangedPath(raw)).toBe(path)
+  ])('shows path %s as %s', (raw, path) => {
+    expect(turnFileChanges([call('write_file', { path: raw })])).toEqual([{ path, action: 'edited' }])
   })
 
-  it.each(['https://example.com/x.swift', '', '   ', 'a'.repeat(241)])('drops %s', (raw) => {
-    expect(normalizeChangedPath(raw)).toBeNull()
+  it.each(['https://example.com/x.swift', '', '   ', 'a'.repeat(241)])('drops path %s', (raw) => {
+    expect(turnFileChanges([call('write_file', { path: raw })])).toEqual([])
   })
 })

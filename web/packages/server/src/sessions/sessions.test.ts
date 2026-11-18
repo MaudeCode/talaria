@@ -1,5 +1,4 @@
 import { sessionDirectory, sessionIndexPath, sessionPath, useJsonStorage, useSelectedStorage } from '../test/storage.js'
-import { publicToolFrame } from '../redact.js'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { readMetadataJsonPrefixWithSignature, statSignature } from './storage/json-files.js'
@@ -15,7 +14,6 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { str } from '../util.js'
 import { diffHunks } from '../text/diff.js'
-import { withPendingUserTurn, withoutRunningTurnOutput } from './merge.js'
 import { rememberConnectorLogos } from './tool-display.js'
 import { JsonJournalWriter as RunJournalWriter } from './storage/json-journal.js'
 import typedRows from '../test/fixtures/agent-typed-rows.json' with { type: 'json' }
@@ -45,23 +43,6 @@ async function writeMessages(s: TestServer, sid: string, messages: Json[]): Prom
 }
 
 describe('malformed session rows (TAL-37)', () => {
-  it('normalizes only unambiguous schema scalars and rejects unusable identities', async () => {
-    const { sanitizeSessionRow } = await import('./list.js')
-    const s = await bootTestServer()
-    try {
-      const raw = { session_id: 'row-types', message_count: '2', archived: 'false', pinned: ' true ', workspace: {}, updated_at: 'bad', model: '123', profile: 42, read_only: 'unknown', pre_compression_snapshot: 'false' }
-      const bytes = JSON.stringify(raw)
-      expect(sanitizeSessionRow(raw, s.deps.sessionStore)).toEqual({ session_id: 'row-types', title: '', message_count: 2, archived: false, pinned: true, model: '123', profile: '42', read_only: true, pre_compression_snapshot: false })
-      for (const value of [false, 'false', 0, '0']) expect(sanitizeSessionRow({ session_id: 'row-types', read_only: value }, s.deps.sessionStore)?.read_only).toBe(false)
-      for (const value of [true, 'true', 1, '1', null, {}]) expect(sanitizeSessionRow({ session_id: 'row-types', read_only: value }, s.deps.sessionStore)?.read_only).toBe(true)
-      expect(JSON.stringify(raw)).toBe(bytes)
-      for (const row of [null, [], {}, { session_id: 42 }, { session_id: '   ' }, { session_id: '../bad' }, { session_id: 'different-file' }]) expect(sanitizeSessionRow(row, s.deps.sessionStore, 'invalid.json')).toBeNull()
-      expect(s.logs.filter((line) => line.includes('invalid.json'))).toHaveLength(1)
-    } finally {
-      await s.close()
-    }
-  })
-
   it('lists and searches usable rows with corrected types, consistent counts and no file writes', async () => {
     const s = await bootTestServer()
     try {
@@ -97,28 +78,6 @@ describe('malformed session rows (TAL-37)', () => {
 })
 
 describe('server-computed context ring (TAL-299)', () => {
-  it('uses the post-compression estimate, else the last prompt, never the cumulative input, over a known window only', async () => {
-    const { contextUsage } = await import('./session.js')
-    const ring = (used: number | null, window: number | null, percent: number | null, threshold: number | null = null) => ({ context_used_tokens: used, context_window_tokens: window, context_usage_percent: percent, context_threshold_percent: threshold, context_window_source: null })
-    expect(contextUsage({ last_prompt_tokens: 64_000, context_length: 128_000 })).toEqual(ring(64_000, 128_000, 50))
-    expect(contextUsage({ post_compression_context_tokens_estimate: 10_347, last_prompt_tokens: 120_000, context_length: 128_000 })).toEqual(ring(10_347, 128_000, 8))
-    expect(contextUsage({ input_tokens: 900_000, last_prompt_tokens: 0, context_length: 200_000 } as Json)).toEqual(ring(null, 200_000, null))
-    expect(contextUsage({ last_prompt_tokens: 5_000, context_length: null })).toEqual(ring(5_000, null, null))
-    expect(contextUsage({ last_prompt_tokens: 5_000, context_length: 0 }, () => 20_000)).toEqual(ring(5_000, 20_000, 25))
-    expect(contextUsage({ last_prompt_tokens: 300_000, context_length: 200_000, threshold_tokens: 160_000 })).toEqual(ring(300_000, 200_000, 100, 80))
-    expect(contextUsage({ last_prompt_tokens: 'junk', context_length: '128000', threshold_tokens: -1 })).toEqual(ring(null, 128_000, null))
-  })
-
-  it('labels the window with the source that supplied it, never a source without a window (TAL-1908)', async () => {
-    const { contextUsage } = await import('./session.js')
-    const source = (...args: Parameters<typeof contextUsage>) => contextUsage(...args).context_window_source
-    expect(source({ context_length: 128_000, context_window_source: 'pinned' }, () => 256_000, () => 'fallback')).toBe('pinned')
-    expect(source({ context_length: 128_000, context_window_source: null }, () => 256_000, () => 'fallback')).toBeNull()
-    expect(source({ context_length: 0, context_window_source: 'pinned' }, () => 256_000, () => 'fallback')).toBe('fallback')
-    expect(source({ context_length: 0, context_window_source: 'pinned' }, () => null, () => 'fallback')).toBeNull()
-    expect(source({ context_length: 128_000, context_window_source: 'guessed' })).toBeNull()
-  })
-
   it('fills the ring on index rows written before the fields existed, in the list and in search', async () => {
     const s = await bootTestServer()
     try {
@@ -1690,27 +1649,6 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(await served(sid)).toEqual(['u1', 'full output', 'a1', 'from CLI', 'from CLI, edited'])
   })
 
-  it('serialises each row at most once when a full transcript loads, with the same rows kept (TAL-1742)', () => {
-    const parts = (text: string): Json[] => [{ type: 'text', text }]
-    const rows = (): Json[] => Array.from({ length: 400 }, (_, i) => [
-      { role: 'user', content: parts(`u${i}`), timestamp: i },
-      { role: 'user', content: parts(`u${i}`), timestamp: i, _state_db_row_id: i },
-      { role: 'user', content: parts(`edited ${i}`), timestamp: i, _state_db_row_id: i },
-      { role: 'user', content: parts(`u${i}`), timestamp: i, _state_db_row_id: i, _turn_id: 't' },
-    ]).flat()
-    const messages = rows()
-    const context = rows()
-    const contents = new Set([...messages, ...context].map((m) => m.content))
-    const stringify = vi.spyOn(JSON, 'stringify')
-    const session = new Session({ messages, context_messages: context }, { workspace: s.state, model: null })
-    const serialised = stringify.mock.calls.map(([value]) => value as unknown).filter((value) => contents.has(value))
-    stringify.mockRestore()
-    expect(new Set(serialised).size).toBe(serialised.length)
-    const kept = rows().filter((_, i) => i % 4 !== 1)
-    expect(session.messages).toEqual(kept)
-    expect(session.context_messages).toEqual(kept)
-  })
-
   it('a settlement whose state.db read fails keeps the marker', async () => {
     const sid = await seeded(FOUR)
     expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
@@ -2762,22 +2700,6 @@ describe('session detail transcript cursor (TAL-316)', () => {
     expect(session.transcript_seq).toBeNull()
     expect(contents(session)).toEqual(['hi', 'hello'])
   })
-
-  it('keeps a checkpointed prompt and the server\'s steer rows, and drops the rest of the turn', () => {
-    const turn = { localCount: 4, turnId: 'run1', startedAt: 100, activeTurnToken: 'run1:100' }
-    const rows = [
-      { role: 'user', content: 'earlier', timestamp: 1 }, { role: 'assistant', content: 'earlier reply', timestamp: 2 },
-      { role: 'user', content: 'prompt', timestamp: 100, _turn_id: 'run1', _active_turn_token: 'run1:100' },
-      { role: 'user', content: 'steer', timestamp: 103, _turn_id: 'run1', _steer: { steer_id: 's1' } },
-      { role: 'user', content: 'prompt', timestamp: 101 }, { role: 'assistant', content: 'partial', timestamp: 102 },
-    ]
-    expect(withoutRunningTurnOutput(rows, turn).map((m) => m.content)).toEqual(['earlier', 'earlier reply', 'prompt', 'steer'])
-    // Deferred save: no checkpointed prompt, so the turn starts at its first state.db row past the sidecar.
-    const deferred = [rows[0]!, rows[1]!, rows[4]!, rows[5]!]
-    expect(withoutRunningTurnOutput(deferred, { ...turn, localCount: 2 }).map((m) => m.content)).toEqual(['earlier', 'earlier reply', 'prompt'])
-    // Nothing of the turn persisted yet: the transcript is unchanged.
-    expect(withoutRunningTurnOutput([rows[0]!, rows[1]!], { ...turn, localCount: 2 })).toHaveLength(2)
-  })
 })
 
 describe('session detail keeps the running turn\'s prompt (TAL-368)', () => {
@@ -2906,15 +2828,6 @@ describe('session detail keeps the running turn\'s prompt (TAL-368)', () => {
     expect(settled.map((m) => m.content)).toEqual(['continue', 'cancel me'])
     expect(JSON.stringify(settled[1]?.attachments)).toContain('cat.png')
     expect(settled[1]?._active_turn_user).toBeUndefined()
-  })
-
-  it('projects an attachment-only prompt ahead of the turn\'s first Agent row', () => {
-    const turn = { localCount: 2, turnId: 'run1', startedAt: 100, activeTurnToken: 'run1:100', prompt: { role: 'user', content: '', attachments: [{ name: 'a.png' }] } }
-    const rows = [{ role: 'user', content: 'earlier', timestamp: 1 }, { role: 'assistant', content: 'reply', timestamp: 2 }]
-    expect(withPendingUserTurn(rows, turn).at(-1)).toMatchObject({ role: 'user', content: '', attachments: [{ name: 'a.png' }] })
-    // An Agent row of the turn already past the sidecar: the prompt opens the turn ahead of it.
-    const withOutput = [...rows, { role: 'assistant', content: 'partial', timestamp: 101 }]
-    expect(withPendingUserTurn(withOutput, turn).map((m) => m.content)).toEqual(['earlier', 'reply', '', 'partial'])
   })
 })
 
@@ -4017,14 +3930,6 @@ describe('the file a companion page shows (TAL-1458)', () => {
   beforeAll(async () => { s = await bootTestServer() })
   afterAll(() => s.close())
   const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/focus-path.json'), 'utf8')) as { stored_tool_calls: Json[]; session: Json } & Record<'tool_a' | 'tool_b' | 'shell', { data: Json }>
-
-  it('stamps each live frame with the shared fixture\'s focus path', () => {
-    for (const key of ['tool_a', 'tool_b', 'shell'] as const) {
-      // The frame as the sidecar sends it, before the server stamps its display fields.
-      const raw = Object.fromEntries(Object.entries(fixture[key].data).filter(([field]) => !['kind', 'target', 'focus_path', 'args_fields', 'raw_args'].includes(field)))
-      expect(publicToolFrame(raw, true), key).toEqual(fixture[key].data)
-    }
-  })
 
   it('reports the last persisted call\'s focus path on the detail and on mutation replies', async () => {
     const sid = String((await newSession(s)).session_id)

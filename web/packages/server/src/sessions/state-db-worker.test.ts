@@ -557,16 +557,16 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
 
   it('stops the worker on server shutdown without leaving a read hanging, and starts a fresh one on the next call', async () => {
     const other = await bootTestServer()
-    seedStateDb(join(other.state, 'state.db'), [{ id: 'tg-b', source: 'telegram', at: 1000 }])
-    setStateDbReadDelayForTests(1500)
-    const started = performance.now()
-    const read = other.deps.cliSessions.read('default')
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    await other.close()
-    // The session-index lookup can yield before dispatch: keep the delay armed until shutdown interrupts the read.
-    setStateDbReadDelayForTests(0)
-    expect((await read).rows).toEqual([])
-    expect(performance.now() - started).toBeLessThan(1000)
+    const otherDb = join(other.state, 'state.db')
+    seedStateDb(otherDb, [{ id: 'tg-b', source: 'telegram', at: 1000 }])
+    // The worker holds the read until the test releases it: only shutdown can settle it.
+    const hold = holdWorkerRead((r) => r.op === 'rowBatches' && r.dbPath === otherDb)
+    try {
+      const read = other.deps.cliSessions.read('default')
+      await hold.entered()
+      await other.close()
+      expect((await read).rows).toEqual([])
+    } finally { hold.release(); hold.restore() }
     expect(other.logs.some((line) => line.includes('state.db worker stopped'))).toBe(true)
     expect((await readImportableAgentSessionRowsAsync(dbPath)).map((r) => r.id)).toContain('tg-a')
     await stopStateDbWorker()

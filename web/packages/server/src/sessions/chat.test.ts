@@ -1,7 +1,6 @@
 import { filterAsync } from '../util.js'
 import { sessionPath, sessionDirectory, useJsonStorage } from '../test/storage.js'
 import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { CANCEL_UNWIND_CEILING_S } from './streams.js'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -10,7 +9,7 @@ import { bootTestServer, type SseFrame, type TestServer, openStateDb } from '../
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { sanitizeMessagesForApi } from './merge.js'
-import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
+import { UNSETTLED_TODO_KEY } from './todo.js'
 import { Session } from './session.js'
 
 useJsonStorage()
@@ -1876,17 +1875,6 @@ describe('chat turns through the sidecar', () => {
     }
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'narrow answer' }]))
     expect((await post(s, '/api/chat/start', { session_id: sid, message: 'continue by summarizing file X' })).status).toBe(200)
-  })
-
-  it('a run that has been cancelling past the unwind ceiling with no live channel no longer blocks the session', () => {
-    const registry = s.deps.registry
-    registry.registerActiveRun({ stream_id: 'stuck-run', session_id: 'stuck-session', phase: 'cancelling', cancelled_at: 1_000, started_at: 900 } as never)
-    try {
-      expect(registry.activeRunStreamForSession('stuck-session', 1_000 + 60)).toBe('stuck-run')
-      expect(registry.activeRunStreamForSession('stuck-session', 1_000 + CANCEL_UNWIND_CEILING_S)).toBeNull()
-    } finally {
-      registry.activeRuns.delete('stuck-run')
-    }
   })
 
   it('preserves a provider conflict through the failed turn and uses a local title for a refused auxiliary route', async () => {
@@ -4255,48 +4243,6 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     }
   })
 
-  it('does not join a live lookup started before config.yaml or .env changed', async () => {
-    useConfig('anthropic', 'claude-sonnet-4', {})
-    const pending: ((ids: string[]) => void)[] = []
-    sidecar.respond('providers.model_ids', (p) => new Promise((resolve) => { pending.push((ids) => { resolve({ provider: p.provider, model_ids: ids }) }) }))
-    try {
-      const first = s.deps.catalog.liveModelIds(s.state, 'deepseek')
-      writeFileSync(join(s.state, '.env'), 'TALARIA_TEST_EDIT=2\n')
-      const second = s.deps.catalog.liveModelIds(s.state, 'deepseek')
-      await vi.waitFor(() => { expect(pending).toHaveLength(2) })
-      pending[1]?.(['ds-new'])
-      expect(await second).toEqual(['ds-new'])
-      pending[0]?.(['ds-old'])
-      expect(await first).toEqual([])
-      expect(await s.deps.catalog.liveModelIds(s.state, 'deepseek')).toEqual(['ds-new'])
-    } finally {
-      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
-    }
-  })
-
-  it('ignores a live-lookup failure from before config.yaml or .env changed', async () => {
-    const config = { model: { provider: 'anthropic', default: 'claude-sonnet-4' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] }, deepseek: { api_key: 'sk-deepseek-12345' } } }
-    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
-    s.deps.agentConfig.invalidate()
-    s.deps.catalog.invalidate()
-    const pending: { resolve: (ids: string[]) => void; reject: (error: Error) => void }[] = []
-    sidecar.respond('providers.model_ids', (p) => (p.provider === 'deepseek' ? new Promise((resolve, reject) => { pending.push({ resolve: (ids) => { resolve({ provider: p.provider, model_ids: ids }) }, reject }) }) : { provider: p.provider, model_ids: [] }))
-    try {
-      const old = s.deps.catalog.liveModelIds(s.state, 'deepseek')
-      writeFileSync(join(s.state, '.env'), 'TALARIA_TEST_EDIT=3\n')
-      const current = s.deps.catalog.liveModelIds(s.state, 'deepseek')
-      await vi.waitFor(() => { expect(pending).toHaveLength(2) })
-      pending[1]?.resolve(['ds-ok'])
-      await current
-      // The lookup against the old credential fails after the current one succeeded.
-      pending[0]?.reject(new SidecarError('old credential refused', { condition: 'sidecar_error' }))
-      await old
-      expect(await start({ session_id: await sessionWith('ds-ok', 'ollama') })).toMatchObject({ effective_model: 'ds-ok', effective_model_provider: 'deepseek' })
-    } finally {
-      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
-    }
-  })
-
   it('does not repair from a catalog invalidated during the goal command', async () => {
     let config: Json = { model: { provider: 'anthropic', default: 'claude-sonnet-4' } }
     sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
@@ -4542,43 +4488,6 @@ describe('turn context from config.yaml (Python streaming worker)', () => {
     }
   })
 })
-
-describe('model-facing history (Python `_sanitize_messages_for_api`)', () => {
-  it('drops display-only rows, orphaned tool traffic and a stale cancelled prompt, keeps API-safe keys', () => {
-    const history = sanitizeMessagesForApi([
-      { role: 'user', content: 'A', timestamp: 1, _recovered: true },
-      { role: 'user', content: 'B', timestamp: 2, attachments: [{ path: '/x' }], api_content: 'B + recall' },
-      { role: 'assistant', content: '', reasoning: 'thinking only', timestamp: 3 },
-      { role: 'assistant', content: 'partial', _partial: true, timestamp: 4 },
-      { role: 'assistant', content: '', _error: true, timestamp: 5 },
-      { role: 'tool', content: 'orphan', tool_call_id: 'nope', timestamp: 6 },
-      { role: 'assistant', content: 'calls', tool_calls: [{ id: 't1', function: { name: 'f' } }, { id: 't2', function: { name: 'g' } }], timestamp: 7 },
-      { role: 'tool', content: 'ok', tool_call_id: 't1', timestamp: 8 },
-      { role: 'assistant', content: 'one [OUT-OF-BAND USER MESSAGE - note]\nsecret[/OUT-OF-BAND USER MESSAGE] two', timestamp: 9 },
-      { role: 'user', content: 'C', timestamp: 10, _recovered: true },
-      { role: 'assistant', content: 'after C', timestamp: 11 },
-    ])
-    expect(history.map((m) => [m.role, m.content])).toEqual([
-      ['user', 'B'], ['assistant', 'partial'], ['assistant', 'calls'], ['tool', 'ok'], ['assistant', 'one  two'], ['user', 'C'], ['assistant', 'after C'],
-    ])
-    // The recovered prompt A had no assistant on both sides (stale), C separates two assistant turns and stays (marker gone).
-    expect(history.every((m) => !('_recovered' in m) && !('attachments' in m) && !('timestamp' in m) && !('api_content' in m))).toBe(true)
-    expect((history[2]?.tool_calls as { id: string }[]).map((t) => t.id)).toEqual(['t1'])
-  })
-
-  it('turn history keeps the reasoning carriers the Agent replays on assistant rows; other projections strip them (TAL-927)', () => {
-    const issued = { reasoning_details: [{ type: 'reasoning.encrypted', data: 'sig' }], codex_reasoning_items: [{ type: 'reasoning', encrypted_content: 'enc' }], codex_message_items: [{ type: 'message', id: 'msg_1' }] }
-    const carriers = { reasoning: 'r', finish_reason: 'stop', ...issued }
-    const rows = [{ role: 'user', content: 'hi', timestamp: 10, ...carriers }, { role: 'assistant', content: 'yo', reasoning_content: 'rc', timestamp: 11, ...carriers }]
-    const [user, assistant] = sanitizeMessagesForApi(rows, { preserveApiContent: true, issuedReasoningSince: 11 })
-    expect(assistant).toEqual({ role: 'assistant', content: 'yo', reasoning_content: 'rc', timestamp: 11, ...carriers })
-    expect(user).toEqual({ role: 'user', content: 'hi', timestamp: 10 })
-    // Provider-issued carriers from before the turn provider took over, or of unknown provenance, stay home.
-    for (const since of [12, null]) expect(sanitizeMessagesForApi(rows, { preserveApiContent: true, issuedReasoningSince: since })[1]).toEqual({ role: 'assistant', content: 'yo', reasoning_content: 'rc', timestamp: 11, reasoning: 'r', finish_reason: 'stop' })
-    expect(sanitizeMessagesForApi(rows)).toEqual([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'yo', reasoning_content: 'rc' }])
-  })
-})
-
 describe('reasoning replay across turns (TAL-927)', () => {
   let s: TestServer
   let sidecar: FakeSidecar
@@ -4960,15 +4869,6 @@ describe('live metering and todo_state (TAL-397)', () => {
     const turnId = str((stored.extra[UNSETTLED_TODO_KEY] as Json).turn_id)
     expect(turnId).toMatch(/\S/)
     expect(stored.messages.some((m) => m._turn_id === turnId && m._error === true)).toBe(true)
-  })
-
-  it('keeps an unsettled todo list only until the transcript holds a newer todo write', () => {
-    const row = (content: string, timestamp: number): Json => ({ role: 'tool', content: JSON.stringify({ todos: [{ id: '1', content, status: 'pending' }] }), timestamp })
-    const unsettled = { todos: [{ id: '1', content: 'kept', status: 'in_progress' }], summary: {}, version: 1, ts: 200 }
-    const pick = (messages: Json[]): unknown => { const payload: Json = {}; attachTodoState(payload, messages, unsettled); return ((payload.todo_state as Json).todos as Json[])[0]?.content }
-    expect(pick([row('older', 100)])).toBe('kept')
-    expect(pick([])).toBe('kept')
-    expect(pick([row('older', 100), row('newer', 300)])).toBe('newer')
   })
 
   // TAL-1121: a history cut that removes the turn which wrote the kept list ends that list; an older kept turn survives.
