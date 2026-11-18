@@ -114,12 +114,20 @@ private struct ChatStreamTickHarness {
         }.environment(\.chatBodyEvaluation, recorder)
             .modelContainer(fixture.cache))
 
-        let started = await viewModel.sendMessage("Show the change")
-        XCTAssertTrue(started)
+        // The keyboard's first show shrinks the viewport and the long transcript's lazy rows re-measure under it. A pass
+        // that moves the offset before the content height reads as the reader scrolling away and can release follow,
+        // which left the stream ticks scrolling an unfollowed transcript on a slow host. Raise the keyboard first and send
+        // from the composer, as a reader does: the send re-arms follow once the re-measure has settled (TAL-2002).
+        let composer = try await Self.focusComposer(in: window, test: test)
+        let keyboardSettled = await test.awaitQuiet { recorder.counts.values.reduce(0, +) }
+        XCTAssertNotNil(keyboardSettled, "The chat must settle under the keyboard before the send")
+        composer.insertText("Show the change")
+        HostedAccessibility.activate(try await test.requireElement(in: window, label: "Send"))
+        let started = await test.awaitCondition { viewModel.activeStreamID != nil }
+        XCTAssertTrue(started, "The composer's send never started the reply")
         stream.emit(.token(Self.token(0)))
         let opened = await test.awaitCondition { viewModel.messages.last?.content == Self.token(0) }
         XCTAssertTrue(opened, "The streaming reply never reached the transcript")
-        _ = try await Self.focusComposer(in: window, test: test)
         let quiet = await test.awaitQuiet { recorder.counts.values.reduce(0, +) }
         XCTAssertNotNil(quiet, "The chat must stop re-evaluating after the send before measuring")
         // Opening the chat renders settled rows, so a zero count while measuring means none re-rendered.

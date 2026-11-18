@@ -1,0 +1,1 @@
+{"skip": "Test-only: the stream tick budget raises the keyboard and sends from the composer before the reply streams, so the keyboard's transcript re-measure cannot release follow inside its measured ticks; no app behavior changes."}
