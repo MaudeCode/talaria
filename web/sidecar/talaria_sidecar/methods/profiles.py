@@ -215,16 +215,13 @@ def gateway_mode(home: Path, name: str, is_default: bool) -> str:
     process, ``parked`` (``hermes -p X gateway stop`` left its marker and nothing runs; the marker records intent, so a
     live ``--force`` gateway still counts, as in ``hermes -p X gateway status``), ``standalone`` (opted out of the host and
     not running), else ``stopped``. The default profile is the host itself.
-    A helper the installed Agent lacks answers no, so an Agent without the multiplexer helpers reports ``own`` or
-    ``stopped``; a helper that fails answers no too, except the parked check, which fails closed to ``stopped``."""
+    A helper that is missing or fails is unknown and answers no, except the parked check, which fails closed to
+    ``stopped``."""
     from hermes_cli import profiles as agent
 
     def probe(helper: str, arg) -> bool | None:
-        check = getattr(agent, helper, None)
-        if check is None:
-            return False
         try:
-            return bool(check(arg))
+            return bool(getattr(agent, helper)(arg))
         except Exception:  # noqa: BLE001
             log.debug("gateway mode probe %s failed for %s", helper, home, exc_info=True)
             return None

@@ -73,16 +73,11 @@ def test_mode_precedence(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     assert gateway_mode(tmp_path, "x", is_default) == mode
 
 
-def test_an_agent_without_the_multiplexer_helpers_reports_own_or_stopped(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+def test_failing_running_and_standalone_probes_report_stopped(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     from talaria_sidecar.methods.profiles import gateway_mode
 
-    _agent(monkeypatch, _check_gateway_running=lambda home: True)
-    assert gateway_mode(tmp_path, "x", False) == "own"
-    _agent(monkeypatch, _check_gateway_running=lambda home: False)
-    assert gateway_mode(tmp_path, "x", False) == "stopped"
-    _agent(monkeypatch, _served_by_running_multiplexer=lambda name: True, _check_gateway_running=lambda home: True)
-    assert gateway_mode(tmp_path, "x", False) == "served"
-    _agent(monkeypatch, _check_gateway_running=lambda home: 1 / 0, profile_is_standalone=lambda home: 1 / 0)
+    _agent(monkeypatch, profile_is_parked=lambda home: False, _served_by_running_multiplexer=lambda name: False,
+           _check_gateway_running=lambda home: 1 / 0, profile_is_standalone=lambda home: 1 / 0)
     assert gateway_mode(tmp_path, "x", False) == "stopped"
 
 
