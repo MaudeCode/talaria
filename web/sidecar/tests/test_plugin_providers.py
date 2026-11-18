@@ -488,7 +488,6 @@ def test_an_updated_plugin_is_attributed_through_its_current_native_generation(t
         (root / "__init__.py").write_text(source)
         stamp = time.time_ns() + 10_000_000_000  # move the plugin dir stamp the Agent's rescan watches
         os.utime(home / "plugins", ns=(stamp, stamp))
-        time.sleep(1.2)  # past the Agent's plugin-dir stamp check interval
 
     install(GENERATION_PROFILE.format(command=str(cli), models=("gen-1",)))
     # Capture a live profile object, then ask whether that same object still owns the provider after an update.
@@ -501,6 +500,8 @@ def test_an_updated_plugin_is_attributed_through_its_current_native_generation(t
         captured = {}
         def methods(runtime):
             handlers = build(runtime)
+            import providers
+            providers._PLUGIN_DIR_STAMP_TTL_SECONDS = 0  # every lookup re-checks the plugin dir stamp, so an update needs no wait
             def capture(ctx, params):
                 import providers
                 runtime.load()

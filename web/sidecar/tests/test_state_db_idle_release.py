@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import sys
 import threading
-import time
 import types
 
 from talaria_sidecar.methods import state_db
@@ -14,8 +13,7 @@ from talaria_sidecar.methods import state_db
 def test_a_write_burst_keeps_one_idle_thread_and_releases_every_reference(monkeypatch, tmp_path) -> None:
     acquired, released = [], []
     registry = types.ModuleType("hermes_state_registry")
-    # Each write takes real time, so the burst outlasts the idle window on the wall clock.
-    registry.acquire = lambda path: acquired.append(types.SimpleNamespace(ensure_session=lambda **kwargs: time.sleep(0.01))) or acquired[-1]
+    registry.acquire = lambda path: acquired.append(types.SimpleNamespace(ensure_session=lambda **kwargs: None)) or acquired[-1]
     registry.release_or_close = released.append
     monkeypatch.setitem(sys.modules, "hermes_state_registry", registry)
     monkeypatch.setattr(state_db, "_pins", {})

@@ -240,7 +240,7 @@ call("oauth.cancel", flow_id=flow["flow_id"])
 
 flow = start()
 redirect = idp.approve(flow["verification_url"])
-oauth._FLOWS[flow["flow_id"]].expires_at = time.time() - 1  # the Agent's timeout_seconds ran out before the approval
+oauth._FLOWS[flow["flow_id"]].expires_at = 0  # the Agent's timeout_seconds ran out before the approval
 out["expired"] = [settle(flow["flow_id"]), call("oauth.submit_redirect", flow_id=flow["flow_id"], url=redirect).get("raised"), grant()]
 
 flow = start()

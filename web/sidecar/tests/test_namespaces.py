@@ -340,7 +340,7 @@ def test_kanban_tasks_report_claim_liveness_and_completion_evidence(handshaken: 
     task = handshaken.result("kanban.task", {"profile_home": home, "task_id": task_id})["task"]
     assert task["claim_live"] is False and task["has_completion_evidence"] is False
     db = next(p for p in hermes_home.rglob("*.db") if sqlite3.connect(p).execute("SELECT name FROM sqlite_master WHERE name = 'tasks'").fetchone())
-    worker = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    worker = subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE)  # alive until killed
     try:
         with sqlite3.connect(db) as conn:
             # The Agent's claimer id is "<host>:<pid>" of the dispatcher that claimed the task, here this host.

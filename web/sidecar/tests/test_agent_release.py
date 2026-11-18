@@ -581,7 +581,12 @@ def test_a_turn_ending_without_a_clear_keeps_its_review(monkeypatch) -> None:
     assert chat.start(Ctx(), _params("st-kept", "kept"))["status"] == "completed"
     registry = _registry()
     chat.register(registry)
+    started: list[threading.Thread] = []
+    cancel = chat._cancel_background_reviews
+    monkeypatch.setattr(chat, "_cancel_background_reviews", lambda entries, message: started.extend(cancel(entries, message)) or started)
     registry.methods["chat.evict_agent"](Ctx(), {"session_id": "kept"})
+    for thread in started:  # every cancel the eviction started has run before the check
+        thread.join(5)
     assert _cancels() == []
     assert not hasattr(MemoryAgent.instances[-1], "skip_background_review")
 
@@ -606,10 +611,7 @@ def test_shutdown_releases_an_agent_a_running_turn_caches_after_the_first_evicti
     ctx.server = _Server()
     shutdown = threading.Thread(target=registry.methods["runtime.shutdown"], args=(ctx, {}))
     shutdown.start()
-    deadline = time.monotonic() + 5
-    while not chat._RUNS["st-late-cache"].cancel.is_set():  # the drain already evicted and is waiting on the turn
-        assert time.monotonic() < deadline
-        time.sleep(0.01)
+    assert chat._RUNS["st-late-cache"].cancel.wait(5)  # the drain already evicted and is waiting on the turn
     gate.set()
     shutdown.join(5)
     worker.join(5)
