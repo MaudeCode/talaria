@@ -9,7 +9,7 @@
       "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelQueuedMessagePreviewTests.swift": 1,
       "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+ActionsQueue.swift": 2,
       "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+BackgroundWork.swift": 2,
-      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+ChatOpen.swift": 2,
+      "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+ChatOpen.swift": 1,
       "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+ClearConversation.swift": 1,
       "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+ComposerConfig.swift": 1,
       "app/TalariaKit/Tests/TalariaKitTests/ChatViewModelSendTests+ConnectionOperation.swift": 6,

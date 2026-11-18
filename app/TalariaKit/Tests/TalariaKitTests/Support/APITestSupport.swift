@@ -172,11 +172,26 @@ final class DeferredMockURLProtocol: URLProtocol {
     }
 
     private let stopped = LockedTestValue(false)
+    private let stopSignal: XCTestExpectation = {
+        let signal = XCTestExpectation(description: "The client cancelled the request")
+        signal.assertForOverFulfill = false
+        return signal
+    }()
     /// True once the client cancelled the request.
     var isStopped: Bool { stopped.value }
 
     override func stopLoading() {
         stopped.value = true
+        stopSignal.fulfill()
+    }
+
+    /// Waits for the client to cancel the request, under the shared 10 s ceiling. URLSession calls `stopLoading` on
+    /// its own queue after the cancelled task's caller resumes, so one read straight after the cancel races it
+    /// (TAL-2186).
+    nonisolated(nonsending) func waitUntilStopped(_ message: String, file: StaticString = #filePath, line: UInt = #line) async {
+        if await XCTWaiter().fulfillment(of: [stopSignal], timeout: 10) != .completed {
+            XCTFail(message, file: file, line: line)
+        }
     }
 
     func complete(withJSON json: String, statusCode: Int = 200) {
