@@ -581,8 +581,8 @@ class RealDiffTests(unittest.TestCase):
     def test_a_ci_workflow_change_selects_the_suites_of_the_jobs_it_changes(self):
         # A ci.yml change runs the suites of the jobs and keys it changes (TAL-2461). Column-0 comments, concurrency and
         # the jobs every pull request run executes in full (path detection, the gate and the failure report)
-        # need only the tooling checks. Path detection's outputs feed every job, so they keep the whole ci.yml route,
-        # as do triggers, permissions and added, removed or renamed jobs.
+        # need only the tooling checks, as does a removed job, which only stops running. Path detection's outputs feed
+        # every job, so they keep the whole ci.yml route, as do triggers, permissions and added or renamed jobs.
         original = ("# Header.\nname: CI\non: push\nconcurrency:\n  group: ci\njobs:\n  changes:\n    runs-on: ubuntu-latest\n"
                     "    outputs:\n      app: x\n    steps:\n      - run: classify\n"
                     "  app-tooling:\n    runs-on: macos-latest\n    steps:\n      - run: old-check\n"
@@ -600,6 +600,7 @@ class RealDiffTests(unittest.TestCase):
             ("the trigger", ("on: push", "on: pull_request"), ci),
             ("a job's name", ("  app-tooling:", "  renamed-tooling:"), ci),
             ("an added job", ("  report:", "  extra:\n    runs-on: ubuntu-latest\n  report:"), ci),
+            ("a removed job", ("  report:\n    if: always()\n    steps:\n      - run: watch\n", ""), {"tooling"}),
             ("permissions", ("jobs:", "permissions:\n  contents: write\njobs:"), ci),
         ]
         workflow = ".github/workflows/ci.yml"

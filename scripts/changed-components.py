@@ -320,9 +320,10 @@ def git_deleted_workflows(base, head):
 
 
 # What each part of ci.yml can break, so a change runs only those suites (TAL-2461). Path detection, the gate and the
-# failure report run in full on every pull request, which the tooling checks join; concurrency only
-# schedules runs (scripts/test-ci-concurrency.py). The contract probe's fixture feeds the App package tests. Any other
-# part, path detection's outputs included since every job reads them, keeps the whole ci.yml route.
+# failure report run in full on every pull request, which the tooling checks join; concurrency only schedules runs
+# (scripts/test-ci-concurrency.py), and a removed job only stops running. The contract probe's fixture feeds the App
+# package tests. Any other part, path detection's outputs included since every job reads them, keeps the whole ci.yml
+# route.
 CI_PARTS = {
     ("key", "concurrency"): {"tooling"},
     ("job", "changes"): {"tooling"},
@@ -366,8 +367,10 @@ def workflow_overrides(base, head, paths):
         after = workflow_parts(git("show", f"{head}:{path}").decode() if head else Path(path).read_text())
     except (OSError, subprocess.CalledProcessError):
         return {}
-    changed = {part for part in before.keys() | after.keys() if before.get(part) != after.get(part)}
-    if before.keys() != after.keys() or not changed <= CI_PARTS.keys():
+    # A removed job stops running and nothing else: a job that needed it changes its own part, routed as that part.
+    removed = {part for part in before.keys() - after.keys() if part[0] in ("job", "outputs")}
+    changed = {part for part in before.keys() | after.keys() if before.get(part) != after.get(part)} - removed
+    if before.keys() - removed != after.keys() or not changed <= CI_PARTS.keys():
         return {}
     return {path: set().union({"tooling"}, *(CI_PARTS[part] for part in changed))}
 

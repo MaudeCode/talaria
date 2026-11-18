@@ -11,7 +11,6 @@ import re
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from unittest import mock
 from contextlib import redirect_stdout

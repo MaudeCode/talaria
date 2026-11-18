@@ -122,8 +122,9 @@ After the merge, wait for the first completed `main` push run that contains
 the merge commit (`gh run list --repo MaudeCode/talaria --workflow ci.yml
 --branch main --event push --status completed --json
 databaseId,headSha,conclusion`, newest first). If it failed, run `report` on it
-and repair what it lists as in steps 2 and 3, in one more pull request. Do not
-look again after that round: whatever fails later belongs to the next session.
+and repair what it lists as in steps 2 and 3, in one more pull request that
+carries that run's ID. Do not look again after that round: whatever fails
+later belongs to the next session.
 
 ## 5. Report and end
 
