@@ -524,6 +524,11 @@ it('masks shared credential names in MCP headers and environment inventory', () 
   }
 })
 
+it('masks a credential nested inside an MCP header object and keeps its plain siblings', () => {
+  expect(serverSummary('mcp', { url: 'https://x.test', headers: { API_KEY: 'x', nested: { token: 'y', ok: 'z' } } }, null).headers)
+    .toEqual({ API_KEY: '••••••', nested: { token: '••••••', ok: 'z' } })
+})
+
 describe('MCP health probe body cap', () => {
   it('the MCP health probe stops reading past its body cap', async () => {
     // A valid initialize reply padded past the 64 KiB cap is never parsed.

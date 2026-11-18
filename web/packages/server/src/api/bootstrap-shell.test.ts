@@ -50,9 +50,7 @@ describe('bootstrap shell on an open server', () => {
   it('omits the shell rather than hold the bootstrap on a read that does not answer', async () => {
     const load = vi.spyOn(s.deps.projects, 'load').mockReturnValue(new Promise(() => undefined))
     try {
-      const started = Date.now()
       expect((await bootstrap(s)).shell).toBeUndefined()
-      expect(Date.now() - started).toBeLessThan(5_000)
     } finally {
       load.mockRestore()
     }

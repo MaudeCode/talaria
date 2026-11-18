@@ -15,7 +15,7 @@ const STDIO_LIFECYCLE_KEYS = ['idle_timeout_seconds', 'max_lifetime_seconds']
 /** TAL-1967: an HTTP server's settings bound to its host: credentials, TLS identity and trust. `null` in an update clears each. */
 export const MCP_HOST_BOUND_KEYS = ['headers', 'auth', 'oauth', 'ssl_verify', 'client_cert', 'client_key', 'skip_preflight', 'identity_header', 'strict_redirect_headers', 'trust']
 
-export function maskSecrets(obj: unknown): unknown {
+function maskSecrets(obj: unknown): unknown {
   if (!isDict(obj)) return obj
   const out: Dict = {}
   for (const [k, v] of Object.entries(obj)) {

@@ -44,7 +44,6 @@ it('preserves main JSON bytes for every document namespace and run-journal compa
     const settings = new SettingsStore({ documents: new JsonDocuments(state), stateDir: state, env: { TALARIA_WEB_DEFAULT_WORKSPACE: workspace }, defaultWorkspace: workspace, botName: 'Hermes' })
     await settings.save({ theme: 'light' })
     const auth = new AuthStore({ documents: new JsonDocuments(state), env: {}, settings, now: () => 1000 })
-    auth.setKeysForTest(Buffer.alloc(32, 1), Buffer.alloc(32, 2))
     await settings.load()
     await auth.initialize()
     auth.createSession({ username: 'synthetic' })

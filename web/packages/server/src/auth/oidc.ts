@@ -78,7 +78,7 @@ function allowValues(raw: unknown): string[] {
 /** Non-global destinations never receive the client credentials (`http/addresses.ts`). */
 const disallowedIp = isNonGlobalAddress
 
-export function safeNextPath(raw: unknown): string {
+function safeNextPath(raw: unknown): string {
   const path = str(raw).trim()
   if (!path.startsWith('/') || path.startsWith('//') || path.startsWith('/\\')) return '/'
   if (/[\x00-\x1f\x7f\s]/.test(path)) return '/'
