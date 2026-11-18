@@ -402,10 +402,7 @@ class CheckerTests(unittest.TestCase):
         findings = [{"name": "mcp_execution_deadline", "case": "explicit/sequential",
                      "expected": "completed", "actual": "tool_timeout"}]
         self.tools.probe_findings[CANDIDATE["version"]] = findings
-        try:
-            receipt = self.receipt("--identity", json.dumps(CANDIDATE))
-        except RuntimeError:
-            receipt = self.last
+        receipt = self.receipt("--identity", json.dumps(CANDIDATE))
         self.assertEqual(receipt["result"], "success")
         self.assertEqual(receipt["tests"], {"passed": 39, "failed": 0, "skipped": 1})
         self.assertTrue(receipt["imageVerified"])
