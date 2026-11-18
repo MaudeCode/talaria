@@ -142,12 +142,26 @@ final class FixtureApp {
     }
 }
 
+/// A navigation stack whose button pushes `destination` the way a row pushes a chat.
+struct FixturePushHost<Content: View>: View {
+    let destination: Content
+    @State private var isPresented = false
+    var body: some View {
+        NavigationStack {
+            Button("Open fixture chat") { isPresented = true }
+                .navigationDestination(isPresented: $isPresented) { destination }
+        }
+    }
+}
+
 /// A process's first chat render takes 20 to 50 s on a hosted runner, against about 3 s for the next: the Swift runtime
 /// resolves the generic conformances SwiftUI asks for by scanning every loaded image. Its first Markdown transcript and
 /// keyboard add up to 40 s more, past the 10 s waits of whichever test comes first. A chat opened from the Chats list
 /// then draws with a render pipeline the bare chat does not use; the runner compiles it on the main thread, which held
-/// the screen for 9 s (TAL-2275). They belong to the run, so they happen before any test starts (TAL-1891). The bundle's
-/// principal class.
+/// the screen for 9 s (TAL-2275). The first animated push does one-time main-thread work no still draw does: up to 4 s
+/// of main-thread CPU on a Mac after a fresh build, and the composer-push test's push took 9 s on a runner, 28 s under
+/// load (TAL-2543). They belong to the run, so they happen before any test starts (TAL-1891). The bundle's principal
+/// class.
 @objc(HostedTestBundle)
 final class HostedTestBundle: NSObject, XCTestObservation {
     override init() {
@@ -178,6 +192,20 @@ final class HostedTestBundle: NSObject, XCTestObservation {
                         $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
                     }), HostedAccessibility.activate(row) {
                         _ = await warmer.awaitElement(in: window, timeout: 60, where: FixtureApp.isLoadedTranscriptRow)
+                    }
+                }
+                if let fixture = try? FixtureApp(for: warmer), let session = try? await fixture.session() {
+                    var pushed = false
+                    let chat = fixture.chat(session, asNavigationDestination: false)
+                        .background(NavigationAppearanceCompletionObserver { pushed = true })
+                    if let window = try? warmer.hostWindow(FixturePushHost(destination: chat), animationsEnabled: true),
+                       let scene = window.windowScene {
+                        windows.append(window)
+                        if let open = await warmer.awaitElement(in: window, label: "Open fixture chat", timeout: 60) {
+                            await warmer.awaitDisplayUpdates(2, in: scene)
+                            HostedAccessibility.activate(open)
+                            _ = await warmer.awaitCondition(timeout: 60) { pushed }
+                        }
                     }
                 }
                 finished = true
