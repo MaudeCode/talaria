@@ -92,7 +92,8 @@ class RoutingTests(unittest.TestCase):
             # Server unit tests are excluded from the built server the frontend and contracts jobs drive.
             (["web/packages/server/src/port/auth.port.test.ts"], {"web_server"}),
             (["web/packages/server/src/sessions/workers.test.ts", "changelog.d/TAL-975.json"], {"web_server"}),
-            (["web/packages/server/src/sidecar/client.test.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            # A server unit test under src/sidecar/ is still only a server test (TAL-2453).
+            (["web/packages/server/src/sidecar/client.test.ts"], {"web_server"}),
             (["web/package-lock.json"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
             # The image compiles the contracts and server workspaces for both release platforms (TAL-2345).
             (["web/packages/contracts/package.json"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
