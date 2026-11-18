@@ -6,6 +6,8 @@ import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { dropTestSchema, startTestPostgres, TEST_POSTGRES_PASSWORD, testSchema, type TestPostgres } from '../../test/postgres.js'
 import type { Message } from '../session.js'
 import { RevisionConflict } from './backend.js'
+import { gunzipSync } from 'node:zlib'
+import { keepRecent } from '../../test/storage.js'
 import { runDocumentBackendConformance, runJournalBackendConformance, runSessionBackendConformance } from './conformance.js'
 import { PostgresStorage } from './postgres.js'
 import { MIGRATIONS, postgresOptions, SCHEMA_VERSION, TRIGRAM_EXTENSION_SQL } from './postgres-db.js'
@@ -15,7 +17,7 @@ let postgres: TestPostgres
 beforeAll(async () => { postgres = await startTestPostgres() }, 60_000)
 afterAll(async () => { await postgres.stop() })
 
-async function fixture(schema = testSchema(), env: Record<string, string | undefined> = { TALARIA_WEB_RUN_JOURNAL_KEEP_RECENT: '0' }, logs: string[] = []) {
+async function fixture(schema = testSchema(), env: Record<string, string | undefined> = keepRecent(0), logs: string[] = []) {
   const storage = await PostgresStorage.open({ url: postgres.url, schema, poolMax: 4, sessionDir: '/nonexistent/talaria-sessions', env, stampingSince: () => 0, log: (line) => logs.push(line) })
   let failCommit = false
   // Throws where COMMIT would run: everything the write staged is inside the open transaction.
@@ -34,7 +36,28 @@ async function fixture(schema = testSchema(), env: Record<string, string | undef
 
 runSessionBackendConformance('Postgres', async () => { const test = await fixture(); return { storage: test.storage, failNextWrite: test.failNextWrite, cleanup: () => dropTestSchema(postgres.url, test.schema) } })
 runDocumentBackendConformance('Postgres', async () => { const test = await fixture(); return { backend: test.storage.documents, failNextWrite: test.failNextWrite, cleanup: test.cleanup } })
-runJournalBackendConformance('Postgres', async () => { const test = await fixture(); return { backend: test.storage.journals, cleanup: test.cleanup } })
+runJournalBackendConformance('Postgres', async (env = keepRecent(0)) => {
+  const test = await fixture(undefined, env)
+  const reopened: PostgresStorage[] = []
+  const db = test.storage.db
+  const t = (table: string): string => `${db.s}${table}`
+  const blob = (sid: string, rid: string) => db.row<{ rows: Buffer }>(`SELECT rows FROM ${t('journal_archives')} WHERE session_id = $1 AND stream_id = $2`, sid, rid)
+  return {
+    backend: test.storage.journals,
+    cleanup: async () => { for (const storage of reopened) await storage.close(); await test.cleanup() },
+    reopen: async () => { const next = await PostgresStorage.open({ url: postgres.url, schema: test.schema, poolMax: 4, sessionDir: '/nonexistent/talaria-sessions', env, stampingSince: () => 0 }); reopened.push(next); return next.journals },
+    store: {
+      age: async (sid, rid, at) => { await db.run(`UPDATE ${t('journal_rows')} SET written_at = $1 WHERE session_id = $2 AND stream_id = $3`, at, sid, rid) },
+      live: async (sid, rid) => (await db.row<{ one: number }>(`SELECT 1 AS one FROM ${t('journal_rows')} WHERE session_id = $1 AND stream_id = $2 LIMIT 1`, sid, rid)) !== undefined,
+      liveBytes: async (sid, rid) => Buffer.from((await db.rows<{ row: string }>(`SELECT row FROM ${t('journal_rows')} WHERE session_id = $1 AND stream_id = $2 ORDER BY seq`, sid, rid)).map(({ row }) => `${row}\n`).join('')),
+      archive: async (sid, rid) => { const found = await blob(sid, rid); return found ? gunzipSync(found.rows) : null },
+      archiveSize: async (sid, rid) => (await blob(sid, rid))!.rows.length,
+      ageArchive: async (sid, rid, at) => { await db.run(`UPDATE ${t('journal_archives')} SET archived_at = $1 WHERE session_id = $2 AND stream_id = $3`, at, sid, rid) },
+      dropSummary: async (sid, rid) => { await db.run(`DELETE FROM ${t('journal_summaries')} WHERE session_id = $1 AND stream_id = $2`, sid, rid) },
+      understateArchive: async (sid, rid) => { await db.run(`UPDATE ${t('journal_archives')} SET bytes = 1 WHERE session_id = $1 AND stream_id = $2`, sid, rid) },
+    },
+  }
+})
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const cleanup of cleanups.splice(0)) await cleanup() })

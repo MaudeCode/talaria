@@ -5,10 +5,8 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { type SceneRow, anchorActivitySceneTransportPreview, assistantAnchorSceneMessageRef, buildTurnScene, hydrateAnchorActivityScenes, normalizeSceneRows, turnsOf, turnTerminalState, withTurnIds } from './anchor.js'
+import { anchorActivitySceneTransportPreview, assistantAnchorSceneMessageRef, buildTurnScene, hydrateAnchorActivityScenes, normalizeSceneRows, turnsOf, turnTerminalState, withTurnIds } from './anchor.js'
 import { splitDisplayText, withToolCallOutcomes } from './merge.js'
-import { withActivityGroups } from './activity-groups.js'
-import { withSceneToolDisplay } from '../redact.js'
 import { str } from '../util.js'
 
 // Pass-through spies: hydration cost is counted in SHA-256 digests (message refs) and prose-row splits (row normalization).
@@ -27,34 +25,18 @@ type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 
-it('keeps a draft review visible after its producing turn settles', () => {
+it.each([
+  { name: 'a draft review', tool: 'draft_card', result: { draft_id: 'd_1234abcd', card: '::draft-card{id="d_1234abcd" v="1"}' }, view: { outbound_draft: { draft_id: 'd_1234abcd', card: 1 } } },
+  { name: 'a proposal (TAL-1967)', tool: 'propose', result: { proposal_id: 'pr_0a1b2c3d', status: 'pending', url: '/session/s', kind: 'setting', summary: 'Change setting show_tps' }, view: { proposal: { proposal_id: 'pr_0a1b2c3d', kind: 'setting', summary: 'Change setting show_tps' } } },
+  { name: 'a shown block (TAL-1968)', tool: 'show', result: { block_id: 'sb_0a1b2c3d4e5f', url: '/session/s', kind: 'table', title: 'Latency', note: null }, view: { block: { block_id: 'sb_0a1b2c3d4e5f', kind: 'table', title: 'Latency' } } },
+])('keeps $name visible after its producing turn settles', ({ tool, result, view }) => {
   const scene = buildTurnScene([
-    [{ role: 'assistant', content: '', tool_calls: [{ id: 'draft', function: { name: 'draft_card', arguments: '{}' } }] }, 0],
-    [{ role: 'tool', tool_call_id: 'draft', content: JSON.stringify({ draft_id: 'd_1234abcd', card: '::draft-card{id="d_1234abcd" v="1"}' }) }, 1],
-    [{ role: 'assistant', content: 'Review the draft.' }, 2],
+    [{ role: 'assistant', content: '', tool_calls: [{ id: tool, function: { name: tool, arguments: '{}' } }] }, 0],
+    [{ role: 'tool', tool_call_id: tool, content: JSON.stringify(result) }, 1],
+    [{ role: 'assistant', content: 'Done.' }, 2],
   ])
-  expect(scene?.expanded_by_default, 'The review body must not disappear into the settled worklog').toBe(true)
-  expect(scene?.activity_rows).toMatchObject([{ tool: { result_view: { outbound_draft: { draft_id: 'd_1234abcd', card: 1 } } } }])
-})
-
-it('keeps a proposal visible after its producing turn settles (TAL-1967)', () => {
-  const scene = buildTurnScene([
-    [{ role: 'assistant', content: '', tool_calls: [{ id: 'propose', function: { name: 'propose', arguments: '{}' } }] }, 0],
-    [{ role: 'tool', tool_call_id: 'propose', content: JSON.stringify({ proposal_id: 'pr_0a1b2c3d', status: 'pending', url: '/session/s', kind: 'setting', summary: 'Change setting show_tps' }) }, 1],
-    [{ role: 'assistant', content: 'Approve it on the card.' }, 2],
-  ])
-  expect(scene?.expanded_by_default, 'The owner must see the proposal without opening the worklog').toBe(true)
-  expect(scene?.activity_rows).toMatchObject([{ tool: { result_view: { proposal: { proposal_id: 'pr_0a1b2c3d', kind: 'setting', summary: 'Change setting show_tps' } } } }])
-})
-
-it('keeps a shown block visible after its producing turn settles (TAL-1968)', () => {
-  const scene = buildTurnScene([
-    [{ role: 'assistant', content: '', tool_calls: [{ id: 'show', function: { name: 'show', arguments: '{}' } }] }, 0],
-    [{ role: 'tool', tool_call_id: 'show', content: JSON.stringify({ block_id: 'sb_0a1b2c3d4e5f', url: '/session/s', kind: 'table', title: 'Latency', note: null }) }, 1],
-    [{ role: 'assistant', content: 'Here is the table.' }, 2],
-  ])
-  expect(scene?.expanded_by_default, 'The user must see the block without opening the worklog').toBe(true)
-  expect(scene?.activity_rows).toMatchObject([{ tool: { result_view: { block: { block_id: 'sb_0a1b2c3d4e5f', kind: 'table', title: 'Latency' } } } }])
+  expect(scene?.expanded_by_default, 'The user must see it without opening the worklog').toBe(true)
+  expect(scene?.activity_rows).toMatchObject([{ tool: { result_view: view } }])
 })
 
 /** A legacy scene as the predecessor browser saved it: every shape the clients used to decode differently. */
@@ -522,20 +504,25 @@ describe('anchor scenes over HTTP', () => {
 
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     const scene = (detail.messages as Json[])[1]?._anchor_activity_scene as Json
-    // Both the preview and the paged rows carry each tool's server kind and target.
-    const normalized = normalizeSceneRows([...rows, ...legacyRows])
+    // The step rows interleave with the legacy rows by order_index; the empty prose row and the non-row drop out.
+    const expected = [
+      ['r89', 'reasoning'], ['think', 'reasoning'], ['r88', 'reasoning'], ['tool:c1', 'tool'], ['r87', 'reasoning'], ['tool:c2', 'tool'], ['r86', 'reasoning'], ['tool:c3', 'tool'],
+      ['r85', 'reasoning'], ['steering:s1', 'steering'], ['r84', 'reasoning'], ['prose:thinking', 'reasoning'], ['prose', 'prose'],
+      ...Array.from({ length: 84 }, (_, i) => [`r${String(83 - i)}`, 'reasoning']),
+    ]
+    const idsAndRoles = (rows: unknown): unknown[] => (rows as Json[]).map((r) => [r.row_id, r.role])
+    expect(scene).toMatchObject({ activity_rows_total: 97, activity_rows_offset: 17, activity_rows_complete: false })
+    expect(idsAndRoles(scene.activity_rows)).toEqual(expected.slice(17))
     // TAL-1175: reasoning rows are numbered over the whole scene, so the preview and every page agree on each key.
-    const turnId = String((detail.messages as Json[])[1]?._turn_id)
-    let segment = 0
-    // TAL-2332: each with its activity group, counted over the whole scene.
-    const all = withActivityGroups((withSceneToolDisplay(normalized, normalized, true, null) as Json[]).map((row) => (row.role === 'reasoning' && !String(row.row_id).endsWith(':thinking') ? { ...row, disclosure_key: `${turnId}:reasoning:${String(segment++)}` } : row)) as unknown as SceneRow[]).rows as unknown as Json[]
-    expect(scene).toMatchObject({ activity_rows_total: all.length, activity_rows_offset: all.length - 80, activity_rows_complete: false })
-    expect(scene.activity_rows).toEqual(all.slice(-80))
+    expect((scene.activity_rows as Json[]).at(-1)).toMatchObject({ row_id: 'r0', disclosure_key: 'legacy:0:reasoning:90' })
 
-    const page = await json(await s.get(`/api/session/anchor-scene?session_id=${sid}&message_index=1&before=${String(all.length - 80)}&limit=80`))
-    expect(page).toMatchObject({ start: 0, end: all.length - 80, total: all.length, complete: true })
-    expect(page.rows).toEqual(all.slice(0, all.length - 80))
-    expect((page.rows as Json[])[0]).toMatchObject({ role: 'reasoning', text: 'step 0', order_index: 0 })
+    const page = await json(await s.get(`/api/session/anchor-scene?session_id=${sid}&message_index=1&before=17&limit=80`))
+    expect(page).toMatchObject({ start: 0, end: 17, total: 97, complete: true })
+    expect(idsAndRoles(page.rows)).toEqual(expected.slice(0, 17))
+    const paged = page.rows as Json[]
+    expect(paged[0]).toMatchObject({ role: 'reasoning', text: 'step 0', order_index: 0, disclosure_key: 'legacy:0:reasoning:0' })
+    // Paged rows carry each tool's server kind and target, like the preview.
+    expect(paged.filter((r) => r.role === 'tool').map((r) => r.tool)).toMatchObject([{ kind: 'shell', target: 'false' }, { kind: 'read', target: 'a.txt' }, { name: 'read_file' }])
     expect(readFileSync(sessionPath(s.deps.sessionStore, sid), 'utf8')).toBe(stored)
   })
 

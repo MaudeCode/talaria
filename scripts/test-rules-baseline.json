@@ -8,7 +8,6 @@
       "web/packages/server/src/cli/main.test.ts": 2,
       "web/packages/server/src/redact.test.ts": 1,
       "web/packages/server/src/sessions/outline.test.ts": 1,
-      "web/packages/server/src/sessions/shares.test.ts": 1,
       "web/packages/server/src/sessions/state-db-worker.test.ts": 1,
       "web/packages/server/src/sessions/workers.test.ts": 2,
       "web/packages/server/src/tools/memory-masks.test.ts": 1,
@@ -67,12 +66,10 @@
       "web/packages/server/src/sessions/chat.test.ts": 23,
       "web/packages/server/src/sessions/compress.test.ts": 3,
       "web/packages/server/src/sessions/context-detail.test.ts": 1,
-      "web/packages/server/src/sessions/evict.test.ts": 1,
       "web/packages/server/src/sessions/notify/agent-notify.test.ts": 2,
       "web/packages/server/src/sessions/sessions.test.ts": 9,
       "web/packages/server/src/sessions/state-db-worker.test.ts": 5,
       "web/packages/server/src/sessions/state-db.test.ts": 4,
-      "web/packages/server/src/sessions/storage/blobs-s3.test.ts": 1,
       "web/packages/server/src/sessions/workers.test.ts": 14,
       "web/packages/server/src/sidecar/client.test.ts": 4,
       "web/packages/server/src/sidecar/server-methods.test.ts": 2,
@@ -84,7 +81,6 @@
       "web/packages/server/src/api/feedback.test.ts": 2,
       "web/packages/server/src/api/sse-writer.test.ts": 1,
       "web/packages/server/src/fs/stat.test.ts": 1,
-      "web/packages/server/src/sessions/storage/state-golden.test.ts": 1,
       "web/packages/server/src/test/harness.ts": 1,
       "web/packages/server/src/tools/project-os.test.ts": 1
     }

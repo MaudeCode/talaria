@@ -256,17 +256,25 @@ describe('buildShareSnapshot inline data', () => {
   })
 
   it('stays linear on long malformed repeated input', () => {
-    // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
-    const n = 40_000
-    for (const content of [
+    const inputs = (n: number): string[] => [
       '<img '.repeat(n), '&lt;img '.repeat(n), '![x](data:a '.repeat(n), '![x](data:image/'.repeat(n), '![' + ' '.repeat(n * 5),
       '![x](' + ' '.repeat(n * 5), 'data:' + 'a'.repeat(n * 5), `<img alt="${'data: '.repeat(n)}`, `<img ${'alt="x '.repeat(n)}>`,
       'MEDIA:data:'.repeat(n), `${'<img '.repeat(n)}>`, `${'![x](data:image/'.repeat(n)})`,
-    ]) {
-      const started = performance.now()
+    ]
+    // This thread's CPU time in milliseconds, compared between a full and a quarter-size input: a linear scan grows about
+    // four times, a quadratic one about sixteen, whatever the host's speed (the TAL-1834 pattern in redact.test.ts).
+    const cost = (content: string): number => {
+      const started = process.threadCpuUsage()
       snapshot(content)
-      expect(performance.now() - started, content.slice(0, 40)).toBeLessThan(1000)
+      const { user, system } = process.threadCpuUsage(started)
+      return (user + system) / 1000
     }
+    const quarters = inputs(10_000)
+    inputs(40_000).forEach((content, i) => {
+      const label = content.slice(0, 40)
+      const quarterCost = cost(quarters[i]!)
+      expect(cost(content), label).toBeLessThan(8 * quarterCost + 100)
+    })
   })
 })
 

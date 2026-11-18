@@ -1,5 +1,5 @@
-import { afterEach, expect, it, vi } from 'vitest'
-import { SessionChannels, nextSessionItem } from './streams.js'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { SessionChannels, StreamChannel, nextSessionItem } from './streams.js'
 
 afterEach(() => { vi.useRealTimers() })
 
@@ -67,4 +67,32 @@ it('preserves distinct payloads, intervening events, profile isolation and the q
   expect(sub.queue).toHaveLength(64)
   expect(sub.queue.at(-1)?.slice(0, 2)).toEqual(['session-updated', { session_id: 'chat', message_count: 99 }])
   channels.unsubscribe('chat', sub)
+})
+
+describe('ephemeral MCP progress snapshots', () => {
+  it('broadcasts a cleared progress value without retaining it for the next attach', () => {
+    const channel = new StreamChannel()
+    const [live] = channel.subscribeWithSnapshot()
+    channel.put(['tool_progress', { id: 'a', progress: { percent: 42, message: 'obsolete' } }, null])
+    channel.put(['tool_progress', { id: 'a', progress: null }, null])
+    expect(live.queue.at(-1)?.[1]).toEqual({ id: 'a', progress: null })
+    const [reloaded] = channel.subscribeWithSnapshot()
+    expect(reloaded.queue).toEqual([])
+  })
+
+  it('keeps only the latest update and drops it on completion and every terminal event', () => {
+    for (const event of ['tool_complete', 'done', 'cancel', 'apperror', 'error', 'stream_end']) {
+      const channel = new StreamChannel()
+      channel.put(['tool', { id: 'a' }, 'run:1'])
+      channel.put(['tool_progress', { id: 'a', progress: { percent: 10, message: 'old' } }, null])
+      channel.put(['tool_progress', { id: 'a', progress: { percent: 42, message: 'latest' } }, null])
+      const [first] = channel.subscribeWithSnapshot()
+      expect(first.queue.map((row) => row[0])).toEqual(['tool', 'tool_progress'])
+      expect(first.queue[1]?.[1]).toMatchObject({ progress: { percent: 42 } })
+      channel.unsubscribe(first)
+      channel.put([event, { id: 'a' }, 'run:2'])
+      const [next] = channel.subscribeWithSnapshot()
+      expect(next.queue.some((row) => row[0] === 'tool_progress')).toBe(false)
+    }
+  })
 })

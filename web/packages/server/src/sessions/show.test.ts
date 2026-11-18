@@ -119,7 +119,7 @@ describe('show blocks (TAL-1968)', () => {
   it('serves an HTML block from an expiring, cookie-free grant with the sandbox CSP, and refuses a body over 512 KB', async () => {
     const body = '<!doctype html><title>t</title><p id="x">Hello</p><script>document.getElementById("x").textContent = "Ran"</script>'
     const { reply, block: page } = await shown('html', { title: 'Checklist', body })
-    expect(page).toMatchObject({ kind: 'html', title: 'Checklist', bytes: Buffer.byteLength(body), expires_at: (Math.ceil(Date.now() / 3_600_000) + 1) * 3600 })
+    expect(page).toMatchObject({ kind: 'html', title: 'Checklist', bytes: Buffer.byteLength(body), expires_at: 1_794_106_800 })
     expect(page).not.toHaveProperty('body')
     const frameUrl = (page as { frame_url: string }).frame_url
     expect(frameUrl).toMatch(/^show-frame\/[^/]+$/)

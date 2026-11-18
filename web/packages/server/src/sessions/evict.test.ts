@@ -26,7 +26,6 @@ describe('cached agent eviction', () => {
   async function evictions(sid: string, mutate: () => Promise<unknown>): Promise<unknown[]> {
     const before = sidecar.calls.length
     await mutate()
-    await new Promise((r) => setTimeout(r, 10))
     return sidecar.calls.slice(before).filter((c) => c.method === 'chat.evict_agent' && (c.params as Json).session_id === sid).map((c) => c.params)
   }
 

@@ -1082,30 +1082,6 @@ describe('session activity lifecycle (TAL-1520)', () => {
       expect(await read()).toMatchObject({ phase, activityPhase: phase, streamId: 'parent' })
     } finally { server.deps.registry.liveIds.delete('command-stream'); server.deps.relay.stop(); await server.close() }
   })
-
-  it.each(['completed', 'failed', 'cancelled'] as const)('does not settle several commands until the final command settles, preserving %s', async (outcome) => {
-    const server = await bootTestServer()
-    const remote = fakeRelay()
-    server.deps.fetch = remote.fetch
-    try {
-      await post(server, '/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'synthetic' })
-      const sid = String(((await json(await post(server, '/api/session/new', {}))).session as Json).session_id)
-      for (const id of ['one', 'two']) {
-        await server.deps.background.trackCommand(sid, id, id)
-        await server.deps.background.setCommandStream(sid, id, id)
-        server.deps.registry.liveIds.add(id)
-      }
-      const snapshot = () => server.deps.background.snapshot(sid, null)
-      // Commands settle through their owner; cancellation is an authoritative receipt outcome too.
-      if (outcome === 'cancelled') {
-        await server.deps.background.recordEvent(sid, { type: 'async_delegation', process_id: 'cancelled-unit', status: 'interrupted', goal: 'Cancelled work' }, '')
-      }
-      await server.deps.background.settleCommand(sid, 'one', outcome === 'failed' ? 'failed' : 'completed', 'Settled')
-      expect(await snapshot()).toMatchObject({ activity_phase: 'running' })
-      await server.deps.background.settleCommand(sid, 'two', 'completed', 'Settled')
-      expect(await snapshot()).toMatchObject({ activity_phase: outcome })
-    } finally { server.deps.registry.liveIds.clear(); server.deps.relay.stop(); await server.close() }
-  })
 })
 
 describe('relay activity of a running turn (TAL-874)', () => {

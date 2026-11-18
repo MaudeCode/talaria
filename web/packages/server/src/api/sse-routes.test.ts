@@ -1,4 +1,4 @@
-import { useJsonStorage } from '../test/storage.js'
+import { keepRecent, useJsonStorage } from '../test/storage.js'
 import * as fs from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import { join } from 'node:path'
@@ -209,7 +209,7 @@ function liveRun(s: TestServer, sid: string, streamId: string): StreamChannel {
 }
 
 it('a detail read and a stream attach read run journals only through async I/O, live or archived', async () => {
-  const s = server = await bootTestServer()
+  const s = server = await bootTestServer({ env: keepRecent(0) })
   const session = await s.deps.sessionStore.newSession()
   const sid = session.session_id
   const journal = s.deps.journal as JsonJournal
@@ -217,7 +217,7 @@ it('a detail read and a stream attach read run journals only through async I/O, 
   await archived.appendSseEvent('token', { text: 'past' })
   await archived.appendSseEvent('done', {})
   await archived.close()
-  expect((await journal.pruneSettled({ now: Date.now() / 1000 + 10, retentionSeconds: 1, keepRecent: 0 })).pruned).toBe(1)
+  expect((await journal.pruneSettled({ now: Date.now() / 1000 + 10, retentionSeconds: 1 })).pruned).toBe(1)
   const active = await journal.writer(sid, 'active')
   await active.appendSseEvent('token', { text: 'streaming' })
   const started = Date.now() / 1000

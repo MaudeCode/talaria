@@ -1,4 +1,4 @@
-import { testSessionDocuments, useJsonStorage } from '../test/storage.js'
+import { keepRecent, testSessionDocuments, useJsonStorage } from '../test/storage.js'
 import { jsonJournal } from '../test/storage.js'
 import { JsonJournal } from './storage/json-journal.js'
 import { JsonDocuments } from '../test/storage.js'
@@ -1507,14 +1507,14 @@ describe('run-journal retention sweep', () => {
   })
 
   it('never compacts a journal that gains a writer or changes while the sweep yields', async () => {
-    const journal = new JsonJournal(tempDir())
+    const journal = new JsonJournal(tempDir(), keepRecent(1))
     const paths = await Promise.all(['run0', 'run1', 'run2', 'run3', 'run4'].map(async (r, i) => (await writeRun(journal, 'sess', r, { mtime: old + i }))))
     const [activated, appended, replaced, pruned, newest] = paths as [string, string, string, string, string]
     let writer: Awaited<ReturnType<JsonJournal['writer']>> | null = null
     let pauses = 0
     try {
       const result = await journal.pruneSettled({
-        now: Date.now() / 1000, retentionSeconds: 14 * DAY, keepRecent: 1,
+        now: Date.now() / 1000, retentionSeconds: 14 * DAY,
         // One pause opens the session and one follows each of its five parsed journals; the last precedes compaction.
         pause: async () => {
           pauses += 1
@@ -1540,11 +1540,11 @@ describe('run-journal retention sweep', () => {
   })
 
   it('stops during the metadata pass before parsing any journal', async () => {
-    const journal = new JsonJournal(tempDir())
+    const journal = new JsonJournal(tempDir(), keepRecent(1))
     for (let r = 0; r < 6; r += 1) (await writeRun(journal, 'sess', `run${String(r)}`, { mtime: old + r }))
     const controller = new AbortController()
     // The abort lands on the next loop turn, while the sweep is listing and stat-ing the session's journals.
-    const result = await journal.pruneSettled({ now: Date.now() / 1000, retentionSeconds: 14 * DAY, keepRecent: 1, signal: controller.signal, pause: () => { setImmediate(() => { controller.abort() }); return Promise.resolve() } })
+    const result = await journal.pruneSettled({ now: Date.now() / 1000, retentionSeconds: 14 * DAY, signal: controller.signal, pause: () => { setImmediate(() => { controller.abort() }); return Promise.resolve() } })
     expect(result).toEqual({ examined: 6, terminal: 0, pruned: 0, bytes_reclaimed: 0, archives_removed: 0 })
   })
 })

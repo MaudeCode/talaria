@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BackgroundActivity, BackgroundTaskStore, backgroundLink, delegationReceipt, delegationStatus, dispatchedDelegationIds, eventReceipt, startsBackgroundWork, taskView } from './background-tasks.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { DocumentBackend } from './storage/backend.js'
+import { bootTestServer } from '../test/harness.js'
 
 const dirs: string[] = []
 const tempDir = (): string => { const d = mkdtempSync(join(tmpdir(), 'bg-tasks-')); dirs.push(d); return d }
@@ -434,4 +435,25 @@ describe('recent background sessions (TAL-1722)', () => {
     expect(await store.sessionIds(0)).toEqual([])
     expect(await store.sessionIds(0)).toEqual(['live'])
   })
+})
+
+it.each(['completed', 'failed', 'cancelled'] as const)('does not settle several commands until the final command settles, preserving %s', async (outcome) => {
+  const server = await bootTestServer()
+  try {
+    const sid = (await server.deps.sessionStore.newSession()).session_id
+    for (const id of ['one', 'two']) {
+      await server.deps.background.trackCommand(sid, id, id)
+      await server.deps.background.setCommandStream(sid, id, id)
+      server.deps.registry.liveIds.add(id)
+    }
+    const snapshot = () => server.deps.background.snapshot(sid, null)
+    // Commands settle through their owner; cancellation is an authoritative receipt outcome too.
+    if (outcome === 'cancelled') {
+      await server.deps.background.recordEvent(sid, { type: 'async_delegation', process_id: 'cancelled-unit', status: 'interrupted', goal: 'Cancelled work' }, '')
+    }
+    await server.deps.background.settleCommand(sid, 'one', outcome === 'failed' ? 'failed' : 'completed', 'Settled')
+    expect(await snapshot()).toMatchObject({ activity_phase: 'running' })
+    await server.deps.background.settleCommand(sid, 'two', 'completed', 'Settled')
+    expect(await snapshot()).toMatchObject({ activity_phase: outcome })
+  } finally { server.deps.registry.liveIds.clear(); await server.close() }
 })
