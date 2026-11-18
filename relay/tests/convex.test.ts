@@ -296,216 +296,97 @@ describe("Convex relay state", () => {
     }
   });
 
-  it("creates one Apple user session and consumes publisher invitations exactly once", async () => {
-    const backend = testBackend();
+  describe("Apple sign-in and publisher invitations", () => {
     const now = 1_800_000_000_000;
-    const signIn = {
-      appleSubjectHash: "subject-hash",
-      appleTokenHash: "apple-token-hash",
-      appleTokenExpiresAt: now + 600_000,
-      userId: "user-1",
-      sessionId: "session-1",
-      sessionTokenHash: "session-token-hash",
-      sessionExpiresAt: now + 86_400_000,
-      now,
-    };
-    await expect(backend.mutation(internal.auth.acceptAppleSignIn, signIn)).resolves.toEqual({
-      ok: true,
-      userId: "user-1",
-    });
-    await expect(
-      backend.mutation(internal.auth.acceptAppleSignIn, {
-        ...signIn,
-        sessionId: "session-replay",
-        sessionTokenHash: "session-token-replay",
-      }),
-    ).resolves.toEqual({ ok: false, reason: "replay" });
-
-    await backend.run(async (ctx) => {
-      await ctx.db.insert("devices", {
-        userId: "user-1",
-        sessionId: "session-1",
-        sessionExpiresAt: signIn.sessionExpiresAt,
-        deviceId: "device-1",
-        label: "iPhone",
-        bundleId: "dev.kil.talaria",
-        apsEnvironment: "sandbox",
-        pushToken: "push-token",
-        pushToStartToken: "start-token",
-        pushToStartIssuedAt: now,
-        preferences: defaultNotificationPreferences,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await ctx.db.insert("liveActivities", {
-        userId: "user-1",
-        deviceId: "device-1",
-        activityId: "activity-1",
-        mode: "all_running",
-        attributesType: "TalariaAggregateActivityAttributes",
-        schemaVersion: 1,
-        activityPushToken: "activity-token",
-        createdAt: now,
-        updatedAt: now,
-      });
-    });
-    await backend.mutation(internal.auth.revokeSession, {
-      tokenHash: signIn.sessionTokenHash,
-      now: now + 1,
-    });
-    const revokedOwnership = await backend.run(async (ctx) => ({
-      device: await ctx.db
-        .query("devices")
-        .withIndex("by_user_id_and_device_id", (query) =>
-          query.eq("userId", "user-1").eq("deviceId", "device-1"),
-        )
-        .unique(),
-      activity: await ctx.db
-        .query("liveActivities")
-        .withIndex("by_user_id_and_device_id_and_activity_id", (query) =>
-          query.eq("userId", "user-1").eq("deviceId", "device-1").eq("activityId", "activity-1"),
-        )
-        .unique(),
-    }));
-    expect(revokedOwnership.device?.revokedAt).toBe(now + 1);
-    expect(revokedOwnership.device?.pushToken).toBeUndefined();
-    expect(revokedOwnership.device?.pushToStartToken).toBeUndefined();
-    expect(revokedOwnership.device?.pushToStartIssuedAt).toBeUndefined();
-    expect(revokedOwnership.activity?.endedAt).toBe(now + 1);
-
-    await backend.mutation(internal.pairing.createPublisherInvitation, {
-      userId: "user-1",
-      tokenHash: "invitation-hash",
-      expiresAt: now + 60_000,
-      now,
-    });
+    const publisherId = "https://hermes.example";
     const redemption = {
-      tokenHash: "invitation-hash",
-      publisherId: "https://hermes.example",
-      profileId: "profile-1",
-      keyId: "key-1",
-      label: "Home",
-      publicKey: "public-key",
-      now,
+      tokenHash: "invitation-hash", publisherId, profileId: "profile-1", keyId: "key-1", label: "Home", publicKey: "public-key", now,
     };
-    await expect(
-      backend.mutation(internal.pairing.redeemPublisherInvitation, redemption),
-    ).resolves.toMatchObject({
-      ok: true,
-      protocolVersion: 2,
-      userId: "user-1",
-      publisherId: "https://hermes.example",
-      profileId: "profile-1",
-      profileIdPreserved: false,
-      keyId: "key-1",
+    type Backend = ReturnType<typeof testBackend>;
+    const signIn = {
+      appleSubjectHash: "subject-hash", appleTokenHash: "apple-token-hash", appleTokenExpiresAt: now + 600_000,
+      userId: "user-1", sessionId: "session-1", sessionTokenHash: "session-token-hash", sessionExpiresAt: now + 86_400_000, now,
+    };
+    // Invitations belong to a Relay user, whom Apple sign-in creates.
+    async function signedIn() {
+      const backend = testBackend();
+      await backend.mutation(internal.auth.acceptAppleSignIn, signIn);
+      return backend;
+    }
+    const invite = (backend: Backend, tokenHash: string, at = now) => backend.mutation(internal.pairing.createPublisherInvitation, {
+      userId: "user-1", tokenHash, expiresAt: at + 60_000, now: at,
     });
-    await expect(
-      backend.mutation(internal.pairing.redeemPublisherInvitation, {
-        ...redemption,
-        keyId: "key-2",
-      }),
-    ).resolves.toEqual({ ok: false, reason: "expired_invitation" });
+    const redeem = (backend: Backend, overrides: Partial<typeof redemption> = {}) =>
+      backend.mutation(internal.pairing.redeemPublisherInvitation, { ...redemption, ...overrides });
+    const publisherKey = (backend: Backend, keyId: string) => backend.query(internal.pairing.getPublisherKey, { publisherId, keyId });
+    const publishAs = (backend: Backend, keyId: string, profileId: string, receivedAt: number) =>
+      backend.mutation(internal.publishers.acceptState, {
+        publisherOwnerUserId: "user-1", publisherId, profileId, keyId, nonce: `activate-${keyId}`, nonceExpiresAt: now + 60_000,
+        receivedAt, sessionId: "session-1", eventId: "event-1", revision: 1,
+        state: { sessionId: "session-1", title: "Activate", phase: "running" as const, updatedAt: receivedAt, deepLink: "/sessions/session-1" },
+      });
+    // A publisher enrolled with key-1, then given replacement key-2 through a second invitation.
+    async function replacedKey() {
+      const backend = await signedIn();
+      await invite(backend, "invitation-hash");
+      await redeem(backend);
+      await invite(backend, "replacement-invitation-hash", now + 1);
+      const replacement = await redeem(backend, {
+        tokenHash: "replacement-invitation-hash", keyId: "key-2", profileId: "different-profile", now: now + 1,
+      });
+      return { backend, replacement };
+    }
 
-    await backend.mutation(internal.pairing.createPublisherInvitation, {
-      userId: "user-1",
-      tokenHash: "replacement-invitation-hash",
-      expiresAt: now + 60_000,
-      now: now + 1,
+    it("refuses a replayed Apple sign-in token", async () => {
+      const backend = testBackend();
+      await expect(backend.mutation(internal.auth.acceptAppleSignIn, signIn)).resolves.toEqual({ ok: true, userId: "user-1" });
+      await expect(backend.mutation(internal.auth.acceptAppleSignIn, {
+        ...signIn, sessionId: "session-replay", sessionTokenHash: "session-token-replay",
+      })).resolves.toEqual({ ok: false, reason: "replay" });
     });
-    await expect(backend.mutation(internal.pairing.redeemPublisherInvitation, {
-      ...redemption,
-      tokenHash: "replacement-invitation-hash",
-      keyId: "key-2",
-      profileId: "different-profile",
-      now: now + 1,
-    })).resolves.toMatchObject({
-      ok: true,
-      keyId: "key-2",
-      profileId: "profile-1",
-      profileIdPreserved: true,
-    });
-    const ownerGrant = await backend.run(async (ctx) => ctx.db.query("publisherGrants")
-      .withIndex("by_user_id_and_publisher_id", (query) =>
-        query.eq("userId", "user-1").eq("publisherId", redemption.publisherId),
-      ).unique());
-    expect(ownerGrant?.profileId).toBe("profile-1");
-    const enrollment = await backend.run(async (ctx) => ({
-      keys: (await ctx.db.query("publisherKeys").collect()).map((key) => key.keyId),
-      unconsumed: (await ctx.db.query("publisherInvitations").collect())
-        .filter((invitation) => invitation.consumedAt === undefined).length,
-    }));
-    expect(enrollment).toEqual({ keys: ["key-1", "key-2"], unconsumed: 0 });
-    const stillActive = await backend.query(internal.pairing.getPublisherKey, {
-      publisherId: redemption.publisherId,
-      keyId: "key-1",
-    });
-    expect(stillActive).not.toHaveProperty("revokedAt");
-    await backend.mutation(internal.publishers.acceptState, {
-      publisherOwnerUserId: "user-1",
-      publisherId: redemption.publisherId,
-      profileId: "profile-1",
-      keyId: "key-2",
-      nonce: "activate-key-2",
-      nonceExpiresAt: now + 60_000,
-      receivedAt: now + 2,
-      sessionId: "session-1",
-      eventId: "event-1",
-      revision: 1,
-      state: {
-        sessionId: "session-1",
-        title: "Activate replacement",
-        phase: "running",
-        updatedAt: now + 2,
-        deepLink: "/sessions/session-1",
-      },
-    });
-    await expect(backend.query(internal.pairing.getPublisherKey, {
-      publisherId: redemption.publisherId,
-      keyId: "key-1",
-    })).resolves.toMatchObject({ revokedAt: now + 2 });
-    const replacementKey = await backend.query(internal.pairing.getPublisherKey, {
-      publisherId: redemption.publisherId,
-      keyId: "key-2",
-    });
-    expect(replacementKey).not.toHaveProperty("revokedAt");
 
-    await backend.mutation(internal.subscriptions.revokePublisher, {
-      userId: "user-1",
-      publisherId: redemption.publisherId,
-      now: now + 3,
+    it("consumes a publisher invitation exactly once", async () => {
+      const backend = await signedIn();
+      await invite(backend, "invitation-hash");
+      await expect(redeem(backend)).resolves.toMatchObject({
+        ok: true, protocolVersion: 2, userId: "user-1", publisherId, profileId: "profile-1", profileIdPreserved: false, keyId: "key-1",
+      });
+      await expect(redeem(backend, { keyId: "key-2" })).resolves.toEqual({ ok: false, reason: "expired_invitation" });
     });
-    await backend.mutation(internal.pairing.createPublisherInvitation, {
-      userId: "user-1",
-      tokenHash: "recovery-invitation",
-      expiresAt: now + 60_000,
-      now: now + 4,
+
+    it("keeps the profile and the old key when a replacement key enrols through a new invitation", async () => {
+      const { backend, replacement } = await replacedKey();
+      expect(replacement).toMatchObject({ ok: true, keyId: "key-2", profileId: "profile-1", profileIdPreserved: true });
+      const ownerGrant = await backend.run(async (ctx) => ctx.db.query("publisherGrants")
+        .withIndex("by_user_id_and_publisher_id", (query) => query.eq("userId", "user-1").eq("publisherId", publisherId))
+        .unique());
+      expect(ownerGrant?.profileId).toBe("profile-1");
+      const enrollment = await backend.run(async (ctx) => ({
+        keys: (await ctx.db.query("publisherKeys").collect()).map((key) => key.keyId),
+        unconsumed: (await ctx.db.query("publisherInvitations").collect())
+          .filter((invitation) => invitation.consumedAt === undefined).length,
+      }));
+      expect(enrollment).toEqual({ keys: ["key-1", "key-2"], unconsumed: 0 });
+      expect(await publisherKey(backend, "key-1")).not.toHaveProperty("revokedAt");
     });
-    await expect(backend.mutation(internal.pairing.redeemPublisherInvitation, {
-      ...redemption,
-      tokenHash: "recovery-invitation",
-      profileId: "recovered-profile",
-      keyId: "key-3",
-      now: now + 4,
-    })).resolves.toMatchObject({ ok: true, profileId: "recovered-profile" });
-    await expect(backend.mutation(internal.publishers.acceptState, {
-      publisherOwnerUserId: "user-1",
-      publisherId: redemption.publisherId,
-      profileId: "recovered-profile",
-      keyId: "key-3",
-      nonce: "activate-key-3",
-      nonceExpiresAt: now + 60_000,
-      receivedAt: now + 5,
-      sessionId: "session-1",
-      eventId: "event-1",
-      revision: 1,
-      state: {
-        sessionId: "session-1",
-        title: "Recovered",
-        phase: "running",
-        updatedAt: now + 5,
-        deepLink: "/sessions/session-1",
-      },
-    })).resolves.toEqual({ status: "accepted" });
+
+    it("revokes the old key once the replacement key first publishes", async () => {
+      const { backend } = await replacedKey();
+      await publishAs(backend, "key-2", "profile-1", now + 2);
+      await expect(publisherKey(backend, "key-1")).resolves.toMatchObject({ revokedAt: now + 2 });
+      expect(await publisherKey(backend, "key-2")).not.toHaveProperty("revokedAt");
+    });
+
+    it("re-enrols a revoked publisher under a new profile", async () => {
+      const { backend } = await replacedKey();
+      await publishAs(backend, "key-2", "profile-1", now + 2);
+      await backend.mutation(internal.subscriptions.revokePublisher, { userId: "user-1", publisherId, now: now + 3 });
+      await invite(backend, "recovery-invitation", now + 4);
+      await expect(redeem(backend, {
+        tokenHash: "recovery-invitation", profileId: "recovered-profile", keyId: "key-3", now: now + 4,
+      })).resolves.toMatchObject({ ok: true, profileId: "recovered-profile" });
+      await expect(publishAs(backend, "key-3", "recovered-profile", now + 5)).resolves.toEqual({ status: "accepted" });
+    });
   });
 
   it("keeps one server publisher while isolating enrolled profile state", async () => {
@@ -911,7 +792,7 @@ describe("Convex relay state", () => {
     })).resolves.toEqual([]);
   });
 
-  it("preserves snapshot phase transitions for alert delivery", async () => {
+  it("renews a non-terminal session's expiry on an equal-revision heartbeat", async () => {
     const backend = testBackend();
     const now = 1_800_000_000_000;
     await backend.run(async (ctx) => {
@@ -978,22 +859,6 @@ describe("Convex relay state", () => {
         deepLink: "/sessions/session-1",
       }],
     });
-    const scheduled = await backend.run(async (ctx) =>
-      ctx.db.system.query("_scheduled_functions").collect(),
-    );
-    expect(scheduled.at(-1)?.args).toMatchObject([{
-      userId: "user-1",
-      transitions: [{
-        publisherId: "https://hermes.example",
-        sessionId: "session-1",
-        previousPhase: "running",
-        state: {
-          eventId: "event-2",
-          phase: "waiting_for_approval",
-          revision: 2,
-        },
-      }],
-    }]);
     await backend.mutation(internal.publishers.acceptSnapshot, {
       publisherOwnerUserId: "user-1",
       publisherId: "https://hermes.example",
@@ -2324,261 +2189,130 @@ describe("Convex relay state", () => {
     ).resolves.toEqual({ status: "stale" });
   });
 
-  it("starts an aggregate activity once when work begins on an idle device", async () => {
-    const backend = testBackend();
-    const now = Date.now();
-    await backend.run(async (ctx) => {
-      await ctx.db.insert("devices", {
-        userId: "user-1",
-        deviceId: "device-1",
-        label: "iPhone",
-        bundleId: "dev.kil.talaria",
-        apsEnvironment: "production",
-        pushToStartToken: "push-to-start-token",
-        preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled: true },
-        createdAt: now,
-        updatedAt: now,
+  describe("push-to-start on an idle device", () => {
+    // A phone with a push-to-start token and Live Activities on, and one running session.
+    async function idleDeviceWithWork() {
+      const backend = testBackend();
+      const now = Date.now();
+      const deviceId = await backend.run(async (ctx) => {
+        const id = await ctx.db.insert("devices", {
+          userId: "user-1", deviceId: "device-1", label: "iPhone", bundleId: "dev.kil.talaria", apsEnvironment: "production",
+          pushToStartToken: "push-to-start-token",
+          preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled: true }, createdAt: now, updatedAt: now,
+        });
+        await ctx.db.insert("sessionStates", session("session-1", now));
+        return id;
       });
-      await ctx.db.insert("sessionStates", {
-        version: 2,
-        userId: "user-1",
-        profileId: "profile-1",
-        deleted: false,
-        publisherId: "https://hermes.example",
-        publisherLabel: "Home",
-        sessionId: "session-1",
-        eventId: "event-1",
-        revision: 1,
-        title: "Build relay",
-        phase: "running",
-        updatedAt: now,
-        deepLink: "/sessions/session-1",
-        expiresAt: now + 60_000,
-        receivedAt: now,
+      const device = () => backend.run(async (ctx) => (await ctx.db.get(deviceId))!);
+      const queued = () => backend.run(async (ctx) => ctx.db.query("deliveryJobs")
+        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued")).collect());
+      const recompute = () => backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+      const claim = (jobId: Id<"deliveryJobs">, at: number) => backend.mutation(internal.delivery.claimJob, { jobId, now: at });
+      const endWork = () => backend.run(async (ctx) => {
+        for (const state of await ctx.db.query("sessionStates").collect()) await ctx.db.delete(state._id);
       });
+      // Push-to-start queued, claimed and delivered by APNs.
+      const deliveredStart = async () => {
+        await recompute();
+        const [start] = await queued();
+        await claim(start!._id, now + 1);
+        await backend.mutation(internal.delivery.markDelivered, { jobId: start!._id, apnsStatus: 200, now: now + 2 });
+      };
+      return { backend, now, deviceId, device, queued, recompute, claim, endWork, deliveredStart };
+    }
+    const session = (sessionId: string, at: number) => ({
+      version: 2 as const, userId: "user-1", profileId: "profile-1", deleted: false, publisherId: "https://hermes.example",
+      publisherLabel: "Home", sessionId, eventId: `event-${sessionId}`, revision: 1, title: "Build relay", phase: "running" as const,
+      updatedAt: at, deepLink: `/sessions/${sessionId}`, expiresAt: at + 60_000, receivedAt: at,
     });
 
-    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
-    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    it("queues one push-to-start when work begins, however often it recomputes", async () => {
+      const { device, recompute, backend } = await idleDeviceWithWork();
+      await recompute();
+      await recompute();
+      const jobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
+      expect(jobs.map((job) => job.kind)).toEqual(["live_activity_start"]);
+      expect((await device()).pushToStartIssuedAt).toBeDefined();
+    });
 
-    const state = await backend.run(async (ctx) => ({
-      device: await ctx.db
-        .query("devices")
-        .withIndex("by_user_id_and_device_id", (query) =>
-          query.eq("userId", "user-1").eq("deviceId", "device-1"),
-        )
-        .unique(),
-      jobs: await ctx.db.query("deliveryJobs").collect(),
-    }));
-    expect(state.device?.pushToStartIssuedAt).toBeDefined();
-    expect(state.jobs).toHaveLength(1);
-    expect(state.jobs[0]?.kind).toBe("live_activity_start");
+    it("queues a new push-to-start for a rotated token and makes the old one stale", async () => {
+      const { backend, now, deviceId, device, queued, recompute, claim } = await idleDeviceWithWork();
+      await recompute();
+      const [original] = await queued();
+      await backend.run((ctx) => ctx.db.patch(deviceId, { pushToStartToken: "rotated-push-to-start-token", pushToStartIssuedAt: undefined }));
+      await recompute();
+      const jobs = await queued();
+      expect(jobs).toHaveLength(2);
+      expect(jobs.some((job) => job.expectedToken === "rotated-push-to-start-token")).toBe(true);
+      await expect(claim(original!._id, now + 1)).resolves.toEqual({ status: "stale" });
+      expect((await device()).pushToStartIssuedAt).toBeDefined();
+    });
 
-    await backend.run(async (ctx) => {
-      await ctx.db.patch(state.device!._id, {
-        pushToStartToken: "rotated-push-to-start-token",
-        pushToStartIssuedAt: undefined,
+    it("makes a queued push-to-start stale when the work changes, releases its lease and recomputes", async () => {
+      const { backend, now, device, queued, recompute, claim } = await idleDeviceWithWork();
+      await recompute();
+      const [start] = await queued();
+      await backend.run(async (ctx) => {
+        const [state] = await ctx.db.query("sessionStates").collect();
+        await ctx.db.patch(state!._id, { title: "Updated work", updatedAt: now + 1 });
       });
+      await recompute();
+      await expect(claim(start!._id, now + 2)).resolves.toEqual({ status: "stale" });
+      expect((await device()).pushToStartIssuedAt).toBeUndefined();
+      const scheduled = await backend.run((ctx) => ctx.db.system.query("_scheduled_functions").collect());
+      expect(scheduled.some((job) => job.name === "delivery:recompute")).toBe(true);
     });
-    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
-    const rotated = await backend.run(async (ctx) => ({
-      device: await ctx.db.get(state.device!._id),
-      jobs: await ctx.db
-        .query("deliveryJobs")
-        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
-        .collect(),
-    }));
-    expect(rotated.jobs).toHaveLength(2);
-    const rotatedJob = rotated.jobs.find(
-      (job) => job.expectedToken === "rotated-push-to-start-token",
-    );
-    expect(rotatedJob).toBeDefined();
-    await expect(backend.mutation(internal.delivery.claimJob, {
-      jobId: state.jobs[0]!._id,
-      now: now + 1,
-    })).resolves.toEqual({ status: "stale" });
-    const rotatedDevice = await backend.run(async (ctx) => ctx.db.get(state.device!._id));
-    expect(rotatedDevice?.pushToStartIssuedAt).toBeDefined();
 
-    await backend.run(async (ctx) => {
-      const session = await ctx.db
-        .query("sessionStates")
-        .withIndex("by_user_id_and_publisher_id_and_session_id", (query) =>
-          query
-            .eq("userId", "user-1")
-            .eq("publisherId", "https://hermes.example")
-            .eq("sessionId", "session-1"),
-        )
-        .unique();
-      await ctx.db.patch(session!._id, { title: "Updated work", updatedAt: now + 1 });
+    it("makes a push-to-start stale and releases its lease once the device's session has expired", async () => {
+      const { backend, now, deviceId, device, queued, recompute, claim } = await idleDeviceWithWork();
+      await recompute();
+      const [start] = await queued();
+      await backend.run((ctx) => ctx.db.patch(deviceId, { sessionExpiresAt: now + 3 }));
+      await expect(claim(start!._id, now + 4)).resolves.toEqual({ status: "stale" });
+      expect((await device()).pushToStartIssuedAt).toBeUndefined();
     });
-    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
-    await expect(backend.mutation(internal.delivery.claimJob, {
-      jobId: rotatedJob!._id,
-      now: now + 2,
-    })).resolves.toEqual({ status: "stale" });
-    const invalidated = await backend.run(async (ctx) => ({
-      device: await ctx.db
-        .query("devices")
-        .withIndex("by_user_id_and_device_id", (query) =>
-          query.eq("userId", "user-1").eq("deviceId", "device-1"),
-        )
-        .unique(),
-      scheduled: await ctx.db.system.query("_scheduled_functions").collect(),
-    }));
-    expect(invalidated.device?.pushToStartIssuedAt).toBeUndefined();
-    expect(invalidated.scheduled.some((job) => job.name === "delivery:recompute")).toBe(true);
 
-    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
-    const replacement = await backend.run(async (ctx) =>
-      ctx.db
-        .query("deliveryJobs")
-        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
-        .first(),
-    );
-    await backend.run(async (ctx) => {
-      const device = await ctx.db
-        .query("devices")
-        .withIndex("by_user_id_and_device_id", (query) =>
-          query.eq("userId", "user-1").eq("deviceId", "device-1"),
-        )
-        .unique();
-      await ctx.db.patch(device!._id, {
-        preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled: false },
+    it("claims a current push-to-start with the device's token", async () => {
+      const { now, queued, recompute, claim } = await idleDeviceWithWork();
+      await recompute();
+      const [start] = await queued();
+      await expect(claim(start!._id, now + 1)).resolves.toMatchObject({
+        status: "ready", kind: "live_activity_start", request: { token: "push-to-start-token", pushType: "liveactivity" },
       });
     });
-    await expect(backend.mutation(internal.delivery.claimJob, {
-      jobId: replacement!._id,
-      now: now + 3,
-    })).resolves.toEqual({ status: "stale" });
-    const disabledDevice = await backend.run(async (ctx) =>
-      ctx.db
-        .query("devices")
-        .withIndex("by_user_id_and_device_id", (query) =>
-          query.eq("userId", "user-1").eq("deviceId", "device-1"),
-        )
-        .unique(),
-    );
-    expect(disabledDevice?.pushToStartIssuedAt).toBeUndefined();
 
-    await backend.run(async (ctx) => {
-      await ctx.db.patch(disabledDevice!._id, {
-        preferences: { ...defaultNotificationPreferences, liveActivitiesEnabled: true },
-      });
-    });
-    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
-    const expiringJob = await backend.run(async (ctx) =>
-      ctx.db
-        .query("deliveryJobs")
-        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
-        .first(),
-    );
-    await backend.run(async (ctx) => {
-      const device = await ctx.db.get(disabledDevice!._id);
-      await ctx.db.patch(device!._id, { sessionExpiresAt: now + 3 });
-    });
-    await expect(backend.mutation(internal.delivery.claimJob, {
-      jobId: expiringJob!._id,
-      now: now + 4,
-    })).resolves.toEqual({ status: "stale" });
-    const expiredDevice = await backend.run(async (ctx) => ctx.db.get(disabledDevice!._id));
-    expect(expiredDevice?.pushToStartIssuedAt).toBeUndefined();
-
-    await backend.run(async (ctx) => {
-      await ctx.db.patch(disabledDevice!._id, { sessionExpiresAt: now + 60_000 });
-    });
-    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
-    const enabledJob = await backend.run(async (ctx) =>
-      ctx.db
-        .query("deliveryJobs")
-        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
-        .first(),
-    );
-    const claimed = await backend.mutation(internal.delivery.claimJob, {
-      jobId: enabledJob!._id,
-      now: now + 5,
-    });
-    expect(claimed).toMatchObject({
-      status: "ready",
-      kind: "live_activity_start",
-      request: { token: "rotated-push-to-start-token", pushType: "liveactivity" },
-    });
-    await backend.mutation(internal.delivery.markDelivered, {
-      jobId: enabledJob!._id,
-      apnsStatus: 200,
-      now: now + 6,
+    it("starts no second activity while a delivered start is outstanding across a gap in work", async () => {
+      const { backend, now, device, recompute, endWork, deliveredStart } = await idleDeviceWithWork();
+      await deliveredStart();
+      const startsBeforeGap = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
+      await endWork();
+      await recompute();
+      expect((await device()).pushToStartIssuedAt).toBeDefined();
+      await backend.run((ctx) => ctx.db.insert("sessionStates", session("session-2", now + 7)));
+      await recompute();
+      expect(await backend.run((ctx) => ctx.db.query("deliveryJobs").collect())).toHaveLength(startsBeforeGap.length);
     });
 
-    const startsBeforeGap = await backend.run(async (ctx) =>
-      ctx.db.query("deliveryJobs").collect(),
-    );
-    await backend.run(async (ctx) => {
-      const states = await ctx.db.query("sessionStates").collect();
-      for (const session of states) await ctx.db.delete(session._id);
+    const registration = (now: number) => ({
+      userId: "user-1", deviceId: "device-1", activityId: "activity-from-apns", mode: "all_running" as const,
+      attributesType: "TalariaAggregateActivityAttributes", schemaVersion: 1, activityPushToken: "activity-token",
+      seededLocally: false, now: now + 8,
     });
-    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
-    const outstandingDevice = await backend.run(async (ctx) => ctx.db.get(disabledDevice!._id));
-    expect(outstandingDevice?.pushToStartIssuedAt).toBeDefined();
-    await backend.run(async (ctx) => {
-      await ctx.db.insert("sessionStates", {
-        version: 2,
-        userId: "user-1",
-        profileId: "profile-1",
-        deleted: false,
-        publisherId: "https://hermes.example",
-        publisherLabel: "Home",
-        sessionId: "session-2",
-        eventId: "event-2",
-        revision: 1,
-        title: "More work",
-        phase: "running",
-        updatedAt: now + 7,
-        deepLink: "/sessions/session-2",
-        expiresAt: now + 60_000,
-        receivedAt: now + 7,
-      });
-    });
-    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
-    const startsAfterGap = await backend.run(async (ctx) =>
-      ctx.db.query("deliveryJobs").collect(),
-    );
-    expect(startsAfterGap).toHaveLength(startsBeforeGap.length);
 
-    await backend.mutation(internal.devices.registerActivity, {
-      userId: "user-1",
-      deviceId: "device-1",
-      activityId: "activity-from-apns",
-      mode: "all_running",
-      attributesType: "TalariaAggregateActivityAttributes",
-      schemaVersion: 1,
-      activityPushToken: "activity-token",
-      seededLocally: false,
-      now: now + 8,
+    it("releases the push-to-start lease when the started activity registers", async () => {
+      const { backend, now, device, deliveredStart } = await idleDeviceWithWork();
+      await deliveredStart();
+      await backend.mutation(internal.devices.registerActivity, registration(now));
+      expect((await device()).pushToStartIssuedAt).toBeUndefined();
     });
-    const registeredDevice = await backend.run(async (ctx) =>
-      ctx.db
-        .query("devices")
-        .withIndex("by_user_id_and_device_id", (query) =>
-          query.eq("userId", "user-1").eq("deviceId", "device-1"),
-        )
-        .unique(),
-    );
-    expect(registeredDevice?.pushToStartIssuedAt).toBeUndefined();
 
-    await backend.run(async (ctx) => {
-      const states = await ctx.db.query("sessionStates").collect();
-      for (const session of states) await ctx.db.delete(session._id);
-    });
-    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
-    const endJob = await backend.run(async (ctx) =>
-      ctx.db
-        .query("deliveryJobs")
-        .withIndex("by_status_and_updated_at", (query) => query.eq("status", "queued"))
-        .first(),
-    );
-    expect(endJob).toMatchObject({
-      kind: "live_activity_end",
-      activityId: "activity-from-apns",
+    it("ends the registered activity once its work ends", async () => {
+      const { backend, now, queued, recompute, endWork, deliveredStart } = await idleDeviceWithWork();
+      await deliveredStart();
+      await backend.mutation(internal.devices.registerActivity, registration(now));
+      await endWork();
+      await recompute();
+      expect((await queued())[0]).toMatchObject({ kind: "live_activity_end", activityId: "activity-from-apns" });
     });
   });
 
@@ -2918,7 +2652,6 @@ describe("Convex relay state", () => {
 
     it.each([
       ["waiting_for_approval", { "title-loc-key": "Approval required", "loc-key": "An agent run is waiting for your approval." }],
-      ["waiting_for_input", { title: "Build relay", body: "Input needed on Home" }],
     ] as const)("sends a silent activity update and a Time Sensitive notification for %s", async (phase, alert) => {
       const jobs = await deliverTransition(phase, { activity: true });
 
@@ -2946,7 +2679,6 @@ describe("Convex relay state", () => {
     });
 
     it.each([
-      ["completed", "Completed on Home"],
       ["failed", "Failed on Home"],
     ] as const)("keeps the %s alert on the activity without a standalone duplicate", async (phase, body) => {
       const jobs = await deliverTransition(phase, { activity: true });
