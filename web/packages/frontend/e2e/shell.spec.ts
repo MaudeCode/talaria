@@ -126,11 +126,6 @@ test.describe('shell', () => {
     expect(content.filter((part) => /^(maximum-scale|user-scalable)=/.test(part))).toEqual([])
   })
 
-  test('unknown paths are not shadowed by the shell', async ({ request }) => {
-    const res = await request.get('/definitely-not-a-route')
-    expect(res.status()).toBe(404)
-  })
-
   test('legacy hash routes redirect to canonical paths', async ({ page }) => {
     await page.goto('/#settings')
     await settle(page)

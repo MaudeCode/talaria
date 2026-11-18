@@ -40,6 +40,8 @@ test('Files uses the native managed source and reconciles a save without workspa
     await page.getByRole('treeitem', { name: 'draft.txt' }).click()
     const editor = page.getByRole('textbox', { name: 'Preview' })
     await expect(editor).toHaveValue(text)
+    // A session buffer is not a host file: nothing offers to download it.
+    await expect(page.getByRole('link', { name: /^download/i })).toHaveCount(0)
     await editor.fill('Edited in Files.\n')
     await page.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(page.getByText('File saved', { exact: true })).toBeVisible()

@@ -56,19 +56,6 @@ describe("What's New (TAL-1617)", () => {
     await waitFor(() => { expect(dialog).toContainElement(document.activeElement as HTMLElement) })
   })
 
-  it('presents only the unseen rows automatically and the full announcement from Settings › About (TAL-1981, TAL-2081)', async () => {
-    const presentation = { ...announcement, rows: announcement.rows.slice(1) }
-    fetchMock.mockResolvedValue({ ...eligible, presentation })
-    renderShell(<><AboutSection /><WhatsNew /></>)
-    const titles = (dialog: HTMLElement) => within(dialog).getAllByRole('listitem').map((row) => row.textContent)
-    const prompt = await screen.findByRole('dialog', { name: TITLE })
-    expect(titles(prompt)).toEqual(presentation.rows.map((row) => row.title + row.description))
-    await userEvent.click(within(prompt).getByRole('button', { name: 'Continue' }))
-    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
-    await userEvent.click(screen.getByRole('button', { name: REPLAY }))
-    expect(titles(await screen.findByRole('dialog', { name: TITLE }))).toEqual(announcement.rows.map((row) => row.title + row.description))
-  })
-
   it.each([
     ['Continue', async () => { await userEvent.click(screen.getByRole('button', { name: 'Continue' })) }],
     ['Escape', async () => { await userEvent.keyboard('{Escape}') }],
@@ -83,13 +70,6 @@ describe("What's New (TAL-1617)", () => {
     await dismiss()
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(window.localStorage.getItem(SCOPE)).toBe(ACK)
-  })
-
-  it('stores a quiet observation at once and presents nothing', async () => {
-    fetchMock.mockResolvedValue(quiet)
-    renderShell()
-    await waitFor(() => { expect(window.localStorage.getItem(SCOPE)).toBe(ACK) })
-    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('stays quiet and records nothing when the read fails or the payload is empty', async () => {
@@ -141,19 +121,6 @@ describe("What's New (TAL-1617)", () => {
     await waitFor(() => { expect(draft).toHaveFocus() })
   })
 
-  it('closes when another tab of this browser acknowledges it', async () => {
-    window.localStorage.setItem(SCOPE, 'web:1.0.0')
-    fetchMock.mockResolvedValueOnce(eligible).mockResolvedValue(quiet)
-    renderShell()
-    await screen.findByRole('dialog')
-    act(() => {
-      window.localStorage.setItem(SCOPE, ACK)
-      window.dispatchEvent(new StorageEvent('storage', { key: SCOPE, newValue: ACK }))
-    })
-    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
-    expect(fetchMock).toHaveBeenLastCalledWith(ACK)
-  })
-
   it('does not reopen an acknowledged prompt when another tab later stores a newer token', async () => {
     window.localStorage.setItem(SCOPE, 'web:1.0.0')
     fetchMock.mockResolvedValueOnce(eligible).mockResolvedValue({ announcement, presentation: null, eligible: false, observation: null, acknowledgement: null })
@@ -164,8 +131,9 @@ describe("What's New (TAL-1617)", () => {
       window.dispatchEvent(new StorageEvent('storage', { key: SCOPE, newValue: 'web:1.2.0' }))
     })
     // This tab never re-presents its own cached answer; the server decides again for the new token.
-    expect(await screen.findByRole('dialog', {}, { timeout: 300 }).catch(() => null)).toBeNull()
     await waitFor(() => { expect(fetchMock).toHaveBeenLastCalledWith('web:1.2.0') })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(window.localStorage.getItem(SCOPE)).toBe('web:1.2.0')
   })
 

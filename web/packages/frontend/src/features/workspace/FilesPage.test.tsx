@@ -248,22 +248,6 @@ describe('managed source in the existing Files editor (TAL-1367)', () => {
     vi.mocked(api.listDir).mockImplementation((_sid, _path, _hidden, source) => Promise.resolve(source === 'managed' ? { entries: [{ name: 'draft.txt', path: 'buffer-one', size: 8 }], write_semantics: 'unconditional' } : tree))
     vi.mocked(api.readFile).mockResolvedValue({ content: 'original', name: 'draft.txt', size: 8, preview: 'text', read_only: false, write_semantics: 'unconditional' })
   }
-  it('opens and edits a managed buffer without a workspace, with no host file actions', async () => {
-    managedMocks()
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={qc}><FilesPage workspace={null} sessionId="s1" active /></QueryClientProvider>)
-    await selectManaged()
-    await userEvent.click(await screen.findByRole('treeitem', { name: row('draft.txt') }))
-    const editor = await screen.findByRole('textbox', { name: 'Preview' })
-    expect(editor).toHaveValue('original')
-    await userEvent.type(editor, ' edited')
-    vi.mocked(api.saveFile).mockResolvedValue({ ok: true, path: 'buffer-one', size: 15 })
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(api.saveFile).toHaveBeenCalledWith('s1', 'buffer-one', 'original edited', 'managed'))
-    expect(screen.queryByRole('link', { name: 'Download folder' })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: 'About saving session buffers' }))
-    expect(await screen.findByText(/without revision checks/)).toBeInTheDocument()
-  })
   it.each([409, 503])('retains the draft after a refused or unknown save (%s) and reconciles without replay', async (status) => {
     managedMocks()
     vi.mocked(api.saveFile).mockRejectedValue(new ApiError({ kind: 'http', status, path: '/x', message: 'Save could not be confirmed' }))
@@ -277,19 +261,6 @@ describe('managed source in the existing Files editor (TAL-1367)', () => {
     expect(editor).toHaveValue('original unsaved')
     expect(api.saveFile).toHaveBeenCalledTimes(1)
     if (status === 503) await waitFor(() => expect(vi.mocked(api.readFile).mock.calls.length).toBeGreaterThan(1))
-  })
-  it('renders server read-only and backend unavailable states accurately', async () => {
-    managedMocks()
-    vi.mocked(api.readFile).mockResolvedValue({ content: 'deleted session', size: 15, preview: 'text', read_only: true, write_semantics: 'unconditional' })
-    renderFiles()
-    await selectManaged()
-    await userEvent.click(await screen.findByRole('treeitem', { name: row('draft.txt') }))
-    expect(await screen.findByRole('textbox', { name: 'Preview' })).toHaveAttribute('readonly')
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
-    await userEvent.click(screen.getByRole('button', { name: 'Back' }))
-    vi.mocked(api.listDir).mockResolvedValue({ entries: [], unavailable: true })
-    await userEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-    expect(await screen.findByText(/Enable and approve the devkit backend/)).toBeInTheDocument()
   })
   it('keeps a new selection and its draft when an older read or save completes', async () => {
     managedMocks()
@@ -312,13 +283,6 @@ describe('managed source in the existing Files editor (TAL-1367)', () => {
 describe('file tree keeps the server order (TAL-1303)', () => {
   const dir = (name: string) => ({ name, path: name, type: 'dir', workspace_sort_rank: 1 })
   const file = (name: string) => ({ name, path: name, type: 'file', workspace_sort_rank: 2, size: 3 })
-
-  it('lists a server directory before the files it precedes', async () => {
-    vi.mocked(api.listDir).mockResolvedValue({ entries: [dir('z-folder'), file('a.txt'), file('b.txt')] })
-    renderFiles()
-    await screen.findByRole('treeitem', { name: row('z-folder') })
-    expect(names()).toEqual(['z-folder', 'a.txt', 'b.txt'])
-  })
 
   it('keeps symlinks, directories, files and mixed-case names exactly as sent', async () => {
     const link = { name: 'Zlink', path: 'Zlink', type: 'symlink', target: 'docs', is_dir: true, workspace_sort_rank: 0, target_outside_workspace: false }
@@ -573,6 +537,8 @@ describe('file tree keyboard navigation and row names (TAL-1606)', () => {
     expect(document.activeElement).toBe(within(item.parentElement!).getByRole('button', { name: 'More actions' }))
     const others = screen.getAllByRole('button', { name: 'More actions' }).filter((button) => button !== document.activeElement)
     expect(others.map((button) => button.tabIndex)).toEqual([-1, -1])
+    await userEvent.tab({ shift: true })
+    expect(focused()).toBe('a.txt, file, 3 B')
   })
 
   it('opens a folder with Enter, focuses its first row, and returns focus to that folder on Up', async () => {

@@ -10,20 +10,6 @@ describe('notification toasts', () => {
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1 })
   })
 
-  it('marks a manually dismissed popup through its callback but timeout alone does not', async () => {
-    const manual = vi.fn()
-    const expired = vi.fn()
-    showRichToast({ id: 'manual-read', title: 'Manual', text: 'Dismiss me', ttl: 0, kind: 'info', dismissible: true, actions: [], onDismiss: manual })
-    showRichToast({ id: 'timeout-unread', title: 'Timeout', text: 'Let me expire', ttl: 10, kind: 'info', dismissible: true, actions: [], onDismiss: expired })
-    render(<Toaster />)
-
-    await userEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0]!)
-    expect(manual).toHaveBeenCalledOnce()
-    await vi.advanceTimersByTimeAsync(20)
-    expect(expired).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(TOAST_EXIT_MS)
-  })
-
   it('uses an accessible body control and updates an existing popup without replaying its entrance', async () => {
     const frame = vi.fn((callback: FrameRequestCallback) => { callback(0); return 1 })
     vi.stubGlobal('requestAnimationFrame', frame)

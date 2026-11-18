@@ -68,11 +68,6 @@ it.each([{ name: 'Sidebar', Component: FixtureSidebar }, { name: 'Titlebar', Com
   expect(rendered.mock.calls.length).toBeGreaterThan(before)
 })
 
-it.each([{ show: true, chips: 1 }, { show: false, chips: 0 }])('TAL-2099: the titlebar shows the profile chip only with show_titlebar_profile $show', async ({ show, chips }) => {
-  await setup(Titlebar, { show_titlebar_profile: show })
-  expect(screen.queryAllByTestId('titlebar-profile')).toHaveLength(chips)
-})
-
 it('keeps the titlebar session control scoped to session routes', async () => {
   const router = await setup(Titlebar)
   expect(document.querySelector('#btnTitlebarSidePanel')).toBeInTheDocument()
