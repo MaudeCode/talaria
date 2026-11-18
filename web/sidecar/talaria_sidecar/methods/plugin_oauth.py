@@ -4,8 +4,8 @@
 helpers, mapped exactly as ``hermes auth status|logout <plugin>:<id>``. The sign-in is the ``oauth.*`` flow kind
 ``plugin:<key>:<id>``: the Agent's PKCE config, loopback listener, token request and grant store, with the waiting
 that ``auth_oauth_pkce_plugin.login`` does in a terminal run here so a flow can be cancelled, can expire, and can also
-finish from a pasted redirect address when the browser runs on another machine. The Agent's helpers are private, so
-each is checked by name: an Agent without any of them offers no status and no sign-in.
+finish from a pasted redirect address when the browser runs on another machine. The Agent's helpers are private; the
+compatibility probe (tests/plugin_oauth_probe.py) proves each supported release still has them.
 """
 
 from __future__ import annotations
@@ -26,36 +26,14 @@ from ..rpc import CallContext
 log = logging.getLogger("talaria_sidecar.plugin_oauth")
 
 PREFIX = "plugin:"
-_NEEDED = {
-    "plugin_oauth": ("_declared_clients", "_read_grant", "_write_grant", "_usable_grant", "_pkce_config", "plugin_key", "_installed_client", "_logout_key"),
-    "auth_oauth_pkce_plugin": ("validate_config", "_post_token", "_err"),
-    "auth_device_flow": ("_make_loopback_callback_handler", "_bind_loopback_callback_server", "_pkce_code_verifier", "_pkce_code_challenge"),
-    "plugins_cmd": ("_discover_all_plugins",),
-    "plugin_provider_requests": ("ProviderNotSignedIn",),
-}
+_MODULES = ("plugin_oauth", "auth_oauth_pkce_plugin", "auth_device_flow", "plugins_cmd", "plugin_provider_requests")
 
 
-def _agent() -> types.SimpleNamespace | None:
-    """The Agent modules this needs, or None when one of them or one of their helpers is missing."""
+def _agent() -> types.SimpleNamespace:
+    """The Agent modules this uses; every supported Agent release ships them."""
     import importlib
 
-    modules = {}
-    for name, attrs in _NEEDED.items():
-        try:
-            module = importlib.import_module(f"hermes_cli.{name}")
-        except ImportError:
-            return None
-        if not all(hasattr(module, attr) for attr in attrs):
-            return None
-        modules[name] = module
-    return types.SimpleNamespace(**modules)
-
-
-def _required() -> types.SimpleNamespace:
-    agent = _agent()
-    if agent is None:
-        raise RpcError("This Hermes Agent cannot sign in to plugin OAuth clients.", condition="oauth_unsupported")
-    return agent
+    return types.SimpleNamespace(**{name: importlib.import_module(f"hermes_cli.{name}") for name in _MODULES})
 
 
 def _hosts(client) -> dict:
@@ -76,8 +54,6 @@ def _state(agent: types.SimpleNamespace, client, key: str) -> str:
 def oauth_status() -> dict:
     """Every discovered plugin that declares OAuth clients, with each client's sign-in state."""
     agent = _agent()
-    if agent is None:
-        return {"supported": False, "plugins": []}
     rows = []
     for _name, _version, _desc, _source, plugin_dir, key in agent.plugins_cmd._discover_all_plugins():
         if not plugin_dir:
@@ -98,7 +74,7 @@ def oauth_logout(key: str, oauth_id: str) -> dict:
     """``hermes auth logout <plugin>:<id>``: removes the stored grant, which needs no valid manifest entry."""
     if not key or not oauth_id:
         raise InvalidParams("plugins.oauth_logout requires 'key' and 'id'")
-    agent = _required()
+    agent = _agent()
     grant = agent.plugin_oauth._logout_key(key, oauth_id)
     if grant is not None:
         agent.plugin_oauth._write_grant(grant, None)
@@ -120,7 +96,7 @@ def steps(provider: str):
 
 def _begin(plugin: str, oauth_id: str) -> tuple[dict, dict]:
     """Bind the loopback listener and build the authorize link as ``login`` does; runs under the flow's home."""
-    agent = _required()
+    agent = _agent()
     try:
         found = agent.plugin_oauth._installed_client(plugin, oauth_id)
     except ValueError as exc:

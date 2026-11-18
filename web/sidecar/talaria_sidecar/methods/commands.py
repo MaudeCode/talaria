@@ -424,11 +424,9 @@ def execute_agent_command(command: str, session_id: str = "", workspace: str = "
 
 
 def _invoke_plugin_handler(handler, arg: str, session_id: str):
-    """``handler(arg)`` plus the session context it declares, as every Agent surface calls it (v0.22.3+)."""
-    try:
-        from hermes_cli.plugin_command_dispatch import invoke_plugin_command
-    except ImportError:  # Delete this fallback once v0.22.3 is the oldest supported Agent.
-        return handler(arg)
+    """``handler(arg)`` plus the session context it declares, as every Agent surface calls it."""
+    from hermes_cli.plugin_command_dispatch import invoke_plugin_command
+
     return invoke_plugin_command(handler, arg, source=None, session_id=session_id, session_key=session_id, platform="webui")
 
 
@@ -570,81 +568,51 @@ def _clean_text(value, limit: int = 240) -> str:
 
 
 def _plugin_update_modules():
-    try:
-        from hermes_cli import plugins_cmd, plugins_transaction
-        from hermes_cli.plugins_cadence import cached_git_updates
-    except ImportError:
-        return None
+    from hermes_cli import plugins_cmd, plugins_transaction
+    from hermes_cli.plugins_cadence import cached_git_updates
+
     return plugins_cmd, plugins_transaction, cached_git_updates
 
 
 def _catalog_agent_module():
-    try:
-        from hermes_cli import plugins_cmd_catalog
-    except ImportError:
-        return None
+    from hermes_cli import plugins_cmd_catalog
+
     return plugins_cmd_catalog
 
 
 def _plugin_auto_update():
-    """The Agent's unattended-update module (v0.23.0+); ``None`` hides Web's switch and Update all on older Agents."""
-    if _plugin_update_modules() is None:
-        return None
-    try:
-        from hermes_cli import plugins_auto_update
-    except ImportError:
-        return None
+    """The Agent's unattended-update module: the auto-update switch, Update all and the one-updater lock."""
+    from hermes_cli import plugins_auto_update
+
     return plugins_auto_update
 
 
-def _require_plugin_auto_update():
-    auto = _plugin_auto_update()
-    if auto is None:
-        raise RpcError("This Hermes Agent cannot update plugins unattended", condition="plugin_update_unsupported")
-    return auto
-
-
 def _plugin_update_lock(target: pathlib.Path):
-    """The Agent's one-updater lock where it has one; a busy lock raises its ``PluginOperationError``, reported as a refusal."""
-    auto = _plugin_auto_update()
-    return auto.plugin_update_lock(target) if auto else contextlib.nullcontext()
+    """The Agent's one-updater lock; a busy lock raises its ``PluginOperationError``, reported as a refusal."""
+    return _plugin_auto_update().plugin_update_lock(target)
 
 
 def plugin_auto_update_state() -> dict:
-    auto = _plugin_auto_update()
-    if auto is None:
-        return {"supported": False, "auto_apply": False, "check_hours": 0}
-    return {"supported": True, **auto.auto_update_state()}
+    return {"supported": True, **_plugin_auto_update().auto_update_state()}
 
 
 def set_plugin_auto_update(enabled) -> dict:
     """The Agent writes ``plugins.auto_apply`` for the caller's profile, and refuses a managed config."""
     if not isinstance(enabled, bool):
         raise InvalidParams("plugins.auto_update_set requires a boolean enabled")
-    auto = _require_plugin_auto_update()
+    auto = _plugin_auto_update()
     try:
         return {"supported": True, **auto.set_auto_update(enabled)}
     except _plugin_update_modules()[0].PluginOperationError as exc:
         raise RpcError(str(exc), condition="plugin_update_refused") from exc
 
 
-def _plugin_enable_function():
-    """The Agent's dashboard enable/disable (v0.22.7+); ``None`` hides Web's per-plugin switch on older Agents."""
-    try:
-        from hermes_cli.plugins_cmd import dashboard_set_agent_plugin_enabled
-    except ImportError:
-        return None
-    return dashboard_set_agent_plugin_enabled
-
-
 def set_plugin_enabled(key: str, enabled) -> dict:
     """TAL-2133: the Agent resolves the key, runs its admission transaction and writes ``plugins.enabled``/``disabled``; Talaria never writes config."""
     if not key or not isinstance(enabled, bool):
         raise InvalidParams("plugins.set_enabled requires a key and boolean enabled")
-    set_enabled = _plugin_enable_function()
-    if set_enabled is None:
-        return {"supported": False}
     from hermes_cli.config import format_managed_message, is_managed
+    from hermes_cli.plugins_cmd import dashboard_set_agent_plugin_enabled as set_enabled
 
     # The Agent's config writer only prints its managed refusal, which would read as a successful write.
     if is_managed():
@@ -653,7 +621,7 @@ def set_plugin_enabled(key: str, enabled) -> dict:
 
     try:
         outcome = set_enabled(key, enabled=enabled)
-    except _toggle_refusals() as exc:  # v0.22.7 raises a recalled plugin's refusal instead of returning it
+    except _toggle_refusals() as exc:  # the Agent raises a recalled plugin's refusal instead of returning it
         outcome = {"ok": False, "error": str(exc)}
     if not outcome.get("ok"):
         return {"supported": True, "ok": False, "error": _clean_text(outcome.get("error"), 300) or f"Plugin {key!r} could not be changed"}
@@ -667,7 +635,7 @@ def set_plugin_enabled(key: str, enabled) -> dict:
 
 def update_all_plugins() -> dict:
     """The Agent's unattended batch: it moves nothing for a widened update, a caution scan or a ``--ref`` hold."""
-    outcome = _require_plugin_auto_update().update_all_unattended()
+    outcome = _plugin_auto_update().update_all_unattended()
     rows = [{"name": str(row["name"]), "status": row["status"], "detail": _clean_text(row["detail"], 300)} for row in outcome["results"]]
     rows += [{"name": str(row["name"]), "status": "skipped", "detail": _clean_text(row["reason"], 300)} for row in outcome["skipped"]]
     if any(row["status"] == "updated" for row in rows):
@@ -680,10 +648,7 @@ def update_plugin(key: str, accept_caution: bool, consent_token: str | None = No
     """The Agent owns Git staging, catalog re-pins, scan consent and publication, under the caller's profile scope."""
     if not key or not isinstance(accept_caution, bool) or (consent_token is not None and not isinstance(consent_token, str)):
         raise InvalidParams("plugins.update requires a key and boolean accept_caution")
-    modules = _plugin_update_modules()
-    if modules is None:
-        raise RpcError("This Hermes Agent cannot update plugins from Web", condition="plugin_update_unsupported")
-    pc, transaction, _cached = modules
+    pc, transaction, _cached = _plugin_update_modules()
     native = _catalog_agent_module()
     found = pc._find_plugin_entry(key)
     if found is None or not found[4]:
@@ -753,10 +718,10 @@ def update_plugin(key: str, accept_caution: bool, consent_token: str | None = No
     catalog_record = None
     try:
         with _plugin_update_lock(target):
-            catalog_record = native.catalog_install_record(target) if native else None
+            catalog_record = native.catalog_install_record(target)
             if catalog_record:
                 auto = _plugin_auto_update()
-                if auto and auto.held_with_ref(pc._read_install_metadata().get(target.name)):
+                if auto.held_with_ref(pc._read_install_metadata().get(target.name)):
                     raise pc.PluginOperationError(auto.HELD_WITH_REF.format(name=found[5]))
 
                 # The Agent's own accept_capabilities is a blanket yes; only the exact widening the user read can accept.
@@ -819,18 +784,13 @@ def plugin_visibility(selected_providers: dict) -> dict:
     from hermes_constants import get_hermes_home
 
     profile_plugins = (get_hermes_home() / "plugins").resolve()
-    modules = _plugin_update_modules()
-    updates = None
-    catalog_updates = {}
-    if modules:
-        from hermes_cli.plugins_provenance import read_sidecar_rows
+    from hermes_cli.plugins_provenance import read_sidecar_rows
 
-        from .plugin_catalog import catalog_updates as behind_catalog
-        records = read_sidecar_rows(get_hermes_home() / "plugins")
-        updates = modules[2](records)
-        catalog_updates = behind_catalog(records)
+    from .plugin_catalog import catalog_updates as behind_catalog
+    records = read_sidecar_rows(get_hermes_home() / "plugins")
+    updates = _plugin_update_modules()[2](records)
+    catalog_updates = behind_catalog(records)
     update_disabled = _update_disabled_reasons()
-    can_set_enabled = _plugin_enable_function() is not None
     rows = []
     for key, loaded in sorted((getattr(manager, "_plugins", {}) or {}).items(), key=lambda item: str(item[0])):
         manifest = getattr(loaded, "manifest", None)
@@ -863,18 +823,17 @@ def plugin_visibility(selected_providers: dict) -> dict:
         row["category"] = category
         row["source"] = "installed" if in_profile else "bundled"
         # TAL-2133: an exclusive backend is chosen through its category's provider setting, never this switch.
-        row["can_toggle"] = can_set_enabled and kind != "exclusive"
+        row["can_toggle"] = kind != "exclusive"
         if kind == "exclusive":
             if category:
                 row["is_active_provider"] = bool(selected) and slug == selected
         else:
             row["is_active_provider"] = kind == "model-provider" and enabled
-        if updates is not None:
-            revision = updates.get(installed.name) if in_profile and (installed / ".git").is_dir() else None
-            revision = revision or (catalog_updates.get(installed.name) if in_profile else None)
-            row["update_available"] = bool(revision)
-            if revision:
-                row["latest_revision"] = revision
+        revision = updates.get(installed.name) if in_profile and (installed / ".git").is_dir() else None
+        revision = revision or (catalog_updates.get(installed.name) if in_profile else None)
+        row["update_available"] = bool(revision)
+        if revision:
+            row["latest_revision"] = revision
         # The record may spell the plugin any way a plugins list can (pm.plugins_state.plugin_spellings).
         spellings = (plugin_key, plugin_key.rsplit("/", 1)[-1], name, pathlib.Path(str(getattr(manifest, "path", "") or "")).name)
         reason = next(filter(None, map(update_disabled.get, spellings)), "")
@@ -942,18 +901,14 @@ def _apply_plugin_mcp_settings(plugins_cmd, plugin_dir, key: str) -> str:
 
         manager = get_plugin_manager()
         manager.discover_and_load(force=False)
-        owners = getattr(manager, "_portable_mcp_server_plugins", None)
-        if owners is None:
-            return "restart_required"
+        owners = manager._portable_mcp_server_plugins
         native = (load_config_readonly() or {}).get("mcp_servers") or {}
         names = {name for name in names if owners.get(name) == key and name not in native}
         if not names:
             return "applied"
         from tools import mcp_tool_discovery as discovery
 
-        reconnect = getattr(discovery, "restart_mcp_servers_with_new_inputs", None)
-        if reconnect is None:
-            return "restart_required"
+        reconnect = discovery.restart_mcp_servers_with_new_inputs
         # Also exclude the explicit Reload MCP path. The native helper serializes settings-driven reconnects.
         with _RELOAD_MCP_LOCK:
             live = {row["name"] for row in discovery.get_mcp_status() if row["name"] in names and row.get("connected")}
@@ -970,8 +925,6 @@ def _apply_plugin_mcp_settings(plugins_cmd, plugin_dir, key: str) -> str:
             if any(status == "connecting" for status in statuses.values()) or any(name not in statuses for name in live | set(restarted)):
                 return "unknown"
         return "applied"
-    except ImportError:
-        return "restart_required"
     except Exception:  # noqa: BLE001
         # Persistence already succeeded. Neither expose launch inputs in an exception nor retry an uncertain reconnect.
         return "unknown"

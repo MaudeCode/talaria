@@ -15,6 +15,6 @@ def test_native_catalog_install(tmp_path: Path):
     assert payload is not None, 'Native probe did not publish typed evidence'
     outputs = json.loads(payload)
     assert validate(outputs['catalog'], load_schema('plugins.catalog')) == []
-    if outputs['catalog']['supported']:
-        for key in ('review', 'blocked', 'installed'):
-            assert validate(outputs[key], load_schema('plugins.install')) == []
+    assert outputs['catalog']['supported'] is True
+    for key in ('review', 'blocked', 'installed'):
+        assert validate(outputs[key], load_schema('plugins.install')) == []

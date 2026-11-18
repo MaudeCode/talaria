@@ -60,11 +60,9 @@ def _requirements(entry):
 
 
 def _held(record):
-    """An install the user put on a commit with ``--ref`` (Agent v0.23.0+): only naming it in a terminal moves it."""
-    try:
-        from hermes_cli.plugins_auto_update import held_with_ref
-    except ImportError:
-        return False
+    """An install the user put on a commit with ``--ref``: only naming it in a terminal moves it."""
+    from hermes_cli.plugins_auto_update import held_with_ref
+
     return held_with_ref(record)
 
 

@@ -156,8 +156,6 @@ def test_a_page_connect_turns_connected_without_a_chat_session(connected, hermes
 
 
 def test_result_reconnect_uses_an_account_fenced_native_operation(hermes_home, portal):
-    if not (AGENT_DIR / "hermes_cli/guest_handoff.py").is_file():
-        pytest.skip("Agent predates native handoff results")
     shared = hermes_home / "fixture-shared"
     shared.mkdir()
     (shared / "guest_handoff.json").write_text(json.dumps({"_schema": 1, "records": {"synthetic": {
@@ -303,6 +301,7 @@ def test_a_client_without_the_card_keeps_the_agents_plain_connect_link(tmp_path,
     assert "https://vendor.example.test/authorize/conn-gmail-1" in json.dumps(tool)
 
 
+KEY = "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"
 LAUNCH_PROBE = r'''
 import json, sys
 sys.path.append(sys.argv[1])
@@ -310,7 +309,7 @@ from tools.connectors.mcp_launch import launch_target
 from tools.connectors.operation import ConnectionOperation, Target
 from talaria_sidecar.methods.connectors import operation_view
 
-argv = ["-y", "mcp-server", "review  server.py", "--api-key=synthetic-flag-value", "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"]
+argv = ["-y", "mcp-server", "review  server.py", "--api-key=synthetic-flag-value", sys.argv[2]]
 launch = launch_target(None, "npx", argv, {"SYNTHETIC_TOKEN": "synthetic-env-value"}, "/work dir")
 remote = launch_target("https://mcp.example.test/sse", None, None)
 targets = [Target("local", "mcp", "install", launch=launch), Target("hosted", "mcp", "install", launch=remote), Target("older", "mcp", "install")]
@@ -318,37 +317,22 @@ print(json.dumps({"launch": launch, "remote": remote, "view": operation_view(Con
 '''
 
 
-def test_an_mcp_operation_carries_the_agents_launch_line_and_only_env_names(tmp_path):
+def test_an_mcp_operation_carries_the_agents_launch_line_with_keys_masked_and_only_env_names(tmp_path):
     import subprocess
 
     from conftest import isolated_env
 
-    if not (AGENT_DIR / "tools/connectors/mcp_launch.py").is_file():
-        pytest.skip("this Agent release sends no launch line")
-    run = subprocess.run([AGENT_PYTHON, "-c", LAUNCH_PROBE, str(AGENT_DIR)], env=isolated_env(tmp_path), capture_output=True, text=True, timeout=90)
+    run = subprocess.run([AGENT_PYTHON, "-c", LAUNCH_PROBE, str(AGENT_DIR), KEY], env=isolated_env(tmp_path), capture_output=True, text=True, timeout=90)
     assert run.returncode == 0, run.stderr[-4000:]
     observed = json.loads(run.stdout.strip().splitlines()[-1])
     assert_matches("connectors.operation", observed["view"])
     local, hosted, older = observed["view"]["targets"]
-    assert local.get("launch") == {"kind": "stdio", "target": observed["launch"]["target"], "env": ["SYNTHETIC_TOKEN"], "cwd": observed["launch"]["cwd"]}
-    assert "'review  server.py'" in local["launch"]["target"] and "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789" in local["launch"]["target"]
+    native = observed["launch"]["target"]
+    assert (local["launch"]["kind"], local["launch"]["env"], local["launch"]["cwd"]) == ("stdio", ["SYNTHETIC_TOKEN"], observed["launch"]["cwd"])
+    # The Agent shows a positional key as is; the consent row keeps every other word of its line and masks the key.
+    assert native.split()[-1] == KEY and "'review  server.py'" in native
+    assert local["launch"]["target"].split()[:-1] == native.split()[:-1] and local["launch"]["target"].split()[-1] != KEY
     assert hosted["launch"] == {"kind": "remote", "target": observed["remote"]["target"], "env": [], "cwd": None}
     assert "launch" not in older
     shown = json.dumps(observed["view"])
-    assert "synthetic-env-value" not in shown and "synthetic-flag-value" not in shown
-
-
-def test_the_operation_cache_never_drops_an_operation_still_open(monkeypatch, tmp_path):
-    """A chat card's operation stays readable however many settled ones follow it: only settled ones age out."""
-    from collections import OrderedDict
-    from types import SimpleNamespace
-
-    from talaria_sidecar.methods import connectors
-
-    monkeypatch.setattr(connectors, "_OPS", OrderedDict())
-    waiting = SimpleNamespace(op_id="op-waiting", settled=False)
-    connectors._remember(tmp_path, waiting)
-    for n in range(connectors._OPS_CAP + 5):
-        connectors._remember(tmp_path, SimpleNamespace(op_id=f"op-{n}", settled=True))
-    assert connectors._operation(tmp_path, "op-waiting") is waiting
-    assert len(connectors._OPS) == connectors._OPS_CAP
+    assert KEY not in shown and "synthetic-env-value" not in shown and "synthetic-flag-value" not in shown

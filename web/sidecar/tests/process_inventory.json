@@ -52,7 +52,7 @@
     },
     "tests/test_connector_offer_compatibility.py::test_native_connector_offer_schedule_and_claim_once": {
       "layer": "compatibility",
-      "reason": "Real installed native offer scheduling, sighting helper and file-locked claim-once across concurrent callers, with disposable records and a controlled clock; an isolated Agent interpreter verifies older-release absence without importing Agent modules into the fast suite. No network or real identity is used.",
+      "reason": "Real installed hermes_cli.free_tier_offer scheduling, note_connected_apps_seen and file-locked claim_offer across 8 concurrent callers, with disposable records and a controlled clock. No network or real identity is used.",
       "cases": [
         ""
       ]
@@ -983,70 +983,63 @@
     },
     "tests/test_connectors.py::test_catalog_accounts_and_remove_round_trip": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: catalog accounts and remove round trip. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent PortalConnectorClient (tools.connectors.portal) maps the synthetic portal's catalog and accounts, and its delete_account turns a second remove into connection_not_found; a fake client cannot prove the installed client's wire mapping. Synthetic portal on loopback.",
       "cases": [
         ""
       ]
     },
     "tests/test_connectors.py::test_tools_list_and_unknown_connector": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: tools list and unknown connector. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent tools cache (tools.connectors.portal.tools_cache.read_tools) lists a connector's tools and turns an unknown slug into connector_not_found against the synthetic portal.",
       "cases": [
         ""
       ]
     },
     "tests/test_connectors.py::test_policy_writes_and_a_stale_revision_conflicts": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: policy writes and a stale revision conflicts. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent policy composers (tools.connectors.portal.policy compose_connector_write and compose_tools_write) build the member-layer bodies, and the portal client's revision check must turn a stale expectedRevision into policy_conflict.",
       "cases": [
         ""
       ]
     },
     "tests/test_connectors.py::test_a_page_connect_turns_connected_without_a_chat_session": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a page connect turns connected without a chat session. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent ConnectionOperation, account operation start and drive_operation thread settle a page connect to connected without a chat session, and refuse continue once settled. Synthetic portal and gateway on loopback.",
       "cases": [
         ""
       ]
     },
     "tests/test_connectors.py::test_skip_ends_a_page_connect": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: skip ends a page connect. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent ConnectionOperation.respond settles a skipped page-connect target as skipped; Talaria maps only an unknown operation id.",
       "cases": [
         ""
       ]
     },
     "tests/test_connectors.py::test_connectors_turned_off_close_every_page_action": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: connectors turned off close every page action. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent connectors_available reads tools.connectors.enabled from the profile's config.yaml; when it is false every page action must refuse with connectors_unavailable.",
       "cases": [
         ""
       ]
     },
     "tests/test_connectors.py::test_a_chat_connect_opens_the_card_frame_and_continue_returns_the_tool": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a chat connect opens the card frame and continue returns the tool. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent manage_connections tool, given a connection_callback, emits the card frame and blocks until continue; the sidecar chat path must forward that frame and return the tool's settled result. A fake model loop stands in for the provider.",
       "cases": [
         ""
       ]
     },
     "tests/test_connectors.py::test_a_client_without_the_card_keeps_the_agents_plain_connect_link": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a client without the card keeps the agents plain connect link. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent manage_connections tool without a card callback answers at once with the vendor's plain connect link; the sidecar must not wait on a card the client never draws.",
       "cases": [
         ""
       ]
     },
-    "tests/test_connectors.py::test_an_mcp_operation_carries_the_agents_launch_line_and_only_env_names": {
+    "tests/test_connectors.py::test_an_mcp_operation_carries_the_agents_launch_line_with_keys_masked_and_only_env_names": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the real installed release's ConnectionOperation and launch scrubber produce the consent line the sidecar view must carry word for word, with env names and never env values. All values are synthetic; nothing runs and no network is used.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_connectors.py::test_the_operation_cache_never_drops_an_operation_still_open": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the operation cache never drops an operation still open. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent launch_target scrubber and ConnectionOperation snapshot produce the MCP consent line; the sidecar view must keep its other words and env names, mask a positional key the Agent shows with the Agent's own agent.redact patterns, and never carry env values. All values are synthetic; nothing runs and no network is used.",
       "cases": [
         ""
       ]
@@ -1796,7 +1789,7 @@
     },
     "tests/test_plugin_host_isolation.py::test_each_profiles_plugin_lists_and_runs_its_command_in_its_own_scope": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: each profiles plugin lists and runs its command in its own scope. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent plugin manager and hermes_cli.plugin_host child list and run each profile's own plugin command under in_process and host isolation, with the host child's pid and HERMES_HOME scoped to that profile.",
       "cases": [
         "[in_process]",
         "[host]"
@@ -1804,28 +1797,28 @@
     },
     "tests/test_plugin_host_isolation.py::test_isolation_survey_reports_each_profiles_mode_and_installed_plugins_without_loading_them": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: isolation survey reports each profiles mode and installed plugins without loading them. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent hermes_cli.plugin_isolation mode and manifest discovery report each profile's isolation mode and installed plugins without importing plugin code.",
       "cases": [
         ""
       ]
     },
     "tests/test_plugin_host_isolation.py::test_plugin_command_runs_under_the_invoking_chats_session_binding": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: plugin command runs under the invoking chats session binding. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent gateway.session_context and agent.runtime_cwd bindings must hold a chat's session id and workspace while a plugin command from that chat runs.",
       "cases": [
         ""
       ]
     },
     "tests/test_plugin_host_isolation.py::test_web_commands_pass_session_context_to_plugins_and_fire_pre_command": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: Web commands pass session context to plugins and fire pre_command. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent hermes_cli.plugin_command_dispatch.invoke_plugin_command passes session context to context-aware handlers, and the Agent fires pre_command with its own payload fields for plugin and built-in commands.",
       "cases": [
         ""
       ]
     },
     "tests/test_plugin_providers.py::test_installed_plugin_providers_report_identity_setup_and_models": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: installed plugin providers report identity setup and models. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent providers registry, per-home provider layers and plugin discovery give this profile's model-provider plugins their identity, setup state, aliases and sanitized paths, and keep a named profile's same-id plugin its own, under in_process and host isolation. Synthetic CLIs are never run.",
       "cases": [
         "[in_process]",
         "[host]"
@@ -1833,7 +1826,7 @@
     },
     "tests/test_plugin_providers.py::test_a_named_profiles_plugin_reads_the_same_whichever_profile_lists_first": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a named profiles plugin reads the same whichever profile lists first. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent per-home provider layer imports a named profile's plugin the same whether the launch or the named profile lists first, for flat and model-providers layouts under both isolation modes.",
       "cases": [
         "[flat-in_process]",
         "[flat-host]",
@@ -1850,7 +1843,7 @@
     },
     "tests/test_plugin_providers.py::test_hosted_plugins_with_a_shared_provider_id_are_not_attributed_by_name": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: hosted plugins with a shared provider id are not attributed by name. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent hermes_cli.plugin_host_profiles.load_hosted_profiles over two hosted plugins registering one provider id: neither root may be attributed by name, including a disabled or manifestless winner.",
       "cases": [
         "[both-enabled]",
         "[disabled-winner]",
@@ -1866,7 +1859,7 @@
     },
     "tests/test_plugin_providers.py::test_an_oauth_plugin_is_ready_only_once_the_agent_holds_a_sign_in": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an oauth plugin is ready only once the agent holds a sign in. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent credential pool (hermes_cli.auth) decides when an oauth_external or oauth_device_code plugin provider reads ready: needs_setup until the Agent holds a live or refreshable sign-in. Synthetic credentials only.",
       "cases": [
         "[oauth_external]",
         "[oauth_device_code]"
@@ -1896,35 +1889,35 @@
     },
     "tests/test_plugin_oauth.py::test_plugin_oauth_sign_in_status_and_sign_out": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a plugin-declared OAuth client signs in through the Agent's own PKCE helpers, loopback listener, token request (real TLS verification against a test CA) and grant store, and the Agent's CLI status reads the result. Uses the real installed release, not a fabricated API response.",
+      "reason": "A plugin-declared OAuth client signs in through the real Agent hermes_cli.plugin_oauth helpers, auth_oauth_pkce_plugin token request (real TLS verification against a test CA), auth_device_flow loopback listener and grant store, and the Agent's own CLI status reads the result. Loopback IdP and disposable home only.",
       "cases": [
         ""
       ]
     },
     "tests/test_plugin_settings.py::test_plugin_settings_round_trip_and_keep_secrets_out_of_config": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: plugin settings round trip and keep secrets out of config. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent plugin config_schema reader and writer (plugin_settings_fields, save_plugin_settings) map field types, name each secret's env var and keep secret values out of config.yaml.",
       "cases": [
         ""
       ]
     },
     "tests/test_plugin_settings.py::test_managed_install_refuses_plugin_settings": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: managed install refuses plugin settings. Uses the real installed release, not a fabricated API response.",
+      "reason": "On a managed install the real Agent settings writer raises PermissionError, which the sidecar must report as plugin_settings_managed without writing.",
       "cases": [
         ""
       ]
     },
     "tests/test_plugin_settings.py::test_unknown_plugin_is_not_found": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: unknown plugin is not found. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent _find_plugin_entry returns None for an unknown plugin key, which the sidecar must report as plugin_not_found.",
       "cases": [
         ""
       ]
     },
     "tests/test_plugin_settings.py::test_secret_mapping_is_checked_before_anything_is_written": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: secret mapping is checked before anything is written. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent plugin_settings_fields decides each field's secret env name; a stale or non-secret mapping must be refused before the Agent writes anything.",
       "cases": [
         ""
       ]
@@ -2988,7 +2981,7 @@
     },
     "tests/test_dashboard_host_compat.py::test_native_dashboard_host_profile_and_request_admission": {
       "layer": "compatibility",
-      "reason": "Actual supported-Agent dashboard discovery, verified-source loading with original module/resource location, per-profile child-host execution and concurrent request-local authentication on one cached plugin app. Synthetic homes/plugins only; older Agents must fail closed. These native host and admission properties cannot be proved by boundary fakes.",
+      "reason": "Actual supported-Agent dashboard discovery (web_server_plugin_profiles), verified-source loading with original module/resource location, per-profile hermes_cli.plugin_host child execution and concurrent request-local authentication on one cached plugin app. Synthetic homes/plugins only. These native host and admission properties cannot be proved by boundary fakes.",
       "cases": [
         ""
       ]
@@ -3002,7 +2995,7 @@
     },
     "tests/test_mcp_events.py::test_native_mcp_events_utilities_consent_and_subscription_state": {
       "layer": "compatibility",
-      "reason": "Installed Agent MCP events owner (TAL-1510): real discovery against a test-owned stub stdio server registers the event utilities without an advertised capability, they dispatch through the native consent gate with a synthetic answer, and native route/grant writes drive subscribe, refresh, lapse and revoke observations. No public endpoint, webhook delivery or external subscription; older Agents must report unsupported. Boundary fakes cannot establish native API compatibility.",
+      "reason": "Installed Agent MCP events owner (TAL-1510): real discovery against a test-owned stub stdio server registers the event utilities without an advertised capability, they dispatch through the native consent gate with a synthetic answer, and native route/grant writes drive subscribe, refresh, lapse and revoke observations. No public endpoint, webhook delivery or external subscription. Boundary fakes cannot establish native API compatibility.",
       "cases": [
         ""
       ]
@@ -3016,7 +3009,7 @@
     },
     "tests/test_plugin_choices.py::test_real_plugin_command_choice_round_trip": {
       "layer": "compatibility",
-      "reason": "Real installed Agent plugin registration, dispatch and ask_choice must round-trip through concurrent stdio commands.exec/clarify.respond with native private-value mapping and old-Agent/async fallback. One disposable sidecar isolates native imports and proves the blocked handler does not block its reply transport; no provider or account.",
+      "reason": "Real installed Agent plugin registration, dispatch and hermes_cli.plugin_choices.ask_choice must round-trip through concurrent stdio commands.exec/clarify.respond with native private-value mapping and the async-handler fallback. One disposable sidecar isolates native imports and proves the blocked handler does not block its reply transport; no provider or account.",
       "cases": [
         ""
       ]
@@ -3041,7 +3034,7 @@
     },
     "tests/test_plugin_providers.py::test_provider_device_login_hooks_save_only_in_the_starting_profile": {
       "layer": "compatibility",
-      "reason": "Supported-Agent provider hooks and profile ownership: a disposable installed plugin invokes the real hook API and saves in its own profile under both isolation modes. Synthetic tests own loop timing and cancellation. No network or real credential.",
+      "reason": "Supported-Agent provider hooks and profile ownership: a disposable installed plugin runs the real device-login hook API and saves only in the profile that started it, under both isolation modes; the test polls the saved record under one 10 s ceiling. No network or real credential.",
       "cases": [
         "[in_process]",
         "[host]"

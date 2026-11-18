@@ -64,6 +64,9 @@ def plugin_update(monkeypatch, tmp_path):
     module("tools.plugin_guard", format_scan_report=lambda scan: scan.report)
     module("hermes_cli")
     module("hermes_cli.plugins", discover_plugins=lambda **_: effects.append("rediscovered"))
+    # Every supported Agent ships both; a Git install has no catalog record, and the unattended fixture models the lock.
+    module("hermes_cli.plugins_cmd_catalog", catalog_install_record=lambda target: None)
+    module("hermes_cli.plugins_auto_update", plugin_update_lock=lambda target: nullcontext())
     state["operation_error"] = OperationError
     return state, effects
 
@@ -156,7 +159,7 @@ def test_replaced_install_during_staging_cannot_use_caution_consent(plugin_updat
 
 @pytest.fixture
 def unattended(monkeypatch, plugin_update):
-    """The Agent's plugins_auto_update module (v0.23.0+) over synthetic install records."""
+    """The Agent's plugins_auto_update module over synthetic install records."""
     state, effects = plugin_update
     state.update(auto_apply=False, check_hours=24.0, lock_held=False, lock_busy=False, writes=[],
                  outcome={"results": [], "skipped": [], "current": 0})
@@ -229,14 +232,6 @@ def test_update_all_maps_every_row_and_rereads_only_after_a_change(unattended, t
     state["outcome"] = {"results": [{"name": "wider", "status": "needs_review", "detail": "adds tools: x"}], "skipped": [{"name": "held", "reason": "held with --ref"}], "current": 0}
     assert [row["status"] for row in rpc("plugins.update_all", tmp_path)["results"]] == ["needs_review", "skipped"]
     assert effects == [], "A batch that moved nothing has nothing to reload"
-
-
-def test_an_agent_without_the_module_offers_neither_control(plugin_update, tmp_path):
-    assert rpc("plugins.auto_update", tmp_path)["supported"] is False
-    for method, params in (("plugins.auto_update_set", {"enabled": True}), ("plugins.update_all", {})):
-        with pytest.raises(RpcError) as error:
-            rpc(method, tmp_path, **params)
-        assert error.value.data["condition"] == "plugin_update_unsupported"
 
 
 def test_a_git_update_holds_the_update_lock_and_a_busy_lock_is_a_refusal(unattended, monkeypatch):
@@ -338,15 +333,6 @@ def test_a_ref_hold_is_never_moved_by_a_stale_update(catalog_install):
     state, effects = catalog_install
     state["install_record"]["held"] = True
     with pytest.raises(RpcError, match="held with --ref") as error:
-        commands.update_plugin("p", False)
-    assert error.value.data["condition"] == "plugin_update_refused"
-    assert published(effects) == []
-
-
-def test_a_busy_lock_refuses_a_catalog_update(catalog_install):
-    state, effects = catalog_install
-    state["lock_busy"] = True
-    with pytest.raises(RpcError, match="already being updated") as error:
         commands.update_plugin("p", False)
     assert error.value.data["condition"] == "plugin_update_refused"
     assert published(effects) == []

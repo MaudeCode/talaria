@@ -3,8 +3,57 @@
 from __future__ import annotations
 
 import pathlib
+import sys
+from types import ModuleType
+
+import pytest
 
 from conftest import SidecarProcess, load_schema, requires_agent, validate
+from talaria_sidecar.errors import RpcError
+from talaria_sidecar.methods import commands
+
+
+@pytest.fixture
+def agent(monkeypatch):
+    """The Agent modules ``set_plugin_enabled`` reaches, recording every writer and rediscovery call."""
+    state = {"managed": False, "refusal": None, "calls": []}
+
+    class PluginOperationError(Exception):
+        pass
+
+    def set_enabled(key, *, enabled):
+        state["calls"].append(("set", key, enabled))
+        if state["refusal"]:
+            raise PluginOperationError(state["refusal"])
+        return {"ok": True, "name": key}
+
+    modules = {
+        "hermes_cli": {},
+        "hermes_cli.plugins_cmd": {"dashboard_set_agent_plugin_enabled": set_enabled, "PluginOperationError": PluginOperationError},
+        "hermes_cli.plugins_admission": {},
+        "hermes_cli.config": {"is_managed": lambda: state["managed"], "format_managed_message": lambda action: f"Managed install: cannot {action}."},
+        "hermes_cli.plugins": {"discover_plugins": lambda force: state["calls"].append(("discover", force))},
+    }
+    for name, values in modules.items():
+        module = ModuleType(name)
+        module.__dict__.update(values)
+        monkeypatch.setitem(sys.modules, name, module)
+    return state
+
+
+def test_a_managed_install_refuses_the_switch_before_the_agent_writes(agent):
+    agent["managed"] = True
+    with pytest.raises(RpcError) as refused:
+        commands.set_plugin_enabled("team-notes", True)
+    assert refused.value.data == {"condition": "plugin_enable_managed"}
+    assert str(refused.value) == "Managed install: cannot change plugins."
+    assert agent["calls"] == []
+
+
+def test_a_recalled_plugin_the_agent_refuses_is_a_failed_switch_not_an_error(agent):
+    agent["refusal"] = "Plugin 'team-notes' was recalled by the catalog"
+    assert commands.set_plugin_enabled("team-notes", True) == {"supported": True, "ok": False, "error": "Plugin 'team-notes' was recalled by the catalog"}
+    assert agent["calls"] == [("set", "team-notes", True)]
 
 
 @requires_agent

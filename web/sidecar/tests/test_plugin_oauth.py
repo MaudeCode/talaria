@@ -22,10 +22,6 @@ def _probe(tmp_path: Path) -> dict:
 
 def test_plugin_oauth_sign_in_status_and_sign_out(tmp_path: Path) -> None:
     out = _probe(tmp_path)
-    if out["before"] == {"supported": False, "clients": None}:
-        # Agents before v0.22.3 declare no plugin OAuth clients: no status and no sign-in, nothing partial.
-        assert out == {"before": {"supported": False, "clients": None}, "start": "oauth_unsupported"}
-        return
     synthetic = {"id": "synthetic", "authorize_host": "127.0.0.1", "token_host": "127.0.0.1"}
     assert out == {
         "before": {"supported": True, "clients": [{**synthetic, "state": "logged_out"}]},

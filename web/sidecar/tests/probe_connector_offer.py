@@ -1,6 +1,5 @@
 """Real native schedule, file CAS and sightings over disposable records and a controlled clock."""
 from concurrent.futures import ThreadPoolExecutor
-import importlib.util
 import os
 from pathlib import Path
 import sys
@@ -10,15 +9,7 @@ sys.path.insert(0, sys.argv[1])
 from talaria_sidecar.methods import connectors
 home = Path(os.environ['HERMES_HOME'])
 home.mkdir(parents=True, exist_ok=True)
-if importlib.util.find_spec('hermes_cli.free_tier_offer') is None:
-    assert connectors.sign_in_offer(home)['available'] is False
-    print('Older Agent: no offer')
-    raise SystemExit(0)
 from hermes_cli import anon_auth as anon, free_tier_offer as native
-if not hasattr(native, 'CONNECTOR'):
-    assert connectors.sign_in_offer(home)['available'] is False
-    print('Older Agent: no connector offer')
-    raise SystemExit(0)
 clock = [1000.0]
 state = {'auth_method': 'anonymous', 'anon_token': 'synthetic-private-guest'}
 allowed = [True]

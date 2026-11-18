@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The MCP server approval prompt in Talaria Web no longer shows an API key passed as a launch argument.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

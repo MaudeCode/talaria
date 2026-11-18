@@ -158,12 +158,10 @@ def events(servers: dict, now: float | None = None) -> dict:
     capabilities: the SDK drops the ``events`` capability, so it cannot say whether a server offers them."""
     import time
 
-    try:
-        from hermes_cli.webhook import _get_webhook_config, _load_subscriptions
-        from tools.mcp_tool_events import _load_state, _server_routes
-        from tools.mcp_tool_schema import _UTILITY_CAPABILITY_ATTRS, mcp_prefixed_tool_name
-    except (ImportError, AttributeError):
-        return {"supported": False, "callback": "missing", "servers": []}
+    from hermes_cli.webhook import _get_webhook_config, _load_subscriptions
+    from tools.mcp_tool_events import _load_state, _server_routes
+    from tools.mcp_tool_schema import _UTILITY_CAPABILITY_ATTRS, mcp_prefixed_tool_name
+
     # The Agent's own utility -> capability map names the event utilities; v0.23.2 dropped EVENT_UTILITY_KEYS.
     event_utilities = [key for key, capability in _UTILITY_CAPABILITY_ATTRS.items() if capability == "events"]
     webhook = _get_webhook_config()
