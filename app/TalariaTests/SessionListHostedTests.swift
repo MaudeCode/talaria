@@ -2781,8 +2781,7 @@ final class SessionActionsHostedTests: XCTestCase {
                 XCTAssertLessThanOrEqual(primary.view.convert(primary.view.bounds, to: window).maxX,
                                          detail.view.convert(detail.view.bounds, to: window).minX + 1)
             }
-            XCTAssertGreaterThan(UITestFixtureHold.shared.pendingCount, 0)
-            fixture.releaseHeldLoads()
+            await releaseHeldRequest(of: fixture)
             let answered = await awaitCondition { UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains(title == "Archive" ? "/api/session/archive" : "/api/session/delete") } }
             XCTAssertTrue(answered)
             window.isHidden = true
@@ -2971,7 +2970,7 @@ final class SessionActionsHostedTests: XCTestCase {
         HostedAccessibility.activate(archive)
         let removed = await awaitNoElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
         XCTAssertTrue(removed)
-        fixture.releaseHeldLoads()
+        await releaseHeldRequest(of: fixture)
         _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
         let restored = await awaitCondition { self.titleMenu(in: window) != nil }
         XCTAssertTrue(restored)
@@ -3001,8 +3000,7 @@ extension RegularSplitHostedTests {
         let removed = await awaitCondition { HostedAccessibility.toolbarItem("Make Primary", in: window) == nil }
         XCTAssertTrue(removed, "Archiving the secondary chat must close it before the server answers")
         XCTAssertEqual(composerDraftText(in: window), "Keep the primary draft")
-        XCTAssertGreaterThan(UITestFixtureHold.shared.pendingCount, 0)
-        fixture.releaseHeldLoads()
+        await releaseHeldRequest(of: fixture)
         _ = try await requireSplitAction("Make Primary", in: window)
         _ = try await requireElement(in: window, label: "Fixture Session 01 reply")
         XCTAssertEqual(composerDraftText(in: window), "Keep the primary draft")
