@@ -474,7 +474,9 @@ for (const virtualize of [false, true]) {
         await page.screenshot({ path: testInfo.outputPath('history-loading.png') })
         await testInfo.attach('History prefetch', { path: testInfo.outputPath('history-loading.png'), contentType: 'image/png' })
       }
-      // Capture the row actually under the reader while the response is held.
+      // Capture the row actually under the reader while the response is held, once the virtualizer has measured the rows the
+      // scroll exposed; their measurement moves the reader by itself, and only the page's arrival is under test here.
+      await still(page)
       const anchor = await page.locator('#messages').evaluate((pane) => {
         const top = pane.getBoundingClientRect().top
         const row = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].find((row) => row.getBoundingClientRect().bottom > top)!
