@@ -29,49 +29,6 @@ public struct ModelFavoritesStore: @unchecked Sendable {
         return Self.deduplicated(decoded)
     }
 
-    func isFavorite(_ option: ModelCatalogOption) -> Bool {
-        favoriteKeys.contains(option.favoriteKey)
-    }
-
-    @discardableResult
-    public func toggleFavorite(for option: ModelCatalogOption) -> [ModelFavoriteKey] {
-        let key = option.favoriteKey
-        var keys = favoriteKeys
-
-        if let index = keys.firstIndex(of: key) {
-            keys.remove(at: index)
-        } else {
-            keys.append(key)
-        }
-
-        save(keys)
-        return keys
-    }
-
-    @discardableResult
-    public func removeFavorite(for option: ModelCatalogOption) -> [ModelFavoriteKey] {
-        let keys = favoriteKeys.filter { $0 != option.favoriteKey }
-        save(keys)
-        return keys
-    }
-
-    func save(_ keys: [ModelFavoriteKey]) {
-        let deduplicated = Self.deduplicated(keys)
-        guard let data = try? JSONEncoder().encode(deduplicated) else { return }
-        defaults.set(data, forKey: storageKey)
-    }
-
-    public static func visibleFavoriteOptions(
-        in groups: [ModelCatalogGroup],
-        favoriteKeys: [ModelFavoriteKey]
-    ) -> [ModelCatalogOption] {
-        let optionsByKey = groups.catalogOptionsByFavoriteKey()
-
-        return deduplicated(favoriteKeys).map { key in
-            optionsByKey[key] ?? key.fallbackOption
-        }
-    }
-
     private static func deduplicated(_ keys: [ModelFavoriteKey]) -> [ModelFavoriteKey] {
         var seen = Set<ModelFavoriteKey>()
         var result: [ModelFavoriteKey] = []
@@ -118,31 +75,24 @@ public struct ModelRecentsStore: @unchecked Sendable {
         return keys
     }
 
-    @discardableResult
-    public func removeRecent(for option: ModelCatalogOption) -> [ModelFavoriteKey] {
-        let keys = recentKeys.filter { $0 != option.favoriteKey }
-        save(keys)
-        return keys
-    }
-
     func save(_ keys: [ModelFavoriteKey]) {
         let deduplicated = Self.limitedDeduplicated(keys, limit: limit)
         guard let data = try? JSONEncoder().encode(deduplicated) else { return }
         defaults.set(data, forKey: storageKey)
     }
 
+    /// The recent rows the catalog still lists, minus favorites: a hidden or filtered-out model never returns from local recents.
     public static func visibleRecentOptions(
         in groups: [ModelCatalogGroup],
         recentKeys: [ModelFavoriteKey],
-        favoriteKeys: [ModelFavoriteKey],
-        includesMissingModels: Bool = true
+        favoriteKeys: [ModelFavoriteKey]
     ) -> [ModelCatalogOption] {
         let favoriteKeySet = Set(favoriteKeys)
         let optionsByKey = groups.catalogOptionsByFavoriteKey()
 
         return limitedDeduplicated(recentKeys, limit: recentKeys.count)
             .filter { !favoriteKeySet.contains($0) }
-            .compactMap { key in optionsByKey[key] ?? (includesMissingModels ? key.fallbackOption : nil) }
+            .compactMap { optionsByKey[$0] }
     }
 
     private static func limitedDeduplicated(_ keys: [ModelFavoriteKey], limit: Int) -> [ModelFavoriteKey] {
@@ -173,11 +123,5 @@ extension Sequence where Element == ModelCatalogGroup {
 extension ModelCatalogOption {
     public var favoriteKey: ModelFavoriteKey {
         ModelFavoriteKey(modelID: id, providerID: providerID)
-    }
-}
-
-private extension ModelFavoriteKey {
-    var fallbackOption: ModelCatalogOption {
-        ModelCatalogOption(id: modelID, displayName: modelID, providerID: providerID)
     }
 }

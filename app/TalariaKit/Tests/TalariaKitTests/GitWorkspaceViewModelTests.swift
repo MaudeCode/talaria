@@ -30,26 +30,6 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
     // MARK: - Loading
 
     @MainActor
-    func testLoadExcludesIgnoredFilesFromCountsAndTotals() async throws {
-        let client = makeClient { request in
-            apiTestJSONResponse(Self.statusWithIgnored, for: request)
-        }
-        let viewModel = GitWorkspaceViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
-
-        await viewModel.load()
-
-        XCTAssertTrue(viewModel.hasRepository)
-        XCTAssertFalse(viewModel.isNonRepository)
-        let status = try XCTUnwrap(viewModel.status)
-        XCTAssertEqual(status.files?.count, 2)
-        XCTAssertEqual(status.trackedFiles.count, 1)
-        XCTAssertEqual(status.changedCount, 1)
-        XCTAssertEqual(status.totalAdditions, 3)
-        XCTAssertEqual(status.totalDeletions, 1)
-        XCTAssertNil(viewModel.errorMessage)
-    }
-
-    @MainActor
     func testRefreshReplacesStaleData() async throws {
         var dirty = true
         let client = makeClient { request in
@@ -59,6 +39,9 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         let viewModel = GitWorkspaceViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
 
         await viewModel.load()
+        XCTAssertTrue(viewModel.hasRepository)
+        XCTAssertFalse(viewModel.isNonRepository)
+        XCTAssertNil(viewModel.errorMessage)
         XCTAssertEqual(viewModel.status?.trackedFiles.count, 1)
 
         dirty = false
@@ -119,7 +102,9 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         let viewModel = GitWorkspaceViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
 
         await viewModel.loadIfNeeded()
+        XCTAssertNil(viewModel.status)
         XCTAssertNotNil(viewModel.errorMessage)
+        XCTAssertNotNil(viewModel.lastError)
         XCTAssertEqual(requestCount, 1)
 
         await viewModel.loadIfNeeded()
@@ -141,21 +126,6 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertTrue(viewModel.isNonRepository)
         XCTAssertFalse(viewModel.hasRepository)
         XCTAssertNil(viewModel.errorMessage)
-    }
-
-    @MainActor
-    func testLoadSurfacesErrorOnHTTPFailure() async throws {
-        let client = makeClient { request in
-            let response = HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!
-            return (response, Data(#"{"error": "boom"}"#.utf8))
-        }
-        let viewModel = GitWorkspaceViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
-
-        await viewModel.load()
-
-        XCTAssertNil(viewModel.status)
-        XCTAssertNotNil(viewModel.errorMessage)
-        XCTAssertNotNil(viewModel.lastError)
     }
 
     // MARK: - Toolbar availability
@@ -236,20 +206,6 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         await viewModel.load()
         XCTAssertFalse(viewModel.hasRepository)
         XCTAssertNil(viewModel.lastError)
-    }
-
-    @MainActor
-    func testAvailabilityHidesOnHTTPFailure() async throws {
-        let client = makeClient { request in
-            let response = HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!
-            return (response, Data(#"{"error": "boom"}"#.utf8))
-        }
-        let viewModel = GitWorkspaceAvailabilityViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
-
-        await viewModel.load()
-
-        XCTAssertFalse(viewModel.hasRepository)
-        XCTAssertNotNil(viewModel.lastError)
     }
 
     @MainActor
@@ -634,33 +590,33 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
 
     @MainActor
     func testToastProgressSuccessAndAutoDismiss() async {
-        let state = GitActionToastState()
+        let clock = ManualTestClock()
+        let state = GitActionToastState(clock: clock)
         state.showProgress(GitActionProgress(title: "Working", detailLines: ["• Fetching"]))
         XCTAssertNotNil(state.progress)
         XCTAssertNil(state.success)
 
-        state.showSuccess(GitActionSuccess(title: "Done"), autoDismissAfter: .milliseconds(10))
+        state.showSuccess(GitActionSuccess(title: "Done"))
         XCTAssertNil(state.progress)
         XCTAssertNotNil(state.success)
 
-        // Wait for the dismissal rather than a fixed 30 ms that a starved main actor can outlast.
-        let deadline = ContinuousClock.now + .seconds(10)
-        while state.success != nil, ContinuousClock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
+        await clock.advance(by: .seconds(6))
         XCTAssertNil(state.success)
     }
 
     @MainActor
     func testToastRapidReplacementDoesNotDismissLatestSuccess() async {
-        let state = GitActionToastState()
-        state.showSuccess(GitActionSuccess(title: "First"), autoDismissAfter: .milliseconds(5))
-        // The replacement never expires on its own, so only the replaced 5 ms timer could dismiss it here.
-        state.showSuccess(GitActionSuccess(title: "Second"), autoDismissAfter: .seconds(3600))
+        let clock = ManualTestClock()
+        let state = GitActionToastState(clock: clock)
+        state.showSuccess(GitActionSuccess(title: "First"))
+        await clock.advance(by: .seconds(3))
+        state.showSuccess(GitActionSuccess(title: "Second"))
 
-        try? await Task.sleep(for: .milliseconds(20))
-        XCTAssertEqual(state.success?.title, "Second")
-        state.dismissSuccess()
+        await clock.advance(by: .seconds(3))
+        XCTAssertEqual(state.success?.title, "Second", "The replaced success's timer must not dismiss its replacement")
+
+        await clock.advance(by: .seconds(3))
+        XCTAssertNil(state.success, "The replacement keeps its own full lifetime")
     }
 
     // MARK: - Quick commit pipeline (issue #315, Slice C)

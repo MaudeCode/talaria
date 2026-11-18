@@ -60,10 +60,6 @@ extension APIClient {
         try await sendData(endpoint: .rawFile(sessionID: sessionID, path: path), method: "GET")
     }
 
-    public func mediaData(sessionID: String, path: String) async throws -> Data {
-        try await sendData(endpoint: .media(sessionID: sessionID, path: path), method: "GET")
-    }
-
     public func remoteTranscriptMediaData(from url: URL) async throws -> Data {
         if Self.isSameOrigin(url, as: baseURL) {
             return try await downloadData(from: url, using: session, mapsUnauthorized: true)

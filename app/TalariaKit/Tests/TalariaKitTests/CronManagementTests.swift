@@ -83,46 +83,13 @@ final class CronManagementModelTests: XCTestCase {
         XCTAssertNil(older.jobs?.first?.lastFailure)
     }
 
-    func testCronMutationResponseDecodesAlreadyRunning() throws {
-        let decoder = JSONDecoder.cronTestDecoder
-        let refused = try decoder.decode(
-            CronMutationResponse.self,
-            from: Data(#"{"ok": false, "job_id": "job-a", "status": "already_running", "elapsed": 12.5}"#.utf8)
-        )
-        XCTAssertEqual(refused.ok, false)
-        XCTAssertEqual(refused.status, "already_running")
-
-        let started = try decoder.decode(CronMutationResponse.self, from: Data(#"{"ok": true}"#.utf8))
-        XCTAssertNil(started.status)
-    }
-
-    func testPausedRecurringJobWithStaleErrorRendersServerPausedState() throws {
-        let job = try JSONDecoder.cronTestDecoder.decode(CronJob.self, from: Data("""
-        {
-          "id": "paused-stale-error",
-          "schedule": {"kind": "cron", "expr": "0 9 * * *"},
-          "schedule_display": "0 9 * * *",
-          "schedule_input": "0 9 * * *",
-          "repeat": {"times": null, "completed": 4},
-          "enabled": false,
-          "state": "paused",
-          "next_run_at": null,
-          "last_status": "error",
-          "derived_state": "paused",
-          "needs_attention": false,
-          "resumable": true
-        }
-        """.utf8))
-
-        XCTAssertEqual(job.status, .paused)
-    }
-
     func testCronJobRendersServerDerivedStateAndResumeAction() throws {
         func decode(_ fields: String) throws -> CronJob {
             try JSONDecoder.cronTestDecoder.decode(CronJob.self, from: Data(#"{"id": "job", \#(fields)}"#.utf8))
         }
 
         let paused = try decode(#""derived_state": "paused", "needs_attention": false, "resumable": true"#)
+        XCTAssertEqual(paused.status, .paused)
         XCTAssertEqual(paused.resumable, true)
 
         let scheduleError = try decode(#""derived_state": "schedule_error", "needs_attention": true, "resumable": true"#)
@@ -453,41 +420,6 @@ final class CronManagementModelTests: XCTestCase {
 }
 
 final class CronManagementViewModelTests: APIClientTestCase {
-    @MainActor
-    func testTasksViewModelCreateInsertsReturnedJob() async throws {
-        let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/crons/create")
-
-            return apiTestJSONResponse("""
-            {
-              "ok": true,
-              "job": {
-                "id": "job-created",
-                "name": "Created",
-                "prompt": "Run it",
-                "schedule": {"kind": "cron", "expr": "0 7 * * *"},
-                "schedule_display": "0 7 * * *",
-                "schedule_input": "0 7 * * *",
-                "enabled": true,
-                "state": "scheduled"
-              }
-            }
-            """, for: request)
-        }
-        let viewModel = TasksViewModel(server: try XCTUnwrap(URL(string: "https://example.test")), client: client)
-
-        let didCreate = await viewModel.create(
-            from: CronJobEditorDraft(
-                name: "Created",
-                prompt: "Run it",
-                schedule: "0 7 * * *"
-            )
-        )
-
-        XCTAssertTrue(didCreate)
-        XCTAssertEqual(viewModel.jobs.map(\.jobId), ["job-created"])
-        XCTAssertNil(viewModel.actionErrorMessage)
-    }
 
     @MainActor
     func testTasksViewModelLoadPopulatesDeliveryOptions() async throws {
@@ -1055,6 +987,7 @@ final class CronManagementViewModelTests: APIClientTestCase {
 
         XCTAssertTrue(didCreate)
         XCTAssertEqual(viewModel.jobs.map(\.jobId), ["job-created"])
+        XCTAssertNil(viewModel.actionErrorMessage)
     }
 
     @MainActor

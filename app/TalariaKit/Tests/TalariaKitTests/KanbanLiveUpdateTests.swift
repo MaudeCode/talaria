@@ -35,40 +35,36 @@ final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
         state.setVisible(false)
     }
 
-    func testBurstDuringLiveReconcileAppliesItAndQueuesOneFollowUp() async throws {
-        try await assertHeldLiveReconcileAppliesAndQueuesOneFollowUp(burstsDuringRequest: 1)
-    }
-
     func testBurstsDuringLiveReconcileQueueOnlyOneFollowUp() async throws {
-        try await assertHeldLiveReconcileAppliesAndQueuesOneFollowUp(burstsDuringRequest: 3)
-    }
-
-    private func assertHeldLiveReconcileAppliesAndQueuesOneFollowUp(burstsDuringRequest: Int) async throws {
+        let clock = ManualTestClock()
         let client = LiveKanbanClient(
             boardResults: [.success(.rich), .success(.newer), .success(.newest)],
             heldBoardCalls: [2, 3]
         )
         let stream = KanbanStreamSpy()
-        let state = makeState(client: client, stream: stream)
+        let state = makeState(client: client, stream: stream, sleep: { try await clock.sleep(for: $0) })
 
         await state.load()
         state.setVisible(true)
         stream.emit(.hello(cursor: 11, board: "main"))
         stream.emit(Self.eventsFrame(cursor: 12, kind: "task.updated"))
+        await clock.advance(by: .milliseconds(5))
         try await waitUntil { await client.heldBoardCallCount == 1 }
 
-        for cursor in 13..<(13 + burstsDuringRequest) {
+        for cursor in 13..<16 {
             stream.emit(Self.eventsFrame(cursor: cursor, kind: "task.updated"))
         }
-        // Several coalescing delays: a burst that restarted the reconcile would have sent its request by now.
-        try await Task.sleep(for: .milliseconds(50))
+        // The coalescing delay elapses: a burst that restarted the reconcile would send its request now.
+        await clock.advance(by: .milliseconds(5))
+        let callsWhileHeld = await client.boardCallCount
+        XCTAssertEqual(callsWhileHeld, 2, "a burst during the held request only queues a follow-up")
         await client.releaseHeldBoardCall()
 
         try await waitUntil { await client.boardCallCount == 3 }
         XCTAssertEqual(state.snapshot?.latestEventID, 13, "the held request's result was discarded")
         await client.releaseHeldBoardCall()
-        try await waitUntil { state.snapshot?.latestEventID == 14 }
-        try await Task.sleep(for: .milliseconds(50))
+        // A further follow-up would start its request in the same turn that ends the last one.
+        try await waitUntil { state.snapshot?.latestEventID == 14 && !state.isRefreshing }
         let boardCallCount = await client.boardCallCount
         let statsCallCount = await client.statsCallCount
         XCTAssertEqual(boardCallCount, 3)
@@ -464,7 +460,8 @@ final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
         let secondClient = LiveKanbanClient(boardResults: [.success(.rich)])
         let firstStream = KanbanStreamSpy()
         let secondStream = KanbanStreamSpy()
-        let first = makeState(client: firstClient, stream: firstStream)
+        let clock = ManualTestClock()
+        let first = makeState(client: firstClient, stream: firstStream, sleep: { try await clock.sleep(for: $0) })
         let second = KanbanFeatureState(
             server: URL(string: "https://second.example.test")!,
             defaults: defaults,
@@ -486,7 +483,8 @@ final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
         first.setVisible(false)
         second.setVisible(true)
         firstStream.emit(Self.eventsFrame(cursor: 12, kind: "task.updated"), startIndex: 0)
-        try await Task.sleep(for: .milliseconds(20))
+        // The coalescing delay elapses: a live callback would reconcile the first Board now.
+        await clock.advance(by: .milliseconds(5))
 
         XCTAssertGreaterThanOrEqual(firstStream.stopCount, 1)
         let firstBoardCallCount = await firstClient.boardCallCount

@@ -49,16 +49,6 @@ final class KanbanEventStreamClientTests: XCTestCase {
         )
     }
 
-    func testSSECommentsAreTransportKeepalives() {
-        // LDSwiftEventSource delivers comment lines through EventHandler.onComment,
-        // which KanbanEventStreamClient intentionally treats as a no-op. The
-        // decoder therefore never receives or misclassifies keepalive payloads.
-        XCTAssertEqual(
-            KanbanStreamFrameDecoder.decode(eventType: "", data: "", frameID: nil),
-            .ignored
-        )
-    }
-
     func testKanbanSSEProtectsHeadersOnCrossOriginRedirect() async throws {
         let streamURL = try XCTUnwrap(URL(string: "https://example.test/api/kanban/events"))
         let cookieStorage = ServerCookieStore.shared.storage(for: streamURL)

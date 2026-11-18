@@ -227,7 +227,7 @@ final class UntrustedInputFuzzTests: XCTestCase {
 
     // MARK: - Workspace paths
 
-    /// Workspace and media paths come back from the server and go straight into
+    /// Workspace paths come back from the server and go straight into
     /// the next request URL. Whatever they contain, they must round-trip as one
     /// query value instead of adding or overwriting query items or changing the
     /// route.
@@ -239,7 +239,7 @@ final class UntrustedInputFuzzTests: XCTestCase {
             let path = generator.string()
             let endpoint = generator.bool()
                 ? Endpoint.file(sessionID: sessionID, path: path)
-                : Endpoint.media(sessionID: sessionID, path: path)
+                : Endpoint.rawFile(sessionID: sessionID, path: path)
             guard let url = withinTimeBudget(seed: seed, input: path, {
                 endpoint.url(relativeTo: baseURL)
             }) else { return }

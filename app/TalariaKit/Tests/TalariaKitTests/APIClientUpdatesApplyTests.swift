@@ -27,8 +27,6 @@ final class APIClientUpdatesApplyTests: APIClientTestCase {
         let response = try await client.applyUpdate()
 
         XCTAssertEqual(response.ok, true)
-        XCTAssertEqual(response.target, "webui")
-        XCTAssertEqual(response.restartScheduled, true)
         XCTAssertEqual(response.outcome, .applying)
     }
 
@@ -54,57 +52,18 @@ final class APIClientUpdatesApplyTests: APIClientTestCase {
         """)
 
         XCTAssertEqual(response.restartBlocked, true)
-        XCTAssertEqual(response.activeStreams, 1)
         XCTAssertEqual(response.outcome, .restartBlocked)
         XCTAssertTrue(response.displayMessage(default: "fallback").contains("active chat stream"))
     }
 
-    func testConflictResponseIsFailed() throws {
-        let response = try decodeApply("""
-        {
-          "ok": false,
-          "message": "The local webui repo has unresolved merge conflicts.",
-          "conflict": true
+    func testNotOkResponsesAreFailed() throws {
+        for json in [
+            #"{ "ok": false, "message": "Update already in progress" }"#,
+            #"{ "ok": false, "message": "The local webui repo has unresolved merge conflicts.", "conflict": true }"#,
+            #"{ "ok": false, "message": "Fast-forward not possible.", "diverged": true }"#
+        ] {
+            XCTAssertEqual(try decodeApply(json).outcome, .failed, json)
         }
-        """)
-
-        XCTAssertEqual(response.conflict, true)
-        XCTAssertEqual(response.outcome, .failed)
-    }
-
-    func testDivergedResponseIsFailed() throws {
-        let response = try decodeApply("""
-        { "ok": false, "message": "Fast-forward not possible.", "diverged": true }
-        """)
-
-        XCTAssertEqual(response.diverged, true)
-        XCTAssertEqual(response.outcome, .failed)
-    }
-
-    func testGenericNotOkResponseIsFailed() throws {
-        let response = try decodeApply("""
-        { "ok": false, "message": "Update already in progress" }
-        """)
-
-        XCTAssertEqual(response.outcome, .failed)
-    }
-
-    func testSuccessWithStashConflictStillCountsAsApplying() throws {
-        // The server updated and is restarting (ok + restart_scheduled), but set
-        // local changes aside in a stash. That's still a success the app should
-        // recover from — not a hard failure.
-        let response = try decodeApply("""
-        {
-          "ok": true,
-          "message": "webui updated to the latest version. Your local modifications conflicted...",
-          "target": "webui",
-          "restart_scheduled": true,
-          "stash_conflict": true
-        }
-        """)
-
-        XCTAssertEqual(response.stashConflict, true)
-        XCTAssertEqual(response.outcome, .applying)
     }
 
     func testDisplayMessageFallsBackWhenMessageMissingOrBlank() throws {

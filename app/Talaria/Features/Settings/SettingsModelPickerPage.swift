@@ -97,7 +97,7 @@ struct SettingsModelPickerPage<Leading: View>: View {
             }
             if catalog.searchText.isEmpty && catalog.providerID.isEmpty && !catalog.favoritesOnly {
                 let recent = ModelRecentsStore.visibleRecentOptions(in: catalog.groups, recentKeys: recentModelKeys,
-                    favoriteKeys: catalog.favoriteOptions.map(\.favoriteKey), includesMissingModels: false)
+                    favoriteKeys: catalog.favoriteOptions.map(\.favoriteKey))
                 if !recent.isEmpty {
                     SettingsSection(title: String(localized: "Recent")) {
                         ForEach(recent) { model in modelRow(model, mixedProviders: true) }

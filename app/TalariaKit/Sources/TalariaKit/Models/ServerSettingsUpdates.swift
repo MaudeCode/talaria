@@ -243,22 +243,14 @@ extension UpdatesCheckResponse {
 }
 
 /// `POST /api/updates/apply`. Tolerant: every field is optional because the
-/// server returns a different mix of keys per outcome — success (`ok`,
-/// `restart_scheduled`), restart-blocked (`restart_blocked` + active counts),
-/// merge conflict (`conflict`), diverged history (`diverged`), or a generic
-/// failure — and may add more over time. We never crash on an unexpected shape.
+/// server returns a different mix of keys per outcome (success, restart-blocked,
+/// recovery handoff, or a failure such as a merge conflict) and may add more over
+/// time. Only the keys `outcome` and `displayMessage` read are decoded.
 public struct UpdatesApplyResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     let message: String?
-    let target: String?
-    let conflict: Bool?
-    let diverged: Bool?
     let restartBlocked: Bool?
-    let restartScheduled: Bool?
     let recoveryPending: Bool?
-    let stashConflict: Bool?
-    let activeStreams: Int?
-    let activeRuns: Int?
     public let notificationId: String?
 }
 

@@ -154,7 +154,8 @@ final class ProvidersViewModel {
     /// unless a forced refresh succeeded within `interval` or a load is in flight;
     /// after that, every owner waits for the shared next due time.
     func refreshQuotasPeriodically(
-        every interval: Duration = ProviderQuotaRefreshInterval.defaultValue.duration
+        every interval: Duration = ProviderQuotaRefreshInterval.defaultValue.duration,
+        sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) async {
         let isStale = lastForcedQuotaRefreshSuccess.map { ContinuousClock.now - $0 >= interval } ?? true
         if isStale, !isQuotaLoading {
@@ -164,7 +165,7 @@ final class ProvidersViewModel {
             let wait = lastForcedQuotaRefreshStart.map { $0 + interval - ContinuousClock.now } ?? .zero
             if wait > .zero {
                 do {
-                    try await Task.sleep(for: wait)
+                    try await sleep(wait)
                 } catch {
                     return
                 }
@@ -364,15 +365,6 @@ final class ProvidersViewModel {
         }
 
         return (shown: shown, total: total)
-    }
-
-    static func quotaUsedPercent(_ window: ProviderQuotaWindow) -> Double? {
-        ProviderQuotaPresentation.usedPercent(window)
-    }
-
-    static func quotaPercentText(_ window: ProviderQuotaWindow, locale: Locale = .current) -> String? {
-        guard let used = quotaUsedPercent(window) else { return nil }
-        return String(localized: "\(insightsFormattedPercent(used, locale: locale)) used")
     }
 
     private static func trimmedNonEmpty(_ value: String?) -> String? {

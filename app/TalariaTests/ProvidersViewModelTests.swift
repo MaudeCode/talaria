@@ -94,45 +94,6 @@ final class ProvidersViewModelTests: APIClientTestCase {
         XCTAssertNil(model.quotaErrorMessage)
     }
 
-    @MainActor
-    func testQuotaReloadTracksRenameReorderingAndRemovalByStableIdentity() async throws {
-        var load = 0
-        let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/provider/quotas")
-            load += 1
-            if load == 1 {
-                return apiTestJSONResponse("""
-                {
-                  "version": 1,
-                  "scope_id": "qscope_default",
-                  "profile_id": "default",
-                  "sources": [
-                    { "source_id": "qsrc_a", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "A", "status": "available", "supported": true, "windows": [] },
-                    { "source_id": "qsrc_b", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "B", "status": "available", "supported": true, "windows": [] }
-                  ]
-                }
-                """, for: request)
-            }
-            return apiTestJSONResponse("""
-            {
-              "version": 1,
-              "scope_id": "qscope_default",
-              "profile_id": "default",
-              "sources": [
-                { "source_id": "qsrc_b", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "B renamed", "status": "available", "supported": true, "windows": [] }
-              ]
-            }
-            """, for: request)
-        }
-        let model = ProvidersViewModel(server: Self.serverURL, client: client)
-
-        await model.loadQuotas()
-        await model.loadQuotas(refresh: true)
-
-        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_b"])
-        XCTAssertEqual(model.quotaSources[0].accountLabel, "B renamed")
-    }
-
     /// TAL-272: a same-scope reload whose provider now carries a new source id used to
     /// keep the old id as a `removed` row, so Insights showed the provider twice.
     @MainActor
@@ -141,6 +102,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
         let client = makeClient { request in
             load += 1
             let codexID = load == 1 ? "qsrc_codex_old" : "qsrc_codex_new"
+            let openRouterLabel = load == 1 ? "OpenRouter" : "OpenRouter renamed"
             return apiTestJSONResponse("""
             {
               "version": 1,
@@ -148,7 +110,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
               "profile_id": "default",
               "sources": [
                 { "source_id": "\(codexID)", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "Codex", "status": "available", "supported": true, "windows": [] },
-                { "source_id": "qsrc_openrouter", "provider_id": "openrouter", "provider_label": "OpenRouter", "account_label": "OpenRouter", "status": "available", "supported": true, "windows": [] }
+                { "source_id": "qsrc_openrouter", "provider_id": "openrouter", "provider_label": "OpenRouter", "account_label": "\(openRouterLabel)", "status": "available", "supported": true, "windows": [] }
               ]
             }
             """, for: request)
@@ -160,6 +122,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
 
         XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_codex_new", "qsrc_openrouter"])
         XCTAssertEqual(model.quotaSources.map(\.providerID), ["openai-codex", "openrouter"])
+        XCTAssertEqual(model.quotaSources.map(\.accountLabel), ["Codex", "OpenRouter renamed"], "A kept source shows its new label")
     }
 
     @MainActor
@@ -256,122 +219,48 @@ final class ProvidersViewModelTests: APIClientTestCase {
 
     @MainActor
     func testQuotaReloadDiscardsRemovedSourcesWhenScopeChanges() async throws {
-        let suite = "ProvidersViewModelScopeChange.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
-        var load = 0
-        let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/provider/quotas")
-            load += 1
-            if load == 1 {
+        let transitions: [(old: String?, new: String?)] = [("qscope_old", "qscope_new"), (nil, "qscope_new"), ("qscope_old", nil)]
+        for transition in transitions {
+            let context = "\(transition.old ?? "unscoped") -> \(transition.new ?? "unscoped")"
+            let suite = "ProvidersViewModelScopeChange.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
+            var load = 0
+            let client = makeClient { request in
+                XCTAssertEqual(request.url?.path, "/api/provider/quotas")
+                load += 1
+                let scope = load == 1 ? transition.old : transition.new
+                let scopeField = scope.map { #""scope_id": "\#($0)","# } ?? ""
+                let sourceID = load == 1 ? "qsrc_old" : "qsrc_new"
                 return apiTestJSONResponse("""
                 {
                   "version": 1,
-                  "scope_id": "qscope_old",
+                  \(scopeField)
                   "profile_id": "default",
                   "sources": [
-                    { "source_id": "qsrc_old", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "Codex", "status": "available", "supported": true, "windows": [] }
+                    { "source_id": "\(sourceID)", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "Codex", "status": "available", "supported": true, "windows": [] }
                   ]
                 }
                 """, for: request)
             }
-            return apiTestJSONResponse("""
-            {
-              "version": 1,
-              "scope_id": "qscope_new",
-              "profile_id": "default",
-              "sources": [
-                { "source_id": "qsrc_new", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "Codex", "status": "available", "supported": true, "windows": [] }
-              ]
+            let model = ProvidersViewModel(
+                server: Self.serverURL,
+                client: client,
+                quotaSnapshotStore: store,
+                reloadQuotaWidgets: {}
+            )
+
+            await model.loadQuotas()
+            await model.loadQuotas(refresh: true)
+
+            XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_new"], context)
+            XCTAssertEqual(model.quotaScopeID, transition.new, context)
+            if let newScope = transition.new {
+                XCTAssertEqual(store.load()?.sources.map(\.sourceID), ["qsrc_new"], context)
+                XCTAssertEqual(store.load()?.sources.map(\.scopeID), [newScope], context)
             }
-            """, for: request)
         }
-        let model = ProvidersViewModel(
-            server: Self.serverURL,
-            client: client,
-            quotaSnapshotStore: store,
-            reloadQuotaWidgets: {}
-        )
-
-        await model.loadQuotas()
-        await model.loadQuotas(refresh: true)
-
-        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_new"])
-        XCTAssertEqual(store.load()?.sources.map(\.sourceID), ["qsrc_new"])
-        XCTAssertEqual(store.load()?.sources.map(\.scopeID), ["qscope_new"])
-    }
-
-    @MainActor
-    func testQuotaReloadDiscardsUnscopedSourcesWhenScopeBecomesKnown() async throws {
-        var load = 0
-        let client = makeClient { request in
-            load += 1
-            if load == 1 {
-                return apiTestJSONResponse("""
-                {
-                  "version": 1,
-                  "profile_id": "default",
-                  "sources": [
-                    { "source_id": "qsrc_old", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "Old", "status": "available", "supported": true, "windows": [] }
-                  ]
-                }
-                """, for: request)
-            }
-            return apiTestJSONResponse("""
-            {
-              "version": 1,
-              "scope_id": "qscope_new",
-              "profile_id": "default",
-              "sources": [
-                { "source_id": "qsrc_new", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "New", "status": "available", "supported": true, "windows": [] }
-              ]
-            }
-            """, for: request)
-        }
-        let model = ProvidersViewModel(server: Self.serverURL, client: client)
-
-        await model.loadQuotas()
-        await model.loadQuotas(refresh: true)
-
-        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_new"])
-        XCTAssertEqual(model.quotaScopeID, "qscope_new")
-    }
-
-    @MainActor
-    func testQuotaReloadDiscardsScopedSourcesWhenScopeBecomesMissing() async throws {
-        var load = 0
-        let client = makeClient { request in
-            load += 1
-            if load == 1 {
-                return apiTestJSONResponse("""
-                {
-                  "version": 1,
-                  "scope_id": "qscope_old",
-                  "profile_id": "default",
-                  "sources": [
-                    { "source_id": "qsrc_old", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "Old", "status": "available", "supported": true, "windows": [] }
-                  ]
-                }
-                """, for: request)
-            }
-            return apiTestJSONResponse("""
-            {
-              "version": 1,
-              "profile_id": "default",
-              "sources": [
-                { "source_id": "qsrc_new", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "New", "status": "available", "supported": true, "windows": [] }
-              ]
-            }
-            """, for: request)
-        }
-        let model = ProvidersViewModel(server: Self.serverURL, client: client)
-
-        await model.loadQuotas()
-        await model.loadQuotas(refresh: true)
-
-        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_new"])
-        XCTAssertNil(model.quotaScopeID)
     }
 
     @MainActor
@@ -500,21 +389,6 @@ final class ProvidersViewModelTests: APIClientTestCase {
         XCTAssertEqual(model.quotaSources.first?.accountLabel, "Work")
         XCTAssertEqual(model.quotaSources.first?.windows.first?.usedPercent, 70)
         XCTAssertNil(model.quotaErrorMessage)
-    }
-
-    @MainActor
-    func testQuotaFormattingUsesReturnedPercentWithoutInventingZero() {
-        let used = ProviderQuotaWindow(label: "Session", usedPercent: 25)
-        let remaining = ProviderQuotaWindow(label: "Weekly", remainingPercent: 60)
-        let missing = ProviderQuotaWindow(label: "Monthly")
-
-        XCTAssertEqual(ProvidersViewModel.quotaUsedPercent(used), 25)
-        XCTAssertEqual(ProvidersViewModel.quotaUsedPercent(remaining), 40)
-        XCTAssertNil(ProvidersViewModel.quotaUsedPercent(missing))
-        XCTAssertEqual(
-            ProvidersViewModel.quotaPercentText(used, locale: Locale(identifier: "en_US")),
-            "25% used"
-        )
     }
 
     @MainActor
@@ -734,77 +608,6 @@ final class ProvidersViewModelTests: APIClientTestCase {
         XCTAssertEqual(critical.content.title, "Claude quota critical")
     }
 
-    /// TAL-872: a chat on screen leaves quota alerts and other chats' notifications as they were.
-    func testOnlyQuotaAlertsStayInNotificationCenterWhileForegrounded() throws {
-        let quota = ProviderQuotaAlertService.request(.warning, sourceID: "qsrc_a", name: "Claude", remaining: nil, preferences: .init())
-        let session = UNMutableNotificationContent()
-        session.userInfo = [SessionNotificationRefresh.sessionIDKey: "session-1"]
-        let otherChat = try XCTUnwrap(SessionNotificationRefresh.VisibleChat(server: Self.serverURL, sessionID: "session-2"))
-
-        for visibleChats: Set<SessionNotificationRefresh.VisibleChat> in [[], [otherChat]] {
-            func presentation(_ content: UNNotificationContent) -> UNNotificationPresentationOptions {
-                TalariaAppDelegate.foregroundPresentation(for: content, visibleChats: visibleChats)
-            }
-            XCTAssertEqual(presentation(quota.content), [.banner, .sound, .list])
-            XCTAssertEqual(presentation(session), [.banner, .sound])
-            XCTAssertEqual(presentation(UNMutableNotificationContent()), [.banner, .sound])
-        }
-    }
-
-    /// TAL-872: the chat on screen already shows its own news, so its notification stays silent; the list still refreshes.
-    @MainActor
-    func testNotificationForTheVisibleChatIsSilentButStillRefreshesTheList() async throws {
-        let chat = try XCTUnwrap(SessionNotificationRefresh.VisibleChat(server: Self.serverURL, sessionID: "session-1"))
-        let shown = SessionNotificationRefresh.ShownChat(chat, window: nil, isActive: true)
-        SessionNotificationRefresh.updateVisibleChat(from: nil, to: shown)
-        defer { SessionNotificationRefresh.updateVisibleChat(from: shown, to: nil) }
-        let content = UNMutableNotificationContent()
-        content.userInfo = [SessionNotificationRefresh.sessionIDKey: "session-1"]
-        let request = UNNotificationRequest(identifier: "visible-chat", content: content, trigger: nil)
-        // The delegate runs off the main actor; this test hands it the notification and never touches it again.
-        nonisolated(unsafe) let notification = try XCTUnwrap(UNNotification(coder: NotificationArchive(["request": request, "date": Date()])))
-        let refreshed = expectation(forNotification: .talariaSessionNotificationArrived, object: nil)
-
-        let options = await TalariaAppDelegate().userNotificationCenter(.current(), willPresent: notification)
-
-        await fulfillment(of: [refreshed], timeout: 5)
-        XCTAssertEqual(options, [])
-    }
-
-    /// TAL-2224: UIKit snapshots the app when a tap's completion runs and asserts it is on main.
-    @MainActor
-    func testTappedNotificationCompletesOnTheMainThread() async throws {
-        let request = UNNotificationRequest(identifier: "tap", content: UNMutableNotificationContent(), trigger: nil)
-        let notification = try XCTUnwrap(UNNotification(coder: NotificationArchive(["request": request, "date": Date()])))
-        let response = try XCTUnwrap(UNNotificationResponse(coder: NotificationArchive([
-            "notification": notification, "actionIdentifier": UNNotificationDefaultActionIdentifier,
-        ])))
-        let completed = expectation(description: "tap completion")
-        let delegate: UNUserNotificationCenterDelegate = TalariaAppDelegate()
-        delegate.userNotificationCenter?(.current(), didReceive: response) {
-            XCTAssertTrue(Thread.isMainThread, "UIKit requires the tap completion on main")
-            completed.fulfill()
-        }
-        await fulfillment(of: [completed], timeout: 5)
-    }
-
-    @MainActor
-    func testTapCompletesAfterOpeningItsSession() async throws {
-        let url = try XCTUnwrap(SessionNotificationRefresh.sessionURL(userInfo: [SessionNotificationRefresh.sessionIDKey: "session-1"]))
-        var events: [String] = []
-        let record = { (event: String) in events.append(Thread.isMainThread ? event : "\(event) off main") }
-
-        await TalariaAppDelegate.completeTap(opening: url, with: { opened in
-            await Task.yield()
-            record("open \(opened.absoluteString)")
-        }) { record("complete") }
-        XCTAssertEqual(events, ["open \(url.absoluteString)", "complete"])
-
-        events = []
-        await TalariaAppDelegate.completeTap(opening: nil, with: { _ in record("open") }) { record("complete") }
-        XCTAssertEqual(events, ["complete"], "a tap without a session completes without opening anything")
-    }
-
     @MainActor
     func testCancelledQuotaLoadCannotRestoreClearedWidgetSnapshot() async throws {
         let requestArrived = expectation(description: "quota request arrived")
@@ -902,13 +705,10 @@ final class ProvidersViewModelTests: APIClientTestCase {
         await model.loadQuotas()
         XCTAssertEqual(model.quotaSources.first?.windows.first?.usedPercent, 20)
 
-        // Insights and the session list both join the shared schedule; with a long
-        // interval, only the entry reconcile can produce a request.
-        let insightsLoop = Task { await model.refreshQuotasPeriodically(every: .seconds(60)) }
-        let sessionListLoop = Task { await model.refreshQuotasPeriodically(every: .seconds(60)) }
-        try await Task.sleep(for: .milliseconds(500))
-        insightsLoop.cancel()
-        sessionListLoop.cancel()
+        // Insights and the session list both join the shared schedule; each owner ends at its first wait, so only
+        // the entry reconcile can produce a request.
+        let insightsLoop = Task { await model.refreshQuotasPeriodically(every: .seconds(60), sleep: { _ in throw CancellationError() }) }
+        let sessionListLoop = Task { await model.refreshQuotasPeriodically(every: .seconds(60), sleep: { _ in throw CancellationError() }) }
         await insightsLoop.value
         await sessionListLoop.value
 
@@ -930,11 +730,13 @@ final class ProvidersViewModelTests: APIClientTestCase {
         let model = ProvidersViewModel(server: Self.serverURL, client: client)
         await model.loadQuotas(refresh: true)
 
-        let loop = Task { await model.refreshQuotasPeriodically(every: .seconds(60)) }
-        try await Task.sleep(for: .milliseconds(300))
-        loop.cancel()
-        await loop.value
+        var waits = 0
+        await model.refreshQuotasPeriodically(every: .seconds(60), sleep: { _ in
+            waits += 1
+            throw CancellationError()
+        })
 
+        XCTAssertEqual(waits, 1, "The loop went straight to the shared next due time")
         XCTAssertEqual(requestCount, 1)
     }
 
@@ -1055,25 +857,6 @@ final class ProvidersViewModelTests: APIClientTestCase {
         await model.load()
 
         XCTAssertEqual(model.providers.map { model.isActive($0) }, [false, true])
-    }
-
-    @MainActor
-    func testLoadFailureSetsErrorMessageAndKeepsEmptyList() async {
-        let client = makeClient { request in
-            (HTTPURLResponse(
-                url: request.url!,
-                statusCode: 500,
-                httpVersion: nil,
-                headerFields: nil
-            )!, Data())
-        }
-        let model = ProvidersViewModel(server: Self.serverURL, client: client)
-
-        await model.load()
-
-        XCTAssertNotNil(model.errorMessage)
-        XCTAssertTrue(model.providers.isEmpty)
-        XCTAssertFalse(model.isLoading)
     }
 
     /// A failed pull-to-refresh must keep the cached providers *and* surface the
@@ -1312,17 +1095,4 @@ final class ProvidersViewModelTests: APIClientTestCase {
         XCTAssertNil(model.quotaErrorMessage)
         XCTAssertTrue(model.quotaSources.isEmpty)
     }
-}
-
-/// Decodes UserNotifications objects that have no public initializer from fixed key values.
-final class NotificationArchive: NSCoder {
-    private let values: [String: Any]
-    init(_ values: [String: Any]) { self.values = values }
-    override var allowsKeyedCoding: Bool { true }
-    override func containsValue(forKey key: String) -> Bool { values[key] != nil }
-    override func decodeObject(forKey key: String) -> Any? { values[key] }
-    override func decodeBool(forKey key: String) -> Bool { false }
-    override func decodeInteger(forKey key: String) -> Int { 0 }
-    override func decodeInt64(forKey key: String) -> Int64 { 0 }
-    override func decodeDouble(forKey key: String) -> Double { 0 }
 }

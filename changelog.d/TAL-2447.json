@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Removed unused Kanban, model favorites, workspace media and update code paths; nothing changes in how Talaria looks or works.",
+      "highlight": false,
+      "components": ["app"],
+      "announce": false
+    }
+  ]
+}

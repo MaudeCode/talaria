@@ -165,8 +165,8 @@ final class ModelsSettingsViewModelTests: XCTestCase {
         let name = "SettingsModelPickerTests.\(UUID())"
         let defaults = UserDefaults(suiteName: name)!
         addTeardownBlock { UserDefaults().removePersistentDomain(forName: name) }
+        defaults.set(try! JSONEncoder().encode(favorites), forKey: "stars")
         let store = ModelFavoritesStore(defaults: defaults, storageKey: "stars")
-        store.save(favorites)
         return SettingsModelPickerViewModel(client: client(handler), favorites: store, live: live)
     }
 

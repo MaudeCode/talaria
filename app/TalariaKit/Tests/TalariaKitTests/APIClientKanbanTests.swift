@@ -745,26 +745,6 @@ final class APIClientKanbanTests: APIClientTestCase {
         }
     }
 
-    func testKanbanCarriesConfiguredCustomHeaders() async throws {
-        MockURLProtocol.requestHandler = { request in
-            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Proxy"), "enabled")
-            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
-            XCTAssertNil(request.value(forHTTPHeaderField: "Origin"))
-            XCTAssertNil(request.value(forHTTPHeaderField: "Referer"))
-            return apiTestJSONResponse(Self.configurationJSON, for: request)
-        }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [MockURLProtocol.self]
-        let serverURL = try XCTUnwrap(URL(string: "https://example.test"))
-        let client = APIClient(
-            baseURL: serverURL,
-            session: URLSession(configuration: configuration),
-            customHeaderProvider: { [CustomHeader(name: "X-Talaria-Proxy", value: "enabled")] }
-        )
-
-        _ = try await client.kanbanConfiguration()
-    }
-
     func testNonJSONAndMalformedJSONAreNotAcceptedAsKanban() async throws {
         let nonJSONClient = makeClient { request in
             let response = HTTPURLResponse(

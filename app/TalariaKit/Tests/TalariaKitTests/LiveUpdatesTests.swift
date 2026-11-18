@@ -113,6 +113,26 @@ final class SessionEventFrameDecoderTests: XCTestCase {
 }
 
 @MainActor
+final class SessionEventStreamClientTests: XCTestCase {
+    func testStopAndReleaseUnregisterTheRedirectPolicy() {
+        let initialCount = CrossOriginRedirectGuardURLProtocol.registeredPolicyCount
+        let url = URL(string: "https://example.test/api/sessions/events")!
+        var client: SessionEventStreamClient? = SessionEventStreamClient(urlSessionConfiguration: .ephemeral, customHeaderProvider: { [] })
+        weak let weakClient = client
+
+        client?.start(url: url, onFrame: { _ in }, onFailure: {})
+        XCTAssertEqual(CrossOriginRedirectGuardURLProtocol.registeredPolicyCount, initialCount + 1)
+        client?.stop()
+        XCTAssertEqual(CrossOriginRedirectGuardURLProtocol.registeredPolicyCount, initialCount, "stop unregisters the policy")
+
+        client?.start(url: url, onFrame: { _ in }, onFailure: {})
+        client = nil
+        XCTAssertNil(weakClient)
+        XCTAssertEqual(CrossOriginRedirectGuardURLProtocol.registeredPolicyCount, initialCount, "release unregisters the policy")
+    }
+}
+
+@MainActor
 final class SessionEventsMonitorTests: XCTestCase {
     private let url = URL(string: "https://example.test/api/sessions/events")!
 

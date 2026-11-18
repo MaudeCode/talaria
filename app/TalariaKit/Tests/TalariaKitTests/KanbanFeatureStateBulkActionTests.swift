@@ -272,22 +272,6 @@ extension KanbanFeatureStateTests {
         XCTAssertNil(state.bulkActionSummary)
     }
 
-    func testKanbanLabPartialScenarioProvidesSafePerCardFailureRecovery() async throws {
-        let state = KanbanLabScenario.partial.makeModel()
-        await state.load()
-        state.beginSelectingCards()
-        for card in state.allCards where ["CARD-3", "CARD-4"].contains(card.cardID ?? "") {
-            state.toggleCardSelection(card)
-        }
-
-        await state.performBulkAction(.changeStatus("done"))
-
-        XCTAssertEqual(state.bulkActionSummary?.succeededCount, 1)
-        XCTAssertEqual(state.bulkActionSummary?.failedCount, 1)
-        XCTAssertEqual(state.selectedCardIDs, ["CARD-4"])
-        XCTAssertTrue(state.canRetryFailedBulkAction)
-    }
-
 }
 
 private actor BulkActionClient: KanbanDataClient {

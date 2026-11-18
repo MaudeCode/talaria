@@ -31,12 +31,18 @@ final class APIClientUpdatesSummaryTests: APIClientTestCase {
     }
 
     func testSummaryPostsOnlyTheTargetAndDecodesSections() async throws {
+        for target in [UpdateTarget.webui, .agent] {
+            try await assertSummaryPostsOnlyTheTarget(target)
+        }
+    }
+
+    private func assertSummaryPostsOnlyTheTarget(_ target: UpdateTarget) async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.url?.path, "/api/updates/summary")
             let body = try XCTUnwrap(apiTestBodyData(from: request))
             let sent = try JSONSerialization.jsonObject(with: body) as? NSDictionary
-            XCTAssertEqual(sent, ["target": "agent"])
+            XCTAssertEqual(sent, ["target": target.rawValue])
             return apiTestJSONResponse("""
             {
               "ok": true, "target": "agent", "summary": "", "generated_by": "llm",
@@ -50,7 +56,7 @@ final class APIClientUpdatesSummaryTests: APIClientTestCase {
             """, for: request)
         }
 
-        let response = try await client.updatesSummary(target: .agent)
+        let response = try await client.updatesSummary(target: target)
 
         XCTAssertEqual(response.source, "release_notes")
         XCTAssertEqual(response.generatedBy, "llm")

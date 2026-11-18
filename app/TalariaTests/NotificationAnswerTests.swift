@@ -254,4 +254,89 @@ final class NotificationAnswerTests: XCTestCase {
             display: display
         )
     }
+
+    // MARK: - Foreground presentation and taps (TAL-872, TAL-2224)
+
+    private static let serverURL = URL(string: "https://example.test")!
+
+    /// TAL-872: a chat on screen leaves quota alerts and other chats' notifications as they were.
+    func testOnlyQuotaAlertsStayInNotificationCenterWhileForegrounded() throws {
+        let quota = ProviderQuotaAlertService.request(.warning, sourceID: "qsrc_a", name: "Claude", remaining: nil, preferences: .init())
+        let session = UNMutableNotificationContent()
+        session.userInfo = [SessionNotificationRefresh.sessionIDKey: "session-1"]
+        let otherChat = try XCTUnwrap(SessionNotificationRefresh.VisibleChat(server: Self.serverURL, sessionID: "session-2"))
+
+        for visibleChats: Set<SessionNotificationRefresh.VisibleChat> in [[], [otherChat]] {
+            func presentation(_ content: UNNotificationContent) -> UNNotificationPresentationOptions {
+                TalariaAppDelegate.foregroundPresentation(for: content, visibleChats: visibleChats)
+            }
+            XCTAssertEqual(presentation(quota.content), [.banner, .sound, .list])
+            XCTAssertEqual(presentation(session), [.banner, .sound])
+            XCTAssertEqual(presentation(UNMutableNotificationContent()), [.banner, .sound])
+        }
+    }
+
+    /// TAL-872: the chat on screen already shows its own news, so its notification stays silent; the list still refreshes.
+    func testNotificationForTheVisibleChatIsSilentButStillRefreshesTheList() async throws {
+        let chat = try XCTUnwrap(SessionNotificationRefresh.VisibleChat(server: Self.serverURL, sessionID: "session-1"))
+        let shown = SessionNotificationRefresh.ShownChat(chat, window: nil, isActive: true)
+        SessionNotificationRefresh.updateVisibleChat(from: nil, to: shown)
+        defer { SessionNotificationRefresh.updateVisibleChat(from: shown, to: nil) }
+        let content = UNMutableNotificationContent()
+        content.userInfo = [SessionNotificationRefresh.sessionIDKey: "session-1"]
+        let request = UNNotificationRequest(identifier: "visible-chat", content: content, trigger: nil)
+        // The delegate runs off the main actor; this test hands it the notification and never touches it again.
+        nonisolated(unsafe) let notification = try XCTUnwrap(UNNotification(coder: NotificationArchive(["request": request, "date": Date()])))
+        let refreshed = expectation(forNotification: .talariaSessionNotificationArrived, object: nil)
+
+        let options = await TalariaAppDelegate().userNotificationCenter(.current(), willPresent: notification)
+
+        await fulfillment(of: [refreshed], timeout: 5)
+        XCTAssertEqual(options, [])
+    }
+
+    /// TAL-2224: UIKit snapshots the app when a tap's completion runs and asserts it is on main.
+    func testTappedNotificationCompletesOnTheMainThread() async throws {
+        let request = UNNotificationRequest(identifier: "tap", content: UNMutableNotificationContent(), trigger: nil)
+        let notification = try XCTUnwrap(UNNotification(coder: NotificationArchive(["request": request, "date": Date()])))
+        let response = try XCTUnwrap(UNNotificationResponse(coder: NotificationArchive([
+            "notification": notification, "actionIdentifier": UNNotificationDefaultActionIdentifier,
+        ])))
+        let completed = expectation(description: "tap completion")
+        let delegate: UNUserNotificationCenterDelegate = TalariaAppDelegate()
+        delegate.userNotificationCenter?(.current(), didReceive: response) {
+            XCTAssertTrue(Thread.isMainThread, "UIKit requires the tap completion on main")
+            completed.fulfill()
+        }
+        await fulfillment(of: [completed], timeout: 5)
+    }
+
+    func testTapCompletesAfterOpeningItsSession() async throws {
+        let url = try XCTUnwrap(SessionNotificationRefresh.sessionURL(userInfo: [SessionNotificationRefresh.sessionIDKey: "session-1"]))
+        var events: [String] = []
+        let record = { (event: String) in events.append(Thread.isMainThread ? event : "\(event) off main") }
+
+        await TalariaAppDelegate.completeTap(opening: url, with: { opened in
+            await Task.yield()
+            record("open \(opened.absoluteString)")
+        }) { record("complete") }
+        XCTAssertEqual(events, ["open \(url.absoluteString)", "complete"])
+
+        events = []
+        await TalariaAppDelegate.completeTap(opening: nil, with: { _ in record("open") }) { record("complete") }
+        XCTAssertEqual(events, ["complete"], "a tap without a session completes without opening anything")
+    }
+}
+
+/// Decodes UserNotifications objects that have no public initializer from fixed key values.
+final class NotificationArchive: NSCoder {
+    private let values: [String: Any]
+    init(_ values: [String: Any]) { self.values = values }
+    override var allowsKeyedCoding: Bool { true }
+    override func containsValue(forKey key: String) -> Bool { values[key] != nil }
+    override func decodeObject(forKey key: String) -> Any? { values[key] }
+    override func decodeBool(forKey key: String) -> Bool { false }
+    override func decodeInteger(forKey key: String) -> Int { 0 }
+    override func decodeInt64(forKey key: String) -> Int64 { 0 }
+    override func decodeDouble(forKey key: String) -> Double { 0 }
 }
