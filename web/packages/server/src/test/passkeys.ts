@@ -2,7 +2,7 @@ import { createHash, generateKeyPairSync, randomBytes, sign as cryptoSign, type 
 type Json = Record<string, unknown>
 export const b64u = (value: Buffer): string => value.toString('base64url')
 
-export function cborEncode(value: unknown): Buffer {
+function cborEncode(value: unknown): Buffer {
   const head = (major: number, n: number): Buffer => {
     if (n < 24) return Buffer.from([(major << 5) | n])
     if (n < 256) return Buffer.from([(major << 5) | 24, n])

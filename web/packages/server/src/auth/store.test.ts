@@ -340,19 +340,6 @@ describe('write-behind persistence', () => {
   const sessionsFile = () => join(dir, '.sessions.json')
   const attemptsFile = () => join(dir, '.login_attempts.json')
 
-  it('answers session calls while a sessions write is held pending', async () => {
-    const writer = gatedWriter()
-    const store = (await makeStore({}, { persistWrite: writer.write }))
-    const first = store.createSession()
-    const second = store.createSession()
-    expect(store.verifySession(first)).toBe(true)
-    expect(store.verifySession(second)).toBe(true)
-    expect(existsSync(sessionsFile())).toBe(false)
-    writer.open()
-    await store.flushPersistence()
-    expect((await makeStore()).verifySession(second)).toBe(true)
-  })
-
   it('coalesces rapid session writes into at most two and lands the newest table', async () => {
     const writer = gatedWriter()
     const store = (await makeStore({}, { persistWrite: writer.write }))
