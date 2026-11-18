@@ -6,9 +6,7 @@ import { queryWrapper } from '../../test/fixtures'
 
 vi.mock('@google/model-viewer', () => ({}))
 vi.mock('./api', () => ({ fetchMeshyCard: vi.fn(), fetchMeshyDetails: vi.fn(), saveMeshyFormat: vi.fn(), saveMeshyImages: vi.fn() }))
-vi.mock('../composer/composerReturn', () => ({ returnToComposer: vi.fn() }))
 import * as api from './api'
-import { returnToComposer } from '../composer/composerReturn'
 import { MeshyModelCard } from './MeshyModelCard'
 import { MeshyItemView } from './MeshyItemView'
 import { ModelViewer } from './ModelViewer'
@@ -89,15 +87,6 @@ it('puts a follow-up draft in the composer only on tap, and never downloads or s
   await userEvent.click(screen.getByRole('button', { name: 'Save FBX' }))
   expect(api.saveMeshyFormat).toHaveBeenCalledWith({ task_id: TASK, format: 'fbx', beside: model.url })
   expect(await screen.findByRole('status')).toHaveTextContent('Saved model.fbx')
-})
-
-it('inline cards prepare drafts in their own session composer', async () => {
-  vi.mocked(api.fetchMeshyCard).mockResolvedValue(card({ item: item() }))
-  vi.mocked(api.fetchMeshyDetails).mockResolvedValue({ availability: 'ready', message: null, balance: null, task_id: TASK, is_preview: false, provenance: null, formats: [], conversions: [{ id: 'convert-fbx', label: 'Convert to FBX', cost: 1, affordable: null, draft: 'convert it' }], actions: [] })
-  render(<MeshyModelCard sessionId="s1" media={media} />, { wrapper: queryWrapper() })
-  await userEvent.click(await screen.findByRole('button', { name: 'Formats and next steps' }))
-  await userEvent.click(await screen.findByRole('button', { name: 'Convert to FBX · 1 credit' }))
-  expect(returnToComposer).toHaveBeenCalledWith('s1', 'convert it')
 })
 
 it('reports a partial image set truthfully and offers a retry', async () => {

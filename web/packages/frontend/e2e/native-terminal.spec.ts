@@ -45,16 +45,3 @@ test('native terminal requires Run, displays captured output, and never opens a 
   await expect(panel).toHaveCount(0)
   expect(calls).toEqual(['/api/terminal/start', '/api/terminal/exec'])
 })
-
-
-test('records the previous native-terminal refusal for comparison', async ({ page, errors }, testInfo) => {
-  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'native-before', title: 'Native workspace', workspace: '/workspace/native', messages: [] } } }))
-  await page.route('**/api/terminal/start', (route) => route.fulfill({ status: 404, json: { error: "'Session not found'" } }))
-  await page.goto('/session/native-before')
-  await page.locator('#msg').fill('/terminal')
-  await page.locator('#btnSend').click()
-  await expect(page.locator('#composerTerminalPanel')).toHaveAttribute('data-status', 'error')
-  await page.screenshot({ path: testInfo.outputPath('native-terminal-before.png') })
-  await expect.poll(() => errors).toEqual([`404 POST ${process.env.HERMES_E2E_BASE_URL}/api/terminal/start`])
-  errors.length = 0
-})

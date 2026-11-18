@@ -15,6 +15,11 @@ describe('cronState', () => {
     expect(cronState({ ...recurring, derived_state: 'paused' }, true)).toBe('running')
     expect(cronState({ ...recurring, derived_state: 'paused', running: true })).toBe('running')
     expect(cronState(recurring)).toBe('unknown')
+  })
+})
+
+describe('CronJobSchema', () => {
+  it('accepts run times sent as epoch numbers', () => {
     expect(CronJobSchema.parse({ ...recurring, last_run_at: 1_789_600_000, next_run_at: 1_789_686_400 }).next_run_at).toBe(1_789_686_400)
   })
 })

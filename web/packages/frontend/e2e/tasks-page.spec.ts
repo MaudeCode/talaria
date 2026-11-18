@@ -95,6 +95,7 @@ test('Stop shows only on a stoppable live run, shows stopping at once and settle
   await page.screenshot({ path: info.outputPath('stop-stopping.png') })
   row = { ...base, can_stop: false, stopping: true }
   answer()
+  await expect(page.getByText('Stopping job', { exact: true })).toBeVisible()
   await expect(detail).toHaveAttribute('data-state', 'stopping')
   row = { ...base, running: false, can_stop: false, stopping: false, last_status: 'cancelled', last_run_at: '2026-10-18T09:00:00Z', last_outcome: 'cancelled' }
   await expect(detail).toHaveAttribute('data-state', 'active', { timeout: 15_000 })

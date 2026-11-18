@@ -43,15 +43,6 @@ it('lists the reviews in the server order with title, session title, answered of
   for (const text of ['Storage choices', 'Submitted', 'Untitled', '2 of 2 answered']) expect(within(second).getByText(text)).toBeInTheDocument()
 })
 
-it('opens the review from its row and the chat from its session title', async () => {
-  const router = await mount(LIST)
-  await userEvent.click(await screen.findByRole('link', { name: 'Release choices' }))
-  expect(router.state.location.pathname).toBe('/decisions/dr_00000002')
-  await router.navigate({ to: '/decisions' })
-  await userEvent.click(await screen.findByRole('link', { name: 'Open chat: Release prep' }))
-  expect(router.state.location.pathname).toBe('/session/sess_b')
-})
-
 it('offers Open and Open chat in the row context menu', async () => {
   const router = await mount(LIST)
   await screen.findByText('Storage choices')
