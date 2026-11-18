@@ -3,7 +3,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 vi.mock(import('../../api/client'), async (importOriginal) => ({ ...(await importOriginal()), post: vi.fn(() => Promise.resolve({ ok: true, lease_seconds: 90 }) as never) }))
 import { post } from '../../api/client'
 import { tabId } from '../../app/tabBuild'
-import { IDLE_MS, RENEW_MS, setWatchingRun, startPresence } from './presence'
+import { setWatchingRun, startPresence } from './presence'
+
+/** Two minutes without input ends active use; a held lease renews every 30 s. */
+const IDLE_MS = 120_000
+const RENEW_MS = 30_000
 
 let visibility: DocumentVisibilityState = 'visible'
 let focused = true

@@ -30,7 +30,7 @@ export interface PanelPageHostProps {
 }
 
 /** The page shown: the requested one when it exists, else the first page. */
-export function resolvePage(pages: PanelPage[], requested: string | null | undefined): PanelPage | undefined {
+function resolvePage(pages: PanelPage[], requested: string | null | undefined): PanelPage | undefined {
   return pages.find((p) => p.id === requested) ?? pages[0]
 }
 

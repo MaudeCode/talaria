@@ -17,7 +17,7 @@ export interface Toast {
   bodyLabel?: string | undefined
 }
 /** How long a dismissed toast stays mounted: the room's 120 ms delay and 340 ms close (dialogs.css), plus slack. */
-export const TOAST_EXIT_MS = 480
+const TOAST_EXIT_MS = 480
 let toasts: Toast[] = []
 let seq = 0
 const listeners = new Set<() => void>()

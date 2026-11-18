@@ -48,7 +48,7 @@ vi.mock('./ComposerNotices', async (original) => {
   const { countRenders } = await import('../../test/countRenders')
   return { ...notices, ComposerNotices: countRenders(notices.ComposerNotices, () => renders.notices++) }
 })
-import { Composer, effectiveBusyMode, type ComposerProps, type BusyMode } from './Composer'
+import { Composer, type ComposerProps } from './Composer'
 import type { ExecutionModes } from '@maudecode/talaria-web-contracts'
 import { dictateLive, NoSpeechError } from '../voice/liveDictation'
 import * as browserDictation from '../voice/dictation'
@@ -72,7 +72,11 @@ function renderComposer(session: Session | null, live: LiveTurn | null = null, o
 }
 
 describe('Composer', () => {
-  it.each([
+  // Each platform, send key and held modifier set, for each of the three busy defaults: the busy button names the mode a
+  // send would take, from the real composer.
+  const BUSY_LABEL = { steer: 'Steer current response', queue: 'Queue message', interrupt: 'Interrupt and send' } as const
+  const MODIFIER_KEY = { ctrlKey: 'Control', altKey: 'Alt', shiftKey: 'Shift' } as const
+  it.each(([
     ['MacIntel', 'enter', {}, ['steer', 'queue', 'interrupt']],
     ['Linux x86_64', 'enter', {}, ['steer', 'queue', 'interrupt']],
     ['MacIntel', 'enter', { ctrlKey: true }, ['queue', 'steer', 'queue']],
@@ -87,8 +91,14 @@ describe('Composer', () => {
     ['Linux x86_64', 'ctrl+enter', { ctrlKey: true, shiftKey: true }, ['queue', 'steer', 'queue']],
     ['Win32', 'ctrl+enter', { ctrlKey: true, altKey: true, shiftKey: true }, ['interrupt', 'interrupt', 'interrupt']],
     ['Linux x86_64', 'ctrl+enter', { shiftKey: true }, ['steer', 'queue', 'interrupt']],
-  ] as const)('resolves the three busy defaults on %s, %s, %j (TAL-1796)', (platform, sendKey, held, expected) => {
-    expect((['steer', 'queue', 'interrupt'] as BusyMode[]).map((mode) => effectiveBusyMode(mode, { ctrlKey: false, altKey: false, shiftKey: false, ...held }, platform, sendKey))).toEqual(expected)
+  ] as const).flatMap(([platform, sendKey, held, expected]) => (['steer', 'queue', 'interrupt'] as const).map((mode, i) => [platform, sendKey, mode, held, expected[i]!] as const)))('resolves %s %s with default %s and %j to %s (TAL-1796)', (platform, sendKey, mode, held, shown) => {
+    const platformGetter = vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform)
+    renderComposer(writable, running(), noop, { send_key: sendKey, default_message_mode: mode })
+    platformGetter.mockRestore()
+    const box = screen.getByRole('textbox')
+    fireEvent.change(box, { target: { value: 'Next step' } })
+    for (const key of Object.keys(held) as (keyof typeof MODIFIER_KEY)[]) fireEvent.keyDown(box, { key: MODIFIER_KEY[key], ...held })
+    expect(screen.getByRole('button', { name: BUSY_LABEL[shown] })).toBeInTheDocument()
   })
 
   it.each([

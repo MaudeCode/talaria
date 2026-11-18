@@ -11,9 +11,9 @@ import { z } from 'zod'
 import { post } from '../../api/client'
 import { tabId } from '../../app/tabBuild'
 
-export const IDLE_MS = 120_000
+const IDLE_MS = 120_000
 /** Well inside the server's 90 s lease. */
-export const RENEW_MS = 30_000
+const RENEW_MS = 30_000
 const LeaseSchema = z.object({ ok: z.literal(true), lease_seconds: z.number() })
 // Not `scroll`: a streaming transcript scrolls itself, and user scrolling arrives as wheel, touch, key, or pointer input.
 const INPUT_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart']
