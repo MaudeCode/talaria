@@ -2,7 +2,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished } from 'vitest'
 import { SidecarClient } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 
@@ -67,6 +67,8 @@ describe.skipIf(!agentLocksEnv)('provider key writes against the pinned Agent (T
     let agentErr = ''
     agent.stderr.on('data', (chunk: Buffer) => { agentErr += chunk.toString() })
     const agentExit = new Promise<number | null>((done) => { agent.on('exit', done) })
+    // A failure before the release would leave the child paused while it holds the `.env` lock: end it with the test.
+    onTestFinished(async () => { if (agent.exitCode === null && agent.signalCode === null) { agent.kill(); await agentExit } })
     await expect.poll(() => existsSync(ready), { timeout: 15_000 }).toBe(true)
 
     // Talaria's save lands inside the window the Agent holds between reading the file and replacing it, and retries the lock.
