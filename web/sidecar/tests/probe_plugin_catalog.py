@@ -16,16 +16,9 @@ home = Path(os.environ['HERMES_HOME'])
 home.mkdir(parents=True, exist_ok=True)
 
 def call(method, **params):
-    handler = registry.methods.get(method)
-    return handler(None, {'profile_home': str(home), **params}) if handler else {'supported': False, 'entries': []}
+    return registry.methods[method](None, {'profile_home': str(home), **params})
 
-try:
-    from hermes_cli import plugin_catalog as catalog, plugins_cmd as pc, plugins_cmd_catalog as native
-except ImportError:
-    unsupported = call('plugins.catalog')
-    assert unsupported['supported'] is False
-    print('TYPED_CATALOG=' + json.dumps({'catalog': unsupported}))
-    sys.exit(0)
+from hermes_cli import plugin_catalog as catalog, plugins_cmd as pc, plugins_cmd_catalog as native
 
 repo = home.parent / 'source'
 repo.mkdir()

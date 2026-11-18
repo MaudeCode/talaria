@@ -1,8 +1,10 @@
-"""Connector page reads own no auth state, even when native refresh could replace a guest."""
+"""Connector page reads own no auth state, even when native refresh could replace a guest, and the operation cache keeps
+every operation still open."""
 from __future__ import annotations
 
 import contextlib
 import sys
+from collections import OrderedDict
 import types
 from pathlib import Path
 
@@ -190,3 +192,14 @@ def test_explicit_writes_refresh_expired_credentials(page, method, params, expec
     assert page.refreshes > 0
     if method == "connectors.policy.set":
         assert page.writes[0]["expectedRevision"] == "rev-1"
+
+
+def test_the_operation_cache_never_drops_an_operation_still_open(monkeypatch, tmp_path):
+    """A chat card's operation stays readable however many settled ones follow it: only settled ones age out."""
+    monkeypatch.setattr(connectors, "_OPS", OrderedDict())
+    waiting = types.SimpleNamespace(op_id="op-waiting", settled=False)
+    connectors._remember(tmp_path, waiting)
+    for n in range(connectors._OPS_CAP + 5):
+        connectors._remember(tmp_path, types.SimpleNamespace(op_id=f"op-{n}", settled=True))
+    assert connectors._operation(tmp_path, "op-waiting") is waiting
+    assert len(connectors._OPS) == connectors._OPS_CAP

@@ -11,7 +11,7 @@ import pathlib
 
 import pytest
 
-from conftest import AGENT_DIR, SidecarProcess, load_schema, requires_agent, validate
+from conftest import SidecarProcess, load_schema, requires_agent, validate
 
 PLUGIN = """
 import os
@@ -31,7 +31,6 @@ def _seed(home: pathlib.Path, plugin: str, isolation: str) -> None:
 
 
 @requires_agent
-@pytest.mark.skipif(AGENT_DIR is None or not (AGENT_DIR / "hermes_cli/plugin_host.py").is_file(), reason="Agent has no plugin host")
 @pytest.mark.parametrize("isolation", ["in_process", "host"])
 def test_each_profiles_plugin_lists_and_runs_its_command_in_its_own_scope(tmp_path: pathlib.Path, isolation: str) -> None:
     home = tmp_path / "home" / ".hermes"
@@ -171,9 +170,7 @@ def test_web_commands_pass_session_context_to_plugins_and_fire_pre_command(tmp_p
         workspace = tmp_path / "workspace"
         workspace.mkdir()
         context = sidecar.result("commands.exec", {**params, "command": "/probe-context hi", "session_id": "chat-1267"})
-        # Agents before v0.22.3 have no context-aware dispatch: the handler keeps its one-argument call.
-        dispatch = AGENT_DIR is not None and (AGENT_DIR / "hermes_cli/plugin_command_dispatch.py").is_file()
-        assert context["output"] == ("hi|chat-1267|webui" if dispatch else "hi||")
+        assert context["output"] == "hi|chat-1267|webui"
         assert sidecar.result("commands.exec", {**params, "command": "/probe-legacy there"})["output"] == "legacy|there"
         reload = {**params, "command": "/reload_skills", "session_id": "chat-1267", "workspace": str(workspace)}
         assert sidecar.result("commands.exec", reload)["source"] == "agent"

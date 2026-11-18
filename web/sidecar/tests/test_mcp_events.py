@@ -18,7 +18,4 @@ def test_native_mcp_events_utilities_consent_and_subscription_state(tmp_path):
                          capture_output=True, text=True, timeout=180)
     assert run.returncode == 0, run.stdout + run.stderr[-4000:]
     outcome = json.loads(run.stdout.strip().splitlines()[-1])
-    if outcome.get("agent") == "without MCP events":
-        assert not (pathlib.Path(AGENT_DIR) / "tools" / "mcp_tool_events.py").exists(), outcome
-    else:
-        assert outcome == {"utilities": "native", "consent": ["mcp-events/events", "mcp-events/events"], "states": "observed"}, outcome
+    assert outcome == {"utilities": "native", "consent": ["mcp-events/events", "mcp-events/events"], "states": "observed"}, outcome

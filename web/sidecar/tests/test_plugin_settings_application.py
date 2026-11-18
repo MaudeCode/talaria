@@ -50,12 +50,10 @@ def test_nonsecret_inputs_reconcile_after_persistence_and_refresh_only_changed_c
     assert len(refreshed) == 2
 
 
-@pytest.mark.parametrize("outcome", ["unavailable", "failed", "connecting", "lost_ack", "missing_status"])
+@pytest.mark.parametrize("outcome", ["failed", "connecting", "lost_ack", "missing_status"])
 def test_runtime_failure_retains_saved_state_without_exposing_exception(settings_runtime, outcome):
     saved, calls, discovery, _, _, _ = settings_runtime
-    if outcome == "unavailable":
-        del discovery.restart_mcp_servers_with_new_inputs
-    elif outcome == "lost_ack":
+    if outcome == "lost_ack":
         def uncertain(names):
             calls.append(names)
             raise RuntimeError("synthetic-secret-must-not-leak")
@@ -64,7 +62,7 @@ def test_runtime_failure_retains_saved_state_without_exposing_exception(settings
         discovery.get_mcp_status = lambda: [] if outcome == "missing_status" else [{"name": "echo", "status": outcome}]
     result = commands.save_plugin_settings("demo", {"endpoint": "saved"}, {"api_key": "DEMO_KEY"})
     assert saved == {"endpoint": "saved"}
-    assert result["runtime_application"] == ("restart_required" if outcome in {"unavailable", "failed"} else "unknown")
+    assert result["runtime_application"] == ("restart_required" if outcome == "failed" else "unknown")
     assert "synthetic-secret-must-not-leak" not in str(result)
     assert len(calls) <= 1, "uncertain reconnect must not be retried"
 

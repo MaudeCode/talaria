@@ -253,6 +253,8 @@ def native_owner_stub(tmp_path, monkeypatch):
             queue.put_nowait(frame)
         yield SimpleNamespace(rpc=rpc), queue
     monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError, GatewayClientError=ConnectionError))
+    # The Agent's redactor leaves these key-free launch lines as they are; test_connectors.py proves the real one masks a key.
+    monkeypatch.setitem(sys.modules, "agent.redact", SimpleNamespace(redact_sensitive_text=lambda text, force: text))
     monkeypatch.setattr(adapter, "_connect", connect)
     monkeypatch.setattr(adapter, "_opens_on_resume", lambda: False)  # a v0.23.0 owner; the open test sets both
     owner.control_refusal = adapter._control_refusal

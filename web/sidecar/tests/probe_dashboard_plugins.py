@@ -49,10 +49,7 @@ dashboard_plugins.register(registry)
 ctx = NS(check_cancelled=lambda: None)
 def call(action, home, **params):
     return registry.methods['plugins.dashboard_' + action](ctx, {'profile_home':str(home), **params})
-if not call('list', base)['supported']:
-    assert call('list', other) == {'supported':False, 'plugins':[]}
-    print('unsupported Agent fails closed')
-    sys.exit(0)
+assert call('list', base)['supported'], 'every supported Agent hosts profile dashboards'
 from hermes_cli.plugins import get_plugin_manager
 hosts = []
 request_params = dict(authenticated=True, path='/identity', method='GET', query='profile=wrong&token=secret&q=ok',

@@ -142,7 +142,7 @@
       "web/sidecar/tests/fixtures/gateway_execution_peer.py": 3,
       "web/sidecar/tests/fixtures/gateway_session_peer.py": 21,
       "web/sidecar/tests/fixtures/group_peer.py": 5,
-      "web/sidecar/tests/plugin_oauth_probe.py": 2,
+      "web/sidecar/tests/plugin_oauth_probe.py": 1,
       "web/sidecar/tests/probe_cron_atomicity.py": 1,
       "web/sidecar/tests/review_cancel_probe.py": 4,
       "web/sidecar/tests/test_agent_gateway_identity.py": 1,

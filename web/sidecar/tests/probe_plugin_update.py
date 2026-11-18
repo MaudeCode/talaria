@@ -54,17 +54,6 @@ git(repo, 'commit', '-qm', 'new revision')
 latest = git(repo, 'rev-parse', 'HEAD')
 
 with scoped_home(home):
-    if not hasattr(cadence, 'cached_git_updates'):
-        rows = call('plugins.list')['plugins']
-        assert rows and all('update_available' not in row and 'latest_revision' not in row for row in rows)
-        try:
-            call('plugins.update', key='update-probe', accept_caution=False)
-        except RpcError as exc:
-            assert exc.data['condition'] == 'plugin_update_unsupported', exc.to_json()
-        else:
-            raise AssertionError('legacy Agent must refuse plugin updates')
-        print('legacy Agent: no update fields; registered update handler refuses unsupported Agent')
-        sys.exit(0)
     cadence.record_check_results([{'name': 'update-probe', 'class': 'git', 'update_available': True, 'latest': latest}], metadata)
     row = next(row for row in call('plugins.list')['plugins'] if row['key'] == 'update-probe')
     assert row.get('update_available') is True, row
@@ -179,14 +168,7 @@ with scoped_home(home):
         assert row['update_available'] is False, row
         assert call('plugins.catalog', query='catalog-probe', offset=0, limit=20)['entries'][0]['can_update'] is False
 
-    try:
-        from hermes_cli import plugins_auto_update as auto
-    except ImportError:
-        assert call('plugins.auto_update') == {'supported': False, 'auto_apply': False, 'check_hours': 0}
-        refused('plugins.auto_update_set', 'plugin_update_unsupported', enabled=True)
-        refused('plugins.update_all', 'plugin_update_unsupported')
-        print('Agent before v0.23.0: catalog re-pin passed; neither unattended control is offered')
-        sys.exit(0)
+    from hermes_cli import plugins_auto_update as auto
 
     assert call('plugins.auto_update') == {'supported': True, 'auto_apply': False, 'check_hours': 24}
     assert call('plugins.auto_update_set', enabled=True)['auto_apply'] is True

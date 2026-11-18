@@ -4,7 +4,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import importlib
-import inspect
 import json
 import os
 import re
@@ -153,14 +152,8 @@ def _read(root: Path, rel: str, limit=_MAX_ASSET, *, anchor: Path):
 
 
 def _supported():
-    if not getattr(os, 'O_NOFOLLOW', 0) or os.open not in os.supports_dir_fd:
-        return False
-    try:
-        from hermes_cli.plugin_host import PluginHost
-        from hermes_cli.web_server_plugin_profiles import _scan_profile_plugins  # noqa: F401
-        return 'authenticated' in inspect.signature(PluginHost.asgi_request).parameters
-    except (ImportError, AttributeError, ValueError):
-        return False
+    """Whether this host can read plugin files without following links; every supported Agent has the dashboard host."""
+    return bool(getattr(os, 'O_NOFOLLOW', 0)) and os.open in os.supports_dir_fd
 
 
 def _plugins(home):

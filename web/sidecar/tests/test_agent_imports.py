@@ -9,13 +9,8 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from talaria_sidecar.errors import InvalidParams
-from talaria_sidecar.methods import Registry, build_methods
+from talaria_sidecar.methods import build_methods
 from talaria_sidecar.methods.plugin_catalog import reviewed_importer
-
-
-def test_profile_import_rpc_is_registered():
-    methods = build_methods(SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
-    assert 'profiles.import' in methods, 'The profile import discovery/preview/apply boundary is missing'
 
 
 @pytest.fixture

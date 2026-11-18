@@ -64,11 +64,6 @@ def test_unavailable_is_not_due_and_identity_change_discards_late_result(native,
     assert connectors.sign_in_offer(tmp_path)["guest_id"] is None
 
 
-def test_older_agent_is_unavailable(native, tmp_path, monkeypatch):
-    monkeypatch.delattr(native.offer, "claim_offer")
-    assert connectors.sign_in_offer(tmp_path) == {"available": False, "guest_id": None, "eligible": False, "due_in": None, "claimed": False}
-
-
 def test_accounts_observes_external_connections_without_provisioning(native, monkeypatch):
     rows = [{"connectionId": "one", "connector": "gmail", "status": "active", "label": "Work", "active": True, "createdAt": "now"},
             {"connectionId": "two", "connector": "notion", "status": "inactive", "label": "Old", "active": False, "createdAt": "before"}]

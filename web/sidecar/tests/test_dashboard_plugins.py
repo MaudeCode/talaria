@@ -49,10 +49,6 @@ def dashboards(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_dashboard', NS(
         _plugin_enable_sets_here=lambda: (consent[current.get()], set()),
         _plugin_api_mount_skip_reason=lambda p, enabled, disabled: None if p['name'] in enabled else 'not enabled'))
-    class Host:
-        def asgi_request(self, *args, authenticated=False, **kwargs):
-            raise AssertionError('read started plugin host')
-    monkeypatch.setitem(sys.modules, 'hermes_cli.plugin_host', NS(PluginHost=Host))
     methods = build_methods(NS(load=lambda: None, ensure_current=lambda: None))
     assert 'plugins.dashboard_list' in methods, 'profile-owned Agent dashboard discovery is absent'
     ctx = NS(check_cancelled=lambda: None, cancelled=False)
@@ -62,7 +58,7 @@ def dashboards(tmp_path, monkeypatch):
         _resolve_plugin_key=lambda name: name,
         _activate_key=lambda key, enable: consent[current.get()].add(key) if enable else consent[current.get()].discard(key)))
     try:
-        yield NS(homes=homes, plugins=plugins, consent=consent, call=call, ctx=ctx, methods=methods, current=current, Host=Host)
+        yield NS(homes=homes, plugins=plugins, consent=consent, call=call, ctx=ctx, methods=methods, current=current)
     finally:
         dashboard_plugins.close_dashboard_sources()
 

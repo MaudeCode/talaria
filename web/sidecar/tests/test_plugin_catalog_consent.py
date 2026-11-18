@@ -68,6 +68,7 @@ def catalog(monkeypatch, tmp_path):
     module('hermes_cli')
     module('hermes_cli.plugins_manifest', requires_hermes_error=lambda m: 'Incompatible Hermes version' if m.get('requires_hermes') else None)
     module('hermes_cli.plugin_capabilities', VALID_CAPABILITY_IDS={'tools.override'})
+    module('hermes_cli.plugins_auto_update', held_with_ref=lambda row: False)  # no install is held with --ref
     module('pm')
     module('pm.plugin_declarations', read_python_declaration=lambda _: SimpleNamespace(install_requirements=state['deps']))
     module('pm.workspace', enabled_plugin_dirs=lambda **_: {state['home'] / 'plugins' / 'probe'} if state['selected'] else set())

@@ -4,7 +4,6 @@ Real discovery connects a stub stdio server that never advertises ``events``; th
 dispatched through the Agent's registry and consent gate (the human answer is the only replaced boundary).
 Subscribe, refresh, lapse and revoke are native route and grant writes: no public endpoint, webhook delivery
 or external subscription is involved. Each observation must equal the shared contract fixture's sidecar data."""
-import importlib.util
 import json
 import os
 import sys
@@ -32,12 +31,6 @@ from talaria_sidecar.home import scoped_home  # noqa: E402
 from talaria_sidecar.methods.mcp import events  # noqa: E402
 
 servers = {"events": {"command": "stub", "events": True}}
-if importlib.util.find_spec("tools.mcp_tool_events") is None:
-    with scoped_home(home):
-        assert events(servers) == fixture["older_agent"]["data"], events(servers)
-    print(json.dumps({"agent": "without MCP events"}))
-    raise SystemExit(0)
-
 from tools.mcp_tool_discovery import discover_mcp_tools  # noqa: E402
 from tools.mcp_tool_events import _route_name, _store_grant, _write_route  # noqa: E402
 from tools.registry import registry  # noqa: E402

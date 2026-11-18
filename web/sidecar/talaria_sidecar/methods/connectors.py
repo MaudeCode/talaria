@@ -137,8 +137,6 @@ def accounts() -> dict:
     try:
         from hermes_cli.free_tier_offer import note_connected_apps_seen
         note_connected_apps_seen([{"connected": row.get("active") is True and not row.get("disabled")} for row in rows])
-    except ImportError:
-        pass  # older Agents have no connector offer
     except Exception:
         log.warning("connector sighting unavailable")
     return {"accounts": [{
@@ -153,8 +151,6 @@ def sign_in_offer(home: Path, claim_guest: str | None = None) -> dict:
     result = {"available": False, "guest_id": None, "eligible": False, "due_in": None, "claimed": False}
     try:
         from hermes_cli import anon_auth, free_tier_offer as native
-        if not all(callable(getattr(native, name, None)) for name in ("_eligible", "offer_due_in", "claim_offer")):
-            return result
 
         def identity():
             state = anon_auth.current_nous_state()
@@ -169,8 +165,6 @@ def sign_in_offer(home: Path, claim_guest: str | None = None) -> dict:
         if identity() != guest:
             return {**result, "guest_id": None}
         return {"available": True, "guest_id": guest, "eligible": eligible, "due_in": due, "claimed": claimed}
-    except ImportError:
-        return result
     except Exception:
         return result  # retain a proven identity, never raw auth or native error details
 
@@ -251,14 +245,17 @@ def _operation(home: Path, op_id: str):
 
 
 def _launch_view(launch: object) -> dict | None:
-    """What an MCP row will run or contact, as the Agent worded it for consent: its scrubbed line unchanged, and env names,
-    never values. None when an older Agent sends no line or this one is unreadable, so the row shows as it did before."""
+    """What an MCP row will run or contact, as the Agent worded it for consent: its scrubbed line with key-shaped arguments
+    masked too (the Agent shows a positional key), and env names, never values. None when the Agent sends no line or this one
+    is unreadable, so the row shows without one."""
     if not isinstance(launch, dict) or launch.get("kind") not in ("stdio", "remote"):
         return None
     target, env, cwd = launch.get("target"), launch.get("env"), launch.get("cwd")
     if not isinstance(target, str) or not target:
         return None
-    return {"kind": launch["kind"], "target": target, "env": [name for name in env if isinstance(name, str)] if isinstance(env, list) else [],
+    from ..redaction import redact_key_shapes
+
+    return {"kind": launch["kind"], "target": redact_key_shapes(target), "env": [name for name in env if isinstance(name, str)] if isinstance(env, list) else [],
             "cwd": cwd if isinstance(cwd, str) else None}
 
 

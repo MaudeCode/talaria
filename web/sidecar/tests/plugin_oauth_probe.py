@@ -155,8 +155,11 @@ def call(method: str, **params) -> dict:
     return result
 
 
+CEILING = 20  # seconds: the one bound on every wait for the sign-in worker
+
+
 def settle(flow_id: str) -> str:
-    deadline = time.monotonic() + 20
+    deadline = time.monotonic() + CEILING
     while time.monotonic() < deadline:
         view = call("oauth.poll", flow_id=flow_id)
         if view.get("status") != "pending":
@@ -196,10 +199,7 @@ def start() -> dict:
 
 
 out: dict = {"before": client_state()}
-if not out["before"]["supported"]:
-    out["start"] = start().get("raised")
-    print(json.dumps(out))
-    sys.exit(0)
+assert out["before"]["supported"], "every supported Agent ships plugin OAuth"
 
 # 1. The browser runs on this host: its redirect reaches the loopback listener.
 flow = start()
@@ -247,7 +247,7 @@ flow = start()
 redirect = idp.approve(flow["verification_url"])
 cancelled = call("oauth.cancel", flow_id=flow["flow_id"])["status"]
 refused = call("oauth.submit_redirect", flow_id=flow["flow_id"], url=redirect).get("raised")
-time.sleep(0.5)  # the listener closes once the worker sees the cancel
+oauth._FLOWS[flow["flow_id"]].closed.wait(CEILING)  # the listener closes once the worker sees the cancel
 try:
     urllib.request.urlopen(redirect, timeout=5).read()
     listener = "answered"

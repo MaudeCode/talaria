@@ -53,65 +53,56 @@ def connection(profile=home):
 
 try:
     # Register the same rendered portable launch config through the native API for both profiles.
-    from tools.mcp_tool_config import _build_safe_env, _interpolate_env_vars, _load_mcp_config
+    from tools.mcp_tool_config import _interpolate_env_vars, _load_mcp_config
     for profile in (other, home):
         with scoped_home(profile):
             discovery.register_mcp_servers(_interpolate_env_vars(_load_mcp_config()))
     assert "first" in read(), "initial child did not receive the synthetic launch secret"
-    if hasattr(discovery, "restart_mcp_servers_with_new_inputs"):
-        # An Agent that pins the profile's HERMES_HOME into the child env gives each profile its own child; older ones share one.
-        with scoped_home(home):
-            per_profile = "HERMES_HOME" in _build_safe_env(None)
-        if per_profile:
-            assert connection() is not connection(other), "profiles with different child envs must hold separate sessions"
-        else:
-            assert connection() is connection(other), "fixture must exercise an actual borrowed connection"
+    # The Agent pins the profile's HERMES_HOME into the child env, so each profile holds its own child.
+    assert connection() is not connection(other), "profiles with different child envs must hold separate sessions"
     with scoped_home(home):
         config.env_write(home, {"DEMO_KEY": "second"})
     with scoped_home(home):
-        saved = commands.save_plugin_settings("envecho", {}, {"api_key": "DEMO_KEY"} if hasattr(discovery, "restart_mcp_servers_with_new_inputs") else {})
-    if hasattr(discovery, "restart_mcp_servers_with_new_inputs"):
-        assert "second" in read(), "saved secret did not reach the live MCP child"
-        assert saved["runtime_application"] == "applied", saved
-        assert "first" in read(other), "saving one profile killed or replaced the other profile's child"
-        current = connection()
+        saved = commands.save_plugin_settings("envecho", {}, {"api_key": "DEMO_KEY"})
+    assert "second" in read(), "saved secret did not reach the live MCP child"
+    assert saved["runtime_application"] == "applied", saved
+    assert "first" in read(other), "saving one profile killed or replaced the other profile's child"
+    current = connection()
+    with scoped_home(home):
+        commands.save_plugin_settings("envecho", {"label": "non-launch setting"})
+    assert connection() is current, "a non-launch setting replaced a healthy connection"
+    # The native comparison covers non-secret launch inputs too; their storage remains Agent-owned.
+    with scoped_home(home):
+        config.env_write(home, {"DEMO_LABEL": "changed"})
+    with scoped_home(home):
+        commands.save_plugin_settings("envecho", {"label": "changed"})
+    assert "second:changed" in read(), "changed non-secret launch input did not reach the child"
+    assert connection() is not current
+    for value in ("third", "latest"):
         with scoped_home(home):
-            commands.save_plugin_settings("envecho", {"label": "non-launch setting"})
-        assert connection() is current, "a non-launch setting replaced a healthy connection"
-        # The native comparison covers non-secret launch inputs too; their storage remains Agent-owned.
+            config.env_write(home, {"DEMO_KEY": value})
         with scoped_home(home):
-            config.env_write(home, {"DEMO_LABEL": "changed"})
-        with scoped_home(home):
-            commands.save_plugin_settings("envecho", {"label": "changed"})
-        assert "second:changed" in read(), "changed non-secret launch input did not reach the child"
-        assert connection() is not current
-        for value in ("third", "latest"):
-            with scoped_home(home):
-                config.env_write(home, {"DEMO_KEY": value})
-            with scoped_home(home):
-                result = commands.save_plugin_settings("envecho", {}, {"api_key": "DEMO_KEY"})
-            assert result["runtime_application"] == "applied", result
-            assert value in read(), "repeated saves did not converge on the latest launch value"
-            assert "first" in read(other), "a later save disturbed the other profile"
-        with scoped_home(home):
-            config.env_write(home, {"DEMO_KEY": "unconfirmed"})
-        reconnect = discovery.restart_mcp_servers_with_new_inputs
-        def lose_ack(names):
-            reconnect(names)
-            raise TimeoutError("synthetic reconnect acknowledgment lost")
-        with patch.object(discovery, "restart_mcp_servers_with_new_inputs", lose_ack), scoped_home(home):
-            unknown = commands.save_plugin_settings("envecho", {"label": "persisted"}, {"api_key": "DEMO_KEY"})
-        assert unknown["runtime_application"] == "unknown", unknown
-        assert "unconfirmed:changed" in read(), "unknown acknowledgment must preserve the applied secret"
-        current = connection()
-        with scoped_home(home):
-            confirmed = commands.save_plugin_settings("envecho", {"label": "persisted"}, {"api_key": "DEMO_KEY"})
-        assert confirmed["runtime_application"] == "applied", confirmed
-        assert connection() is current, "an explicit retry duplicated the child after a lost acknowledgment"
-        assert "first" in read(other), "an explicit retry disturbed the other profile"
-        assert "unconfirmed" not in json.dumps([unknown, confirmed]), "unknown/retry payload leaked the secret"
-    else:
-        assert saved["runtime_application"] == "restart_required", saved
+            result = commands.save_plugin_settings("envecho", {}, {"api_key": "DEMO_KEY"})
+        assert result["runtime_application"] == "applied", result
+        assert value in read(), "repeated saves did not converge on the latest launch value"
+        assert "first" in read(other), "a later save disturbed the other profile"
+    with scoped_home(home):
+        config.env_write(home, {"DEMO_KEY": "unconfirmed"})
+    reconnect = discovery.restart_mcp_servers_with_new_inputs
+    def lose_ack(names):
+        reconnect(names)
+        raise TimeoutError("synthetic reconnect acknowledgment lost")
+    with patch.object(discovery, "restart_mcp_servers_with_new_inputs", lose_ack), scoped_home(home):
+        unknown = commands.save_plugin_settings("envecho", {"label": "persisted"}, {"api_key": "DEMO_KEY"})
+    assert unknown["runtime_application"] == "unknown", unknown
+    assert "unconfirmed:changed" in read(), "unknown acknowledgment must preserve the applied secret"
+    current = connection()
+    with scoped_home(home):
+        confirmed = commands.save_plugin_settings("envecho", {"label": "persisted"}, {"api_key": "DEMO_KEY"})
+    assert confirmed["runtime_application"] == "applied", confirmed
+    assert connection() is current, "an explicit retry duplicated the child after a lost acknowledgment"
+    assert "first" in read(other), "an explicit retry disturbed the other profile"
+    assert "unconfirmed" not in json.dumps([unknown, confirmed]), "unknown/retry payload leaked the secret"
     assert "second" not in json.dumps(saved), "secret leaked into ordinary save payload"
 finally:
     shutdown_mcp_servers()

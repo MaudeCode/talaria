@@ -1,4 +1,4 @@
-"""Snapshot and publish the Agent's additive plugin registry without importing it."""
+"""Snapshot and publish the Agent's additive plugin registry without importing it, and mask key-shaped text with it."""
 from __future__ import annotations
 
 import hashlib
@@ -11,6 +11,14 @@ from contextlib import nullcontext
 def _policy(patterns: list[dict]) -> dict:
     fingerprint = hashlib.sha256(json.dumps(patterns, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return {"fingerprint": fingerprint, "patterns": patterns}
+
+
+def redact_key_shapes(text: str) -> str:
+    """``text`` with every key-shaped token masked by the Agent's own patterns, plugin-registered ones included, whatever
+    the profile's ``redact_secrets`` preference: for a line shown to the user verbatim, such as an MCP launch command."""
+    from agent.redact import redact_sensitive_text
+
+    return redact_sensitive_text(text, force=True)
 
 
 class RedactionPolicy:

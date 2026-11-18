@@ -140,17 +140,13 @@ def test_installed_plugin_providers_report_identity_setup_and_models(tmp_path: p
         # Another profile never sees this profile's plugins, and its own plugin loads on demand.
         named = {row["name"]: row["setup"] for row in sidecar.result("plugins.providers", {"profile_home": str(other)})["providers"]}
         named_models = sidecar.result("providers.model_ids", {"profile_home": str(other), "provider": "fake-sub"})["model_ids"]
-        # A row reads ready exactly when the Agent can run that provider in that profile. Agent 0.21.3 cannot run a
-        # plugin loaded after its import-time discovery, so it reads as unavailable there.
+        # A row reads ready exactly when the Agent can run that provider in that profile.
         runtime, _ = sidecar.call("providers.resolve_runtime", {"profile_home": str(other), "requested": "fake-other"})
-        assert named.pop("fake-other") == ("ready" if "result" in runtime else "unavailable"), runtime
-        # The other profile's plugin with the default profile's provider id is either its own provider (an Agent with
-        # per-home provider layers) or stays unloaded (one process-wide registry). Either way it never receives the
-        # default profile's models, and the checks below prove the default profile's provider is unchanged.
-        assert (named, named_models) in (
-            ({"fake-sub": "ready"}, ["hijacked"]),
-            ({"fake-sub-copy-provider": "not_loaded"}, []),
-        ), (named, named_models)
+        assert "result" in runtime and named.pop("fake-other") == "ready", (runtime, named)
+        # The other profile's plugin with the default profile's provider id is its own provider in the Agent's per-home
+        # provider layer: it never receives the default profile's models, and the checks below prove the default
+        # profile's provider is unchanged.
+        assert (named, named_models) == ({"fake-sub": "ready"}, ["hijacked"])
         assert sidecar.result("providers.model_ids", {"profile_home": str(other), "provider": "fake-other"})["model_ids"] == ["other-1"]
         assert sidecar.result("providers.model_ids", {"profile_home": str(home), "provider": "fake-other"})["model_ids"] == []
         assert sidecar.result("plugins.providers", {"profile_home": str(home)})["providers"] == result["providers"]
@@ -183,7 +179,7 @@ def test_a_named_profiles_plugin_reads_the_same_whichever_profile_lists_first(tm
                 rows = {row["name"]: row["setup"] for row in sidecar.result("plugins.providers", {"profile_home": str(profile)})["providers"]}
             seen.append(rows if order[-1] == other else {row["name"]: row["setup"] for row in sidecar.result("plugins.providers", {"profile_home": str(other)})["providers"]})
             runtime, _ = sidecar.call("providers.resolve_runtime", {"profile_home": str(other), "requested": "fake-other"})
-            assert seen[-1]["fake-other"] == ("ready" if "result" in runtime else "unavailable"), runtime
+            assert "result" in runtime and seen[-1]["fake-other"] == "ready", (runtime, seen)
         finally:
             sidecar.close()
     assert seen[0] == seen[1], seen
@@ -228,16 +224,15 @@ def test_runtime_resolution_refuses_another_profiles_plugin(tmp_path: pathlib.Pa
             outcomes[method] = denied
         assert all(reply.get("error", {}).get("data", {}).get("condition") == "credential_missing"
                    for reply in outcomes.values()), outcomes
+        assert rows[0]["setup"] == "ready", rows
         for method in outcomes:
             owned, _ = sidecar.call(method, {"profile_home": str(other), "requested": "fake-other"})
-            # Agent 0.21.3's auth snapshot cannot resolve a plugin first loaded by a named profile.
-            assert ("result" in owned) == (rows[0]["setup"] == "ready"), owned
+            assert "result" in owned, owned
     finally:
         sidecar.close()
 
 
 @requires_agent
-@pytest.mark.skipif(AGENT_DIR is None or not (AGENT_DIR / "hermes_cli/plugin_host_profiles.py").is_file(), reason="Agent has no hosted profiles")
 @pytest.mark.parametrize("disabled,manifestless", [(False, False), (True, False), (False, True)], ids=["both-enabled", "disabled-winner", "manifestless"])
 def test_hosted_plugins_with_a_shared_provider_id_are_not_attributed_by_name(tmp_path: pathlib.Path, disabled: bool, manifestless: bool) -> None:
     home = tmp_path / "home" / ".hermes"
@@ -278,12 +273,7 @@ CREATE_CLIENT_PROFILE = textwrap.dedent(
     ))
     """
 )
-# Agent 0.22.6 loads a profile that cannot cross the host boundary in-process; older Agents drop its whole plugin.
-HOST_CHILD = AGENT_DIR / "hermes_cli/plugin_host_child.py" if AGENT_DIR is not None else None
-
-
 @requires_agent
-@pytest.mark.skipif(HOST_CHILD is None or not HOST_CHILD.is_file(), reason="Agent has no hosted profiles")
 def test_a_hosted_plugin_profile_that_overrides_create_client_reports_its_own_name(tmp_path: pathlib.Path) -> None:
     home = tmp_path / "home" / ".hermes"
     root = home / "plugins" / "fake-client"
@@ -297,11 +287,9 @@ def test_a_hosted_plugin_profile_that_overrides_create_client_reports_its_own_na
     sidecar = SidecarProcess(home)
     try:
         rows = sidecar.result("plugins.providers", {"profile_home": str(home)})["providers"]
-        if "_host_unsupported_reason" in HOST_CHILD.read_text():
-            assert [(row["name"], row["setup"]) for row in rows] == [("fake-client", "ready")], rows
-            assert sidecar.result("providers.model_ids", {"profile_home": str(home), "provider": "fake-client"})["model_ids"] == ["client-1"]
-        else:
-            assert [(row["name"], row["setup"]) for row in rows] == [("fake-client-provider", "not_loaded")], rows
+        # The Agent loads a profile that cannot cross the host boundary in-process, under the profile's own name.
+        assert [(row["name"], row["setup"]) for row in rows] == [("fake-client", "ready")], rows
+        assert sidecar.result("providers.model_ids", {"profile_home": str(home), "provider": "fake-client"})["model_ids"] == ["client-1"]
     finally:
         sidecar.close()
 

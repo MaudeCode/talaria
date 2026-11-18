@@ -118,13 +118,7 @@ def _discoverable_plugin_dirs(roots: dict[Path, str]) -> set[Path]:
 def _hosted_plugin_profiles(roots: dict[Path, str]) -> dict[Path, list] | None:
     """Resolve enabled directories through the Agent's host metadata and scoped provider registry."""
     import providers
-
-    if not hasattr(providers, "_home_layer") or not callable(getattr(providers, "provider_source", None)):
-        return None
-    try:
-        from hermes_cli.plugin_isolation import ISOLATION_HOST, isolation_mode
-    except ImportError:  # per-home registries predate host isolation
-        return None
+    from hermes_cli.plugin_isolation import ISOLATION_HOST, isolation_mode
 
     if isolation_mode() != ISOLATION_HOST:
         return None
@@ -137,9 +131,8 @@ def _hosted_plugin_profiles(roots: dict[Path, str]) -> dict[Path, list] | None:
     for root in _discoverable_plugin_dirs(roots):
         try:
             # Reuse the Agent's cached extraction; provider ids need not match manifest or directory names.
-            loaded = load_hosted_profiles(root, providers._user_module_name(root, home_key))
-            # Agent 0.22.6+ returns (hosted proxies, {name: reason} for profiles it loads in-process); older ones a list.
-            hosted, in_process = loaded if isinstance(loaded, tuple) else (loaded, {})
+            # Hosted proxies, and {name: reason} for the profiles the Agent loads in-process.
+            hosted, in_process = load_hosted_profiles(root, providers._user_module_name(root, home_key))
             for name in [*(profile.name for profile in hosted), *in_process]:
                 owners.setdefault(name, set()).add(root)
         except Exception:  # noqa: BLE001 - failed extraction keeps the manifest's not_loaded row
@@ -163,7 +156,7 @@ def _native_plugin_profiles(roots: dict[Path, str]) -> dict[Path, list] | None:
     """
     import providers
 
-    layer = providers._home_layer() if hasattr(providers, "_home_layer") else None
+    layer = providers._home_layer()
     if not isinstance(getattr(layer, "owner", None), dict) or not isinstance(getattr(layer, "trees", None), dict):
         return None
     from hermes_constants import get_hermes_home, hermes_home_key
@@ -263,10 +256,7 @@ def _unavailable_plugin(provider_id: str) -> bool:
     profile = providers.get_provider_profile(provider_id)
     if profile is None:
         return False
-    if hasattr(providers, "_home_layer") and callable(getattr(providers, "provider_source", None)):
-        if providers.provider_source(profile.name) != "user":
-            return False
-    elif id(profile) not in _user_plugin_profiles():
+    if providers.provider_source(profile.name) != "user":
         return False
     return not any(p is profile for _name, p in installed_plugin_profiles())
 
