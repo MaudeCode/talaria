@@ -1,5 +1,5 @@
-"""TAL-881: ``worktree.create`` never runs the target repository's own git filter programs: the Agent neutralizes them
-in the checkout. TAL-1254: ``worktree.retain`` keeps a Talaria worktree's lock live for the Agent's own sweep after a
+"""TAL-881: ``worktree.create`` never runs the target repository's own git filter programs: supported Agents neutralize
+them in the checkout, and an older Agent that still loads gets a refusal instead. TAL-1254: ``worktree.retain`` keeps a Talaria worktree's lock live for the Agent's own sweep after a
 restart. Real sidecar, disposable repos."""
 
 from __future__ import annotations

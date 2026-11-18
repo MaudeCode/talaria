@@ -6,9 +6,11 @@ from __future__ import annotations
 import os
 import pathlib
 import subprocess
+import sys
 
 import pytest
 
+from talaria_sidecar.errors import RpcError
 from talaria_sidecar.methods import worktree
 from talaria_sidecar.methods.worktree import _admin_dir, _take_lock, retain_all
 
@@ -92,3 +94,23 @@ def test_an_unreadable_worktree_is_unconfirmed_not_missing(tmp_path: pathlib.Pat
     finally:
         (tree / ".git").chmod(0o644)
     assert retain_all([str(tree)]) == {str(tree): "retained"}
+
+
+# git config --show-scope -z answers "<scope>\0<key>\n<value>\0" per match; exit 1 means none.
+@pytest.mark.parametrize("stdout, code, refused", [
+    ("local\0filter.lfs.smudge\nrun-me\0", 0, True),
+    ("worktree\0includeif.onbranch:x.path\n/elsewhere\0", 0, True),
+    ("global\0filter.lfs.smudge\nmine\0system\0filter.lfs.clean\nours\0", 0, False),
+    ("", 1, False),
+    ("", 128, True),
+], ids=["repo-filter", "repo-conditional-include", "user-filters-only", "none", "unreadable"])
+def test_an_agent_that_cannot_neutralize_repo_filters_refuses_a_repo_that_configures_one(monkeypatch, stdout, code, refused) -> None:
+    # Security, fail closed: an older Agent still loads with only a warning, and its checkout would run these programs.
+    monkeypatch.setitem(sys.modules, "hermes_cli._subprocess_compat", None)  # the v0.21.6 neutralizer is missing
+    monkeypatch.setattr(worktree.subprocess, "run", lambda *args, **kwargs: subprocess.CompletedProcess(args, code, stdout, ""))
+    if refused:
+        with pytest.raises(RpcError) as refusal:
+            worktree._refuse_unneutralized_repo_filters("/synthetic/repo")
+        assert refusal.value.data["condition"] == "worktree_unsafe_repo"
+    else:
+        worktree._refuse_unneutralized_repo_filters("/synthetic/repo")

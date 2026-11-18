@@ -19,6 +19,32 @@ from ..rpc import CallContext
 log = logging.getLogger("talaria_sidecar.worktree")
 
 
+# Repository config can name a program for a filter driver its .gitattributes selects; the checkout runs it. A
+# conditional include (onbranch:, gitdir:) can hold one back until the new worktree's checkout, so it counts too.
+_REPO_FILTER_KEYS = r"^(filter\..*\.(smudge|clean|process)|includeif\..*\.path)$"
+
+
+def _refuse_unneutralized_repo_filters(repo_root: str) -> None:
+    """Agents before v0.21.6 check out with the repository's filter programs live; refuse a repo that configures one.
+
+    Only global and system config are the user's own; any other scope (local, worktree, an include from either) is
+    the repository's. Unreadable config fails closed, matching the Agent's own refusal from v0.21.6, and so does any
+    repository conditional include: this probe cannot evaluate it for the branch and gitdir the worktree will have.
+    """
+    try:
+        from hermes_cli._subprocess_compat import noninteractive_repo_git_env  # noqa: F401 - v0.21.6+ neutralizes them
+        return
+    except ImportError:
+        pass
+    probe = subprocess.run(["git", "-C", repo_root, "config", "--includes", "--show-scope", "-z", "--get-regexp", _REPO_FILTER_KEYS],
+                           text=True, capture_output=True, timeout=5, check=False, stdin=subprocess.DEVNULL)
+    # -z --show-scope answers "<scope>\0<key>\n<value>\0" per match.
+    scopes = set(probe.stdout.split("\0")[::2]) - {""}
+    if probe.returncode not in (0, 1) or scopes - {"global", "system"}:
+        raise RpcError("This repository's git config can run filter programs; update Hermes Agent to v0.21.6 or later to create a worktree here",
+                       condition="worktree_unsafe_repo")
+
+
 # The Agent's own lock contract (``worktree_ops._worktree_lock_is_live``): its sweep keeps a tree whose ``hermes pid=`` owner runs.
 _HERMES_PID_LOCK = re.compile(r"hermes pid=(\d+)(?: db=.+)?", re.DOTALL)
 
@@ -133,6 +159,7 @@ def create(repo_root: str) -> dict:
     if probe.returncode != 0 or not probe.stdout.strip():
         raise RpcError("Workspace is not inside a git repository", condition="not_a_repo")
     repo = str(Path(probe.stdout.strip()).resolve())
+    _refuse_unneutralized_repo_filters(repo)
     from hermes_cli.worktree_ops import _setup_worktree
 
     output = io.StringIO()
