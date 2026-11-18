@@ -213,7 +213,7 @@ function ageSeconds(status: Dict | null, state: string, now: number): number | n
   return now - t / 1000
 }
 
-export function runtimeStatusIsFresh(status: Dict | null, now: number): boolean {
+function runtimeStatusIsFresh(status: Dict | null, now: number): boolean {
   const age = ageSeconds(status, 'running', now)
   if (age === null) return false
   return age < 0 ? -age <= GATEWAY_FRESHNESS_THRESHOLD_S : age <= GATEWAY_FRESHNESS_THRESHOLD_S

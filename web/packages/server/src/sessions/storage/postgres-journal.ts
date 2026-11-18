@@ -367,7 +367,7 @@ export class PostgresJournal implements JournalBackend {
       for (const { run, summary, archived } of terminalRuns.slice(keep).reverse()) {
         if (stopped()) return result
         const rid = run.stream_id
-        if ((run.written > cutoff && !overBudget()) || named.has(rid) || this.busy(sid, rid, opts)) continue
+        if ((run.written > cutoff && !overBudget()) || named.has(rid) || this.busy(sid, rid)) continue
         if (opts.dryRun) { result.pruned += 1; result.bytes_reclaimed += run.bytes; liveRuns -= 1; liveBytes -= run.bytes; continue }
         const archive = await this.compact(sid, rid)
         if (!archive) continue
@@ -375,7 +375,7 @@ export class PostgresJournal implements JournalBackend {
         liveBytes -= run.bytes
         // Recheck after the async compaction: the session may now name the run, or the run may have changed or been deleted.
         const current = await references(sid)
-        if (!current || this.closed || current.has(rid) || this.busy(sid, rid, opts)) continue
+        if (!current || this.closed || current.has(rid) || this.busy(sid, rid)) continue
         await this.flushAll()
         // The legacy fields stay as the JSON adapter writes them; `archived` carries the lookup summary.
         const stored = JSON.stringify({ ...summary, journal_pruned: true, journal_pruned_at: now, original_size: run.bytes, original_mtime: run.written, archived })
@@ -399,8 +399,8 @@ export class PostgresJournal implements JournalBackend {
     return result
   }
 
-  private busy(sessionId: string, runId: string, opts: PruneOptions): boolean {
-    return [...this.writers].some((writer) => writer.sessionId === sessionId && writer.runId === runId) || Boolean(opts.isActive?.(`${sessionId}/${runId}`))
+  private busy(sessionId: string, runId: string): boolean {
+    return [...this.writers].some((writer) => writer.sessionId === sessionId && writer.runId === runId)
   }
 
   /**
@@ -437,7 +437,7 @@ export class PostgresJournal implements JournalBackend {
     if (total <= maxArchiveBytes) return
     for (const { session_id: sid, stream_id: rid, size } of await this.db.rows<{ session_id: string; stream_id: string; size: number }>(`SELECT session_id, stream_id, octet_length(rows) AS size FROM ${this.s}journal_archives ORDER BY archived_at, session_id COLLATE "C", stream_id COLLATE "C"`)) {
       if (total <= maxArchiveBytes || opts.signal?.aborted) return
-      if (this.busy(sid, rid, opts) || (await this.prunedSummary(sid, rid))?.journal_pruned !== true) continue
+      if (this.busy(sid, rid) || (await this.prunedSummary(sid, rid))?.journal_pruned !== true) continue
       if (!opts.dryRun && !await this.db.run(`DELETE FROM ${this.s}journal_archives WHERE session_id = $1 AND stream_id = $2 AND NOT EXISTS (SELECT 1 FROM ${this.s}journal_rows WHERE session_id = $1 AND stream_id = $2)`, sid, rid)) continue
       if (opts.dryRun && await this.db.row(`SELECT 1 FROM ${this.s}journal_rows WHERE session_id = $1 AND stream_id = $2 LIMIT 1`, sid, rid)) continue
       total -= size

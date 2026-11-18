@@ -54,7 +54,6 @@ export interface PruneOptions {
    * recovery path; null when that state cannot be read, which leaves the whole session live.
    */
   protectedRuns?: (sessionId: string) => Promise<ReadonlySet<string> | null>
-  isActive?: (path: string) => boolean
   dryRun?: boolean
   signal?: AbortSignal
   pause?: () => Promise<unknown>

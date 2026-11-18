@@ -101,7 +101,10 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     sidecar.respond('process.defer_delivery', () => ({ ok: true }))
     sidecar.respond('process.requeue', () => ({ requeued: 1 }))
     if (phase === 'deferred') {
-      s.deps.completions.recordDeferred(sid, 'deleg_owned', '[Result deleg_owned]', event)
+      // Drained while a turn runs, so it waits for that turn's teardown; the Agent adopts the session meanwhile.
+      s.deps.registry.registerActiveRun({ stream_id: 'held', session_id: sid, started_at: 0, phase: 'running', workspace: '', model: null, provider: null, ephemeral: false })
+      await s.deps.completions.processOne(event)
+      s.deps.registry.activeRuns.delete('held')
       adoptAndCapture()
       expect(await s.deps.completions.drainDeferred(sid)).toBe(0)
     } else await s.deps.completions.processOne(event)

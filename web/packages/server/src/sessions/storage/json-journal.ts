@@ -477,7 +477,7 @@ export class JsonJournal implements JournalBackend {
         // Still the parsed file, with no live writer, in the session the sweep started. ctime catches a replacement
         // that reuses the inode, size, and mtime.
         const archivable = (): boolean => {
-          if ((this.deletions.get(sid) ?? 0) !== generation || [...this.writers].some((writer) => writer.path === path) || opts.isActive?.(path)) return false
+          if ((this.deletions.get(sid) ?? 0) !== generation || [...this.writers].some((writer) => writer.path === path)) return false
           try { return sameFile(lstatSync(path, { bigint: true }), st) } catch { return false }
         }
         if (!archivable()) continue
