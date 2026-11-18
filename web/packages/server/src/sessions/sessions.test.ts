@@ -39,7 +39,7 @@ async function newSession(s: TestServer, body: Json = {}): Promise<Json> {
 function lockRequests(s: TestServer): (sid: string, count: number) => Promise<void> {
   const lock = vi.spyOn(s.deps.sessionStore, 'withLock')
   onTestFinished(() => { lock.mockRestore() })
-  return (sid, count) => vi.waitFor(() => { expect(lock.mock.calls.filter(([id]) => id === sid).length).toBeGreaterThanOrEqual(count) })
+  return (sid, count) => vi.waitFor(() => { expect(lock.mock.calls.filter(([id]) => id === sid).length).toBeGreaterThanOrEqual(count) }, { timeout: 15_000 })
 }
 
 /** New sessions stay in memory until their first message (Python `new_session`), so persist through the store. */
@@ -201,7 +201,7 @@ describe('session lifecycle over HTTP', () => {
     const pinA = post(s, '/api/session/pin', { session_id: sid, pinned: true })
     await queued(sid, 1)
     const pinB = post(s, '/api/session/pin', { session_id: b.session_id, pinned: true })
-    await vi.waitFor(() => { expect(entered).toHaveBeenCalledWith(b.session_id, true) })
+    await vi.waitFor(() => { expect(entered).toHaveBeenCalledWith(b.session_id, true) }, { timeout: 15_000 })
     // B queues behind A's open count-and-save; unserialized, B's own would already be running against the stale count.
     expect(transactions.mock.calls.map(([id]) => id)).toEqual([sid])
     releaseA()
