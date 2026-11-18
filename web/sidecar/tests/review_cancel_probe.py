@@ -59,10 +59,7 @@ def reviews_left(parent) -> list:
     """Which reviews ``parent`` can still fork: a post-turn one, a deferred one the idle queue dispatches, and one whose
     spawn had already resolved the method before the session ended."""
     left = [] if getattr(parent, "skip_background_review", False) else ["post-turn"]
-    if not left:  # an ended agent's cancel claims its review slot on its own thread
-        deadline = time.monotonic() + 3
-        while getattr(parent, "_talaria_review_slot", None) is None and time.monotonic() < deadline:
-            time.sleep(0.02)
+    quiesce()  # an ended agent's cancel claims its review slot on its own thread
     spawned = []
     parent.__dict__.setdefault("_spawn_background_review_now", lambda **kwargs: spawned.append(Parent._spawn_background_review_now(parent, **kwargs)))
     QUEUE._dispatch(_PendingReview(parent, "probe", {}, 0.0, contextvars.copy_context()))
@@ -71,6 +68,14 @@ def reviews_left(parent) -> list:
     if Parent._spawn_background_review_now(parent):
         left.append("in-flight")
     return left
+
+
+def quiesce() -> None:
+    """Wait, under one ceiling, for every release and review cancel the sidecar has running (its ``_RELEASES`` record).
+    A cancel ends only after its fork acknowledged the interrupt, so its interrupts and slot claim have landed."""
+    with chat._RELEASES_LOCK:
+        threads = [thread for thread in chat._RELEASES if isinstance(thread, threading.Thread)]
+    chat._join(threads, time.monotonic() + 10)
 
 
 def admitted(acknowledge: bool = True):
@@ -93,7 +98,7 @@ def settled(review) -> list:
 parent, review = admitted()
 chat._AGENT_CACHE["switch"] = (parent, "sig", HOME)
 evict(None, {"session_id": "switch"})
-time.sleep(0.3)
+quiesce()
 out["switch"] = review.interrupts
 out["switch_review_live"] = parent._background_review_run is not None
 finish_background_review_run(parent, review.run)
@@ -140,9 +145,7 @@ out["wedged_returned_first"] = not joined and not review.run.request_done.is_set
 out["wedged"] = settled(review)
 # The fork acknowledges late; the Agent would requeue a cancelled review on the idle queue.
 finish_background_review_run(parent, review.run)
-deadline = time.monotonic() + 3
-while parent._background_review_run is None and time.monotonic() < deadline:
-    time.sleep(0.02)
+quiesce()
 out["wedged_left"] = reviews_left(parent)
 
 # Shutdown.

@@ -8,7 +8,6 @@ import json
 import subprocess
 import sys
 import threading
-import time
 import types
 
 import pytest
@@ -340,6 +339,7 @@ def test_interrupt_returns_the_agents_checkpoint_only_once_this_turn_published_o
     previous = [{"role": "user", "content": "earlier"}, {"role": "assistant", "content": "earlier answer"}]
     tool_call = {"role": "assistant", "content": "", "tool_calls": [{"id": "call-1", "type": "function", "function": {"name": "terminal", "arguments": "{}"}}]}
     tool_result = {"role": "tool", "tool_call_id": "call-1", "content": "worker-2 CrashLoopBackOff"}
+    entered = threading.Event()
     published = threading.Event()
     publish = threading.Event()
     gate = threading.Event()
@@ -351,6 +351,7 @@ def test_interrupt_returns_the_agents_checkpoint_only_once_this_turn_published_o
             self._session_messages = list(previous)
 
         def run_conversation(self, **kwargs):
+            entered.set()
             publish.wait(5)
             # What the Agent's tool round republishes after a completed call.
             self._session_messages = [*kwargs["conversation_history"], {"role": "user", "content": kwargs["user_message"]}, tool_call, tool_result]
@@ -369,13 +370,10 @@ def test_interrupt_returns_the_agents_checkpoint_only_once_this_turn_published_o
     result: dict = {}
     worker = threading.Thread(target=lambda: result.update(chat.start(Ctx(), {**_params("st-ck", "s-ck"), "conversation_history": previous, "user_message": "check the rollout"})))
     worker.start()
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and chat._run_for({"stream_id": "st-ck"}) is None:
-        time.sleep(0.01)
+    # The turn calls the Agent only after it registered the run and bound the agent to it.
+    assert entered.wait(5)
     run = chat._run_for({"stream_id": "st-ck"})
-    assert run is not None
-    while time.monotonic() < deadline and run.agent is None:
-        time.sleep(0.01)
+    assert run is not None and run.agent is not None
     # Before the Agent republishes, it still holds the previous turn's list: no checkpoint, never a stale one.
     assert chat._cancel_checkpoint(run) is None
     publish.set()

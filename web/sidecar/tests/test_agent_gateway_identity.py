@@ -152,7 +152,7 @@ try:
     body=source.replace("'--profile', 'named'",repr('HERMES_HOME='+str(owner)))
     assert ready('python -I -c '+shlex.quote(body)), owner
    for command in (None, 'python -c '+shlex.quote('print("gateway run --profile named")'),
-                   'python -c '+shlex.quote('import time; time.sleep(30)')+' -m hermes_cli.main --profile named gateway run',
+                   'python -c pass -m hermes_cli.main --profile named gateway run',
                    'python -c '+shlex.quote(source.replace("'named'","'foreign'")),
                    'python -c '+shlex.quote(source.replace("['hermes', '--profile', 'named', 'gateway', 'run', '--replace']",'build_argv()')),
                    'python -c '+shlex.quote(source.replace("'run', '--replace'","'status', '--replace'")),

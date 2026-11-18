@@ -231,14 +231,17 @@ try {
  wire.checkEnabled=()=>false; wire.autoApply=()=>false;
  wire.scheduleRestart=()=>{throw Error('Web restart is not authorized')};
  const notify=wire.recoveryChanged;
+ let settle; const settled=new Promise(r=>{settle=r});
  wire.recoveryChanged=async state=>{
   await notify(state); phases.push(state.phase);
   if(state.phase==='waiting') writeFileSync(a.facts,a.selectedFacts);
+  if(state.phase==='complete'||state.phase==='blocked') settle();
  };
  writeFileSync(a.facts,'{');
  deps.updates.startAutoApply();
- const deadline=Date.now()+30000;
- while(deps.updates.cachedStatus().agent_recovery.phase!=='complete' && Date.now()<deadline) await new Promise(r=>setTimeout(r,25));
+ // The server publishes each recovery phase through recoveryChanged; wait for a terminal one under one ceiling.
+ const ceiling=setTimeout(()=>settle(),30000);
+ await settled; clearTimeout(ceiling);
  assert.equal(deps.updates.cachedStatus().agent_recovery.phase,'complete',JSON.stringify({logs,phases,status:deps.updates.cachedStatus()}));
  assert.ok(phases.includes('waiting'),JSON.stringify(phases));
  assert.notEqual(client.child.pid,oldPid,'unusable old generation must refresh');
