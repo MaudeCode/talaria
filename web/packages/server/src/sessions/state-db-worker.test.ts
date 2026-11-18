@@ -545,10 +545,10 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     const watcher = new GatewayWatcher('default', s.state, { rows: (profile) => s.deps.cliSessions.read(profile), now: () => Date.now() / 1000, log: () => undefined })
     const sub = watcher.subscribe()
     setStateDbReadDelayForTests(1500)
-    // The fingerprint read is held when the stop lands; its caller then goes on to the projection read.
+    // pollOnce posts the fingerprint read, held 1.5 s, before it returns: the stop lands while that read is in flight, and
+    // its caller then goes on to the projection read.
     const poll = watcher.pollOnce()
     setStateDbReadDelayForTests(0)
-    await new Promise((resolve) => setTimeout(resolve, 100))
     await stopStateDbWorker()
     expect(await poll).toBe(false)
     sub.close()
@@ -738,14 +738,14 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
   it('settles a Stop that lands during the starting read as a turn whose read failed', async () => {
     await seeded('web-stop', 1500)
     const begin = s.deps.sessions.beginStateDbTurn.bind(s.deps.sessions)
-    let reading = false
-    const read = vi.spyOn(s.deps.sessions, 'beginStateDbTurn').mockImplementation((session) => { reading = true; return begin(session) })
+    let entered!: () => void
+    const reading = new Promise<void>((resolve) => { entered = resolve })
+    const read = vi.spyOn(s.deps.sessions, 'beginStateDbTurn').mockImplementation((session) => { entered(); return begin(session) })
     const settle = vi.spyOn(s.deps.sessions, 'settleStateDb')
     try {
       setStateDbReadDelayForTests(1500)
       const streamId = String(((await (await post('/api/chat/start', { session_id: 'web-stop', message: 'halt' })).json()) as Json).stream_id)
-      const deadline = Date.now() + 10_000
-      while (!reading && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+      await reading
       await s.get(`/api/chat/cancel?stream_id=${streamId}`)
       setStateDbReadDelayForTests(0)
       await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
@@ -775,13 +775,13 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
     const settlementRead = s.deps.sessions.settlementRead.bind(s.deps.sessions)
     let release = (): void => undefined
     const held = new Promise<void>((resolve) => { release = resolve })
-    let holding = false
+    let entered!: () => void
+    const holding = new Promise<void>((resolve) => { entered = resolve })
     // The turn's settlement read is held until the Stop has settled.
-    const read = vi.spyOn(s.deps.sessions, 'settlementRead').mockImplementationOnce(async (session) => { holding = true; await held; return settlementRead(session) })
+    const read = vi.spyOn(s.deps.sessions, 'settlementRead').mockImplementationOnce(async (session) => { entered(); await held; return settlementRead(session) })
     try {
       const streamId = String(((await (await post('/api/chat/start', { session_id: 'web-late-stop', message: 'late' })).json()) as Json).stream_id)
-      const deadline = Date.now() + 10_000
-      while (!holding && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+      await holding
       await s.get(`/api/chat/cancel?stream_id=${streamId}`)
       release()
       const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
@@ -811,13 +811,13 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
     const stateDbRows = s.deps.sessions.stateDbRows.bind(s.deps.sessions)
     let release = (): void => undefined
     const held = new Promise<void>((resolve) => { release = resolve })
-    let holding = false
+    let entered!: () => void
+    const holding = new Promise<void>((resolve) => { entered = resolve })
     // The detail's transcript read is held while the turn settles.
-    const read = vi.spyOn(s.deps.sessions, 'stateDbRows').mockImplementationOnce(async (session) => { holding = true; await held; return stateDbRows(session) })
+    const read = vi.spyOn(s.deps.sessions, 'stateDbRows').mockImplementationOnce(async (session) => { entered(); await held; return stateDbRows(session) })
     try {
       const detail = contents(`/api/session?session_id=${sid}${query}`)
-      const deadline = Date.now() + 10_000
-      while (!holding && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+      await holding
       finish()
       await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
       release()

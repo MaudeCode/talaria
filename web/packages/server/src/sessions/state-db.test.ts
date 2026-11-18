@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { bootTestServer, type TestServer, openStateDb } from '../test/harness.js'
+import { bootTestServer, type SseFrame, type TestServer, openStateDb } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionSchema } from '@maudecode/talaria-web-contracts'
@@ -26,6 +26,13 @@ useJsonStorage()
 
 type Json = Record<string, unknown>
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+
+/** Opens a feed; `opened` resolves at its first frame, which each gateway feed writes only after it subscribed to the watcher. */
+function feed(s: TestServer, path: string, until: (frame: SseFrame) => boolean, opts: { headers?: Record<string, string>; timeoutMs: number }): { frames: Promise<SseFrame[]>; opened: Promise<void> } {
+  let first!: () => void
+  const opened = new Promise<void>((resolve) => { first = resolve })
+  return { frames: s.sse(path, (frame) => { first(); return until(frame) }, opts), opened }
+}
 
 /** The Agent's `state.db` columns the projection reads. */
 function createStateDb(path: string): DatabaseSync {
@@ -636,10 +643,10 @@ describe('state.db projection', () => {
     expect(first[0]?.event).toBe('sessions_changed')
     expect(((first[0]?.data as Json).sessions as Json[]).map((r) => r.session_id)).toContain('tg-1')
     // A live insert reaches the stream through the watcher poll.
-    const live = s.sse('/api/sessions/gateway/stream', (f) => f.event === 'sessions_changed' && ((f.data as Json).sessions as Json[]).some((r) => r.session_id === 'tg-gw'), { timeoutMs: 4000 })
-    await new Promise((r) => setTimeout(r, 150))
+    const live = feed(s, '/api/sessions/gateway/stream', (f) => f.event === 'sessions_changed' && ((f.data as Json).sessions as Json[]).some((r) => r.session_id === 'tg-gw'), { timeoutMs: 4000 })
+    await live.opened
     insertSession(db, { id: 'tg-gw', source: 'telegram', started_at: 600, title: 'Gateway live', messages: [['user', 601]], chat_id: 'c-gw' })
-    expect((await live).some((f) => ((f.data as Json).sessions as Json[]).some((r) => r.session_id === 'tg-gw'))).toBe(true)
+    expect((await live.frames).some((f) => ((f.data as Json).sessions as Json[]).some((r) => r.session_id === 'tg-gw'))).toBe(true)
     // A watcher that is not running answers 503 on both modes.
     const stopped = vi.spyOn(s.deps.gatewayWatchers, 'get').mockReturnValue({ isAlive: () => false } as never)
     try {
@@ -682,10 +689,10 @@ describe('state.db projection', () => {
     expect(merged[0]).toMatchObject({ event: 'initial', data: { stream: 'sessions' } })
     expect(merged[1]).toMatchObject({ event: 'gateway_status', data: { ok: true, watcher_running: true } })
     // A live insert reaches the merged feed through the 100 ms poll.
-    const live = s.sse('/api/sessions/events?gateway=1', (f) => f.event === 'sessions_changed' && (f.data as Json).stream === 'gateway' && ((f.data as Json).sessions as Json[]).some((r) => r.session_id === 'tg-3'), { timeoutMs: 4000 })
-    await new Promise((r) => setTimeout(r, 150))
+    const live = feed(s, '/api/sessions/events?gateway=1', (f) => f.event === 'sessions_changed' && (f.data as Json).stream === 'gateway' && ((f.data as Json).sessions as Json[]).some((r) => r.session_id === 'tg-3'), { timeoutMs: 4000 })
+    await live.opened
     insertSession(db, { id: 'tg-3', source: 'telegram', started_at: 500, title: 'Live', messages: [['user', 501]], chat_id: 'c3' })
-    const liveFrames = await live
+    const liveFrames = await live.frames
     expect(liveFrames.some((f) => (f.data as Json).stream === 'gateway' && ((f.data as Json).sessions as Json[]).some((r) => r.session_id === 'tg-3'))).toBe(true)
     await s.deps.settings.save({ show_cli_sessions: false })
     const status = await s.sse('/api/sessions/events?gateway=1', (f) => f.event === 'gateway_status', { timeoutMs: 2000 })
@@ -1032,10 +1039,13 @@ describe('claiming a CLI session for WebUI (TAL-256)', () => {
       titled = true
       return { model: 'aux', text: 'Title: "Too late"', usage: null }
     })
+    const titleJob = vi.spyOn(s.deps.turns, 'titleClaimed')
+    onTestFinished(() => { titleJob.mockRestore() })
 
     expect((await post('/api/session/pin', { session_id: 'cli-gone', pinned: true })).status).toBe(200)
-    await vi.waitFor(() => { expect(titled).toBe(true) })
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(titleJob).toHaveBeenCalledTimes(1)
+    await titleJob.mock.results[0]!.value
+    expect(titled).toBe(true)
 
     expect(existsSync(sessionPath(s.deps.sessionStore, 'cli-gone'))).toBe(false)
   })
@@ -1979,10 +1989,15 @@ describe('gateway session feeds under person isolation (TAL-48)', () => {
       expect(seen.some((f) => f.event === 'sessions_changed')).toBe(true)
       expect(rows(seen)).not.toContain('tg-shared')
       // A live insert reaching the watcher is withheld from both feeds too.
-      const live = ['/api/sessions/gateway/stream', '/api/sessions/events?gateway=1'].map((path) => s.sse(path, () => false, { headers: alice, timeoutMs: 2000 }))
-      await new Promise((r) => setTimeout(r, 150))
+      const live = ['/api/sessions/gateway/stream', '/api/sessions/events?gateway=1'].map((path) => feed(s, path, () => false, { headers: alice, timeoutMs: 2000 }))
+      await Promise.all(live.map((f) => f.opened))
+      const probe = s.deps.gatewayWatchers.get(s.deps.activeProfile()).subscribe()
       insertSession(db, { id: 'tg-live', source: 'telegram', started_at: 600, title: 'Live gateway chat', messages: [['user', 601]], chat_id: 'c-2' })
-      const liveRows = rows((await Promise.all(live)).flat())
+      // The watcher hands each change to every subscriber at once, so once the probe holds tg-live both feeds have it
+      // queued; stopping the watcher queues their end behind it, and each feed writes that change before it closes.
+      for (let event = await probe.next(); event && !event.sessions.some((r) => r.session_id === 'tg-live'); event = await probe.next());
+      s.deps.gatewayWatchers.stopAll()
+      const liveRows = rows((await Promise.all(live.map((f) => f.frames))).flat())
       expect(liveRows).not.toContain('tg-live')
       expect(liveRows).not.toContain('tg-shared')
     } finally {

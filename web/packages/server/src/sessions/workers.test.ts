@@ -237,14 +237,14 @@ describe('async delegation delivery claims (TAL-459)', () => {
   })
 
   it('backs empty drains off to 10 s and resets on routed events and wake() (TAL-1395)', async () => {
-    vi.useFakeTimers()
+    vi.useFakeTimers({ now: 0 })
     const drain = new CompletionDrain({ documents: new JsonDocuments(s.state),
       sidecar: () => null, baseHome: '/base', profileHome: () => '/base', activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels,
       registry: s.deps.registry, startTurn: () => ({}), now: () => 0, log: () => undefined,
     })
-    const t0 = Date.now(), at: number[] = []
+    const at: number[] = []
     let routed = 0
-    vi.spyOn(drain, 'drainOnce').mockImplementation(() => { at.push(Date.now() - t0); return Promise.resolve(routed) })
+    vi.spyOn(drain, 'drainOnce').mockImplementation(() => { at.push(Date.now()); return Promise.resolve(routed) })
     const gaps = (): number[] => at.slice(1).map((t, i) => t - at[i]!)
     try {
       drain.start()
@@ -1738,20 +1738,22 @@ describe('agent health', () => {
   it('reads the local gateway pid and state file with the freshness rules', async () => {
     const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-gw-${String(process.pid)}-${String(Date.now())}`)
     mkdirSync(dir, { recursive: true })
-    const deps = { env: {}, hermesHome: dir, profileHome: () => dir, fetch: () => fetch, now: () => Date.now() / 1000 }
+    const now = 1_800_000_000
+    const deps = { env: {}, hermesHome: dir, profileHome: () => dir, fetch: () => fetch, now: () => now }
+    const fresh = new Date(now * 1000).toISOString()
+    const old = new Date((now - 10 * 60) * 1000).toISOString()
     const probe = () => { forgetGatewayProbes(); return agentHealth(deps) }
     expect(await agentHealth(deps)).toMatchObject({ alive: null, details: { state: 'unknown', reason: 'gateway_not_configured' } })
     writeFileSync(join(dir, 'gateway.pid'), String(process.pid))
-    writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', updated_at: new Date().toISOString(), active_agents: 2, platforms: { telegram: { state: 'connected' }, discord: { state: 'connected' } } }))
+    writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', updated_at: fresh, active_agents: 2, platforms: { telegram: { state: 'connected' }, discord: { state: 'connected' } } }))
     expect(await probe()).toMatchObject({ alive: true, details: { state: 'alive', gateway_state: 'running', active_agents: 2, platform_count: 2, platform_states: { connected: 2 } } })
     writeFileSync(join(dir, 'gateway.pid'), '999999999')
     expect(await probe()).toMatchObject({ alive: true, details: { reason: 'cross_container_freshness' } })
-    const old = new Date(Date.now() - 10 * 60 * 1000).toISOString()
     writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', updated_at: old }))
     expect(await probe()).toMatchObject({ alive: null, details: { reason: 'gateway_stale_running_state' } })
     writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'stopped', updated_at: old }))
     expect(await probe()).toMatchObject({ alive: null, details: { reason: 'gateway_stale_stopped_state' } })
-    writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'stopped', updated_at: new Date().toISOString() }))
+    writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'stopped', updated_at: fresh }))
     expect(await probe()).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
     // TAL-950: the Agent writes a JSON pid record; a live gateway still starting under a stale `draining` state is alive.
     writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'draining', updated_at: old }))
@@ -1768,7 +1770,7 @@ describe('agent health', () => {
     writeFileSync(join(dir, 'gateway.pid'), JSON.stringify({ pid: 999999999, kind: 'hermes-gateway' }))
     expect(await probe()).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
     // A naive timestamp is refused even when it names the current local time, so the dead pid decides.
-    const clock = new Date()
+    const clock = new Date(now * 1000)
     const local = new Date(clock.getTime() - clock.getTimezoneOffset() * 60_000).toISOString().slice(0, 19)
     writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', updated_at: local }))
     expect(await probe()).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })

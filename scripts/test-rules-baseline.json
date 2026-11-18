@@ -1,8 +1,7 @@
 {
   "counts": {
     "clock-elapsed": {
-      "app/TalariaTests/ChatViewModelSendTests.swift": 1,
-      "web/packages/server/src/sessions/workers.test.ts": 2
+      "app/TalariaTests/ChatViewModelSendTests.swift": 1
     },
     "clock-sleep": {
       "app/TalariaKit/Tests/TalariaKitTests/ApprovalNotificationTests.swift": 1,
@@ -40,11 +39,7 @@
       "web/packages/server/src/app.test.ts": 1,
       "web/packages/server/src/providers/env-write.agent.test.ts": 1,
       "web/packages/server/src/sessions/chat.test.ts": 1,
-      "web/packages/server/src/sessions/compress.test.ts": 1,
-      "web/packages/server/src/sessions/notify/agent-notify.test.ts": 2,
-      "web/packages/server/src/sessions/sessions.test.ts": 9,
-      "web/packages/server/src/sessions/state-db-worker.test.ts": 4,
-      "web/packages/server/src/sessions/state-db.test.ts": 4
+      "web/packages/server/src/sessions/compress.test.ts": 1
     }
   },
   "exceptions": [
