@@ -2,9 +2,6 @@
   "counts": {
     "clock-elapsed": {
       "app/TalariaTests/ChatViewModelSendTests.swift": 1,
-      "web/packages/frontend/src/app/bootstrap.test.tsx": 1,
-      "web/packages/frontend/src/features/chat/useTranscript.test.tsx": 1,
-      "web/packages/frontend/src/features/voice/completionAudio.test.ts": 1,
       "web/packages/server/src/api/bootstrap-shell.test.ts": 1,
       "web/packages/server/src/api/settings.test.ts": 2,
       "web/packages/server/src/api/sse-routes.test.ts": 1,
@@ -65,10 +62,6 @@
       "app/TalariaTests/ReplayCatchUpPerformanceTests.swift": 1,
       "app/TalariaTests/SessionListHostedTests.swift": 1,
       "app/TalariaTests/TranscriptHostedTests.swift": 26,
-      "web/packages/frontend/src/app/settings.test.tsx": 1,
-      "web/packages/frontend/src/features/chat/ChatSidePanel.test.tsx": 3,
-      "web/packages/frontend/src/features/composer/ComposerNotices.test.tsx": 1,
-      "web/packages/frontend/src/features/composer/chips.test.tsx": 1,
       "web/packages/server/src/api/auth-flows.test.ts": 1,
       "web/packages/server/src/api/settings.test.ts": 7,
       "web/packages/server/src/api/sse-writer.test.ts": 3,
@@ -129,9 +122,6 @@
       "web/packages/frontend/vitest.config.ts": 1
     },
     "unheld-clock": {
-      "web/packages/frontend/src/features/chat/VaultPromptCard.test.tsx": 1,
-      "web/packages/frontend/src/features/chat/useTranscript.test.tsx": 1,
-      "web/packages/frontend/src/features/notices/useRuntimeNotices.test.ts": 1,
       "web/packages/server/src/api/feedback.test.ts": 2,
       "web/packages/server/src/api/sse-writer.test.ts": 1,
       "web/packages/server/src/fs/stat.test.ts": 1,

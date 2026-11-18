@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createRef } from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ComposerNotices, type ComposerNotice } from './ComposerNotices'
 
@@ -66,21 +66,26 @@ describe('ComposerNotices (TAL-1078)', () => {
     expect(status).toHaveTextContent('Three nodes.')
   })
 
-  it('never duplicates or revives a chip re-added during its exit', async () => {
-    const { container, update } = setup([{ id: 'x', content: 'Old' }])
-    update([])
-    expect(container.querySelector('[data-notice="x"]')).toHaveClass('is-leaving')
-    // Not even for the one commit before the exit list is pruned: React reports the duplicate key it would render.
-    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    update([{ id: 'x', content: 'New' }])
-    expect(errors.mock.calls.flat().join(' ')).not.toMatch(/same key/)
-    errors.mockRestore()
-    expect(container.querySelectorAll('[data-notice="x"]')).toHaveLength(1)
-    expect(container.querySelector('[data-notice="x"]')).toHaveTextContent('New')
-    expect(container.querySelector('[data-notice="x"]')).not.toHaveClass('is-leaving')
-    // The cancelled exit's timer must not remove the returned chip.
-    await new Promise((r) => setTimeout(r, 260))
-    expect(container.querySelector('[data-notice="x"]')).toHaveTextContent('New')
+  it('never duplicates or revives a chip re-added during its exit', () => {
+    vi.useFakeTimers()
+    try {
+      const { container, update } = setup([{ id: 'x', content: 'Old' }])
+      update([])
+      expect(container.querySelector('[data-notice="x"]')).toHaveClass('is-leaving')
+      // Not even for the one commit before the exit list is pruned: React reports the duplicate key it would render.
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      update([{ id: 'x', content: 'New' }])
+      expect(errors.mock.calls.flat().join(' ')).not.toMatch(/same key/)
+      errors.mockRestore()
+      expect(container.querySelectorAll('[data-notice="x"]')).toHaveLength(1)
+      expect(container.querySelector('[data-notice="x"]')).toHaveTextContent('New')
+      expect(container.querySelector('[data-notice="x"]')).not.toHaveClass('is-leaving')
+      // The cancelled exit's timer must not remove the returned chip.
+      act(() => { vi.runOnlyPendingTimers() })
+      expect(container.querySelector('[data-notice="x"]')).toHaveTextContent('New')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not measure a lone ticking chip to decide that it stays separate', async () => {

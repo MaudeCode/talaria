@@ -66,11 +66,12 @@ it.each(['before', 'after'] as const)('keeps the terminal window without a detai
   expect(result.current.session?.title).toBe('Settled title')
   expect(qc.getQueryState(keys.sessions.list({}))?.isInvalidated).toBe(true)
   expect(qc.getQueryState(keys.sessions.detail('other'))?.isInvalidated).toBe(false)
-  const now = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 5_001)
+  // Past the 5 s settle window: the whole clock moves, so no real timer runs behind it.
+  vi.useFakeTimers({ now: Date.now() + 5_001 })
   try {
     await act(() => Promise.resolve(vi.mocked(feeds.openSessionListStream).mock.calls[0]![0].onEvent({ event: 'sessions_changed', data: { reason: 'session_done', session_id: 'terminal' } })))
     expect(api.fetchSession).toHaveBeenCalledTimes(1)
-  } finally { now.mockRestore() }
+  } finally { vi.useRealTimers() }
   await act(async () => { await attachToStream('terminal', 'next-run'); teardown('terminal') })
   vi.mocked(api.fetchSession).mockClear()
   await act(() => Promise.resolve(sidebar()))
@@ -401,7 +402,7 @@ it('does not refetch stale transcript detail on window focus with its feed open'
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   renderHook(() => useTranscript('focus'), { wrapper })
   await act(async () => {
-    qc.setQueryData(key, data, { updatedAt: Date.now() - 10_000 })
+    qc.setQueryData(key, data, { updatedAt: 0 })
     focusManager.setFocused(false)
     focusManager.setFocused(true)
     await Promise.resolve()

@@ -153,16 +153,20 @@ describe('useRuntimeNotices compression (TAL-1006)', () => {
   }
   const row = (args: Partial<Parameters<typeof useRuntimeNotices>[0]>) => {
     vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, chat: { available: true, condition: null } })
-    vi.spyOn(Date, 'now').mockReturnValue(NOW)
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children)
-    const { result } = renderHook(() => useRuntimeNotices({ live: null, compressingSince: null, ...args }), { wrapper })
-    const notice = result.current.notices.find((n) => n.id === 'runtime:compressing')
-    if (!notice) return null
-    const { container, unmount } = render(createElement(Fragment, null, notice.content))
-    const text = container.textContent
-    unmount()
-    return text
+    vi.useFakeTimers({ now: NOW })
+    try {
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children)
+      const { result } = renderHook(() => useRuntimeNotices({ live: null, compressingSince: null, ...args }), { wrapper })
+      const notice = result.current.notices.find((n) => n.id === 'runtime:compressing')
+      if (!notice) return null
+      const { container, unmount } = render(createElement(Fragment, null, notice.content))
+      const text = container.textContent
+      unmount()
+      return text
+    } finally {
+      vi.useRealTimers()
+    }
   }
 
   it('shows the manual job with the time since the server\'s start; a live turn\'s span is the live pill\'s (TAL-1282)', () => {

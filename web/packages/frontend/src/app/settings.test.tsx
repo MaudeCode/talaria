@@ -40,7 +40,8 @@ describe('shared optimistic settings', () => {
     vi.mocked(api.fetchSettings).mockReturnValue(held.promise)
     const before = renders
     const refetch = qc.refetchQueries({ queryKey: keys.settings })
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
+    // React Query notifies on a 0 ms timer; flush it so a background refetch that rendered would show here.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
     expect(fetching.result.current).toBe(false)
     expect(renders).toBe(before)
     held.resolve(initial)
