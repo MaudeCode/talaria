@@ -125,7 +125,7 @@ def test_diagnostic_creation_refuses_without_starting(tmp_path):
 
 
 @requires_agent
-@pytest.mark.parametrize("scenario", ["controls", "restart", "safe", "safe-sibling", "safe-error"])
+@pytest.mark.parametrize("scenario", ["controls", "restart-config", "restart-safe", "safe", "safe-sibling", "safe-error"])
 def test_real_owner_diagnostic_execution_modes(request, tmp_path, scenario):
     run_owner_peer(request, tmp_path, "gateway_execution_peer.py", [scenario])
 

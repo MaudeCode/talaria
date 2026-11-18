@@ -22,7 +22,10 @@ agent = Path(os.environ["TALARIA_WEB_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
 from peer_phases import POLL_SECONDS, Phases, report_modes
 
-SCENARIOS = ["controls", "restart", "safe", "safe-sibling", "safe-error"]
+SCENARIOS = ["controls", "restart-config", "restart-safe", "safe", "safe-sibling", "safe-error"]
+# The MCP sentinel witnesses a safe worker's launches. Every owner boot waits out its connect timeout, so only the
+# scenarios that audit those launches, or read the whole profile, configure it.
+MCP_SCENARIOS = {"controls", "safe", "safe-error"}
 from local_recovery_probe import Model, child_env, daemon as owner_daemon, rpc, websocket
 from conftest import SidecarProcess
 
@@ -95,7 +98,7 @@ class Provider(Model):
         super().do_POST()
 
 
-def write_profile(home: Path, workspace: Path, url: str, witness: Path, tag: str = ""):
+def write_profile(home: Path, workspace: Path, url: str, witness: Path, tag: str = "", mcp: bool = True):
     (home / "SOUL.md").write_text(f"{tag}SOUL_SENTINEL persona.\n")
     (home / "memories").mkdir(parents=True)
     (home / "memories/MEMORY.md").write_text(f"{tag}MEMORY_SENTINEL fact.\n")
@@ -107,8 +110,7 @@ def write_profile(home: Path, workspace: Path, url: str, witness: Path, tag: str
     plugin.mkdir(parents=True)
     (plugin / "plugin.yaml").write_text("name: sentinel\nversion: 1.0.0\nkind: standalone\n")
     (plugin / "__init__.py").write_text(f"from pathlib import Path\nPath({str(witness / (tag + 'plugin-imported'))!r}).touch()\ndef register(ctx): pass\n")
-    mcp = home / "mcp_sentinel.py"
-    mcp.write_text(f"from pathlib import Path\nPath({str(witness / (tag + 'mcp-spawned'))!r}).touch()\nimport sys\nsys.stdin.read()\n")
+    (home / "mcp_sentinel.py").write_text(f"from pathlib import Path\nPath({str(witness / (tag + 'mcp-spawned'))!r}).touch()\nimport sys\nsys.stdin.read()\n")
     (home / ".env").write_text("TALARIA_ENV_SENTINEL=present\n")
     (home / "config.yaml").write_text(json.dumps({
         "gateway": {"multiplex_profiles": False, **({"standalone": True} if tag else {})},
@@ -117,7 +119,7 @@ def write_profile(home: Path, workspace: Path, url: str, witness: Path, tag: str
         "plugins": {"enabled": ["sentinel"]},
         # The sentinel only witnesses a spawn and never answers, so each owner start waits out this connect timeout. The
         # spawn happens first; nothing here depends on how long the owner then waits for a handshake (TAL-1599, TAL-1780).
-        "mcp_servers": {"sentinel": {"command": sys.executable, "args": [str(mcp)], "connect_timeout": 1}},
+        "mcp_servers": {"sentinel": {"command": sys.executable, "args": [str(home / "mcp_sentinel.py")], "connect_timeout": 1}} if mcp else {},
         "auxiliary": {"title_generation": {"enabled": False}}, "platform_toolsets": {"cli": []},
     }))
     (workspace / "AGENTS.md").write_text("RULES_SENTINEL project rule.\n")
@@ -261,46 +263,44 @@ def probe_controls(home: Path, workspace: Path, witness: Path, peer, env):
         owner.sidecar.close()
 
 
-def probe_restart(home: Path, workspace: Path, witness: Path, peer, env):
-    """Each diagnostic session's frozen policy across an owner restart."""
-    owner, audit, ids = Owner(home, workspace, peer), Witness(witness / "audit.jsonl"), {}
-    call = owner.call
+def probe_restart(home: Path, workspace: Path, witness: Path, peer, env, mode: str):
+    """One diagnostic session's frozen policy across an owner restart."""
+    owner, audit = Owner(home, workspace, peer), Witness(witness / "audit.jsonl")
+    call, safe = owner.call, mode == "safe"
     try:
         with daemons((home, env)):
-            for name, mode in (("config", "ignore_config"), ("safe", "safe")):
-                created = owner.create(mode, "diagnostic-" + name)
-                assert created["state"] == "attached" and created["snapshot"]["messages"] == [], created
-                ids[name] = created["snapshot"]["session_id"]
+            created = owner.create(mode, "diagnostic-" + mode)
+            assert created["state"] == "attached" and created["snapshot"]["messages"] == [], created
+            sid = created["snapshot"]["session_id"]
 
         # The frozen policy survives an owner restart. v0.22.1 binds DEFAULT_CONFIG's voice.record_key
         # as a launch-only secret, so a restarted owner refuses a bypass turn before any worker starts
         # (launch_credentials_unavailable). Either way nothing runs under a weaker policy.
         with daemons((home, env)):
-            for name, text, expected in (("safe", "SAFE_AFTER_RESTART", set()),
-                                         ("config", "CONFIG_AFTER_RESTART", set(SENTINELS) - {"CONFIG_SENTINEL"})):
-                assert receipt_policy(home, ids[name]) == {"safe_mode": name == "safe", "ignore_user_config": True}
-                submitted = call("submit", ids[name], request_id="restart-" + name, text=text)
-                assert submitted["receipt"], submitted
-                end = time.monotonic() + 60
-                while True:
-                    current = call("snapshot", ids[name])
-                    pending = current["snapshot"]["pending"]
-                    if not current["snapshot"]["running"] and all(p["status"] in {"unknown", "terminal"} for p in pending):
-                        break
-                    assert time.monotonic() < end, current
-                    time.sleep(POLL_SECONDS)
-                if request_for(peer, text):
-                    assert sentinels_in(request_for(peer, text)) == expected, request_for(peer, text)
-                else:
-                    assert [p["status"] for p in pending] == ["unknown"], pending
-                    discarded = call("discard", ids[name], admission_id=pending[0]["admission_id"],
-                                     execution_generation=pending[0]["execution_generation"])
-                    assert discarded["state"] == "attached", discarded
-                    settle(call, ids[name])
+            text, expected = ("SAFE_AFTER_RESTART", set()) if safe else ("CONFIG_AFTER_RESTART", set(SENTINELS) - {"CONFIG_SENTINEL"})
+            assert receipt_policy(home, sid) == {"safe_mode": safe, "ignore_user_config": True}
+            submitted = call("submit", sid, request_id="restart-" + mode, text=text)
+            assert submitted["receipt"], submitted
+            end = time.monotonic() + 60
+            while True:
+                current = call("snapshot", sid)
+                pending = current["snapshot"]["pending"]
+                if not current["snapshot"]["running"] and all(p["status"] in {"unknown", "terminal"} for p in pending):
+                    break
+                assert time.monotonic() < end, current
+                time.sleep(POLL_SECONDS)
+            if request_for(peer, text):
+                assert sentinels_in(request_for(peer, text)) == expected, request_for(peer, text)
+            else:
+                assert [p["status"] for p in pending] == ["unknown"], pending
+                discarded = call("discard", sid, admission_id=pending[0]["admission_id"],
+                                 execution_generation=pending[0]["execution_generation"])
+                assert discarded["state"] == "attached", discarded
+                settle(call, sid)
             events = audit.take()
             gone({e["pid"] for e in events if e["worker"]})
             assert not any(path.endswith(("config.yaml", ".env")) for path in worker_opened(events)), events
-        print(json.dumps({"scenario": "restart", "sessions": ids, "provider_requests": len(peer.requests)}))
+        print(json.dumps({"scenario": "restart-" + mode, "session": sid, "provider_requests": len(peer.requests)}))
     finally:
         peer.release.set()
         owner.sidecar.close()
@@ -413,8 +413,10 @@ def main():
     peer.blocked, peer.release = threading.Event(), threading.Event()
     threading.Thread(target=peer.serve_forever, daemon=True).start()
     peer.url = f"http://127.0.0.1:{peer.server_port}/v1"
-    write_profile(home, workspace, peer.url, witness)
-    write_profile(alpha, workspace, peer.url, witness, "ALPHA_")
+    [scenario] = sys.argv[1:]
+    assert scenario in SCENARIOS, scenario
+    write_profile(home, workspace, peer.url, witness, mcp=scenario in MCP_SCENARIOS)
+    write_profile(alpha, workspace, peer.url, witness, "ALPHA_", mcp=scenario in MCP_SCENARIOS)
     env = child_env()
     env.update(HOME=os.environ["HOME"], HERMES_HOME=str(home), PYTHONPATH=f"{hooks}{os.pathsep}{agent}",
                OPENAI_API_KEY="loopback-only", OPENAI_BASE_URL=peer.url, HERMES_STATE_DB_GUARD_BYPASS="1",
@@ -422,15 +424,14 @@ def main():
                AWS_EC2_METADATA_DISABLED="true", TALARIA_WITNESS_LOG=str(witness / "audit.jsonl"),
                TALARIA_WITNESS_ROOTS=os.pathsep.join([str(home), str(workspace)]))
     alpha_env = dict(env, HERMES_HOME=str(alpha), OPENAI_API_KEY="alpha-only")
-    [scenario] = sys.argv[1:]
-    assert scenario in SCENARIOS, scenario
     ran = []
     try:
         with PHASES.probe(scenario):
             if scenario == "safe-sibling":
                 probe_safe_sibling(home, alpha, workspace, witness, peer, env, alpha_env)
             else:
-                {"controls": probe_controls, "restart": probe_restart, "safe": probe_safe,
+                {"controls": probe_controls, "restart-config": lambda *a: probe_restart(*a, "ignore_config"),
+                 "restart-safe": lambda *a: probe_restart(*a, "safe"), "safe": probe_safe,
                  "safe-error": probe_safe_error}[scenario](home, workspace, witness, peer, env)
         ran = [scenario]
     finally:

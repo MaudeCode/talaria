@@ -1393,10 +1393,11 @@
     },
     "tests/test_gateway_sessions.py::test_real_owner_diagnostic_execution_modes": {
       "layer": "compatibility",
-      "reason": "Real disposable owners with a loopback provider and an audit hook in every owner and worker interpreter, one per scenario. [controls] proves normal sessions read the whole profile and ignore_config drops only its config. [restart] proves each diagnostic session's frozen ignore_config and safe policy survives an owner restart. [safe] proves a safe turn runs in a fresh private worker that reads, imports and launches nothing from the profile, beside an ordinary session on the same owner, across cancel and interrupt. [safe-sibling] proves a sibling profile's own owner keeps its profile, environment and credential while a safe turn runs. [safe-error] proves the turn after a provider failure is still safe. Only the installed owner's creation policy and managed worker prove this.",
+      "reason": "Real disposable owners with a loopback provider and an audit hook in every owner and worker interpreter, one per scenario. [controls] proves normal sessions read the whole profile and ignore_config drops only its config. [restart-config] proves an ignore_config session's frozen policy survives an owner restart; [restart-safe] proves the same for a safe session. [safe] proves a safe turn runs in a fresh private worker that reads, imports and launches nothing from the profile, beside an ordinary session on the same owner, across cancel and interrupt. [safe-sibling] proves a sibling profile's own owner keeps its profile, environment and credential while a safe turn runs. [safe-error] proves the turn after a provider failure is still safe. Only the installed owner's creation policy and managed worker prove this.",
       "cases": [
         "[controls]",
-        "[restart]",
+        "[restart-config]",
+        "[restart-safe]",
         "[safe]",
         "[safe-sibling]",
         "[safe-error]"
