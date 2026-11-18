@@ -39,9 +39,9 @@ class WorkflowCommandTests(unittest.TestCase):
             # Without a plan, CI only lists them to probe (TAL-2345).
             self.assertEqual(cli.supported_web_sources(None, experimental, published), ["a" * 40, "b" * 40])
 
-    def test_prepare_neither_waits_for_main_ci_nor_records_it(self):
-        # No main CI wait (TAL-2396): prepare runs only the notes it writes and records no receipt; the manifest's
-        # gates are its gate jobs' receipts alone (test_release_set owns that a set without mainCI validates).
+    def test_prepare_writes_the_plan_and_notes_only_for_changed_components(self):
+        # prepare writes the plan beside the previous set, generates notes only for a changed component from the
+        # previous set's source, reports each component to the workflow, and records no receipt (TAL-2396).
         from test_release_set import candidate, complete
 
         previous = complete(candidate("a" * 40))
@@ -54,14 +54,32 @@ class WorkflowCommandTests(unittest.TestCase):
         request = {"sourceRevision": source, "tags": {n: c["tag"] for n, c in plan["components"].items()},
                    "relayDeploymentId": "synthetic-relay"}
         published = [{"tag_name": "release-set-" + previous["releaseSet"], "published_at": "2026-01-01"}]
-        with tempfile.TemporaryDirectory() as temporary, patch.object(cli, "load", side_effect=[request, previous]), \
-                patch.dict(os.environ, {}, clear=True), patch("builtins.print"), \
-                patch.object(cli, "run_url", return_value="https://github.com/MaudeCode/talaria/actions/runs/1"), patch.object(cli, "require_latest_predecessor", return_value=published), \
-                patch.object(cli, "unused_release"), patch.object(cli, "resolve", return_value=plan), \
-                patch.object(cli, "git"), patch.object(cli.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as calls:
-            cli.prepare(SimpleNamespace(request="request", previous="previous", dry_run=False, release_tag=None, output=Path(temporary) / "out"))
-            self.assertEqual([call.args[0][1:3] for call in calls.call_args_list], [[str(cli.ROOT / "app/ci/release_notes.py"), "generate"]])
-            self.assertFalse((Path(temporary) / "out/receipts").exists())
+        with tempfile.TemporaryDirectory() as temporary:
+            output, github_output = Path(temporary) / "out", Path(temporary) / "github-output"
+            with patch.object(cli, "load", side_effect=[request, deepcopy(previous)]), \
+                    patch.dict(os.environ, {"GITHUB_OUTPUT": str(github_output)}, clear=True), patch("builtins.print"), \
+                    patch.object(cli, "run_url", return_value="https://github.com/MaudeCode/talaria/actions/runs/1"), \
+                    patch.object(cli, "require_latest_predecessor", return_value=published), \
+                    patch.object(cli, "unused_release"), patch.object(cli, "resolve", return_value=plan), \
+                    patch.object(cli, "git"), patch.object(cli.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as calls:
+                cli.prepare(SimpleNamespace(request="request", previous="previous", dry_run=True, release_tag=None, output=output))
+            self.assertEqual([call.args[0] for call in calls.call_args_list], [[
+                "python3", str(cli.ROOT / "app/ci/release_notes.py"), "generate", "--component", "app", "--previous", "a" * 40,
+                "--target", source, "--version", "1.1.0", "--output", str(output / "notes/app")]])
+            self.assertEqual((output / "notes/web/release-notes.md").read_text(),
+                             "Unchanged; reuses web-v2.0.0 and its previous immutable artifact.\n")
+            self.assertEqual((output / "notes/relay/release-notes.md").read_text(),
+                             "Unchanged; reuses relay-v3.0.0 and its previous immutable artifact.\n")
+            written = json.loads((output / "plan.json").read_text())
+            self.assertEqual((written["dryRun"], written["previousAppSource"], written["releaseTag"]), (True, "a" * 40, None))
+            self.assertEqual(json.loads((output / "previous.json").read_text()), previous)
+            self.assertEqual(github_output.read_text().splitlines(), [
+                f"source={source}",
+                "app_changed=true", f"app_source={source}", "app_version=1.1.0",
+                "web_changed=false", f"web_source={'a' * 40}", "web_version=2.0.0",
+                "relay_changed=false", f"relay_source={'a' * 40}", "relay_version=3.0.0",
+            ])
+            self.assertFalse((output / "receipts").exists())
 
     def test_the_release_version_names_every_changed_component(self):
         from test_release_set import candidate

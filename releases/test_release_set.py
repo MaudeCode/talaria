@@ -2,6 +2,7 @@
 """Synthetic release receipts: no credentials, tags, registry or deployment."""
 
 from copy import deepcopy
+import functools
 import json
 from pathlib import Path
 import re
@@ -13,6 +14,19 @@ import unittest
 from jsonschema import ValidationError
 
 from release_set import COMMON_GATES, COMPONENTS, PUBLISH_GATES, validate
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+@functools.cache
+def _workflow_json(name):
+    return subprocess.check_output(["ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+                                    str(ROOT / ".github/workflows" / name)], text=True)
+
+
+def workflow(name):
+    """A workflow file parsed as Actions reads it (YAML 1.1, through Ruby's loader); each call returns a fresh copy."""
+    return json.loads(_workflow_json(name))
 
 # The image the Relay release publishes; spelled out so the tests pin the registry contract independently.
 BRIDGE_IMAGE = "ghcr.io/maudecode/talaria-feedback-bridge"
@@ -71,18 +85,14 @@ class ReleaseSetTests(unittest.TestCase):
         # Tags last (TAL-2342, MaudeCode/.github RELEASES.md): production-cutover.yml is the release. It starts only by a
         # dispatch with a version and an optional commit, checks that first, and every job takes the commit preflight
         # resolved, since the input may be empty.
-        workflow = Path(__file__).resolve().parents[1] / ".github/workflows/production-cutover.yml"
-        document = json.loads(subprocess.check_output([
-            "ruby", "-ryaml", "-rjson", "-e",
-            "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(workflow),
-        ], text=True))
+        document = workflow("production-cutover.yml")
         triggers = document.get("on", document.get("true"))
         self.assertEqual(set(triggers), {"workflow_dispatch"})
         inputs = triggers["workflow_dispatch"]["inputs"]
         self.assertEqual({name: (spec["type"], spec["required"]) for name, spec in inputs.items()},
                          {"tag": ("string", True), "sha": ("string", False)})
         self.assertEqual(document["run-name"], "Release ${{ inputs.tag }}")
-        self.assertFalse(Path(workflow.parent / "release.yml").exists(), "no tag push starts a release")
+        self.assertFalse((ROOT / ".github/workflows/release.yml").exists(), "no tag push starts a release")
         jobs = document["jobs"]
         check = jobs["preflight"]["steps"][0]
         self.assertRegex(check["uses"], r"^MaudeCode/\.github/actions/release-preflight@[0-9a-f]{40}$")
