@@ -130,11 +130,18 @@ class ReleaseSetTests(unittest.TestCase):
         steps = {"start": release["freeze"], "end": release["thaw"], "pull-request": pulls["jobs"]["status"]}
         for mode, job in steps.items():
             with self.subTest(mode=mode):
-                (step,) = job["steps"]
+                step = job["steps"][0]
                 self.assertRegex(step["uses"], r"^MaudeCode/\.github/actions/release-freeze@[0-9a-f]{40}$")
                 self.assertEqual(step["with"], {"mode": mode, "workflow": "production-cutover.yml"})
-                self.assertEqual(job["permissions"], {"statuses": "write", "pull-requests": "read", "actions": "read"})
+                permissions = {"statuses": "write", "pull-requests": "read", "actions": "read"}
+                self.assertEqual(job["permissions"], permissions | ({"contents": "read"} if mode == "start" else {}))
         self.assertEqual(release["freeze"]["needs"], "preflight")
+        # Once frozen, the release compares main's workflows with its commit's again: one merged between preflight's
+        # check and the freeze would still break the tags.
+        (recheck,) = release["freeze"]["steps"][1:]
+        self.assertEqual(recheck["env"]["SOURCE"], "${{ needs.preflight.outputs.sha }}")
+        self.assertIn('"$source_tree" != "$main_tree"', recheck["run"])
+        self.assertEqual([len(steps["end"]["steps"]), len(steps["pull-request"]["steps"])], [1, 1])
         # release-set.yml holds every publishing job, so a freeze that failed or timed out publishes nothing.
         self.assertIn("freeze", release["release"]["needs"])
         self.assertNotIn("if", release["release"])

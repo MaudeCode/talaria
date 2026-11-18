@@ -448,8 +448,11 @@ credential, and an existing ref is reused only when it names the same commit.
 The `release-freeze` commit status keeps that from happening (TAL-2516,
 `RELEASES.md` rule 6). The release's `freeze` job, right after preflight, sets
 it to failure on every open pull request that changes a file under
-`.github/workflows/`. The `release` job needs `freeze`, so a release that could
-not set the freeze publishes nothing. Its last job, `thaw`, sets the status back
+`.github/workflows/`, then checks again that `main`'s workflow files still match
+the release's commit, since one could have merged between preflight's check and
+the freeze. The `release` job needs `freeze`, so a release that could not set
+the freeze, or whose workflows no longer match, publishes nothing: dispatch the
+same version again from a later commit. Its last job, `thaw`, sets the status back
 to success however the release ended, unless another release is still running.
 `release-freeze.yml` sets it on every pull request push, Dependabot's and
 forks' included: failure while a release runs and the pull request changes a
