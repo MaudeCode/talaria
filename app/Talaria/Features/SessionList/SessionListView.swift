@@ -413,7 +413,33 @@ struct SessionListView: View {
 
     var body: some View {
         refreshSessionActionInputs()
-        return sessionListWithPresentations
+        return sessionListWithEvents
+            .modifier(
+                SessionActionConfirmations(
+                    viewModel: viewModel,
+                    sessionPendingDeletion: $sessionPendingDeletion,
+                    isConfirmingBulkDelete: $isConfirmingBulkDelete,
+                    projectPendingDeletion: $projectPendingDeletion,
+                    deleteSession: { session in
+                        Task { await delete(session) }
+                    },
+                    deleteSelectedSessions: {
+                        Task { await performBulkAction(.delete) }
+                    },
+                    deleteProject: { project in
+                        Task { await delete(project) }
+                    }
+                )
+            )
+            .focusedSceneValue(\.talariaSceneActions, sceneActions)
+            .task(id: updateNotificationRefreshTaskID) {
+                await refreshUpdateNotificationsWhileActive()
+            }
+    }
+
+    // The body's modifiers in three properties: one chain of them all took the type checker 8 s (TAL-2470).
+    private var sessionListWithTasks: some View {
+        sessionListWithPresentations
             .background(WindowSceneReader(title: windowTitle))
             .task {
                 // Start the normal refresh immediately so a slow direct session
@@ -499,6 +525,10 @@ struct SessionListView: View {
                     refresh: { await refreshSessionsAndActiveProfile() }
                 )
             }
+    }
+
+    private var sessionListWithEvents: some View {
+        sessionListWithTasks
             .onAppear {
                 if sessionActionContext == nil {
                     sessionActionContext = SessionActionContext(
@@ -544,7 +574,7 @@ struct SessionListView: View {
             // `dismissesFilesInspector`), and the reader closes Files with the Files button or the inspector's close
             // button. UIKit dropping the presentation while the layout still shows Files is UIKit refusing it over a
             // column it has not hidden yet: the intent stays, and the next room measurement admits it (TAL-1670).
-            .onChange(of: nativeFilesInspectorPresented) {
+            .onChange(of: nativeFilesInspectorPresented) { _, _ in
                 if !sidebarPresentation.showsFilesInspector { setFilesInspectorPresented(false) }
             }
             .onReceive(
@@ -559,27 +589,6 @@ struct SessionListView: View {
                     suppressEmptyPlaceholders: viewModel.removeEmptySidebarPlaceholders,
                     refreshSessions: refreshAfterReturningIfNeeded
                 )
-            }
-            .modifier(
-                SessionActionConfirmations(
-                    viewModel: viewModel,
-                    sessionPendingDeletion: $sessionPendingDeletion,
-                    isConfirmingBulkDelete: $isConfirmingBulkDelete,
-                    projectPendingDeletion: $projectPendingDeletion,
-                    deleteSession: { session in
-                        Task { await delete(session) }
-                    },
-                    deleteSelectedSessions: {
-                        Task { await performBulkAction(.delete) }
-                    },
-                    deleteProject: { project in
-                        Task { await delete(project) }
-                    }
-                )
-            )
-            .focusedSceneValue(\.talariaSceneActions, sceneActions)
-            .task(id: updateNotificationRefreshTaskID) {
-                await refreshUpdateNotificationsWhileActive()
             }
     }
 

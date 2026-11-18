@@ -819,6 +819,21 @@ public final class ChatViewModel {
         displayTitle = Self.displayTitle(from: title)
     }
 
+    private var pendingModelSelection: (option: ModelCatalogOption, sessionID: String, ownership: Int)?
+    private var modelSelectionNeedsReconciliation = false
+    private var confirmedModelTitle = String(localized: "Model")
+    /// A profile name seeded from the last response (TAL-437) only shows; requests wait for the
+    /// live load or the user's pick, since another device may have switched profiles since.
+    private var isProfileSelectionFromCache = false
+    private var didShowCachedComposerChoices = false
+    public private(set) var pendingVoiceDraft: ChatDraftVoiceNote?
+    private var mediaGeneration = 0
+    @ObservationIgnored private var isTranscriptScrolling = false
+    @ObservationIgnored private var deferredTranscriptCache: (sessionID: String, context: ModelContext)?
+    /// TAL-1761: seconds until the server wants this detail read again (a running delegated child has no stream of its
+    /// own); nil when it does not.
+    public private(set) var serverRefreshAfter: Int?
+
     public init(
         session: SessionSummary,
         server: URL,
@@ -944,6 +959,12 @@ public final class ChatViewModel {
         listenPlaybackTicker?.cancel()
         initialTranscriptPrefetch?.task.cancel()
     }
+}
+
+// Everything below is in an extension, not the class body: `@Observable` expands over each member of the class
+// body in every compile job that looks up a ChatViewModel member, about 2 s per job at this size (TAL-2470).
+// Stored properties stay in the class body above.
+extension ChatViewModel {
 
     public func setShowsLiveActivityResponseExcerpts(_ shows: Bool) {
         guard showsLiveActivityResponseExcerpts != shows else { return }
@@ -977,8 +998,6 @@ public final class ChatViewModel {
         let usedSnapshotMessagesOffset: Bool
     }
 
-    private var pendingModelSelection: (option: ModelCatalogOption, sessionID: String, ownership: Int)?
-    private var modelSelectionNeedsReconciliation = false
     private var requestedModelOption: ModelCatalogOption? {
         guard let pendingModelSelection, pendingModelSelection.sessionID == sessionID,
               pendingModelSelection.ownership == sendOwnershipGeneration else { return nil }
@@ -1045,7 +1064,6 @@ public final class ChatViewModel {
     }
 
     public var selectedModelTitle: String { requestedModelOption?.displayName ?? confirmedModelTitle }
-    private var confirmedModelTitle = String(localized: "Model")
 
     private func recomputeSelectedModelTitle() {
         let title: String
@@ -1165,11 +1183,6 @@ public final class ChatViewModel {
             scheduleStreamingScrollTrigger()
         }
     }
-
-    /// A profile name seeded from the last response (TAL-437) only shows; requests wait for the
-    /// live load or the user's pick, since another device may have switched profiles since.
-    private var isProfileSelectionFromCache = false
-    private var didShowCachedComposerChoices = false
 
     private var requestProfileName: String? {
         (isProfileSelectionFromCache ? nil : Self.nonEmpty(selectedProfileName)) ?? Self.nonEmpty(currentProfile)
@@ -3284,9 +3297,6 @@ public final class ChatViewModel {
         var errorDescription: String? { message }
     }
 
-    public private(set) var pendingVoiceDraft: ChatDraftVoiceNote?
-    private var mediaGeneration = 0
-
     public func restoreVoiceNote(_ draft: ChatDraftVoiceNote) async {
         // Reading can fail transiently while device protection is locked; keep the receipt for retry.
         let resourcePrefix = attachmentResourceContextID
@@ -3926,9 +3936,6 @@ public final class ChatViewModel {
         ServerCacheGeneration.current(for: server) == cacheGeneration
             && resourceCacheVersionAtOpen == sessionID.flatMap { sessionListOwner?.resourceCacheVersion(for: $0) }
     }
-
-    @ObservationIgnored private var isTranscriptScrolling = false
-    @ObservationIgnored private var deferredTranscriptCache: (sessionID: String, context: ModelContext)?
 
     /// Keep synchronous offline-cache work out of a drag and its momentum.
     public func handleTranscriptScroll(_ event: ChatScrollPolicy.FollowEvent) {
@@ -6015,10 +6022,6 @@ public final class ChatViewModel {
             }
         }
     }
-
-    /// TAL-1761: seconds until the server wants this detail read again (a running delegated child has no stream of its
-    /// own); nil when it does not.
-    public private(set) var serverRefreshAfter: Int?
 
     /// Rereads the detail after each delay the server sets, until a detail clears it. Runs until cancelled, so the caller
     /// scopes it to an active scene and the visible chat.

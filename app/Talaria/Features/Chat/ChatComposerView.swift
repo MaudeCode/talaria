@@ -702,16 +702,20 @@ struct MessageComposerView: View {
             .accessibilityLabel(clarificationPrompt == nil ? "Resize connection area" : "Resize question area")
             .accessibilityValue("\(Int(displayedClarificationHeight / max(1, maximumClarificationHeight) * 100))%")
             .accessibilityHint(clarificationPrompt == nil ? "Swipe up or down to resize the connection area." : "Swipe up or down to resize the question area.")
-            .accessibilityAdjustableAction { direction in
-                switch direction {
-                case .increment:
-                    clarificationPanelHeight = clampedClarificationHeight(displayedClarificationHeight + 60)
-                case .decrement:
-                    clarificationPanelHeight = clampedClarificationHeight(displayedClarificationHeight - 60)
-                @unknown default:
-                    break
-                }
-            }
+            .accessibilityAdjustableAction(adjustClarificationHeight)
+    }
+
+    // A method, not a closure in the handle's modifier chain, where the type checker re-checked it hundreds of times
+    // (TAL-2470).
+    private func adjustClarificationHeight(_ direction: AccessibilityAdjustmentDirection) {
+        switch direction {
+        case .increment:
+            clarificationPanelHeight = clampedClarificationHeight(displayedClarificationHeight + 60)
+        case .decrement:
+            clarificationPanelHeight = clampedClarificationHeight(displayedClarificationHeight - 60)
+        @unknown default:
+            break
+        }
     }
 
     @ViewBuilder
