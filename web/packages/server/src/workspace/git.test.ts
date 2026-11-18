@@ -169,59 +169,65 @@ describe('workspace git over HTTP', () => {
     expect((await s.get('/api/git/status')).status).toBe(400)
   })
 
-  it('parity: vanished untracked discard, missing workspace, single-line hunk header, in-repo untracked symlink, checkout inputs', async () => {
+  // An untracked file removed between status and unlink is a benign race (Python `unlink(missing_ok=True)` semantics).
+  // The anchored unlink enters the workspace with chdir on macOS; the file vanishes right there.
+  it.skipIf(process.platform === 'linux')('parity: discarding an untracked file that vanishes before its unlink succeeds', async () => {
     const { sid, ws } = await repoSession(s)
-    const gitRunner = s.deps.git as unknown as { statusCache: Map<string, unknown> }
-    // An untracked file removed between status and unlink is a benign race (Python `unlink(missing_ok=True)` semantics).
-    // The anchored unlink enters the workspace with chdir on macOS; the file vanishes right there.
     writeFileSync(join(ws, 'transient.txt'), 'x\n')
-    gitRunner.statusCache.clear()
+    s.deps.git.invalidateStatusCache(ws)
+    const realChdir = process.chdir.bind(process)
+    let raced = false
+    const spy = vi.spyOn(process, 'chdir').mockImplementation((dir: string) => {
+      realChdir(dir)
+      if (!raced && dir === realpathSync(ws) && existsSync(join(ws, 'transient.txt'))) { raced = true; rmSync(join(ws, 'transient.txt')) }
+    })
     let res: Response
-    if (process.platform !== 'linux') {
-      const realChdir = process.chdir.bind(process)
-      let raced = false
-      const spy = vi.spyOn(process, 'chdir').mockImplementation((dir: string) => {
-        realChdir(dir)
-        if (!raced && dir === realpathSync(ws) && existsSync(join(ws, 'transient.txt'))) { raced = true; rmSync(join(ws, 'transient.txt')) }
-      })
-      try {
-        res = await post(s, '/api/git/discard', { session_id: sid, paths: ['transient.txt'], delete_untracked: true })
-      } finally {
-        spy.mockRestore()
-      }
-      expect(raced).toBe(true)
-      expect(res.status).toBe(200)
-      expect(existsSync(join(ws, 'transient.txt'))).toBe(false)
-    } else {
-      rmSync(join(ws, 'transient.txt'))
+    try {
+      res = await post(s, '/api/git/discard', { session_id: sid, paths: ['transient.txt'], delete_untracked: true })
+    } finally {
+      spy.mockRestore()
     }
-    // `difflib` writes `+1` for a single-line untracked file, `+1,N` otherwise.
-    writeFileSync(join(ws, 'one.txt'), 'only\n')
+    expect(raced).toBe(true)
+    expect(res.status).toBe(200)
+    expect(existsSync(join(ws, 'transient.txt'))).toBe(false)
+  })
+
+  // `difflib` writes `+1,N` for a multi-line untracked file; the single-line `+1` header is pinned by new.txt's diff above.
+  it('parity: a multi-line untracked file\'s synthetic hunk header carries its line count', async () => {
+    const { sid, ws } = await repoSession(s)
     writeFileSync(join(ws, 'two.txt'), 'a\nb\n')
-    gitRunner.statusCache.clear()
-    expect(String(((await json(await s.get(`/api/git/diff?session_id=${sid}&path=one.txt`))).diff as Json).diff)).toContain('@@ -0,0 +1 @@')
+    s.deps.git.invalidateStatusCache(ws)
     expect(String(((await json(await s.get(`/api/git/diff?session_id=${sid}&path=two.txt`))).diff as Json).diff)).toContain('@@ -0,0 +1,2 @@')
-    // An untracked symlink whose target stays inside the workspace is read through, as Python did.
+    rmSync(join(ws, 'two.txt'))
+  })
+
+  it('parity: an untracked symlink whose target stays inside the workspace is read through, as Python did', async () => {
+    const { sid, ws } = await repoSession(s)
+    writeFileSync(join(ws, 'two.txt'), 'a\nb\n')
     symlinkSync(join(ws, 'two.txt'), join(ws, 'inside-link.txt'))
-    gitRunner.statusCache.clear()
+    s.deps.git.invalidateStatusCache(ws)
     const row = (((await json(await s.get(`/api/git/status?session_id=${sid}`))).git as Json).files as Json[]).find((f) => f.path === 'inside-link.txt')
     expect(row).toMatchObject({ untracked: true, additions: 2 })
     expect(String(((await json(await s.get(`/api/git/diff?session_id=${sid}&path=inside-link.txt`))).diff as Json).diff)).toContain('+b')
     rmSync(join(ws, 'inside-link.txt'))
-    rmSync(join(ws, 'one.txt'))
     rmSync(join(ws, 'two.txt'))
-    // Checkout inputs follow Python: `require()` on mode, whitespace `dirty_mode` is not "block".
-    res = await post(s, '/api/git/checkout', { session_id: sid, ref: 'main', mode: '' })
+  })
+
+  it('parity: checkout requires a mode, and a whitespace dirty_mode is not "block"', async () => {
+    const { sid } = await repoSession(s)
+    let res = await post(s, '/api/git/checkout', { session_id: sid, ref: 'main', mode: '' })
     expect((await json(res)).error).toBe('Missing required field(s): mode')
     res = await post(s, '/api/git/checkout', { session_id: sid, ref: 'main', mode: 'local', dirty_mode: '  ' })
     expect((await json(res)).code).toBe('dirty_worktree')
-    // A workspace directory that no longer exists is `missing_git` on every route, as Python's `cwd=` failure was.
+  })
+
+  it('parity: a workspace directory that no longer exists is missing_git on every route, as Python\'s `cwd=` failure was', async () => {
     const gone = join(s.state, 'gone-ws')
     mkdirSync(gone)
     expect((await post(s, '/api/workspaces/add', { path: gone })).status).toBe(200)
     const goneSid = String(((await json(await post(s, '/api/session/new', { workspace: gone }))).session as Json).session_id)
     rmSync(gone, { recursive: true, force: true })
-    res = await s.get(`/api/git/status?session_id=${goneSid}`)
+    const res = await s.get(`/api/git/status?session_id=${goneSid}`)
     expect(res.status).toBe(400)
     expect(await json(res)).toEqual({ error: 'Git is not installed or not available on PATH', code: 'missing_git' })
     expect((await json(await s.get(`/api/git-info?session_id=${goneSid}`))).code).toBe('missing_git')

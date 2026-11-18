@@ -22,7 +22,8 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { writeContinuation } from './update-continuation.js'
 import { UpdateNotificationStore } from './update-notifications.js'
-import { initializeStore, JsonDocuments } from '../test/storage.js'
+import { initializeStore } from '../test/storage.js'
+import { JsonDocuments } from '../sessions/storage/json-documents.js'
 import {
   applyAgentUpdate, applyWebUpdate, AUTO_UPDATE_INTERVAL_MS, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, FETCH_RETRY_MS, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, purgePycache, ReleaseUnavailable,
   REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, updatesCheckView, updateTargetView, waitUntilRestartSafe, type BuildRun, type GetJson, type GitOutcome, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,

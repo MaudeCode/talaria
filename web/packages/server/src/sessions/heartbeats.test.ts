@@ -1,5 +1,5 @@
 import { testSessionDocuments, useJsonStorage } from '../test/storage.js'
-import { JsonDocuments } from '../test/storage.js'
+import { JsonDocuments } from './storage/json-documents.js'
 import { sessionDirectory, sessionPath } from '../test/storage.js'
 import { readFileSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'

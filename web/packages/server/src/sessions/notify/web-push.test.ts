@@ -1,7 +1,7 @@
 import { createPublicKey, verify } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, cookieHeader, type TestServer } from '../../test/harness.js'
-import { browserKeys, PUBLIC, stubPushService, type Push } from '../../test/notifications.js'
+import { browserKeys, stubPushService, type Push } from '../../test/notifications.js'
 import { liveLoginHashes, loginHash } from './web-push.js'
 
 type Json = Record<string, unknown>
@@ -62,7 +62,7 @@ describe('Web Push channel', () => {
     expect(push.pushes).toHaveLength(1)
     const [sent] = push.pushes as [Push]
     expect(sent.url).toBe(ENDPOINT)
-    expect(sent.addresses).toEqual([PUBLIC])
+    expect(sent.addresses).toEqual(['93.184.216.34'])
     expect(sent.init.method).toBe('POST')
     expect(sent.init.headers).toMatchObject({ TTL: '3600', Urgency: 'high', 'Content-Encoding': 'aes128gcm' })
     expect(verifyVapid(sent.init.headers!.Authorization!, publicKey)).toMatchObject({ aud: 'https://push.example' })

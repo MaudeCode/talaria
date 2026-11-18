@@ -1,4 +1,4 @@
-import { JsonDocuments } from './test/storage.js'
+import { JsonDocuments } from './sessions/storage/json-documents.js'
 import { mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'

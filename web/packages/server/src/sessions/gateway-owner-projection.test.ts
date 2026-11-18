@@ -6,10 +6,12 @@ import { SessionEnvelopeSchema, ChatEventSchema, type GatewaySnapshot, type Gate
 import type { StreamFrame } from '../sidecar/client.js'
 import { type TestServer, openStateDb } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
-import { admission, attached, bootOwnerAttachment, cronRefusal, fixture, ownerHelpers, sid, snapshot } from '../test/gateway-owner.js'
+import { admission, attached, bootOwnerAttachment, fixture, ownerHelpers, sid, snapshot } from '../test/gateway-owner.js'
 import { GatewaySessions } from './gateway-sessions.js'
 import { CANONICAL_READ_ONLY_REASON } from './state-db.js'
 import type { DocumentBackend, StoredDocument } from './storage/backend.js'
+
+const cronRefusal = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/native-cron-refusal.json', import.meta.url), 'utf8')) as { completion: Record<string, unknown>; event: { event: string; data: Record<string, unknown> } }
 
 function deferred<T>() {
   let resolve!: (value: T) => void

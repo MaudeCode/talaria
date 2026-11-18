@@ -12,7 +12,8 @@ import { RequestContext } from './http/context.js'
 import { AssetCache, SpaShell } from './spa.js'
 import { createApp } from './app.js'
 import { AuthStore } from './auth/store.js'
-import { initializeStore, JsonDocuments, useJsonStorage } from './test/storage.js'
+import { initializeStore, useJsonStorage } from './test/storage.js'
+import { JsonDocuments } from './sessions/storage/json-documents.js'
 import { os } from '@orpc/server'
 import { z } from 'zod'
 
@@ -87,11 +88,29 @@ describe('open server (no auth)', () => {
   })
 
   it('api requests wait on the startup gate and get the retryable 503 once it times out', async () => {
-    s.deps.startup.arm()
-    const pending = s.get('/api/auth/status')
-    await new Promise((r) => setTimeout(r, 50))
-    s.deps.startup.release()
-    expect((await pending).status).toBe(200)
+    const gate = s.deps.startup
+    const realWait = gate.wait.bind(gate)
+    const wait = vi.spyOn(gate, 'wait')
+    gate.arm()
+    try {
+      const pending = s.get('/api/sessions')
+      await vi.waitFor(() => { expect(wait).toHaveBeenCalledTimes(1) })
+      const settled = await Promise.race([pending.then(() => 'settled'), new Promise((r) => { setImmediate(() => { r('pending') }) })])
+      expect(settled).toBe('pending')
+      gate.release()
+      expect((await pending).status).toBe(200)
+
+      // The gate's own timeout, injected as zero, answers the retryable 503.
+      gate.arm()
+      wait.mockImplementationOnce(() => realWait(0))
+      const timedOut = await s.get('/api/sessions')
+      expect(timedOut.status).toBe(503)
+      expect(timedOut.headers.get('retry-after')).toBe('5')
+      expect(await timedOut.json()).toMatchObject({ phase: 'session recovery', condition: 'startup_recovery' })
+    } finally {
+      wait.mockRestore()
+      gate.release()
+    }
     s.deps.startup.arm()
     try {
       // The immediate paths bypass the gate.

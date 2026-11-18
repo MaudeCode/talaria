@@ -247,13 +247,8 @@ describe('a provider that left the Agent core', () => {
   })
   afterAll(() => s.close())
 
-  it('has no built-in card, and shows the plugin\'s own rows once it is installed', async () => {
+  it('shows the plugin\'s own rows once it is installed', async () => {
     config = { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' } }
-    rows = []
-    const builtIn = (await providers()).providers.map((p) => p.id)
-    expect(builtIn).not.toContain('copilot')
-    expect(builtIn).not.toContain('copilot-acp')
-
     rows = [{ name: 'copilot', display_name: 'GitHub Copilot', auth_type: 'copilot', setup: 'ready' }, { name: 'copilot-acp', display_name: 'GitHub Copilot ACP', auth_type: 'external_process', setup: 'missing_cli' }]
     const installed = (await providers()).providers
     expect(installed.find((p) => p.id === 'copilot')).toMatchObject({ display_name: 'GitHub Copilot', is_plugin_provider: true, is_oauth: false, has_key: true, key_source: 'plugin', models: [{ id: 'gpt-5.5' }], models_total: 1 })

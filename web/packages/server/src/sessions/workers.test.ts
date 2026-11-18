@@ -1,7 +1,7 @@
 import { keepRecent, testSessionDocuments, useJsonStorage } from '../test/storage.js'
 import { jsonJournal } from '../test/storage.js'
 import { JsonJournal } from './storage/json-journal.js'
-import { JsonDocuments } from '../test/storage.js'
+import { JsonDocuments } from './storage/json-documents.js'
 import { sessionPath, sessionDirectory } from '../test/storage.js'
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'

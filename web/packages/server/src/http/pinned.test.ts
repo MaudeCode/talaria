@@ -106,9 +106,7 @@ describe('pinnedFetch', () => {
   })
 
   it('honours an abort signal', async () => {
-    const signal = AbortSignal.timeout(1)
-    await new Promise((r) => setTimeout(r, 5))
-    await expect(pinnedFetch(`http://pinned.invalid:${String(port)}/audio`, { signal }, ['127.0.0.1'])).rejects.toThrow()
+    await expect(pinnedFetch(`http://pinned.invalid:${String(port)}/audio`, { signal: AbortSignal.abort() }, ['127.0.0.1'])).rejects.toMatchObject({ name: 'AbortError' })
   })
 
   it('streams ordinary responses before the upstream finishes', async () => {

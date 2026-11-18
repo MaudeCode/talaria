@@ -12,7 +12,7 @@ import pg from 'pg'
 export interface TestPostgres { url: string; stop: () => Promise<void> }
 
 /** The synthetic password the test server's URLs carry; PGlite accepts any. */
-export const TEST_POSTGRES_PASSWORD = 'synthetic-pglite-secret'
+const TEST_POSTGRES_PASSWORD = 'synthetic-pglite-secret'
 
 /** Extended-query messages that belong to the statement a later Sync completes: Parse, Bind, Describe, Execute, Close, Flush. */
 const EXTENDED = new Set([0x50, 0x42, 0x44, 0x45, 0x43, 0x48])

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { FakeAuthenticator } from '../test/passkeys.js'
-import { JsonDocuments } from '../test/storage.js'
+import { JsonDocuments } from '../sessions/storage/json-documents.js'
 import { cborDecode, PasskeyError, PasskeyStore } from './passkeys.js'
 
 describe('cborDecode', () => {

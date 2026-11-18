@@ -369,16 +369,23 @@ describe('hardened worktree Git calls', () => {
     }
   }
 
-  it('preserves clean, dirty, untracked, ahead and forced-removal behavior', async () => {
+  // The clean and dirty status rows are owned by the status test below.
+  it('refuses to remove a worktree with uncommitted changes unless forced', async () => {
     const { worktree, session } = setup()
-    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ exists: true, listed: true, dirty: false, untracked_count: 0, force_required: false, ahead_behind: { ahead: 0, behind: 0, available: true, upstream: 'main' } })
     writeFileSync(join(worktree, 'tracked.txt'), 'changed\n')
-    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: true, untracked_count: 0, force_required: true })
     await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow('Worktree has uncommitted changes')
-    git(worktree, 'add', '.')
-    git(worktree, 'commit', '-q', '-m', 'ahead')
+  })
+
+  it('reports a commit ahead of upstream and refuses to remove it unless forced', async () => {
+    const { worktree, session } = setup()
+    git(worktree, 'commit', '-q', '--allow-empty', '-m', 'ahead')
     expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false, force_required: true, ahead_behind: { ahead: 1, behind: 0, available: true } })
     await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow('Worktree has 1 unpushed commit(s)')
+  })
+
+  it('forced removal drops untracked files and unpushed commits, warning about each', async () => {
+    const { worktree, session } = setup()
+    git(worktree, 'commit', '-q', '--allow-empty', '-m', 'ahead')
     writeFileSync(join(worktree, 'notes.txt'), 'untracked\n')
     expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: true, untracked_count: 1, force_required: true })
     expect(await removeWorktreeForSession(session, unlocked, { force: true })).toMatchObject({ ok: true, warnings: ['1 untracked file(s) will be removed.', '1 unpushed commit(s) will be removed.'] })
