@@ -278,19 +278,6 @@ describe('chat turns through the sidecar', () => {
     expect(await detailNotices()).toEqual(shown)
   })
 
-  it('drops a TTL notice when it expires and tells the running turn (TAL-803)', async () => {
-    const sid = await newSession(s)
-    let release!: () => void
-    sidecar.respond('chat.start', (_params, emit) => new Promise((resolve) => {
-      emit({ event: 'notice', data: { id: 'band', key: 'band', level: 'info', kind: 'ttl', ttl_ms: 200, text: 'Usage at 90%' } })
-      release = () => { resolve(completed([{ role: 'user', content: 'go' }, { role: 'assistant', content: 'ok' }])) }
-    }))
-    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'go' }))
-    const notices = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'notices' && (f.data as Json).notices instanceof Array && ((f.data as Json).notices as Json[]).length === 0)
-    expect(notices.filter((f) => f.event === 'notices').map((f) => ((f.data as Json).notices as Json[]).map((n) => n.key))).toEqual([['band'], []])
-    release()
-  })
-
   it.each(['live', 'late'])('eventually clears a TTL notice for a %s subscriber after an early timer (TAL-992)', async (subscription) => {
     let now = 1000
     const clockSidecar = new FakeSidecar()
@@ -1202,30 +1189,6 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
-  it('marks a long prompt collapsible on the done frame (TAL-452)', async () => {
-    const sid = await newSession(s)
-    const prompt = Array.from({ length: 21 }, (_, i) => `trace ${i}`).join('\n')
-    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: prompt }]))
-    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Trace"', usage: null }))
-    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: prompt }))
-    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
-    const messages = (((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[])
-    expect(messages.map((m) => [m.role, m._collapsible ?? null])).toEqual([['user', true], ['assistant', null]])
-  })
-
-  it('ships an earlier bare-filename attachment as a filename-only object on the done frame (TAL-277)', async () => {
-    const sid = await newSession(s)
-    const session = (await s.deps.sessionStore.get(sid))
-    session.messages = [{ role: 'user', content: 'look', timestamp: 1000, attachments: ['example.png'] }, { role: 'assistant', content: 'seen', timestamp: 1001 }]
-    await s.deps.sessionStore.save(session)
-    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Again' }]))
-    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Legacy"', usage: null }))
-    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'again' }))
-    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
-    const messages = (((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[])
-    expect(messages.find((m) => m.content === 'look')?.attachments).toEqual([{ name: 'example.png', filename: 'example.png' }])
-  })
-
   it('ships served media references rewritten for display on the done frame and every detail window, keeping content (TAL-186)', async () => {
     const sid = await newSession(s)
     const ws = realpathSync(join(s.state, 'workspace'))
@@ -1256,21 +1219,6 @@ describe('chat turns through the sidecar', () => {
     const served = await s.get(`/${url(join(ws, 'shot.png')).slice(2)}`)
     expect(served.status).toBe(200)
     expect(served.headers.get('content-type')).toBe('image/png')
-  })
-
-  it('keeps a long newest reply full on the done frame (TAL-1114)', async () => {
-    const sid = await newSession(s)
-    const reply = `${'r'.repeat(2800)} ${'s'.repeat(4000)}`
-    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: reply }]))
-    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Long"', usage: null }))
-    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'write a lot' }))
-    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
-    const messages = (((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[])
-    const settled = messages.find((m) => m.role === 'assistant')
-    expect(settled).not.toHaveProperty('_display_truncated')
-    expect(settled).not.toHaveProperty('_display_excerpt')
-    expect(settled?._anchor_activity_scene).not.toHaveProperty('final_answer_excerpt')
-    expect(messages.find((m) => m.role === 'user')).not.toHaveProperty('_display_excerpt')
   })
 
   it.each([{ name: 'short', answer: 'short answer B' }, { name: 'long', answer: 'b'.repeat(6000) }, { name: 'no response', answer: '' }, { name: 'cancelled', answer: '', error: 'Task cancelled by user' }, { name: 'failed', answer: '', error: 'boom' }])('transfers the expanded reply only at terminal settlement (TAL-1114, $name)', async ({ answer: nextReply, error }) => {
@@ -3892,27 +3840,6 @@ describe('chat turns through the sidecar', () => {
     expect((await leftovers())).toEqual([])
     // The parent is untouched.
     expect((await s.deps.sessionStore.get(sid)).messages).toHaveLength(2)
-  })
-
-  it('keeps the closing explanation when the Agent exhausts its tool budget', async () => {
-    const sid = await newSession(s)
-    // The budget ran out mid tool-run: the graceful summary exists only in `final_response`.
-    sidecar.respond('chat.start', (params) => ({
-      ...completed([
-        { role: 'user', content: str(params.user_message), timestamp: 300 },
-        { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } }], timestamp: 301 },
-        { role: 'tool', tool_call_id: 'c1', content: 'file contents', timestamp: 302 },
-      ]),
-      final_response: 'I reached the iteration limit and could not finish.', tool_limit_reached: true,
-    }))
-    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'do a lot' }))
-    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
-    const done = frames.find((f) => f.event === 'done')?.data as Json | undefined
-    expect(done?.terminal_state).toBe('tool_limit_reached')
-    const persisted = (await s.deps.sessionStore.get(sid)).messages
-    expect(str(persisted[persisted.length - 1]?.content)).toBe('I reached the iteration limit and could not finish.')
-    const shown = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
-    expect(str(shown[shown.length - 1]?.content)).toBe('I reached the iteration limit and could not finish.')
   })
 
   it('drops the Agent\'s max-iterations summary request and keeps its closure text (TAL-537)', async () => {

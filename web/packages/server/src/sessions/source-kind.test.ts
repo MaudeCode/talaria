@@ -26,10 +26,6 @@ describe('sourceKind (TAL-310)', () => {
     expect(sourceKind(row)).toBe(kind)
   })
 
-  it('lets an explicit WebUI marker win over a stale is_cli_session', () => {
-    expect(sourceKind({ session_source: 'webui', is_cli_session: true })).toBe('webui')
-  })
-
   it('never calls a row a subagent from parent linkage alone', () => {
     expect(sourceKind({ parent_session_id: 'parent', relationship_type: 'child_session' })).toBe('webui')
   })

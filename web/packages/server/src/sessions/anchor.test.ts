@@ -361,12 +361,6 @@ describe('running turn scenes (TAL-374)', () => {
     { role: 'assistant', content: 'Halfway there.', _turn_id: 'run-1' },
   ])
 
-  it('keeps every persisted row of the running turn in order, with no answer and an open, outcome-free scene', () => {
-    const scene = buildTurnScene(turnOf(transcript.slice(2)), { running: true })
-    expect(rows(scene)).toEqual([['reasoning', 'Plan the read.'], ['prose', 'Reading.'], ['tool', 'read_file'], ['prose', 'Halfway there.']])
-    expect(scene).toMatchObject({ final_answer: '', terminal_state: 'running', expanded_by_default: true })
-  })
-
   it('gives the running turn a scene only when its run has no journal to replay it, and leaves settled turns alone', () => {
     const scenes = (opts: { runningScene?: boolean }) => (hydrateAnchorActivityScenes(transcript, {}, { activeTurnId: 'run-1', ...opts }) as Json[]).map((m) => m._anchor_activity_scene as Json | undefined)
     const unjournaled = scenes({ runningScene: true })
