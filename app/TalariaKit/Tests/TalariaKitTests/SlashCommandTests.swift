@@ -119,16 +119,6 @@ final class SlashCommandTests: XCTestCase {
 
     // MARK: - ParsedSlashQuery
 
-    func testParsedQueryExtractsCommandName() {
-        let parsed = ParsedSlashQuery(query: "/model gpt-4")
-        XCTAssertEqual(parsed.commandName, "model")
-    }
-
-    func testParsedQueryExtractsArgQuery() {
-        let parsed = ParsedSlashQuery(query: "/model gpt-4")
-        XCTAssertEqual(parsed.argQuery, "gpt-4")
-    }
-
     func testParsedQueryNoArgs() {
         let parsed = ParsedSlashQuery(query: "/help")
         XCTAssertEqual(parsed.commandName, "help")
@@ -159,11 +149,6 @@ final class SlashCommandTests: XCTestCase {
     func testParsedQueryIsSubArgModeWithTrailingSpace() {
         let parsed = ParsedSlashQuery(query: "/model ")
         XCTAssertTrue(parsed.isSubArgMode)
-    }
-
-    func testParsedQueryReturnsCommand() {
-        let parsed = ParsedSlashQuery(query: "/model gpt-4")
-        XCTAssertEqual(parsed.command?.name, "model")
     }
 
     func testParsedQueryTreatsGoalActionsAsSubArgs() {

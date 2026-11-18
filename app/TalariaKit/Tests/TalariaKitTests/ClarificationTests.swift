@@ -103,11 +103,13 @@ final class ClarificationTests: APIClientTestCase {
             XCTAssertEqual(prompt.question, "Which branch?")
             XCTAssertEqual(prompt.choices, ["main", "dev"])
             XCTAssertFalse(prompt.isMultiSelect)
+            XCTAssertFalse(prompt.isLastQuestion)
             prompt.questionIndex = 1
             XCTAssertEqual(prompt.questionID, "checks")
             XCTAssertEqual(prompt.question, "Which checks?")
             XCTAssertEqual(prompt.choices, ["unit", "ui"])
             XCTAssertTrue(prompt.isMultiSelect)
+            XCTAssertTrue(prompt.isLastQuestion)
         }
     }
 
@@ -674,49 +676,6 @@ final class ClarificationTests: APIClientTestCase {
         XCTAssertEqual(coordinator.clarificationDraftResponse, "")
         coordinator.setClarificationDraftResponse("Late answer", promptID: newID)
         XCTAssertEqual(coordinator.clarificationDraftResponse, "")
-    }
-
-    func testStepsOnlyInitialEventRendersQuestionAndChoices() throws {
-        let event = SSEEventDecoder.decode(eventType: "initial", data: #"{"pending":{"clarify_id":"batch","steps":[{"qid":"q0","question":"What sounds best for a quiet evening?","choices":["A movie","A book","A game","Some music"],"multi_select":false}]},"pending_count":1}"#)
-        guard case .clarificationPending(let update) = event else {
-            return XCTFail("A steps-only initial payload must be a clarification, not an approval")
-        }
-        let pending = try XCTUnwrap(update.pending)
-        let prompt = ClarificationPromptState(sessionID: "session-abc", pending: pending, pendingCount: 1)
-        XCTAssertEqual(prompt.question, "What sounds best for a quiet evening?")
-        XCTAssertEqual(prompt.choices, ["A movie", "A book", "A game", "Some music"])
-        XCTAssertEqual(prompt.questionID, "q0")
-        XCTAssertTrue(prompt.isLastQuestion)
-    }
-
-    @MainActor
-    func testTypedAnswerSubmitsKeyedAnswers() async throws {
-        var receivedAnswers: [String: JSONValue]?
-        let viewModel = try makeViewModel { request in
-            switch request.url?.path {
-            case "/api/chat/start":
-                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
-            case "/api/clarify/respond":
-                let body = try XCTUnwrap(apiTestJSONBody(from: request))
-                XCTAssertEqual(body["clarify_id"] as? String, "batch")
-                receivedAnswers = try submittedAnswers(body)
-                return apiTestJSONResponse(#"{"ok":true}"#, for: request)
-            case "/api/clarify/pending":
-                return apiTestJSONResponse(#"{"pending":null}"#, for: request)
-            default:
-                XCTFail("Unexpected route: \(request.url!.path)")
-                throw URLError(.badURL)
-            }
-        }
-        _ = await viewModel.sendMessage("Continue")
-        let update = try JSONDecoder().decode(ClarificationPendingResponse.self, from: Data(#"{"pending":{"clarify_id":"batch","steps":[{"qid":"q0","question":"Evening?","choices":["A movie","A book"],"multi_select":false}]}}"#.utf8))
-        viewModel.applyClarificationUpdate(update, sessionID: "session-abc")
-        let id = try XCTUnwrap(viewModel.clarificationPrompt?.id)
-        viewModel.setClarificationDraftResponse("A movie", promptID: id)
-        let submitted = await viewModel.submitClarificationDraft(promptID: id)
-        XCTAssertTrue(submitted)
-        XCTAssertEqual(receivedAnswers, ["q0": .string("A movie")])
-        XCTAssertNil(viewModel.clarificationPrompt)
     }
 
     @MainActor

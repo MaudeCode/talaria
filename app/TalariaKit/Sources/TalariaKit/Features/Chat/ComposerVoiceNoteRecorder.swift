@@ -236,11 +236,6 @@ enum VoiceNoteFilename {
         let suffix = uuid.uuidString.prefix(8).lowercased()
         return "voice-note-\(suffix).m4a"
     }
-
-    static func isVoiceNote(_ filename: String) -> Bool {
-        let lower = filename.lowercased()
-        return lower.hasPrefix("voice-note-") && lower.hasSuffix(".m4a")
-    }
 }
 
 /// Pure decision helpers for the hold-to-talk mic gesture, kept out of the view

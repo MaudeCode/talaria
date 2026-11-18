@@ -73,6 +73,9 @@ final class ChatDraftAttachmentStoreTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = ChatDraftAttachmentStore(directoryURL: directory)
         let fileName = try await store.save(data: Data("bytes".utf8), suggestedFilename: "photo.jpg")
+        // `../drafts.json` from `ChatDrafts/Attachments` is the drafts document itself.
+        let draftsDocument = directory.appendingPathComponent("ChatDrafts/drafts.json")
+        try Data("{}".utf8).write(to: draftsDocument)
 
         await store.delete(named: fileName)
 
@@ -82,6 +85,7 @@ final class ChatDraftAttachmentStoreTests: XCTestCase {
         await store.delete(named: "never-written.jpg")
         // Traversal attempts never reach outside the directory.
         await store.delete(named: "../drafts.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: draftsDocument.path))
     }
 
     func testSweepDeletesOnlyUnreferencedFilesOlderThanTheGrace() async throws {

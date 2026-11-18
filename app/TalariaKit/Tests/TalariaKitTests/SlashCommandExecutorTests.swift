@@ -23,20 +23,6 @@ final class SlashCommandExecutorTests: XCTestCase {
         XCTAssertEqual(SlashCommandExecutor.parse("/clear", catalog: catalog)?.runsOnServer, false)
     }
 
-    func testParseClearWithoutArgs() {
-        let parsed = SlashCommandExecutor.parse("/clear")
-        XCTAssertEqual(parsed?.command?.name, "clear")
-        XCTAssertEqual(parsed?.name, "clear")
-        XCTAssertEqual(parsed?.args, "")
-    }
-
-    func testParseHelpWithoutArgs() {
-        let parsed = SlashCommandExecutor.parse("/help")
-        XCTAssertEqual(parsed?.command?.name, "help")
-        XCTAssertEqual(parsed?.name, "help")
-        XCTAssertEqual(parsed?.args, "")
-    }
-
     func testParseModelWithArgs() {
         let parsed = SlashCommandExecutor.parse("/model gpt-4")
         XCTAssertEqual(parsed?.command?.name, "model")
@@ -55,20 +41,6 @@ final class SlashCommandExecutorTests: XCTestCase {
         XCTAssertEqual(alias?.command?.handler, .serverSide(.branch))
         XCTAssertEqual(alias?.name, "fork")
         XCTAssertEqual(alias?.args, "Planning Copy")
-    }
-
-    func testParseUndoWithoutArgs() {
-        let parsed = SlashCommandExecutor.parse("/undo")
-        XCTAssertEqual(parsed?.command?.name, "undo")
-        XCTAssertEqual(parsed?.name, "undo")
-        XCTAssertEqual(parsed?.args, "")
-    }
-
-    func testParseRetryWithoutArgs() {
-        let parsed = SlashCommandExecutor.parse("/retry")
-        XCTAssertEqual(parsed?.command?.name, "retry")
-        XCTAssertEqual(parsed?.name, "retry")
-        XCTAssertEqual(parsed?.args, "")
     }
 
     func testParseCompressWithFocus() {
@@ -117,8 +89,8 @@ final class SlashCommandExecutorTests: XCTestCase {
         XCTAssertEqual(parsed?.args, "")
     }
 
-    func testParseBusyInputCommands() {
-        for name in ["queue", "steer", "interrupt", "status", "btw", "background", "goal"] {
+    func testParseCommandsWithoutArgs() {
+        for name in ["clear", "help", "undo", "retry", "queue", "steer", "interrupt", "status", "btw", "background", "goal"] {
             let parsed = SlashCommandExecutor.parse("/\(name)")
             XCTAssertEqual(parsed?.command?.name, name)
             XCTAssertEqual(parsed?.name, name)

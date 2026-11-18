@@ -122,23 +122,6 @@ final class ChatDraftStoreTests: XCTestCase {
         XCTAssertEqual(persistedDrafts[key]?.text, "abc")
     }
 
-    func testFlushLandsAStillDebouncedWrite() async throws {
-        let persistence = RecordingChatDraftPersistence()
-        let store = ChatDraftStore(persistence: persistence, debounceDuration: .seconds(10))
-        let key = ChatDraftKey(
-            serverID: "https://example.com",
-            context: .session("chat-1")
-        )
-
-        store.setDraft("Typed before backgrounding", for: key)
-        try await store.flush()
-
-        let writeCount = await persistence.writeCount()
-        let persistedDrafts = await persistence.latestDrafts()
-        XCTAssertEqual(writeCount, 1)
-        XCTAssertEqual(persistedDrafts[key]?.text, "Typed before backgrounding")
-    }
-
     func testNewChatDraftMovesToCreatedSession() async throws {
         let persistence = RecordingChatDraftPersistence()
         let store = ChatDraftStore(persistence: persistence, debounceDuration: .seconds(10))

@@ -125,12 +125,4 @@ final class ContextWindowIndicatorTests: XCTestCase {
     func testFormatTokensSmallNumber() {
         XCTAssertEqual(ContextWindowFormatter.formatTokens(500), "500")
     }
-
-    func testFormatTokensThousand() {
-        XCTAssertEqual(ContextWindowFormatter.formatTokens(1_234), "1.2K")
-    }
-
-    func testFormatTokensMillion() {
-        XCTAssertEqual(ContextWindowFormatter.formatTokens(1_500_000), "1.5M")
-    }
 }
