@@ -1532,6 +1532,8 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect([res.status, JSON.parse(text)]).toEqual([500, { error: 'Gateway start failed: Profile \'work\' does not get a gateway of its own.', ok: false, action: 'start', returncode: 78 }])
       expect(calls.map((c) => c.action)).toEqual(['start', 'stop', 'restart', 'restart', 'start', 'start'])
       expect(calls.every((c) => c.interrupt === true)).toBe(true)
+      // With no Gateway URL the local profile lifecycle is decided without an ownership probe.
+      expect(sidecar.calls.some((c) => c.method === 'gateway.ownership')).toBe(false)
     } finally {
       sidecar.respond('gateway.control', undefined)
     }
