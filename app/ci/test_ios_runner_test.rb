@@ -205,9 +205,11 @@ class TestIOSRunnerTest < Minitest::Test
                   'options=$(ci/hosted-test-shard prepare-options "${RUNNER_TEMP}/shard.json")',
                   'ci/background start simulator-prepare scripts/prepare-ui-simulator ${options} "${{ steps.sim.outputs.udid }}"'],
                  shard["steps"][boot + 1]["run"].lines.map(&:strip).reject { |line| line.start_with?("#") })
-    assert_equal(["Prepare the simulator", "Wait for the build", "Download the test build", "Wait for the simulator", "Test without building"],
-                 shard["steps"][boot + 1, 5].map { |step| step["name"] })
-    assert_equal("ci/background wait simulator-prepare", shard["steps"][boot + 4]["run"])
+    assert_equal(["Prepare the simulator", "Wait for the build", "Download the test build", "Test without building"],
+                 shard["steps"][boot + 1, 4].map { |step| step["name"] })
+    # The guarded launch collects the preparation, so a simulator it could not ready gets the launch's one recovery
+    # and, failing that, the runner-fault status, never a test failure (TAL-2469).
+    assert_includes(shard["steps"][boot + 4]["run"], "xctest_ready() { ci/background wait simulator-prepare; }")
     assert_equal("true", shard["steps"][boot]["with"]["wait_for_boot"].to_s)
     refute(shard["steps"].any? { |step| step["name"] == "Build for testing" }, "test jobs never build")
     steps = shard["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h

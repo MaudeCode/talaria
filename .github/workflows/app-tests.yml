@@ -316,7 +316,7 @@ jobs:
 
       # The keyboard's slide-to-type introduction marked as shown (TAL-668), the notification service answering
       # (TAL-651) and a photo the tests own (TAL-633). It needs only the booted simulator, so it runs in the background
-      # while the job waits for and downloads the build, and "Wait for the simulator" collects it (TAL-1599). Only the
+      # while the job waits for and downloads the build, and "Test without building" collects it (TAL-1599). Only the
       # shard whose tests wait on the notification server waits for it here (TAL-2352).
       - name: Prepare the simulator
         run: |
@@ -365,9 +365,6 @@ jobs:
           mkdir -p Build
           tar -C Build -xf "${RUNNER_TEMP}/app-build.tar.xz"
 
-      - name: Wait for the simulator
-        run: ci/background wait simulator-prepare
-
       # The memory sampler runs for the whole step; "Report memory" stops it, summarizes it and uploads its log.
       # The step's own limit ends a stuck run inside the job's, so the steps after it still upload the result bundle
       # and the memory log and the job fails rather than being cancelled, which the failure alert sees (TAL-670).
@@ -400,13 +397,15 @@ jobs:
           # No run collects the simulator's diagnostics: on a hosted runner that waited 600 s on every run, passing or
           # failing, and never returned any (TAL-669). The result bundle keeps each failure's screenshots and logs.
           # The local runner's guarded launch (TAL-2277): a fault before the runner connects, when no test has run,
-          # gets one relaunch, and a second fault ends the run with status 70, a runner fault. Recovery here keeps
-          # the evidence, restarts CoreSimulator, which this runner owns alone, reboots the simulator and prepares
-          # it again.
+          # gets one relaunch, and a second fault ends the run with status 70, a runner fault. A simulator that
+          # "Prepare the simulator" could not ready is such a fault too (TAL-2469). Recovery here keeps the evidence,
+          # restarts CoreSimulator, which this runner owns alone, reboots the simulator and prepares it again.
           source scripts/xctest-launch
           simulator_id=${SIMULATOR_ID}
           # shellcheck disable=SC2034 # scripts/xctest-launch reads it.
           destination="platform=iOS Simulator,id=${SIMULATOR_ID}"
+          # shellcheck disable=SC2329 # scripts/xctest-launch calls it.
+          xctest_ready() { ci/background wait simulator-prepare; }
           # shellcheck disable=SC2329 # scripts/xctest-launch calls it.
           xctest_recover() {
             mkdir -p launch-fault
@@ -432,11 +431,11 @@ jobs:
           echo "### Hosted test shard ${SHARD}" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
           if [[ "${status}" == 70 ]]; then
-            echo "::error title=Simulator runner fault::The test runner faulted before any test ran, also after restarting CoreSimulator. No test failed; rerun the job."
-            echo "- Runner fault: the test runner faulted before any test ran, twice. No test failed." >> "${GITHUB_STEP_SUMMARY}"
+            echo "::error title=Simulator runner fault::Runner fault before any test ran: the simulator or its test runner faulted, also after a reboot with CoreSimulator restarted. No test failed; rerun the job."
+            echo "- Runner fault before any test ran: the simulator or its test runner faulted twice. No test failed." >> "${GITHUB_STEP_SUMMARY}"
           elif [[ -d launch-fault ]]; then
-            echo "::warning title=Simulator launch recovered::The first launch faulted before any test ran; the relaunch after restarting CoreSimulator ran the tests."
-            echo "- Launch recovered: the first launch faulted before any test ran." >> "${GITHUB_STEP_SUMMARY}"
+            echo "::warning title=Simulator launch recovered::The simulator or its test runner faulted before any test ran; after a reboot with CoreSimulator restarted, the tests ran."
+            echo "- Launch recovered: the simulator or its test runner faulted before any test ran." >> "${GITHUB_STEP_SUMMARY}"
           fi
           # The test cases this shard ran, from its result bundle, and its test time: the gate proves every planned
           # identifier ran exactly once and reports the slowest shard against its estimate.

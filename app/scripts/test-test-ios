@@ -390,6 +390,35 @@ grep -q "stopping the run as a runner fault" "$state/LaunchFaultAlways.log"
 faulted_bundle=$(grep -m1 -- 'TalariaTests/LaunchFaultOnce|' "$state/runs" | cut -d'|' -f2)
 [[ -d "${faulted_bundle%.xcresult}-launch-1.xcresult" ]]
 
+# A simulator the hosted step could not ready (xctest_ready fails) uses the guard's one recovery before the first launch
+# (TAL-2469): a recovered simulator runs the tests, and a failed recovery or a later launch fault is a runner fault.
+echo 'build-produced fixture receipt' > "$state/ready.xctestrun"
+for case in ReadyFaultOnce:0:1:1 ReadyFaultRecoveryFails:70:0:1 ReadyFaultLaunchFaultAlways:70:1:1; do
+    IFS=: read -r selector expected_status expected_runs expected_recoveries <<< "$case"
+    : > "$state/$selector.recoveries"
+    observed_status=0
+    (
+        source "$repo/scripts/xctest-launch"
+        simulator_id=AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA
+        destination="platform=iOS Simulator,id=$simulator_id"
+        xctest_ready() { return 124; }
+        xctest_recover() {
+            echo recovered >> "$state/$selector.recoveries"
+            [[ "$selector" != *RecoveryFails* ]]
+        }
+        xctest_launch "$state/$selector.xcresult" "$state/$selector.output" \
+            -xctestrun "$state/ready.xctestrun" "-only-testing:TalariaTests/$selector"
+    ) > "$state/$selector.log" 2>&1 || observed_status=$?
+    observed_recoveries=$(wc -l < "$state/$selector.recoveries" | tr -d ' ')
+    [[ "$observed_status:$(runs_for "TalariaTests/$selector|"):$observed_recoveries" == \
+        "$expected_status:$expected_runs:$expected_recoveries" ]] || {
+        echo "$selector returned $observed_status after $(runs_for "TalariaTests/$selector|") launch(es) and $observed_recoveries recoveries; expected $expected_status after $expected_runs and $expected_recoveries." >&2
+        exit 1
+    }
+done
+grep -q "was not ready before any test ran; recovering the simulator" "$state/ReadyFaultOnce.log"
+grep -q "stopping the run as a runner fault" "$state/ReadyFaultLaunchFaultAlways.log"
+
 lock_file="$repo/.codex-tmp/xctest/runner.lock"
 sleep 0.01 &
 dead_pid=$!

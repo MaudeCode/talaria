@@ -1,7 +1,8 @@
 # shellcheck shell=bash disable=SC2154 # The caller sets destination and simulator_id.
 # Sourced, never run: the one guarded launch of `xcodebuild test-without-building`, shared by scripts/test-ios and the
 # hosted tests in .github/workflows/app-tests.yml. The caller sets `destination` and `simulator_id` and defines
-# `xctest_recover`, which hands the next attempt a working simulator and may change both.
+# `xctest_recover`, which hands the next attempt a working simulator and may change both. A caller that readies its
+# simulator before the tests may define `xctest_ready`, which fails when that preparation failed.
 #
 #   xctest_launch RESULT_BUNDLE OUTPUT_LOG XCODEBUILD_ARGUMENT...
 #
@@ -9,6 +10,7 @@
 # A fault before the test runner connects, when no test can have run, gets one relaunch after `xctest_recover`; if the
 # relaunch faults too, it returns 70, a runner fault rather than a test failure. The faulted attempt's bundle moves to
 # RESULT_BUNDLE's name with -launch-1. Once the runner connected, xcodebuild's status stands: nothing is retried.
+# A failed `xctest_ready` is such a fault too, before the first launch, and uses up the same one recovery (TAL-2469).
 #
 # Faults before the runner connects:
 # - A host that never connects. On the iOS 27.1 Duo simulator, a test host launched while SpringBoard still settles the
@@ -20,6 +22,9 @@
 # - A launch the simulator services break (TAL-2277). On hosted runners CoreSimulator's SimLaunchHost died while
 #   xcodebuild launched the runner ("Mach error -308 - (ipc/mig) server died"), and a runtime image detached
 #   ("simulator runtime is not available"); xcodebuild then exits before the runner connects.
+# - A simulator that never got ready (TAL-2469). On a hosted runner starved by the build download, the notification
+#   server never answered within its 90 s budget, and every dasd restart client outlasted its own 5 s budget
+#   (scripts/ready-simulator-notifications). Recovery reboots the simulator once that download is over.
 
 shopt -s nullglob globstar
 
@@ -48,6 +53,18 @@ xctest_stop_output() {
     rm -f "$fifo"
 }
 
+# The one recovery: the first fault before any test ran recovers the simulator, and a second stops the run with 70.
+xctest_recover_once() {
+    if (( attempt == 2 )); then
+        echo "$1 after recovering the simulator; stopping the run as a runner fault." >&2
+        return 70
+    fi
+    echo "$1; recovering the simulator for one more launch." >&2
+    [[ ! -e "$result_bundle" ]] || mv "$result_bundle" "${result_bundle%.xcresult}-launch-1.xcresult"
+    xctest_recover || { echo "Recovering the simulator failed; stopping the run as a runner fault." >&2; return 70; }
+    attempt=2
+}
+
 xctest_launch() {
     local result_bundle=$1 output_log=$2
     shift 2
@@ -56,6 +73,9 @@ xctest_launch() {
     local attempt=1 status simulator_name output_start tee_pid connect_started preparation_started runner_phase
     local host_launched reason
     touch "$output_log"
+    if declare -F xctest_ready >/dev/null && ! xctest_ready; then
+        xctest_recover_once "The simulator $simulator_id was not ready before any test ran" || return
+    fi
     while true; do
         simulator_name=$(xcrun simctl list devices available --json |
             /usr/bin/jq -r --arg id "$simulator_id" 'first(.devices[][] | select(.udid == $id) | .name) // "simulator"')
@@ -116,13 +136,6 @@ xctest_launch() {
                 reason="The test runner on $simulator_name ($simulator_id) did not connect within ${connect_timeout}s"
             fi
         fi
-        if (( attempt == 2 )); then
-            echo "$reason after recovering the simulator; stopping the run as a runner fault." >&2
-            return 70
-        fi
-        echo "$reason; recovering the simulator for one more launch." >&2
-        [[ ! -e "$result_bundle" ]] || mv "$result_bundle" "${result_bundle%.xcresult}-launch-1.xcresult"
-        xctest_recover || { echo "Recovering the simulator failed; stopping the run as a runner fault." >&2; return 70; }
-        attempt=2
+        xctest_recover_once "$reason" || return
     done
 }
