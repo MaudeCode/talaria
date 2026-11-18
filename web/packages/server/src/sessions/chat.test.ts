@@ -11,6 +11,7 @@ import { str } from '../util.js'
 import { sanitizeMessagesForApi } from './merge.js'
 import { UNSETTLED_TODO_KEY } from './todo.js'
 import { Session } from './session.js'
+import { JsonJournalWriter } from './storage/json-journal.js'
 
 useJsonStorage()
 
@@ -33,6 +34,20 @@ const completed = (messages: Json[], extra: Partial<ChatResult> = {}): ChatResul
 })
 
 const eventNames = (frames: SseFrame[]): string[] => frames.map((f) => f.event)
+/** A promise the test resolves from a fake or spy, so a wait ends on the event itself under the suite's own timeout. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = () => undefined
+  const promise = new Promise<void>((r) => { resolve = r })
+  return { promise, resolve }
+}
+/** Opens a stream and resolves once its `initial` frame arrived; the route subscribes before sending it, so nothing the test does next is missed. */
+async function subscribe(s: TestServer, path: string, until: (f: SseFrame) => boolean): Promise<{ frames: Promise<SseFrame[]> }> {
+  let opened: () => void = () => undefined
+  const open = new Promise<void>((resolve) => { opened = resolve })
+  const frames = s.sse(path, (f) => { if (f.event === 'initial') opened(); return until(f) })
+  await Promise.race([open, frames])
+  return { frames }
+}
 /** A `/background` task's shared record and its full result, as every client reads them. */
 async function backgroundTask(s: TestServer, sid: string, taskId: unknown): Promise<{ record: Json | undefined; result: unknown }> {
   const tasks = (await json(await s.get(`/api/background/tasks?session_id=${sid}`))).tasks as Json[]
@@ -902,6 +917,16 @@ describe('chat turns through the sidecar', () => {
     const bufferedSid = await newSession(s)
     let release: () => void = () => undefined
     let bufferedStream = ''
+    // Resolves once the run journal holds both `tool` rows, written while redaction is off.
+    const journaled = deferred()
+    type Append = (this: JsonJournalWriter, ...args: Parameters<JsonJournalWriter['appendSseEvent']>) => ReturnType<JsonJournalWriter['appendSseEvent']>
+    const appendSseEvent: Append = Reflect.get(JsonJournalWriter.prototype, 'appendSseEvent')
+    let tools = 0
+    const append = vi.spyOn(JsonJournalWriter.prototype, 'appendSseEvent').mockImplementation(async function (this: JsonJournalWriter, ...args) {
+      const row = await appendSseEvent.apply(this, args)
+      if (args[0] === 'tool' && ++tools === 2) journaled.resolve()
+      return row
+    })
     await s.deps.settings.save({ api_redact_enabled: false })
     try {
       sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
@@ -912,10 +937,9 @@ describe('chat turns through the sidecar', () => {
         release = () => { resolve(completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Done.' }])) }
       }))
       bufferedStream = String((await json(await post(s, '/api/chat/start', { session_id: bufferedSid, message: 'run it' }))).stream_id)
-      const bufferedJournal = join(realpathSync(s.state), 'sessions', '_run_journal', bufferedSid, `${bufferedStream}.jsonl`)
-      const deadline = Date.now() + 3000
-      while (!(existsSync(bufferedJournal) && readFileSync(bufferedJournal, 'utf8').split('\n').filter((line) => line.includes('"event":"tool"')).length >= 2) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10))
+      await journaled.promise
     } finally {
+      append.mockRestore()
       await s.deps.settings.save({ api_redact_enabled: true })
     }
     try {
@@ -1671,27 +1695,23 @@ describe('chat turns through the sidecar', () => {
     const original = turns.deps.titleRefreshEvery
     sidecar.respond('chat.start', (params) => completed([...(params.conversation_history as Json[]), { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Here is the plan for that step.' }]))
     const held = new Map<string, () => void>()
+    const asked = new Map([['two', deferred()], ['four', deferred()]])
     const stepOf = (params: Json): string => /step (\w+)/.exec(str((params.messages as Json[])[1]?.content))?.[1] ?? ''
     sidecar.respond('aux.complete', (params) => {
       const step = stepOf(params)
       const answer = { model: 'aux', text: `Title: "Rollout step ${step}"`, usage: null }
       // The refresh prompts for exchanges 2 and 4 answer only when the test releases them.
       if (step !== 'two' && step !== 'four') return answer
-      return new Promise((resolve) => { held.set(step, () => { resolve(answer) }) })
+      return new Promise((resolve) => { held.set(step, () => { resolve(answer) }); asked.get(step)?.resolve() })
     })
     const sid = await newSession(s)
+    // TAL-1840: `done` released admission, so each next message is admitted at once while the held title work runs.
     const start = async (word: string): Promise<string> => {
-      const deadline = Date.now() + 5000
-      let res = await post(s, '/api/chat/start', { session_id: sid, message: `plan the rollout step ${word}` })
-      while (res.status === 409 && Date.now() < deadline) { await new Promise((r) => setTimeout(r, 25)); res = await post(s, '/api/chat/start', { session_id: sid, message: `plan the rollout step ${word}` }) }
+      const res = await post(s, '/api/chat/start', { session_id: sid, message: `plan the rollout step ${word}` })
       expect(res.status).toBe(200)
       return String((await json(res)).stream_id)
     }
-    const until = async (ready: () => boolean): Promise<void> => {
-      const deadline = Date.now() + 5000
-      while (!ready() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25))
-      expect(ready()).toBe(true)
-    }
+    const until = async (step: string): Promise<void> => { await asked.get(step)?.promise }
     turns.deps.titleRefreshEvery = () => 2
     try {
       await s.sse(`/api/chat/stream?stream_id=${await start('one')}`, (f) => f.event === 'stream_end')
@@ -1700,9 +1720,9 @@ describe('chat turns through the sidecar', () => {
       await s.sse(`/api/chat/stream?stream_id=${await start('three')}`, (f) => f.event === 'stream_end')
       const fourth = await start('four')
       await s.sse(`/api/chat/stream?stream_id=${fourth}`, (f) => f.event === 'done')
-      await until(() => held.has('two'))
+      await until('two')
       held.get('two')?.()
-      await until(() => held.has('four'))
+      await until('four')
       held.get('four')?.()
       await s.sse(`/api/chat/stream?stream_id=${fourth}`, (f) => f.event === 'stream_end')
       const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
@@ -1758,10 +1778,9 @@ describe('chat turns through the sidecar', () => {
     const first = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'first' }))
     await s.sse(`/api/chat/stream?stream_id=${String(first.stream_id)}`, (f) => f.event === 'done')
 
-    const started = s.sse('/api/sessions/events', (f) => f.event === 'sessions_changed' && (f.data as Json).reason === 'turn_started')
-    await new Promise((r) => setTimeout(r, 50))
+    const started = await subscribe(s, '/api/sessions/events', (f) => f.event === 'sessions_changed' && (f.data as Json).reason === 'turn_started')
     const second = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'second' }))
-    const frames = await started
+    const frames = await started.frames
     expect(frames.find((f) => (f.data as Json).reason === 'turn_started')?.data).toMatchObject({ type: 'sessions_changed', reason: 'turn_started', session_id: sid })
     await s.sse(`/api/chat/stream?stream_id=${String(second.stream_id)}`, (f) => f.event === 'done')
   })
@@ -1826,9 +1845,7 @@ describe('chat turns through the sidecar', () => {
       const first = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'first' }))
       await s.sse(`/api/chat/stream?stream_id=${String(first.stream_id)}`, (f) => f.event === 'done')
       // The title prompt has not answered; the next turn must not be refused with 409 meanwhile.
-      const deadline = Date.now() + 5000
-      let res = await post(s, '/api/chat/start', { session_id: sid, message: 'second' })
-      while (res.status === 409 && Date.now() < deadline) { await new Promise((r) => setTimeout(r, 25)); res = await post(s, '/api/chat/start', { session_id: sid, message: 'second' }) }
+      const res = await post(s, '/api/chat/start', { session_id: sid, message: 'second' })
       expect(res.status).toBe(200)
       await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}`, (f) => f.event === 'done')
     } finally {
@@ -2177,8 +2194,9 @@ describe('chat turns through the sidecar', () => {
     release()
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
     await s.deps.completions.processOne({ process_id: 'proc_bg2', session_id: 'proc_bg2', type: 'completion', command: 'backup', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
-    for (let i = 0; i < 60 && !(await s.deps.sessionStore.get(sid)).active_stream_id; i += 1) await new Promise((r) => setTimeout(r, 20))
+    // `processOne` returns once the wakeup turn is admitted.
     const background = str((await s.deps.sessionStore.get(sid)).active_stream_id)
+    expect(background).not.toBe('')
     await s.sse(`/api/chat/stream?stream_id=${background}`, (f) => f.event === 'token')
     expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).active_turn_origin).toBe('background')
     expect(await json(await s.get(`/api/session/status?session_id=${sid}`))).toMatchObject({ active_turn_origin: 'background' })
@@ -2418,7 +2436,7 @@ describe('chat turns through the sidecar', () => {
     expect(names).not.toContain('pending_steer_leftover')
     expect(starts).toBe(1)
     // The worker's unwind adds nothing after the terminal row: replay from the start still ends on that one cancel.
-    await new Promise((r) => setTimeout(r, 100))
+    await s.deps.turns.finished(streamId)
     const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, () => false, { timeoutMs: 300 })
     expect(replay.filter((f) => f.event === 'cancel')).toHaveLength(1)
     expect(replay.filter((f) => f.event === 'steer_withdrawn')).toHaveLength(3)
@@ -2853,8 +2871,7 @@ describe('chat turns through the sidecar', () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'answer to it' }]))
     const bg = await json(await post(s, '/api/background', { session_id: sid, prompt: 'summarize repo\nin detail' }))
-    await s.sse(`/api/chat/stream?stream_id=${String(bg.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
-    await new Promise((r) => setTimeout(r, 50))
+    await s.deps.turns.finished(String(bg.stream_id))
     // The Agent's view: two concurrent delegations (one stalled), the two units of one split call, and a notified process.
     const unit = (id: string, goals: string[], extra: Json = {}): Json => ({ delegation_id: id, origin_ui_session_id: sid, state: 'running', dispatched_at: 10, completed_at: null, updated_at: 11, goals, child_statuses: [], has_result: false, live_status: 'running', ...extra })
     let agent: Json = {
@@ -2988,10 +3005,9 @@ describe('chat turns through the sidecar', () => {
 
   it('serves the session-list, per-session, and prompt streams with initial frames', async () => {
     const sid = await newSession(s)
-    const events = s.sse('/api/sessions/events', (f) => f.event === 'sessions_changed' && (f.data as Json).reason === 'session_rename')
-    await new Promise((r) => setTimeout(r, 50))
+    const events = await subscribe(s, '/api/sessions/events', (f) => f.event === 'sessions_changed' && (f.data as Json).reason === 'session_rename')
     await post(s, '/api/session/rename', { session_id: sid, title: 'Renamed' })
-    const frames = await events
+    const frames = await events.frames
     expect(frames.some((f) => f.event === 'sessions_changed' && (f.data as Json).stream === 'sessions')).toBe(true)
     const gateway = await s.sse('/api/sessions/events?gateway=1', (f) => f.event === 'gateway_status')
     expect(gateway[0]).toMatchObject({ event: 'initial', data: { stream: 'sessions' } })
@@ -3173,17 +3189,18 @@ describe('chat turns through the sidecar', () => {
     const turns = s.deps.turns as unknown as { deps: { profileConfig: ((profile: string | null) => Promise<Record<string, unknown> | null>) | undefined } }
     const original = turns.deps.profileConfig
     let releaseConfig: () => void = () => undefined
-    turns.deps.profileConfig = () => new Promise((resolve) => { releaseConfig = () => { resolve({}); } })
+    let loading: () => void = () => undefined
+    const configLoading = new Promise<void>((resolve) => { loading = resolve })
+    turns.deps.profileConfig = () => new Promise((resolve) => { releaseConfig = () => { resolve({}); }; loading() })
     try {
       const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'slow config' }))
       const streamId = String(start.stream_id)
-      const until = Date.now() + 5000
-      while (!(s.deps.registry.activeRuns.get(streamId)?.phase === 'running') && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+      await configLoading
       expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toMatchObject({ ok: true, cancelled: true })
       releaseConfig()
       const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel')
       // Exactly one terminal row: the cancel route wrote it, the worker's "before start" unwind adds no second one.
-      await new Promise((r) => setTimeout(r, 50))
+      await s.deps.turns.finished(streamId)
       const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, () => false, { timeoutMs: 300 })
       expect([...frames, ...replay].filter((f) => f.event === 'cancel').map((f) => (f.data as Json).type)).toEqual(['cancelled', 'cancelled'])
       expect(starts).toBe(0)
@@ -3382,16 +3399,14 @@ describe('chat turns through the sidecar', () => {
     const head = (data: Json): unknown => (data.pending as Json | null)?.approval_id ?? null
     const settled = (approvalId: string | null, count: number) => (f: SseFrame): boolean => f.event === 'approval' && head(f.data as Json) === approvalId && (f.data as Json).pending_count === count
     // The Agent's approvals.timeout expires on the head: the approval stream, GET pending, and the chat card all move on.
-    const timedOut = s.sse(`/api/approval/stream?session_id=${sid}`, settled('to-2', 1))
-    await new Promise((r) => setTimeout(r, 50))
+    const timedOut = await subscribe(s, `/api/approval/stream?session_id=${sid}`, settled('to-2', 1))
     emitFrame({ event: 'approval_resolved', data: { approval_id: 'to-1', session_id: sid, reason: 'timeout' } })
-    expect((await timedOut).filter((f) => f.event === 'approval').map((f) => f.data)).toMatchObject([{ pending: { approval_id: 'to-2' }, pending_count: 1 }])
+    expect((await timedOut.frames).filter((f) => f.event === 'approval').map((f) => f.data)).toMatchObject([{ pending: { approval_id: 'to-2' }, pending_count: 1 }])
     expect(await json(await s.get(`/api/approval/pending?session_id=${sid}`))).toMatchObject({ pending: { approval_id: 'to-2' }, pending_count: 1 })
     const promoted = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:${String(queued.length)}`, (f) => f.event === 'approval')
     expect(promoted.filter((f) => f.event === 'approval').map((f) => f.data)).toMatchObject([{ approval_id: 'to-2', pending_count: 1 }])
     // The second approval is answerable; the Agent's settle frame for it clears the chat card.
-    const watcher = s.sse(`/api/approval/stream?session_id=${sid}`, settled('to-3', 1))
-    await new Promise((r) => setTimeout(r, 50))
+    const watcher = await subscribe(s, `/api/approval/stream?session_id=${sid}`, settled('to-3', 1))
     sidecar.respond('approval.respond', (params) => ({ ok: params.request_id === 'to-2', resolved: params.request_id === 'to-2' ? 1 : 0, choice: params.choice }))
     expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'to-2' }))).toEqual({ ok: true, choice: 'once' })
     emitFrame({ event: 'approval_resolved', data: { approval_id: 'to-2', session_id: sid, reason: 'resolved' } })
@@ -3399,7 +3414,7 @@ describe('chat turns through the sidecar', () => {
     expect(cleared.filter((f) => f.event.startsWith('approval')).map((f) => [f.event, f.data])).toEqual([['approval_cleared', { session_id: sid, pending_count: 0 }]])
     // An approval stream that watched the queue empty still hears the next prompt.
     emitFrame({ event: 'approval', data: { request_id: 'to-3', command: 'rm -rf out', session_id: sid } })
-    expect((await watcher).filter((f) => f.event === 'approval').map((f) => f.data)).toMatchObject([{ pending: null, pending_count: 0 }, { pending: { approval_id: 'to-3' }, pending_count: 1 }])
+    expect((await watcher.frames).filter((f) => f.event === 'approval').map((f) => f.data)).toMatchObject([{ pending: null, pending_count: 0 }, { pending: { approval_id: 'to-3' }, pending_count: 1 }])
     release()
     await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
   })
@@ -3443,15 +3458,18 @@ describe('chat turns through the sidecar', () => {
     const sid = await newSession(s)
     let finishTurn: () => void = () => undefined
     let replySteer: () => void = () => undefined
-    sidecar.respond('chat.start', (params) => new Promise((resolve) => { finishTurn = () => { resolve(completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'done' }], { pending_steer: '' })) } }))
+    let dispatched: () => void = () => undefined
+    let steered: () => void = () => undefined
+    const running = new Promise<void>((resolve) => { dispatched = resolve })
+    const steering = new Promise<void>((resolve) => { steered = resolve })
+    sidecar.respond('chat.start', (params) => new Promise((resolve) => { finishTurn = () => { resolve(completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'done' }], { pending_steer: '' })) }; dispatched() }))
     // The steer reply is held until after the turn result: the Agent applied it, then finished, then replied.
-    sidecar.respond('chat.steer', () => new Promise((resolve) => { replySteer = () => { resolve({ accepted: true, fallback: null }) } }))
+    sidecar.respond('chat.steer', () => new Promise((resolve) => { replySteer = () => { resolve({ accepted: true, fallback: null }) }; steered() }))
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'go' }))
     const streamId = String(start.stream_id)
-    const until = Date.now() + 5000
-    while (s.deps.registry.activeRuns.get(streamId)?.phase !== 'running' && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    await running
     const steer = post(s, '/api/chat/steer', { session_id: sid, text: 'late steer', steer_id: 'late-1' })
-    await new Promise((r) => setTimeout(r, 30))
+    await steering
     finishTurn()
     const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
     replySteer()
@@ -3484,18 +3502,27 @@ describe('chat turns through the sidecar', () => {
     const sid = await newSession(s)
     const pushes: boolean[] = []
     const gates: (() => void)[] = []
-    sidecar.respond('approval.set_yolo', (params) => new Promise((resolve) => { gates.push(() => { pushes.push(params.enabled); resolve({ yolo_enabled: params.enabled, released: 0 }) }) }))
-    const until = Date.now() + 5000
+    const mutations = [deferred(), deferred()]
+    sidecar.respond('approval.set_yolo', (params) => new Promise((resolve) => { gates.push(() => { pushes.push(params.enabled); resolve({ yolo_enabled: params.enabled, released: 0 }) }); mutations[gates.length - 1]?.resolve() }))
+    const turns = s.deps.turns as unknown as { withYoloLock: (...args: unknown[]) => Promise<unknown> }
+    const withYoloLock = turns.withYoloLock
+    const queued = deferred()
+    let lockCalls = 0
+    const locks = vi.spyOn(turns, 'withYoloLock').mockImplementation(function (this: unknown, ...args: unknown[]) {
+      if (++lockCalls === 2) queued.resolve()
+      return withYoloLock.apply(this, args)
+    })
     const enable = post(s, '/api/session/yolo', { session_id: sid, enabled: true })
-    while (gates.length < 1 && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
-    // The enable's sidecar mutation is in flight; an opposing toggle arrives now.
+    await mutations[0]!.promise
+    // The enable's sidecar mutation is in flight; an opposing toggle arrives now and queues on the session's lock.
     const disable = post(s, '/api/session/yolo', { session_id: sid, enabled: false })
-    await new Promise((r) => setTimeout(r, 50))
+    await queued.promise
+    locks.mockRestore()
     // The disable's RPC waits for the enable's mutation + commit to settle.
     expect(gates).toHaveLength(1)
     gates[0]!()
     expect(await json(await enable)).toEqual({ ok: true, yolo_enabled: true })
-    while (gates.length < 2 && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    await mutations[1]!.promise
     gates[1]!()
     expect(await json(await disable)).toEqual({ ok: true, yolo_enabled: false })
     expect(pushes).toEqual([true, false])
@@ -3508,17 +3535,17 @@ describe('chat turns through the sidecar', () => {
     let starts = 0
     sidecar.respond('chat.start', (params) => { starts += 1; return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'late' }]) })
     let releaseSync: () => void = () => undefined
-    sidecar.respond('approval.set_yolo', (params) => new Promise((resolve) => { releaseSync = () => { resolve({ yolo_enabled: params.enabled, released: 0 }) } }))
+    let syncing: () => void = () => undefined
+    const yoloSyncing = new Promise<void>((resolve) => { syncing = resolve })
+    sidecar.respond('approval.set_yolo', (params) => new Promise((resolve) => { releaseSync = () => { resolve({ yolo_enabled: params.enabled, released: 0 }) }; syncing() }))
     try {
       const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'slow sync' }))
       const streamId = String(start.stream_id)
-      const until = Date.now() + 5000
-      while (!(s.deps.registry.activeRuns.get(streamId)?.phase === 'running') && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
-      await new Promise((r) => setTimeout(r, 30))
+      await yoloSyncing
       expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toMatchObject({ ok: true, cancelled: true })
       releaseSync()
       await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel')
-      await new Promise((r) => setTimeout(r, 50))
+      await s.deps.turns.finished(streamId)
       expect(starts).toBe(0)
     } finally {
       sidecar.respond('approval.set_yolo', (params) => ({ yolo_enabled: params.enabled, released: 0 }))
@@ -3774,8 +3801,7 @@ describe('chat turns through the sidecar', () => {
     expect((asked?.params as Json).ephemeral).toBe(true)
     expect(sidecar.calls.find((c) => c.method === 'chat.start' && str((c.params as Json).user_message).endsWith('long task'))?.params).not.toHaveProperty('ephemeral')
     release()
-    await s.sse(`/api/chat/stream?stream_id=${run}&replay=1`, (f) => f.event === 'done')
-    await new Promise((r) => setTimeout(r, 50))
+    await s.deps.turns.finished(run)
     expect((await s.deps.sessionStore.get(sid)).messages.map((m) => [m.role, m.content])).toEqual([['user', 'long task'], ['assistant', 'Done.']])
   })
 

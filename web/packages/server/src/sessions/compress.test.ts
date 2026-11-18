@@ -36,13 +36,10 @@ const compressed = (params: SidecarParams<'chat.compress'>): CompressResult => {
   }
 }
 
+/** Awaits the session's compression job, then reads the status every polling client reads. */
 async function waitForTerminal(s: TestServer, sid: string): Promise<Json> {
-  for (let i = 0; i < 200; i += 1) {
-    const payload = await json(await s.get(`/api/session/compress/status?session_id=${sid}`))
-    if (payload.status !== 'running') return payload
-    await new Promise((r) => setTimeout(r, 10))
-  }
-  throw new Error('compression job never finished')
+  await (s.deps.sessions as unknown as { compressionJobs: CompressionJobs }).compressionJobs.get(sid)?.done
+  return json(await s.get(`/api/session/compress/status?session_id=${sid}`))
 }
 
 describe('manual session compression', () => {
@@ -285,8 +282,10 @@ describe('manual session compression', () => {
     sidecar.respond('chat.compress', async (params) => { calls += 1; await gate; return compressed(params) })
     // Finalize stays pending after the context is installed: the job is still running with a two-row context.
     let finalize!: () => void
+    let finalizing!: () => void
     const finalizeGate = new Promise<void>((r) => { finalize = r })
-    sidecar.respond('chat.compress_finalize', async () => { await finalizeGate; return { finalized: true } })
+    const installed = new Promise<void>((r) => { finalizing = r })
+    sidecar.respond('chat.compress_finalize', async () => { finalizing(); await finalizeGate; return { finalized: true } })
     const first = await json(await post(s, '/api/session/compress/start', { session_id: sid, focus_topic: 'slow' }))
     expect(first).toMatchObject({ ok: true, status: 'running', session_id: sid, focus_topic: 'slow' })
     // TAL-1006: the session names the running job's start, so a client that comes back shows the same chip.
@@ -298,7 +297,8 @@ describe('manual session compression', () => {
     const sync = post(s, '/api/session/compress', { session_id: sid })
     expect((await json(await s.get(`/api/session/compress/status?session_id=${sid}`))).status).toBe('running')
     release()
-    for (let i = 0; i < 100 && (await s.deps.sessionStore.get(sid)).context_messages.length === 0; i += 1) await new Promise((r) => setTimeout(r, 10))
+    // The job finalizes only once the compressed context is installed.
+    await installed
     expect((await s.deps.sessionStore.get(sid)).context_messages).toHaveLength(2)
     expect(await json(await post(s, '/api/session/compress/start', { session_id: sid }))).toMatchObject({ status: 'running' })
     finalize()
