@@ -18,7 +18,6 @@
     "TranscriptHostedTests::testContinuousHistoryLoadsAllTwoThousandRowsAndPreservesPosition": "TAL-2405: 25.8 s on main",
     "ScreenGalleryHostedTests::testInsights": "TAL-2405: 25.6 s on main",
     "src/sessions/state-db-worker.test.ts::settles a Stop that lands during the starting read as a turn whose read failed": "TAL-2405: 24.1 s on main",
-    "src/redact.test.ts::stays linear on long runs of scheme and identifier characters": "TAL-2405: 23.9 s on main",
     "SettingsPlacementHostedTests::testSettingsSearchButtonSitsInTheBottomBarOnPhoneAndTopTrailingOnPad": "TAL-2405: 23.8 s on main",
     "StreamHostedTests::testWaitingRunKeepsItsStreamAlive": "TAL-2405: 22.9 s on main",
     "ScreenGalleryHostedTests::testServerSettings": "TAL-2405: 22.8 s on main",
