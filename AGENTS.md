@@ -23,7 +23,7 @@ platform integration (notifications, Live Activities, share sheets, input).
 Everything else, including anything uncertain, belongs on the server; when the
 server lacks the data, add it to the server or sidecar. A change that adds or
 edits client logic outside that list moves it to the server and contract in the
-same change, or files a linked Kaneo ticket before merge and cites it in the
+same change, or files a linked Kanvil ticket before merge and cites it in the
 PR; reviewers treat unticketed client derivation as blocking. An old-server
 fallback sits behind the contract field and is deleted once the field ships.
 
@@ -39,7 +39,7 @@ auth/OAuth, installs and updates) keep a busy state, and only on the control
 that started them. A ticket that asks for immediate feedback says "optimistic
 update with rollback", never "pending presentation" or "intent overlay".
 
-Kaneo Talaria is the canonical tracker for all components. Add one or more scope
+Kanvil project TAL (Talaria) is the canonical tracker for all components. Add one or more scope
 labels: `app`, `web`, `relay`, `tooling`, `contracts`. Use `contracts` alongside
 the affected components for shared schema/protocol work; CI and agent tooling
 use `tooling`. Keep work-type (`ci`, `bug`, etc.), difficulty, and readiness
@@ -59,7 +59,11 @@ references); `scripts/check-committed-images.py` enforces this on every PR.
 Pushing, PR publication/updates, merging, releases, deployments, TestFlight
 uploads, repository administration, and archival retain explicit human gates.
 The scheduled Nightly workflow (`.github/workflows/nightly.yml`) uploading its
-build to TestFlight is owner-approved, not a release.
+build to TestFlight is owner-approved, not a release. So is a CI repair session
+(`docs/main-ci-repair.md`) pushing its `fix/TAL-<number>-<slug>` branch,
+publishing that pull request and merging it with `land` once CI Gate passes on
+the exact head (owner decision, 2026-11-18); its releases and everything else
+stay gated.
 Use `--repo MaudeCode/talaria` with repository-scoped `gh` commands.
 Preserve unrelated work and component runtime identities. Keep component
 credentials isolated. Do not change live services.

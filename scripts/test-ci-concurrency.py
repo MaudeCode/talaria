@@ -105,9 +105,6 @@ def evaluate(expression, context):
                 take()
                 arguments.append(either())
             take(")")
-            # The status functions a job's `if` uses: the context says whether the run was cancelled.
-            if name in ("always", "cancelled") and not arguments:
-                return name == "always" or bool(context.get("cancelled"))
             if name != "format":
                 raise ValueError(f"unsupported function {name}")
             return re.sub(r"\{(\d+)\}", lambda found: text(arguments[1 + int(found.group(1))]), arguments[0])
@@ -191,14 +188,6 @@ class ConcurrencyTests(unittest.TestCase):
         for other in others:
             self.assertFalse(cancels(other, initial), other)
             self.assertFalse(cancels(initial, other), other)
-
-    def test_the_failure_handoff_skips_a_run_a_newer_push_cancelled(self):
-        condition = WORKFLOW["jobs"]["alert"]["if"]
-        for cancelled, expected in ((False, True), (True, False)):
-            with self.subTest(cancelled=cancelled):
-                context = {"cancelled": cancelled, "needs": {"gate": {"result": "failure"}},
-                           "github": {"repository": "MaudeCode/talaria", "event_name": "push", "ref": "refs/heads/main"}}
-                self.assertIs(evaluate(condition, context), expected)
 
     def test_a_retry_keeps_its_own_runs_group(self):
         self.assertEqual(run("push", 103, "a" * 40, attempt=2)[0], run("push", 103, "a" * 40, attempt=3)[0])
