@@ -1,4 +1,4 @@
-import { Suspense, useState, useSyncExternalStore, type ComponentType } from 'react'
+import { Suspense, useEffect, useState, useSyncExternalStore, type ComponentType } from 'react'
 
 export interface MarkdownProps {
   text: string
@@ -22,13 +22,16 @@ export interface MarkdownProps {
  * batch is still a blocking render that no tick can restart. Instances mounted after the load render at once.
  */
 let loaded: { Renderer: ComponentType<MarkdownProps> } | { error: unknown } | null = null
-let loading = false
+/** The one chunk request, settled once `loaded` is set. */
+let request: Promise<void> | null = null
 let draining = false
 // ponytail: fixed count; each batch also pays one layout of the transcript, so smaller batches finish the history
 // later. Size batches by measured render time if slow devices still show long tasks.
 const BATCH = 32
 /** Mount order; the newest mounts are a transcript's latest rows, the ones on screen. */
 const waiting = new Set<Gate>()
+/** Subscribers of `useMarkdownRendererReady`, told once when the chunk settles. */
+const settled = new Set<() => void>()
 
 class Gate {
   ready = loaded !== null
@@ -38,7 +41,7 @@ class Gate {
     if (!this.ready) {
       waiting.add(this)
       if (loaded) drain()
-      else preloadMarkdownRenderer()
+      else void preloadMarkdownRenderer()
     }
     return () => { this.notify = null; waiting.delete(this) }
   }
@@ -49,14 +52,13 @@ class Gate {
  * TAL-1693: the single import of the renderer chunk. The client entry starts it before the bootstrap so it downloads
  * beside the bootstrap and session fetches; the first mounted Markdown reuses the same request.
  */
-export function preloadMarkdownRenderer(): void {
-  if (loading || loaded) return
-  loading = true
-  void import('./MarkdownRenderer').then(({ default: Renderer }) => ({ Renderer }), (error: unknown) => ({ error })).then((result) => {
+export function preloadMarkdownRenderer(): Promise<void> {
+  request ??= import('./MarkdownRenderer').then(({ default: Renderer }) => ({ Renderer }), (error: unknown) => ({ error })).then((result) => {
     loaded = result
-    loading = false
     drain()
+    for (const notify of settled) notify()
   })
+  return request
 }
 
 function drain(): void {
@@ -73,6 +75,21 @@ function drain(): void {
     draining = false
     if (waiting.size) drain()
   }, 0)
+}
+
+const subscribeSettled = (notify: () => void): (() => void) => {
+  settled.add(notify)
+  return () => { settled.delete(notify) }
+}
+
+/**
+ * TAL-2410: whether the renderer chunk has settled (loaded or failed). A transcript holds its history until then, so its
+ * rows mount once at their rendered height: no raw-text fallback matches a rendered code fence or list. A caller with
+ * nothing to show (`wanted` false) neither loads the chunk nor waits for it, so login and onboarding never fetch it.
+ */
+export function useMarkdownRendererReady(wanted: boolean): boolean {
+  useEffect(() => { if (wanted) void preloadMarkdownRenderer() }, [wanted])
+  return useSyncExternalStore(subscribeSettled, () => loaded !== null, () => false)
 }
 
 /** One loading boundary for every Markdown consumer, including shared transcripts and previews. */

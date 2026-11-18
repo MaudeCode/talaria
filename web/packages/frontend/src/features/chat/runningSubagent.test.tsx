@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import type { Message } from '../../contracts'
 import { sessionFixture } from '../../test/fixtures'
 import { stubAnimate } from '../../test/animate'
@@ -10,6 +10,9 @@ vi.mock('../../api/sse', async (original) => ({ ...await original<typeof import(
 const api = await import('../../api/endpoints')
 const { useTranscript } = await import('./useTranscript')
 const { Transcript } = await import('./Transcript')
+const { preloadMarkdownRenderer } = await import('./render/Markdown')
+// The client entry preloads the renderer before any history arrives; a transcript holds its rows until then (TAL-2410).
+beforeAll(() => preloadMarkdownRenderer())
 
 const toolRow = (id: string, done = true) => ({ row_id: `tool:${id}`, role: 'tool', tool: { id, name: 'read_file', kind: 'read', target: id, args: {}, done, is_error: false, result: 'body' } })
 const scene = (terminal_state: string, final_answer: string, activity_rows: unknown[], expanded_by_default = false) => ({ version: 'activity_scene_v1', terminal_state, final_answer, activity_rows, expanded_by_default })

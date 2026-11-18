@@ -23,7 +23,7 @@ installClipboardShim()
 applyBootAppearance()
 registerServiceWorker(appRoot)
 // TAL-1693: fetch the transcript renderer beside the bootstrap; the sign-in and onboarding pages never render Markdown.
-if (!/^(login|onboarding)(\/|$)/.test(location.pathname.slice(appRoot.pathname.length))) preloadMarkdownRenderer()
+if (!/^(login|onboarding)(\/|$)/.test(location.pathname.slice(appRoot.pathname.length))) void preloadMarkdownRenderer()
 
 const container = document.getElementById('app')
 if (!container) throw new Error('missing #app mount node')

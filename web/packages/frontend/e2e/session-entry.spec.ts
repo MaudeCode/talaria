@@ -125,23 +125,7 @@ async function liveHistory(page: Page) {
 test('long history beside a live run renders on a slow CPU', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'CPU throttling is a Chromium desktop measurement')
   const history = await liveHistory(page)
-  // TAL-1637: one blocking render of all 300 answers held the live turn's attach for seconds. Record, at the commit
-  // that first renders the newest answer's Markdown, whether the oldest had rendered too. Before the renderer
-  // arrives each row shows its raw text (TAL-1693), so only rendered paragraphs count.
-  // The client preloads the renderer (TAL-1693), so it usually lands before the rows mount and they render at once,
-  // as on a session switch. Hold it until the history has mounted, as a slow network would, to cover the batch drain.
-  await page.route('**/MarkdownRenderer-*.js', async (route) => {
-    await page.locator('[data-message-key="600"]').waitFor({ state: 'attached' })
-    await route.continue()
-  })
-  await page.addInitScript(() => {
-    const w = window as unknown as { oldestWithNewest?: boolean }
-    new MutationObserver((_, observer) => {
-      if (!document.querySelector('[data-message-key="600"] .msg-body p')) return
-      w.oldestWithNewest = !!document.querySelector('[data-message-key="2"] .msg-body p')
-      observer.disconnect()
-    }).observe(document, { childList: true, subtree: true })
-  })
+  // The history mounts once the renderer has loaded (TAL-2410), so its answers render in one pass beside the live run.
   const cpu = await page.context().newCDPSession(page)
   try {
     // TAL-1592: rendering 300 rows takes longer than the live turn's one-second elapsed tick, which used to restart
@@ -155,7 +139,6 @@ test('long history beside a live run renders on a slow CPU', async ({ page }, te
     await expect.poll(() => !!history.run.stream, 'the client connects to the run stream').toBe(true)
     await expect(page.locator('.live-turn')).toBeAttached()
     await expect(page.locator('[data-message-key="600"] .msg-body p').first()).toBeAttached()
-    expect(await page.evaluate(() => (window as unknown as { oldestWithNewest?: boolean }).oldestWithNewest), 'the history renders newest first, a batch per task').toBe(false)
   } catch (error) {
     // The teardown below leaves the page blank before Playwright's failure screenshot; keep the failing page.
     await page.screenshot({ path: testInfo.outputPath('failed-page.png') })

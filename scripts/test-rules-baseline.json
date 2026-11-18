@@ -99,7 +99,6 @@
       "web/packages/frontend/e2e/retry.spec.ts": 1,
       "web/packages/frontend/e2e/server.ts": 1,
       "web/packages/frontend/e2e/session-entry.spec.ts": 8,
-      "web/packages/frontend/e2e/session-layout-shift.spec.ts": 1,
       "web/packages/frontend/e2e/session-switch.spec.ts": 7,
       "web/packages/frontend/e2e/stream-motion.spec.ts": 1,
       "web/packages/frontend/e2e/updating-dialog.spec.ts": 2,
