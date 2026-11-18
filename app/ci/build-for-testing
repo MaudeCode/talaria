@@ -6,10 +6,10 @@
 # store, debug info or coverage instrumentation: no test run reads them, and they took a tenth of the test build the
 # shards download (TAL-1891). A Swift warning from our sources fails the build (ci/check-swift-warnings).
 # A function body or expression that takes the type checker over type_check_limit_ms is one of those warnings, so a
-# slow SwiftUI chain cannot come back unnoticed (TAL-2470). The limit is 3x the slowest body this build measured on the
-# hosted runner, rounded up to 500 ms, so runner noise does not trip it.
+# slow SwiftUI chain cannot come back unnoticed (TAL-2470). The limit is 3x the slowest body on the hosted runner (722 ms
+# locally, 1.74x slower there by the build's SwiftCompile total), rounded up to 500 ms, so runner noise does not trip it.
 set -euo pipefail
-type_check_limit_ms=5500
+type_check_limit_ms=4000
 type_check_warnings="-Xfrontend -warn-long-function-bodies=${type_check_limit_ms}"
 type_check_warnings+=" -Xfrontend -warn-long-expression-type-checking=${type_check_limit_ms}"
 
