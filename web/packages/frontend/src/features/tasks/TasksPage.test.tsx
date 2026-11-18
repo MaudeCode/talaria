@@ -155,6 +155,14 @@ describe('TasksPage', () => {
     expect(showToast).toHaveBeenCalledWith('This Hermes Agent can\'t stop a running task', 4000, 'error')
   })
 
+  it('says so when the job had already stopped by the time Stop reached the server', async () => {
+    const detail = await openJob('Digest', [{ ...full, running: true, can_stop: true }])
+    vi.mocked(api.cronAction).mockResolvedValue({ ok: true, job_id: full.id!, status: 'not_running' })
+    await userEvent.click(detail.getByRole('button', { name: /^stop$/i }))
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith("Job isn't running"))
+    expect(showToast).not.toHaveBeenCalledWith('Stopping job')
+  })
+
   it('removes a deleted job at once after confirmation; Cancel changes nothing; a refusal brings it back', async () => {
     const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
     vi.mocked(api.cronAction).mockImplementation(() => held.promise)

@@ -25,7 +25,7 @@ describe('SessionContextMenu', () => {
   })
 
   it('keeps pin, archive and duplicate for a read-only import the server still lets Web organize', async () => {
-    const items = await menuItems({ ...writable, session_id: 'import', read_only: true, can_branch: false })
+    const items = await menuItems({ ...writable, session_id: 'import', read_only: true, can_branch: false, can_delete: false })
     for (const offered of ['Pin', 'Duplicate', 'Archive']) expect(items.some((t) => t.startsWith(offered)), offered).toBe(true)
     for (const refused of ['Rename', 'Move', 'Delete']) expect(items.some((t) => t.startsWith(refused)), refused).toBe(false)
   })
@@ -34,6 +34,7 @@ describe('SessionContextMenu', () => {
     ['refuses sharing on a shared row', { session_id: 'claude', source_kind: 'claude_code', can_share: false, share_url: '/share/old' }, ['Copy share link', 'Revoke public link'], ['Share publicly', 'Refresh snapshot']],
     ['allows sharing', {}, ['Share publicly'], ['Refresh snapshot']],
     ['allows sharing on a shared row', { session_id: 'shared', share_url: '/share/old' }, ['Refresh snapshot'], ['Share publicly']],
+    ['refuses deleting a row it still lets Web edit', { session_id: 'kept', can_delete: false }, ['Rename conversation', 'Move to project'], ['Delete conversation']],
   ] as const)('follows the server where it %s (TAL-732)', async (_, extra, offered, refused) => {
     const items = await menuItems({ ...writable, ...extra })
     for (const name of offered) expect(items, name).toContain(name)
