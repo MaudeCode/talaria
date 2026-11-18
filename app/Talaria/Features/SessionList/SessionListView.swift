@@ -26,6 +26,7 @@ struct SessionListView: View {
     @Environment(\.accessibilityReduceMotion) private var observedReduceMotion
     @Environment(\.scenePhase) private var observedScenePhase
     @Environment(\.windowSceneID) private var windowSceneID
+    @Environment(\.windowOpener) private var windowOpener
     @State private var viewModel: SessionListViewModel
     // Installed once after State bindings are mounted; its immutable handlers share this list's lifetime.
     @State private var sessionActionContext: SessionActionContext?
@@ -413,6 +414,7 @@ struct SessionListView: View {
     var body: some View {
         refreshSessionActionInputs()
         return sessionListWithPresentations
+            .background(WindowSceneReader(title: windowTitle))
             .task {
                 // Start the normal refresh immediately so a slow direct session
                 // request cannot leave the sidebar empty. The launch root was already
@@ -2041,6 +2043,12 @@ struct SessionListView: View {
                 guard canSplit, navigation.canOpenBeside(session) else { return nil }
                 return { Task { await openSession(session, beside: true) } }
             }
+            let opener = windowOpener.map { opener in (opener, windowSceneID) }
+            actions.openInNewWindow = { session in
+                guard let (opener, window) = opener,
+                      let target = navigation.newWindowTarget(for: session, supportsMultipleWindows: true) else { return nil }
+                return { openInNewWindow(target, title: SessionRowPresentation.displayTitle(for: session), with: opener, from: window) }
+            }
             actions.sidebarChatLifted = { sidebarChatLifted($0) }
         }
         return actions
@@ -2506,6 +2514,24 @@ struct SessionListView: View {
     /// Carries the chosen mode to the first Send or Files request (TAL-1045).
     private func openNewChat(in mode: ExecutionMode) {
         openNewChat(viewModel.diagnosticChatRoute(mode, projectID: selectedProjectID))
+    }
+
+    /// TAL-2389: the window's name in the app switcher: its chat's title, else its section's name.
+    private var windowTitle: String {
+        let shownID = navigationState.section == .chats
+            ? navigationState.displayedSessionID ?? navigationState.selectedSessionID
+            : navigationState.selectedSectionSession?.sessionId
+        if let shownID, let session = viewModel.sessions.first(where: { $0.sessionId == shownID }) {
+            return SessionRowPresentation.displayTitle(for: session)
+        }
+        return navigationState.section == .chats && shownID == nil ? String(localized: "New Chat") : navigationState.section.title
+    }
+
+    /// TAL-2389: a chat already shown in another window comes forward instead of opening a second copy.
+    private func openInNewWindow(_ target: OpenWindowTarget, title: String, with opener: WindowOpener, from window: String?) {
+        if case .session(let id) = target,
+           AppIntentRouter.shared.bringsForwardOtherWindow(showing: id, on: server, from: window) { return }
+        opener.open(target, title, window)
     }
 
     private func openSession(_ session: SessionSummary, in list: AppSection = .chats, beside: Bool = false) async {

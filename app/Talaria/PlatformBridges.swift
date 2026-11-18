@@ -54,7 +54,23 @@ private final class WindowActivity {
     }
 }
 
-extension UIWindowScene {
+/// TAL-2389: opens a chat or section in a new window beside the window that asked.
+struct WindowOpener {
+    let open: @MainActor (_ target: OpenWindowTarget, _ title: String, _ from: String?) -> Void
+
+    @MainActor static var system: Self? {
+        guard UIApplication.shared.supportsMultipleScenes else { return nil }
+        return Self { target, title, window in
+            var request = UISceneSessionActivationRequest(userActivity: target.activity(title: title))
+            let options = UIScene.ActivationRequestOptions()
+            options.requestingScene = UIApplication.shared.connectedScenes.first { $0.windowSceneID == window }
+            request.options = options
+            UIApplication.shared.activateSceneSession(for: request)
+        }
+    }
+}
+
+extension UIScene {
     /// The identity a Talaria window goes by in the event router and the visible-chat registry (TAL-2388).
     var windowSceneID: String? {
         session.role == .windowApplication ? session.persistentIdentifier : nil

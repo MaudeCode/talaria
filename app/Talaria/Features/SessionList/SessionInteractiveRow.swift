@@ -29,6 +29,7 @@ struct SessionInteractiveRow: View, Equatable {
         var pendingChange: PendingResourceChange?
         var isMutating: Bool
         var canOpenBeside: Bool
+        var canOpenInNewWindow: Bool
         var matchPreview: String?
         var isViewingCachedData: Bool
         var isSelectingSessions: Bool
@@ -49,6 +50,7 @@ struct SessionInteractiveRow: View, Equatable {
             pendingChange: viewModel.pendingChange(for: session),
             isMutating: viewModel.isMutating(session),
             canOpenBeside: actions.openBeside(session) != nil,
+            canOpenInNewWindow: actions.openInNewWindow(session) != nil,
             matchPreview: viewModel.contentMatchPreview(for: session, searchText: searchText),
             isViewingCachedData: viewModel.isViewingCachedData,
             isSelectingSessions: viewModel.isSelectingSessions,
@@ -92,7 +94,7 @@ struct SessionInteractiveRow: View, Equatable {
             }
             .contextMenu { contextMenuContent(includesSelection: canEnterSelection) }
             .accessibilityActions {
-                rowMenu(placement: .menu).openBesideButton
+                rowMenu(placement: .menu).windowButtons
                 if canEnterSelection, !selectionIsDisabled {
                     Button("Select Chats…") { viewModel.beginSelectingSessions() }
                 }
@@ -101,10 +103,10 @@ struct SessionInteractiveRow: View, Equatable {
 
     @ViewBuilder
     private var draggableRowContent: some View {
-        if rowStyle == .sidebar, !state.isSelectingSessions, state.canOpenBeside {
+        if !state.isSelectingSessions, (rowStyle == .sidebar && state.canOpenBeside) || state.canOpenInNewWindow {
             rowContent.onDrag {
                 actions.sidebarChatLifted(session)
-                return SidebarChatDrag.provider(for: session)
+                return SidebarChatDrag.provider(for: session, opensWindow: state.canOpenInNewWindow)
             }
         } else {
             rowContent
@@ -201,6 +203,7 @@ struct SessionInteractiveRow: View, Equatable {
     private func rowMenu(placement: SessionRowContextMenu.Placement) -> SessionRowContextMenu {
         SessionRowContextMenu(viewModel: viewModel, session: session, actions: actions, placement: placement,
             openBeside: rowStyle == .sidebar && !state.isSelectingSessions ? actions.openBeside(session) : nil,
+            openInNewWindow: !state.isSelectingSessions ? actions.openInNewWindow(session) : nil,
             rowState: (state.pendingChange, state.isMutating))
     }
 

@@ -8,13 +8,19 @@ enum SidebarChatDrag {
     static let type = UTType(exportedAs: "dev.kil.talaria.sidebar-chat", conformingTo: .data)
     static let typeIdentifier = type.identifier
 
-    static func provider(for session: SessionSummary) -> NSItemProvider {
+    /// One provider, two destinations: the conversation opens the chat beside, and with `opensWindow` the screen edge
+    /// or the other Split View side opens it in a new window (TAL-2389).
+    static func provider(for session: SessionSummary, opensWindow: Bool = false) -> NSItemProvider {
         let provider = NSItemProvider()
         provider.suggestedName = session.title
         guard let id = session.sessionId else { return provider }
         provider.registerDataRepresentation(forTypeIdentifier: typeIdentifier, visibility: .ownProcess) { completion in
             completion(Data(id.utf8), nil)
             return nil
+        }
+        if opensWindow {
+            let activity = OpenWindowTarget.session(id).activity(title: SessionRowPresentation.displayTitle(for: session))
+            provider.registerObject(activity, visibility: .all)
         }
         return provider
     }
@@ -27,6 +33,15 @@ enum SidebarChatDrag {
         var isDropped = false
 
         var shown: SessionSummary? { isOverChat || isDropped ? session : nil }
+    }
+}
+
+/// A sidebar row's menu item that opens its chat or section in its own window (TAL-2389).
+struct OpenInNewWindowButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) { Label("Open in New Window", systemImage: "macwindow.badge.plus") }
     }
 }
 
@@ -64,6 +79,8 @@ struct SessionListRowActions {
     /// Stops a run card's live run (TAL-1460).
     let stopRun: (SessionSummary) -> Void
     var openBeside: (SessionSummary) -> (() -> Void)? = { _ in nil }
+    /// Opens the chat in its own window, or brings forward the window already showing it (TAL-2389).
+    var openInNewWindow: (SessionSummary) -> (() -> Void)? = { _ in nil }
     /// A row lifted for a chat drag.
     var sidebarChatLifted: (SessionSummary) -> Void = { _ in }
 }

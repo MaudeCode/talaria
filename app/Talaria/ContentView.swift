@@ -106,6 +106,15 @@ struct ContentView: View {
             .onDisappear { sharedImports.windowDidChange(window, isInForeground: false) }
             .environment(\.newChatDraftWindow, newChatDraftWindow)
             .environment(\.windowSceneID, sceneID)
+            .environment(\.windowOpener, .system)
+            // TAL-2389: a window opened from a sidebar row's menu or drag starts at that chat or section.
+            .onContinueUserActivity(OpenWindowTarget.activityType) { activity in
+                switch OpenWindowTarget(activity: activity) {
+                case .session(let id): pendingDeepLinkedSessionID = id
+                case .section(let section): pendingDestination = section
+                case nil: break
+                }
+            }
             .onAppear { windowSelections.keepNewChatDraftWindow(newChatDraftWindow) }
     }
 
@@ -265,15 +274,21 @@ struct ContentView: View {
     }
 }
 
-/// Reports the window scene a view sits in, which SwiftUI does not expose (TAL-2388).
-private struct WindowSceneReader: UIViewRepresentable {
-    let report: (String?) -> Void
+/// Reports the window scene a view sits in, which SwiftUI does not expose (TAL-2388), and names it with `title`
+/// (TAL-2389).
+struct WindowSceneReader: UIViewRepresentable {
+    var title: String?
+    var report: (String?) -> Void = { _ in }
 
     func makeUIView(context: Context) -> ReaderView { ReaderView(report: report) }
-    func updateUIView(_ view: ReaderView, context: Context) {}
+    func updateUIView(_ view: ReaderView, context: Context) {
+        view.title = title
+        view.applyTitle()
+    }
 
     final class ReaderView: UIView {
         let report: (String?) -> Void
+        var title: String?
 
         init(report: @escaping (String?) -> Void) {
             self.report = report
@@ -288,8 +303,15 @@ private struct WindowSceneReader: UIViewRepresentable {
         override func didMoveToWindow() {
             super.didMoveToWindow()
             let id = window?.windowScene?.windowSceneID
+            applyTitle()
             // Outside the view update that moved it.
             Task { @MainActor in report(id) }
+        }
+
+        /// The window's name in the app switcher and the system's window pickers.
+        func applyTitle() {
+            guard let title, let scene = window?.windowScene, scene.title != title else { return }
+            scene.title = title
         }
     }
 }
