@@ -382,6 +382,8 @@ class PublicationTests(unittest.TestCase):
                             "path": "${{ steps.%s.outputs.handoff_path }}" % step["id"],
                             "retention-days": 30, "if-no-files-found": "error"}, (name, step.get("name")))
                     self.assertNotIn("download-artifact", step.get("uses", ""), "downloads go through the digest check")
+                # No release job restores anything from an Actions cache, which other runs can write.
+                self.assertFalse([step for step in steps if "actions/cache/" in step.get("uses", "")], name)
                 puts = [step["id"] for step in steps if "artifacts.py put" in step.get("run", "")]
                 if puts:
                     # A job's last put reports every handoff it staged.
@@ -415,8 +417,7 @@ class PublicationTests(unittest.TestCase):
         self.assertIn("${GITHUB_WORKFLOW_SHA}:releases/publish.py", bridge)
 
     def test_web_reads_npm_back_before_tagging_the_image_from_the_restored_build(self):
-        # npm's readback precedes the GHCR tag; both read the digest-checked web-build handoff, and no release job
-        # restores anything from an Actions cache.
+        # npm's readback precedes the GHCR tag; both read the digest-checked web-build handoff.
         jobs = workflow("release-set.yml")["jobs"]
         web = [step.get("run", "") for step in jobs["web-publish"]["steps"]]
         npm = next(index for index, run in enumerate(web) if "publish.py\" web-npm" in run)
@@ -424,7 +425,6 @@ class PublicationTests(unittest.TestCase):
         restore = next(index for index, run in enumerate(web) if "artifacts.py get" in run)
         self.assertLess(restore, npm)
         self.assertLess(npm, image)
-        self.assertFalse([job for job in jobs.values() for step in job.get("steps", []) if "actions/cache/" in step.get("uses", "")])
 
     def test_contents_write_jobs_run_the_workflow_revisions_tooling_and_push_nothing(self):
         # finalize writes the release-set ref itself, at publication (TAL-2396); no workflow step pushes one. The jobs
