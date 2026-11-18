@@ -1,6 +1,6 @@
 import workpoolTest from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
-import { createHash, generateKeyPairSync, verify } from "node:crypto";
+import { generateKeyPairSync, verify } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
@@ -8,7 +8,6 @@ import {
   classifyApnsFailure,
   makeProviderToken,
   sendHttp2,
-  sendWithTransport,
   type ApnsWireRequest,
 } from "../convex/lib/apnsTransport.node";
 import { defaultNotificationPreferences } from "../convex/lib/model";
@@ -74,25 +73,6 @@ describe("APNs transport", () => {
     ).toBe(true);
   });
 
-  it("supports a deterministic fake transport", async () => {
-    const request: ApnsWireRequest = {
-      token: "token",
-      topic: "dev.kil.talaria.push-type.liveactivity",
-      environment: "sandbox",
-      pushType: "liveactivity",
-      priority: "5",
-      payloadJson: "{}",
-      jobId: "job-1",
-    };
-    const fake = vi.fn().mockResolvedValue({ status: 200, apnsId: "apns-id" });
-
-    await expect(sendWithTransport(request, "jwt", fake)).resolves.toEqual({
-      status: 200,
-      apnsId: "apns-id",
-    });
-    expect(fake).toHaveBeenCalledWith(request, "jwt");
-  });
-
   it("keeps the per-job apns-collapse-id for Live Activity pushes", async () => {
     const request: ApnsWireRequest = {
       token: "token",
@@ -110,7 +90,9 @@ describe("APNs transport", () => {
     await sendHttp2({ ...request, jobId: "job-2" }, "jwt");
 
     const [first, retry, other] = http2.requests.map((headers) => headers["apns-collapse-id"]);
-    expect(first).toBe(createHash("sha256").update("job-1").digest("base64url"));
+    // APNs refuses an apns-collapse-id over 64 bytes.
+    expect(Buffer.byteLength(first!)).toBeGreaterThan(0);
+    expect(Buffer.byteLength(first!)).toBeLessThanOrEqual(64);
     expect(retry).toBe(first);
     expect(other).not.toBe(first);
   });

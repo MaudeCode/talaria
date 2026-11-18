@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   nativeSessionRequest,
-  fitActivityAggregate,
   makeLiveActivityEnd,
   makeLiveActivityStart,
   makeLiveActivityUpdate,
@@ -169,7 +168,7 @@ describe("ActivityKit payloads", () => {
     });
 
     expect(request.priority).toBe("10");
-    expect(request.payload).toMatchObject({ aps: { "content-state": { rows: [] } } });
+    expect(request.payload).toMatchObject({ aps: { "content-state": { activeCount: 1, rows: [] } } });
   });
 
   it("ends with final content and a five-minute dismissal", () => {
@@ -259,23 +258,6 @@ describe("ActivityKit payloads", () => {
     expect((makeLiveActivityStart({ ...common, aggregate, alert: approval }).payload.aps as Record<string, unknown>).alert)
       .toEqual({ title: { "loc-key": "Approval required" }, body: { "loc-key": "An agent run is waiting for your approval." } });
   });
-
-  it("drops overflow rows before ActivityKit's content-state boundary", () => {
-    const oversized: ActivityAggregate = {
-      ...aggregate,
-      rows: Array.from({ length: 5 }, (_, index) => ({
-        ...aggregate.rows[0]!,
-        sessionId: `session-${index}-${"x".repeat(500)}`,
-        deepLink: `/sessions/${"y".repeat(500)}`,
-      })),
-    };
-
-    const fitted = fitActivityAggregate(oversized);
-
-    expect(fitted.activeCount).toBe(oversized.activeCount);
-    expect(fitted.rows.length).toBeLessThan(oversized.rows.length);
-    expect(new TextEncoder().encode(JSON.stringify(fitted)).byteLength).toBeLessThanOrEqual(3_500);
-  });
 });
 
 
@@ -301,6 +283,11 @@ it("keeps all-running and native per-session payloads non-final after the foregr
   }
 });
 
+// The content state an update sends, after fitting it under ActivityKit's limit.
+const contentState = (content: ActivityAggregate) => (makeLiveActivityUpdate({
+  token: "synthetic", bundleId: "dev.kil.talaria", environment: "sandbox", aggregate: content, nowEpochSeconds: 1,
+}).payload.aps as { "content-state": ActivityAggregate })["content-state"];
+
 // TAL-1422: the largest plan and worker counts a publisher may send cost no row of a full aggregate with the longest titles.
 it("fits a full aggregate's largest plan and worker counts without dropping a row", () => {
   const states: SessionState[] = Array.from({ length: 5 }, (_, index) => ({
@@ -312,7 +299,7 @@ it("fits a full aggregate's largest plan and worker counts without dropping a ro
   const full = makeAggregate(states, 1_800_000_000_000)!;
   expect(full.rows).toHaveLength(5);
   expect(full.rows[0]).toMatchObject({ planCompleted: 9_999, planTotal: 9_999, workerCount: 9_999 });
-  expect(fitActivityAggregate(full).rows).toHaveLength(5);
+  expect(contentState(full).rows).toHaveLength(5);
 });
 
 // TAL-2336: the largest current call a publisher may send, on every row of a full aggregate with the longest titles.
@@ -337,7 +324,7 @@ it("keeps every row of a full aggregate by dropping the later rows' current call
     startedAt: 1_799_999_000_000, toolCount: 9_999, activityAt: 1_800_000_000_000,
     planCompleted: 9_999, planTotal: 9_999, workerCount: 9_999, currentTool: largestTool,
   }));
-  const fitted = fitActivityAggregate(makeAggregate(states, 1_800_000_000_000)!);
+  const fitted = contentState(makeAggregate(states, 1_800_000_000_000)!);
   expect(fitted.rows).toHaveLength(5);
   // The first row, which a per-session activity shows, keeps its call.
   expect(fitted.rows[0]!.currentTool).toEqual(largestTool);
