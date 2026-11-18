@@ -1,6 +1,6 @@
 import { createServer, IncomingMessage, request, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { brotliDecompressSync, gunzipSync } from 'node:zlib'
@@ -11,10 +11,15 @@ import { FakeSidecar } from './sidecar/fake.js'
 import { RequestContext } from './http/context.js'
 import { AssetCache, SpaShell } from './spa.js'
 import { createApp } from './app.js'
+import { AuthStore } from './auth/store.js'
+import { initializeStore, JsonDocuments, useJsonStorage } from './test/storage.js'
 import { os } from '@orpc/server'
 import { z } from 'zod'
 
 const DIST_INDEX = resolve(WEB_ROOT, 'static/dist/index.html')
+type Json = Record<string, unknown>
+const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
+const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 
 describe('open server (no auth)', () => {
   let s: TestServer
@@ -875,6 +880,173 @@ describe('per-request costs (TAL-1727)', () => {
     } finally {
       await s.close()
       rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('password login: CSRF exemption and attempt persistence', () => {
+  useJsonStorage()
+  let s: TestServer
+  const PASSWORD = 'correct horse battery'
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: PASSWORD, TALARIA_WEB_MAX_SSE_CLIENTS: '2' } }) })
+  afterAll(() => s.close())
+
+  it('the login route ignores a hostile Origin and needs no CSRF token', async () => {
+    const res = await post(s, '/api/auth/login', { password: PASSWORD }, { origin: 'https://evil.example', host: s.base.replace('http://', '') })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ ok: true, redirect_path: '/' })
+  })
+
+  it('the attempt window persists on disk and a fresh store still rate-limits the address', async () => {
+    for (let i = 0; i < 5; i += 1) await post(s, '/api/auth/login', { password: 'wrong' })
+    expect((await post(s, '/api/auth/login', { password: PASSWORD })).status).toBe(429)
+    await s.deps.auth.flushPersistence()
+    const reloaded = (await initializeStore(new AuthStore({ documents: new JsonDocuments(s.state), env: s.deps.config.env, settings: s.deps.settings })))
+    expect(reloaded.checkLoginRate('127.0.0.1')).toBe(false)
+    s.deps.auth.clearLoginAttempts('127.0.0.1')
+    await s.deps.auth.flushPersistence()
+    expect((await initializeStore(new AuthStore({ documents: new JsonDocuments(s.state), env: s.deps.config.env, settings: s.deps.settings }))).checkLoginRate('127.0.0.1')).toBe(true)
+  })
+})
+
+describe('auth persistence off the request path', () => {
+  useJsonStorage()
+  let s: TestServer
+  const PASSWORD = 'correct horse battery'
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: PASSWORD } }) })
+  afterAll(() => s.close())
+
+  it('answers login, the new session, and unrelated requests while the sessions write is held pending', async () => {
+    let open!: () => void
+    const gate = new Promise<void>((resolve) => { open = resolve })
+    const land = s.deps.auth.persistWrite
+    const held: string[] = []
+    s.deps.auth.persistWrite = async (file, text) => { held.push(join(s.state, file === 'sessions' ? '.sessions.json' : '.login_attempts.json')); await gate; await land(file, text) }
+    try {
+      const login = await post(s, '/api/auth/login', { password: PASSWORD })
+      expect(login.status).toBe(200)
+      const cookie = cookieHeader(login.headers.getSetCookie(), 'hermes_session') ?? ''
+      expect((await json(await s.get('/api/auth/status', { headers: { cookie } }))).logged_in).toBe(true)
+      expect((await s.get('/health')).status).toBe(200)
+      const sessionsFile = join(s.state, '.sessions.json')
+      // The login reserves a rate-limit attempt before hashing and releases it on success (TAL-523).
+      expect(held.toSorted()).toEqual([join(s.state, '.login_attempts.json'), sessionsFile])
+      expect(existsSync(sessionsFile)).toBe(false)
+      open()
+      await s.deps.auth.flushPersistence()
+      expect(Object.keys(JSON.parse(readFileSync(sessionsFile, 'utf8')) as object)).toEqual([AuthStore.tokenFromCookieValue(cookie.split('=')[1])])
+    } finally {
+      open()
+      s.deps.auth.persistWrite = land
+    }
+  })
+
+  it('answers logout only after the revoked session is on disk', async () => {
+    const login = await post(s, '/api/auth/login', { password: PASSWORD })
+    const cookie = cookieHeader(login.headers.getSetCookie(), 'hermes_session') ?? ''
+    const token = AuthStore.tokenFromCookieValue(cookie.split('=')[1]) ?? ''
+    await s.deps.auth.flushPersistence()
+    let open!: () => void
+    const gate = new Promise<void>((resolve) => { open = resolve })
+    const land = s.deps.auth.persistWrite
+    let entered!: () => void
+    const held = new Promise<void>((resolve) => { entered = resolve })
+    s.deps.auth.persistWrite = async (file, text) => { entered(); await gate; await land(file, text) }
+    try {
+      let answered = false
+      const logout = s.get('/api/auth/logout', { method: 'POST', headers: { cookie } }).then((res) => { answered = true; return res })
+      // The revocation's write is held; a full request round trip after it lets a logout that did not wait answer first.
+      await held
+      expect((await s.get('/health')).status).toBe(200)
+      expect(answered).toBe(false)
+      open()
+      expect((await logout).status).toBe(200)
+      expect(JSON.parse(readFileSync(join(s.state, '.sessions.json'), 'utf8'))).not.toHaveProperty(token)
+    } finally {
+      open()
+      s.deps.auth.persistWrite = land
+    }
+  })
+})
+
+describe('orderly shutdown lands write-behind auth state', () => {
+  useJsonStorage()
+  const SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP'] as const
+
+  it.each(SIGNALS)('%s exits only after the pending session write lands', async (signal) => {
+    let token = ''
+    let landedAtExit: boolean | null = null
+    const sessionsFile = (): string => join(s.state, '.sessions.json')
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => { landedAtExit ??= existsSync(sessionsFile()) && token in (JSON.parse(readFileSync(sessionsFile(), 'utf8')) as object) }) as never)
+    const before = new Map(SIGNALS.map((name) => [name, process.listeners(name)]))
+    const s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: 'correct horse battery' }, signals: true })
+    let open!: () => void
+    const gate = new Promise<void>((resolve) => { open = resolve })
+    const land = s.deps.auth.persistWrite
+    s.deps.auth.persistWrite = async (file, text) => { await gate; await land(file, text) }
+    const flushing = vi.spyOn(s.deps.auth, 'flushPersistence')
+    try {
+      token = AuthStore.tokenFromCookieValue(s.deps.auth.createSession()) ?? ''
+      process.emit(signal, signal)
+      // The shutdown has reached the auth step while the session write is held.
+      await vi.waitFor(() => { expect(flushing).toHaveBeenCalled() })
+      expect(exit).not.toHaveBeenCalled()
+      open()
+      await vi.waitFor(() => { expect(exit).toHaveBeenCalledWith(0) })
+      expect(landedAtExit).toBe(true)
+      expect(JSON.parse(readFileSync(sessionsFile(), 'utf8'))).toHaveProperty(token)
+    } finally {
+      open()
+      exit.mockRestore()
+      for (const name of SIGNALS) for (const listener of process.listeners(name)) if (!before.get(name)?.includes(listener)) process.off(name, listener)
+      await s.close()
+    }
+  })
+
+  it('a failed shutdown step still lands the pending session write, logs it, and exits non-zero', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
+    const before = new Map(SIGNALS.map((name) => [name, process.listeners(name)]))
+    const s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: 'correct horse battery' }, signals: true })
+    vi.spyOn(s.deps.hygiene, 'stop').mockRejectedValue(new Error('synthetic sweep failure'))
+    try {
+      const token = AuthStore.tokenFromCookieValue(s.deps.auth.createSession()) ?? ''
+      process.emit('SIGTERM', 'SIGTERM')
+      process.emit('SIGTERM', 'SIGTERM')
+      await vi.waitFor(() => { expect(exit).toHaveBeenCalledWith(1) })
+      expect(exit).toHaveBeenCalledTimes(1)
+      expect(JSON.parse(readFileSync(join(s.state, '.sessions.json'), 'utf8'))).toHaveProperty(token)
+      expect(s.logs).toContain('[webui] shutdown: retention sweep failed: synthetic sweep failure')
+      expect(s.logs).toContain('[webui] shutdown failed: shutdown incomplete: retention sweep')
+    } finally {
+      exit.mockRestore()
+      for (const name of SIGNALS) for (const listener of process.listeners(name)) if (!before.get(name)?.includes(listener)) process.off(name, listener)
+      await s.close().catch(() => undefined)
+    }
+  })
+})
+
+describe('authenticated stream budget', () => {
+  useJsonStorage()
+  let s: TestServer
+  // Python keyed the per-client SSE budget by the reconciled trusted-auth username, else the peer address.
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Test-Identity', TALARIA_WEB_MAX_SSE_CLIENTS: '2' } }) })
+  afterAll(() => s.close())
+
+  it('a third stream for one identity answers 503 while another identity still opens one', async () => {
+    const alice = 'alice'
+    const bob = 'bob'
+    const controllers: AbortController[] = []
+    const open = async (identity: string): Promise<Response> => { const c = new AbortController(); controllers.push(c); return fetch(`${s.base}/api/sessions/events`, { headers: { 'x-test-identity': identity }, signal: c.signal }) }
+    try {
+      const a1 = await open(alice)
+      const a2 = await open(alice)
+      const a3 = await open(alice)
+      const b1 = await open(bob)
+      expect([a1.status, a2.status, a3.status, b1.status]).toEqual([200, 200, 503, 200])
+      expect(await a3.json()).toMatchObject({ condition: 'client_stream_limit' })
+      expect((await s.get('/health')).status).toBe(200)
+    } finally {
+      for (const c of controllers) c.abort()
     }
   })
 })

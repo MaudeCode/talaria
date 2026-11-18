@@ -175,6 +175,36 @@ describe('absorbed durable identity (TAL-1019)', () => {
   })
 })
 
+describe('agentSessionRowsExisting probes', () => {
+  let dir = ''
+  beforeAll(() => { dir = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-probes-'))) })
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }) })
+
+  it('a missing state.db reports every probed id as present', () => {
+    expect(agentSessionRowsExisting(join(dir, 'missing', 'state.db'), ['a', 'b'])).toEqual(new Set(['a', 'b']))
+  })
+
+  it('600 probe ids against 300 present rows answer exactly those 300', () => {
+    const path = join(dir, 'batch.db')
+    const db = createStateDb(path)
+    for (let i = 0; i < 300; i += 1) insertSession(db, { id: `b-${String(i)}`, source: 'cli', started_at: i })
+    db.close()
+    const probe = Array.from({ length: 600 }, (_, i) => `b-${String(i)}`)
+    const present = agentSessionRowsExisting(path, probe)
+    expect(present.size).toBe(300)
+    expect(present.has('b-299')).toBe(true)
+    expect(present.has('b-300')).toBe(false)
+  })
+
+  it('probe ids are trimmed', () => {
+    const path = join(dir, 'trim.db')
+    const db = createStateDb(path)
+    insertSession(db, { id: 'cli-padded', source: 'cli', started_at: 1 })
+    db.close()
+    expect(agentSessionRowsExisting(path, ['  cli-padded  '])).toEqual(new Set(['cli-padded']))
+  })
+})
+
 describe('latestCronSessionInfo', () => {
   let dir: string
   beforeAll(() => { dir = realpathSync(mkdtempSync(join(tmpdir(), 'cron-sessions-'))) })

@@ -1,5 +1,6 @@
-import { JsonDocuments, useJsonStorage } from '../test/storage.js'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { JsonDocuments, useJsonStorage, useSelectedStorage } from '../test/storage.js'
+import { createHash } from 'node:crypto'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { request } from 'node:http'
@@ -1172,6 +1173,146 @@ describe('query parameters on non-GET routes (parity)', () => {
     const res = await post(s, '/api/session/rename', {})
     expect(res.status).toBe(400)
     expect((await json(res)).error).toBe('Missing required field(s): session_id, title')
+  })
+})
+
+describe('extension gallery installs', () => {
+  useSelectedStorage()
+  let s: TestServer
+  const zips: Record<string, Buffer> = {
+    'slip.zip': makeZip({ '../../evil.txt': 'evil' }),
+    'nested.zip': makeZip({ 'deep-ext/manifest.json': '{"version":"1.0.0","scripts":["sub/a/b.js"]}', 'deep-ext/sub/a/b.js': 'x' }),
+    'settings.zip': makeZip({ 'set-ext/manifest.json': JSON.stringify({ version: '2.0.0', name: 'Set Ext', permissions: { storage: { owned: true } }, settings_schema: [{ key: 'greeting', type: 'string', label: 'Greeting', description: 'd', default: 'hi' }, { key: 'bad' }] }) }),
+    'roll.zip': makeZip({ 'roll-ext/a.txt': 'a', 'roll-ext/sub/b.txt': 'b' }),
+    'link.zip': makeZip({ 'linked-ext/manifest.json': '{"version":"1.0.0"}' }),
+    'inside.zip': makeZip({ 'inside-ext/manifest.json': '{"version":"1.0.0"}' }),
+    'assets.zip': makeZip({ 'assets-ext/manifest.json': '{"version":"1.0.0"}', 'assets-ext/assets/config': 'pwned' }),
+  }
+  beforeAll(async () => {
+    const fakeFetch: typeof fetch = (input) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (url.endsWith('/registry.json')) return Promise.resolve(new Response(JSON.stringify([{ id: 'zeta' }, { id: 'alpha' }]), { status: 200 }))
+      if (url.endsWith('/redirect.zip')) return Promise.resolve(new Response(null, { status: 302, headers: { location: 'https://evil.example/ext.zip' } }))
+      const name = url.split('/').pop() ?? ''
+      const zip = zips[name]
+      if (zip) return Promise.resolve(new Response(zip, { status: 200 }))
+      return Promise.resolve(new Response('nope', { status: 404 }))
+    }
+    s = await bootTestServer({ sidecar: new FakeSidecar(), deps: (deps) => { (deps as { fetch: typeof fetch }).fetch = fakeFetch } })
+  })
+  afterAll(() => s.close())
+  const root = (): string => join(s.state, 'extensions')
+  const sha = (buf: Buffer): string => createHash('sha256').update(buf).digest('hex')
+  const install = (id: string, file: string): Promise<Response> => post(s, '/api/extensions/install', { id, download_url: `https://hermes-webui.github.io/x/${file}`, sha256: sha(zips[file] ?? Buffer.alloc(0)) })
+
+  it('a top-level JSON array registry keeps its order', async () => {
+    const body = await json(await s.get('/api/extensions/registry'))
+    expect((body.entries as Json[]).map((e) => e.id)).toEqual(['zeta', 'alpha'])
+  })
+
+  it('a zip-slip member is refused and nothing escapes the root', async () => {
+    const res = await install('slip-ext', 'slip.zip')
+    expect(res.status).toBe(400)
+    expect(existsSync(join(s.state, 'evil.txt'))).toBe(false)
+    expect(existsSync(join(s.state, '..', 'evil.txt'))).toBe(false)
+    expect(existsSync(join(root(), 'slip-ext'))).toBe(false)
+  })
+
+  it('uninstall removes nested empty directories too', async () => {
+    expect((await install('deep-ext', 'nested.zip')).status).toBe(200)
+    expect(existsSync(join(root(), 'deep-ext', 'sub', 'a', 'b.js'))).toBe(true)
+    const res = await post(s, '/api/extensions/uninstall', { id: 'deep-ext' })
+    expect(await json(res)).toEqual({ uninstalled: true, id: 'deep-ext' })
+    expect(existsSync(join(root(), 'deep-ext'))).toBe(false)
+  })
+
+  it('a settings-only manifest becomes a storage-owned runtime entry with a normalized schema', async () => {
+    expect((await install('set-ext', 'settings.zip')).status).toBe(200)
+    // Python `get_extension_config()` entry: storage ownership and the normalized schema live on the status payload.
+    const status = await json(await s.get('/api/extensions/status'))
+    const entry = (status.extensions as Json[]).find((m) => m.id === 'set-ext')
+    expect(entry, JSON.stringify(status)).toMatchObject({ storage_owned: true, effective_enabled: true })
+    expect(entry?.settings_schema).toEqual([{ key: 'greeting', type: 'string', label: 'Greeting', description: 'd', default: 'hi' }])
+    const manifests = (await json(await s.get('/api/extensions/manifests'))).manifests as Json[]
+    const manifest = manifests.find((m) => m.id === 'set-ext')
+    expect(manifest?.settings_schema).toEqual([{ key: 'greeting', type: 'string', label: 'Greeting', description: 'd', default: 'hi' }])
+  })
+
+  it('a write failure mid-extraction leaves no partial extension behind', async () => {
+    const dir = join(root(), 'roll-ext')
+    mkdirSync(dir, { recursive: true })
+    chmodSync(dir, 0o500)
+    try {
+      const res = await install('roll-ext', 'roll.zip')
+      expect(res.status).toBe(500)
+      expect(String((await json(res)).error)).toContain('Extraction failed')
+    } finally {
+      if (existsSync(dir)) chmodSync(dir, 0o700)
+    }
+    expect(existsSync(dir) ? readdirSync(dir) : []).toEqual([])
+  })
+
+  it('a pre-existing symlink out of the root is refused and nothing is written at its target', async () => {
+    const outside = join(s.state, 'outside-target')
+    mkdirSync(outside, { recursive: true })
+    mkdirSync(root(), { recursive: true })
+    symlinkSync(outside, join(root(), 'linked-ext'))
+    const res = await install('linked-ext', 'link.zip')
+    expect(res.status).toBe(400)
+    expect(String((await json(res)).error).toLowerCase()).toContain('symlink')
+    expect(readdirSync(outside)).toEqual([])
+  })
+
+  it('a symlinked subdirectory already inside the extension is never followed: nothing lands outside, and a clean reinstall succeeds', async () => {
+    const outside = join(s.state, 'ssh-target')
+    mkdirSync(outside, { recursive: true })
+    writeFileSync(join(outside, 'config'), 'original')
+    const dir = join(root(), 'assets-ext')
+    mkdirSync(dir, { recursive: true })
+    symlinkSync(outside, join(dir, 'assets'))
+    const res = await install('assets-ext', 'assets.zip')
+    expect(res.status).toBe(500)
+    expect(readFileSync(join(outside, 'config'), 'utf8')).toBe('original')
+    expect(existsSync(join(dir, 'manifest.json'))).toBe(false)
+    unlinkSync(join(dir, 'assets'))
+    expect((await install('assets-ext', 'assets.zip')).status).toBe(200)
+    expect(readFileSync(join(dir, 'assets', 'config'), 'utf8')).toBe('pwned')
+    // Reinstall overwrites in place through the anchored write path.
+    expect((await install('assets-ext', 'assets.zip')).status).toBe(200)
+    expect((await post(s, '/api/extensions/uninstall', { id: 'assets-ext' })).status).toBe(200)
+    expect(existsSync(dir)).toBe(false)
+  })
+
+  it('uninstall never follows an extension directory that was replaced by a symlink: outside empty directories survive', async () => {
+    expect((await install('assets-ext', 'assets.zip')).status).toBe(200)
+    const dir = join(root(), 'assets-ext')
+    const outside = join(s.state, 'victim-tree')
+    mkdirSync(join(outside, 'assets'), { recursive: true })
+    mkdirSync(join(outside, 'empty'), { recursive: true })
+    // The installed files are moved aside and the extension directory itself becomes a link into the victim tree.
+    renameSync(dir, join(root(), 'assets-ext-real'))
+    symlinkSync(outside, dir)
+    expect((await post(s, '/api/extensions/uninstall', { id: 'assets-ext' })).status).toBe(200)
+    expect(existsSync(join(outside, 'assets'))).toBe(true)
+    expect(existsSync(join(outside, 'empty'))).toBe(true)
+    expect(existsSync(outside)).toBe(true)
+    expect(readFileSync(join(root(), 'assets-ext-real', 'assets', 'config'), 'utf8')).toBe('pwned')
+    unlinkSync(dir)
+    rmSync(join(root(), 'assets-ext-real'), { recursive: true })
+  })
+
+  it('a symlink that stays inside the root is refused too', async () => {
+    mkdirSync(join(root(), 'real-inside'), { recursive: true })
+    symlinkSync(join(root(), 'real-inside'), join(root(), 'inside-ext'))
+    const res = await install('inside-ext', 'inside.zip')
+    expect(res.status).toBe(400)
+    expect(String((await json(res)).error).toLowerCase()).toContain('symlink')
+  })
+
+  it('a download that redirects off the gallery host is refused', async () => {
+    const res = await post(s, '/api/extensions/install', { id: 'redir-ext', download_url: 'https://hermes-webui.github.io/x/redirect.zip', sha256: 'a'.repeat(64) })
+    expect(res.status).toBe(400)
+    expect(String((await json(res)).error).toLowerCase()).toContain('disallowed host')
   })
 })
 

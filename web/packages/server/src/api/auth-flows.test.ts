@@ -12,6 +12,8 @@ import { SidecarClient } from '../sidecar/client.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { ConfigUnavailable } from '../config/agent-config.js'
 import { tmpdir } from 'node:os'
+import { request } from 'node:http'
+import { WindowLimiter } from './tools-router.js'
 
 useJsonStorage()
 
@@ -336,6 +338,8 @@ describe('sign-in destination at a subpath mount', () => {
     ['nested partial', '/a/tasks', '/a/b/', '/a/b/a/tasks'],
     ['root mount', '/tasks', '/', '/tasks'],
     ['no mount', '/tasks', undefined, '/tasks'],
+    ['own next key', '/x?next=/y', undefined, '/x?next=/y'],
+    ['own next key after a query', '/admin?action=foo&next=/real/path', undefined, '/admin?action=foo&next=/real/path'],
   ])('%s: %s at %s → %s', async (_case, next, mount, expected) => {
     expect(await destination({ next, mount_path: mount })).toBe(expected)
   })
@@ -375,6 +379,116 @@ describe('sign-in destination at a subpath mount', () => {
     expect(await json(res)).toEqual({ ok: true, redirect_path: '/' })
   })
 })
+
+describe('login limiter without the trusted-proxy opt-in', () => {
+  let s: TestServer
+  const PASSWORD = 'correct horse battery'
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: PASSWORD, TALARIA_WEB_MAX_SSE_CLIENTS: '2' } }) })
+  afterAll(() => s.close())
+
+  it('without the trusted-proxy opt-in a forwarded header does not escape the peer budget', async () => {
+    for (let i = 0; i < 5; i += 1) await post(s, '/api/auth/login', { password: 'wrong' }, { 'x-forwarded-for': '203.0.113.1' })
+    expect((await post(s, '/api/auth/login', { password: PASSWORD }, { 'x-forwarded-for': '203.0.113.2' })).status).toBe(429)
+    s.deps.auth.clearLoginAttempts('127.0.0.1')
+  })
+})
+
+describe('login limiter behind an opted-in trusted proxy', () => {
+  let s: TestServer
+  const PASSWORD = 'correct horse battery'
+  const PEER = '127.0.0.1'
+  const env = (): Record<string, string | undefined> => s.deps.config.env
+  const login = (headers: Record<string, string | string[]>, password = 'wrong'): Promise<number> => rawPost(s, '/api/auth/login', { password }, headers)
+  const passkey = (headers: Record<string, string | string[]>): Promise<number> => rawPost(s, '/api/auth/passkey/login', { id: 'unknown' }, headers)
+  /** Five rejected guesses under rotating headers, then the sixth: 429 means they all shared one budget. */
+  const sixthAfterFiveRotating = async (send: (headers: Record<string, string | string[]>) => Promise<number>, headersFor: (i: number) => Record<string, string | string[]>): Promise<number> => {
+    for (let i = 0; i < 5; i += 1) expect(await send(headersFor(i))).toBe(401)
+    return send(headersFor(5))
+  }
+  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: PASSWORD, TALARIA_WEB_PASSKEY: '1', TALARIA_WEB_TRUST_FORWARDED_FOR: '1' } }) })
+  afterEach(() => {
+    delete env().TALARIA_WEB_TRUSTED_PROXY_CIDRS
+    env().TALARIA_WEB_TRUST_FORWARDED_FOR = '1'
+    for (const key of [PEER, ...Array.from({ length: 8 }, (_, i) => `203.0.113.${i}`)]) s.deps.auth.clearLoginAttempts(key)
+  })
+  afterAll(() => s.close())
+
+  it.each([['password', login], ['passkey', passkey]] as const)('%s: implicit loopback trust cannot select a budget with a rotating X-Forwarded-For', async (_name, send) => {
+    expect(await sixthAfterFiveRotating(send, (i) => ({ 'x-forwarded-for': `203.0.113.${i}` }))).toBe(429)
+  })
+
+  it.each([['password', login], ['passkey', passkey]] as const)('%s: a listed proxy whose X-Real-IP disagrees with X-Forwarded-For keys on the peer', async (_name, send) => {
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    expect(await sixthAfterFiveRotating(send, (i) => ({ 'x-forwarded-for': `203.0.113.${i}`, 'x-real-ip': '192.0.2.99' }))).toBe(429)
+  })
+
+  it.each([['password', login], ['passkey', passkey]] as const)('%s: X-Real-IP without an X-Forwarded-For chain keys on the peer', async (_name, send) => {
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    expect(await sixthAfterFiveRotating(send, (i) => ({ 'x-real-ip': `203.0.113.${i}` }))).toBe(429)
+  })
+
+  it.each([['password', login], ['passkey', passkey]] as const)('%s: an empty first X-Forwarded-For field with a rotating later field keys on the peer', async (_name, send) => {
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    expect(await sixthAfterFiveRotating(send, (i) => ({ 'x-forwarded-for': ['', `203.0.113.${i}`] }))).toBe(429)
+  })
+
+  it.each([['password', login], ['passkey', passkey]] as const)('%s: repeated X-Real-IP fields that disagree key on the peer', async (_name, send) => {
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    expect(await sixthAfterFiveRotating(send, (i) => ({ 'x-forwarded-for': `203.0.113.${i}`, 'x-real-ip': [`203.0.113.${i}`, '192.0.2.99'] }))).toBe(429)
+  })
+
+  it('password login: without the opt-in a listed proxy still keys on the peer', async () => {
+    delete env().TALARIA_WEB_TRUST_FORWARDED_FOR
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    expect(await sixthAfterFiveRotating(login, (i) => ({ 'x-forwarded-for': `203.0.113.${i}` }))).toBe(429)
+  })
+
+  it('password login: a listed proxy with consistent evidence keeps a budget per client that a forged left-most hop does not reset', async () => {
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32, ::1/128'
+    for (let i = 0; i < 5; i += 1) expect(await login({ 'x-forwarded-for': `198.51.100.${i}, 203.0.113.1`, 'x-real-ip': '203.0.113.1' })).toBe(401)
+    expect(await login({ 'x-forwarded-for': '198.51.100.9, 203.0.113.1', 'x-real-ip': '203.0.113.1' }, PASSWORD)).toBe(429)
+    // Equivalent spellings of the same client share its budget.
+    expect(await login({ 'x-forwarded-for': '::ffff:203.0.113.1', 'x-real-ip': '::FFFF:cb00:7101' }, PASSWORD)).toBe(429)
+    expect(await login({ 'x-forwarded-for': '203.0.113.2', 'x-real-ip': ['203.0.113.2', '::ffff:203.0.113.2'] }, PASSWORD)).toBe(200)
+    expect(await login({ 'x-forwarded-for': '203.0.113.3' }, PASSWORD)).toBe(200)
+    // The peer's own budget is untouched by the forwarded clients' failures.
+    expect(await login({}, PASSWORD)).toBe(200)
+  })
+
+  it('passkey login: a listed proxy keeps a budget per forwarded client', async () => {
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    for (let i = 0; i < 5; i += 1) expect(await passkey({ 'x-forwarded-for': '203.0.113.3' })).toBe(401)
+    expect(await passkey({ 'x-forwarded-for': '198.51.100.9, 203.0.113.3' })).toBe(429)
+    expect(await passkey({ 'x-forwarded-for': '203.0.113.4' })).toBe(401)
+    expect(await passkey({})).toBe(401)
+  })
+
+  it('native OIDC start keys its limiter through the same policy', async () => {
+    const start = (headers: Record<string, string | string[]>): Promise<number> => rawPost(s, '/api/auth/oidc/native/start', { callback_url: 'talaria://oidc-callback', state: 's'.repeat(32), code_challenge: 'c'.repeat(43), code_challenge_method: 'S256' }, headers)
+    s.deps.nativeOidcLimiter = new WindowLimiter(60, 1)
+    expect(await start({ 'x-forwarded-for': '203.0.113.5' })).not.toBe(429)
+    expect(await start({ 'x-forwarded-for': '203.0.113.6' })).toBe(429)
+    env().TALARIA_WEB_TRUSTED_PROXY_CIDRS = '127.0.0.1/32'
+    s.deps.nativeOidcLimiter = new WindowLimiter(60, 1)
+    expect(await start({ 'x-forwarded-for': '203.0.113.5' })).not.toBe(429)
+    expect(await start({ 'x-forwarded-for': '203.0.113.6' })).not.toBe(429)
+    expect(await start({ 'x-forwarded-for': '203.0.113.6', 'x-real-ip': '192.0.2.99' })).not.toBe(429)
+    expect(await start({ 'x-forwarded-for': '203.0.113.7', 'x-real-ip': '192.0.2.99' })).toBe(429)
+  })
+})
+
+/** POST with each header array sent as repeated wire fields, which fetch would join. */
+function rawPost(s: TestServer, path: string, body: unknown, headers: Record<string, string | string[]>): Promise<number> {
+  const payload = JSON.stringify(body)
+  return new Promise((resolve, reject) => {
+    const req = request(`${s.base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload), ...headers } }, (res) => {
+      res.resume()
+      res.on('end', () => { resolve(res.statusCode ?? 0) })
+    })
+    req.on('error', reject)
+    req.end(payload)
+  })
+}
 
 describe('OIDC unconfigured', () => {
   let s: TestServer

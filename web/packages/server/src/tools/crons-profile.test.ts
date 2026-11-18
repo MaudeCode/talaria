@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CronService, type CronDeps } from './crons.js'
+import { CronService, jobForApi, type CronDeps } from './crons.js'
+import { bootTestServer, freshCronListingsPerTest, type TestServer } from '../test/harness.js'
+import { useJsonStorage } from '../test/storage.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { Dict } from '../config/agent-config.js'
@@ -293,5 +295,107 @@ describe('cross-profile cron ownership', () => {
     expect(jobs.some((row) => row.id === 'legacy')).toBe(true)
     await service.pause(homes.default, 'legacy', null)
     await service.delete(homes.default, 'legacy')
+  })
+})
+
+type Json = Record<string, unknown>
+const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+const row = (name: string, extra: Json = {}): Json => ({ name, path: '', is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0, ...extra })
+
+describe('cross-profile cron routes', () => {
+  useJsonStorage()
+  freshCronListingsPerTest()
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let configs: Map<string, Json>
+  let cronJobs: Map<string, Json[]>
+  let workHome = ''
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    configs = new Map()
+    cronJobs = new Map()
+    sidecar.respond('profiles.list', () => ({ profiles: [row('default', { is_default: true, path: s.state }), row('work', { path: join(s.state, 'profiles', 'work') }), row('research', { path: join(s.state, 'profiles', 'research') }), row('hidden', { visible: false, path: join(s.state, 'profiles', 'hidden') })] as never[] }))
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: configs.get(params.profile_home) ?? {} }))
+    sidecar.respond('config.set', (params) => { configs.set(params.profile_home, params.config); mkdirSync(params.profile_home, { recursive: true }); writeFileSync(join(params.profile_home, 'config.yaml'), `# ${String(Math.random())}\n`); return { ok: true as const, path: join(params.profile_home, 'config.yaml') } })
+    sidecar.respond('cron.list', (params) => ({ jobs: (cronJobs.get(params.profile_home) ?? []) as never[] }))
+    sidecar.respond('cron.create', (params) => { const job = { id: `job-${String(cronJobs.size + 1)}`, name: null, profile: null, toast_notifications: true, monitor: '', continuity: false, ...(params.job as Json) }; cronJobs.set(params.profile_home, [...(cronJobs.get(params.profile_home) ?? []), job]); return { job: job } })
+    sidecar.respond('cron.update', (params) => { for (const jobs of cronJobs.values()) { const job = jobs.find((j) => j.id === params.job_id); if (job) { Object.assign(job, params.updates); return { job: job as never } } } throw new Error('missing') })
+    s = await bootTestServer({ sidecar })
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+    workHome = join(s.state, 'profiles', 'work')
+    for (const p of ['work', 'research', 'hidden']) { mkdirSync(join(s.state, 'profiles', p), { recursive: true }); writeFileSync(join(s.state, 'profiles', p, 'config.yaml'), '# seed\n') }
+  })
+  afterAll(() => s.close())
+
+  it('foreign cron jobs are hidden by default and counted; all_profiles shows them read-only', async () => {
+    cronJobs.clear()
+    cronJobs.set(s.state, [{ id: 'd1', name: 'mine', profile: null, toast_notifications: true, monitor: '', continuity: false }])
+    cronJobs.set(join(s.state, 'profiles', 'research'), [{ id: 'r1', name: 'theirs', profile: 'research', toast_notifications: true, monitor: '', continuity: false }])
+    let body = await json(await s.get('/api/crons'))
+    expect(body).toMatchObject({ all_profiles: false, active_profile: 'default', other_profile_count: 1 })
+    expect((body.jobs as Json[]).map((j) => j.id)).toEqual(['d1'])
+    expect((body.jobs as Json[])[0]).toMatchObject({ owner_profile: 'default', read_only: false })
+    body = await json(await s.get('/api/crons?all_profiles=1'))
+    expect(body).toMatchObject({ all_profiles: true, other_profile_count: 0 })
+    expect((body.jobs as Json[]).find((j) => j.id === 'r1')).toMatchObject({ owner_profile: 'research', read_only: true })
+  })
+
+  it('root aliases resolving to one home are read once', async () => {
+    sidecar.respond('profiles.list', () => ({ profiles: [row('rootalias', { is_default: true, path: s.state }), row('default', { is_default: true, path: s.state }), row('research', { path: join(s.state, 'profiles', 'research') })] as never[] }))
+    s.deps.profiles.invalidate()
+    await s.deps.profiles.warmRootAliases()
+    const start = sidecar.calls.length
+    const body = await json(await s.get('/api/crons?all_profiles=1'))
+    const listed = sidecar.calls.slice(start).filter((c) => c.method === 'cron.list').map((c) => (c.params as Json).profile_home)
+    expect(listed.filter((h) => h === s.state)).toHaveLength(1)
+    expect((body.jobs as Json[]).filter((j) => j.id === 'd1')).toHaveLength(1)
+    sidecar.respond('profiles.list', () => ({ profiles: [row('default', { is_default: true, path: s.state }), row('work', { path: workHome }), row('research', { path: join(s.state, 'profiles', 'research') }), row('hidden', { visible: false, path: join(s.state, 'profiles', 'hidden') })] as never[] }))
+    s.deps.profiles.invalidate()
+  })
+
+  it('a hidden inactive profile is skipped even under all_profiles', async () => {
+    cronJobs.clear()
+    cronJobs.set(s.state, [{ id: 'd2', name: 'mine', profile: null, toast_notifications: true, monitor: '', continuity: false }])
+    cronJobs.set(join(s.state, 'profiles', 'hidden'), [{ id: 'h1', name: 'hidden job', profile: 'hidden', toast_notifications: true, monitor: '', continuity: false }])
+    const body = await json(await s.get('/api/crons?all_profiles=1'))
+    expect((body.jobs as Json[]).map((j) => j.id)).toEqual(['d2'])
+    expect(body.other_profile_count).toBe(0)
+  })
+
+  it('a legacy job without a profile serialises profile: null', () => {
+    const legacy = { id: 'legacy1', name: 'old', toast_notifications: true, monitor: '', continuity: false }
+    expect(jobForApi(legacy)).toMatchObject({ id: 'legacy1', profile: null })
+    expect('profile' in legacy).toBe(false)
+  })
+
+  it('creating a job with a known profile persists and returns it', async () => {
+    cronJobs.clear()
+    const res = await post(s, '/api/crons/create', { schedule: 'every 1h', prompt: 'hi', profile: 'research' })
+    expect(res.status).toBe(200)
+    expect(((await json(res)).job as Json).profile).toBe('research')
+  })
+
+  it('an unknown profile is refused before anything is created', async () => {
+    cronJobs.clear()
+    const before = sidecar.calls.filter((c) => c.method === 'cron.create').length
+    const res = await post(s, '/api/crons/create', { schedule: 'every 1h', prompt: 'hi', profile: 'missing' })
+    expect(res.status).toBe(400)
+    expect(String((await json(res)).error)).toBe('Unknown profile: missing')
+    expect(sidecar.calls.filter((c) => c.method === 'cron.create').length).toBe(before)
+  })
+
+  it('update clears the stored profile override, reports the execution store profile, and refuses an unknown one', async () => {
+    cronJobs.clear()
+    const created = (await json(await post(s, '/api/crons/create', { schedule: 'every 1h', prompt: 'hi', profile: 'research' }))).job as Json
+    let res = await post(s, '/api/crons/update', { job_id: created.id, profile: '' })
+    expect(res.status).toBe(200)
+    expect(((await json(res)).job as Json).profile).toBe('research')
+    expect(cronJobs.get(join(s.state, 'profiles', 'research'))?.[0]?.profile).toBeNull()
+    const before = sidecar.calls.filter((c) => c.method === 'cron.update').length
+    res = await post(s, '/api/crons/update', { job_id: created.id, profile: 'ghost' })
+    expect(res.status).toBe(400)
+    expect(String((await json(res)).error)).toBe('Unknown profile: ghost')
+    expect(sidecar.calls.filter((c) => c.method === 'cron.update').length).toBe(before)
   })
 })
