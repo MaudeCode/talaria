@@ -67,12 +67,15 @@ struct SidebarList<Content: View>: View {
         // Rows hug their content instead of the 44pt default minimum.
         .environment(\.defaultMinListRowHeight, 0)
         .scrollContentBackground(.hidden)
-        // A List that reaches the trailing safe-area edge stretches its cells underneath it (the Duo's vertical bar),
-        // and a swipe slides the whole cell, so an empty stretch came in before the actions (TAL-2399). Stopping a point
+        // A List that reaches a trailing bar's safe area stretches its cells underneath it (the Duo's vertical bar), and
+        // a swipe slides the whole cell, so an empty stretch came in before the actions (TAL-2399). Stopping a point
         // short keeps the cells beside the bar; the background still fills underneath it.
-        .padding(.trailing, 1)
+        .padding(.trailing, besideTrailingBar ? 1 : 0)
+        .onGeometryChange(for: Bool.self) { $0.safeAreaInsets.trailing > 0 } action: { besideTrailingBar = $0 }
         .background(Color(.systemBackground))
     }
+
+    @State private var besideTrailingBar = false
 }
 
 /// A section heading inside a `SidebarList`, styled like Chats' "Sessions".
