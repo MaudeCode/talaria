@@ -95,7 +95,7 @@ describe('chat side panel (TAL-373)', () => {
     vi.mocked(api.fetchBackgroundTasks).mockResolvedValue(tasks([agent({ task_id: 'd1' })]))
     const { rerender } = render(<Panel open={false} />)
     await screen.findByRole('tab', { name: 'Agents' })
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
     expect(api.fetchBackgroundTasks).not.toHaveBeenCalled()
     localStorage.setItem('talaria-right-panel-page', 'files')
     rerender(<Panel />)
@@ -328,7 +328,7 @@ describe('chat side panel settings (TAL-2154)', () => {
     await waitFor(() => { expect(panelOpen()).toBe(true) })
     act(() => { setSidePanelOpen(false) })
     rerender(<ShellPanel sessionId="first" />)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
     expect(panelOpen()).toBe(false)
     // A new chat opens it, and returning to the first chat without touching the second restores the first chat's close.
     rerender(<ShellPanel sessionId="second" />)
@@ -344,7 +344,7 @@ describe('chat side panel settings (TAL-2154)', () => {
     settings({ workspace_panel_open: false })
     render(<ShellPanel sessionId="off" />)
     await screen.findByRole('tab', { name: 'Files' })
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
     expect(panelOpen()).toBe(false)
   })
 

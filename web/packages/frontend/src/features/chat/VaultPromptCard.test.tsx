@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -34,9 +34,11 @@ function Prompts() {
 
 const renderHead = (pending: ClarifyPending) => {
   head = pending
-  vi.spyOn(Date, 'now').mockReturnValue(1800000000 * 1000)
+  vi.useFakeTimers({ now: 1800000000 * 1000, shouldAdvanceTime: true })
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Prompts /></QueryClientProvider>)
 }
+
+afterEach(() => { vi.useRealTimers() })
 
 describe('password-manager prompts (TAL-887)', () => {
   beforeEach(() => {

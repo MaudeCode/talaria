@@ -47,7 +47,8 @@ describe('seedShellQueries', () => {
 
   it('keeps a query the client read after the bootstrap request left', () => {
     const qc = new QueryClient()
-    const requestedAt = Date.now() - 1_000
+    // Long before this test's own writes, so the projects read above counts as newer.
+    const requestedAt = 1_000_000_000_000
     qc.setQueryData(keys.projects, { projects: [], active_profile: 'newer', all_profiles: false, other_profile_count: 0 })
     qc.setQueryData(keys.settings, { bot_name: 'Older snapshot' }, { updatedAt: requestedAt - 1 })
     seedShellQueries(qc, { state: 'ready', data: withShell, requestedAt })

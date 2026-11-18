@@ -23,7 +23,7 @@ beforeEach(() => {
 })
 describe('completion audio delivery', () => {
   it('keeps expired, ineligible and muted deliveries quiet', async () => {
-    await deliverCompletion({ ...completion(), expires_at: Date.now() - 1 }, () => true)
+    await deliverCompletion({ ...completion(), expires_at: 0 }, () => true)
     await deliverCompletion({ ...completion(), eligible: false }, () => true)
     await deliverCompletion(completion(), () => false)
     expect(play).not.toHaveBeenCalled()

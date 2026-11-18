@@ -605,10 +605,10 @@ describe('ExecutionModeChip (TAL-1040)', () => {
     const both = (selectable: boolean | undefined) => ({ modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: !!selectable, reason: selectable ? null : 'agent_unsupported' }, { mode: 'safe', available: !!selectable, reason: selectable ? null : 'agent_unsupported' }], ...(selectable === undefined ? {} : { selectable }) })
     modes = both(false)
     renderMode({ value: 'normal', onChange: vi.fn() })
-    // The mocked read answers at once; after it the chip stays away, so it is the server's answer that hid it.
-    await act(() => new Promise((resolve) => setTimeout(resolve, 20)))
+    // The mocked read answers at once; once its answer has rendered the chip stays away, so the server's answer hid it.
+    await waitFor(() => expect(fetchExecutionModes).toHaveBeenCalled())
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
     expect(screen.queryByRole('button', { name: /Agent mode/ })).toBeNull()
-    expect(fetchExecutionModes).toHaveBeenCalled()
     cleanup()
     // A mode already picked stays changeable after the others become unavailable.
     renderMode({ value: 'safe', onChange: vi.fn() })
