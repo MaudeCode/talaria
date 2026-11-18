@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import { MAX_TRANSCRIBE_STREAMS } from './transcribe-stream.js'
 import { TRANSCRIBE_STREAM_PATH, TranscribeStreamEventSchema, type TranscribeStreamEvent } from '@maudecode/talaria-web-contracts'
@@ -63,11 +63,6 @@ function dictate(s: TestServer, chunks: Buffer[], opts: { origin?: string; hangU
 
 const pcm = (samples: number) => Buffer.alloc(samples * 2, 1)
 
-async function until(check: () => boolean): Promise<void> {
-  for (let i = 0; i < 200 && !check(); i++) await new Promise((r) => setTimeout(r, 10))
-  expect(check()).toBe(true)
-}
-
 describe('live dictation stream (TAL-802)', () => {
   let s: TestServer
   let sidecar: FakeSidecar
@@ -103,7 +98,7 @@ describe('live dictation stream (TAL-802)', () => {
     // The first partial shows the session open and hearing audio; the client leaves without the end frame.
     const done = await dictate(s, [pcm(1600)], { hangUp: (ws) => { ws.once('message', () => { ws.close() }) } })
     expect(done.events.every((event) => event.type === 'partial')).toBe(true)
-    await until(() => session.cancelled)
+    await vi.waitFor(() => { expect(session.cancelled).toBe(true) })
   })
 
   it('answers error when the profile has no live wire, so the client falls back to the upload', async () => {
@@ -132,12 +127,12 @@ describe('live dictation stream (TAL-802)', () => {
       const done = dictate(s, [], { hangUp: (ws) => { socket = ws } })
       return { done, close: () => socket?.close() }
     })
-    await until(() => session.opened.length === MAX_TRANSCRIBE_STREAMS)
+    await vi.waitFor(() => { expect(session.opened).toHaveLength(MAX_TRANSCRIBE_STREAMS) })
     const refused = await dictate(s, [pcm(1600)])
     expect(refused.status).toBe(503)
     for (const stream of held) stream.close()
     await Promise.all(held.map((stream) => stream.done))
-    await until(() => session.cancelled)
+    await vi.waitFor(() => { expect(session.cancelled).toBe(true) })
   })
 
   it('answers a plain request with 426 instead of upgrading', async () => {
@@ -154,11 +149,11 @@ describe('live dictation stream shutdown (TAL-802)', () => {
     const s = await bootTestServer({ sidecar })
     let closed: Promise<Dictation> | null = null
     closed = dictate(s, [pcm(1600)], { hangUp: () => undefined })
-    await until(() => session.pushes.length > 0)
+    await vi.waitFor(() => { expect(session.pushes.length).toBeGreaterThan(0) })
     await s.close()
     const done = await closed
     expect(done.closed).toBe(true)
     expect(done.events.some((event) => event.type === 'final')).toBe(false)
-    await until(() => session.cancelled)
+    await vi.waitFor(() => { expect(session.cancelled).toBe(true) })
   })
 })

@@ -4,6 +4,7 @@ import { JsonJournal } from './storage/json-journal.js'
 import { JsonDocuments } from './storage/json-documents.js'
 import { sessionPath, sessionDirectory } from '../test/storage.js'
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
+import { once } from 'node:events'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -25,14 +26,32 @@ useJsonStorage()
 type Json = Record<string, unknown>
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+/**
+ * Settles every turn on `s`, the teardown drains they fire and any turn those drains start. It awaits those workers and
+ * drains, so a negative check after it covers a turn that would have started, without waiting on a clock.
+ */
+const settler = (s: TestServer): (() => Promise<void>) => {
+  const drains = vi.spyOn(s.deps.completions, 'drainDeferred')
+  const settle = async (): Promise<void> => {
+    const runs = [...s.deps.registry.activeRuns.keys()]
+    const fired = drains.mock.results.length
+    await Promise.all(runs.map((stream) => s.deps.turns.finished(stream)))
+    await Promise.allSettled(drains.mock.results.map((result) => result.value as Promise<number>))
+    expect(runs.filter((stream) => s.deps.registry.activeRuns.has(stream)), 'a finished run left the registry').toEqual([])
+    if (runs.length || drains.mock.results.length > fired) await settle()
+  }
+  return settle
+}
 const completed = (text: string) => ({ status: 'completed' as const, messages: [{ role: 'user', content: 'x' }, { role: 'assistant', content: text }], final_response: text, error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: { context_length: 1000 }, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] })
 
 describe('background completion drain', () => {
   let s: TestServer
   let sidecar: FakeSidecar
+  let settled: () => Promise<void>
   beforeAll(async () => {
     sidecar = new FakeSidecar()
     s = await bootTestServer({ sidecar })
+    settled = settler(s)
   })
   afterAll(() => s.close())
 
@@ -81,13 +100,14 @@ describe('background completion drain', () => {
     expect(item?.[1]).toMatchObject({ session_id: sid, task_id: 'proc_a', summary: expect.stringContaining('Background process proc_a completed') as unknown })
     expect(String((item?.[1] as Json).event_id)).toHaveLength(32)
     expect((await nextSessionItem(sub, 200))?.[0]).toBe('process_complete')
-    await new Promise((r) => setTimeout(r, 300))
+    await settled()
     expect(starts).toHaveLength(1)
     expect(starts[0]).toContain('[IMPORTANT: Background process proc_a completed (exit_code=0).')
     expect(consumed).toEqual(['proc_a'])
     // A replayed event is deduped; an already-consumed one is skipped.
     expect(await s.deps.completions.processOne(events[0]!)).toBe(true)
     expect(await s.deps.completions.processOne({ ...events[0]!, process_id: 'proc_b', consumed: true })).toBe(true)
+    await settled()
     expect(starts).toHaveLength(1)
     s.deps.channels.unsubscribe(sid, sub)
   })
@@ -100,12 +120,12 @@ describe('background completion drain', () => {
     sidecar.respond('process.mark_consumed', () => ({ ok: true }))
     const started = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hello' }))
     expect(started.stream_id).toBeTruthy()
-    await new Promise((r) => setTimeout(r, 100))
+    await vi.waitFor(() => { expect(starts).toHaveLength(1) })
     expect(await s.deps.completions.processOne({ process_id: 'proc_c', session_id: 'proc_c', type: 'completion', command: 'build', exit_code: 1, output: 'failed', origin_ui_session_id: sid, consumed: false })).toBe(true)
     expect(s.deps.completions.deferredCount(sid)).toBe(1)
     expect(starts).toHaveLength(1)
     release()
-    for (let i = 0; i < 50 && starts.length < 2; i += 1) await new Promise((r) => setTimeout(r, 50))
+    await settled()
     expect(starts).toHaveLength(2)
     expect(starts[1]).toContain('Background process proc_c completed (exit_code=1)')
     expect(s.deps.completions.deferredCount(sid)).toBe(0)
@@ -608,8 +628,8 @@ describe('process notifications follow the owning profile (TAL-933, TAL-907)', (
     // The active profile's opt-in does not count for a session owned by profile b.
     const { sid, drain, starts, consumed, requeued, notified } = await setup({ '/homes/a': optIn })
     sidecar.respond('process.drain', () => ({ events: [exit(sid, 'proc_child', true)] }))
+    // drainOnce awaits the event's routing, including the wakeup a woken parent would start.
     expect(await drain.drainOnce()).toBe(1)
-    await new Promise((r) => setTimeout(r, 100))
     expect(starts).toEqual([])
     expect(notified).toEqual([])
     // Left unconsumed, so the child's teardown still reports an exit nobody read.
@@ -775,17 +795,10 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
     return sid
   }
   const wakeupRow = async (sid: string): Promise<Json | undefined> => {
-    for (let i = 0; i < 60; i += 1) {
-      const messages = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
-      const row = messages.find((m) => m._source === 'process_wakeup')
-      if (row && typeof row._turn_id === 'string') {
-        await s.deps.turns.finished(row._turn_id)
-        const settled = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
-        return settled.find((m) => m._source === 'process_wakeup')
-      }
-      await new Promise((r) => setTimeout(r, 50))
-    }
-    return undefined
+    const row = async (): Promise<Json | undefined> => (((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).find((m) => m._source === 'process_wakeup')
+    const turn = await vi.waitFor(async () => { const id = (await row())?._turn_id; expect(id).toEqual(expect.any(String)); return id as string })
+    await s.deps.turns.finished(turn)
+    return row()
   }
   beforeAll(() => {
     sidecar.respond('chat.start', (params) => ({ ...completed('Handled.'), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Handled.' }] }))
@@ -958,8 +971,7 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
     }
     const background = (sid: string, id: string) => async (): Promise<string> => {
       await s.deps.completions.processOne({ process_id: id, session_id: id, type: 'completion', command: 'sync', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
-      for (let i = 0; i < 60 && !(await s.deps.sessionStore.get(sid)).active_stream_id; i += 1) await new Promise((r) => setTimeout(r, 20))
-      return str((await s.deps.sessionStore.get(sid)).active_stream_id)
+      return await vi.waitFor(async () => { const stream = str((await s.deps.sessionStore.get(sid)).active_stream_id); expect(stream).not.toBe(''); return stream })
     }
     const silentSid = await newSid()
     expect(await streamed(silentSid, background(silentSid, 'proc_silent'), [' [SIL', 'ENT', ']'])).toBe('')
@@ -976,19 +988,19 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
   let s: TestServer
   let sidecar: FakeSidecar
   let starts: string[]
+  let idle: () => Promise<void>
   beforeAll(async () => {
     sidecar = new FakeSidecar()
     s = await bootTestServer({ sidecar })
+    idle = settler(s)
     sidecar.respond('process.mark_consumed', () => ({ ok: true }))
     writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-old', last_status: 'exhausted', request_count: 9 }] } }))
   })
   afterAll(() => s.close())
 
   const poolEmpty = (): void => { sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return { ...completed(''), messages: [{ role: 'user', content: str(params.user_message) }], status: 'error' as const, failed: true, error: 'All 2 credential(s) exhausted for provider openrouter' } }) }
-  const idle = async (): Promise<void> => { for (let i = 0; i < 100 && s.deps.registry.activeRuns.size; i += 1) await new Promise((r) => setTimeout(r, 20)) }
   const complete = async (sid: string, id: string): Promise<void> => {
     await s.deps.completions.processOne({ process_id: id, session_id: id, type: 'completion', command: 'make', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
-    await new Promise((r) => setTimeout(r, 50))
     await idle()
   }
   const heldFile = (): Record<string, Json[]> => { try { return JSON.parse(readFileSync(join(sessionDirectory(s.deps.sessionStore), '_wakeup_held.json'), 'utf8')) as Record<string, Json[]> } catch { return {} } }
@@ -1023,7 +1035,6 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('woke up') })
     await complete(sid, `${sid}_5`)
     // The new completion wakes the session; its teardown delivers the ones held while paused once its save commits.
-    for (let i = 0; i < 100 && starts.length < 3; i += 1) await new Promise((r) => setTimeout(r, 20))
     // The delivery's turn can end before that drain writes the held file; a drain queues behind it (TAL-2167).
     await s.deps.completions.drainDeferred(sid)
     await idle()
@@ -1080,10 +1091,10 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(starts).toHaveLength(1)
     sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('ok') })
     await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hello' }))
-    for (let i = 0; i < 100 && starts.length < 3; i += 1) await new Promise((r) => setTimeout(r, 20))
+    await idle()
+    expect(starts).toHaveLength(3)
     expect(starts[1]).toContain('hello')
     expect(starts[2]).toContain(`Background process ${sid}_2 completed`)
-    await idle()
     expect((await s.deps.sessionStore.get(sid)).process_wakeup_pause).toBeNull()
   })
 
@@ -1270,7 +1281,8 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
       expect(starts).toHaveLength(1)
       sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('ok') })
       poolOpen = true
-      for (let i = 0; i < 100 && starts.length < 2; i += 1) await new Promise((r) => setTimeout(r, 20))
+      // The production recheck timer is real: wait for its delivery under the test's own ceiling, never a per-call one.
+      await vi.waitFor(() => { expect(starts).toHaveLength(2) }, { timeout: 15_000 })
       expect(starts[1], 'the deadline alone resumes the held wakeup').toContain(`Background process ${sid}_2 completed`)
       expect(new Set(asked)).toEqual(new Set(['openrouter']))
       await idle()
@@ -1426,11 +1438,17 @@ describe('run-journal retention sweep', () => {
       journal.pruneSettled = async (opts) => (await prune({ ...opts, pause: () => gate }))
       void s.deps.hygiene.tick()
       const before = tree(s.state)
+      const drain = vi.spyOn(s.deps.turns, 'drain')
+      const quiesce = vi.spyOn(s.deps.gatewayRestarts, 'quiesce')
+      const flush = vi.spyOn(s.deps.auth, 'flushPersistence')
+      const stopped = once(s.running.server, 'close')
       // The server's own close (the harness close also deletes the state dir).
-      let closed = false
-      const closing = s.running.close().then(() => { closed = true })
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      expect(closed).toBe(false)
+      const closing = s.running.close()
+      // Every step before the sweep's has settled, so without the wait close reaches its auth flush in this turn.
+      await stopped
+      await Promise.all([drain, quiesce].map((spy) => spy.mock.results[0]?.value as Promise<unknown>))
+      await new Promise((resolve) => { setImmediate(resolve) })
+      expect(flush, 'close waits for the sweep').not.toHaveBeenCalled()
       release()
       await closing
       expect(tree(s.state)).toEqual(before)
@@ -1770,9 +1788,11 @@ describe('wakeup turns pass the user-turn admission (TAL-577)', () => {
   let s: TestServer
   let sidecar: FakeSidecar
   const starts: Json[] = []
+  let settled: () => Promise<void>
   beforeAll(async () => {
     sidecar = new FakeSidecar()
     s = await bootTestServer({ sidecar })
+    settled = settler(s)
     sidecar.respond('chat.start', (params) => { starts.push(params); return { ...completed('Handled.'), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Handled.' }] } })
     sidecar.respond('process.mark_consumed', () => ({ ok: true }))
   })
@@ -1780,9 +1800,6 @@ describe('wakeup turns pass the user-turn admission (TAL-577)', () => {
 
   const newSid = async (): Promise<string> => String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
   const completion = (sid: string, id: string): Json => ({ process_id: id, session_id: id, type: 'completion', command: 'make', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
-  const settled = async (): Promise<void> => {
-    for (let i = 0; i < 60 && s.deps.registry.activeRuns.size; i += 1) await new Promise((r) => setTimeout(r, 50))
-  }
 
   it('runs a wakeup for a session whose workspace was deleted in the recovered workspace', async () => {
     const sid = await newSid()
@@ -1826,9 +1843,11 @@ describe('a Stop holds automatic turns until the next user message (TAL-899)', (
   let s: TestServer
   let sidecar: FakeSidecar
   const starts: string[] = []
+  let settled: () => Promise<void>
   beforeAll(async () => {
     sidecar = new FakeSidecar()
     s = await bootTestServer({ sidecar })
+    settled = settler(s)
     sidecar.respond('process.mark_consumed', () => ({ ok: true }))
     sidecar.respond('chat.interrupt', () => ({ ok: true }))
   })
@@ -1837,9 +1856,6 @@ describe('a Stop holds automatic turns until the next user message (TAL-899)', (
   const newSid = async (): Promise<string> => String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
   const completion = (sid: string, id: string): Json => ({ process_id: id, session_id: id, type: 'completion', command: 'make', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
   const held = async (sid: string): Promise<unknown> => ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).automatic_turns_held
-  const settled = async (): Promise<void> => {
-    for (let i = 0; i < 60 && s.deps.registry.activeRuns.size; i += 1) await new Promise((r) => setTimeout(r, 50))
-  }
   // The user's first turn runs until stopped; every later turn answers at once.
   const stoppableThenAnswer = (): void => {
     starts.length = 0

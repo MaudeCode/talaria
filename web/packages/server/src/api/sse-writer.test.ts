@@ -129,19 +129,21 @@ describe('SseWriter backpressure on a real socket', () => {
 
   it('ready() waits while the reader is paused and resolves once it reads again', async () => {
     let ready: Promise<boolean> = Promise.resolve(false)
-    let wrote: () => void = () => undefined
-    const written = new Promise<void>((resolve) => { wrote = resolve })
-    const server = await serve((sse) => {
+    let wrote: (backpressured: boolean) => void = () => undefined
+    const written = new Promise<boolean>((resolve) => { wrote = resolve })
+    const server = await serve((sse, res) => {
       sse.start()
       for (let i = 1; i <= 4500; i += 1) sse.event('token', { text: FRAME_TEXT }, `run:${String(i)}`)
       ready = sse.ready()
-      wrote()
+      wrote(res.writableNeedDrain)
     })
     const client = read(server.url, true)
-    await written
+    // The socket is full and the paused reader takes nothing, so only a 'drain' can settle ready(); one event-loop turn
+    // runs anything ready() would settle on without that drain.
+    expect(await written).toBe(true)
     let settled = false
     void ready.then(() => { settled = true })
-    await new Promise((r) => setTimeout(r, 200))
+    await new Promise((resolve) => { setImmediate(resolve) })
     expect(settled).toBe(false)
     client.resume()
     expect(await ready).toBe(true)
@@ -276,7 +278,7 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     const client = read(`${s.base}/api/session/stream?session_id=${sid}`)
     await subscribed(() => s.deps.channels.subscriberCount(sid))
     for (let n = 1; n <= 200; n += 1) s.deps.channels.emit(sid, 'bg_task_complete', { session_id: sid, n })
-    await new Promise((r) => setTimeout(r, 300))
+    await vi.waitFor(() => { expect(client.text).toContain('"n":200') })
     client.destroy()
     const got = await frames(client)
     expect(got.filter((f) => f.event === 'bg_task_complete').at(-1)?.data).toMatchObject({ n: 200 })
@@ -350,10 +352,7 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     expect(ids(got)).toEqual(expectedIds('run-resume', 3001))
   })
 
-  const subscribed = async (count: () => number): Promise<void> => {
-    for (let i = 0; i < 200 && count() === 0; i += 1) await new Promise((r) => setTimeout(r, 10))
-    expect(count()).toBe(1)
-  }
+  const subscribed = (count: () => number): Promise<void> => vi.waitFor(() => { expect(count()).toBe(1) })
 
   it('a stalled chat subscriber gets the frames its queue dropped back from the journal, in order', async () => {
     const channel = s.deps.registry.create('run-gap', sid)
