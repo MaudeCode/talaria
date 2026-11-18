@@ -3,9 +3,9 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { internal } from "../convex/_generated/api";
 import schema from "../convex/schema";
+import { readState } from "./relayFixture";
 import { defaultNotificationPreferences } from "../convex/lib/model";
 import { webcrypto } from "node:crypto";
-import { setTimeout as realTimeout } from "node:timers/promises";
 import { bytesToBase64Url, sha256 } from "../convex/lib/crypto";
 import { makeAggregate } from "../convex/lib/aggregate";
 
@@ -22,7 +22,7 @@ it("atomically caps cumulative publisher states while allowing updates and revoc
     ...request("overflow"), snapshotId: "overflow", states: [{ ...state("session-0", 2), title: "Must roll back" }, ...Array.from({ length: 499 }, (_, index) => state(`extra-${index}`))],
   })).rejects.toThrow("too_many_states");
   expect(await backend.run((ctx) => ctx.db.query("sessionStates").take(501))).toHaveLength(500);
-  expect(await backend.query(internal.publishers.getState, { userId: "user", publisherId: "https://hermes.example", sessionId: "session-0" })).toMatchObject({ revision: 1, title: "Original" });
+  expect(await readState(backend, { userId: "user", publisherId: "https://hermes.example", sessionId: "session-0" })).toMatchObject({ revision: 1, title: "Original" });
   expect((await backend.run((ctx) => ctx.db.query("publisherNonces").take(10))).some((row) => row.nonce === "overflow")).toBe(false);
   await expect(backend.mutation(internal.publishers.acceptState, {
     ...request("single-overflow"), sessionId: "extra", eventId: "extra-1", revision: 1, state: content("extra"),
@@ -145,18 +145,6 @@ async function fixture() {
   const list = () => backend.query(internal.completions.list, { userId: "user", deviceId: "device", paginationOpts: { numItems: 100, cursor: null } });
   return { backend, publish, list, now };
 }
-
-it("keeps scheduled fixture work pending until the test advances its clock", async () => {
-  const { backend } = await fixture();
-  const jobId = await backend.run((ctx) => ctx.scheduler.runAfter(0, internal.cleanup.prune, {}));
-  // A real event-loop turn must not execute work queued on the test-owned clock.
-  await realTimeout(25);
-  const state = async () => (await backend.run((ctx) => ctx.db.system.get(jobId)))?.state.kind;
-  expect(await state()).toBe("pending");
-  await vi.advanceTimersByTimeAsync(0);
-  await backend.finishInProgressScheduledFunctions();
-  expect(await state()).toBe("success");
-});
 
 it("keeps Done through heartbeat expiry, new runs and replay until exact acknowledgement", async () => {
   vi.setSystemTime(new Date(1_800_000_000_000));

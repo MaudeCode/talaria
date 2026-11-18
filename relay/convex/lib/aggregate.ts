@@ -160,7 +160,7 @@ export function alertForTransition(
  * TAL-1966: a decision review the state did not hold before alerts once under the input preference, whatever the phase
  * did, and opens the review. Its own level makes it a standalone notification rather than a Live Activity alert.
  */
-export function decisionAlert(
+function decisionAlert(
   next: SessionState,
   preferences: NotificationPreferences,
   previousDecisionReviewId: string | null | undefined,
@@ -207,8 +207,8 @@ export function isAttentionTransition(
 }
 
 // The App's local approval fallback shows these same Localizable keys (contracts/fixtures/relay-approval-alert.json).
-export const approvalAlertTitleKey = "Approval required";
-export const approvalAlertBodyKey = "An agent run is waiting for your approval.";
+const approvalAlertTitleKey = "Approval required";
+const approvalAlertBodyKey = "An agent run is waiting for your approval.";
 
 export function alertForState(
   next: SessionState,

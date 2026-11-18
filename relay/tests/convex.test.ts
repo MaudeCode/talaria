@@ -8,6 +8,7 @@ import type { Id } from "../convex/_generated/dataModel";
 import { bytesToBase64Url, sha256 } from "../convex/lib/crypto";
 import { defaultNotificationPreferences } from "../convex/lib/model";
 import schema from "../convex/schema";
+import { readState } from "./relayFixture";
 
 const modules = import.meta.glob("../convex/**/*.ts");
 // Approval alerts name only the App's Localizable keys, never the session.
@@ -1012,7 +1013,7 @@ describe("Convex relay state", () => {
         deepLink: "/sessions/session-1",
       }],
     });
-    const refreshed = await backend.query(internal.publishers.getState, {
+    const refreshed = await readState(backend, {
       userId: "user-1",
       publisherId: "https://hermes.example",
       sessionId: "session-1",
@@ -1235,7 +1236,7 @@ describe("Convex relay state", () => {
         deepLink: "/sessions/session-1",
       },
     })).resolves.toEqual({ status: "accepted" });
-    await expect(backend.query(internal.publishers.getState, {
+    await expect(readState(backend, {
       userId: "user-1",
       publisherId: "https://hermes.example",
       sessionId: "session-1",
@@ -1391,7 +1392,7 @@ describe("Convex relay state", () => {
         deepLink: "/sessions/session-1",
       }],
     });
-    const refreshed = await backend.query(internal.publishers.getState, {
+    const refreshed = await readState(backend, {
       userId: "user-1",
       publisherId: "https://hermes.example",
       sessionId: "session-1",
@@ -1473,7 +1474,7 @@ describe("Convex relay state", () => {
         deepLink: "/sessions/session-1",
       }],
     });
-    let refreshed = await backend.query(internal.publishers.getState, {
+    let refreshed = await readState(backend, {
       userId: "user-1",
       publisherId: "https://hermes.example",
       sessionId: "session-1",
@@ -1501,7 +1502,7 @@ describe("Convex relay state", () => {
         deepLink: "/sessions/session-1",
       }],
     });
-    refreshed = await backend.query(internal.publishers.getState, {
+    refreshed = await readState(backend, {
       userId: "user-1",
       publisherId: "https://hermes.example",
       sessionId: "session-1",
@@ -1527,7 +1528,7 @@ describe("Convex relay state", () => {
         deepLink: "/sessions/session-1",
       }],
     });
-    refreshed = await backend.query(internal.publishers.getState, {
+    refreshed = await readState(backend, {
       userId: "user-1",
       publisherId: "https://hermes.example",
       sessionId: "session-1",

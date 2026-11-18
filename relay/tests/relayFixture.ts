@@ -64,3 +64,12 @@ export async function runScheduledRecomputes(backend: Backend) {
 export function snapshotState(sessionId: string, revision: number, phase: SessionPhase, alertEligible?: boolean, streamId?: string) {
   return { sessionId, eventId: `${sessionId}-event-${revision}`, revision, title: sessionId, phase, updatedAt: now + revision, deepLink: `/sessions/${sessionId}`, ...(alertEligible === undefined ? {} : { alertEligible }), ...(streamId === undefined ? {} : { streamId }) };
 }
+
+// The session state Relay committed for one publisher session, or null once it is gone or deleted.
+export async function readState(backend: Backend, key: { userId: string; publisherId: string; sessionId: string }) {
+  const state = await backend.run((ctx) => ctx.db.query("sessionStates")
+    .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
+      query.eq("version", 2).eq("userId", key.userId).eq("publisherId", key.publisherId).eq("sessionId", key.sessionId))
+    .unique());
+  return state && !state.deleted ? state : null;
+}

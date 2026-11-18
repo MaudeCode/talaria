@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
-import { agentNotifyAlerts, alertForTransition, approvalAlertBodyKey } from "../convex/lib/aggregate";
+import { agentNotifyAlerts, alertForTransition } from "../convex/lib/aggregate";
 import { defaultNotificationPreferences, type AgentNotify, type SessionPhase, type SessionState } from "../convex/lib/model";
 
 // Talaria Web's server applies the same vectors (web/packages/server/src/sessions/notify/alerts.test.ts).
@@ -39,7 +39,7 @@ it.each(vectors)("shared alert rule: $name", (vector) => {
   const alert = alertForTransition(vector.previous, next, preferences, undefined, vector.previousDecisionReviewId);
   if (vector.expected === null) expect(alert).toBeNull();
   else if (vector.expected === "decision") expect(alert).toMatchObject({ title: "Decision review ready", body: "Release choices", deepLink: `/decisions/${String(vector.decisionReviewId)}` });
-  else if (vector.expected === "approval") expect(alert?.body).toBe(approvalAlertBodyKey);
+  else if (vector.expected === "approval") expect(alert?.body).toBe("An agent run is waiting for your approval.");
   else expect(alert?.body.startsWith(`${bodyPrefix[vector.expected]} on `)).toBe(true);
 });
 

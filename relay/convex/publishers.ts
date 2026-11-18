@@ -475,16 +475,3 @@ export const listCurrentStates = internalQuery({
     ];
   },
 });
-
-export const getState = internalQuery({
-  args: { userId: v.string(), publisherId: v.string(), sessionId: v.string() },
-  returns: v.union(v.null(), storedSessionStateValidator),
-  handler: async (ctx, args) => {
-    const state = await ctx.db.query("sessionStates")
-      .withIndex("by_version_and_user_id_and_publisher_id_and_session_id", (query) =>
-        query.eq("version", 2).eq("userId", args.userId)
-          .eq("publisherId", args.publisherId).eq("sessionId", args.sessionId),
-      ).unique();
-    return state && !state.deleted ? exposedState(state) : null;
-  },
-});

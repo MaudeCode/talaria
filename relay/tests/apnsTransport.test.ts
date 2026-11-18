@@ -9,7 +9,6 @@ import {
   classifyApnsFailure,
   makeProviderToken,
   sendHttp2,
-  type ApnsWireRequest,
 } from "../convex/lib/apnsTransport.node";
 import { defaultNotificationPreferences } from "../convex/lib/model";
 import schema from "../convex/schema";
@@ -89,7 +88,7 @@ describe("APNs transport", () => {
   });
 
   it("keeps the per-job apns-collapse-id for Live Activity pushes", async () => {
-    const request: ApnsWireRequest = {
+    const request: Parameters<typeof sendHttp2>[0] = {
       token: "token",
       topic: "dev.kil.talaria.push-type.liveactivity",
       environment: "sandbox",
