@@ -122,7 +122,7 @@ private struct ChatStreamTickHarness {
         let keyboardSettled = await test.awaitQuiet { recorder.counts.values.reduce(0, +) }
         XCTAssertNotNil(keyboardSettled, "The chat must settle under the keyboard before the send")
         composer.insertText("Show the change")
-        HostedAccessibility.activate(try await test.requireElement(in: window, label: "Send"))
+        try await test.activateSend(in: window)
         let started = await test.awaitCondition { viewModel.activeStreamID != nil }
         XCTAssertTrue(started, "The composer's send never started the reply")
         stream.emit(.token(Self.token(0)))
