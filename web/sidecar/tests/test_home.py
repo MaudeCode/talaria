@@ -57,8 +57,21 @@ def scope_calls(monkeypatch):
     launch_policy.launch_secret_scope = lambda home: calls.append(("launch-scope", Path(home))) or agent.secret_scope.build_profile_secret_scope(home)
     launch_policy.launch_terminal_env = lambda: pytest.fail("the launch env is frozen only once multiplexing is active")
     terminal = types.ModuleType("tools.terminal_scope")
-    terminal.install_profile_terminal_scope = lambda home, env_overlay=None: calls.append(("terminal", Path(home), env_overlay)) or "terminal-token"
+
+    class Unavailable(Exception):
+        pass
+
+    class Refusal(dict):
+        def __init__(self, reason):
+            self.reason = reason
+
+    terminal.build_profile_terminal_scope = lambda home, env_overlay=None: calls.append(("terminal", Path(home), env_overlay)) or {}
+    terminal.set_terminal_scope = lambda policy: "terminal-token"
     terminal.reset_terminal_scope = lambda token: calls.append(("reset-terminal", token))
+    terminal.TerminalPolicyUnavailable = Unavailable
+    terminal.TerminalPolicyRefusal = Refusal
+    monkeypatch.setattr(home_module, "_recover_processes", lambda home: None)
+    monkeypatch.setattr(home_module, "_SCOPE_CACHE", {})
     monkeypatch.setitem(sys.modules, "agent", agent)
     monkeypatch.setitem(sys.modules, "agent.secret_scope", agent.secret_scope)
     monkeypatch.setitem(sys.modules, "hermes_cli.env_loader", env_loader)
@@ -118,13 +131,16 @@ def test_profile_scope_can_skip_process_recovery(tmp_path, monkeypatch, scope_ca
         assert calls == [root]
 
 
-def test_named_profile_fails_closed_without_a_secret_scope(tmp_path, monkeypatch) -> None:
+# Agents gained secret scopes before terminal scopes, and both before the launch-profile policy.
+@pytest.mark.parametrize("missing", [("agent.secret_scope", "tools.terminal_scope"), ("tui_gateway.launch_profile_policy",)],
+                         ids=["no-secret-scope", "no-launch-policy"])
+def test_named_profile_fails_closed_without_a_secret_scope(tmp_path, monkeypatch, scope_calls, missing) -> None:
     root = tmp_path / "root"
     named = root / "profiles" / "work"
     named.mkdir(parents=True)
     monkeypatch.setattr(home_module, "_PROCESS_HOME", root)
-    monkeypatch.setitem(sys.modules, "agent", None)
-    monkeypatch.setitem(sys.modules, "agent.secret_scope", None)
+    for module in missing:
+        monkeypatch.setitem(sys.modules, module, None)
     with pytest.raises(RpcError) as excinfo:
         with home_module.scoped_home(named):
             pass
@@ -132,63 +148,6 @@ def test_named_profile_fails_closed_without_a_secret_scope(tmp_path, monkeypatch
     # The root profile still runs (its credentials are the process's own).
     with home_module.scoped_home(root):
         assert os.environ["HERMES_HOME"] == str(root)
-
-
-def test_agent_0_21_3_mirrors_the_launch_profile_policy(tmp_path, monkeypatch, scope_calls) -> None:
-    root = tmp_path / "root"
-    named = root / "profiles" / "work"
-    named.mkdir(parents=True)
-    (root / ".env").write_text("ROOT_FILE=root\n")
-    (named / ".env").write_text("OPENAI_API_KEY=sk-work\n")
-    monkeypatch.setattr(home_module, "_PROCESS_HOME", root)
-    monkeypatch.setattr(home_module, "_LAUNCH_ENV", None)
-    monkeypatch.setitem(sys.modules, "tui_gateway.launch_profile_policy", None)
-    scope = sys.modules["agent.secret_scope"]
-    multiplex = []
-    monkeypatch.setattr(scope, "_is_global_env", lambda name: name in {"HERMES_HOME", "PATH"}, raising=False)
-    monkeypatch.setattr(scope, "is_multiplex_active", lambda: bool(multiplex), raising=False)
-    monkeypatch.setattr(scope, "set_multiplex_active", lambda active: multiplex.append(active), raising=False)
-    for name in list(os.environ):
-        if name not in {"HERMES_HOME", "PATH"}:
-            monkeypatch.delenv(name)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-launch")
-
-    # The launch profile also binds its terminal scope, layering the launch env's TERMINAL_* (none here).
-    with home_module.scoped_home(root):
-        assert scope_calls[-2:] == [("scope", {"OPENAI_API_KEY": "sk-launch", "ROOT_FILE": "root"}), ("terminal", root, {})]
-    assert multiplex == []
-
-    with pytest.raises(ValueError, match="test body"):
-        with home_module.scoped_home(named):
-            assert multiplex == [True]
-            assert ("hydrate", named) in scope_calls
-            assert scope_calls[-2:] == [("scope", {"OPENAI_API_KEY": "sk-work"}), ("terminal", named, None)]
-            raise ValueError("test body")
-    assert scope_calls[-1] == ("reset-scope", "scope-token")
-
-    # The launch environment was frozen at activation; later process-env writes never reach it.
-    monkeypatch.setenv("LEAKED_LATER", "x")
-    with home_module.scoped_home(root):
-        assert scope_calls[-2:] == [("scope", {"OPENAI_API_KEY": "sk-launch", "ROOT_FILE": "root"}), ("terminal", root, {})]
-    assert multiplex == [True]
-
-    # A Settings edit reaches the frozen launch environment.
-    from talaria_sidecar.methods import runtime as runtime_methods
-
-    registry = types.SimpleNamespace(runtime=None, methods={})
-    registry.method = lambda name, **_: lambda func: registry.methods.setdefault(name, func)
-    runtime_methods.register(registry)
-    monkeypatch.setenv("FRESH_KEY", "restored-after-the-test")
-    registry.methods["runtime.env"](None, {"unset": ["OPENAI_API_KEY"], "set": {"FRESH_KEY": "sk-fresh"}})
-    with home_module.scoped_home(root):
-        assert scope_calls[-2:] == [("scope", {"FRESH_KEY": "sk-fresh", "ROOT_FILE": "root", "HERMES_DISABLE_LAZY_INSTALLS": "1"}), ("terminal", root, {})]
-
-    # A partial implementation is not permission to leak the launch profile's credentials.
-    monkeypatch.delattr(scope, "set_multiplex_active")
-    with pytest.raises(RpcError) as excinfo:
-        with home_module.scoped_home(named):
-            pytest.fail("missing isolation must not reach the body")
-    assert excinfo.value.data["condition"] == "agent_incompatible"
 
 
 def test_named_profile_fails_closed_without_a_terminal_scope(tmp_path, monkeypatch, scope_calls) -> None:
@@ -211,9 +170,6 @@ def test_named_profile_fails_closed_without_a_terminal_scope(tmp_path, monkeypat
 def cached_scopes(tmp_path, monkeypatch, scope_calls):
     """Agent boundaries with real disposable files and context-local scope bindings."""
     monkeypatch.setattr(home_module, "_PROCESS_HOME", tmp_path / "launch")
-    monkeypatch.setattr(home_module, "_recover_processes", lambda home: None)
-    if hasattr(home_module, "_SCOPE_CACHE"):
-        monkeypatch.setattr(home_module, "_SCOPE_CACHE", {})
     terminal = sys.modules["tools.terminal_scope"]
     active = ContextVar("test-terminal", default=None)
     active_secrets = ContextVar("test-secrets", default=None)
@@ -245,35 +201,18 @@ def cached_scopes(tmp_path, monkeypatch, scope_calls):
     secrets.set_secret_scope = set_secrets
     secrets.reset_secret_scope = active_secrets.reset
 
-    class Unavailable(Exception):
-        pass
-
-    class Refusal(dict):
-        def __init__(self, reason):
-            self.reason = reason
-
     def build_terminal_scope(home, *, env_overlay=None):
         path = Path(home) / "config.yaml"
         reads.append(("config", Path(home)))
         try:
             config = json.loads(path.read_text()) if path.exists() else {}
         except (OSError, ValueError) as exc:
-            raise Unavailable(str(exc)) from exc
+            raise terminal.TerminalPolicyUnavailable(str(exc)) from exc
         return {**(env_overlay or {}), **config}
-
-    def install(home, *, env_overlay=None):
-        try:
-            scope = build_terminal_scope(home, env_overlay=env_overlay)
-        except Unavailable as exc:
-            scope = Refusal(str(exc))
-        return active.set(scope)
 
     terminal.build_profile_terminal_scope = build_terminal_scope
     terminal.set_terminal_scope = active.set
     terminal.reset_terminal_scope = active.reset
-    terminal.install_profile_terminal_scope = install
-    terminal.TerminalPolicyUnavailable = Unavailable
-    terminal.TerminalPolicyRefusal = Refusal
     return types.SimpleNamespace(reads=reads, active=active, secrets=active_secrets, external=external, managed=managed)
 
 

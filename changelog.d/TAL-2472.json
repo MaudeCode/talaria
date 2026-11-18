@@ -1,0 +1,3 @@
+{
+  "skip": "Removes sidecar fallbacks only Hermes Agent releases older than the supported v0.23.x line can reach, and the tests that faked them; supported Agents behave the same."
+}

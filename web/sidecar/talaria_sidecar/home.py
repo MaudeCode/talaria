@@ -10,10 +10,9 @@ process-wide swap of ``HERMES_HOME`` for older Agents.
 Credentials use the Agent's own multi-profile hosting policy: a named profile
 activates fail-closed multiplexing and installs its file-backed secret scope;
 the launch profile installs the Agent's frozen launch scope. A miss can never
-fall through to another profile's process environment. Agent 0.21.3 has the
-multiplex switch and secret scopes but not the launch-profile policy module, so
-the sidecar mirrors that policy for it. If the installed Agent has no secret
-scope, named-profile calls fail closed instead.
+fall through to another profile's process environment. If the installed Agent
+has no secret scope or launch-profile policy, named-profile calls fail closed
+instead.
 
 Terminal policy follows the same split. Under a home override the Agent skips its
 config-to-env terminal bridge, so every call also binds the profile's complete
@@ -95,14 +94,9 @@ def _secret_scope_inputs(home: Path, named: bool):
 
         launch = None
         if not named:
-            try:
-                from tui_gateway.launch_profile_policy import _launch_env
-            except ImportError:
-                from agent.secret_scope import is_multiplex_active
+            from tui_gateway.launch_profile_policy import _launch_env
 
-                launch = _frozen_launch_env() if is_multiplex_active() else dict(os.environ)
-            else:
-                launch = _launch_env()
+            launch = _launch_env()
         return (get_secret_source_values(home), load_managed_env(), bridged_allow_all_users(), launch)
     except Exception:  # Older/partial Agents keep the original uncached builder and its policy.
         return None
@@ -158,29 +152,6 @@ def edit_launch_env(to_set: dict[str, str], to_unset: list[str]) -> None:
             edit(policy._snapshot)
 
 
-def _activate_multi_profile_hosting() -> None:
-    """Agent 0.21.3 twin of ``tui_gateway.launch_profile_policy.activate_multi_profile_hosting``."""
-    from agent.secret_scope import set_multiplex_active
-
-    _frozen_launch_env()
-    set_multiplex_active(True)
-
-
-def _launch_terminal_env() -> dict[str, str]:
-    """Agent 0.21.3 twin of ``tui_gateway.launch_profile_policy.launch_terminal_env``."""
-    return {k: v for k, v in _frozen_launch_env().items() if k.startswith("TERMINAL_")}
-
-
-def _launch_secret_scope(home: Path) -> dict[str, str]:
-    """Agent 0.21.3 twin of ``tui_gateway.launch_profile_policy.launch_secret_scope``."""
-    from agent.secret_scope import _is_global_env, build_profile_secret_scope, is_multiplex_active
-
-    env = _frozen_launch_env() if is_multiplex_active() else dict(os.environ)
-    scope = {k: v for k, v in env.items() if not _is_global_env(k)}
-    scope.update(build_profile_secret_scope(home))
-    return scope
-
-
 @contextlib.contextmanager
 def _secret_scope(home: Path, stamp: tuple | None = None, *, load_plugins: bool = True):
     """Install ``home``'s credential scope for the call; named profiles run under multiplex semantics."""
@@ -188,13 +159,8 @@ def _secret_scope(home: Path, stamp: tuple | None = None, *, load_plugins: bool 
     try:
         from agent.secret_scope import build_profile_secret_scope, reset_secret_scope, set_secret_scope
         from hermes_cli.env_loader import hydrate_profile_secret_sources
-        try:
-            from tui_gateway.launch_profile_policy import activate_multi_profile_hosting, launch_secret_scope
-        except ImportError:
-            # Probe the whole 0.21.3 surface up front so a partial Agent fails closed before the body.
-            from agent.secret_scope import _is_global_env, is_multiplex_active, set_multiplex_active  # noqa: F401
-            activate_multi_profile_hosting, launch_secret_scope = _activate_multi_profile_hosting, _launch_secret_scope
-    except Exception:  # noqa: BLE001 - older Agent without a secret scope
+        from tui_gateway.launch_profile_policy import activate_multi_profile_hosting, launch_secret_scope
+    except Exception:  # noqa: BLE001 - older Agent without a secret scope or launch-profile policy
         if named:
             raise RpcError(
                 "profile credential isolation is unavailable in this Hermes Agent; named-profile calls are refused",
@@ -228,7 +194,9 @@ def _terminal_scope(home: Path, stamp: tuple | None = None):
     """Install ``home``'s terminal policy for the call; a policy file that cannot be read refuses terminal execution."""
     named = _is_named_profile(home)
     try:
-        from tools.terminal_scope import install_profile_terminal_scope, reset_terminal_scope
+        from tools.terminal_scope import (
+            TerminalPolicyRefusal, TerminalPolicyUnavailable, build_profile_terminal_scope, reset_terminal_scope, set_terminal_scope,
+        )
     except Exception:  # noqa: BLE001 - older Agent without terminal scopes
         if named:
             raise RpcError(
@@ -239,30 +207,22 @@ def _terminal_scope(home: Path, stamp: tuple | None = None):
         return
     launch = None
     if not named:
-        try:
-            from agent.secret_scope import is_multiplex_active
-        except ImportError:  # An Agent without multiplexing cannot layer the launch env, so the launch profile keeps the process env
-            yield
-            return
-        try:
+        from agent.secret_scope import is_multiplex_active
+
+        if is_multiplex_active():
             from tui_gateway.launch_profile_policy import launch_terminal_env
-        except ImportError:  # Agent 0.21.3: the sidecar's twin of the launch-profile policy
-            launch_terminal_env = _launch_terminal_env
-        # Like the launch secret scope: the live process env until multiplexing freezes it.
-        launch = launch_terminal_env() if is_multiplex_active() else {k: v for k, v in os.environ.items() if k.startswith("TERMINAL_")}
+
+            launch = launch_terminal_env()
+        else:  # Like the launch secret scope: the live process env until multiplexing freezes it.
+            launch = {k: v for k, v in os.environ.items() if k.startswith("TERMINAL_")}
     try:
-        from tools.terminal_scope import build_profile_terminal_scope, set_terminal_scope, TerminalPolicyRefusal, TerminalPolicyUnavailable
-    except ImportError:  # Keep the installed Agent's original behavior when its builder API is absent.
-        token = install_profile_terminal_scope(home, env_overlay=launch) if not named else install_profile_terminal_scope(home)
-    else:
-        try:
-            policy = _cached_scope(
-                home, "terminal", stamp, (launch, str(Path.home())),
-                lambda: build_profile_terminal_scope(home, env_overlay=launch),
-            )
-        except (OSError, TerminalPolicyUnavailable) as exc:
-            policy = TerminalPolicyRefusal(str(exc))
-        token = set_terminal_scope(policy)
+        policy = _cached_scope(
+            home, "terminal", stamp, (launch, str(Path.home())),
+            lambda: build_profile_terminal_scope(home, env_overlay=launch),
+        )
+    except (OSError, TerminalPolicyUnavailable) as exc:
+        policy = TerminalPolicyRefusal(str(exc))
+    token = set_terminal_scope(policy)
     try:
         yield
     finally:
@@ -287,10 +247,7 @@ def _recover_processes(home: Path) -> None:
             return
         try:
             from tools import process_registry as registry_module
-        except ImportError:  # an Agent without the registry has nothing to recover
-            _RECOVERED_HOMES.add(key)
-            return
-        try:
+
             # The Agent reads an unreadable or malformed checkpoint as "nothing to recover"; that must not count as recovered.
             checkpoint = registry_module._checkpoint_path()
             if checkpoint.exists() and not isinstance(json.loads(checkpoint.read_text(encoding="utf-8")), list):

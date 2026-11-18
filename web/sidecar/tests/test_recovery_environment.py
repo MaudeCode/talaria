@@ -204,6 +204,13 @@ def stop_worker(timeout=None):
     (root / 'agent').mkdir()
     (root / 'agent/__init__.py').write_text('')
     (root / 'agent/account_usage.py').write_text("def fetch_account_usage(provider,**kw): return {'provider':provider,'available':True,'windows':[{'remaining':7}], 'details':[]}\n_USAGE_FETCHERS={'synthetic':fetch_account_usage}\n")
+    # Every Agent ships the process registry each profile-scoped call re-adopts from; this home has nothing to recover.
+    (root / 'tools').mkdir()
+    (root / 'tools/__init__.py').write_text('')
+    (root / 'tools/process_registry.py').write_text("import os, threading\nfrom pathlib import Path\n"
+        "def _checkpoint_path(): return Path(os.environ['HERMES_HOME']) / 'processes.json'\n"
+        "class ProcessRegistry:\n _lock = threading.Lock()\n _running = {}\n def recover_from_checkpoint(self): return 0\n"
+        "process_registry = ProcessRegistry()\n")
     args = dict(root=str(root), home=str(home), old=str(old / 'bin/python'), revision=revision,
                 facts=str(facts), selectedFacts=facts.read_text(), web=str(SIDECAR_ROOT.parent))
     script = tmp_path / 'recovery.mjs'

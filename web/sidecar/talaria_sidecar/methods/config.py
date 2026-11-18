@@ -216,15 +216,6 @@ def write_config(path: Path, config: dict, *, profile_home: Path | None = None) 
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def _env_refusal(agent_config, key: str, action: str) -> str | None:
-    """The Agent's ``.env`` write-lock refusal (package-managed install or administrator-managed key)."""
-    refusal = getattr(agent_config, "env_write_refusal", None)
-    if refusal is not None:
-        return refusal(key, action)
-    # Agent 0.21.5 only reports the refusal on stderr.
-    return f"Cannot {action} {key}: this Hermes installation manages it" if agent_config._env_write_blocked(key, action) else None
-
-
 def env_write(home: Path, updates) -> dict:
     """Upsert ``updates`` into ``home``'s ``.env`` (``None`` removes a key) with the Agent's own line helpers, under
     the lock its ``save_env_value`` / ``remove_env_value`` take, in one atomic replace.
@@ -253,7 +244,8 @@ def env_write(home: Path, updates) -> dict:
 
     with scoped_home(home):
         for key, value in changes.items():
-            refusal = _env_refusal(agent_config, key, "remove" if value is None else "set")
+            # The Agent's .env write lock: a package-managed install or an administrator-managed key.
+            refusal = agent_config.env_write_refusal(key, "remove" if value is None else "set")
             if refusal:
                 raise RpcError(refusal, condition="env_write_refused")
         try:
