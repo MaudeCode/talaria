@@ -31,11 +31,10 @@ class VoiceAgent(FakeAgent):
         return {**super().run_conversation(**kwargs), "model": model}
 
 
-def _setup(monkeypatch, route: bool = True):
+def _setup(monkeypatch):
     _patch(monkeypatch)
     VoiceAgent.turns.clear()
     monkeypatch.setattr(chat, "_agent_class", lambda: VoiceAgent)
-    monkeypatch.setattr(chat, "_has_voice_turn_route", lambda: route, raising=False)
 
 
 def test_a_voice_turn_runs_on_the_voice_route_and_the_next_typed_turn_on_the_main_model(monkeypatch) -> None:
@@ -58,9 +57,3 @@ def test_a_typed_turn_clears_a_mark_the_agent_never_consumed(monkeypatch) -> Non
     agent._voice_turn_pending = True
     chat.start(Ctx(), _params("st-2"))
     assert VoiceAgent.turns == [("main", "m"), ("main", "m")]
-
-
-def test_an_agent_without_the_voice_route_is_left_untouched(monkeypatch) -> None:
-    _setup(monkeypatch, route=False)
-    chat.start(Ctx(), {**_params("st-1"), "voice_turn": True})
-    assert VoiceAgent.turns == [("main", "m")]

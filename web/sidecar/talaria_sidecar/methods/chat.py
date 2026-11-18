@@ -14,7 +14,6 @@ import contextlib
 import contextvars
 import copy
 import hashlib
-import importlib.util
 import inspect
 import json
 import logging
@@ -133,12 +132,8 @@ def _ask_clarify(run: _Run, data: dict, timeout: int, emit=None) -> str | None:
 
 
 def _clarify_callback(run: _Run, params: dict, emit=None):
-    def clarify_callback(question, choices=None, multi_select=False, questions=None):
-        # TAL-351: remove the legacy signature path when v0.21.6 is the oldest supported Agent.
-        structured = isinstance(question, list)
-        if structured:
-            questions, question = question, ""
-        choices_list = [str(c) for c in (choices or [])]
+    def clarify_callback(questions):
+        """The Agent's structured clarify: ``questions`` in, ``{"answers", "outcome", "notice"?}`` back."""
         # Predecessor `_clarify_timeout_seconds`: the Agent's own resolver over this profile's config
         # (``clarify.timeout`` else ``agent.clarify_timeout`` else 90 since v0.23.1); ``<= 0`` waits until answered or cancelled.
         # The advertised ``timeout_seconds`` is what the clients count down, so it is the same number.
@@ -146,25 +141,14 @@ def _clarify_callback(run: _Run, params: dict, emit=None):
         if run.deadline is not None:
             remaining = max(1, math.ceil(run.deadline - time.monotonic()))
             timeout = min(timeout, remaining) if timeout > 0 else remaining
-        data = {"question": str(question or ""), "choices_offered": choices_list, "session_id": run.session_id, "kind": "clarify", "requested_at": time.time(), "timeout_seconds": timeout}
-        if multi_select:
-            data["multi_select"] = True
-        # Batch prompts (the Agent's ``_run_batch``) carry no top-level question and expect the ``{"answers": {...}}`` reply.
-        if isinstance(questions, list) and questions:
-            data["questions"] = questions
+        # The frame carries no top-level question; the server reads ``questions`` and answers with ``{"answers": {...}}``.
+        data = {"question": "", "choices_offered": [], "questions": questions, "session_id": run.session_id, "kind": "clarify", "requested_at": time.time(), "timeout_seconds": timeout}
         answer = _ask_clarify(run, data, timeout, emit)
         if answer is not None:
-            if structured:
-                return {"answers": json.loads(answer)["answers"], "outcome": "submitted"}
-            return answer
+            return {"answers": json.loads(answer)["answers"], "outcome": "submitted"}
         cancelled = run.prompt_cancelled(data)
-        if structured:
-            return {"answers": {}, "outcome": "cancelled" if cancelled else "timed_out",
-                    "notice": "The user cancelled the clarification." if cancelled else "The clarification timed out."}
-        # Older tools have no outcome field. A batch understands timed_out; a single needs an empty answer.
-        if questions:
-            return json.dumps({"answers": {}, "timed_out": not cancelled})
-        return ""
+        return {"answers": {}, "outcome": "cancelled" if cancelled else "timed_out",
+                "notice": "The user cancelled the clarification." if cancelled else "The clarification timed out."}
 
     return clarify_callback
 
@@ -209,14 +193,11 @@ def cancel_command_choices(session_id: str | None = None, home=None) -> None:
 @contextlib.contextmanager
 def command_choices(ctx: CallContext, params: dict):
     session_id = str(params.get("session_id") or "").strip()
-    try:
-        from hermes_cli.plugin_choices import bind_asker, clarify_asker
-    except ImportError:
-        yield
-        return
     if not session_id:
         yield
         return
+    from hermes_cli.plugin_choices import bind_asker, clarify_asker
+
     run = _Run(uuid.uuid4().hex, session_id, ctx)
     # The server's commands.exec budget includes every question and the handler's final output.
     run.deadline = time.monotonic() + 120
@@ -340,15 +321,10 @@ def _raw_result(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX, max_keys: int =
     return out
 
 
-_TODO_TOOL_NAMES = frozenset({"todo", "todo_list"})
-
-
 def _is_todo_tool(name: Any) -> bool:
-    """TAL-889: the Agent's own todo-tool predicate (canonical ``todo_list`` and legacy aliases); older Agents lack it."""
-    try:
-        from tools.todo_tool import is_todo_tool_name
-    except Exception:  # noqa: BLE001 - older Agent without the predicate
-        return isinstance(name, str) and name in _TODO_TOOL_NAMES
+    """TAL-889: the Agent's own todo-tool predicate (canonical ``todo_list`` and legacy aliases)."""
+    from tools.todo_tool import is_todo_tool_name
+
     return bool(is_todo_tool_name(name))
 
 
@@ -546,22 +522,14 @@ def _capped_tool_result(text: str, tokens: int, keep_tokens: int) -> str:
     TAL-827: the Agent's elision marker marks the cut, so its dispatch guard rejects a model that copies the marker
     into a durable write; Talaria's note follows on its own line."""
     outcome = _tool_failure_outcome(text)
-    try:
-        from agent.compression_marker import elide_middle
-    except ImportError:  # An Agent without the shared marker keeps Talaria's own.
-        prefix = "[Talaria context budget: omitted "
-        suffix = f" (~{tokens} rough tokens) from this tool result; the full output remains in the visible transcript.{outcome}]"
-        note_only, widest = f"{prefix}{len(text)} chars{suffix}", f"{prefix}{len(text)} of {len(text)} chars{suffix}"
+    from agent.compression_marker import elide_middle
 
-        def cut(snippet: str) -> str:
-            return f"{snippet}\n\n{prefix}{len(text) - len(snippet)} of {len(text)} chars{suffix}"
-    else:
-        note = f"\n[Talaria context budget: this tool result is ~{tokens} rough tokens; the full output remains in the visible transcript.{outcome}]"
-        # With nothing kept the marker counts every char, its widest form for this text.
-        note_only = widest = elide_middle(text, 0, 0) + note
+    note = f"\n[Talaria context budget: this tool result is ~{tokens} rough tokens; the full output remains in the visible transcript.{outcome}]"
+    # With nothing kept the marker counts every char, its widest form for this text.
+    note_only = widest = elide_middle(text, 0, 0) + note
 
-        def cut(snippet: str) -> str:
-            return elide_middle(text, len(snippet), 0) + note
+    def cut(snippet: str) -> str:
+        return elide_middle(text, len(snippet), 0) + note
     if keep_tokens < _TAIL_TOOL_MIN_SNIPPET_TOKENS:
         return note_only
     room = keep_tokens - _rough_tokens(widest) - 1
@@ -576,15 +544,7 @@ def _capped_tool_result(text: str, tokens: int, keep_tokens: int) -> str:
 def _skill_result_stubs(messages: list) -> dict[int, str]:
     """Recovery metadata for paired skill loads, captured before the Agent can prune their success/failure payloads.
     Extends the Agent's call-id and marker helpers; its older summaries omit small-skill markers and failure verdicts."""
-    try:
-        from agent.context_compressor import _tool_calls_by_id
-    except ImportError:
-        return {}
-    try:
-        from agent.context_compressor import _skill_pruned_marker
-    except ImportError:
-        def _skill_pruned_marker(name: str) -> str:
-            return f"[SKILL_PRUNED: content lost in compression; reload with skill_view(name='{name}')]"
+    from agent.context_compressor import _skill_pruned_marker, _tool_calls_by_id
 
     calls = _tool_calls_by_id(messages)
     stubs = {}
@@ -657,16 +617,14 @@ def _post_compression_context(agent: Any, messages: list, system_message: Any) -
     """TAL-539: tool output produced after a mid-turn compression never went through the compressor's pruning. Run that
     pruning plus a hard cap on the model context, and estimate the next request from it (predecessor
     ``_prune_context_tool_results_after_compression`` / ``_estimate_post_compression_context_tokens``)."""
+    from agent.context_compressor import ContextCompressor
+
     compressor = getattr(agent, "context_compressor", None)
     context = messages
-    try:
-        from agent.context_compressor import ContextCompressor
-    except ImportError:
-        ContextCompressor = None
     # TAL-1558: an external context engine owns its tool bodies (reference markers, cache-stable prefix), so only the
     # active native compressor (or none) gets pruned and capped. The active object decides: a configured engine that
     # failed to load leaves the native one in place.
-    if compressor is None or ContextCompressor is None or isinstance(compressor, ContextCompressor):
+    if compressor is None or isinstance(compressor, ContextCompressor):
         prune = getattr(compressor, "_prune_old_tool_results", None)
         if callable(prune):
             try:
@@ -694,28 +652,22 @@ _VAULT_PROMPT_TIMEOUTS = {"vault_unlock": 120, "vault_save_login": 180, "vault_c
 
 def _set_vault_session(session_id) -> None:
     """Bind the session an unlock made on this thread belongs to (released with it)."""
-    try:
-        from agent.vault_backends import unlock
-    except Exception:  # noqa: BLE001 - an Agent without the credential vault
-        return
+    from agent.vault_backends import unlock
+
     unlock.set_current_session_id(session_id)
 
 
 def _release_vault_session(session_id) -> None:
     """Lock the password managers ``session_id`` unlocked; other sessions keep theirs."""
-    try:
-        from agent.vault_backends.unlock import release_session
-    except Exception:  # noqa: BLE001 - an Agent without the credential vault
-        return
+    from agent.vault_backends.unlock import release_session
+
     release_session(session_id)
 
 
 def _set_vault_prompts(session_id, unlock_cb, save_login_cb, code_cb) -> None:
     """Bind (or with ``None``s clear) the Agent's per-thread vault prompts and the session an unlock belongs to."""
-    try:
-        from agent.vault_backends import unlock
-    except Exception:  # noqa: BLE001 - an Agent without the credential vault
-        return
+    from agent.vault_backends import unlock
+
     _set_vault_session(session_id)
     unlock.set_unlock_prompt_callback(unlock_cb)
     unlock.set_save_login_prompt_callback(save_login_cb)
@@ -730,22 +682,9 @@ def _clarify_timeout(params: dict) -> int:
             return int(explicit)
         except (TypeError, ValueError):
             pass
-    try:
-        from tools.clarify_gateway import get_clarify_timeout
+    from tools.clarify_gateway import get_clarify_timeout
 
-        return int(get_clarify_timeout())
-    except Exception:  # noqa: BLE001 - older Agent without the resolver
-        pass
-    try:
-        from hermes_cli.config import load_config
-
-        cfg = load_config() or {}
-        raw = (cfg.get("clarify") or {}).get("timeout")
-        if raw is None:
-            raw = (cfg.get("agent") or {}).get("clarify_timeout", 90)
-        return int(raw)
-    except Exception:  # noqa: BLE001
-        return 90  # the Agent resolver's own default since v0.23.1
+    return int(get_clarify_timeout())
 
 
 # TAL-2053: proposals and secret requests are not clarify questions; reading a diff or fetching a key takes longer
@@ -878,32 +817,23 @@ def _turn_identity(session_id: str, workspace: str):
     the approval session key (so ``register_gateway_notify`` cards reach this turn and dangerous commands are gated
     instead of auto-approved), the gateway session vars (platform ``webui``, chat/ui session ids, profile), and the session cwd
     (so terminals and AGENTS.md discovery run in the selected workspace, not the sidecar's launch directory). Every
-    binding is a context variable, so concurrent turns cannot overwrite each other. Missing Agent surfaces are logged,
-    not fatal."""
-    resets: list = []
-    try:
-        from tools.approval_context import reset_current_session_key, set_current_session_key
+    binding is a context variable, so concurrent turns cannot overwrite each other."""
+    from gateway import session_context as sc
+    from hermes_cli.profiles import get_active_profile_name
+    from hermes_constants import get_hermes_home, profile_name_for_home
+    from tools.approval_context import reset_current_session_key, set_current_session_key
 
-        token = set_current_session_key(session_id)
-        resets.append(lambda: reset_current_session_key(token))
-    except Exception:  # noqa: BLE001
-        log.debug("per-turn approval session-key bind failed", exc_info=True)
-    try:
-        from gateway import session_context as sc
-        from hermes_cli.profiles import get_active_profile_name
-        from hermes_constants import get_hermes_home, profile_name_for_home
-
-        # The persistent Docker sandbox is keyed by the profile name; unbound, every profile reuses "default".
-        profile = profile_name_for_home(get_hermes_home()) or get_active_profile_name()
-        pairs = [
-            (sc._SESSION_KEY, session_id), (sc._SESSION_UI_SESSION_ID, session_id), (sc._SESSION_PLATFORM, "webui"),
-            (sc._SESSION_CHAT_ID, session_id), (sc._SESSION_ID, session_id), (sc._SESSION_PROFILE, profile),
-        ]
-        for var, value in pairs:
-            tok = var.set(value)
-            resets.append(lambda var=var, tok=tok: var.reset(tok))
-    except Exception:  # noqa: BLE001
-        log.debug("per-turn session context bind failed", exc_info=True)
+    # The persistent Docker sandbox is keyed by the profile name; unbound, every profile reuses "default".
+    profile = profile_name_for_home(get_hermes_home()) or get_active_profile_name()
+    token = set_current_session_key(session_id)
+    resets: list = [lambda: reset_current_session_key(token)]
+    pairs = [
+        (sc._SESSION_KEY, session_id), (sc._SESSION_UI_SESSION_ID, session_id), (sc._SESSION_PLATFORM, "webui"),
+        (sc._SESSION_CHAT_ID, session_id), (sc._SESSION_ID, session_id), (sc._SESSION_PROFILE, profile),
+    ]
+    for var, value in pairs:
+        tok = var.set(value)
+        resets.append(lambda var=var, tok=tok: var.reset(tok))
     try:
         with session_workspace(workspace):
             yield
@@ -913,11 +843,6 @@ def _turn_identity(session_id: str, workspace: str):
                 reset()
             except Exception:  # noqa: BLE001
                 log.debug("per-turn identity reset failed", exc_info=True)
-
-
-#: Older configs named the CLI composite ``hermes``; the Agent registers it split in two (predecessor
-#: ``_LEGACY_CLI_TOOLSET_ALIASES``). Agent 0.21.6 expands it itself; delete this once 0.21.6 is the oldest supported.
-_LEGACY_TOOLSET_ALIASES = {"hermes": ("hermes-cli", "hermes-api-server")}
 
 
 def _turn_toolsets(toolsets, cfg: dict | None = None) -> list[str]:
@@ -934,8 +859,7 @@ def _profile_toolsets(cfg: dict | None = None) -> list[str]:
     from hermes_cli.tools_config import _get_platform_tools
 
     cfg = (load_config() or {}) if cfg is None else cfg
-    resolved = sorted(_get_platform_tools(cfg, "cli"))
-    names = list(dict.fromkeys(name for raw in resolved for name in _LEGACY_TOOLSET_ALIASES.get(raw, (raw,))))
+    names = sorted(_get_platform_tools(cfg, "cli"))
     if HARNESS_TOOLSET not in names and HARNESS_TOOLSET not in disabled_toolsets(cfg):
         names.append(HARNESS_TOOLSET)
     return names
@@ -1200,9 +1124,6 @@ def _schedule_archive(work: _ArchiveCallback, home: Path) -> None:
 def _notify_archive(home: Path, session_id: str, lineage: list[str] | None) -> None:
     import hermes_state_common
 
-    emit = getattr(hermes_state_common, "emit_session_deleted", None)
-    if emit is None:
-        return
     # Upstream hook warnings can include arbitrary callback exceptions. Keep one payload-free diagnostic.
     thread_id, warned = threading.get_ident(), False
 
@@ -1218,8 +1139,10 @@ def _notify_archive(home: Path, session_id: str, lineage: list[str] | None) -> N
         handler.addFilter(bounded_diagnostic)
     try:
         # The emitter only needs db_path for profile identity. Opening SessionDB would migrate an owner's store.
-        emit(SimpleNamespace(db_path=home / "state.db"), [session_id, *(lineage or [])],
-             reason="archive", primary=session_id, sessions_dir=home / "sessions")
+        # The server's lineage starts at the root, which is usually ``session_id``: one id each.
+        ids = list(dict.fromkeys([session_id, *(lineage or [])]))
+        hermes_state_common.emit_session_deleted(SimpleNamespace(db_path=home / "state.db"), ids, reason="archive",
+                                                 primary=session_id, sessions_dir=home / "sessions")
     finally:
         for handler in handlers:
             handler.removeFilter(bounded_diagnostic)
@@ -1547,10 +1470,9 @@ def _cancel_background_reviews(entries, message: str) -> list[threading.Thread]:
             agent.skip_background_review = True
         except AttributeError:  # an object without instance attributes forks no reviews
             pass
-    try:
-        from agent.background_review import cancel_background_review_for_live_turn, prepare_background_review_run
-    except ImportError:
-        return []
+    if not unique:
+        return []  # nothing to cancel, and a sidecar that never loaded the Agent must still shut down
+    from agent.background_review import cancel_background_review_for_live_turn, prepare_background_review_run
 
     def cancel(agent) -> None:
         thread = threading.current_thread()
@@ -1758,11 +1680,8 @@ def _stored_context_detail(home: Path, session_id: str) -> dict:
         return unavailable("not_built")
     try:
         from agent.context_breakdown import stored_context_breakdown
-        from tools.mcp_tool_agent import pinned_tool_defs
-    except ImportError:
-        return unavailable("not_built")
-    try:
         from hermes_state import SessionDB
+        from tools.mcp_tool_agent import pinned_tool_defs
 
         with scoped_home(home):
             db = SessionDB(path, read_only=True)
@@ -1809,19 +1728,9 @@ def _require_data_use_support(history: list) -> frozenset[str]:
 
 def _max_iterations_summary_request() -> str:
     """The user row the Agent appends to ask for a summary once its tool budget runs out; the server drops it."""
-    try:
-        from agent.context_compressor import MAX_ITERATIONS_SUMMARY_REQUEST
-    except Exception:  # noqa: BLE001
-        return ""
+    from agent.context_compressor import MAX_ITERATIONS_SUMMARY_REQUEST
+
     return str(MAX_ITERATIONS_SUMMARY_REQUEST)
-
-
-def _has_voice_turn_route() -> bool:
-    """Whether the Agent routes a marked turn to ``auxiliary.voice_chat`` (``agent.voice_turn_route``, v0.21.6)."""
-    try:
-        return importlib.util.find_spec("agent.voice_turn_route") is not None
-    except (ImportError, ValueError):
-        return False
 
 
 def _supported(cls, name: str) -> bool:
@@ -2428,8 +2337,6 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 return
             try:
                 agent.interrupt("Cancelled by user", hard_cancel=True)
-            except TypeError:
-                agent.interrupt("Cancelled by user")
             except Exception:  # noqa: BLE001
                 log.debug("agent.interrupt failed", exc_info=True)
 
@@ -2451,19 +2358,15 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             run_kwargs["persist_user_message"] = persist
         # TAL-801: a spoken turn runs on the profile's ``auxiliary.voice_chat`` slot; the Agent consumes the mark at turn
         # setup. Every turn sets it, as the Agent's own surfaces do, so a mark a failed turn never consumed cannot leak.
-        if _has_voice_turn_route():
-            agent._voice_turn_pending = params.get("voice_turn") is True
+        agent._voice_turn_pending = params.get("voice_turn") is True
         error: str | None = None
         result: dict = {}
         # The Agent reads its vault prompts from the thread running the turn (and copies them onto tool workers).
         _set_vault_prompts(session_id, vault_unlock_prompt, vault_save_login_prompt, vault_code_prompt)
         try:
-            try:
-                from tools.skills_tool import bind_turn_secret_capture
-            except ImportError:  # Older Agents and v0.22.2 have only an unsafe process-global callback slot.
-                bind_turn_secret_capture = None
-                log.debug("Agent lacks turn-local skill secret capture; secure setup is unavailable")
-            with bind_turn_secret_capture(skill_secret_prompt) if bind_turn_secret_capture and params.get("skill_secret") is True else contextlib.nullcontext():
+            from tools.skills_tool import bind_turn_secret_capture
+
+            with bind_turn_secret_capture(skill_secret_prompt) if params.get("skill_secret") is True else contextlib.nullcontext():
                 if timing:
                     timing.end("conversation_setup")
                     timing.observe("conversation_entry")
@@ -2915,13 +2818,8 @@ def register(registry) -> None:
                         return
                     from hermes_cli import lifecycle
 
-                    callback = getattr(lifecycle, "finalize_session", None)
-                    if callback is None:
-                        return
-                    results = callback(session_id=session_id, platform="webui", reason=reason)
-                    extract = getattr(lifecycle, "session_end_messages", None)
-                    if extract is not None:
-                        messages.extend(extract(results))
+                    results = lifecycle.finalize_session(session_id=session_id, platform="webui", reason=reason)
+                    messages.extend(lifecycle.session_end_messages(results))
             except Exception:  # noqa: BLE001 - hooks must never block the boundary
                 log.warning("Session lifecycle callback failed (%s)", reason)
             finally:
@@ -3013,8 +2911,6 @@ def register(registry) -> None:
                 if _AGENT_CACHE.get(sid) is not cached or before != marks():
                     return unavailable("changed")
             return project(payload, window_source=window_source)
-        except ImportError:
-            return unavailable("unsupported")
         except Exception:  # never expose Agent diagnostics, prompt contents or paths
             return unavailable()
         finally:

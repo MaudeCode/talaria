@@ -146,3 +146,17 @@ def test_live_agent_between_requests_keeps_the_steer_for_its_next_step(monkeypat
     methods = _methods(monkeypatch, _Run(agent))
     assert methods["chat.steer_now"](None, {"stream_id": "s", "pending": ["a", "b"], "index": 0}) == {"redirected": False, "withdrawn": True, "requeued": "kept"}
     assert agent._pending_steer == "a\nb"
+
+
+def test_a_steer_queued_behind_during_a_failed_redirect_goes_back_last(monkeypatch):
+    agent = _Agent("a\nb")
+
+    def redirect(text):
+        agent.steer("x")  # another surface queues a steer while the redirect is refused
+        return False
+
+    agent.redirect = redirect
+    methods = _methods(monkeypatch, _Run(agent))
+    assert methods["chat.steer_now"](None, {"stream_id": "s", "pending": ["a", "b"], "index": 0}) == {"redirected": False, "withdrawn": True, "requeued": "last"}
+    # The slot changed meanwhile, so the steer is not written back over it: it goes behind what is there now.
+    assert agent._pending_steer == "b\nx\na"

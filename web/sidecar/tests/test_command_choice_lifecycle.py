@@ -122,10 +122,8 @@ def test_every_exit_releases_the_waiter_and_refuses_a_late_answer(bridge, monkey
     assert not chat._COMMAND_RUNS and asker.get() is None
 
 
-def test_no_session_or_older_agent_keeps_unattended_fallback(bridge, monkeypatch):
+def test_a_command_without_a_session_runs_unattended(bridge):
     methods, server, frames, params, asker = bridge
     ctx = CallContext(server, 1, 'commands.exec')
     assert methods['commands.exec'](ctx, {**params, 'session_id': ''})['output'] == 'unattended'
-    monkeypatch.setitem(sys.modules, 'hermes_cli.plugin_choices', None)
-    assert methods['commands.exec'](ctx, params)['output'] == 'unattended'
     assert frames.empty() and not chat._COMMAND_RUNS and asker.get() is None

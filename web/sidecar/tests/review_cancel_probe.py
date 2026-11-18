@@ -3,7 +3,7 @@
 Prints one JSON line: per scenario (a cache-only eviction, a delete/clear eviction of a cached and of a running turn's
 agent, a shutdown drain), the interrupts the admitted review fork received and which reviews the agent can still fork:
 a post-turn one (``skip_background_review``), a deferred one the Agent's idle queue dispatches, and one whose spawn was
-already under way when the session ended. Also how long a delete/clear eviction waited on a review that never
+already under way when the session ended. Also whether a delete/clear eviction waited on a review that never
 acknowledges.
 """
 
@@ -13,6 +13,7 @@ import contextvars
 import json
 import os
 import sys
+import threading
 import time
 import types
 
@@ -119,9 +120,23 @@ chat._RUNS.pop("running-stream"), chat._RUNS_BY_SESSION.pop("running")
 # A review that never acknowledges does not hold up the eviction.
 parent, review = admitted(acknowledge=False)
 chat._AGENT_CACHE["wedged"] = (parent, "sig", HOME)
-started = time.monotonic()
-out["wedged_evicted"] = evict(None, {"session_id": "wedged", "clear_session": True})["evicted"]
-out["wedged_seconds"] = round(time.monotonic() - started, 1)
+joined = []
+thread_join = threading.Thread.join
+
+
+def recording_join(self, timeout=None):
+    if self.name == "chat-review-cancel":
+        joined.append(self.name)
+    return thread_join(self, timeout)
+
+
+threading.Thread.join = recording_join
+try:
+    out["wedged_evicted"] = evict(None, {"session_id": "wedged", "clear_session": True})["evicted"]
+finally:
+    threading.Thread.join = thread_join
+# It returned without joining the cancel, while the fork had still not acknowledged.
+out["wedged_returned_first"] = not joined and not review.run.request_done.is_set()
 out["wedged"] = settled(review)
 # The fork acknowledges late; the Agent would requeue a cancelled review on the idle queue.
 finish_background_review_run(parent, review.run)

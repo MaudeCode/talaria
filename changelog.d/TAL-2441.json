@@ -1,0 +1,1 @@
+{"skip": "Sidecar test fixes plus removal of fallback code that only Agent releases older than v0.23.0 could reach; no app behavior changes."}

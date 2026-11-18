@@ -17,6 +17,9 @@ from talaria_sidecar.errors import RpcError
 from talaria_sidecar.methods import Registry, chat, commands, profiles
 from talaria_sidecar.rpc import RpcServer
 
+# One ceiling for every wait on an event below; each wait is on held work, so a slow host never changes an outcome.
+WAIT = 5
+
 
 @pytest.fixture
 def discovery(monkeypatch, tmp_path):
@@ -25,6 +28,9 @@ def discovery(monkeypatch, tmp_path):
     home = tmp_path / "profiles" / "alpha"
     home.mkdir(parents=True)
     monkeypatch.setattr(chat, "refresh_profile_agents_mcp_tools", lambda home: None)
+    # A settled profile's retry gives up at once instead of after the real two seconds: discovery below stays held, so a
+    # turn that waits for it can only be one that must, and one that must not returns without a timer deciding.
+    monkeypatch.setattr(chat, "_MCP_REDISCOVERY_WAIT", 0)
     # The Agent boundary only. Real Talaria discovery orchestration and chat.start run below.
     release = threading.Event()
     entered = threading.Event()
@@ -43,11 +49,29 @@ def discovery(monkeypatch, tmp_path):
         with chat._MCP_DISCOVERY_LOCK:
             done = chat._MCP_DISCOVERIES.get(str(home.resolve()))
         if done is not None:
-            assert done.wait(5)
+            assert done.wait(WAIT)
 
 
-def start(home, stream, session="s1"):
-    ctx = Ctx()
+class StopWhenParked(Ctx):
+    """Stops the turn on its second poll inside the first-discovery wait. A wait that wrongly gave up would return after
+    its first poll, so reaching the second proves the turn stayed parked, with no clock deciding."""
+
+    def __init__(self):
+        super().__init__()
+        self.polls = 0
+        self.agents_while_parked = None
+
+    @property
+    def cancelled(self):
+        if sys._getframe(1).f_code is chat._discover_mcp_tools.__code__:
+            self.polls += 1
+            if self.polls == 2:
+                self.agents_while_parked = len(FakeAgent.instances)
+        return self.polls >= 2
+
+
+def start(home, stream, session="s1", ctx=None):
+    ctx = ctx or Ctx()
     result = {}
     returned = threading.Event()
     ctx.pending = threading.Event()
@@ -82,16 +106,16 @@ def test_cached_chat_starts_while_another_agents_mcp_refresh_is_blocked(monkeypa
     def refresh(agent, **kwargs):
         if agent is slow:
             entered.set()
-            assert release.wait(5)
+            assert release.wait(WAIT)
 
     monkeypatch.setitem(sys.modules, "tools.mcp_tool_agent", types.SimpleNamespace(refresh_agent_mcp_tools=refresh))
     reload_worker = threading.Thread(target=chat.refresh_profile_agents_mcp_tools, args=(home,))
     reload_worker.start()
     turn = None
     try:
-        assert entered.wait(1)
+        assert entered.wait(WAIT)
         turn = start(home, "during-reload")
-        assert turn[2].wait(1), "chat.start cache lookup blocked behind another agent's MCP refresh"
+        assert turn[2].wait(WAIT), "chat.start cache lookup blocked behind another agent's MCP refresh"
         assert turn[1]["status"] == "completed"
         assert FakeAgent.instances == [cached], "the concurrent turn must reuse its cached agent"
         assert not release.is_set()
@@ -122,7 +146,7 @@ def test_failed_mcp_refresh_only_evicts_the_original_cached_agent(monkeypatch, t
         refreshed.append(agent)
         if agent is failed:
             entered.set()
-            assert release.wait(5)
+            assert release.wait(WAIT)
             raise RuntimeError("refresh failed")
 
     monkeypatch.setitem(sys.modules, "tools.mcp_tool_agent", types.SimpleNamespace(refresh_agent_mcp_tools=refresh))
@@ -130,7 +154,7 @@ def test_failed_mcp_refresh_only_evicts_the_original_cached_agent(monkeypatch, t
     worker = threading.Thread(target=chat.refresh_profile_agents_mcp_tools, args=(home,))
     worker.start()
     try:
-        assert entered.wait(1)
+        assert entered.wait(WAIT)
         with chat._AGENT_CACHE_LOCK:
             if change == "replace":
                 chat._AGENT_CACHE["failed"] = updated
@@ -150,7 +174,7 @@ def test_failed_mcp_refresh_only_evicts_the_original_cached_agent(monkeypatch, t
     assert chat._AGENT_CACHE["foreign"][0] is foreign
 
 
-def test_repeat_discovery_starts_turn_with_pending_notice_within_three_seconds(discovery):
+def test_repeat_discovery_starts_turn_with_pending_notice(discovery):
     home, release, entered, calls = discovery
     # A completed catalog discovery warms this profile before its first chat.
     release.set()
@@ -159,15 +183,15 @@ def test_repeat_discovery_starts_turn_with_pending_notice_within_three_seconds(d
     entered.clear()
     ctx, result, returned, worker = start(home, "retry")
     try:
-        assert entered.wait(1)
-        assert returned.wait(3), "chat.start stayed blocked on a previously discovered profile"
+        assert entered.wait(WAIT)
+        assert returned.wait(WAIT), "chat.start stayed blocked on a previously discovered profile"
         assert result["status"] == "completed"
         assert any(event == "notice" and data.get("key") == "mcp_discovery_pending" for event, data in ctx.frames)
         assert len(FakeAgent.instances) == 1
         assert ctx.cleared.is_set(), "a finished turn must not retain its pending notice"
         frames = list(ctx.frames)
         release.set()
-        assert chat._MCP_DISCOVERIES[str(home.resolve())].wait(1)
+        assert chat._MCP_DISCOVERIES[str(home.resolve())].wait(WAIT)
         assert ctx.frames == frames, "background completion must not emit into a finished stream"
     finally:
         release.set()
@@ -176,14 +200,12 @@ def test_repeat_discovery_starts_turn_with_pending_notice_within_three_seconds(d
 
 def test_fresh_home_waits_and_stop_releases_it(discovery):
     home, release, entered, calls = discovery
-    ctx, result, returned, worker = start(home, "fresh")
+    ctx, result, returned, worker = start(home, "fresh", ctx=StopWhenParked())
     try:
-        assert entered.wait(1)
-        assert not returned.wait(2.2), "first discovery must finish before the first Agent snapshots tools"
-        assert not FakeAgent.instances
-        ctx.cancelled = True
-        assert returned.wait(1), "Stop must release the first discovery wait"
-        assert result["status"] == "cancelled"
+        assert returned.wait(WAIT), "Stop must release the first discovery wait"
+        assert result["status"] == "cancelled", "first discovery must finish before the first Agent snapshots tools"
+        assert ctx.agents_while_parked == 0
+        assert not ctx.pending.is_set()
     finally:
         release.set()
         worker.join(5)
@@ -227,16 +249,16 @@ def test_concurrent_turns_share_retry_and_clear_notice_when_tools_arrive(discove
     monkeypatch.setattr(chat, "refresh_profile_agents_mcp_tools", refresh)
     turns = [start(home, "shared-" + str(i), "session-" + str(i)) for i in range(2)]
     try:
-        assert entered.wait(1)
-        # Observe the real two-second timeout without releasing discovery or the Agent.
+        assert entered.wait(WAIT)
+        # Both turns give up on the held retry without releasing discovery or the Agent.
         for ctx, result, returned, worker in turns:
-            assert ctx.pending.wait(3)
+            assert ctx.pending.wait(WAIT)
             assert any(e == "notice" and d.get("key") == "mcp_discovery_pending" for e, d in ctx.frames)
         assert len(calls) == 2, "a completed catalog scan plus one shared chat retry"
         release.set()
-        assert refreshed.wait(1)
+        assert refreshed.wait(WAIT)
         for ctx, result, returned, worker in turns:
-            assert ctx.cleared.wait(1)
+            assert ctx.cleared.wait(WAIT)
             assert any(e == "notice_clear" and d.get("key") == "mcp_discovery_pending" for e, d in ctx.frames)
     finally:
         release.set()
@@ -269,14 +291,14 @@ def test_profile_deletion_refuses_until_background_discovery_finishes(discovery,
     release.clear()
     ctx, result, returned, worker = start(home, "delete-pending")
     try:
-        assert returned.wait(3)
+        assert returned.wait(WAIT)
         monkeypatch.setattr(chat, "_PROFILE_RELEASE_TIMEOUT", 0.02)
         with pytest.raises(RpcError, match="MCP|discovery"):
             delete()
         assert deleted == [], "profile home was removed while discovery could still publish"
         assert commands.profile_mcp_tools_discovered(home), "refused deletion must preserve the live profile baseline"
         release.set()
-        assert chat._MCP_DISCOVERIES[str(home.resolve())].wait(1)
+        assert chat._MCP_DISCOVERIES[str(home.resolve())].wait(WAIT)
         assert delete() == {"ok": True}
         assert deleted == ["alpha"]
     finally:
@@ -293,12 +315,11 @@ def test_profile_deletion_forgets_readiness_for_recreated_home(discovery, profil
     assert delete() == {"ok": True}
     assert not commands.profile_mcp_tools_discovered(home), "recreated profile inherited deleted profile's readiness"
     release.clear()
-    ctx, result, returned, worker = start(home, "recreated")
+    ctx, result, returned, worker = start(home, "recreated", ctx=StopWhenParked())
     try:
-        assert entered.wait(1)
-        assert not returned.wait(2.2), "recreated profile skipped its first tool snapshot"
-        ctx.cancelled = True
-        assert returned.wait(1)
+        assert returned.wait(WAIT)
+        assert result["status"] == "cancelled", "recreated profile skipped its first tool snapshot"
+        assert ctx.agents_while_parked == 0
     finally:
         release.set()
         worker.join(5)
@@ -312,14 +333,25 @@ def test_shutdown_joins_background_discovery_after_turn_finishes(discovery, monk
     commands.discover_profile_mcp_tools()
     release.clear()
     ctx, result, returned, worker = start(home, "shutdown-pending")
-    stopped = threading.Event()
-    shutdown = threading.Thread(target=lambda: (chat.drain_agents(timeout=1), stopped.set()))
+    joined = []
+    shutdown = threading.Thread(target=chat.drain_agents, kwargs={"timeout": WAIT})
     try:
-        assert returned.wait(3)
+        assert returned.wait(WAIT)
+        # The turn ended with its discovery still held. Discovery finishes only once shutdown joins its worker.
+        discovering = next(work for work in chat._RELEASES if getattr(work, "name", "").startswith("chat-mcp-"))
+        join = discovering.join
+
+        def join_then_finish(timeout=None):
+            joined.append(discovering.is_alive())
+            release.set()
+            return join(timeout)
+
+        discovering.join = join_then_finish
         shutdown.start()
-        assert not stopped.wait(0.1), "shutdown abandoned an active discovery worker"
-        release.set()
-        assert stopped.wait(1)
+        shutdown.join(WAIT * 2)
+        assert not shutdown.is_alive()
+        assert joined == [True], "shutdown abandoned an active discovery worker"
+        assert not discovering.is_alive()
     finally:
         release.set()
         worker.join(5)
@@ -351,7 +383,7 @@ def test_fast_turn_refreshes_tools_when_discovery_finishes_during_agent_build(di
             self.tools = ["old-tool"]
             # Discovery's first cache refresh runs after this snapshot, before the Agent enters the cache.
             release.set()
-            assert chat._MCP_DISCOVERIES[str(home.resolve())].wait(1)
+            assert chat._MCP_DISCOVERIES[str(home.resolve())].wait(WAIT)
 
     def refresh(target):
         with chat._AGENT_CACHE_LOCK:
@@ -371,6 +403,8 @@ def settled(discovery, monkeypatch, caplog):
     """Discovery finishes at once; each ``turn()`` runs a real ``chat.start`` and returns its ``mcp_discovery`` span outcome."""
     home, release, entered, calls = discovery
     release.set()
+    # Released discovery finishes at once, so the retry ends on its completion; the wait is only a ceiling here.
+    monkeypatch.setattr(chat, "_MCP_REDISCOVERY_WAIT", WAIT)
     rows = [{"name": "notes", "status": "connected", "connected": True}]
     refreshed = []
     outputs = []
@@ -411,7 +445,7 @@ def test_later_turn_reuses_a_completed_discovery(settled, monkeypatch, tools, fi
             super().start()
 
     monkeypatch.setattr(threading, "Thread", RecordingThread)
-    # A repeat discovery would block here and surface the turn's two-second pending notice.
+    # A repeat discovery would find discovery held here and surface the turn's pending notice.
     settled.release.clear()
     assert settled.turn() == "cache_hit"
     assert len(settled.calls) == 1, "an unchanged profile ran discovery again"

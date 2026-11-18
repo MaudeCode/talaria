@@ -158,17 +158,6 @@ def _stored_read(tmp_path, monkeypatch, *, session_db):
     return registry.methods['chat.context_detail'](None, {'profile_home': str(tmp_path), 'session_id': 'stored', 'model': None, 'model_provider': None, 'workspace': None})
 
 
-def test_an_agent_without_the_stored_helpers_keeps_not_built(tmp_path, monkeypatch):
-    def must_not_open(*a, **k):
-        raise AssertionError('must not open the store')
-    monkeypatch.setitem(sys.modules, 'agent.context_breakdown', SimpleNamespace())
-    monkeypatch.setitem(sys.modules, 'tools.mcp_tool_agent', SimpleNamespace(pinned_tool_defs=lambda pin: []))
-    assert _stored_read(tmp_path, monkeypatch, session_db=must_not_open)['reason'] == 'not_built'
-    monkeypatch.setitem(sys.modules, 'agent.context_breakdown', SimpleNamespace(stored_context_breakdown=lambda *a: {}))
-    monkeypatch.setitem(sys.modules, 'tools.mcp_tool_agent', SimpleNamespace())
-    assert _stored_read(tmp_path, monkeypatch, session_db=must_not_open)['reason'] == 'not_built'
-
-
 def test_a_failed_stored_read_exposes_no_diagnostics(tmp_path, monkeypatch):
     def broken(*a, **k):
         raise RuntimeError('/private/synthetic-secret')

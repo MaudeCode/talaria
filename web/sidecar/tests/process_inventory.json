@@ -135,12 +135,12 @@
     },
     "tests/test_chat_request_overrides.py::test_auxiliary_privacy_routes_use_real_agent_policy_without_hidden_provider_hops": {
       "layer": "compatibility",
-      "reason": "Real Agent auxiliary resolver, provider profiles and call_llm stream path must preserve deny/ZDR policy without hidden provider hops; legacy Agent APIs must refuse before transport. Only credentials and the final transport are faked.",
+      "reason": "Each supported release's auxiliary resolver, Nous provider profile and call_llm stream path must send private auxiliary history with deny/ZDR routing and never hop to the configured unsafe fallback provider. Runs the real auxiliary_client in an Agent interpreter with an httpx mock transport.",
       "cases": [""]
     },
     "tests/test_chat_request_overrides.py::test_second_turn_connector_data_use_reaches_nous_request": {
       "layer": "compatibility",
-      "reason": "Real Agent API compatibility: legacy releases refuse private history before execution; capable releases build Nous deny/ZDR routing while stripping message metadata. Requires the installed Agent interpreter; execution and HTTP clients are faked.",
+      "reason": "The real AIAgent._build_api_kwargs must turn a second turn's connector data_use rows into Nous deny/ZDR routing and strip data_use and display_metadata from the request, for chat.start and refine. Runs the real constructor and request builder with only execution replaced.",
       "cases": [""]
     },
     "tests/test_agent_gateway_identity.py::test_native_systemd_start_past_its_client_timeout_stays_pending": {
@@ -528,7 +528,7 @@
     },
     "tests/test_chat_clarify.py::test_real_agent_clarify_through_chat_start": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: real agent clarify through chat start. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real tools.clarify_tool calls the sidecar's structured callback and maps its {answers, outcome} reply into per-question responses and statuses (answered, unanswered with a notice); each outcome and question shape the tool treats differently runs once per release.",
       "cases": [
         "[submitted-single]",
         "[submitted-multi]",
@@ -542,70 +542,35 @@
     },
     "tests/test_chat_compress.py::test_compress_runs_the_shared_core_on_a_throwaway_agent_and_commits": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: compress runs the shared core on a throwaway agent and commits. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_chat_compress.py::test_a_server_that_never_finalizes_has_its_compression_discarded": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a server that never finalizes has its compression discarded. Uses the real installed release, not a fabricated API response.",
+      "reason": "chat.compress must bind the pinned agent.conversation_compression_manual.compress_now signature and its CompressResult fields, and finalize_context_engine_compression_notification must still take committed=. Loads the release's own manual core.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_compress.py::test_a_held_lock_is_reported_and_not_committed": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a held lock is reported and not committed. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_chat_compress.py::test_compress_without_an_override_uses_the_profile_toolsets": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: compress without an override uses the profile toolsets. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_chat_compress.py::test_no_api_key_is_refused_before_an_agent_exists": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: no api key is refused before an agent exists. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_chat_compress.py::test_registered_method_scopes_the_profile_home": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: registered method scopes the profile home. Uses the real installed release, not a fabricated API response.",
+      "reason": "The pinned release's CompressResult(lock_holder=) and render_compress_result must render a lock skip as the message chat.compress returns, without a commit token.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_edit_diff.py::test_a_write_file_edit_carries_its_diff_live_and_on_the_persisted_row": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a write file edit carries its diff live and on the persisted row. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_chat_edit_diff.py::test_an_agent_without_the_metadata_callback_keeps_the_live_diff": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an agent without the metadata callback keeps the live diff. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real agent.display capture_local_edit_snapshot and tool_result_metadata_callback must produce the same write_file diff on the live tool_complete frame and on the metadata the Agent persists. Runs on the Agent interpreter around a real file.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_edit_diff.py::test_a_remote_terminal_backend_yields_no_diff": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a remote terminal backend yields no diff. Uses the real installed release, not a fabricated API response.",
+      "reason": "With TERMINAL_ENV=ssh the real edit-snapshot capture must yield no diff, live or persisted, so a remote edit never shows the host file's diff.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_fallback.py::test_turns_carry_the_profile_fallback_chain_and_rebuild_when_it_changes": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: turns carry the profile fallback chain and rebuild when it changes. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's config reader and fallback-chain resolver (fallback_providers then fallback_model, deduplicated) must feed AIAgent(fallback_model=), and a chain edit must change the cache signature.",
       "cases": [
         ""
       ]
@@ -625,7 +590,7 @@
     },
     "tests/test_chat_next_turn_threshold.py::test_next_turn_threshold_is_the_primary_runtimes_after_a_fallback_turn": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: next turn threshold is the primary runtimes after a fallback turn. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real ContextCompressor keeps a fallback's threshold after a fallback turn while the Agent restores the primary runtime next turn; next_turn_threshold_tokens must report the primary's threshold.",
       "cases": [
         ""
       ]
@@ -641,42 +606,42 @@
     },
     "tests/test_context_window_source.py::test_live_agent_and_lookup_report_the_agents_marker": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: the window's pinned or fallback marker on a live compressor and on the no-agent lookup. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's agent.context_pin markers must label a pinned or fallback window, and no label for a detected one, both on a live ContextCompressor and on the no-agent models.context_length lookup; only metadata network lookups are stubbed.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_prefill.py::test_turns_send_the_profile_prefill_and_follow_its_edits": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: turns send the profile prefill and follow its edits. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's prefill_messages_file loader must put the profile's prefill rows on the wire ahead of the user turn and follow file edits, empty and missing files. Real sidecar process and stub model capture the request bytes.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_provider_routing.py::test_turns_carry_the_profile_provider_routing_and_rebuild_when_it_changes": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: turns carry the profile OpenRouter provider routing and rebuild when it changes. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's config must map provider_routing and openrouter.min_coding_score to the AIAgent OpenRouter kwargs the Agent CLI uses, and a routing edit must rebuild the cached agent.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_refine.py::test_refine_reviews_the_conversation_on_the_session_agent_in_its_profile": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: refine reviews the conversation on the session agent in its profile. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real background review fork must run /refine's review on the session agent with the call's secret scope and profile home propagated to its thread (propagate_context_to_thread), so its memory and skill writes land in that profile.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_request_overrides.py::test_main_model_turns_carry_service_tier_and_extra_body": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: main model turns carry service tier and extra body. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's model config (service_tier, extra_body) must reach AIAgent(request_overrides=) for main-model turns.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_request_overrides.py::test_turn_speed_uses_agent_route_resolver": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: turn speed uses agent route resolver. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's model_supports_ultrafast and route resolver decide service_tier per model, provider and base URL; each row is a different resolver branch.",
       "cases": [
         "[gpt-6-astra-openai-codex-ultrafast-https://chatgpt.com/backend-api/codex-expected0]",
         "[gpt-6-sol-openai-codex-priority-https://chatgpt.com/backend-api/codex-expected1]",
@@ -687,14 +652,14 @@
     },
     "tests/test_chat_request_overrides.py::test_custom_provider_extra_body_reaches_chat_and_compress": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: custom provider extra body reaches chat and compress. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's custom-provider resolver extra_body must reach both build sites, the turn agent and the compression agent.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_skill_secret.py::test_skill_secret_through_real_skill_and_worker": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: skill secret through real skill and worker. Uses the real installed release, not a fabricated API response.",
+      "reason": "Security: the real skills_tool secret setup through bind_turn_secret_capture and save_env_value_secure must keep the value out of frames, stderr and the worker's process environment and store it in the profile's .env, for each outcome the sidecar's prompt and fence produce.",
       "cases": [
         "[submitted]",
         "[concurrent]",
@@ -713,35 +678,35 @@
     },
     "tests/test_chat_state_db.py::test_a_web_turn_writes_its_session_and_messages_to_state_db": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a web turn writes its session and messages to state db. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real SessionDB must record a Web turn's session and messages under the Web session id in the profile's state.db.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_state_db.py::test_a_btw_side_question_stays_out_of_state_db": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a btw side question stays out of state db. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real Agent must not persist a /btw side question to state.db.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_state_db.py::test_server_generated_title_survives_a_cached_agent_turn": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: server generated title survives a cached agent turn. Uses the real installed release, not a fabricated API response.",
+      "reason": "A cached agent's next turn must keep the title the server wrote to the real SessionDB row.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_state_db.py::test_an_agent_rebuilt_after_restart_runs_on_the_compression_tip": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an agent rebuilt after restart runs on the compression tip. Uses the real installed release, not a fabricated API response.",
+      "reason": "An agent rebuilt in a fresh sidecar must continue a compressed session on its live tip as the real SessionDB lineage records it.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_todo.py::test_a_todo_tool_call_carries_its_whole_result": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a todo tool call carries its whole result. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's todo tool, called directly and through the deferred tool_call bridge, must reach on_tool_complete with its whole result so todo_result carries it.",
       "cases": [
         "[bridged]",
         "[direct]"
@@ -749,7 +714,7 @@
     },
     "tests/test_chat_tool_limit.py::test_an_exhausted_tool_budget_reports_the_limit_and_the_agents_summary_request": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an exhausted tool budget reports the limit and the agents summary request. Uses the real installed release, not a fabricated API response.",
+      "reason": "The stand-in agent ends on max_iterations_reached; the real part is agent.context_compressor.MAX_ITERATIONS_SUMMARY_REQUEST, whose text chat.start forwards so the server can drop the Agent's summary row. Each release must still export it there.",
       "cases": [
         ""
       ]
@@ -819,7 +784,7 @@
     },
     "tests/test_chat_vault.py::test_vault_prompts_through_chat_start": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: vault prompts through chat start. Uses the real installed release, not a fabricated API response.",
+      "reason": "Security: the real browser_vault_* tools must reach the sidecar's per-thread unlock, save-login and code prompts, never put the answer in a frame, and map submit, decline, cancel and expiry to the tool results the release defines.",
       "cases": [
         "[submitted-unlock]",
         "[submitted-save_login]",
@@ -833,21 +798,14 @@
     },
     "tests/test_chat_vault.py::test_unlock_answered_after_the_session_ended_is_released": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: unlock answered after the session ended is released. Uses the real installed release, not a fabricated API response.",
+      "reason": "Security: the real vault unlock store must re-lock an unlock answered after its session ended.",
       "cases": [
         ""
       ]
     },
     "tests/test_chat_workspace_hints.py::test_a_turn_loads_the_local_workspace_subdirectory_hint_and_a_workspace_change_rebuilds_the_agent": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a turn loads the local workspace subdirectory hint and a workspace change rebuilds the agent. Uses the real installed release, not a fabricated API response.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_chat_workspace_hints.py::test_an_agent_without_the_cwd_kwarg_is_built_as_before": {
-      "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an agent without the cwd kwarg is built as before. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's subdirectory-hint discovery must load AGENTS.md under a local workspace passed as AIAgent(cwd=), skip it for a remote workspace, and a workspace change must rebuild the agent. Real sidecar process and stub model.",
       "cases": [
         ""
       ]
@@ -1594,35 +1552,35 @@
     },
     "tests/test_mcp_discovery.py::test_first_turn_after_a_restart_exposes_the_profiles_mcp_tools": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: first turn after a restart exposes the profiles mcp tools. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real discover_mcp_tools and model_tools must connect a stub stdio MCP server and give a fresh sidecar's first agent its tools, with one discovery.",
       "cases": [
         ""
       ]
     },
     "tests/test_mcp_discovery.py::test_reload_mcp_in_one_profile_leaves_another_profiles_servers_connected": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: reload mcp in one profile leaves another profiles servers connected. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real MCP client's per-scope connections must let /reload-mcp in one profile tear down only that profile's servers.",
       "cases": [
         ""
       ]
     },
     "tests/test_mcp_discovery.py::test_launch_reload_after_multiplexing_starts_replaces_its_earlier_unscoped_connections": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: launch reload after multiplexing starts replaces its earlier unscoped connections. Uses the real installed release, not a fabricated API response.",
+      "reason": "Unscoped connections the release opened at launch must be retired by the first scoped reload once multiplexing starts.",
       "cases": [
         ""
       ]
     },
     "tests/test_mcp_discovery.py::test_reload_refreshes_only_the_reloaded_profiles_cached_agents": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: reload refreshes only the reloaded profiles cached agents. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real refresh_agent_mcp_tools must refresh only the reloaded profile's cached agents, and an agent whose refresh fails is evicted.",
       "cases": [
         ""
       ]
     },
     "tests/test_mcp_discovery.py::test_catalog_discovers_mcp_before_any_turn_without_crossing_profiles": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: catalog discovers mcp before any turn without crossing profiles. Uses the real installed release, not a fabricated API response.",
+      "reason": "toolsets.catalog must run the real MCP discovery for its profile before any turn without connecting another profile's servers.",
       "cases": [
         ""
       ]
@@ -1890,32 +1848,30 @@
     },
     "tests/test_post_compression_context.py::test_an_auto_compressed_turn_returns_pruned_context_and_its_estimate": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: an auto compressed turn returns pruned context and its estimate. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real ContextCompressor pruning and estimate_request_tokens_rough must give the post-compression context and estimate; an external context engine stays untouched.",
       "cases": [
         ""
       ]
     },
     "tests/test_post_compression_context.py::test_a_capped_tool_result_keeps_its_failure_outcome": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a capped tool result keeps its failure outcome. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's estimate_tokens_rough and elide_middle must leave room for the failure outcome Talaria appends to a capped tool result.",
       "cases": [
-        "[agent]",
-        "[legacy]"
+        ""
       ]
     },
     "tests/test_post_compression_context.py::test_a_capped_tool_result_uses_the_agents_elision_marker": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a capped tool result uses the agents elision marker. Uses the real installed release, not a fabricated API response.",
+      "reason": "The cut must match the release's own _COMPRESSION_MARKER_RE, which its dispatch guard rejects in a durable write. Shares one probe run with the outcome case.",
       "cases": [
         ""
       ]
     },
     "tests/test_post_compression_context.py::test_post_compression_context_keeps_skill_reload_pointers": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: post compression context keeps skill reload pointers. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's skill_view results, _skill_pruned_marker, _tool_calls_by_id and _lean_recovery_stub must keep reload pointers for pruned skill loads and none for failed or forged ones, with and without the Agent's own pruning.",
       "cases": [
         "[agent]",
-        "[legacy]",
         "[no_prune]"
       ]
     },
@@ -2151,7 +2107,7 @@
     },
     "tests/test_review_cancel.py::test_delete_clear_and_shutdown_cancel_the_admitted_background_review": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: delete clear and shutdown cancel the admitted background review. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real background_review run slot and review idle queue must let delete, clear and shutdown cancel an admitted review and fork no later one, while a model switch leaves it alone.",
       "cases": [
         ""
       ]
@@ -2339,7 +2295,7 @@
     },
     "tests/test_status_events.py::test_pinned_stream_diagnostics_reach_warning_frames": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: pinned stream diagnostics reach warning frames. Uses the real installed release, not a fabricated API response.",
+      "reason": "The release's agent.stream_diag strings, loaded from its package as production loads them, must classify into the warning frames chat.start emits.",
       "cases": [
         "[response]",
         "[tool-call]"
@@ -2355,7 +2311,7 @@
     },
     "tests/test_steer_withdraw.py::test_withdraw_and_send_now_against_the_pinned_agent": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: withdraw and send now against the pinned agent. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real AIAgent steer slot, redirect and drain must agree with withdraw_steer and steer_now on every slot state, including redirect's degrade-to-steer during tools.",
       "cases": [
         ""
       ]
@@ -2582,14 +2538,14 @@
     },
     "tests/test_turn_lease_busy.py::test_a_turn_right_after_stopping_a_stuck_turn_waits_only_until_the_agent_abandons_it": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a turn right after stopping a stuck turn waits only until the agent abandons it. Uses the real installed release, not a fabricated API response.",
+      "reason": "The real durable turn lease in state.db must be abandoned by a stopped stuck turn so the next turn waits only until then. Real sidecar process with a tool that ignores interrupts.",
       "cases": [
         ""
       ]
     },
     "tests/test_turn_lease_busy.py::test_a_turn_while_the_previous_turn_is_still_running_is_refused_as_busy": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: a turn while the previous turn is still running is refused as busy. Uses the real installed release, not a fabricated API response.",
+      "reason": "While the real turn lease is held, a second turn must be refused as session_busy instead of waiting on the lease for 30 minutes.",
       "cases": [
         ""
       ]
