@@ -12,6 +12,8 @@ it. Narrowing is structural for test code and reviewed for production code:
 - Production code narrows only through a rule in app/ci/test-ownership.json: its files, every first-order consumer a
   reviewer checked, and the tests that cover them. A rule whose files gained an unlisted reference or a foreign extension,
   or whose tests are gone, is stale and widens.
+- A test method whose own lines changed, added included, is also listed in its lane's `repeat`: pull request CI runs it
+  repeatedly within a time budget to catch a flaky test before it merges (TAL-2402).
 - Anything else, and anything the scanner cannot read, runs the affected target in full: the hosted target for the App,
   its extensions, resources and project; both targets for TalariaKit sources, the package manifest and shared CI.
 
@@ -267,6 +269,7 @@ class Universe:
         self.units = [decl for decls in self.files.values() for decl in walk(decls)]
         self.trail = set()
         self.scanned = {}  # Name set -> (tests, trail it added): see reached().
+        self.written = set()  # The test methods whose own lines changed: what a pull request repeats (TAL-2402).
         self.declared = {decl.name for decl in self.units if decl.parent is None}  # What the tested revision still has.
         self.superclass = {}
         for decl in self.units:
@@ -383,6 +386,8 @@ class Universe:
                     top.name in self.superclass:  # Present at the tested revision, under a base this target lacks.
                 raise Uncertain(f"cannot tell whether {top.name} is a test class: its superclass is outside {self.target}")
             if cls and len(chain) == 2 and is_test_method(deepest):
+                if lines[number - 1].strip() != "}":  # The diff can pair a neighbour's closing brace with an added method's.
+                    self.written |= self.method(cls, deepest.name)
                 result |= self.method(cls, deepest.name) | self.reached({deepest.name})
             elif cls:
                 member = chain[1] if len(chain) > 1 else None
@@ -519,6 +524,7 @@ def code_changes(before, after):
 class Lane:
     def __init__(self, target):
         self.target, self.full, self.identifiers, self.reasons = target, False, set(), []
+        self.written = set()
 
     def widen(self, reason):
         self.full = True
@@ -529,11 +535,13 @@ class Lane:
         self.reasons.append(reason)
 
     def result(self):
+        # `repeat`: the test methods the diff adds or changes, whatever the lane's mode; CI repeats them (TAL-2402).
+        repeat = sorted(self.written)
         if self.full:
-            return {"mode": "full", "identifiers": [self.target], "reasons": self.reasons}
+            return {"mode": "full", "identifiers": [self.target], "reasons": self.reasons, "repeat": repeat}
         identifiers = collapse(self.identifiers)
         return {"mode": "explicit" if identifiers else "empty", "identifiers": identifiers,
-                "reasons": self.reasons or ["No changed path reaches this target."]}
+                "reasons": self.reasons or ["No changed path reaches this target."], "repeat": repeat}
 
 
 def collapse(identifiers):
@@ -637,7 +645,7 @@ class Planner:
             if not isinstance(universe, Universe):
                 lane.widen(f"{path}: {universe}.")
                 continue
-            found, universe.trail = set(), set()
+            found, universe.trail, universe.written = set(), set(), set()
             for text, numbers in sides:
                 if text is not None and numbers:
                     decls, lines = scan(text, path)
@@ -645,6 +653,7 @@ class Planner:
             trail = sorted(universe.trail)
             via = f", through {', '.join(trail[:8])}{' and more' if len(trail) > 8 else ''}" if trail else ""
             lane.add(found, f"{path}: {len(found)} test identifier(s) reach its changed declarations{via}.")
+            lane.written |= universe.written
 
     def other_file(self, path, deleted):
         readers = (self.ownership or {}).get("readers", {})
@@ -721,7 +730,7 @@ def plan(paths, base, head, tree, suites, path_suites, deleted=frozenset()):
 
 def full_plan(reason, base=None, head=None):
     return {"version": 1, "base": base, "head": head, "lanes": {
-        target: {"mode": "full", "identifiers": [target], "reasons": [reason]} for target in TARGETS}}
+        target: {"mode": "full", "identifiers": [target], "reasons": [reason], "repeat": []} for target in TARGETS}}
 
 
 def describe(result):
@@ -732,4 +741,5 @@ def describe(result):
         lines.append(f"{target} {lane['mode']}{count}")
         lines += [f"  run {identifier}" for identifier in lane["identifiers"] if lane["mode"] == "explicit"]
         lines += [f"  why {reason}" for reason in lane["reasons"]]
+        lines += [f"  repeat {identifier}" for identifier in lane.get("repeat", [])]
     return "\n".join(lines)

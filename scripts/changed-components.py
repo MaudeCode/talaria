@@ -471,6 +471,8 @@ def main():
         print(app_test_plan.describe(app_plan), file=sys.stderr)
         for target, name in ((app_test_plan.PACKAGE, "app_package"), (app_test_plan.HOSTED, "app_hosted")):
             print(f"{name}={app_plan['lanes'][target]['mode']}")
+        # Whether the hosted lane has test methods the diff added or changed: CI repeats them on a simulator (TAL-2402).
+        print(f"app_hosted_repeat={str(bool(app_plan['lanes'][app_test_plan.HOSTED]['repeat'])).lower()}")
         print(f"app_plan={json.dumps(app_plan, separators=(',', ':'))}")
 
 

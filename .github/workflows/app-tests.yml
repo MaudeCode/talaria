@@ -26,6 +26,10 @@
 #       job, then named "App selected package tests", or in hosted mode's build job, then named "App build and selected
 #       package tests"; an explicit hosted lane runs only its identifiers. ci.yml passes package_tests false for an empty
 #       package lane. Main pushes, manual runs and releases pass no plan, so they always run both targets in full.
+#       Each lane's `repeat` lists the test methods the diff added or changed (TAL-2402). Hosted ones run in one more
+#       shard, "App repeated tests"; TalariaKit ones in their own job from the start, "App repeated package tests". Both
+#       repeat until the first failure or their fixed time budget (ci/hosted-test-shard). hosted_lane empty with a plan
+#       runs only the hosted repeats.
 #     diagnostic: true for a focused diagnostic (app-test-diagnostics.yml): its failing tests post commit statuses under
 #       its own run's name, never a CI shard's. repetitions: its attempts (default 1); more than one runs the hosted
 #       lane on one simulator with -test-iterations and -run-tests-until-failure.
@@ -40,7 +44,8 @@
 # jobs API for the build's upload from before its boot (TAL-405), and queues only once the build holds a runner
 # (TAL-413), so it never holds a macOS slot its own build is still queued for. In hosted mode the build job and the four
 # shards fill the five slots: the package tests run in the build job after its upload, so no shard waits on them
-# (TAL-1891). In build and contracts modes they run in their own job (TAL-1896), beside the build if there is one.
+# (TAL-1891). In build and contracts modes they run in their own job (TAL-1896), beside the build if there is one, and
+# so do a selective or repeat-only hosted run's, whose few shards leave slots to spare (TAL-2402).
 
 name: App tests
 
@@ -88,12 +93,12 @@ defaults:
 env:
   # The build job the test job waits for.
   # A subset of the package tests in the build job renames it, so it never reports under the full suite's name.
-  BUILD_JOB: ${{ inputs.mode == 'hosted' && inputs.package_lane == 'explicit' && 'App build and selected package tests' || 'App build' }}
+  BUILD_JOB: ${{ inputs.mode == 'hosted' && inputs.hosted_lane == 'full' && inputs.package_lane == 'explicit' && 'App build and selected package tests' || 'App build' }}
   BUILD_ARTIFACT: app-test-build
 
 jobs:
   app-build:
-    name: ${{ inputs.mode == 'hosted' && inputs.package_lane == 'explicit' && 'App build and selected package tests' || 'App build' }}
+    name: ${{ inputs.mode == 'hosted' && inputs.hosted_lane == 'full' && inputs.package_lane == 'explicit' && 'App build and selected package tests' || 'App build' }}
     # Hosted mode builds on its own runner while the test jobs boot their simulators, then runs the package tests after
     # its upload, whatever the build's result (TAL-1891). Build mode has nothing to upload, and its package tests run
     # beside it in their own job. A contract-only change leaves the App sources alone, so it needs no build.
@@ -154,7 +159,7 @@ jobs:
           if-no-files-found: error
 
       - name: Run the package tests
-        if: ${{ !cancelled() && inputs.mode == 'hosted' && inputs.package_tests }}
+        if: ${{ !cancelled() && inputs.mode == 'hosted' && inputs.hosted_lane == 'full' && inputs.package_tests }}
         uses: ./.github/actions/app-package-tests
         with:
           contracts: ${{ inputs.contracts }}
@@ -165,7 +170,9 @@ jobs:
     # Build mode's and contracts mode's package tests, on their own runner from the start. Hosted mode runs them in
     # app-build. An explicit lane runs here under its own name, so a subset never reports as the full suite.
     name: ${{ inputs.package_lane == 'explicit' && 'App selected package tests' || 'App package tests' }}
-    if: inputs.mode != 'hosted' && inputs.package_tests
+    # A selective or repeat-only hosted run has slots to spare, and its package tests would otherwise wait for the
+    # build's upload (TAL-2402).
+    if: (inputs.mode != 'hosted' || inputs.hosted_lane != 'full') && inputs.package_tests
     runs-on: xcode-27
     timeout-minutes: 30
     permissions:
@@ -186,6 +193,44 @@ jobs:
           contracts: ${{ inputs.contracts }}
           plan: ${{ inputs.package_lane == 'explicit' && inputs.plan || '' }}
           failure_status: ${{ inputs.package_lane == 'explicit' && 'App selected package test failures' || 'App package test failures' }}
+
+  package-repeat:
+    # The TalariaKit test methods a pull request added or changed, repeated on their own runner from the start, beside
+    # the build, until the first failure or the budget (TAL-2402). A detector, not a retry: any failing attempt fails it.
+    name: App repeated package tests
+    if: fromJSON(inputs.plan || '{}').lanes.TalariaKitTests.repeat[0] != null
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - uses: ./.github/actions/setup-xcode
+
+      - uses: ./.github/actions/setup-bash
+
+      - name: Repeat the added and changed package tests
+        env:
+          PLAN: ${{ inputs.plan }}
+          TALARIA_PACKAGE_RESULTS: ${{ runner.temp }}/package-repeats
+        run: |
+          set -euo pipefail
+          printf '%s' "${PLAN}" > "${RUNNER_TEMP}/plan.json"
+          # shellcheck disable=SC2046 # One validated argument per line.
+          scripts/test-package $(ci/hosted-test-shard package-repeat "${RUNNER_TEMP}/plan.json") | tee -a "${GITHUB_STEP_SUMMARY}"
+
+      - name: Hold each test inside the run-time budget
+        run: python3 ../scripts/check-test-durations.py "${RUNNER_TEMP}"/package-repeats/attempt-*.log
+
+      - name: Upload the attempts' logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-package-repeats
+          path: ${{ runner.temp }}/package-repeats/
+          retention-days: 14
+          if-no-files-found: ignore
 
   build-started:
     # Two suites queued together once filled all five hosted macOS slots with test jobs waiting for builds that never
@@ -234,12 +279,20 @@ jobs:
           HOSTED_LANE: ${{ inputs.hosted_lane }}
           REPETITIONS: ${{ inputs.repetitions }}
           SHARDS_AT_ONCE: ${{ inputs.shards_at_once }}
+          # The package tests' own job beside the build in a selective hosted run takes a slot (TAL-2402).
+          PACKAGE_JOB: ${{ inputs.hosted_lane != 'full' && inputs.package_tests }}
         run: |
           set -euo pipefail
-          if [[ -n "${PLAN}" && "${HOSTED_LANE}" != "full" ]]; then
-            jq '.lanes.TalariaTests' <<< "${PLAN}" > "${RUNNER_TEMP}/lane.json"
-          else
-            echo '{"mode":"full","identifiers":["TalariaTests"]}' > "${RUNNER_TEMP}/lane.json"
+          # The plan's hosted lane at the mode this run gives it, with its repeats (TAL-2402); a package test or repeat job
+          # takes a macOS slot beside the shards.
+          echo '{"mode":"full","identifiers":["TalariaTests"]}' > "${RUNNER_TEMP}/lane.json"
+          export RESERVED_SLOTS=0
+          [[ "${PACKAGE_JOB}" != true ]] || RESERVED_SLOTS=1
+          if [[ -n "${PLAN}" ]]; then
+            jq --arg lane "${HOSTED_LANE}" '.lanes.TalariaTests | .mode = $lane
+              | if $lane == "full" then .identifiers = ["TalariaTests"] elif $lane == "empty" then .identifiers = [] else . end' \
+              <<< "${PLAN}" > "${RUNNER_TEMP}/lane.json"
+            RESERVED_SLOTS=$(( RESERVED_SLOTS + $(jq '[.lanes.TalariaKitTests.repeat // [] | select(length > 0)] | length' <<< "${PLAN}") ))
           fi
           # Read-only and bounded: an unavailable or stale observation plans as a quiet pool.
           ci/hosted-test-shard capacity > "${RUNNER_TEMP}/capacity.json" || echo '{}' > "${RUNNER_TEMP}/capacity.json"
@@ -255,7 +308,8 @@ jobs:
     # build's upload, prepares the simulator in the background while it waits for and downloads the build, then runs
     # its shard of the hosted unit tests (TalariaTests). "App build started" planned the shards: one to four, balanced
     # from measured times (ci/hosted-test-shard). A full run's last shard also runs any class the planner missed.
-    name: ${{ inputs.hosted_lane == 'explicit' && 'App selected hosted tests' || 'App hosted tests' }} ${{ matrix.shard }}
+    # The repeat shard (TAL-2402) carries its own name and status, never a lane's.
+    name: ${{ matrix.repeat && 'App repeated tests' || format('{0} {1}', inputs.hosted_lane == 'explicit' && 'App selected hosted tests' || 'App hosted tests', matrix.shard) }}
     needs: build-started
     if: inputs.mode == 'hosted'
     strategy:
@@ -276,7 +330,7 @@ jobs:
     env:
       # One commit status per shard: a passing shard's success must not replace another shard's failure. A selected
       # run's statuses are its own, so they never replace a full run's; a diagnostic posts none.
-      FAILURE_STATUS: ${{ inputs.diagnostic && format('App test diagnostics {0}', github.run_id) || format('{0} {1}', inputs.hosted_lane == 'explicit' && 'App selected hosted test failures' || 'App hosted test failures', matrix.shard) }}
+      FAILURE_STATUS: ${{ inputs.diagnostic && format('App test diagnostics {0}', github.run_id) || matrix.repeat && 'App repeated test failures' || format('{0} {1}', inputs.hosted_lane == 'explicit' && 'App selected hosted test failures' || 'App hosted test failures', matrix.shard) }}
       SHARD: ${{ matrix.shard }}
       SHARD_PLAN: ${{ toJSON(matrix) }}
       RESULT_BUNDLE_PATH: TestResults.xcresult
@@ -418,6 +472,12 @@ jobs:
             # shellcheck disable=SC2046 # One-word options, as in "Prepare the simulator".
             scripts/prepare-ui-simulator $(ci/hosted-test-shard prepare-options "${RUNNER_TEMP}/shard.json") "${simulator_id}"
           }
+          # The repeat shard stops at its budget once each planned test completed one attempt (TAL-2402).
+          if [[ "$(jq -r '.repeat // false' "${RUNNER_TEMP}/shard.json")" == true ]]; then
+            TALARIA_TEST_BUDGET=$(jq -r .budget "${RUNNER_TEMP}/shard.json")
+            TALARIA_TEST_BUDGET_AFTER=$(jq '.planned | length' "${RUNNER_TEMP}/shard.json")
+            export TALARIA_TEST_BUDGET TALARIA_TEST_BUDGET_AFTER
+          fi
           status=0
           xctest_launch "${RESULT_BUNDLE_PATH}" "${XCODEBUILD_LOG}" \
             -xctestrun "${xctestrun[0]}" \
@@ -444,9 +504,21 @@ jobs:
             echo '{}' > hosted-cases/results.json
           ci/hosted-test-shard cases hosted-cases/results.json > "hosted-cases/shard-${SHARD}.txt"
           echo "${duration_seconds}" > "hosted-cases/shard-${SHARD}.time"
-          # A focused diagnostic's attempts: how many completed and the first that failed (TAL-2390).
-          [[ "$(jq -r '.repetitions // 1' "${RUNNER_TEMP}/shard.json")" == 1 ]] ||
+          # The repeat shard's verdict: each planned test's attempts, and any failing one fails it; an attempt only the
+          # budget interrupted is not a failure (TAL-2402). A focused diagnostic's attempts: how many completed and the
+          # first that failed (TAL-2390).
+          if [[ -n "${TALARIA_TEST_BUDGET:-}" ]]; then
+            verdict=0
+            ci/hosted-test-shard repeated "${RUNNER_TEMP}/shard.json" hosted-cases/results.json "${xctest_budget_spent}" |
+              tee -a "${GITHUB_STEP_SUMMARY}" || verdict=$?
+            if [[ "${status}" != 70 && "${xctest_budget_spent}" == 1 ]]; then
+              status=${verdict}
+            elif [[ "${status}" == 0 ]]; then
+              status=${verdict}
+            fi
+          elif [[ "$(jq -r '.repetitions // 1' "${RUNNER_TEMP}/shard.json")" != 1 ]]; then
             ci/hosted-test-shard attempts hosted-cases/results.json | tee -a "${GITHUB_STEP_SUMMARY}"
+          fi
           rm hosted-cases/results.json
           # A passing run replaces an earlier run's failure status on this commit with success.
           [[ "${status}" != 0 ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "${FAILURE_STATUS}"
@@ -599,7 +671,7 @@ jobs:
     # rather than testing again (TAL-1550). An explicit lane's gate is app-test-selected-gate, never this job.
     name: App hosted tests
     needs: [build-started, app-test]
-    if: inputs.mode == 'hosted' && inputs.hosted_lane != 'explicit'
+    if: inputs.mode == 'hosted' && inputs.hosted_lane == 'full'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

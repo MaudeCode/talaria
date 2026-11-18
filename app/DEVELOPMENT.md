@@ -57,9 +57,12 @@ the view models and presentation logic behind every screen (chat, sessions,
 Kanban, settings, workspace, auth). The App, the share extension and the Live
 Activity widget link it. Its tests run on macOS without a simulator; CI runs
 them on every App change, beside the App build for testing. The
-simulator-hosted `TalariaTests` run on `main` pushes, at release and on pull
-requests labelled `hosted-tests`. A pull request runs only the tests its diff
-reaches ([Run the tests a change affects](#run-the-tests-a-change-affects)):
+simulator-hosted `TalariaTests` run in full on `main` pushes, at release and on
+pull requests labelled `hosted-tests`. A pull request runs only the tests its
+diff reaches ([Run the tests a change affects](#run-the-tests-a-change-affects)),
+hosted ones included without the label, and repeats each test method it adds or
+changes for up to 50 attempts within 90 s (hosted) or 60 s (TalariaKit), so a
+flaky test fails the pull request that wrote it (TAL-2402):
 
 ```zsh
 swift test --package-path TalariaKit

@@ -7,6 +7,9 @@
 #   xctest_launch RESULT_BUNDLE OUTPUT_LOG XCODEBUILD_ARGUMENT...
 #
 # Runs the tests once, appending xcodebuild's output to OUTPUT_LOG as well as stdout, and returns xcodebuild's status.
+# TALARIA_TEST_BUDGET=SECONDS bounds a repeated run (TAL-2402): once the runner connected, at least
+# TALARIA_TEST_BUDGET_AFTER tests finished (one complete attempt) and SECONDS passed, it interrupts xcodebuild and sets
+# xctest_budget_spent=1. The interrupted attempt then reads "Testing was canceled" (ci/hosted-test-shard repeated).
 # A fault before the test runner connects, when no test can have run, gets one relaunch after `xctest_recover`; if the
 # relaunch faults too, it returns 70, a runner fault rather than a test failure. The faulted attempt's bundle moves to
 # RESULT_BUNDLE's name with -launch-1. Once the runner connected, xcodebuild's status stands: nothing is retried.
@@ -29,6 +32,7 @@
 shopt -s nullglob globstar
 
 xcodebuild_pid=""
+xctest_budget_spent=0
 xctest_launch_faults='Failed to (install or launch the test runner|prepare device)|simulator runtime is not available|Lost pending connection to the test runner|never finished bootstrapping'
 
 # Bash's SECONDS ticks on wall-clock second boundaries, so a 1 s budget could expire at once; time it in microseconds.
@@ -63,6 +67,24 @@ xctest_recover_once() {
     [[ ! -e "$result_bundle" ]] || mv "$result_bundle" "${result_bundle%.xcresult}-launch-1.xcresult"
     xctest_recover || { echo "Recovering the simulator failed; stopping the run as a runner fault." >&2; return 70; }
     attempt=2
+}
+
+# Interrupts xcodebuild once the budget is spent after the first complete attempt; returns when xcodebuild ends.
+xctest_watch_budget() {
+    local stream=$1 started finished
+    started=$(now_us)
+    while kill -0 "$xcodebuild_pid" 2>/dev/null; do
+        if (( $(now_us) - started >= TALARIA_TEST_BUDGET * 1000000 )); then
+            finished=$(( $({ grep -o '"_value":"testFinished"' "$stream" || true; } | wc -l) ))
+            if (( finished >= ${TALARIA_TEST_BUDGET_AFTER:-1} )); then
+                echo "The ${TALARIA_TEST_BUDGET}s test budget is spent after ${finished} finished test(s); stopping the run."
+                xctest_budget_spent=1
+                kill -INT "$xcodebuild_pid" 2>/dev/null || true
+                return
+            fi
+        fi
+        sleep 1
+    done
 }
 
 xctest_launch() {
@@ -115,6 +137,7 @@ xctest_launch() {
         done
         if ! kill -0 "$xcodebuild_pid" 2>/dev/null || runner_connected; then
             ! runner_connected || echo "The test runner connected after $(( ($(now_us) - connect_started) / 1000000 ))s."
+            [[ -z "${TALARIA_TEST_BUDGET:-}" ]] || xctest_watch_budget "$result_stream"
             status=0
             wait "$xcodebuild_pid" || status=$?
             xcodebuild_pid=""
