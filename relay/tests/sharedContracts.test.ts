@@ -14,6 +14,10 @@ const fixture = (name: string) => readFileSync(new URL(`../../contracts/fixtures
 
 const now = 1_800_000_000_000;
 
+// Fake timers hold the clock, convex-test's scheduler and the APNs workpool for every contract test.
+beforeEach(() => { vi.useFakeTimers({ now }); });
+afterEach(() => { vi.useRealTimers(); });
+
 // A synthetic relay with one enrolled publisher profile (prf_default) and one signed-in device.
 async function relayWithPublisher() {
   const backend = convexTest(schema, modules);
@@ -98,53 +102,43 @@ it.each([
   ["its fixture", (body: string) => body],
   ["none of the optional run fields", withoutRunFields],
 ])("accepts a Web publisher sending %s and App registration, then returns the shared App snapshot", async (_, publish) => {
-  const clock = vi.spyOn(Date, "now").mockReturnValue(now);
-  try {
-    const { backend, signedPut } = await relayWithPublisher();
-    const body = publish(fixture("publisher-snapshot"));
-    const response = await signedPut(publisherPath("prf_default", "snapshot"), body);
-    expect(response.status).toBe(200);
-    const headers = { authorization: "Bearer contract-session-token", "x-talaria-device-id": "contract-device" };
-    const snapshot = await backend.fetch("/v1/activity-snapshot?mode=all_running", { headers });
-    expect(snapshot.status).toBe(200);
-    expect(await snapshot.json()).toEqual(expectedAppSnapshot(body));
-    const registration = await backend.fetch("/v1/devices/contract-device/live-activities/contract-activity", {
-      method: "PUT", headers: { ...headers, "content-type": "application/json" }, body: fixture("app-registration"),
-    });
-    expect(registration.status).toBe(200);
-  } finally {
-    clock.mockRestore();
-  }
+  const { backend, signedPut } = await relayWithPublisher();
+  const body = publish(fixture("publisher-snapshot"));
+  const response = await signedPut(publisherPath("prf_default", "snapshot"), body);
+  expect(response.status).toBe(200);
+  const headers = { authorization: "Bearer contract-session-token", "x-talaria-device-id": "contract-device" };
+  const snapshot = await backend.fetch("/v1/activity-snapshot?mode=all_running", { headers });
+  expect(snapshot.status).toBe(200);
+  expect(await snapshot.json()).toEqual(expectedAppSnapshot(body));
+  const registration = await backend.fetch("/v1/devices/contract-device/live-activities/contract-activity", {
+    method: "PUT", headers: { ...headers, "content-type": "application/json" }, body: fixture("app-registration"),
+  });
+  expect(registration.status).toBe(200);
 });
 
 it("accepts only the bounded session-started fields for the publisher's own profile", async () => {
-  const clock = vi.spyOn(Date, "now").mockReturnValue(now);
-  try {
-    const { signedPut } = await relayWithPublisher();
-    const body = fixture("publisher-session-started");
-    const event = JSON.parse(body) as Record<string, unknown>;
-    const path = publisherPath("prf_default", "sessions/contract-session/started");
-    expect((await signedPut(path, body)).status).toBe(200);
-    for (const invalid of [
-      { ...event, title: "Contract fixture" },
-      { ...event, version: 2 },
-      { ...event, sessionId: "another-session" },
-      { ...event, eventId: "e".repeat(201) },
-      { ...event, startedAt: 1.5 },
-    ]) {
-      expect((await signedPut(path, JSON.stringify(invalid))).status).toBe(400);
-    }
-    // Another profile's scope: the body cannot name it, and the publisher holds no grant for its path.
-    expect((await signedPut(path, JSON.stringify({ ...event, profileId: "prf_other" }))).status).toBe(403);
-    const other = await signedPut(
-      publisherPath("prf_other", "sessions/contract-session/started"),
-      JSON.stringify({ ...event, profileId: "prf_other" }),
-    );
-    expect(other.status).toBe(409);
-    expect(await other.json()).toEqual({ status: "unauthorized" });
-  } finally {
-    clock.mockRestore();
+  const { signedPut } = await relayWithPublisher();
+  const body = fixture("publisher-session-started");
+  const event = JSON.parse(body) as Record<string, unknown>;
+  const path = publisherPath("prf_default", "sessions/contract-session/started");
+  expect((await signedPut(path, body)).status).toBe(200);
+  for (const invalid of [
+    { ...event, title: "Contract fixture" },
+    { ...event, version: 2 },
+    { ...event, sessionId: "another-session" },
+    { ...event, eventId: "e".repeat(201) },
+    { ...event, startedAt: 1.5 },
+  ]) {
+    expect((await signedPut(path, JSON.stringify(invalid))).status).toBe(400);
   }
+  // Another profile's scope: the body cannot name it, and the publisher holds no grant for its path.
+  expect((await signedPut(path, JSON.stringify({ ...event, profileId: "prf_other" }))).status).toBe(403);
+  const other = await signedPut(
+    publisherPath("prf_other", "sessions/contract-session/started"),
+    JSON.stringify({ ...event, profileId: "prf_other" }),
+  );
+  expect(other.status).toBe(409);
+  expect(await other.json()).toEqual({ status: "unauthorized" });
 });
 
 // TAL-868, TAL-874: the run's start times the activity; its tool count and last activity replace the lock screen's
@@ -169,8 +163,6 @@ describe("relay-pushed Live Activity run fields", () => {
     Object.assign(body.states[0]!, fields);
     return (await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(body))).status;
   };
-  beforeEach(() => { vi.useFakeTimers({ now }); });
-  afterEach(() => { vi.useRealTimers(); });
 
   it("maps the run's start, tool count and last activity into a relay-pushed Live Activity", async () => {
     const { backend, signedPut } = await relayWithPublisher();
@@ -231,96 +223,85 @@ describe("relay-pushed Live Activity run fields", () => {
 // TAL-1422: plan and worker counts reach only their own session's activity, a repeat of unchanged counts pushes nothing,
 // and the publisher's zeros clear what the activity showed.
 it("updates, fences and clears a relay-pushed Live Activity's plan and worker counts", async () => {
-  let clock = now;
-  const spy = vi.spyOn(Date, "now").mockImplementation(() => clock);
-  try {
-    const { backend, signedPut } = await relayWithPublisher();
-    let revision = 0;
-    const publish = async (counts: { planCompleted: number; planTotal: number; workerCount: number }) => {
-      revision += 1;
-      const body = JSON.parse(fixture("publisher-snapshot")) as { snapshotId: string; states: Record<string, unknown>[] };
-      body.snapshotId = `contract-snapshot-${String(revision)}`;
-      const state = body.states[0]!;
-      body.states = [
-        { ...state, ...counts, revision: now + revision, eventId: `snapshot:${String(now + revision)}:contract-session` },
-        // Another chat of the same publisher and profile, with its own counts.
-        { ...state, sessionId: "other-session", streamId: "other-stream", deepLink: "/sessions/other-session", planCompleted: 9, planTotal: 9_999, workerCount: 9_999, revision: now + revision, eventId: `snapshot:${String(now + revision)}:other-session` },
-      ];
-      expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(body))).status).toBe(200);
-      await backend.mutation(internal.delivery.recompute, { userId: "contract-user" });
-    };
-    const contentStates = async () => (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect()))
-      .filter((job) => job.kind === "live_activity_update" && job.activityId === "contract-activity")
-      .map((job) => JSON.parse(job.request.payloadJson).aps["content-state"] as Record<string, unknown>);
-    await publish({ planCompleted: 2, planTotal: 5, workerCount: 3 });
-    const headers = { authorization: "Bearer contract-session-token", "x-talaria-device-id": "contract-device", "content-type": "application/json" };
-    expect((await backend.fetch("/v1/devices/contract-device/live-activities/contract-activity", { method: "PUT", headers, body: fixture("app-registration") })).status).toBe(200);
+  const { backend, signedPut } = await relayWithPublisher();
+  let revision = 0;
+  const publish = async (counts: { planCompleted: number; planTotal: number; workerCount: number }) => {
+    revision += 1;
+    const body = JSON.parse(fixture("publisher-snapshot")) as { snapshotId: string; states: Record<string, unknown>[] };
+    body.snapshotId = `contract-snapshot-${String(revision)}`;
+    const state = body.states[0]!;
+    body.states = [
+      { ...state, ...counts, revision: now + revision, eventId: `snapshot:${String(now + revision)}:contract-session` },
+      // Another chat of the same publisher and profile, with its own counts.
+      { ...state, sessionId: "other-session", streamId: "other-stream", deepLink: "/sessions/other-session", planCompleted: 9, planTotal: 9_999, workerCount: 9_999, revision: now + revision, eventId: `snapshot:${String(now + revision)}:other-session` },
+    ];
+    expect((await signedPut(publisherPath("prf_default", "snapshot"), JSON.stringify(body))).status).toBe(200);
     await backend.mutation(internal.delivery.recompute, { userId: "contract-user" });
-    expect((await contentStates()).at(-1)).toMatchObject({ sessionID: "contract-session", planCompleted: 2, planTotal: 5, workerCount: 3 });
-    // APNs accepted that push, as the delivery worker records it, whenever the scheduler gets to it.
-    await backend.run(async (ctx) => {
-      const job = (await ctx.db.query("deliveryJobs").collect()).filter((candidate) => candidate.activityId === "contract-activity").at(-1)!;
-      const activity = (await ctx.db.query("liveActivities").collect()).find((candidate) => candidate.activityId === "contract-activity")!;
-      await ctx.db.patch(activity._id, { lastAggregate: job.aggregate, lastDeliveryAt: clock });
-    });
-    const delivered = (await contentStates()).length;
-    // The same counts again, past the update throttle but inside the unchanged-content heartbeat: no new push.
-    clock = now + 60_000;
-    await publish({ planCompleted: 2, planTotal: 5, workerCount: 3 });
-    expect(await contentStates()).toHaveLength(delivered);
-    // A plan item completes and a worker finishes.
-    await publish({ planCompleted: 3, planTotal: 5, workerCount: 2 });
-    expect((await contentStates()).at(-1)).toMatchObject({ planCompleted: 3, planTotal: 5, workerCount: 2 });
-    // The plan completes and the last worker ends: the zeros clear both.
-    clock = now + 120_000;
-    await publish({ planCompleted: 0, planTotal: 0, workerCount: 0 });
-    expect((await contentStates()).at(-1)).toMatchObject({ planCompleted: 0, planTotal: 0, workerCount: 0 });
-  } finally {
-    spy.mockRestore();
-  }
+  };
+  const contentStates = async () => (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect()))
+    .filter((job) => job.kind === "live_activity_update" && job.activityId === "contract-activity")
+    .map((job) => JSON.parse(job.request.payloadJson).aps["content-state"] as Record<string, unknown>);
+  await publish({ planCompleted: 2, planTotal: 5, workerCount: 3 });
+  const headers = { authorization: "Bearer contract-session-token", "x-talaria-device-id": "contract-device", "content-type": "application/json" };
+  expect((await backend.fetch("/v1/devices/contract-device/live-activities/contract-activity", { method: "PUT", headers, body: fixture("app-registration") })).status).toBe(200);
+  await backend.mutation(internal.delivery.recompute, { userId: "contract-user" });
+  expect((await contentStates()).at(-1)).toMatchObject({ sessionID: "contract-session", planCompleted: 2, planTotal: 5, workerCount: 3 });
+  // APNs accepted that push, as the delivery worker records it, whenever the scheduler gets to it.
+  await backend.run(async (ctx) => {
+    const job = (await ctx.db.query("deliveryJobs").collect()).filter((candidate) => candidate.activityId === "contract-activity").at(-1)!;
+    const activity = (await ctx.db.query("liveActivities").collect()).find((candidate) => candidate.activityId === "contract-activity")!;
+    await ctx.db.patch(activity._id, { lastAggregate: job.aggregate, lastDeliveryAt: Date.now() });
+  });
+  const delivered = (await contentStates()).length;
+  // The same counts again, past the update throttle but inside the unchanged-content heartbeat: no new push.
+  vi.setSystemTime(now + 60_000);
+  await publish({ planCompleted: 2, planTotal: 5, workerCount: 3 });
+  expect(await contentStates()).toHaveLength(delivered);
+  // A plan item completes and a worker finishes.
+  await publish({ planCompleted: 3, planTotal: 5, workerCount: 2 });
+  expect((await contentStates()).at(-1)).toMatchObject({ planCompleted: 3, planTotal: 5, workerCount: 2 });
+  // The plan completes and the last worker ends: the zeros clear both.
+  vi.setSystemTime(now + 120_000);
+  await publish({ planCompleted: 0, planTotal: 0, workerCount: 0 });
+  expect((await contentStates()).at(-1)).toMatchObject({ planCompleted: 0, planTotal: 0, workerCount: 0 });
 });
 
 it("alerts a Web publisher's approval queue head with only the shared localized keys", async () => {
-  const clock = vi.spyOn(Date, "now").mockReturnValue(now);
-  try {
-    const { backend, signedPut } = await relayWithPublisher();
-    await backend.run(async (ctx) => {
-      const device = (await ctx.db.query("devices").collect())[0]!;
-      await ctx.db.patch(device._id, {
-        pushToken: "contract-push-token", preferences: { ...defaultNotificationPreferences, notificationsEnabled: true },
-      });
+  const { backend, signedPut } = await relayWithPublisher();
+  await backend.run(async (ctx) => {
+    const device = (await ctx.db.query("devices").collect())[0]!;
+    await ctx.db.patch(device._id, {
+      pushToken: "contract-push-token", preferences: { ...defaultNotificationPreferences, notificationsEnabled: true },
     });
-    const { snapshot, notificationAlert, notificationCategory } = JSON.parse(fixture("relay-approval-alert")) as {
-      snapshot: { snapshotId: string; states: Record<string, unknown>[] }; notificationAlert: Record<string, string>;
-      notificationCategory: string;
-    };
-    const path = publisherPath("prf_default", "snapshot");
-    const running = JSON.parse(fixture("publisher-snapshot")) as { states: { revision: number; eventId: string }[] };
-    running.states[0]!.revision -= 1;
-    running.states[0]!.eventId = `snapshot:${String(running.states[0]!.revision)}:contract-session`;
-    expect((await signedPut(path, JSON.stringify(running))).status).toBe(200);
-    expect((await signedPut(path, JSON.stringify(snapshot))).status).toBe(200);
-    const scheduled = await backend.run(async (ctx) => ctx.db.system.query("_scheduled_functions").collect());
-    for (const job of scheduled) {
-      if (job.name === "delivery:recompute") await backend.mutation(internal.delivery.recompute, (job.args as [never])[0]);
+  });
+  const { snapshot, notificationAlert, notificationCategory } = JSON.parse(fixture("relay-approval-alert")) as {
+    snapshot: { snapshotId: string; states: Record<string, unknown>[] }; notificationAlert: Record<string, string>;
+    notificationCategory: string;
+  };
+  const path = publisherPath("prf_default", "snapshot");
+  const running = JSON.parse(fixture("publisher-snapshot")) as { states: { revision: number; eventId: string }[] };
+  running.states[0]!.revision -= 1;
+  running.states[0]!.eventId = `snapshot:${String(running.states[0]!.revision)}:contract-session`;
+  expect((await signedPut(path, JSON.stringify(running))).status).toBe(200);
+  expect((await signedPut(path, JSON.stringify(snapshot))).status).toBe(200);
+  const scheduled = await backend.run(async (ctx) => ctx.db.system.query("_scheduled_functions").collect());
+  for (const job of scheduled) {
+    if (job.name === "delivery:recompute") await backend.mutation(internal.delivery.recompute, (job.args as [never])[0]);
+  }
+  const notifications = (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect()))
+    .filter((job) => job.kind === "notification");
+  expect(notifications).toHaveLength(1);
+  const payload = JSON.parse(notifications[0]!.request.payloadJson);
+  expect(payload.aps.alert).toEqual(notificationAlert);
+  expect(payload.aps.category).toBe(notificationCategory);
+  expect(payload.approvalHeadId).toBe(snapshot.states[0]!.approvalHeadId);
+  expect(notifications[0]!.request.payloadJson).not.toContain("Contract fixture");
+  // The head is bounded and opaque; anything else rejects the whole snapshot.
+  for (const head of ["", "x".repeat(65), "has/slash", 7]) {
+    for (const field of ["approvalHeadId", "inputHeadId"]) {
+      const invalid = { ...snapshot, states: [{ ...snapshot.states[0], [field]: head }] };
+      expect((await signedPut(path, JSON.stringify(invalid))).status).toBe(400);
     }
-    const notifications = (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect()))
-      .filter((job) => job.kind === "notification");
-    expect(notifications).toHaveLength(1);
-    const payload = JSON.parse(notifications[0]!.request.payloadJson);
-    expect(payload.aps.alert).toEqual(notificationAlert);
-    expect(payload.aps.category).toBe(notificationCategory);
-    expect(payload.approvalHeadId).toBe(snapshot.states[0]!.approvalHeadId);
-    expect(notifications[0]!.request.payloadJson).not.toContain("Contract fixture");
-    // The head is bounded and opaque; anything else rejects the whole snapshot.
-    for (const head of ["", "x".repeat(65), "has/slash", 7]) {
-      for (const field of ["approvalHeadId", "inputHeadId"]) {
-        const invalid = { ...snapshot, states: [{ ...snapshot.states[0], [field]: head }] };
-        expect((await signedPut(path, JSON.stringify(invalid))).status).toBe(400);
-      }
-    }
-  } finally {
-    clock.mockRestore();
   }
 });
 
@@ -333,39 +314,34 @@ it.each([
   ["still alerts a background approval", "background", "waiting_for_approval", {}, ["An agent run is waiting for your approval."]],
   ["still alerts a user completion", "user", "completed", {}, ["Completed on Contract publisher"]],
 ] as const)("%s", async (_, origin, phase, preferences, expected) => {
-  const clock = vi.spyOn(Date, "now").mockReturnValue(now);
-  try {
-    const { backend, signedPut } = await relayWithPublisher();
-    await backend.run(async (ctx) => {
-      const device = (await ctx.db.query("devices").collect())[0]!;
-      await ctx.db.patch(device._id, {
-        pushToken: "contract-push-token", preferences: { ...defaultNotificationPreferences, notificationsEnabled: true, ...preferences },
-      });
+  const { backend, signedPut } = await relayWithPublisher();
+  await backend.run(async (ctx) => {
+    const device = (await ctx.db.query("devices").collect())[0]!;
+    await ctx.db.patch(device._id, {
+      pushToken: "contract-push-token", preferences: { ...defaultNotificationPreferences, notificationsEnabled: true, ...preferences },
     });
-    const path = publisherPath("prf_default", "snapshot");
-    const publish = async (revision: number, statePhase: string) => {
-      const body = JSON.parse(fixture("publisher-snapshot")) as { snapshotId: string; states: Record<string, unknown>[] };
-      const state = body.states[0]!;
-      delete state.alertEligible;
-      Object.assign(state, {
-        origin, phase: statePhase, activityPhase: statePhase, revision, eventId: `snapshot:${String(revision)}:contract-session`,
-        ...(statePhase === "waiting_for_approval" ? { approvalHeadId: "contract-head" } : {}),
-      });
-      body.snapshotId = `contract-snapshot-${String(revision)}`;
-      expect((await signedPut(path, JSON.stringify(body))).status).toBe(200);
-    };
-    await publish(now - 1, "running");
-    await publish(now, phase);
-    const scheduled = await backend.run(async (ctx) => ctx.db.system.query("_scheduled_functions").collect());
-    for (const job of scheduled) {
-      if (job.name === "delivery:recompute") await backend.mutation(internal.delivery.recompute, (job.args as [never])[0]);
-    }
-    const alerts = (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect()))
-      .filter((job) => job.kind === "notification")
-      .map((job) => (JSON.parse(job.request.payloadJson) as { aps: { alert: { body?: string; "loc-key"?: string } } }).aps.alert)
-      .map((alert) => alert.body ?? alert["loc-key"]);
-    expect(alerts).toEqual(expected);
-  } finally {
-    clock.mockRestore();
+  });
+  const path = publisherPath("prf_default", "snapshot");
+  const publish = async (revision: number, statePhase: string) => {
+    const body = JSON.parse(fixture("publisher-snapshot")) as { snapshotId: string; states: Record<string, unknown>[] };
+    const state = body.states[0]!;
+    delete state.alertEligible;
+    Object.assign(state, {
+      origin, phase: statePhase, activityPhase: statePhase, revision, eventId: `snapshot:${String(revision)}:contract-session`,
+      ...(statePhase === "waiting_for_approval" ? { approvalHeadId: "contract-head" } : {}),
+    });
+    body.snapshotId = `contract-snapshot-${String(revision)}`;
+    expect((await signedPut(path, JSON.stringify(body))).status).toBe(200);
+  };
+  await publish(now - 1, "running");
+  await publish(now, phase);
+  const scheduled = await backend.run(async (ctx) => ctx.db.system.query("_scheduled_functions").collect());
+  for (const job of scheduled) {
+    if (job.name === "delivery:recompute") await backend.mutation(internal.delivery.recompute, (job.args as [never])[0]);
   }
+  const alerts = (await backend.run((ctx) => ctx.db.query("deliveryJobs").collect()))
+    .filter((job) => job.kind === "notification")
+    .map((job) => (JSON.parse(job.request.payloadJson) as { aps: { alert: { body?: string; "loc-key"?: string } } }).aps.alert)
+    .map((alert) => alert.body ?? alert["loc-key"]);
+  expect(alerts).toEqual(expected);
 });
