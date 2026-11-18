@@ -51,7 +51,7 @@ async function seed() {
     }
   };
   // Every snapshot is a fresh signed event with a new revision, as Talaria Web's heartbeat publishes them.
-  const publish = async (phase: SessionPhase, head?: string, options: { profileId?: string; alertEligible?: boolean; decision?: string; notices?: AgentNotify[] } = {}) => {
+  const publish = async (phase: SessionPhase, head?: string, options: { profileId?: string; alertEligible?: boolean; decision?: string; notices?: AgentNotify[]; status?: number } = {}) => {
     revision += 1;
     const path = `/v1/publishers/${encodeURIComponent(publisherId)}/profiles/${options.profileId ?? "profile-1"}/snapshot`;
     const body = JSON.stringify({
@@ -76,7 +76,7 @@ async function seed() {
         "x-talaria-nonce": requestNonce, "x-talaria-signature": signature,
       },
     });
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(options.status ?? 200);
     await runScheduledRecomputes();
   };
   const notifications = async (userId = "user-1") => {
@@ -172,8 +172,9 @@ describe("agent notices (TAL-1970)", () => {
   });
 
   it("refuses a malformed notice", async () => {
-    const { publish } = await seed();
-    await expect(publish("running", undefined, { notices: [{ ...info, title: "x".repeat(81) }] })).rejects.toThrow();
+    const { publish, notifications } = await seed();
+    await publish("running", undefined, { notices: [{ ...info, title: "x".repeat(81) }], status: 400 });
+    expect(await notifications()).toEqual([]);
   });
 });
 
