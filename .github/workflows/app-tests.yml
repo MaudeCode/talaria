@@ -105,6 +105,8 @@ jobs:
       contents: read
       # Reads this run's job list to wait for the Web contract probe.
       actions: read
+      # The package tests post each failing test as a commit status while they run (TAL-2395).
+      statuses: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -157,6 +159,7 @@ jobs:
         with:
           contracts: ${{ inputs.contracts }}
           plan: ${{ inputs.package_lane == 'explicit' && inputs.plan || '' }}
+          failure_status: ${{ inputs.package_lane == 'explicit' && 'App selected package test failures' || 'App package test failures' }}
 
   package-test:
     # Build mode's and contracts mode's package tests, on their own runner from the start. Hosted mode runs them in
@@ -169,6 +172,8 @@ jobs:
       contents: read
       # Reads this run's job list to wait for the Web contract probe.
       actions: read
+      # The package tests post each failing test as a commit status while they run (TAL-2395).
+      statuses: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -180,6 +185,7 @@ jobs:
         with:
           contracts: ${{ inputs.contracts }}
           plan: ${{ inputs.package_lane == 'explicit' && inputs.plan || '' }}
+          failure_status: ${{ inputs.package_lane == 'explicit' && 'App selected package test failures' || 'App package test failures' }}
 
   build-started:
     # Two suites queued together once filled all five hosted macOS slots with test jobs waiting for builds that never

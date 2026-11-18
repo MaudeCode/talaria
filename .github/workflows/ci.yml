@@ -9,7 +9,8 @@
 # changed, only the changed spec files when they are all it touches, and every shard otherwise. No labeled trigger: a label event would start a run that cancels the PR's running
 # one through the concurrency group, so a label added after a run started takes effect on the next push.
 # Release metadata always validates; uncertain classification runs every suite.
-# The always-reporting CI Gate is the required check, including skipped jobs.
+# The always-reporting CI Gate is the required check, including skipped jobs. On a pull request, the advisory "Report the
+# first failure" job keeps one PR comment on each failure as soon as it is known (TAL-2395).
 #
 # Every job runs on GitHub-hosted runners and uses no repository secrets (TAL-380) except the main-only failure
 # handoff to T3 (TAL-1103); handoffs between jobs are Actions artifacts. Only Xcode work runs on hosted macOS: the App build, its hosted unit tests and the
@@ -219,6 +220,36 @@ jobs:
           retention-days: 1
           overwrite: true
           if-no-files-found: error
+
+  report:
+    # A pull request's failure report (TAL-2395, docs/main-ci-repair.md): from the first failed job or App test on, one
+    # PR comment names each failure with its tested commit, a local reproduction command and its evidence while the
+    # other jobs still run. It polls this run's jobs and the App test reporters' commit statuses. Advisory: CI Gate does
+    # not need it, so it never changes a suite's or the gate's result, and it dispatches nothing. It fails once it has
+    # reported a failure, so "Re-run failed jobs" reruns it and the report follows the new attempt. A fork's pull
+    # request gets a read-only token, so its report is this job's log and summary; only a same-repository pull request,
+    # whose author can push here already, runs it with a token that can comment.
+    name: Report the first failure
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # Pull request runs have taken up to about 90 minutes; the gate's completion ends it sooner.
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
+      # Reads cancelled jobs' annotations for a timeout, and failed browser tests' file and line.
+      checks: read
+      statuses: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+      - name: Keep the failure report current
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/main-ci-failure.py watch
 
   gate:
     name: CI Gate

@@ -261,10 +261,13 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal("${{ !cancelled() && inputs.mode == 'hosted' && inputs.package_tests }}", build["steps"].last["if"])
     [build["steps"].last, package["steps"].last].each do |caller|
       assert_equal("./.github/actions/app-package-tests", caller["uses"])
-      assert_equal({ "contracts" => "${{ inputs.contracts }}", "plan" => "${{ inputs.package_lane == 'explicit' && inputs.plan || '' }}" },
+      # Each failing test posts as a commit status while it runs, for the pull request's failure report (TAL-2395).
+      assert_equal({ "contracts" => "${{ inputs.contracts }}", "plan" => "${{ inputs.package_lane == 'explicit' && inputs.plan || '' }}",
+                     "failure_status" => "${{ inputs.package_lane == 'explicit' && 'App selected package test failures' || 'App package test failures' }}" },
                    caller["with"])
     end
     [build, package].each { |job| assert_equal("read", job["permissions"]["actions"], "The probe wait reads this run's job list") }
+    [build, package].each { |job| assert_equal("write", job["permissions"]["statuses"], "The package tests post failing tests") }
     assert_equal({"type" => "boolean", "default" => true},
                  YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)[true]["workflow_call"]["inputs"]["package_tests"])
     assert_equal("xcode-27", package["runs-on"])
