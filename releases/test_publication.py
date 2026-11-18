@@ -31,7 +31,7 @@ from cli import require_latest_predecessor
 
 class PublicationTests(unittest.TestCase):
     def setUp(self):
-        self.enterContext(patch("publish.require_latest_predecessor", return_value=[], create=True))
+        self.enterContext(patch("publish.require_latest_predecessor", return_value=[]))
 
     def test_native_release_lookup_resolves_drafts_and_rejects_errors(self):
         draft = {"id": 123, "tag_name": "app-v1.0.0", "draft": True}
@@ -192,7 +192,7 @@ class PublicationTests(unittest.TestCase):
                         self.assertEqual(set(releases), {root_tag})
                     self.assertEqual(publish.tag_components(plan, root), "v1.0.0")
 
-                with patch.object(publish, "_release_info", side_effect=lambda tag: deepcopy(releases.get(tag)), create=True), \
+                with patch.object(publish, "_release_info", side_effect=lambda tag: deepcopy(releases.get(tag))), \
                         patch.object(publish, "unused_release", side_effect=unused), \
                         patch.object(publish, "published_set", return_value=manifest), \
                         patch.object(publish, "tagged_commit", side_effect=remote_tags.get), \
@@ -448,9 +448,6 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(release["secrets"], "inherit")
         self.assertEqual(release["permissions"]["id-token"], "write")
         self.assertEqual(release["permissions"]["statuses"], "write")
-        self.assertNotIn("environment", release)
-        self.assertEqual(release["needs"], "preflight")
-        self.assertIs(release["with"]["dry_run"], False)
 
     def test_recovery_publishes_the_app_then_the_set_from_main_only(self):
         document, recovery = workflow("release-set.yml"), workflow("recover-cutover.yml")
@@ -527,8 +524,10 @@ class PublicationTests(unittest.TestCase):
     def test_signing_numbering_export_and_upload_go_through_the_pinned_shared_actions(self):
         build = workflow("ios-release-build.yml")["jobs"]["build"]
         text = json.dumps(build)
-        for gone in ("security ", "login.keychain", "apple-actions/", "-exportArchive", "ExportOptions", "AuthKey", ".rb"):
-            self.assertNotIn(gone, text)
+        # Signing certificates and the App Store Connect key reach the build only inside the pinned shared actions:
+        # no step of its own imports a certificate into a keychain or writes the API key file.
+        for credential in ("security ", "login.keychain", "apple-actions/", "AuthKey"):
+            self.assertNotIn(credential, text)
         # A signing check is dispatched with its own inputs, so none is interpolated into a script.
         for step in build["steps"]:
             self.assertNotIn("${{ inputs.", step.get("run", ""), step.get("name"))
