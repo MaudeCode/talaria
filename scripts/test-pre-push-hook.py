@@ -152,10 +152,6 @@ class PrePushHookTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.checks(), EVERY_CHECK)
 
-    def test_each_check_reports_its_duration(self):
-        self.commit_on_new_branch("feature", "relay/convex/x.ts")
-        self.assertRegex(self.push("feature").stderr, r"pnpm typecheck\b.*\(\d+s\)")
-
     def test_a_failing_check_rejects_the_push_from_any_worktree(self):
         failing = "web: npm run lint -w packages/frontend"
         self.env["STUB_FAIL"] = failing

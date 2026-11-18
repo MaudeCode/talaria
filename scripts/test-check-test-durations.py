@@ -8,6 +8,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 _spec = importlib.util.spec_from_file_location("check_test_durations", str(Path(__file__).with_name("check-test-durations.py")))
 ctd = importlib.util.module_from_spec(_spec)
@@ -40,7 +41,14 @@ class BudgetTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp, name)
             path.write_text(text)
-            return ctd.main([str(path)], BUDGET)
+            return self.main([str(path)])
+
+    def main(self, paths):
+        with tempfile.TemporaryDirectory() as tmp:
+            budget = Path(tmp, "test-durations.json")
+            budget.write_text(json.dumps(BUDGET))
+            with patch.object(ctd, "BUDGET", budget):
+                return ctd.main(paths)
 
     def test_an_unlisted_test_over_the_budget_fails_and_listed_ones_pass(self):
         for name, within, over in [
@@ -53,7 +61,7 @@ class BudgetTests(unittest.TestCase):
 
     def test_a_report_with_no_test_cases_fails(self):
         self.assertEqual(self.run_check("junit.xml", "<testsuites/>"), 1)
-        self.assertEqual(ctd.main([], BUDGET), 1)
+        self.assertEqual(self.main([]), 1)
 
     def test_the_committed_budget_lists_each_test_with_its_ticket(self):
         budget = json.loads(ctd.BUDGET.read_text())
