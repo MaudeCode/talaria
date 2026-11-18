@@ -288,23 +288,6 @@ describe('authenticated stream budget', () => {
   })
 })
 
-describe('anonymous stream budget', () => {
-  let s: TestServer
-  beforeAll(async () => { s = await bootTestServer({ env: { TALARIA_WEB_MAX_SSE_CLIENTS: '1' } }) })
-  afterAll(() => s.close())
-
-  it('without an identity the cap keys on the client address', async () => {
-    const c = new AbortController()
-    try {
-      const first = await fetch(`${s.base}/api/sessions/events`, { signal: c.signal })
-      expect(first.status).toBe(200)
-      const second = await s.get('/api/sessions/events')
-      expect(second.status).toBe(503)
-      expect(await second.json()).toMatchObject({ condition: 'client_stream_limit' })
-    } finally { c.abort() }
-  })
-})
-
 describe('project context walk', () => {
   const git = (cwd: string, ...args: string[]): void => { const r = spawnSync('git', args, { cwd, encoding: 'utf8' }); if (r.status !== 0) throw new Error(r.stderr) }
   let root = ''

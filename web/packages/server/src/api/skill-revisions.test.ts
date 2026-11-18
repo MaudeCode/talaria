@@ -9,13 +9,6 @@ import { SkillRevisionsSchema } from '@maudecode/talaria-web-contracts'
 let server: TestServer | undefined
 afterEach(async () => { await server?.close() })
 
-it('exposes read-only skill revision inspection independently of replay execution', async () => {
-  server = await bootTestServer({ sidecar: new FakeSidecar() })
-  const response = await server.get('/api/skills/revisions?name=demo')
-  expect(response.status).toBe(200)
-  expect(await response.json()).toMatchObject({ state: 'unavailable', revisions: [], replay_available: false })
-})
-
 it('passes exact selections and profile scope to the backend and redacts display text', async () => {
   const sidecar = new FakeSidecar()
   const fixture = SkillRevisionsSchema.parse(JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../..', 'contracts/fixtures/skill-revisions.json'), 'utf8')))

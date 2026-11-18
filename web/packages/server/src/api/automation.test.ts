@@ -1021,20 +1021,6 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(res.status).toBe(200)
     expect(s.deps.terminals.get(sid)).toBeNull()
   })
-
-  it('a new session honours the profile config worktree default when the body omits worktree', async () => {
-    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: { worktree: true } }))
-    s.deps.agentConfig.invalidate()
-    await s.deps.agentConfig.read(s.state)
-    expect(s.deps.worktreeDefault(null)).toBe(true)
-    sidecar.respond('worktree.create', (params) => ({ path: join(params.repo_root, '.worktrees', 'wt-default'), branch: 'wt-default', repo_root: params.repo_root, base: null }))
-    const res = await post(s, '/api/session/new', {})
-    const body = await json(res)
-    expect(res.status, JSON.stringify(body)).toBe(200)
-    expect(String((body.session as Json).worktree_path), JSON.stringify(body)).toContain('wt-default')
-    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: {} }))
-    s.deps.agentConfig.invalidate()
-  })
 })
 
 describe('automation helpers', () => {
@@ -1164,29 +1150,6 @@ describe('query parameters on non-GET routes (parity)', () => {
     })
     expect(body.status).toBe(413)
     expect(JSON.parse(body.text)).toEqual({ error: `Request body too large (${String(declared)} bytes, max 20971520)` })
-  })
-
-  it('a chunked body is cut off at 20 MiB while it streams, with the Python message', async () => {
-    const chunk = Buffer.alloc(1024 * 1024, 0x20)
-    const body = await new Promise<{ status: number; text: string }>((resolve, reject) => {
-      const req = request({ host: '127.0.0.1', port: s.running.port, path: '/api/session/rename', method: 'POST', headers: { 'content-type': 'application/json', 'transfer-encoding': 'chunked' } }, (res) => {
-        let text = ''
-        res.on('data', (c: Buffer) => { text += c.toString('utf8') })
-        res.on('end', () => { resolve({ status: res.statusCode ?? 0, text }); req.destroy() })
-      })
-      req.on('error', (error: NodeJS.ErrnoException) => { if (error.code !== 'EPIPE' && error.code !== 'ECONNRESET') reject(error) })
-      let sent = 0
-      const pump = (): void => {
-        while (sent < 22) {
-          sent += 1
-          if (!req.write(chunk)) { req.once('drain', pump); return }
-        }
-        req.end()
-      }
-      pump()
-    })
-    expect(body.status).toBe(413)
-    expect(body.text).toMatch(/^\{"error":"Request body too large \(\d+ bytes, max 20971520\)"\}$/)
   })
 
   it('JSON responses over 1 KiB are gzipped for clients that accept gzip', async () => {

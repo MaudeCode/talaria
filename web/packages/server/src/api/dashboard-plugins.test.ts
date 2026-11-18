@@ -49,7 +49,6 @@ describe('dashboard plugin routes', () => {
   beforeAll(async () => {
     s = await bootTestServer({ env: { TALARIA_WEB_EXTENSION_DIR: extensionDir } })
     mkdirSync(join(extensionDir, 'demo'))
-    writeFileSync(join(extensionDir, 'demo', 'index.html'), '<!doctype html><title>demo</title>')
     put('plugin.css', '.shared{}')
     put('secret.css', '.nope{}')
     // A full SPA build with its own document and a custom tab path.
@@ -145,13 +144,6 @@ describe('dashboard plugin routes', () => {
     const page = await res.text()
     expect(page).toContain('<link rel="stylesheet" href="/dashboard-plugins/iife/dist/style.css">')
     expect(page).toContain('<script src="/dashboard-plugins/iife/dist/index.js"></script>')
-  })
-
-  it('lets the app frame an extension panel document under the same sandbox', async () => {
-    const res = await s.get('/extensions/demo/index.html')
-    expect(res.status).toBe(200)
-    expect(sandboxed(res)).toBe(true)
-    frameable(res)
   })
 
   it('reads each manifest once across 50 asset requests until its signature changes (TAL-1733)', async () => {

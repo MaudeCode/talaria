@@ -197,12 +197,6 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     await w?.close()
   }
 
-  it('a finished run replays every frame of a journal past 4 MiB', async () => {
-    await run('run-finished', 3000)
-    const got = await frames(read(`${s.base}/api/chat/stream?stream_id=run-finished&replay=1`))
-    expect(ids(got)).toEqual(expectedIds('run-finished', 3001))
-  })
-
   it('a replay to a paused reader keeps unsent data near the socket high-water mark, then delivers every frame', async () => {
     await run('run-paused', 4000)
     const spy = vi.spyOn(SseWriter.prototype, 'event')

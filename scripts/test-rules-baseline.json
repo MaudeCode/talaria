@@ -136,7 +136,7 @@
       "web/packages/server/src/sessions/state-db.test.ts": 4,
       "web/packages/server/src/sessions/storage/blobs-s3.test.ts": 1,
       "web/packages/server/src/sessions/workers.test.ts": 18,
-      "web/packages/server/src/sidecar/client.test.ts": 5,
+      "web/packages/server/src/sidecar/client.test.ts": 4,
       "web/packages/server/src/sidecar/server-methods.test.ts": 2,
       "web/packages/server/src/tools/health-logs.test.ts": 1,
       "web/packages/server/src/tools/toolsets.test.ts": 1,
