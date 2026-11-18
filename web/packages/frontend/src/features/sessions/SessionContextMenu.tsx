@@ -29,7 +29,7 @@ interface PendingAction { sid: string; kind: ActionKind; active: boolean; list: 
 const allowed: Record<ActionKind, (row: SessionRow) => boolean> = {
   rename: (row) => !row.read_only,
   move: (row) => !row.read_only,
-  delete: (row) => !row.read_only,
+  delete: (row) => row.can_delete,
   worktree: (row) => !!row.worktree_branch && !row.read_only,
   revoke: (row) => !!row.share_url,
 }
