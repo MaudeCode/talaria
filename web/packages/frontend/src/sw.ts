@@ -69,13 +69,7 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
 })
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil((async () => {
-    // The pre-HWEB-100 worker kept the legacy shell in `hermes-shell-<version>` caches and only
-    // deleted siblings of its own name; nothing else ever removes them after an upgrade.
-    const legacy = (await caches.keys()).filter((k) => k.startsWith('hermes-shell-'))
-    await Promise.all(legacy.map((k) => caches.delete(k)))
-    await self.clients.claim()
-  })())
+  event.waitUntil(self.clients.claim())
 })
 
 // Web Push (TAL-1070): the server decides when to alert and what it says; the worker shows the payload as sent.

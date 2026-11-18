@@ -42,7 +42,7 @@ const insights = {
   activity_by_hour: Array.from({ length: 24 }, (_, hour) => ({ hour, sessions: hour >= 9 && hour <= 18 ? 3 + (hour * 7) % 5 : 0 })),
 }
 
-test('Insights opens on Quotas with every window, pace and forecast; Usage holds the stats, charts and model table', async ({ page }, info) => {
+test('Insights opens on Quotas, whose Used / Remaining choice survives a reload; Usage holds the stats, charts and model table', async ({ page }, info) => {
   await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: quotas }))
   await page.route('**/api/insights**', (route) => route.fulfill({ json: insights }))
   await page.goto('/insights')
@@ -52,21 +52,9 @@ test('Insights opens on Quotas with every window, pace and forecast; Usage holds
 
   const paced = page.locator('[data-quota-source="qsrc_paced"]')
   await expect(paced.getByText('Max', { exact: true })).toHaveCSS('font-size', '11px') // Badge sits at the type floor (DESIGN.md)
-  await expect(paced.getByRole('meter')).toHaveCount(2)
+  // Each window's figures are ProviderQuotaRows' own (InsightsPage.test.tsx); this route checks the mode toggle end to end.
   const session = paced.locator('[data-quota-window="Session"]')
-  await expect(session).toHaveAttribute('data-level', 'healthy')
-  await expect(session.getByRole('meter', { name: 'Session: 25% Used' })).toBeVisible()
-  await expect(session.locator('[data-metric="pace"]')).toHaveText('Pace15% under')
-  await expect(session.locator('[data-metric="burn"]')).toHaveText('Burn0.62×')
-  await expect(session.locator('[data-metric="budget"]')).toHaveText('Budget25%/hr')
-  await expect(session).toContainText('Lasts through reset')
-  const weekly = paced.locator('[data-quota-window="Weekly"]')
-  await expect(weekly).toHaveAttribute('data-level', 'warning')
-  await expect(weekly).toContainText('Empty 5h early')
-  await expect(weekly.locator('[data-metric="budget"]')).toHaveText('Budget12%/day')
   const codex = page.locator('[data-quota-source="qsrc_codex"]')
-  await expect(codex.getByRole('meter', { name: 'Session: 40% Used' })).toBeVisible()
-  await expect(codex.locator('[data-metric]')).toHaveCount(0)
 
   // The Used / Remaining choice flips every headline and survives a reload (a per-browser convenience).
   await page.getByRole('combobox', { name: 'Percentage' }).click()

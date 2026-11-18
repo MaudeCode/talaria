@@ -127,6 +127,16 @@ export async function settle(page: Page): Promise<void> {
   await expect(page.locator('#app :visible').first()).toBeVisible()
 }
 
+/** A 1×1 PNG for synthetic image attachments and uploads. */
+export const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
+
+/** A request held until the test releases it, so the page can be inspected while it is in flight. */
+export function hold() {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  return { gate, release }
+}
+
 /** Resolves once the page has painted two more frames, so work its last event scheduled has rendered and run its effects. */
 export async function painted(page: Page): Promise<void> {
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))

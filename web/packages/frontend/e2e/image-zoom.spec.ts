@@ -1,5 +1,5 @@
 import type { CDPSession, Locator, Page } from '@playwright/test'
-import { expect, test } from './fixtures'
+import { expect, PNG, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -69,6 +69,33 @@ async function expectCovers(page: Page) {
 }
 
 const centre = (b: { x: number; y: number; width: number; height: number }) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
+
+test('clicking a sent image opens it enlarged, the arrow keys step through the message images, and Escape closes it (TAL-608)', async ({ page }) => {
+  const shots = ['a.png', 'b.png', 'c.png']
+  const attachments = [...shots.map((name) => ({ name, path: `/tmp/${name}`, is_image: true })), { name: 'notes.txt', path: '/tmp/notes.txt' }]
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'gallery', title: 'Gallery', messages: [{ role: 'user', content: 'three shots', attachments }] } } }))
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.route('**/api/file/raw**', (route) => route.fulfill({ contentType: 'image/png', body: PNG }))
+  await page.goto('/session/gallery')
+  await page.locator('.msg-row img[alt="b.png"]').click()
+  const dialog = page.getByRole('dialog', { name: 'b.png' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('img', { name: 'b.png' })).toBeVisible()
+  await expect(dialog).toContainText('2 / 3')
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('dialog', { name: 'c.png' })).toBeVisible()
+  // Stepping wraps, and the on-screen arrows move the same way.
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('dialog', { name: 'a.png' })).toBeVisible()
+  await page.keyboard.press('ArrowLeft')
+  await expect(page.getByRole('dialog', { name: 'c.png' })).toBeVisible()
+  await page.getByRole('button', { name: 'Previous image' }).click()
+  await expect(page.getByRole('dialog', { name: 'b.png' })).toBeVisible()
+  await page.getByRole('button', { name: 'Next image' }).click()
+  await expect(page.getByRole('dialog', { name: 'c.png' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+})
 
 test('the wheel zooms at the cursor and converts line and page deltas', async ({ page }) => {
   await gallery(page, ['large.svg'])

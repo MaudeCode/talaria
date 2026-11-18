@@ -25,7 +25,7 @@ vi.mock('../../api/sse', () => ({
   },
 }))
 const api = await import('../../api/endpoints')
-const { useTranscript } = await import('./useTranscript')
+const { projectMessages, useTranscript } = await import('./useTranscript')
 const { liveText } = await import('../../stream/reducer')
 const { resetStreamStoreForTests } = await import('../../stream/store')
 const { resetConnectionsForTests, configureStream, attachToStream, teardown, teardownAll } = await import('../../stream/connection')
@@ -527,4 +527,10 @@ it('refreshes already-loaded direct history when reasoning is shown again (TAL-9
   await waitFor(() => expect(result.current.rows[0]?.message.reasoning).toBe('Restored older reasoning'))
   expect(result.current.rows.map((row) => row.message.content)).toEqual(['older answer', 'latest'])
   qc.clear()
+})
+
+it('keeps an assistant row whose only content is its server scene', () => {
+  const scene = { version: 'activity_scene_v1' as const, activity_rows: [], final_answer: '', terminal_state: 'no_response', expanded_by_default: false }
+  const rows = projectMessages([{ role: 'user', content: 'Go' }, { role: 'assistant', content: '', _anchor_activity_scene: scene }])
+  expect(rows.map((row) => row.message.role)).toEqual(['user', 'assistant'])
 })

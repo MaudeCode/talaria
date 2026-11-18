@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ToolKind, ToolResultView } from '@maudecode/talaria-web-contracts'
+import { ToolKindSchema, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
 import { ToolCard, toolCardLabel, type ToolCardData } from './ToolCard'
 import { sceneItems } from '../turnActivity'
 import { requestOpenFile } from '../../workspace/openFileRequest'
@@ -22,6 +22,22 @@ async function shownResult(resultView: ToolResultView | null): Promise<string | 
   unmount()
   return text
 }
+
+const TOOL_TEXT_LOCALES = ['en', 'ru', 'zh', 'zh-Hant', 'vi', 'pl', 'cs']
+const KANBAN_VERBS = ['kanban_create', 'kanban_view', 'kanban_list', 'kanban_update', 'kanban_complete', 'kanban_block', 'kanban_comment']
+const BROWSER_VERBS = ['browser_run', 'browser_send', 'browser_answer', 'browser_fill', 'browser_list', 'computer_capture', 'computer_click', 'computer_type']
+
+// A kind or verb a locale's table lacks reads as the unknown tool's words.
+it.each(TOOL_TEXT_LOCALES)('names every tool kind and verb in %s apart from an unknown tool', (locale) => {
+  const text = toolText(locale)
+  const unknownLabel = text.actionLabel('unknown', 'done', '', 'x')
+  const unknownSummary = text.worklogSummary('unknown', 'running', 2)
+  for (const kind of ToolKindSchema.options.filter((kind) => kind !== 'unknown')) {
+    expect(text.actionLabel(kind, 'done', '', 'x'), kind).not.toBe(unknownLabel)
+    expect(text.worklogSummary(kind, 'running', 2), kind).not.toBe(unknownSummary)
+  }
+  for (const verb of [...KANBAN_VERBS, ...BROWSER_VERBS]) expect(text.actionLabel(verb, 'done', '', 'x'), verb).not.toBe(unknownLabel)
+})
 
 describe('ToolCard unlocked by an approval (TAL-1783)', () => {
   afterEach(() => { vi.unstubAllGlobals() })
@@ -216,17 +232,6 @@ describe('media and analysis results (TAL-2325)', () => {
     await vi.waitFor(() => { expect(result.querySelector('.tool-analysis [data-streamdown="strong"]')?.textContent).toBe('cat') }, { timeout: 5000 })
     expect(result.textContent).not.toContain('"analysis"')
   })
-
-  it('names every media kind in every locale', () => {
-    for (const locale of ['en', 'ru', 'zh', 'zh-Hant', 'vi', 'pl', 'cs']) {
-      const text = toolText(locale)
-      // A kind a table lacks reads as the unknown tool's words.
-      for (const kind of ['image', 'audio', 'video', 'image_analysis', 'video_analysis']) {
-        expect(text.actionLabel(kind, 'done', '', 'tool'), `${locale} ${kind}`).not.toBe(text.actionLabel('unknown', 'done', '', 'tool'))
-        expect(text.worklogSummary(kind, 'running', 2), `${locale} ${kind}`).not.toBe(text.worklogSummary('unknown', 'running', 2))
-      }
-    }
-  })
 })
 
 describe('memory, skill, session, scheduled job, connection and clarify rows (TAL-2326)', () => {
@@ -258,7 +263,7 @@ describe('memory, skill, session, scheduled job, connection and clarify rows (TA
     expect(result.querySelector('[data-dot]')).toHaveAttribute('data-dot', 'warning')
   })
 
-  it('gives sessions, scheduled jobs, connections and questions their own icons and words in every locale', async () => {
+  it('gives sessions, scheduled jobs, connections and questions their own icons and words', async () => {
     const icons = { session: 'lucide-messages-square', schedule: 'lucide-calendar-clock', connection: 'lucide-plug', question: 'lucide-message-circle-question' }
     for (const [kind, icon] of Object.entries(icons) as [ToolKind, string][]) {
       const view = await renderRouted(<ToolCard call={{ ...call, kind, target: '' }} />)
@@ -266,13 +271,6 @@ describe('memory, skill, session, scheduled job, connection and clarify rows (TA
       view.unmount()
     }
     expect(['session', 'schedule', 'connection', 'question'].map((kind) => toolText('en').actionLabel(kind, 'done', '', 'tool'))).toEqual(['Searched past chats', 'Managed scheduled jobs', 'Managed connections', 'Asked a question'])
-    for (const locale of ['en', 'ru', 'zh', 'zh-Hant', 'vi', 'pl', 'cs']) {
-      const text = toolText(locale)
-      for (const kind of Object.keys(icons)) {
-        expect(text.actionLabel(kind, 'done', '', 'tool'), `${locale} ${kind}`).not.toBe(text.actionLabel('unknown', 'done', '', 'tool'))
-        expect(text.worklogSummary(kind, 'running', 2), `${locale} ${kind}`).not.toBe(text.worklogSummary('unknown', 'running', 2))
-      }
-    }
   })
 })
 
@@ -308,29 +306,15 @@ describe('Kanban rows (TAL-2327)', () => {
     expect(result.textContent).not.toContain('"ok"')
   })
 
-  it('reads each Kanban verb in every locale, a list without a task as its tasks', () => {
-    const verbs = ['create', 'view', 'list', 'update', 'complete', 'block', 'comment']
-    expect(verbs.map((verb) => toolText('en').actionLabel(`kanban_${verb}`, 'done', verb === 'list' ? '' : 't_1', 'kanban_x'))).toEqual(['Created t_1', 'Viewed t_1', 'Listed tasks', 'Updated t_1', 'Completed t_1', 'Blocked t_1', 'Commented on t_1'])
-    for (const locale of ['en', 'ru', 'zh', 'zh-Hant', 'vi', 'pl', 'cs']) {
-      const text = toolText(locale)
-      const labels = verbs.map((verb) => text.actionLabel(`kanban_${verb}`, 'done', '', 'kanban_x'))
-      expect(labels.every((label) => label !== text.actionLabel('unknown', 'done', '', 'kanban_x')), locale).toBe(true)
-      expect(text.worklogSummary('kanban', 'running', 2), locale).not.toBe(text.worklogSummary('unknown', 'running', 2))
-    }
+  it('reads each Kanban verb, a list without a task as its tasks', () => {
+    expect(KANBAN_VERBS.map((verb) => toolText('en').actionLabel(verb, 'done', verb === 'kanban_list' ? '' : 't_1', 'kanban_x'))).toEqual(['Created t_1', 'Viewed t_1', 'Listed tasks', 'Updated t_1', 'Completed t_1', 'Blocked t_1', 'Commented on t_1'])
   })
 })
 
 describe('browser and computer-use calls (TAL-2328)', () => {
-  it('reads each browser and computer verb in every locale', () => {
-    const verbs = ['browser_run', 'browser_send', 'browser_answer', 'browser_fill', 'browser_list', 'computer_capture', 'computer_click', 'computer_type']
-    expect(verbs.map((verb) => toolText('en').actionLabel(verb, 'done', '', 'x'))).toEqual(['Ran browser code', 'Sent a browser command', 'Answered a dialog', 'Filled a login', 'Listed saved logins', 'Captured the screen', 'Clicked on the screen', 'Typed text'])
+  it('reads each browser and computer verb', () => {
+    expect(BROWSER_VERBS.map((verb) => toolText('en').actionLabel(verb, 'done', '', 'x'))).toEqual(['Ran browser code', 'Sent a browser command', 'Answered a dialog', 'Filled a login', 'Listed saved logins', 'Captured the screen', 'Clicked on the screen', 'Typed text'])
     expect(toolText('en').actionLabel('browser_send', 'running', 'Page.navigate', 'x')).toBe('Sending Page.navigate')
-    for (const locale of ['en', 'ru', 'zh', 'zh-Hant', 'vi', 'pl', 'cs']) {
-      const text = toolText(locale)
-      const unknown = text.actionLabel('unknown', 'done', '', 'x')
-      for (const kind of ['browser', 'computer', ...verbs]) expect(text.actionLabel(kind, 'done', '', 'x'), `${locale} ${kind}`).not.toBe(unknown)
-      for (const kind of ['browser', 'computer']) expect(text.worklogSummary(kind, 'running', 2), `${locale} ${kind}`).not.toBe(text.worklogSummary('unknown', 'running', 2))
-    }
   })
 })
 
@@ -353,13 +337,8 @@ describe('MCP and connector calls (TAL-2330)', () => {
   it('names a failed app call with its kind\'s verb, in every locale', () => {
     const failed: ToolCardData = { ...call, name: 'mcp__github__create_issue', kind: 'mcp', target: 'Create issue', app: { name: 'GitHub', logo_url: null }, isError: true }
     expect(toolCardLabel(failed, 'en')).toBe('Failed to use GitHub · Create issue')
-    for (const locale of ['en', 'ru', 'zh', 'zh-Hant', 'vi', 'pl', 'cs']) {
-      const text = toolText(locale)
-      for (const kind of ['mcp', 'connector'] as const) {
-        expect(toolCardLabel({ ...failed, kind }, locale), `${locale} ${kind}`).toContain('GitHub · Create issue')
-        expect(text.actionLabel(kind, 'done', '', 'x'), `${locale} ${kind}`).not.toBe(text.actionLabel('unknown', 'done', '', 'x'))
-        expect(text.worklogSummary(kind, 'running', 2), `${locale} ${kind}`).not.toBe(text.worklogSummary('unknown', 'running', 2))
-      }
+    for (const locale of TOOL_TEXT_LOCALES) {
+      for (const kind of ['mcp', 'connector'] as const) expect(toolCardLabel({ ...failed, kind }, locale), `${locale} ${kind}`).toContain('GitHub · Create issue')
     }
   })
 })

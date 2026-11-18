@@ -93,7 +93,7 @@ test.describe('shell', () => {
     await page.screenshot({ path: testInfo.outputPath('hub-title-skill-detail.png') })
   })
 
-  test('settings route renders and navigates between sections', async ({ page }) => {
+  test('the settings hub and a settings section deep link each render at their own path', async ({ page }) => {
     await page.goto('/settings')
     await settle(page)
     await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible()
@@ -132,7 +132,7 @@ test.describe('shell', () => {
     await expect(page).toHaveURL(/\/settings(\/[a-z-]+)?$/)
   })
 
-  test('theme switch persists across reload', async ({ page }) => {
+  test('a light theme stored in the browser applies on reload', async ({ page }) => {
     await page.goto('/settings/appearance')
     await settle(page)
     const before = await page.locator('html').getAttribute('class')

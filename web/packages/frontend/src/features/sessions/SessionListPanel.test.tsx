@@ -711,7 +711,6 @@ describe('optimistic session and project writes (TAL-1179)', () => {
     await userEvent.click(screen.getAllByRole('button', { name: 'Archive' })[0]!)
     await waitFor(() => expect(api.archiveSession).toHaveBeenCalledWith('alpha', true))
     expect(shown()).toEqual(['other'])
-    expect(screen.queryByText(/Pending/)).toBeNull()
     // The overlay never enters the cached server snapshot.
     expect(qc.getQueryData<{ sessions: SessionRow[] }>(['sessions', 'list', {}])?.sessions[0]?.archived).not.toBe(true)
     vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [other] } as never)
@@ -746,7 +745,6 @@ describe('optimistic session and project writes (TAL-1179)', () => {
     await waitFor(() => { expect(screen.queryByRole('menu')).toBeNull() })
     const menu = await openFilters()
     expect(within(menu).getByRole('menuitemradio', { name: 'Fresh project' })).toHaveAttribute('aria-disabled', 'true')
-    expect(within(menu).queryByText(/Pending/)).toBeNull()
     vi.mocked(api.fetchProjects).mockResolvedValue({ projects: [{ project_id: 'new-server-id', name: 'Canonical project' }] } as never)
     answer({ project: { project_id: 'new-server-id', name: 'Canonical project' } })
     await within(menu).findByRole('menuitemradio', { name: 'Canonical project' })

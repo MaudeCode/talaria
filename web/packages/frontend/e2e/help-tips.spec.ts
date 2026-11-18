@@ -9,7 +9,8 @@ const PAGES = [
 // demo-tour.spec.ts owns each page's layout at every width with the help closed; the open popover can only push the
 // document at a phone width, so this runs there.
 for (const { path, name, text } of PAGES) {
-  test(`${path} keeps its explanation behind the title help, and the open help fits a phone`, async ({ page }) => {
+  test(`${path} keeps its explanation behind the title help, and the open help fits a phone`, async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'mobile', 'the test sets its own phone width, so one project covers it')
     await page.setViewportSize({ width: 390, height: 900 })
     await page.goto(path)
     await settle(page)

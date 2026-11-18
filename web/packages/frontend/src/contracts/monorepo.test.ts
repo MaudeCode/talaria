@@ -148,10 +148,4 @@ describe('shared monorepo contracts', () => {
     const views = persistedActivity(turn).items.flatMap((item) => (item.kind === 'tool' ? [[item.call.id, item.call.resultView]] : []))
     expect(Object.fromEntries(views)).toEqual(fixture.tool_result_views.expected)
   })
-
-  it('keeps an assistant row whose only content is its server scene', () => {
-    const scene = { version: 'activity_scene_v1' as const, activity_rows: [], final_answer: '', terminal_state: 'no_response', expanded_by_default: false }
-    const rows = projectMessages([{ role: 'user', content: 'Go' }, { role: 'assistant', content: '', _anchor_activity_scene: scene }])
-    expect(rows.map((row) => row.message.role)).toEqual(['user', 'assistant'])
-  })
 })

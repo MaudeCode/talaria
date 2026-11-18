@@ -63,7 +63,8 @@ test('a file that is not JSON reports the failure and creates nothing', async ({
   await expect(page).not.toHaveURL(/\/session\//)
 })
 
-test('wraps long export metadata within a mobile viewport', async ({ page }) => {
+test('wraps long export metadata within a mobile viewport', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile', 'the mobile project supplies the 390 px viewport')
   const imported = await page.request.post('/api/session/import', { data: {
     title: 'UnbrokenTitle'.repeat(25), messages: [{ role: 'user', content: 'Export layout fixture' }],
   } })
@@ -71,7 +72,6 @@ test('wraps long export metadata within a mobile viewport', async ({ page }) => 
   const { session } = await imported.json() as { session: { session_id: string } }
   const exported = await page.request.get(`/api/session/export?session_id=${session.session_id}&format=html`)
   expect(exported.status()).toBe(200)
-  await page.setViewportSize({ width: 390, height: 844 })
   await page.setContent(await exported.text())
   await expect(page.getByText('Export layout fixture')).toBeVisible()
   const size = await page.evaluate(() => ({ viewport: innerWidth, content: document.documentElement.scrollWidth }))
