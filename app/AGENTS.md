@@ -8,9 +8,9 @@ Talaria is a native SwiftUI iPhone client for a self-hosted Talaria Web server
 
 ## Scope and workflow
 
-- Root `../AGENTS.md` owns the Kaneo tracker, ticket states, branch and commit
+- Root `../AGENTS.md` owns the Kanvil tracker, ticket states, branch and commit
   naming, release-note fragments, and publication gates. Follow it for App work.
-  If selected work has no Kaneo issue, create one before coding.
+  If selected work has no Kanvil ticket, create one before coding.
 - Code, tests, configuration, and `../CONTRACT_TESTS.md` describe implemented
   behavior; app contracts are checked against the local `../web/`. `CONTEXT.md`
   defines the domain vocabulary.
@@ -48,7 +48,7 @@ Every exception requires a non-empty reason.
   through `$talaria-upstream-contract`.
 - Before adding code, inspect nearby callers and existing helpers. Reuse or
   consolidate behavior with multiple callers, delete obsolete code, keep files
-  and types cohesive, avoid single-use abstractions, and create a Kaneo follow-up
+  and types cohesive, avoid single-use abstractions, and create a Kanvil follow-up
   when necessary cleanup is too broad for the selected task.
 - A screen's reads die with it. Load in `.task` or `.refreshable`; start a
   button's read (Refresh, Try Again, load more) with `ScreenReads.start` and

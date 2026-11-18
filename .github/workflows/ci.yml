@@ -308,6 +308,8 @@ jobs:
       actions: read
       # Reads cancelled jobs' annotations for a timeout.
       checks: read
+      # Reads the open repair claim and needs-a-person issues, so a red run starts a session only when it is new.
+      issues: read
     steps:
       - uses: actions/checkout@v7
         with:

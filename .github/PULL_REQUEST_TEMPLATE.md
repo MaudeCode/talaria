@@ -1,6 +1,6 @@
 ## Linked work
 
-<!-- Every PR must reference its canonical Kaneo task. -->
+<!-- Every PR must reference its canonical Kanvil ticket. -->
 
 TAL-
 
