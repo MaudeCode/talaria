@@ -61,10 +61,9 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   if (testInfo.project.name === 'mobile') await page.locator('#btnTitlebarSidePanel').click()
   else await page.getByRole('button', { name: 'Show workspace panel' }).click()
   await page.getByRole('tablist', { name: 'Side panel' }).getByRole('tab', { name: 'Files' }).click()
-  // Until the session record loads the panel shows the default workspace, then remounts on the session's own.
+  // Until the session record loads the panel has no workspace to list; it then mounts the session's own.
   await expect(page.locator('[data-files-workspace]')).toHaveAttribute('title', workspace)
   const tree = page.getByRole('tree', { name: 'Files' })
-  const shot = async (name: string) => { if (process.env.TAL566_SHOTS) await page.screenshot({ path: `${process.env.TAL566_SHOTS}/${name}-${testInfo.project.name}.png` }) }
   const open = async (name: string) => {
     await tree.getByRole('treeitem', { name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')},`) }).click()
     await expect(page.getByRole('button', { name: 'Back' })).toBeVisible()
@@ -75,7 +74,6 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
     await open(name)
     const img = page.getByRole('img', { name })
     await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth)).toBeGreaterThan(0)
-    await shot(name)
     await back()
   }
 
@@ -87,14 +85,11 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   expect(pdfRes.status()).toBe(200)
   expect(pdfRes.headers()['content-type']).toBe('application/pdf')
   expect(pdfRes.headers()['x-frame-options']).toBeUndefined()
-  // Headless Chromium draws no viewer inside the frame, so the shot has nothing to wait for.
-  await shot('pdf')
   await back()
 
   await open('tone.wav')
   const audio = page.getByLabel('tone.wav', { exact: true })
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.duration)).toBeGreaterThan(0.4)
-  await shot('audio')
   // A hidden Files page unmounts its player, so playback stops; the open file comes back with the page.
   const tabs = page.getByRole('tablist', { name: 'Side panel' })
   await tabs.getByRole('tab', { name: 'Agents' }).click()
@@ -106,7 +101,6 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   await open('clip.webm')
   const video = page.getByLabel('clip.webm', { exact: true })
   await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.videoWidth)).toBe(64)
-  await shot('video')
   await back()
 
   await open('page.html')
@@ -114,7 +108,6 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   await expect(frame.getByRole('heading', { name: 'Hello from HTML' })).toBeVisible()
   await expect(frame.getByText('script ran')).toBeVisible()
   await expect(frame.getByRole('heading', { name: 'Hello from HTML' })).toHaveCSS('color', 'rgb(0, 128, 128)')
-  await shot('html')
   // Edit swaps the preview for the source text.
   await page.getByRole('button', { name: 'Edit' }).click()
   await expect(page.getByRole('textbox', { name: 'Preview' })).toHaveValue(/Hello from HTML/)
@@ -126,7 +119,6 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   await expect(table.getByRole('columnheader')).toHaveText(['name', 'note'])
   await expect(table.getByRole('row')).toHaveCount(3)
   await expect(table.getByRole('cell', { name: 'said "hi", twice' })).toBeVisible()
-  await shot('csv')
   await back()
 
   await open('notes.md')

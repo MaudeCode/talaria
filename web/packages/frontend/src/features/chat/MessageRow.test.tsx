@@ -79,6 +79,17 @@ describe('server-collapsed bodies (TAL-456)', () => {
   })
 })
 
+describe('assistant reply copy', () => {
+  it('copies a partial reply when there is no final answer', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const row = groupAssistantTurns(projectMessages([{ role: 'assistant', id: 1, content: 'Partial output', _partial: true }]))[0]!
+    render(<AssistantMessageRow row={row} name="Assistant" mode="compact_worklog" actions={{}} tts={false} isLast />)
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+    expect(writeText).toHaveBeenCalledWith('Partial output')
+  })
+})
+
 describe('reply token usage (TAL-1076)', () => {
   const usage = { input_tokens: 12_345, output_tokens: 678, cache_read_tokens: 9_000, cache_write_tokens: 120, estimated_cost: 0.0123, cache_hit_percent: 73 }
   const reply = (extra: Partial<Message> = {}) => groupAssistantTurns(projectMessages([{ role: 'assistant', id: 1, content: 'Done.', _turnDuration: 4.25, _usedModel: 'test-model', ...extra }]))[0]!

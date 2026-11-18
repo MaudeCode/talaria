@@ -5,7 +5,6 @@ import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Transcript } from './Transcript'
-import { AssistantMessageRow } from './MessageRow'
 import { TurnActivityView } from './TurnActivityView'
 import { useDisclosure, WorklogDisclosureProvider } from './blocks/Worklog'
 import { groupAssistantTurns, liveActivity, persistedActivity, type TurnActivity } from './turnActivity'
@@ -496,15 +495,6 @@ describe('turn worklog presentation', () => {
     expect(steer).toBeVisible()
     expect(steer.closest('[data-role="user"]')).not.toBeNull()
     expect(view.container.querySelectorAll('.tool-worklog-summary')).toHaveLength(2)
-  })
-
-  it('copies a partial reply when there is no final answer', () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-    const row = groupAssistantTurns(projectMessages([{ role: 'assistant', id: 1, content: 'Partial output', _partial: true }]))[0]!
-    render(<AssistantMessageRow row={row} name="Assistant" mode="compact_worklog" actions={{}} tts={false} isLast />)
-    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
-    expect(writeText).toHaveBeenCalledWith('Partial output')
   })
 
   it('shows prose-only answers without empty worklogs', () => {

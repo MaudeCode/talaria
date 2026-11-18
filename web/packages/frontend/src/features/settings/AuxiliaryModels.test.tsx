@@ -1,5 +1,6 @@
 import delegationFixtures from '../../../../../../contracts/fixtures/delegation-settings.json'
 import { teardownAll } from '../../stream/connection'
+import { deferred } from '../../test/fixtures'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -58,13 +59,6 @@ async function openTask(name: RegExp) {
   await userEvent.click(row)
   expect(row).toHaveAttribute('aria-expanded', 'true')
   return editorOf(row)
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (error: unknown) => void
-  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
-  return { promise, resolve, reject }
 }
 
 beforeEach(() => {

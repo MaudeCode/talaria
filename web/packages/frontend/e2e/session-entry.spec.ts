@@ -1,6 +1,8 @@
 import type { Page, Route } from '@playwright/test'
 import { createServer, type ServerResponse } from 'node:http'
-import { expect, test } from './fixtures'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { expect, hold, test } from './fixtures'
 
 // Per-action DOM traces serialize the full 2,000-row fixture; retain failure screenshots.
 test.use({ serviceWorkers: 'block', trace: 'off', screenshot: 'only-on-failure' })
@@ -291,6 +293,73 @@ for (const { name, settings, turns } of cases) {
     await expect.poll(() => distance(page)).toBeLessThan(2)
   })
 }
+
+test('sending from a session scrolled up returns the transcript to its end', async ({ page }) => {
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'scrolled', title: 'Scrolled', messages: transcript('scrolled', 20) } } }))
+  await page.route('**/api/chat/start', (route) => route.fulfill({ json: { status: 'suppressed' } }))
+  // The draft autosave fires 1.2 s after typing; on a slow runner it lands before the test ends.
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.goto('/session/scrolled')
+  await expect.poll(() => distance(page)).toBeLessThan(2)
+  await page.locator('#messages').evaluate((el) => { el.scrollTop = el.scrollHeight / 3 })
+  await expect.poll(() => distance(page)).toBeGreaterThan(200)
+  await page.locator('#msg').fill('One more thing')
+  await page.locator('#btnSend').click()
+  await expect.poll(() => distance(page)).toBeLessThan(2)
+})
+
+test('opening a session paints every frame at its end', async ({ page }) => {
+  const manifest = JSON.parse(readFileSync(join(import.meta.dirname, '../dist/client/.vite/manifest.json'), 'utf8')) as Record<string, { file: string }>
+  const renderer = manifest['src/features/chat/render/MarkdownRenderer.tsx']
+  expect(renderer).toBeDefined()
+  const loading = hold()
+  await page.route(`**/${renderer!.file}`, async (route) => { await loading.gate; await route.continue() })
+  // The session's history answers only once the opened view has drawn without it.
+  const asked = hold()
+  const answering = hold()
+  await page.route('**/api/session?**', async (route) => {
+    asked.release()
+    await answering.gate
+    await route.fulfill({ json: { session: { session_id: 'entry', title: 'Entry', messages: transcript('entry', 25) } } })
+  })
+  await page.goto('/')
+  await expect(page.locator('#msg')).toBeVisible()
+  const sampling = page.evaluate(async () => {
+    const seen: number[] = []
+    history.pushState({}, '', '/session/entry')
+    dispatchEvent(new PopStateEvent('popstate'))
+    // Sampled until the last answer has rendered and ten frames in a row kept the same layout with no finite animation
+    // running, under a frame cap.
+    let still = 0, frames = 0, last = ''
+    await new Promise<void>((done) => {
+      const tick = () => {
+        const el = document.getElementById('messages')
+        if (el && document.querySelector('[data-message-key]')) seen.push(el.scrollHeight - el.scrollTop - el.clientHeight)
+        const landed = [...document.querySelectorAll('.hermes-prose p')].at(-1)?.textContent?.includes('entry answer 25.')
+        const moving = document.getAnimations().some((a) => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity)
+        const layout = `${el?.scrollHeight}:${el?.scrollTop}`
+        still = landed && !moving && layout === last ? still + 1 : 0
+        last = layout
+        if (still < 10 && ++frames < 1000) requestAnimationFrame(tick)
+        else done()
+      }
+      requestAnimationFrame(tick)
+    })
+    return seen
+  })
+  try {
+    await asked.gate
+    await page.evaluate(() => new Promise((drawn) => requestAnimationFrame(() => requestAnimationFrame(drawn))))
+    answering.release()
+    // Until the renderer arrives the session's history waits behind the skeleton (TAL-2410).
+    await expect(page.getByText('Entry', { exact: true }).filter({ visible: true }).first()).toBeVisible()
+    await expect(page.getByTestId('transcript-skeleton')).toBeVisible()
+  } finally { answering.release(); loading.release() }
+  await expect(page.locator('.hermes-prose p').last()).toContainText('entry answer 25.')
+  const frames = await sampling
+  expect(frames.length).toBeGreaterThan(10)
+  expect(Math.max(...frames)).toBeLessThan(2)
+})
 
 test('a message deep link wins over the entry jump to the bottom', async ({ page }) => {
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'entry-link', title: 'Link', messages: transcript('entry-link', 20) } } }))

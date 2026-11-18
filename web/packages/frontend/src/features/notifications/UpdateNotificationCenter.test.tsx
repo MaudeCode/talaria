@@ -53,9 +53,12 @@ function UpdateButton({ target }: { target: 'webui' | 'agent' }) {
 
 let qc: QueryClient
 /** Mounts the provider and waits for its first read, so each `serve` is a fresh read. */
-async function renderProvider() {
+function mountProvider() {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  const view = render(<QueryClientProvider client={qc}><UpdateNotificationProvider><UpdateButton target="webui" /><UpdateButton target="agent" /></UpdateNotificationProvider></QueryClientProvider>)
+  return render(<QueryClientProvider client={qc}><UpdateNotificationProvider><UpdateButton target="webui" /><UpdateButton target="agent" /></UpdateNotificationProvider></QueryClientProvider>)
+}
+async function renderProvider() {
+  const view = mountProvider()
   await waitFor(() => { expect(qc.getQueryCache().getAll()[0]?.state.status).toBe('success') })
   return view
 }
@@ -64,8 +67,9 @@ async function serve(rows: UpdateNotification[], tabUpdate: UpdateNotification |
   server.rows = rows
   server.tabUpdate = tabUpdate
   await act(async () => { await qc.refetchQueries() })
-  // React Query notifies its observers on the next macrotask.
-  await act(() => new Promise((resolve) => { setTimeout(resolve, 0) }))
+  // React Query notifies its observers on the next macrotask; on the fake clock, its zero step.
+  if (vi.isFakeTimers()) await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+  else await act(() => new Promise((resolve) => { setTimeout(resolve, 0) }))
 }
 const updating = (name: string) => screen.queryByRole('dialog', { name: `Updating ${name}` })
 const stepTexts = (name: string) => within(screen.getByRole('dialog', { name: `Updating ${name}` })).getAllByRole('listitem').map((item) => item.textContent)
@@ -124,44 +128,6 @@ describe('UpdateNotificationProvider Updating dialog (TAL-1138)', () => {
     expect(refreshToasts()).toMatchObject([[{ title: 'Talaria Web was updated', ttl: 0, dismissible: false, actions: [{ id: 'reload', label: 'Refresh now' }] }]])
   })
 
-  it('opens for an Agent update the server presents and closes itself once the Agent responds', async () => {
-    await renderProvider()
-    await serve([record({ phase: 'verifying', active: true, steps: steps(AGENT, 3) })], null)
-    expect(stepTexts('Hermes Agent')).toEqual(AGENT)
-    expect(within(updating('Hermes Agent')!).queryByRole('button')).toBeNull()
-    await serve([record({ phase: 'succeeded', presents_dialog: false, dialog_close: 'auto', steps: steps([...AGENT.slice(0, 3), 'Hermes Agent v0.22.1 is running'], 4) })], null)
-    expect(updating('Hermes Agent')).toHaveTextContent('Hermes Agent v0.22.1 is running')
-    await waitFor(() => { expect(updating('Hermes Agent')).toBeNull() }, { timeout: 4_000 })
-    await serve(server.rows, null)
-    expect(updating('Hermes Agent')).toBeNull()
-  })
-
-  it('Restart now and Restart later act on the wait, and the deferred restart reopens the dialog until it succeeds', async () => {
-    const WAIT = ['Installing', 'Restarting Talaria Web', 'Waiting for 2 gateway tasks', 'Restarting gateway', 'Agent responding']
-    const wait = record({
-      phase: 'waiting_for_idle', presents_dialog: false, dialog_close: 'restart_later', can_dismiss: false, steps: steps(WAIT, 2),
-      actions: [{ id: 'restart_gateway_now', label: 'Restart now', style: 'destructive', acknowledges: false }],
-    })
-    await renderProvider()
-    await userEvent.click(screen.getByRole('button', { name: 'Start agent' }))
-    await serve([wait])
-    const dialog = updating('Hermes Agent')!
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Restart now' }))
-    expect(api.performUpdateNotificationAction).toHaveBeenCalledWith(wait.id, 'restart_gateway_now')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Restart later' }))
-    expect(updating('Hermes Agent')).toBeNull()
-    // The wait goes on in the bell; the closed dialog stays closed.
-    await serve([{ ...wait, updated_at: record({}).updated_at, steps: steps([...WAIT.slice(0, 2), 'Waiting for 1 gateway task', ...WAIT.slice(3)], 2) }])
-    expect(updating('Hermes Agent')).toBeNull()
-
-    await serve([record({ phase: 'restarting', active: true, steps: steps(WAIT, 3) })])
-    expect(within(updating('Hermes Agent')!).getAllByRole('listitem')[3]).toHaveAttribute('aria-current', 'step')
-    expect(within(updating('Hermes Agent')!).queryByRole('button')).toBeNull()
-    await serve([record({ phase: 'verifying', active: true, steps: steps(WAIT, 4) })])
-    await serve([record({ phase: 'succeeded', presents_dialog: false, dialog_close: 'auto', steps: steps(WAIT, 5) })])
-    await waitFor(() => { expect(updating('Hermes Agent')).toBeNull() }, { timeout: 4_000 })
-  })
-
   it('shows a failure with Close, and a later read or reload never reopens it', async () => {
     const failed = record({
       phase: 'failed', presents_dialog: false, dialog_close: 'close', message: 'The update could not be completed.',
@@ -180,6 +146,69 @@ describe('UpdateNotificationProvider Updating dialog (TAL-1138)', () => {
     await renderProvider()
     await serve([failed])
     expect(updating('Hermes Agent')).toBeNull()
+  })
+
+  // An outcome with `dialog_close: 'auto'` stays readable for 2.5 s; the fake clock steps over that wait.
+  describe('an outcome that closes by itself', () => {
+    const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+    async function mount() {
+      mountProvider()
+      await advance(0)
+      expect(api.fetchUpdateNotifications).toHaveBeenCalledOnce()
+    }
+    beforeEach(() => { vi.useFakeTimers(); notifyManager.setScheduler(queueMicrotask) })
+    afterEach(() => {
+      cleanup()
+      qc.clear()
+      notifyManager.setScheduler((callback) => { setTimeout(callback, 0) })
+      vi.useRealTimers()
+    })
+
+    it('opens for an Agent update the server presents and closes itself once the Agent responds', async () => {
+      await mount()
+      await serve([record({ phase: 'verifying', active: true, steps: steps(AGENT, 3) })], null)
+      expect(stepTexts('Hermes Agent')).toEqual(AGENT)
+      expect(within(updating('Hermes Agent')!).queryByRole('button')).toBeNull()
+      await serve([record({ phase: 'succeeded', presents_dialog: false, dialog_close: 'auto', steps: steps([...AGENT.slice(0, 3), 'Hermes Agent v0.22.1 is running'], 4) })], null)
+      expect(updating('Hermes Agent')).toHaveTextContent('Hermes Agent v0.22.1 is running')
+      await advance(2_499)
+      expect(updating('Hermes Agent')).not.toBeNull()
+      await advance(1)
+      expect(updating('Hermes Agent')).toBeNull()
+      await serve(server.rows, null)
+      expect(updating('Hermes Agent')).toBeNull()
+    })
+
+    it('Restart now and Restart later act on the wait, and the deferred restart reopens the dialog until it succeeds', async () => {
+      const WAIT = ['Installing', 'Restarting Talaria Web', 'Waiting for 2 gateway tasks', 'Restarting gateway', 'Agent responding']
+      const wait = record({
+        phase: 'waiting_for_idle', presents_dialog: false, dialog_close: 'restart_later', can_dismiss: false, steps: steps(WAIT, 2),
+        actions: [{ id: 'restart_gateway_now', label: 'Restart now', style: 'destructive', acknowledges: false }],
+      })
+      await mount()
+      fireEvent.click(screen.getByRole('button', { name: 'Start agent' }))
+      await advance(0)
+      await serve([wait])
+      const dialog = updating('Hermes Agent')!
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Restart now' }))
+      await advance(0)
+      expect(api.performUpdateNotificationAction).toHaveBeenCalledWith(wait.id, 'restart_gateway_now')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Restart later' }))
+      expect(updating('Hermes Agent')).toBeNull()
+      // The wait goes on in the bell; the closed dialog stays closed.
+      await serve([{ ...wait, updated_at: record({}).updated_at, steps: steps([...WAIT.slice(0, 2), 'Waiting for 1 gateway task', ...WAIT.slice(3)], 2) }])
+      expect(updating('Hermes Agent')).toBeNull()
+
+      await serve([record({ phase: 'restarting', active: true, steps: steps(WAIT, 3) })])
+      expect(within(updating('Hermes Agent')!).getAllByRole('listitem')[3]).toHaveAttribute('aria-current', 'step')
+      expect(within(updating('Hermes Agent')!).queryByRole('button')).toBeNull()
+      await serve([record({ phase: 'verifying', active: true, steps: steps(WAIT, 4) })])
+      await serve([record({ phase: 'succeeded', presents_dialog: false, dialog_close: 'auto', steps: steps(WAIT, 5) })])
+      await advance(2_499)
+      expect(updating('Hermes Agent')).not.toBeNull()
+      await advance(1)
+      expect(updating('Hermes Agent')).toBeNull()
+    })
   })
 })
 

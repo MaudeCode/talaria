@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http'
 import type { Page } from '@playwright/test'
-import { expect, test } from './fixtures'
+import { expect, hold, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block', video: 'on' })
 
@@ -31,12 +31,6 @@ async function settled(page: Page): Promise<void> {
   })
 }
 
-/** A request held until the test releases it. */
-function hold() {
-  let release!: () => void
-  const gate = new Promise<void>((resolve) => { release = resolve })
-  return { gate, release }
-}
 
 const yoloTab = '.composer-notices [data-notice="yolo"]'
 

@@ -20,16 +20,16 @@ describe('createSessionNow (TAL-1040)', () => {
     await createSessionNow({ execution_mode: 'normal' })
     expect(newSession).toHaveBeenLastCalledWith({ worktree: false })
   })
-})
 
-describe('useCreationId (TAL-1040)', () => {
   it('sends the creation id with a diagnostic chat only', async () => {
     await createSessionNow({ execution_mode: 'safe', request_id: 'abc' })
     expect(newSession).toHaveBeenLastCalledWith({ worktree: false, execution_mode: 'safe', request_id: 'abc' })
     await createSessionNow({ request_id: 'abc' })
     expect(newSession).toHaveBeenLastCalledWith({ worktree: false })
   })
+})
 
+describe('useCreationId (TAL-1040)', () => {
   it('keeps one id across retries until the chat is created or its choices change', () => {
     const { result, rerender } = renderHook(({ choices }) => useCreationId(choices), { initialProps: { choices: { execution_mode: 'safe' } } })
     const first = result.current.next()

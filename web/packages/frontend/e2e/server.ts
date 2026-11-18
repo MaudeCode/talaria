@@ -30,7 +30,7 @@ const STATE_FILE = join(tmpdir(), `hermes-e2e-${process.env.HERMES_E2E_PORT ?? '
  */
 const STATE_ROOT = existsSync('/dev/shm') ? '/dev/shm' : tmpdir()
 
-export interface ServerHandle { pid: number; state: string; log: string }
+interface ServerHandle { pid: number; state: string; log: string }
 
 /** A listener on the port would answer the `/health` wait below for a server that could not bind. Only a refused connection proves the port free. */
 function assertPortFree(url: URL): Promise<void> {

@@ -104,7 +104,7 @@ describe('file tree writes show their result at once (TAL-1384)', () => {
     expect(names()).toEqual(['docs', 'a.txt', 'b.txt', 'notes.md'])
   })
 
-  it('moves a dropped entry out of the folder at once', async () => {
+  it('moves an entry dropped on a folder into that folder at once', async () => {
     vi.mocked(api.moveEntry).mockReturnValue(held())
     renderFiles()
     const folder = (await screen.findByRole('treeitem', { name: row('docs') })).parentElement!
