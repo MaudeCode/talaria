@@ -195,6 +195,13 @@ jobs:
     if: fromJSON(inputs.plan || '{}').lanes.TalariaKitTests.repeat[0] != null
     runs-on: xcode-27
     timeout-minutes: 30
+    permissions:
+      contents: read
+      # Reads this run's job list to wait for the Web contract probe.
+      actions: read
+    env:
+      # The live contract test skips without the probe's fixture, so repeating it waits for that like the package job.
+      LIVE_REPEAT: ${{ inputs.contracts && contains(join(fromJSON(inputs.plan || '{}').lanes.TalariaKitTests.repeat, ' '), '/testLiveUpstreamContractResponsesDecodeWhenSupplied') }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -204,12 +211,29 @@ jobs:
 
       - uses: ./.github/actions/setup-bash
 
+      - name: Wait for the Web contract probe
+        if: env.LIVE_REPEAT == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ci/wait-for-job "Web contract probe" 1500
+
+      - name: Download the probe's live response fixture
+        if: env.LIVE_REPEAT == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: contract-fixture
+          path: ${{ runner.temp }}/contract-fixture
+
       - name: Repeat the added and changed package tests
         env:
           PLAN: ${{ inputs.plan }}
           TALARIA_PACKAGE_RESULTS: ${{ runner.temp }}/package-repeats
         run: |
           set -euo pipefail
+          if [[ "${LIVE_REPEAT}" == true ]]; then
+            [[ -s "${RUNNER_TEMP}/contract-fixture/live-responses.json" ]] || { echo "The probe artifact has no live-responses.json" >&2; exit 1; }
+            export TALARIA_LIVE_CONTRACT_RESPONSES="${RUNNER_TEMP}/contract-fixture/live-responses.json"
+          fi
           printf '%s' "${PLAN}" > "${RUNNER_TEMP}/plan.json"
           # shellcheck disable=SC2046 # One validated argument per line.
           scripts/test-package $(ci/hosted-test-shard package-repeat "${RUNNER_TEMP}/plan.json") | tee -a "${GITHUB_STEP_SUMMARY}"
