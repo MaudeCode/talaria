@@ -449,8 +449,6 @@ final class SettingsPlacementHostedTests: XCTestCase {
                         $0.accessibilityLabel?.contains("Offline: showing the breakpoints last read from the server.") == true
                     }
                 }
-                let labels = allSettingsRows(in: window).labels
-                let rows = labels.joined(separator: "\n")
                 let helpSections = [
                     "chat": ["Composer", "Conversation"], "notifications": ["Provider Quotas"], "speech": ["Speech"],
                     "servers": ["Server Access"], "navigation": ["Quota Display"],
@@ -463,8 +461,14 @@ final class SettingsPlacementHostedTests: XCTestCase {
                     "user-profile": ["User Profile"], "server-detail": ["Identity", "Account"],
                     "connection-headers": ["Connection Headers"], "default-model": ["Custom"]
                 ]
-                for section in helpSections[name] ?? [] {
-                    XCTAssertTrue(labels.contains("About \(section)"), "\(name) must expose help for \(section)")
+                // A page that loads its rows shows no "Loading" row first (auxiliary models), so wait for the help the
+                // page owns before reading its rows once (rule `snapshot`).
+                let expectedHelp = (helpSections[name] ?? []).map { "About \($0)" }
+                let helpShown = await awaitCondition { expectedHelp.allSatisfy(self.allSettingsRows(in: window).labels.contains) }
+                let labels = allSettingsRows(in: window).labels
+                let rows = labels.joined(separator: "\n")
+                for help in expectedHelp {
+                    XCTAssertTrue(helpShown && labels.contains(help), "\(name) must expose help for \(help.dropFirst(6))")
                 }
                 if name == "providers-offline" {
                     XCTAssertTrue(rows.contains("Offline: showing the breakpoints last read from the server."),
