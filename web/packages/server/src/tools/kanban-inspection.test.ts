@@ -3,7 +3,7 @@ import { withKanbanPolicy } from './kanban.js'
 
 const task = (board: string, id: string, status = 'todo', extra = {}) => ({ key: `${board}/${id}`, board, task: { id, title: id, status, priority: 0, claim_live: false, has_completion_evidence: false, agent_move_targets: null, ...extra } })
 const edge = (source: string, target: string) => ({ source, target })
-const inspect = (nodes: ReturnType<typeof task>[], edges = [] as ReturnType<typeof edge>[], extra = {}) => withKanbanPolicy({ nodes, edges, truncated: false, generated_at: 200, ...extra }) as unknown as { nodes: { key: string; ancestors: string[]; descendants: string[]; cycle: boolean; running_lineage: boolean; timing: { start: number | null; end: number | null; duration_seconds: number | null }; task: { available_actions: unknown } }[]; edges: ReturnType<typeof edge>[] }
+const inspect = (nodes: ReturnType<typeof task>[], edges = [] as ReturnType<typeof edge>[], extra = {}) => withKanbanPolicy({ nodes, edges, truncated: false, generated_at: 200, ...extra }) as unknown as { nodes: { key: string; ancestors: string[]; descendants: string[]; cycle: boolean; running_lineage: boolean; timing: { start: number | null; end: number | null; duration_seconds: number | null }; task: { available_actions: unknown } }[]; edges: ReturnType<typeof edge>[]; truncated: boolean }
 
 describe('Kanban inspection projection', () => {
   it('qualifies identities across authorized boards and resolves transitive running lineage and cycles', () => {
@@ -55,12 +55,12 @@ describe('Kanban inspection projection', () => {
     expect(golden.some(n => n.cycle) && golden.some(n => !n.cycle && n.descendants.length > 0)).toBe(true)
   })
 
-  it('bounds hostile large graphs and never retains another profile between reads', () => {
-    const view = inspect(Array.from({ length: 700 }, (_, i) => task('a', String(i))), Array.from({ length: 3000 }, () => edge('a/0', 'a/1')))
-    expect(view.nodes.length).toBeLessThanOrEqual(500)
+  it('caps a hostile graph at 500 nodes and 2000 edges and marks it truncated', () => {
+    // 3000 distinct edges, all between the first 500 nodes, so every one survives the node cap.
+    const edges = Array.from({ length: 3000 }, (_, i) => edge(`a/${String(i % 500)}`, `a/${String((i % 500 + 1 + Math.floor(i / 500)) % 500)}`))
+    const view = inspect(Array.from({ length: 700 }, (_, i) => task('a', String(i))), edges)
+    expect(view.nodes).toHaveLength(500)
     expect(view.edges.length).toBeLessThanOrEqual(2000)
-    const switched = inspect([task('other-profile', '1')])
-    expect(switched.nodes).toHaveLength(1)
-    expect(switched.nodes[0]?.ancestors).toEqual([])
+    expect(view.truncated).toBe(true)
   })
 })

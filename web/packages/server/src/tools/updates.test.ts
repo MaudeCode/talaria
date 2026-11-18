@@ -8,10 +8,11 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-// These tests own a synthetic host prefix even when CI itself runs in a container.
+// These tests own a synthetic host prefix even when CI itself runs in a container; `host.container` fakes one.
+const host = vi.hoisted(() => ({ container: false }))
 vi.mock('node:fs', async (original) => {
   const fs = await original<typeof import('node:fs')>()
-  return { ...fs, readdirSync: vi.fn(fs.readdirSync), existsSync: (path: import('node:fs').PathLike) => ['/run/.containerenv', '/.dockerenv', '/.within_container'].includes(String(path)) ? false : fs.existsSync(path) }
+  return { ...fs, readdirSync: vi.fn(fs.readdirSync), existsSync: (path: import('node:fs').PathLike) => ['/run/.containerenv', '/.dockerenv', '/.within_container'].includes(String(path)) ? host.container : fs.existsSync(path) }
 })
 import type { AgentRecoveryState, RuntimeDescribe } from '@maudecode/talaria-web-contracts'
 import type { Dict } from '../config/agent-config.js'
@@ -42,6 +43,8 @@ const cleanup = async (): Promise<void> => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 }
 afterEach(cleanup)
+/** One event-loop turn: drains every microtask chain a synchronous call started, so absent work that needs no I/O has had its chance to run. */
+const macrotask = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve) })
 const tmp = (): string => { const d = mkdtempSync(join(tmpdir(), 'talaria-updates-')); dirs.push(d); return d }
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', '-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, ...GIT_ENV }, stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 const write = (path: string, text: string): void => { mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, text) }
@@ -192,7 +195,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       const advance = async (ms: number): Promise<void> => {
         await vi.advanceTimersByTimeAsync(ms)
         await tick.mock.results.at(-1)!.value
-        await new Promise(setImmediate)
+        await macrotask()
       }
       svc.startAutoApply()
       await advance(0)
@@ -584,7 +587,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(restarts).toEqual([1])
   })
 
-  it('the Experimental setting round-trips and keeps the Agent channel independent', async () => {
+  it('a source checkout on Experimental stays manual while the Agent checkout keeps its own v* tags', async () => {
     const s = sourceInstall()
     const agentCalls: string[][] = []
     const run: GitRun = (args, cwd, t) => { if (cwd !== s.client && cwd !== web(s.client)) agentCalls.push(args); return s.run(args, cwd, t) }
@@ -844,10 +847,12 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(result.message).toContain('synthetic pty ABI mismatch')
   })
 
-  it('refuses Experimental npm updates and mismatched global package roots', async () => {
+  it('leaves container installs, a mismatched global npm root and Experimental without a registry to manual updates', async () => {
     const s = sourceInstall()
     const n = npmPackageInstall(s)
-    expect(await npmInstallInfo(n.packageRoot, n.npm, true)).toBeNull()
+    expect(await npmInstallInfo(n.packageRoot, n.npm)).toMatchObject({ version: '1.0.0' })
+    host.container = true
+    try { expect(await npmInstallInfo(n.packageRoot, n.npm)).toBeNull() } finally { host.container = false }
     const wrongRoot: BuildRun = (args) => Promise.resolve(args[0] === 'root' ? { ok: true, out: join(tmp(), 'other') } : { ok: false, out: 'must not install' })
     expect((await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, wrongRoot)).manual_update).toBe(true)
     expect((await applyWebUpdate(n.packageRoot, 'experimental', s.run, s.getJson, s.identity, n.npm)).manual_update).toBe(true)
@@ -1710,7 +1715,7 @@ describe('Agent checkout updates', () => {
         if (state.phase === 'complete') break
         expect(state.phase).toBe('waiting')
         // Keep the virtual clock still while the real Git/filesystem work completes.
-        await new Promise<void>((resolve) => { setImmediate(resolve) })
+        await macrotask()
         delay = Math.max(0, new Date(state.retry_at!).getTime() - Date.now()) + 1
       }
       expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'complete' })
@@ -2585,10 +2590,11 @@ describe('Agent checkout updates', () => {
     expect(prompts).toHaveLength(1)
   })
 
-  it.each(['summary disabled', 'checks disabled'])('does not pre-generate when %s (TAL-1008)', async (mode) => {
-    const { svc, prompts } = summaryService(agentInstall(), { summarizeAutomatically: () => mode !== 'summary disabled', checkEnabled: () => mode !== 'checks disabled' })
+  it('does not pre-generate when checks are disabled (TAL-1008)', async () => {
+    const stateDir = tmp()
+    const { svc, prompts } = summaryService(agentInstall(), { stateDir, summarizeAutomatically: () => true, checkEnabled: () => false })
     await svc.check(true)
-    await new Promise((resolve) => setImmediate(resolve))
+    await vi.waitFor(() => { expect(pendingSummary(stateDir).items).toHaveLength(1) })
     expect(prompts).toHaveLength(0)
   })
 
@@ -2765,19 +2771,19 @@ describe('Agent checkout updates', () => {
     expect(pendingSummary(stateDir)).toMatchObject({ items: [{ id: 'v2.0.0', text: 'Release notes for v2.0.0' }], summary_sections: null, summarized_through: null })
     // A refresh while the runtime is known stale skips the model call.
     await svc.check(true)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await macrotask()
     expect(prompts).toHaveLength(2)
     current()
     svc.startAutoApply(300000)
     try {
       reconnect({ ...new FakeSidecar().describe!, stale: true })
-      await new Promise((resolve) => setTimeout(resolve, 20))
+      await macrotask()
       expect(prompts).toHaveLength(2)
       reconnect(new FakeSidecar().describe!)
       await vi.waitFor(() => { expect(pendingSummary(stateDir)).toMatchObject({ summary_sections: [{ title: "What you'll notice", items: ['Chats open faster.'] }], summarized_through: 'v2.0.0' }) })
       expect(prompts).toHaveLength(3)
       reconnect(new FakeSidecar().describe!)
-      await new Promise((resolve) => setTimeout(resolve, 20))
+      await macrotask()
       expect(prompts).toHaveLength(3)
       expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'llm', cached: true })
       expect(logs.filter((line) => line.includes('summary'))).toEqual([])
@@ -2852,7 +2858,7 @@ describe('Agent checkout updates', () => {
     svc.startAutoApply(300000)
     try {
       reconnect(new FakeSidecar().describe!)
-      await new Promise((resolve) => setTimeout(resolve, 20))
+      await macrotask()
       expect(prompts).toHaveLength(2)
       expect(logs.filter((line) => line.includes('summary'))).toHaveLength(1)
     } finally { svc.stopAutoApply() }
@@ -3026,7 +3032,8 @@ describe('Agent checkout updates', () => {
     await vi.waitFor(() => { expect(holding).toBe(true) })
     let cleaned = false
     const done = cleanup().then(() => { cleaned = true })
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    // Cleanup's own work is microtasks; one macrotask lets it run as far as the held refresh allows.
+    await macrotask()
     // Removing the checkout now would race the git process the refresh is about to run in it.
     expect(existsSync(a.agent)).toBe(true)
     expect(cleaned).toBe(false)

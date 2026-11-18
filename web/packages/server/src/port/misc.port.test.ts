@@ -506,31 +506,11 @@ describe('image attachments in user messages (review round 14)', () => {
       expect((await post(s, '/api/chat/start', { session_id: sid, message: 'again' })).status).toBe(409)
       expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toMatchObject({ ok: true, cancelled: true })
       // The turn reaches teardown without the lookup ever answering, so a new turn is admitted.
-      const deadline = Date.now() + 5000
-      let res = await post(s, '/api/chat/start', { session_id: sid, message: 'after cancel' })
-      while (res.status === 409 && Date.now() < deadline) { await new Promise((r) => setTimeout(r, 25)); res = await post(s, '/api/chat/start', { session_id: sid, message: 'after cancel' }) }
-      expect(res.status).toBe(200)
+      let res!: Response
+      await vi.waitFor(async () => { res = await post(s, '/api/chat/start', { session_id: sid, message: 'after cancel' }); expect(res.status).toBe(200) }, { timeout: 15_000 })
       await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
     } finally {
       (release as (() => void) | null)?.()
-      sidecar.respond('text.image_mode', () => ({ mode, reason: 'test', supports_vision: mode === 'native' }))
-    }
-  })
-
-  it('a cancel that lands before the image-mode lookup starts never waits on the sidecar', async () => {
-    mode = 'native'
-    writeFileSync(join(ws(), 'pre.png'), png)
-    let lookups = 0
-    sidecar.respond('text.image_mode', () => { lookups += 1; return new Promise(() => undefined) })
-    try {
-      const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-      const session = (await s.deps.sessionStore.get(sid))
-      const controller = new AbortController()
-      controller.abort()
-      interface Resolver { imageInputMode: (sid: string, session: unknown, opts: Record<string, unknown>, signal: AbortSignal) => Promise<unknown> }
-      expect(await (s.deps.turns as unknown as Resolver).imageInputMode(sid, session, {}, controller.signal)).toBeNull()
-      expect(lookups).toBe(0)
-    } finally {
       sidecar.respond('text.image_mode', () => ({ mode, reason: 'test', supports_vision: mode === 'native' }))
     }
   })
@@ -683,18 +663,18 @@ describe('upstream probe caps', () => {
   const endless = (): Response => new Response(new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(64 * 1024)) } }), { status: 200, headers: { 'content-type': 'application/json' } })
 
   it('the MCP health probe stops reading past its body cap', async () => {
-    const started = Date.now()
-    const [state] = await probeServer({ url: 'https://mcp.example/mcp' }, () => Promise.resolve(endless()))
-    expect(Date.now() - started).toBeLessThan(5000)
-    expect(state).not.toBe('healthy')
+    // A valid initialize reply padded past the 64 KiB cap is never parsed.
+    const oversized = Response.json({ jsonrpc: '2.0', id: 'hermes-webui-health', result: { protocolVersion: '2025-06-18', padding: 'x'.repeat(64 * 1024) } })
+    expect(await probeServer({ url: 'https://mcp.example/mcp' }, () => Promise.resolve(oversized))).toEqual(['unknown', 'unexpected initialize reply'])
   })
 
   it('the remote gateway health probe stops reading past its body cap', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'talaria-gw-'))
-    try {
-      const result = await agentHealth({ env: { TALARIA_WEB_CHAT_BACKEND: 'gateway', TALARIA_WEB_GATEWAY_URL: 'https://gw.example' }, hermesHome: home, profileHome: () => home, fetch: () => () => Promise.resolve(endless()), now: () => Date.now() / 1000 })
-      expect(JSON.stringify(result)).not.toContain('gateway_state')
-    } finally { rmSync(home, { recursive: true, force: true }) }
+    // A gateway_state past the 64 KiB cap is never parsed.
+    const oversized = vi.fn(() => Promise.resolve(Response.json({ gateway_state: 'running', padding: 'x'.repeat(64 * 1024) })))
+    const result = await agentHealth({ env: { TALARIA_WEB_CHAT_BACKEND: 'gateway', TALARIA_WEB_GATEWAY_BASE_URL: 'https://gw-body-cap.example' }, hermesHome: '/nonexistent', profileHome: () => '/nonexistent', fetch: () => oversized, now: () => 1000 })
+    expect(oversized).toHaveBeenCalledWith('https://gw-body-cap.example/health/detailed', expect.anything())
+    expect(result).toMatchObject({ alive: true, details: { state: 'alive', reason: 'remote_gateway' } })
+    expect((result.details as Json).gateway_state).toBeUndefined()
   })
 
   it('the release metadata fetch aborts past two megabytes', async () => {

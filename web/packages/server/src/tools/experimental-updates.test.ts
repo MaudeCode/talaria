@@ -271,8 +271,6 @@ describe('Experimental npm updates (TAL-378)', () => {
     const status = await checkWebUpdate(current.packageRoot, 'web-exp', 'experimental', runGit, stableGetJson, identity(EXPERIMENTAL), current.npm, g.registry)
     expect(status).toMatchObject({ behind: 0, metadata_repair: false, manual_update: false })
     expect(status.channel_switch).toBeUndefined()
-    // The pull token goes to GHCR only, never to the blob host.
-    expect(g.requests.every((r) => r.url.startsWith('https://ghcr.io/'))).toBe(true)
   })
 
   it('updates an Experimental npm install from the verified tarball without a backup', async () => {

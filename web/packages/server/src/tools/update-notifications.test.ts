@@ -14,7 +14,14 @@ const alice: UpdateNotificationScope = { owner: 'oidc:alice', profile: 'work', s
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 describe('UpdateNotificationStore', () => {
-  it.each([['error', 'critical'], ['warn', 'warning'], ['info', 'info'], ['success', 'info']])('persists startup %s warnings with %s severity and scoped dismissal', async (level, severity) => {
+  it.each([['error', 'critical'], ['warn', 'warning'], ['info', 'info'], ['success', 'info']])('a startup %s warning has %s severity', async (level, severity) => {
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp()), () => new Date('2026-10-14T12:00:00Z')))
+    await store.agentWarning(alice, 'startup-warning.1234', { text: 'Synthetic Agent startup warning.', level })
+    expect((await store.list(alice)).notifications).toMatchObject([{ kind: 'agent_warning', severity }])
+  })
+
+  it('persists a startup warning with scoped dismissal', async () => {
+    const level = 'warn'
     const root = temp()
     let now = new Date('2026-10-14T12:00:00Z')
     const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root), () => now))
@@ -23,7 +30,7 @@ describe('UpdateNotificationStore', () => {
     await Promise.all([store.agentWarning(alice, key, { text, level }), store.agentWarning(alice, key, { text, level })])
     const original = (await store.list(alice)).notifications[0]!
     expect((await store.list(alice)).notifications).toHaveLength(1)
-    expect(original).toMatchObject({ kind: 'agent_warning', severity, persistent: true, actions: [], destination: null })
+    expect(original).toMatchObject({ kind: 'agent_warning', severity: 'warning', persistent: true, actions: [], destination: null })
     expect(original).not.toHaveProperty('notice_key')
     expect(original).not.toHaveProperty('notice_text_hash')
     await store.read(alice, original.id)
