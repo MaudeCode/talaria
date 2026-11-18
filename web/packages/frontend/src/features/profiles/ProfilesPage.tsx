@@ -27,7 +27,6 @@ import { cn } from '../../ui/cn'
 import { useResourceEffects, useResourceMutation, withCreated, withEffects } from '../sessions/useResourceMutation'
 import { SettingLink, SettingText, SettingValue, SettingValues, SettingsGroup, SettingsStats, SETTINGS_PAGE } from '../settings/SettingsRows'
 
-// TAL-805: `gateway_running` labels rows from a server without `gateway_mode`; delete the fallback once every supported server ships the field.
 const GATEWAY_MODE_LABEL: Record<GatewayMode, () => string> = {
   own: m.profile_gateway_running, served: m.profile_gateway_served, parked: m.profile_gateway_parked, standalone: m.profile_gateway_standalone, stopped: m.profile_gateway_stopped,
 }
@@ -37,8 +36,7 @@ type Profile = Profiles['profiles'][number]
 /** TAL-2143: the profile's own model and provider, or, as the server reports, that it runs on the default model. */
 const modelLine = (p: Profile): string => p.uses_default_model ? m.profile_uses_default_model() : [p.model, p.provider].filter(Boolean).join(' · ')
 
-const gatewayLabel = (p: Profile): string | undefined => p.gateway_mode ? GATEWAY_MODE_LABEL[p.gateway_mode]()
-  : p.gateway_running === undefined ? undefined : p.gateway_running ? m.profile_gateway_running() : m.profile_gateway_stopped()
+const gatewayLabel = (p: Profile): string | undefined => p.gateway_mode ? GATEWAY_MODE_LABEL[p.gateway_mode]() : undefined
 
 type NewProfile = Record<string, unknown> & { name: string; default_model?: string | undefined }
 interface ProfileEdit { name: string; display_name?: string; description?: string }

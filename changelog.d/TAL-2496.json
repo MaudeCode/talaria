@@ -1,0 +1,3 @@
+{
+  "skip": "Removes client fallbacks for older servers and a test-only seam; no behavior change with the current server."
+}

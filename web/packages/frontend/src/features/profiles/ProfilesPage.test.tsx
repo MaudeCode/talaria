@@ -80,15 +80,6 @@ describe('ProfilesPage', () => {
     expect(within(await label('stopped')).getByText('Gateway stopped')).toBeVisible()
   })
 
-  it('TAL-805: falls back to gateway_running from a server without gateway_mode', async () => {
-    vi.mocked(api.fetchProfiles).mockResolvedValueOnce({ profiles: [{ name: 'up', gateway_running: true, gateway_state: 'ok' as const }, { name: 'down', gateway_running: false, gateway_state: 'idle' as const }, { name: 'unknown' }], active: 'up', single_profile_mode: false })
-    await renderPage()
-    const row = async (name: string): Promise<HTMLElement> => (await screen.findByText(name, { selector: 'span.truncate' })).closest('li')!
-    expect(within(await row('up')).getByText('Gateway running')).toBeVisible()
-    expect(within(await row('down')).getByText('Gateway stopped')).toBeVisible()
-    expect(within(await row('unknown')).queryByText(/Gateway/)).not.toBeInTheDocument()
-  })
-
   it('TAL-213: shows each bot identity and opens the canonical Bot Chat only where one exists', async () => {
     const assign = vi.fn()
     const reload = vi.fn()
@@ -117,8 +108,8 @@ describe('ProfilesPage', () => {
   it('TAL-2143: shows the server\'s figures and, per profile, its monogram, marks, model line and gateway state', async () => {
     vi.mocked(api.fetchProfiles).mockResolvedValueOnce({
       profiles: [
-        { name: 'default', is_default: true, display_name: 'Writer', model: 'claude-sonnet-4-6', provider: 'anthropic', gateway_running: true, gateway_state: 'ok', has_env: false, uses_default_model: false, name_differs: true },
-        { name: 'scratch', gateway_running: false, gateway_state: 'idle', uses_default_model: true, name_differs: false },
+        { name: 'default', is_default: true, display_name: 'Writer', model: 'claude-sonnet-4-6', provider: 'anthropic', gateway_mode: 'own', gateway_running: true, gateway_state: 'ok', has_env: false, uses_default_model: false, name_differs: true },
+        { name: 'scratch', gateway_mode: 'stopped', gateway_running: false, gateway_state: 'idle', uses_default_model: true, name_differs: false },
       ],
       active: 'default', single_profile_mode: false, summary: { total: 2, gateways_running: 1, active_name: 'Writer' },
     })

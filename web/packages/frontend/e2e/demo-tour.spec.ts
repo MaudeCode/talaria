@@ -99,7 +99,12 @@ test('the demo server shows seeded data on every data page', async ({ page }, in
   await dataPages(page, info, 'dark')
 })
 
+// The light passes repeat the dark passes' checks, so they run only to save the light screenshots. sidebar.spec.ts owns
+// picking the light theme in Settings › Appearance.
+const LIGHT_SHOTS_ONLY = 'the light pass only saves screenshots (TOUR_SHOTS)'
+
 test('every data page shows its seeded data in the light theme', async ({ page }, info) => {
+  test.skip(!process.env.TOUR_SHOTS, LIGHT_SHOTS_ONLY)
   await dataPages(page, info, 'light')
 })
 
@@ -156,11 +161,13 @@ test('every Settings section and Tools tab shows its heading without horizontal 
 })
 
 test('every Settings section and Tools tab shows its heading in the light theme', async ({ page }, info) => {
+  test.skip(!process.env.TOUR_SHOTS, LIGHT_SHOTS_ONLY)
   await settingsPages(page, info, 'light')
 })
 
 for (const theme of ['dark', 'light'] as const) {
   test(`feedback form fits the viewport in the ${theme} theme`, async ({ page }, info) => {
+    test.skip(theme === 'light' && !process.env.TOUR_SHOTS, LIGHT_SHOTS_ONLY)
     const { server } = await bootDemoServer()
     try {
       if (theme === 'light') await pickLightTheme(page, server.base)

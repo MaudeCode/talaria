@@ -6,7 +6,7 @@ import { createQueryClient } from '../../api/queryClient'
 import { configureClient, get, resetClientForTests } from '../../api/client'
 import { createMemoryAdapter, DEFAULT_BOOTSTRAP, makeSession } from '../../contracts/adapters/memory'
 import { ProjectsSchema } from '../../contracts'
-import { BootstrapContext, setBootstrapForTests } from '../../app/bootstrap'
+import { BootstrapContext, loadBootstrap } from '../../app/bootstrap'
 import { readPersisted, removePersistedByPrefix, writePersisted } from '../../lib/persisted'
 import { z } from 'zod'
 import { useLogout } from './useLogout'
@@ -200,8 +200,8 @@ describe('identity-owned boot snapshots', () => {
   it('resets the same boundary on an expired-auth redirect', async () => {
     const qc = client()
     seed(qc)
-    setBootstrapForTests(DEFAULT_BOOTSTRAP)
-    configureClient({ transport: createMemoryAdapter({ routes: { 'GET /api/settings': () => [401, { error: 'Authentication required' }] } }) })
+    configureClient({ transport: createMemoryAdapter({ routes: { 'GET /api/bootstrap': () => [200, DEFAULT_BOOTSTRAP], 'GET /api/settings': () => [401, { error: 'Authentication required' }] } }) })
+    await loadBootstrap()
     await expect(get('api/settings', z.unknown())).rejects.toMatchObject({ kind: 'unauthorized' })
     expect(assign).toHaveBeenCalledTimes(1)
     window.dispatchEvent(new Event('pagehide'))
