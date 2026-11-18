@@ -87,8 +87,10 @@ PYTHON
 
 prepare_step keyboard xcrun simctl spawn "$simulator_id" defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true
 [[ "$keyboard_only" == true ]] && exit 0
-# The successful keyboard spawn just verified this simulator is running; do not repeat its boot wait. A reboot never
-# helped: it restarts the server's own startup on the same busy runner (TAL-2352).
+# The successful keyboard spawn just verified this simulator is running; do not repeat its boot wait. No reboot here:
+# beside the hosted build download it restarts the server's own startup on the same busy runner (TAL-2352). A hosted
+# shard whose notifications never answer gets its reboot from the guarded launch instead (scripts/xctest-launch,
+# TAL-2469), once the download is over.
 if [[ "$notifications" == true ]]; then
     prepare_step notifications "$scripts/ready-simulator-notifications" --already-booted "$simulator_id"
 fi

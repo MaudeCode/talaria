@@ -1,0 +1,1 @@
+{"skip": "CI and test tooling only: a hosted test shard whose simulator the preparation could not ready reboots it through the same pre-test recovery as a launch fault, and a second fault is reported as a runner fault before any test ran; no app behavior changes."}
