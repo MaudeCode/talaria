@@ -97,7 +97,7 @@ test.describe('popup motion', () => {
       await expect(select).toHaveCSS('opacity', '1')
       await page.keyboard.press('Escape')
       await expect(select).toBeHidden()
-      await expect.poll(async () => timings(await recorded(page))).toEqual(expect.arrayContaining(POPUP_TIMINGS))
+      await expect.poll(async () => timings((await recorded(page)).filter(({ surface }) => surface === 'listbox'))).toEqual(expect.arrayContaining(POPUP_TIMINGS))
       await recordRuns(page)
       const tip = page.locator('main button[aria-label]', { has: page.locator('svg.lucide-circle-help') }).first()
       await tip.click()
@@ -106,7 +106,7 @@ test.describe('popup motion', () => {
       await expect(popover).toHaveCSS('opacity', '1')
       await page.keyboard.press('Escape')
       await expect(popover).toBeHidden()
-      await expect.poll(async () => timings(await recorded(page))).toEqual(expect.arrayContaining(POPUP_TIMINGS))
+      await expect.poll(async () => timings((await recorded(page)).filter(({ surface }) => surface === 'dialog'))).toEqual(expect.arrayContaining(POPUP_TIMINGS))
     })
 
     test('items take a click from the first frame, and a closing dialog lets the next click through', async ({ page }) => {

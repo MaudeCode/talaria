@@ -1,5 +1,5 @@
 import type { FunctionComponent, MemoExoticComponent, NamedExoticComponent } from 'react'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { VisibleMessage } from './useTranscript'
@@ -99,6 +99,8 @@ it.each([{ cached: true, reduced: false }, { cached: false, reduced: false }, { 
     if (!cached) {
       expect(view.container.querySelector('[data-message-key]')).toBeNull()
       expect(view.container.querySelector('.transcript-skeleton')).not.toBeNull()
+      // The skeleton's loading status sits inside the transcript, where the rows will land.
+      expect(within(view.container.querySelector<HTMLElement>('#messages')!).getByRole('status')).toHaveTextContent('Loading conversation…')
       await act(async () => { resolve({ session: make('second') }); await Promise.resolve() })
     }
     await screen.findByText('second message 5')

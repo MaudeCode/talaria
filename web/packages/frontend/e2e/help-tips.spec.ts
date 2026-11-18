@@ -6,21 +6,18 @@ const PAGES = [
   { path: '/settings/profiles', name: 'About Profiles', text: 'Use profiles for how the agent works' },
 ]
 
-for (const width of [1280, 760, 390]) {
-  for (const { path, name, text } of PAGES) {
-    test(`${path} keeps its explanation behind the title help at ${width}px`, async ({ page }, testInfo) => {
-      await page.setViewportSize({ width, height: 900 })
-      await page.goto(path)
-      await settle(page)
-      await expect(page.getByText(text, { exact: false })).toHaveCount(0)
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-      await page.screenshot({ path: testInfo.outputPath(`${path.slice(1)}-${width}.png`) })
-      await page.getByRole('button', { name, exact: true }).click()
-      await expect(page.getByText(text, { exact: false })).toBeVisible()
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-      await page.screenshot({ path: testInfo.outputPath(`${path.slice(1)}-${width}-help.png`) })
-    })
-  }
+// demo-tour.spec.ts owns each page's layout at every width with the help closed; the open popover can only push the
+// document at a phone width, so this runs there.
+for (const { path, name, text } of PAGES) {
+  test(`${path} keeps its explanation behind the title help, and the open help fits a phone`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 900 })
+    await page.goto(path)
+    await settle(page)
+    await expect(page.getByText(text, { exact: false })).toHaveCount(0)
+    await page.getByRole('button', { name, exact: true }).click()
+    await expect(page.getByText(text, { exact: false })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  })
 }
 
 test('the hub title help button keeps a 44px touch target', async ({ page }) => {
