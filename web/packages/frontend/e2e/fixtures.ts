@@ -127,6 +127,11 @@ export async function settle(page: Page): Promise<void> {
   await expect(page.locator('#app :visible').first()).toBeVisible()
 }
 
+/** Resolves once the page has painted two more frames, so work its last event scheduled has rendered and run its effects. */
+export async function painted(page: Page): Promise<void> {
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+}
+
 /** Records whether the page cancelled each contextmenu event, which is what suppresses the browser's own menu. */
 export async function watchNativeMenu(page: Page): Promise<() => Promise<boolean[]>> {
   await page.evaluate(() => {
@@ -137,14 +142,19 @@ export async function watchNativeMenu(page: Page): Promise<() => Promise<boolean
   return () => page.evaluate(() => (window as unknown as { nativeMenus: boolean[] }).nativeMenus)
 }
 
-/** Holds one touch point past Base UI's 500 ms long-press, as a finger would, `across` the way over the target's width. */
-export async function longPress(page: Page, target: Locator, across = 1 / 2): Promise<void> {
+/**
+ * Holds one touch point `across` the way over the target's width until `held` resolves: by default until a menu has opened
+ * and painted, so its effects run before the lift's click arrives, as a finger waits for Base UI's 500 ms long-press. A
+ * press that must open nothing installs `page.clock` and passes `() => page.clock.runFor(800)`, so the long-press timer has
+ * fired before the finger lifts.
+ */
+export async function longPress(page: Page, target: Locator, across = 1 / 2, held = async () => { await expect(page.getByRole('menu')).toBeVisible(); await painted(page) }): Promise<void> {
   const box = await target.boundingBox()
   if (!box) throw new Error('long-press target is not visible')
   const point = { x: box.x + box.width * across, y: box.y + box.height / 2 }
   const cdp = await page.context().newCDPSession(page)
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] })
-  await page.waitForTimeout(800)
+  await held()
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
   await cdp.detach()
 }
@@ -178,7 +188,7 @@ export async function expectNoOverflow(page: Page, name: string, shot?: (name: s
     for (const { name: viewport, width, height } of DUO_VIEWPORTS) {
       await page.setViewportSize({ width, height })
       // Two frames: media-query listeners re-render after the resize before the width is read.
-      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      await painted(page)
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${name} has no horizontal scroll at ${viewport}`).toBe(true)
       if (pane) await expect.poll(() => pane.evaluate((el) => el.scrollWidth <= el.clientWidth), `${name} has no horizontal scroll in its pane at ${viewport}`).toBe(true)
       await shot?.(`${name}-${viewport}`)

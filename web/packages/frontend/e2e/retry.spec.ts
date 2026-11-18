@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { expect, test } from './fixtures'
+import { expect, painted, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -58,13 +58,18 @@ test('against a server without the resend fields, Regenerate puts the stored tex
 test('a double-clicked Regenerate removes and resends one exchange', async ({ page }) => {
   const starts = await mockRetry(page, 'double')
   let retries = 0
+  // The first retry stays in flight until both clicks have landed.
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
   await page.route('**/api/session/retry', async (route) => {
     retries += 1
-    await new Promise((r) => setTimeout(r, 300))
+    await held
     await route.fulfill({ json: { ok: true, last_user_text: 'Summarize the logs', last_user_prompt: 'Summarize the logs', last_user_attachments: [], removed_count: 2 } })
   })
   await page.goto('/session/double')
   await page.getByRole('button', { name: 'Regenerate response' }).dblclick()
+  await painted(page)
+  release()
   await expect.poll(() => starts.length).toBe(1)
   expect(retries).toBe(1)
 })

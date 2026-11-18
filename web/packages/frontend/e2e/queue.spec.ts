@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http'
 import type { Page } from '@playwright/test'
-import { expect, longPress, test, watchNativeMenu } from './fixtures'
+import { expect, longPress, painted, test, watchNativeMenu } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -182,6 +182,8 @@ test('a long-press on a queued message opens its menu, but holding its drag hand
   const sid = 'queue-touch'
   const run = await runningSession(page, sid)
   try {
+    // The handle's hold must outlast the context menu's long-press timer, which the page's clock fires on demand.
+    await page.clock.install()
     await page.goto(`/session/${sid}`)
     await expect.poll(() => run.streams.has(`${sid}-run`)).toBe(true)
     await queue(page, 'First', 1)
@@ -189,8 +191,9 @@ test('a long-press on a queued message opens its menu, but holding its drag hand
     await openQueue(page)
     const menu = page.getByRole('menu')
 
-    await longPress(page, row(page, 'Second').getByRole('button', { name: 'Reorder queued message' }))
-    await page.waitForTimeout(100)
+    await longPress(page, row(page, 'Second').getByRole('button', { name: 'Reorder queued message' }), undefined, () => page.clock.runFor(800))
+    // A menu the expired timer opened has rendered by the next painted frame.
+    await painted(page)
     await expect(menu).toHaveCount(0)
 
     await longPress(page, row(page, 'Second').locator('.queue-card-text'))

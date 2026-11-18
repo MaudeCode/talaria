@@ -1,5 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdtempSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, openSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -84,19 +84,38 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
   // Foreground keeps the launcher attached as the supervisor of the server worker; SIGTERM to it stops both.
   const child: ChildProcess = spawn(process.execPath, [SERVER_BIN, '--foreground', '--no-browser'], { cwd: REPO_ROOT, env, stdio: ['ignore', fd, fd], detached: true })
   child.unref()
-  const deadline = Date.now() + 60_000
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) break
+  if (await listening(child, log)) {
     try {
       const res = await fetch(`${baseUrl}/health`)
       if (res.ok) return { pid: child.pid!, state, log }
-    } catch { /* not up yet */ }
-    await new Promise((r) => setTimeout(r, 200))
+    } catch { /* reported with the log below */ }
   }
   const output = readFileSync(log, 'utf8')
   const excerpt = output.length > 6000 ? `${output.slice(0, 3000)}\n[... ${String(output.length - 6000)} bytes ...]\n${output.slice(-3000)}` : output
   try { process.kill(child.pid!, 'SIGTERM') } catch { /* already gone */ }
   throw new Error(`server on ${baseUrl} did not become healthy (exit ${String(child.exitCode)}):\n${excerpt}`)
+}
+
+/** Wakes on each write to the server's log and on its exit, so readiness is the listening line itself, under one 60 s ceiling. */
+function listening(child: ChildProcess, log: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (up: boolean) => {
+      if (settled) return
+      settled = true
+      watcher.close()
+      clearTimeout(ceiling)
+      child.off('exit', exited)
+      resolve(up)
+    }
+    const check = () => { if (readFileSync(log, 'utf8').includes('Talaria Web listening on')) finish(true) }
+    const exited = () => { check(); finish(false) }
+    const watcher = watch(log, check)
+    const ceiling = setTimeout(() => { finish(false) }, 60_000)
+    child.once('exit', exited)
+    if (child.exitCode !== null) exited()
+    else check()
+  })
 }
 
 export function saveHandles(handles: ServerHandle[]): void { writeFileSync(STATE_FILE, JSON.stringify(handles)) }

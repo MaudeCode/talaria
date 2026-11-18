@@ -1,5 +1,5 @@
 import { createServer, type ServerResponse } from 'node:http'
-import { expect, test } from './fixtures'
+import { expect, painted, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -136,14 +136,19 @@ test('navigation keeps a live scene and requests only its unseen suffix (TAL-105
   let releaseStatus!: () => void
   const detailGate = new Promise<void>((resolve) => { releaseDetail = resolve })
   const statusGate = new Promise<void>((resolve) => { releaseStatus = resolve })
+  // The page may abandon the held read when it leaves the chat, so the late reply is the handler having answered it.
+  let detailAnswered!: () => void
+  const lateDetail = new Promise<void>((resolve) => { detailAnswered = resolve })
   await page.route('**/api/session?**', async (route) => {
     const id = new URL(route.request().url()).searchParams.get('session_id')!
-    if (id === sid && ++detailReads > 1) await detailGate
+    const late = id === sid && ++detailReads > 1
+    if (late) await detailGate
     await route.fulfill({ json: { session: {
       session_id: id, title: id === sid ? 'Navigation proof' : 'Other chat',
       ...(id === sid ? { active_stream_id: run, transcript_seq: { stream_id: run, seq: 0 } } : {}),
       messages: [{ role: 'user', id: 1, content: id === sid ? 'Read the file' : 'Other question', _turn_id: id === sid ? run : 'other' }],
     } } })
+    if (late) detailAnswered()
   })
   await page.route('**/api/chat/stream/status?**', async (route) => {
     if (++statusReads > 1) await statusGate
@@ -159,7 +164,6 @@ test('navigation keeps a live scene and requests only its unseen suffix (TAL-105
   const connections: ServerResponse[] = []
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://fixture')
-    requests.push(url)
     connections.push(response)
     const seq = Number(url.searchParams.get('after_seq') ?? journal.length)
     response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
@@ -169,12 +173,19 @@ test('navigation keeps a live scene and requests only its unseen suffix (TAL-105
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Missing fixture port')
-  await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}${new URL(route.request().url()).search}` }))
+  // A stream request counts when the page sends it, before it reaches the fixture.
+  await page.route('**/api/chat/stream?**', (route) => {
+    const url = new URL(route.request().url())
+    requests.push(url)
+    return route.continue({ url: `http://127.0.0.1:${address.port}${url.search}` })
+  })
   const enter = async (id: string) => {
     await page.evaluate((path) => { history.pushState({}, '', path); dispatchEvent(new PopStateEvent('popstate')) }, `/session/${id}`)
     await expect(page).toHaveURL(new RegExp(`/session/${id}$`))
   }
   try {
+    // The page's clock lets the detail go stale on demand.
+    await page.clock.install()
     await page.goto(`/session/${sid}`)
     await expect(page.locator('.live-turn')).toContainText('Reading the file.')
     await expect(page.locator('[data-tool-id="navigation-tool"]')).toHaveCount(1)
@@ -183,7 +194,7 @@ test('navigation keeps a live scene and requests only its unseen suffix (TAL-105
     await expect(page.getByText('Reading the file.')).toHaveCount(0)
     journal.push(['token', { text: ' Unseen suffix.' }])
     // Detail is stale on return, so the first paint must survive its outstanding refresh too.
-    await page.waitForTimeout(5100)
+    await page.clock.runFor(5100)
     await enter(sid)
     await expect.poll(() => detailReads).toBeGreaterThan(1)
     await expect.poll(() => statusReads).toBe(2)
@@ -193,9 +204,12 @@ test('navigation keeps a live scene and requests only its unseen suffix (TAL-105
     // Navigate again with status still pending. Its late reply must not reconnect a hidden chat.
     await enter('navigation-fixture-b')
     await expect(page.getByText('Other question')).toBeVisible()
+    const lateReplies = Promise.all([page.waitForResponse((response) => new URL(response.url()).pathname === '/api/chat/stream/status'), lateDetail])
     releaseStatus()
     releaseDetail()
-    await page.waitForTimeout(150)
+    // A reconnect the late replies caused has been sent once they have rendered.
+    await lateReplies
+    await painted(page)
     expect(requests).toHaveLength(1)
     await enter(sid)
     await expect(page.locator('.live-turn')).toContainText('Unseen suffix.')

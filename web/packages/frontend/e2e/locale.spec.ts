@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Page, Request } from '@playwright/test'
 import { expect, settle, test } from './fixtures'
 import { E2E_PASSWORD } from './global-setup'
 
@@ -23,11 +23,23 @@ async function bootIn(page: Page, language: string): Promise<{ chunks: string[] 
       if (text && seen.at(-1) !== text) seen.push(text)
     }).observe(document, { childList: true, subtree: true, characterData: true })
   }, LANGUAGE_LABEL)
-  // The chunk arrives after the lazy route would have painted, so any render before it would show English.
+  // The chunk arrives only once it is the page's last open request across three painted frames and the page's clock has run
+  // past React's Suspense reveal throttle: a route that did not wait for it has loaded and painted by then, so any render
+  // before it would show English. An event stream stays open by design.
+  await page.clock.install()
+  const open = new Set<Request>()
+  page.on('request', (request) => { if (request.resourceType() !== 'eventsource') open.add(request) })
+  page.on('requestfinished', (request) => { open.delete(request) })
+  page.on('requestfailed', (request) => { open.delete(request) })
   const chunks: string[] = []
   await page.route(/\/assets\/locale-.+\.js$/, async (route) => {
     chunks.push(/\/assets\/locale-(.+)-[a-z0-9]+\.js$/.exec(route.request().url())?.[1] ?? '')
-    await new Promise((resolve) => setTimeout(resolve, 750))
+    for (let quiet = 0; quiet < 3;) {
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+      quiet = open.size === 1 ? quiet + 1 : 0
+    }
+    await page.clock.runFor(750)
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
     await route.continue()
   })
   await page.goto('/settings/appearance')

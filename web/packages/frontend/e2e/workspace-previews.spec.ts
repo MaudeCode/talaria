@@ -49,7 +49,8 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
     recorder.start()
     for (let i = 0; i < 10; i++) {
       if (ctx) { ctx.fillStyle = i % 2 ? 'teal' : 'orange'; ctx.fillRect(0, 0, 64, 48) }
-      await new Promise((r) => setTimeout(r, 40))
+      // The stream captures a canvas frame when it paints.
+      await new Promise((r) => requestAnimationFrame(r))
     }
     recorder.stop()
     await stopped
@@ -86,7 +87,8 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   expect(pdfRes.status()).toBe(200)
   expect(pdfRes.headers()['content-type']).toBe('application/pdf')
   expect(pdfRes.headers()['x-frame-options']).toBeUndefined()
-  if (process.env.TAL566_SHOTS) { await page.waitForTimeout(1500); await shot('pdf') }
+  // Headless Chromium draws no viewer inside the frame, so the shot has nothing to wait for.
+  await shot('pdf')
   await back()
 
   await open('tone.wav')
