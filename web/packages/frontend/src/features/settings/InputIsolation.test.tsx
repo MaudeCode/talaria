@@ -47,7 +47,7 @@ vi.mock('../../api/endpoints', async (original) => ({
   fetchWorkspaces: vi.fn(() => Promise.resolve({ workspaces: [{ path: '/test/one', name: 'One' }, { path: '/test/two', name: 'Two' }], last: null })),
   // The server's filter answer: each call returns new row objects, as a real response does.
   fetchProviders: vi.fn((q = '') => {
-    const providers = [{ id: 'one', has_key: true }, { id: 'two', has_key: true }, { id: 'local', has_key: true, is_self_hosted: true, base_url: '' }].filter((p) => p.id.includes(q))
+    const providers = [{ id: 'one', has_key: true, setup: 'key' as const }, { id: 'two', has_key: true, setup: 'key' as const }, { id: 'local', has_key: true, is_self_hosted: true, base_url: '', setup: 'self_hosted' as const }].filter((p) => p.id.includes(q))
     return Promise.resolve({ providers, groups: providers.length ? [{ id: 'available', provider_ids: providers.map((p) => p.id) }] : [] })
   }),
   fetchProviderQuotas: vi.fn(() => Promise.resolve({ sources: [] })),

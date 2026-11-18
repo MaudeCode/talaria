@@ -857,7 +857,7 @@ test('an empty phone composer keeps its strip while each chip opens and applies,
   await page.route('**/api/session/execution-modes', (route) => route.fulfill({ json: { modes: [
     { mode: 'normal', available: true, reason: null, can_attach: true, can_reference: true },
     { mode: 'safe', available: true, reason: null, can_attach: false, can_reference: false },
-  ] } }))
+  ], selectable: true } }))
   await page.route('**/api/profiles', (route) => route.fulfill({ json: { profiles: [{ name: 'default' }, { name: 'research' }], active: 'default' } }))
   await page.route('**/api/profile/switch', (route) => route.fulfill({ json: { profiles: [{ name: 'default' }, { name: 'research' }], active: 'research', is_default: false, default_model: null, default_model_provider: null, default_workspace: null } }))
   await page.goto('/')
@@ -912,7 +912,7 @@ test('the composer menus open upward under their name, check the chosen row, and
   await page.route('**/api/session/execution-modes', (route) => route.fulfill({ json: { modes: [
     { mode: 'normal', available: true, reason: null, can_attach: true, can_reference: true },
     { mode: 'safe', available: true, reason: null, can_attach: false, can_reference: false },
-  ] } }))
+  ], selectable: true } }))
   await page.route('**/api/profiles', (route) => route.fulfill({ json: { profiles: [{ name: 'default', is_default: true }, { name: 'research' }], active: 'default' } }))
   await page.route('**/api/reasoning**', (route) => route.fulfill({ json: { supports_reasoning_effort: true, reasoning_effort: 'medium', supported_efforts: ['low', 'medium', 'high'] } }))
   await page.goto('/')

@@ -17,7 +17,7 @@ import type { AgentRuntimeMetadata } from '@maudecode/talaria-web-contracts'
 import type { ChatEvent } from '../contracts/sse'
 import type { ApprovalPending, Attachment, ClarifyPending, Session } from '../contracts'
 import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
-import type { ActivityGroup, ApprovalAnsweredBy, PendingSteer, RunStatus, RateLimitWait, ToolApprovalOutcome, ToolField, ToolKind, ToolApp, ToolProgress, ToolResultView, ToolVerb } from '@maudecode/talaria-web-contracts'
+import type { ActivityGroup, ApprovalAnsweredBy, PendingSteer, RunStatus, ToolApprovalOutcome, ToolField, ToolKind, ToolApp, ToolProgress, ToolResultView, ToolVerb } from '@maudecode/talaria-web-contracts'
 
 export type TurnStatus = 'starting' | 'connecting' | 'streaming' | 'reconnecting' | 'done' | 'error' | 'cancelled'
 
@@ -25,7 +25,7 @@ export interface LiveToolCall {
   progress?: ToolProgress | null
   id: string
   name: string
-  /** Server-derived display class and redacted label; an older server sends neither (`unknown`, no target). */
+  /** Server-derived display class and redacted label; every tool frame carries `kind`, and `target` is absent when empty. */
   kind: ToolKind
   /** TAL-2327: the verb a `kanban` call shows in place of its kind's own (server field). */
   verb?: ToolVerb | undefined
@@ -33,7 +33,7 @@ export interface LiveToolCall {
   app?: ToolApp | undefined
   target: string
   args: unknown
-  /** TAL-2318: the server's argument rows; absent from an older server, which shows `args`. */
+  /** TAL-2318: the server's argument rows; absent when the arguments are not an object, which shows `args`. */
   argsFields?: ToolField[] | undefined
   /** TAL-2338: the server's raw view of the arguments and result (`raw_args`, `raw_result`). */
   rawArgs?: string | undefined
@@ -57,7 +57,7 @@ export interface LiveToolCall {
   mediaInDetails?: true | undefined
   /** TAL-2331: the transcript leaves it out (server `hidden`); a failed lookup's completion clears it. */
   hidden?: true | undefined
-  /** TAL-2332: the server's activity group for the call; absent from an older server, which groups on the client. */
+  /** TAL-2332: the server's activity group for the call; absent on a native gateway stream, which groups on the client. */
   groupId?: string | undefined
   /** TAL-2340: the server's `started_at` (epoch ms); absent from a replayed native-owner start, whose row shows no timer. */
   startedAt?: number | undefined
@@ -113,8 +113,6 @@ export interface LiveTurn {
   closedSteerIds: string[]
   /** TAL-1006: the open compression span's server start (ms), until `compressed` or the turn's end closes it. */
   compressionStartedAt: number | null
-  /** TAL-821: the server's rate-limit wait while the Agent sits one out. */
-  rateLimitWait: RateLimitWait | null
   runStatus: RunStatus | null
   title: string | null
   doneSession: Session | null
@@ -182,7 +180,7 @@ function newTurn(sessionId: string, streamId: string, now: number, serverStarted
     sessionId, streamId, turnId: null, userMessageId: null, userText: '', userAttachments: [], startedAt: runStart(serverStartedAt, now, now), status: 'starting',
     segments: [], tools: {}, groups: {}, toolOrder: [], reasoningText: '', reasoningTitles: [], lastEventId: '', lastSeq: 0,
     usage: null, tps: null, contextStatus: null, warning: null, error: null, cancelledMessage: null, approval: null, clarify: null, connectCard: null,
-    pendingSteers: [], closedSteerIds: [], compressionStartedAt: null, rateLimitWait: null, runStatus: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false, claimsPersistedRows: true,
+    pendingSteers: [], closedSteerIds: [], compressionStartedAt: null, runStatus: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false, claimsPersistedRows: true,
   }
 }
 
@@ -323,8 +321,6 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       return { ...stamped, compressionStartedAt: null }
     case 'run_status':
       return terminal ? stamped : { ...stamped, runStatus: event.data.status }
-    case 'rate_limit_wait':
-      return { ...stamped, rateLimitWait: event.data.wait }
     case 'title':
     case 'title_status':
       return event.data.title ? { ...stamped, title: event.data.title } : stamped
@@ -382,6 +378,8 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
     case 'events':
     case 'gateway_status':
     case 'sessions_changed':
+    // TAL-821: `run_status` carries the wait the pill shows.
+    case 'rate_limit_wait':
       return stamped
   }
 }

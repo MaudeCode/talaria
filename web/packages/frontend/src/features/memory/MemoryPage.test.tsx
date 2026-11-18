@@ -73,17 +73,16 @@ describe('Memory page names and entries (TAL-2126)', () => {
   const header = () => screen.getByTitle('/h/memories/MEMORY.md')
   const blocks = () => Array.from(document.querySelectorAll('[data-memory-view="memory"] [data-memory-entry]'), (el) => el.textContent)
 
-  it('shows the name the server sent, and the section label without one', async () => {
+  it('shows the name the server sent, and the section label for a disabled store\'s empty name', async () => {
     vi.mocked(api.fetchMemory).mockResolvedValue({ ...memory('Entry A', 'r1'), memory_name: 'NOTES.md' })
     const qc = renderPage()
     await waitFor(() => expect(header()).toHaveTextContent(/^NOTES\.md$/))
-    const { memory_name: _, ...old } = memory('Entry A', 'r1')
-    vi.mocked(api.fetchMemory).mockResolvedValue(old)
+    vi.mocked(api.fetchMemory).mockResolvedValue({ ...memory('Entry A', 'r1'), memory_name: '' })
     await qc.refetchQueries()
     await waitFor(() => expect(header()).toHaveTextContent(/^Memory$/))
   })
 
-  it('renders each server entry as its own block, and the raw text without the field', async () => {
+  it('renders each server entry as its own block, and the raw text past the entry cap', async () => {
     const text = 'Uses tabs.\n§\nDeploys go to staging.'
     vi.mocked(api.fetchMemory).mockResolvedValue({ ...memory(text, 'r1'), memory_entries: ['Uses tabs.', 'Deploys go to staging.'] })
     const qc = renderPage()

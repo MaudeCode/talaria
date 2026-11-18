@@ -143,9 +143,9 @@ function reviewLabel(state: NonNullable<BackgroundLine['review_state']>): string
   }
 }
 
-/** Older servers/caches can prove worker failure, but never successful parent review. */
+/** The server stamps every line's `review_state`; the contract keeps it optional, which reads as unknown. */
 function lineReviewState(line: BackgroundLine): NonNullable<BackgroundLine['review_state']> {
-  return line.review_state ?? (line.status === 'failed' ? 'failed' : 'unknown')
+  return line.review_state ?? 'unknown'
 }
 
 function reviewDescription(line: BackgroundLine, parentReview: BackgroundLine['review_state']): string {

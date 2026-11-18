@@ -13,7 +13,7 @@ import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { AttachmentTray, pastedText, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
-import { parseCommand, resolveCommand, runsOnServer, type CommandSuggestion } from './commands'
+import { parseCommand, resolveCommand, type CommandSuggestion } from './commands'
 import { ContextRing, QuotaChip, type ContextFigures } from './chips'
 import { ComposerControls, chatModelChoice, hideComposerControl, quotaChipShown } from './ComposerControls'
 import { beginUpload, clearDraft, dropStagedFiles, finishUpload, moveStagedFiles, readLocalDraft, useDraftPersistence, useServerDraft, useStagedFiles } from './useDraft'
@@ -625,7 +625,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
       const entry = parsed ? resolveCommand(parsed.name, catalog) : undefined
       if (entry && !entry.clients.includes('web')) { showToast(entry.unsupported_message ?? m.cmd_unsupported(), 3000); return }
       // TAL-561: an entry the server runs shows its output behind a composer chip; it never reaches the model.
-      if (entry && runsOnServer(entry)) { setText(''); void runCommand(value); return }
+      if (entry?.exec) { setText(''); void runCommand(value); return }
       const cmd = parsed && { ...parsed, name: entry?.name ?? parsed.name }
       if (cmd) {
         if (cmd.name === 'theme') { const v = ThemeSchema.safeParse(cmd.args); if (v.success) setTheme(v.data); setText(''); return }

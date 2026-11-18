@@ -239,8 +239,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
   const g = git.data?.git
   const readOnly = managed && (content.data?.read_only !== false || content.isError)
   const fileName = content.data?.name ?? listing.data?.entries.find((entry) => entry.path === file)?.name ?? file
-  // An older server sends no `preview`: its replies are always text, Markdown by extension. Delete once Stable sends it.
-  const kind = content.data ? (content.data.preview ?? (/\.(md|markdown)$/i.test(file ?? '') ? 'markdown' : 'text')) : undefined
+  const kind = content.data?.preview
   // Markdown, CSV and HTML show their rendered form until Edit opens the text; TAL-2323: a file opened at a line shows its text.
   const atLine = opened?.line !== undefined && opened.path === file
   const renderable = kind === 'markdown' || kind === 'csv' || kind === 'html'
@@ -288,10 +287,10 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
             <div className="flex min-h-0 flex-1 flex-col">
               {rendered && kind === 'markdown' && <div className="min-h-0 flex-1 overflow-auto p-3 text-[13px]"><Markdown text={text} /></div>}
               {rendered && kind === 'csv' && <CsvTable rows={content.data.table ?? []} truncated={!!content.data.table_truncated} />}
-              {rendered && kind === 'html' && active && (
+              {rendered && kind === 'html' && active && content.data.preview_url && (
                 // The server's preview URL serves the page and its relative assets with a sandbox CSP; the frame sandbox
-                // repeats it without same-origin. An older server's raw inline route serves the page alone.
-                <iframe src={content.data.preview_url ? appUrl(content.data.preview_url).href : rawUrl(true)} title={file} sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" className="min-h-0 w-full flex-1 border-0 bg-white" />
+                // repeats it without same-origin.
+                <iframe src={appUrl(content.data.preview_url).href} title={file} sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" className="min-h-0 w-full flex-1 border-0 bg-white" />
               )}
               {!rendered && (
                 <textarea ref={textRef} readOnly={readOnly} value={text} onChange={(e) => setDraft(e.target.value)} spellCheck={false} aria-label={m.ws_panel_preview()} className="min-h-0 flex-1 resize-none bg-code-bg p-3 font-mono text-[12px] text-pre-text outline-none" />

@@ -39,7 +39,7 @@ export interface TurnActivity {
   continued?: boolean
   sceneRows?: unknown[]
   history?: { ref: string; index: number; before: number }
-  /** TAL-2332: the server's activity groups by `group_id`; absent from an older server, which groups on the client. */
+  /** TAL-2332: the server's activity groups by `group_id`; absent on a native gateway stream, which groups on the client. */
   groups?: Record<string, ActivityGroup>
   /** TAL-2332: the work phase after the last consumed steer, which the turn's last "Worked" header words. */
   finalPhase?: ActivityGroup
@@ -49,7 +49,7 @@ export interface TurnActivity {
 
 const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
 const text = (v: unknown): string => typeof v === 'string' ? v : ''
-/** The server's kind as sent; an older server's missing or unrecognized value shows as `unknown`. */
+/** The server's kind as sent; the contract keeps it optional, so a missing value reads as `unknown`. */
 const toolKindOf = (v: unknown): ToolKind => ToolKindSchema.safeParse(v).data ?? 'unknown'
 /** TAL-186: the server's display text and media, when it sent them. */
 function displayBody(display: unknown, media: unknown): DisplayBody {
@@ -148,7 +148,7 @@ export function sceneItems(value: unknown): ActivityItem[] {
 
 /**
  * A completed turn renders its server scene exactly: the rows under "Worked", the final answer, the outcome, and the
- * default disclosure. A row without a scene (an older server) shows its text with no worklog.
+ * default disclosure. A row without a scene (the running turn's, which the live stream renders) shows its text with no worklog.
  */
 export function persistedActivity(row: VisibleMessage): TurnActivity {
   const parts = row.assistantRows ?? [row]

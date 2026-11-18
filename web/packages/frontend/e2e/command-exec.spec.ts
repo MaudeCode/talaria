@@ -40,9 +40,9 @@ test('/reload-skills runs on the server and shows its output above the composer;
   await expect(page.locator('[data-notice="command"]')).toHaveCount(0)
 })
 
-test('a plugin command from a server that sends no exec field still runs on the server; its Markdown output renders (TAL-561)', async ({ page }, testInfo) => {
+test('a plugin command the server marks exec runs on the server; its Markdown output renders (TAL-561)', async ({ page }, testInfo) => {
   await page.route('**/api/commands', (route) => route.fulfill({ json: { commands: [
-    { name: 'standup', description: 'Post the standup', aliases: [], category: 'Plugin', handler: 'agent', clients: ['web', 'ios'] },
+    { name: 'standup', description: 'Post the standup', aliases: [], category: 'Plugin', handler: 'agent', clients: ['web', 'ios'], exec: true },
   ] } }))
   const executed: unknown[] = []
   await page.route('**/api/commands/exec', (route) => { executed.push(route.request().postDataJSON()); return route.fulfill({ json: { output: '**Standup posted**\nChannel: #team' } }) })

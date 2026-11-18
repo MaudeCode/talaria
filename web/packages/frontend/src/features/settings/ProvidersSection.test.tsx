@@ -17,7 +17,7 @@ Object.assign(noPace.sources[0]!.windows[1]!, { pace: null, forecast: null })
 const quotaResponse = vi.hoisted((): { current: unknown } => ({ current: null }))
 // A test sets one server answer, or one per filter (`q`); an answer without `groups` gets the server's grouping by `configured`.
 const providersResponse = vi.hoisted(() => {
-  interface Answer { active_provider?: string; providers: { id: string; display_name?: string; has_key?: boolean; configured?: boolean }[]; groups?: unknown }
+  interface Answer { active_provider?: string; providers: { id: string; display_name?: string; has_key?: boolean; configured?: boolean; setup?: string }[]; groups?: unknown }
   const fallback: Answer = { active_provider: 'openrouter', providers: [{ id: 'openrouter', display_name: 'OpenRouter', has_key: true }, { id: 'zai', display_name: 'Z.AI', has_key: true }, { id: 'anthropic', display_name: 'Anthropic', has_key: true }] }
   const state = { current: null as unknown, serve: (q = '') => {
     const body = ((typeof state.current === 'function' ? (state.current as (q: string) => unknown)(q) : state.current) ?? fallback) as Answer
@@ -186,10 +186,10 @@ describe('ProvidersSection', () => {
   })
 
   it('installs the plugin a card offers through the reviewed catalog flow and rereads the row (TAL-1812)', async () => {
-    providersResponse.current = { active_provider: 'copilot', providers: [{ id: 'copilot', display_name: 'GitHub Copilot', has_key: false, is_plugin_provider: true, install_hint: 'github-copilot', auth_error: 'This provider is now a plugin. Install it, then sign in.' }, { id: 'openrouter', display_name: 'OpenRouter', has_key: true }] }
+    providersResponse.current = { active_provider: 'copilot', providers: [{ id: 'copilot', display_name: 'GitHub Copilot', has_key: false, is_plugin_provider: true, install_hint: 'github-copilot', setup: 'plugin', auth_error: 'This provider is now a plugin. Install it, then sign in.' }, { id: 'openrouter', display_name: 'OpenRouter', has_key: true }] }
     vi.mocked(api.installPlugin).mockImplementation((_name, token) => {
       if (!token) return Promise.resolve({ name: 'github-copilot', status: 'needs_consent', findings: 'github-copilot · community', consent_token: 'preview' })
-      providersResponse.current = { active_provider: 'copilot', providers: [{ id: 'copilot', display_name: 'GitHub Copilot', has_key: false, is_plugin_provider: true, auth_error: 'This provider is not set up yet.' }] }
+      providersResponse.current = { active_provider: 'copilot', providers: [{ id: 'copilot', display_name: 'GitHub Copilot', has_key: false, is_plugin_provider: true, setup: 'key', auth_error: 'This provider is not set up yet.' }] }
       return Promise.resolve({ name: 'github-copilot', key: 'github-copilot', status: 'installed', enabled: false })
     })
     renderSection()
@@ -201,13 +201,13 @@ describe('ProvidersSection', () => {
     expect(within(dialog).getByText('github-copilot · community')).toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Install disabled' }))
     await waitFor(() => expect(api.installPlugin).toHaveBeenLastCalledWith('github-copilot', 'preview'))
-    // Installed, the provider offers the next step (an older server's derivation: a key) and no install.
+    // Installed, the provider offers the next step the server names and no install.
     expect(await within(block('copilot')).findByRole('button', { name: 'Set key' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Install plugin' })).toBeNull()
   })
 
   it('opens the same actions as the visible controls on right-click (TAL-1812)', async () => {
-    providersResponse.current = { active_provider: 'copilot', providers: [{ id: 'copilot', display_name: 'GitHub Copilot', has_key: false, is_plugin_provider: true, configurable: false, install_hint: 'github-copilot' }] }
+    providersResponse.current = { active_provider: 'copilot', providers: [{ id: 'copilot', display_name: 'GitHub Copilot', has_key: false, is_plugin_provider: true, configurable: false, install_hint: 'github-copilot', setup: 'plugin' }] }
     vi.mocked(api.installPlugin).mockClear().mockResolvedValue({ name: 'github-copilot', status: 'blocked', findings: 'Scan refused this plugin' })
     renderSection()
     const name = await screen.findByText('GitHub Copilot')

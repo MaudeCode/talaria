@@ -67,7 +67,7 @@ test('switching from the composer strip keeps a new chat and its draft, and show
   await page.route('**/api/session/execution-modes', (route) => route.fulfill({ json: { modes: [
     { mode: 'normal', available: true, reason: null, can_attach: true, can_reference: true },
     { mode: 'safe', available: true, reason: null, can_attach: false, can_reference: false },
-  ] } }))
+  ], selectable: true } }))
   await page.goto('/')
   const msg = page.locator('#msg')
   await msg.fill('A thought to finish later')

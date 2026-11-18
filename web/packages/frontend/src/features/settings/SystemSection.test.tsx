@@ -700,13 +700,6 @@ describe('Gateway restart capability (TAL-1627)', () => {
     expect(await screen.findByText('Talaria could not confirm that it runs this gateway.')).toBeInTheDocument()
   })
 
-  it('offers nothing when an older server sends no capability', async () => {
-    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, display_state: 'ok', display_reason: null })
-    renderSystem()
-    expect(await screen.findAllByText('Running normally')).toHaveLength(2)
-    expect(restartButton()).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Why restart is unavailable' })).toBeNull()
-  })
 })
 
 describe('Health, disk and Agent figure from server fields (TAL-2162)', () => {
@@ -762,15 +755,4 @@ describe('Health, disk and Agent figure from server fields (TAL-2162)', () => {
     await waitFor(() => { expect(figureTone('agent')).toBe('warning') })
   })
 
-  it('shows the neutral fallbacks for an older server without the fields', async () => {
-    vi.mocked(api.fetchSystemHealth).mockResolvedValue({ status: 'partial', disk: { percent: 99 } })
-    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: false, details: { reason: 'down' } })
-    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: current, agent: behind(2) })
-    renderSystem()
-    await waitFor(() => { expect(fill()).toContain('bg-accent') })
-    expect((await dot('Talaria Web')).dataset.status).toBe('idle')
-    expect((await dot('Hermes Agent')).dataset.status).toBe('idle')
-    expect(figureTone('disk')).toBeNull()
-    expect(figureTone('agent')).toBeNull()
-  })
 })

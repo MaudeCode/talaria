@@ -119,9 +119,10 @@ export function MemoryPage() {
   const editing = draft[section] !== undefined
   const text = draft[section]?.text ?? shown
   const path = data ? (section === 'memory' ? data.memory_path : section === 'user' ? data.user_path : section === 'soul' ? data.soul_path : data.project_context_path) : ''
+  // A disabled store's name is `''`; the section label stands in.
   const name = data?.[`${section}_name`] || current?.label()
-  // TAL-2126: MEMORY.md and USER.md read as the server's entries. A save or compaction shown before the server's read, and
-  // the other files, read as written; so does an old server without the field (drop that case once Stable sends it).
+  // TAL-2126: MEMORY.md and USER.md read as the server's entries. A save or compaction shown before the server's read, the
+  // other files, and a file past the server's entry cap read as written.
   const entries = (section === 'memory' || section === 'user') && saving[section] === undefined ? data?.[`${section}_entries`] : undefined
   const disabled = (section === 'memory' && !data?.memory_path) || (section === 'user' && !data?.user_path)
   const mtime = data ? (section === 'memory' ? data.memory_mtime : section === 'user' ? data.user_mtime : section === 'soul' ? data.soul_mtime : data.project_context_mtime) : null

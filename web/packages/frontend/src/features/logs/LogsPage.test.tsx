@@ -130,13 +130,3 @@ it('builds its tabs from the server, shows a missing log as empty, copies the sh
   expect(screen.queryByRole('switch', { name: m.logs_follow() })).toBeNull()
   Reflect.deleteProperty(navigator, 'clipboard')
 })
-
-it('renders an older server\'s plain lines without figures, search or level control (TAL-2139)', async () => {
-  fetchLogs.mockResolvedValue({ file: 'agent', tail: 500, lines: ['plain one', 'plain two'], hint: '' })
-  const { container } = renderInPane()
-  await screen.findByText('plain two')
-  expect(container.querySelector('[data-settings-stats]')).toBeNull()
-  expect(screen.queryByRole('searchbox')).toBeNull()
-  expect(screen.queryByRole('radiogroup')).toBeNull()
-  expect(screen.queryByRole('tablist')).toBeNull()
-})

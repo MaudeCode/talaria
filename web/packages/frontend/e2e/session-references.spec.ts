@@ -17,7 +17,7 @@ test('selects earlier conversations and retains accepted references on lazy crea
   await page.route('**/api/session/execution-modes', (route) => route.fulfill({ json: { modes: [
     { mode: 'normal', available: true, reason: null, can_attach: true, can_reference: true },
     { mode: 'safe', available: true, reason: null, can_attach: false, can_reference: false },
-  ] } }))
+  ], selectable: true } }))
   await page.goto('/')
   await page.getByRole('button', { name: 'Earlier conversations', exact: true }).click()
   const dialog = page.getByRole('dialog')

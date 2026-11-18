@@ -239,17 +239,6 @@ describe('server-selected prompt reading (TAL-1058)', () => {
     }
   })
 
-  it('shows an old server\'s open span without run_status, but not over a reconnect (TAL-1282)', async () => {
-    const run = liveRun()
-    run.emit({ event: 'compressing', data: { session_id: 's' } })
-    const view = render(<LiveStatusPill sessionId={run.turn.sessionId} />)
-    await waitFor(() => expect(view.getByRole('status')).toHaveTextContent(/^Compressing context/))
-    run.reconnect()
-    view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
-    await waitFor(() => expect(view.getByRole('status')).toHaveTextContent(/^Reconnecting/))
-    expect(view.getByRole('status')).not.toHaveTextContent('Compressing')
-  })
-
   it('keeps newer server progress when a retained stream resumes from a cached session snapshot', async () => {
     const run = liveRun()
     run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'prompt_reading', progress_percent: 42 } } })
@@ -283,17 +272,17 @@ describe('rate-limit wait (TAL-821)', () => {
     vi.useFakeTimers({ now: new Date(2026, 9, 14, 10, 0).getTime() })
     const run = liveRun()
     const until = new Date(2026, 9, 14, 10, 17).getTime() / 1000
-    run.emit({ event: 'rate_limit_wait', data: { session_id: 's', wait: { provider: 'openrouter', provider_label: 'OpenRouter', until, until_kind: 'reset' } } })
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'rate_limit_wait', wait: { provider: 'openrouter', provider_label: 'OpenRouter', until, until_kind: 'reset' } } } })
     const view = render(<LiveStatusPill sessionId={run.turn.sessionId} />)
     expect(pills(view.container)[0]).toHaveTextContent(/^OpenRouter rate limit until 10:17\sAM$/)
-    run.emit({ event: 'rate_limit_wait', data: { session_id: 's', wait: { provider: null, provider_label: null, until, until_kind: 'reset' } } })
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'rate_limit_wait', wait: { provider: null, provider_label: null, until, until_kind: 'reset' } } } })
     view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
     expect(pills(view.container)[0]).toHaveTextContent(/^Rate limited until 10:17\sAM$/)
     // No reset from the provider: the time is the Agent's next retry.
-    run.emit({ event: 'rate_limit_wait', data: { session_id: 's', wait: { provider: 'openrouter', provider_label: 'OpenRouter', until, until_kind: 'retry' } } })
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'rate_limit_wait', wait: { provider: 'openrouter', provider_label: 'OpenRouter', until, until_kind: 'retry' } } } })
     view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
     expect(pills(view.container)[0]).toHaveTextContent(/^OpenRouter rate limit · retry at 10:17\sAM$/)
-    run.emit({ event: 'rate_limit_wait', data: { session_id: 's', wait: null } })
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'working' } } })
     view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
     expect(pills(view.container)[0]).toHaveTextContent(/^Working \d/)
   })
@@ -438,7 +427,7 @@ describe('live steering', () => {
     const run = liveRun()
     run.emit(pending('s1'))
     vi.mocked(api.withdrawSteer).mockReturnValueOnce(new Promise(() => undefined) as never)
-    vi.mocked(api.sendSteerNow).mockResolvedValueOnce({ redirected: false } as never)
+    vi.mocked(api.sendSteerNow).mockResolvedValueOnce({ redirected: false, outcome: 'not_running' })
     const view = render(<View run={run} />)
     fireEvent.click(view.getByRole('button', { name: 'Send now' }))
     await waitFor(() => { expect(showToast).toHaveBeenCalledWith('Nothing is running to take it now; it stays pending.', 2500) })
@@ -501,13 +490,13 @@ describe('live steering', () => {
   it('sends one request at a time from a pending steer\'s buttons', async () => {
     const run = liveRun()
     run.emit(pending('s1'))
-    let release: (v: { redirected: boolean }) => void = () => undefined
+    let release: (v: { redirected: boolean; outcome: 'delivered' }) => void = () => undefined
     vi.mocked(api.sendSteerNow).mockClear().mockReturnValueOnce(new Promise((resolve) => { release = resolve }) as never)
     const view = render(<View run={run} />)
     fireEvent.click(view.getByRole('button', { name: 'Send now' }))
     fireEvent.click(view.getByRole('button', { name: 'Send now' }))
     expect(view.getByRole('button', { name: 'Edit steering message' })).toBeDisabled()
-    release({ redirected: true })
+    release({ redirected: true, outcome: 'delivered' })
     await waitFor(() => { expect(view.getByRole('button', { name: 'Send now' })).toBeEnabled() })
     expect(api.sendSteerNow).toHaveBeenCalledTimes(1)
   })

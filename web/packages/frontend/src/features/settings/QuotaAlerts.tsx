@@ -23,7 +23,7 @@ const QUOTA_PACE: readonly Field[] = [
 
 /**
  * TAL-411, TAL-2136: Settings › Providers › Quota alerts: the profile's `provider_quota_thresholds`, each saved on its own; the
- * server validates them and classifies quotas with them. Nothing to edit on an older server without them.
+ * server validates them and classifies quotas with them.
  */
 export function QuotaAlertsPage() {
   const qc = useQueryClient()

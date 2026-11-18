@@ -120,8 +120,8 @@ export function PluginsSection() {
   const { groups, summary } = plugins.data
   const rowProps = (p: InstalledPlugin) => ({ plugin: p, editable, open: open === p.key, onOpen: setOpen, updateBusy, updating: update.isPending && update.variables.key === p.key,
     blockedFindings: scan?.key === p.key && scan.status === 'blocked' ? scan.findings : null, onUpdate: requestUpdate, enabledEffect: enabledEffects[enabledResource(p.key)], onSetEnabled: setEnabled.mutate })
-  // TAL-2132: with the server's groups, Update all shows only while a plugin has an update; an older server keeps the install-wide button.
-  const updateAllButton = autoUpdate && (summary ? summary.updates > 0 : installed)
+  // TAL-2132: Update all shows only while a plugin has an update.
+  const updateAllButton = autoUpdate && summary && summary.updates > 0
     ? <IconButton variant="ghost" label={m.plugins_update_all()} disabled={updateBusy} aria-busy={updateAll.isPending} onClick={requestUpdateAll}><CircleArrowUp aria-hidden="true" /></IconButton> : null
   return (
     <div className={SETTINGS_PAGE} data-section="plugins">

@@ -128,7 +128,6 @@ export function SystemSection() {
   const webInstalled = webUpdate?.current_version ?? str('webui_version', bootstrap.webui_version)
   const agentInstalled = agentUpdate?.current_version ?? str('agent_version', '—')
   const disk = health.data?.disk?.percent
-  // An older server sends no level: the meter keeps the healthy fill and the figures no tone.
   const diskLevel = health.data?.disk?.display_level ?? 'healthy'
   const webHealth = healthText(health.data)
   const agentHealth = healthText(agent.data)
@@ -190,7 +189,6 @@ export function SystemSection() {
       </SettingsGroup>
       {canManage && (
         <SettingsGroup id="server" title={m.settings_group_server()}>
-          {/* An older server sends no gateway capability and offers no restart (TAL-1627). */}
           {agent.data?.gateway_lifecycle ? <SettingAction label={m.system_restart_agent()} icon={RotateCw}><GatewayRestart /></SettingAction> : null}
           <SettingAction label={m.system_shutdown()} hint={m.system_shutdown_hint()} icon={Power}><IconButton variant="danger" label={m.system_shutdown()} onClick={() => setConfirmShutdown(true)}><Power aria-hidden="true" /></IconButton></SettingAction>
         </SettingsGroup>
@@ -240,7 +238,7 @@ function pathStatus(t: Target | null | undefined, name: string, { failed, pendin
   }
 }
 
-/** A health row's server dot and its words: `ok` and a reasonless `error` are worded here; an older server's row is an idle dot. */
+/** A health row's server dot and its words: `ok` and a reasonless `error` are worded here; a row not yet read is an idle dot. */
 function healthText(h: { display_state?: DotState | undefined; display_reason?: string | null | undefined } | undefined): { state: DotState; text: string } {
   const state = h?.display_state ?? 'idle'
   if (state === 'ok') return { state, text: m.system_running_normally() }

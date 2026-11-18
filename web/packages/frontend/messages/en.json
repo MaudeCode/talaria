@@ -3704,7 +3704,6 @@
 	"ws_panel_reveal": "Reveal in file manager",
 	"ws_panel_saved": "File saved",
 	"ws_panel_source": "File source",
-	"ws_panel_source_unsupported": "This server does not support session buffers.",
 	"ws_panel_title": "Workspace",
 	"ws_panel_unconditional_save": "This backend saves without revision checks. Saving replaces the current buffer, including changes made elsewhere. Reload before saving if it may have changed.",
 	"ws_panel_up": "Up one level",

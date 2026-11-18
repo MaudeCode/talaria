@@ -98,7 +98,7 @@ function groupSummary(group: Pick<ActivityGroup, 'parts' | 'running'>, locale: s
   return text.summaryJoin(group.parts.map((part) => text.worklogSummary(part.kind, group.running ? 'running' : 'done', part.count))) || m.thinking_label()
 }
 
-/** The record an older server's calls make, counted on the client (old-server fallback: delete once every server sends groups). */
+/** The record a native gateway stream's calls make (it sends no groups), counted on the client. */
 function countedGroup(calls: ToolCardData[]): Pick<ActivityGroup, 'parts' | 'running' | 'failed'> {
   const parts = new Map<string, { kind: string; count: number; failed: number }>()
   for (const c of calls) { const part = parts.get(c.kind) ?? { kind: c.kind, count: 0, failed: 0 }; part.count += 1; parts.set(c.kind, part) }

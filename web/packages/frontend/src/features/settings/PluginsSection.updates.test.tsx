@@ -46,6 +46,7 @@ describe('TAL-1914', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     render(<QueryClientProvider client={client}><PluginsSection /></QueryClientProvider>)
   }
+  const pending = { summary: { installed: 1, bundled: 0, enabled: 1, total: 1, updates: 1, updates_tone: 'warning' as const } }
   const on = { auto_apply: true, check_hours: 24, inactive_reason: null }
   const off = { auto_apply: false, check_hours: 24, inactive_reason: null }
 
@@ -103,7 +104,7 @@ describe('TAL-1914', () => {
   it('Update all is busy on its own control, then lists every row and rereads the plugins', async () => {
     const held = deferred<Awaited<ReturnType<typeof api.updateAllPlugins>>>()
     vi.mocked(api.updateAllPlugins).mockReturnValue(held.promise)
-    vi.mocked(api.fetchPlugins).mockResolvedValue({ ...plugins(off), plugins: [{ key: 'probe', name: 'Probe', update: { available: true } }] })
+    vi.mocked(api.fetchPlugins).mockResolvedValue({ ...plugins(off), ...pending, plugins: [{ key: 'probe', name: 'Probe', update: { available: true } }] })
     show()
     const all = await screen.findByRole('button', { name: 'Update all' })
     fireEvent.click(all)
@@ -121,7 +122,7 @@ describe('TAL-1914', () => {
 
   it('Update all with nothing to move says so', async () => {
     vi.mocked(api.updateAllPlugins).mockResolvedValue({ current: 2, results: [] })
-    vi.mocked(api.fetchPlugins).mockResolvedValue(plugins(off))
+    vi.mocked(api.fetchPlugins).mockResolvedValue({ ...plugins(off), ...pending })
     show()
     fireEvent.click(await screen.findByRole('button', { name: 'Update all' }))
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('No plugin updates to apply'))
