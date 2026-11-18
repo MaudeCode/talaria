@@ -265,7 +265,7 @@ export function pyBool(v: unknown): boolean {
   return Boolean(v)
 }
 
-export function normalizeAppearance(theme: unknown, skin: unknown): [string, string] {
+function normalizeAppearance(theme: unknown, skin: unknown): [string, string] {
   const rawTheme = typeof theme === 'string' ? theme.trim().toLowerCase() : ''
   const rawSkin = typeof skin === 'string' ? skin.trim().toLowerCase() : ''
   let nextTheme: string

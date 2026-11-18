@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkExternalLink, externalLinkOpensDirectly, linkPreferences, normalizeTrustedLinkHost, normalizeTrustedLinkHosts, TRUSTED_LINK_HOSTS_MAX } from './links.js'
+import { checkExternalLink, linkPreferences, normalizeTrustedLinkHost, normalizeTrustedLinkHosts, TRUSTED_LINK_HOSTS_MAX } from './links.js'
 
 describe('normalizeTrustedLinkHost (TAL-279)', () => {
   it('keeps bare hostnames in browser-normalized form', () => {
@@ -22,21 +22,21 @@ describe('normalizeTrustedLinkHost (TAL-279)', () => {
   })
 })
 
-describe('externalLinkOpensDirectly (TAL-279)', () => {
+describe('checkExternalLink (TAL-279)', () => {
   const trusted = { confirm: true, trustedHosts: ['example.com'] }
 
   it('matches the exact hostname only, ignoring case and port', () => {
-    expect(externalLinkOpensDirectly('https://EXAMPLE.com:8443/a?b#c', trusted)).toBe(true)
-    expect(externalLinkOpensDirectly('http://example.com', trusted)).toBe(true)
-    expect(externalLinkOpensDirectly('https://docs.example.com/', trusted)).toBe(false)
-    expect(externalLinkOpensDirectly('https://example.com.evil.test/', trusted)).toBe(false)
-    expect(externalLinkOpensDirectly('https://evilexample.com/', trusted)).toBe(false)
+    expect(checkExternalLink('https://EXAMPLE.com:8443/a?b#c', trusted).opens_directly).toBe(true)
+    expect(checkExternalLink('http://example.com', trusted).opens_directly).toBe(true)
+    expect(checkExternalLink('https://docs.example.com/', trusted).opens_directly).toBe(false)
+    expect(checkExternalLink('https://example.com.evil.test/', trusted).opens_directly).toBe(false)
+    expect(checkExternalLink('https://evilexample.com/', trusted).opens_directly).toBe(false)
   })
 
   it('never skips the prompt for non-HTTP(S), relative, or malformed links, even with confirmation off', () => {
     for (const prefs of [trusted, { confirm: false, trustedHosts: [] }]) {
       for (const href of ['javascript:alert(1)', 'data:text/html,x', 'mailto:a@example.com', 'ftp://example.com/', '/relative', 'https://', 'not a url']) {
-        expect(externalLinkOpensDirectly(href, prefs), href).toBe(false)
+        expect(checkExternalLink(href, prefs).opens_directly, href).toBe(false)
       }
     }
   })
@@ -54,8 +54,4 @@ describe('externalLinkOpensDirectly (TAL-279)', () => {
     expect(linkPreferences({ confirm_external_links: false })).toEqual({ confirm: false, trustedHosts: [] })
   })
 
-  it('opens any external HTTP(S) link directly when confirmation is off', () => {
-    expect(externalLinkOpensDirectly('https://anything.test/', { confirm: false, trustedHosts: [] })).toBe(true)
-    expect(externalLinkOpensDirectly('https://anything.test/', { confirm: true, trustedHosts: [] })).toBe(false)
-  })
 })

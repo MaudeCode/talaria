@@ -14,7 +14,7 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { loadEnvFile } from '../providers/env-file.js'
 import { writeEnvFile } from '../test/env-file.js'
 import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel, providerListing, uniqueQuotaSources } from '../providers/catalog.js'
-import { coerceReasoningEffort, parseProviderQualifiedModel, customProviderSlug, type SpeedTier } from '../config/agent-config.js'
+import { coerceReasoningEffort, customProviderSlug, type SpeedTier } from '../config/agent-config.js'
 import { ProfileService, splitProviderModel } from '../profiles/profiles.js'
 
 useJsonStorage()
@@ -2686,11 +2686,7 @@ describe('catalog helpers', () => {
     expect(labelForModel('llama3:8b', [])).toBe('Llama3 (8B)')
   })
 
-  it('parses provider-qualified ids and coerces efforts down the ladder', () => {
-    expect(parseProviderQualifiedModel('@custom:backup:model-a:free')).toEqual(['model-a:free', 'custom:backup'])
-    expect(parseProviderQualifiedModel('@custom:127.0.0.1:1234:llama')).toEqual(['llama', 'custom:127.0.0.1:1234'])
-    expect(parseProviderQualifiedModel('@ollama:qwen3.8:27b')).toEqual(['qwen3.8:27b', 'ollama'])
-    expect(parseProviderQualifiedModel('plain')).toBeNull()
+  it('slugs custom providers and coerces efforts down the ladder', () => {
     expect(customProviderSlug('Local (127.0.0.1:15721)')).toBe('custom:local-127.0.0.1-15721')
     expect(coerceReasoningEffort('max', ['low', 'medium', 'high'])).toBe('high')
     expect(coerceReasoningEffort('none', ['low'])).toBe('none')

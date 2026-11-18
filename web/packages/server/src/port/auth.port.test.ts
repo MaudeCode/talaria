@@ -371,13 +371,7 @@ describe('OAuth provider cards and model groups', () => {
   it('a config token keeps has_key with key_source config_yaml when not logged in', async () => {
     reset({ providers: { 'openai-codex': { api_key: 'cfg-token' } } })
     auth.set('openai-codex', { logged_in: false, error: 'token expired' })
-    expect((await cards()).find((p) => p.id === 'openai-codex')).toMatchObject({ has_key: true, key_source: 'config_yaml' })
-  })
-
-  it('the auth error is still reported next to the config token', async () => {
-    reset({ providers: { 'openai-codex': { api_key: 'cfg-token' } } })
-    auth.set('openai-codex', { logged_in: false, error: 'token expired' })
-    expect((await cards()).find((p) => p.id === 'openai-codex')).toMatchObject({ has_key: true, auth_error: 'token expired' })
+    expect((await cards()).find((p) => p.id === 'openai-codex')).toMatchObject({ has_key: true, key_source: 'config_yaml', auth_error: 'token expired' })
   })
 
   it('every provider card carries an auth_error key', async () => {

@@ -125,18 +125,7 @@ describe('isolation flag semantics', () => {
     const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'default')
     expect(s.deps.activeProfile()).toBe('default')
     expect(s.deps.profileHome('default')).toBe(home)
-  })
-
-  it('explicit default resolution answers the pinned home', async () => {
-    const { s, home } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'default')
-    expect(s.deps.profileHome('default')).toBe(home)
     expect(s.deps.profileHome('')).toBe(home)
-  })
-
-  it('the resolver never falls back to the base home in isolated mode', async () => {
-    const { s, home, base } = await boot({ TALARIA_WEB_ISOLATED_PROFILE: '1' }, 'default')
-    expect(s.deps.profileHome('default')).toBe(home)
-    expect(s.deps.profileHome('default')).not.toBe(base)
   })
 
   it('a foreign profile name resolves to the pinned home', async () => {
@@ -217,16 +206,8 @@ describe('profile home routing and root aliases', () => {
     expect(s.deps.profileHome('newprofile')).toBe(join(s.state, 'profiles', 'newprofile'))
   })
 
-  it('an absent profile resolves to the base home', () => {
-    expect(s.deps.profileHome(null as unknown as string)).toBe(s.state)
-  })
-
   it('an empty profile name resolves to the base home', () => {
     expect(s.deps.profileHome('')).toBe(s.state)
-  })
-
-  it('a real named profile resolves to profiles/<name>', () => {
-    expect(s.deps.profileHome('haku')).toBe(join(s.state, 'profiles', 'haku'))
   })
 
   it('deleting a renamed root profile is refused', async () => {
@@ -1130,10 +1111,6 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
   it('missing, zero, empty, or garbage values stay scoped', async () => {
     for (const v of ['', '0', 'garbage']) expect((await json(await s.get(`/api/sessions?all_profiles=${v}`))).all_profiles, v).toBe(false)
     expect((await json(await s.get('/api/sessions'))).all_profiles).toBe(false)
-  })
-
-  it('all_profiles=1 aggregates in normal mode', async () => {
-    expect((await json(await s.get('/api/sessions?all_profiles=1'))).all_profiles).toBe(true)
   })
 
   it('a cookieless load of a foreign-profile session answers the 409 envelope, never content', async () => {

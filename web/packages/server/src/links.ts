@@ -63,7 +63,3 @@ export function checkExternalLink(href: string, prefs: LinkPreferences): Externa
   const http = url.protocol === 'http:' || url.protocol === 'https:'
   return { opens_directly: http && (!prefs.confirm || prefs.trustedHosts.includes(url.hostname)), host: url.hostname || null }
 }
-
-export function externalLinkOpensDirectly(href: string, prefs: LinkPreferences): boolean {
-  return checkExternalLink(href, prefs).opens_directly
-}

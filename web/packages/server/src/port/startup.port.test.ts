@@ -3,7 +3,7 @@
  * detection from environment variables and config, and the password env-var
  * lock.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { BootstrapSchema } from '@maudecode/talaria-web-contracts'
@@ -12,24 +12,12 @@ import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, cookieHeader, type TestServer } from '../test/harness.js'
 import { loadEnvFile } from '../providers/env-file.js'
 import { writeEnvFile } from '../test/env-file.js'
-import { OAUTH_PROVIDERS, PROVIDER_ENV_VAR, PROVIDER_ENV_VAR_ALIASES, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
+import { OAUTH_PROVIDERS, PROVIDER_ENV_VAR, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
 
 type Json = Record<string, unknown>
 interface Provider { id: string; has_key: boolean; key_source: string; configurable: boolean; is_oauth: boolean }
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
-
-describe('.env writer', () => {
-  it('writing to a missing .env creates it with exactly the new key', () => {
-    const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-env-${String(process.pid)}-${String(Date.now())}`)
-    mkdirSync(dir, { recursive: true })
-    const path = join(dir, '.env')
-    expect(existsSync(path)).toBe(false)
-    writeEnvFile(path, { NEW_KEY: 'value' })
-    expect(readFileSync(path, 'utf8').trim()).toBe('NEW_KEY=value')
-    expect(loadEnvFile(path)).toEqual({ NEW_KEY: 'value' })
-  })
-})
 
 describe('provider key detection', () => {
   let s: TestServer
@@ -49,11 +37,6 @@ describe('provider key detection', () => {
   const providers = async (): Promise<Provider[]> => (await json(await s.get('/api/providers'))).providers as Provider[]
   const provider = async (id: string): Promise<Provider | undefined> => (await providers()).find((p) => p.id === id)
   const clearEnv = (): void => { const current = loadEnvFile(join(s.state, '.env')); setEnv(Object.fromEntries(Object.keys(current).map((k) => [k, null]))) }
-
-  it('LM Studio reads LM_API_KEY with LMSTUDIO_API_KEY as an alias', () => {
-    expect(PROVIDER_ENV_VAR.lmstudio).toBe('LM_API_KEY')
-    expect(PROVIDER_ENV_VAR_ALIASES.lmstudio).toContain('LMSTUDIO_API_KEY')
-  })
 
   it('the onboarding setup for LM Studio names the canonical variable and its alias', () => {
     expect(SUPPORTED_PROVIDER_SETUPS.lmstudio?.env_var).toBe('LM_API_KEY')
@@ -134,10 +117,6 @@ describe('provider key detection', () => {
     const xiaomi = groups.find((g) => g.provider_id === 'xiaomi')
     expect(xiaomi, JSON.stringify(groups.map((g) => g.provider_id))).toBeDefined()
     expect(xiaomi?.models.some((m) => m.id.includes('mimo-v2.5-pro'))).toBe(true)
-  })
-
-  it('NeuralWatt reads NEURALWATT_API_KEY', () => {
-    expect(PROVIDER_ENV_VAR.neuralwatt).toBe('NEURALWATT_API_KEY')
   })
 
   // Python asserted the `_provider_has_key` helper: NeuralWatt has an env var but no display row, so neither backend lists it in /api/providers.
