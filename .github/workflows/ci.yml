@@ -1,4 +1,5 @@
-# Pull requests and main pushes run suites selected by the complete changed-path diff. App changes run
+# Pull requests and main pushes run suites selected by the complete changed-path diff; a main push's diff starts at the
+# last main run that completed, because a newer push cancels the run it supersedes (TAL-2461). App changes run
 # the TalariaKit package tests with `swift test` and build the App, its extensions and test bundle for
 # testing. Main pushes, manual runs and pull requests labelled hosted-tests also run the simulator-hosted
 # unit tests (TalariaTests) in up to four simulator jobs split by class (TAL-1896); a failure on main reaches the repair
@@ -29,10 +30,12 @@ on:
 permissions:
   contents: read
 
-# Only a pull request's initial attempts share its group, so a newer head cancels superseded work. A retry keeps
-# its old head's PR event, so it, like a push or manual run, gets its own run's group and cancels nothing (TAL-1656).
+# A pull request's initial attempts share its group, so a newer head cancels superseded work; main's initial push runs
+# share one too, so a newer merge cancels the run it supersedes (TAL-2461), whose changes the newer run then tests. A
+# retry keeps its old head's or push's event, so it, like a manual run, gets its own run's group and cancels nothing
+# (TAL-1656).
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 && format('ci-{0}', github.event.pull_request.number) || format('ci-run-{0}', github.run_id) }}
+  group: ${{ github.run_attempt == 1 && (github.event_name == 'pull_request' && format('ci-{0}', github.event.pull_request.number) || github.event_name == 'push' && format('ci-{0}', github.ref)) || format('ci-run-{0}', github.run_id) }}
   cancel-in-progress: true
 
 defaults:
@@ -44,6 +47,10 @@ jobs:
     name: Detect changed paths
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      # A main push reads main's earlier CI runs to find the last one that completed.
+      actions: read
     outputs:
       app: ${{ steps.filter.outputs.app }}
       app_tooling: ${{ steps.filter.outputs.app_tooling }}
@@ -84,11 +91,20 @@ jobs:
         env:
           PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          PUSH_BASE: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
-            python3 scripts/changed-components.py --base="$PUSH_BASE" --head="$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            # A newer push cancels this run's predecessor, so a push tests every change since the last main run that
+            # completed, not only its own; without one, every suite (TAL-2461).
+            base=$(python3 scripts/main-ci-failure.py base) || base=""
+            if [[ -n "$base" ]]; then
+              echo "Tests the changes since $base, the last main run that completed." >> "$GITHUB_STEP_SUMMARY"
+              python3 scripts/changed-components.py --base="$base" --head="$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            else
+              echo "No earlier main run completed: every suite runs." >> "$GITHUB_STEP_SUMMARY"
+              python3 scripts/changed-components.py >> "$GITHUB_OUTPUT"
+            fi
           elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             # A manual run proves the whole pipeline: every suite runs.
             python3 scripts/changed-components.py >> "$GITHUB_OUTPUT"
@@ -276,12 +292,13 @@ jobs:
     # Hands a failed push run of main to the T3 repair dispatcher (TAL-1103, docs/main-ci-repair.md): one signed,
     # bounded report, which the dispatcher re-verifies against GitHub before it starts or updates a repair thread.
     # After the gate, so the gate's own failure is reported; it never changes that result. Only main's push runs reach
-    # the MAIN_CI_WEBHOOK_URL and MAIN_CI_WEBHOOK_SECRET secrets: pull requests and forks never run this job. A run a
-    # person cancelled sends nothing; a job GitHub cancelled at its timeout still counts (TAL-670).
+    # the MAIN_CI_WEBHOOK_URL and MAIN_CI_WEBHOOK_SECRET secrets: pull requests and forks never run this job. A
+    # cancelled run, by a person or by a newer push, skips it: the newer run tests its changes (TAL-2461). A job GitHub
+    # cancelled at its timeout cancels only that job and still counts (TAL-670).
     name: Hand the failure to T3
     needs: gate
     if: >-
-      always() && github.repository == 'MaudeCode/talaria' && github.event_name == 'push'
+      !cancelled() && github.repository == 'MaudeCode/talaria' && github.event_name == 'push'
       && github.ref == 'refs/heads/main' && needs.gate.result != 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5

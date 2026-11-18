@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""CI's concurrency policy, evaluated from the real ci.yml against synthetic event contexts (TAL-1656).
+"""CI's concurrency policy, evaluated from the real ci.yml against synthetic event contexts (TAL-1656, TAL-2461).
 
-Only initial pull_request attempts share the per-PR group, so a newer head cancels superseded work. A retry of an
-older head, a push or a manual run gets its own run-scoped group and cannot cancel the latest head's checks."""
+Initial attempts share one group per pull request, and main's initial push runs share one, so a newer head or push
+cancels superseded work. A retry of an older head or push, or a manual run, gets its own run-scoped group and cannot
+cancel the latest run's checks."""
 
 import importlib.util
 import math
@@ -99,11 +100,14 @@ def evaluate(expression, context):
             return {"true": True, "false": False, "null": None}[name]
         if tokens[index][2] == "(":
             take()
-            arguments = [either()]
+            arguments = [] if tokens[index][2] == ")" else [either()]
             while tokens[index][2] == ",":
                 take()
                 arguments.append(either())
             take(")")
+            # The status functions a job's `if` uses: the context says whether the run was cancelled.
+            if name in ("always", "cancelled") and not arguments:
+                return name == "always" or bool(context.get("cancelled"))
             if name != "format":
                 raise ValueError(f"unsupported function {name}")
             return re.sub(r"\{(\d+)\}", lambda found: text(arguments[1 + int(found.group(1))]), arguments[0])
@@ -128,13 +132,15 @@ def render(value, context):
     return re.sub(r"\$\{\{(.*?)\}\}", lambda found: text(evaluate(found.group(1), context)), value, flags=re.S)
 
 
-CONCURRENCY = hosted.load(ROOT / ".github/workflows/ci.yml")["concurrency"]
+WORKFLOW = hosted.load(ROOT / ".github/workflows/ci.yml")
+CONCURRENCY = WORKFLOW["concurrency"]
 
 
-def run(event_name, run_id, sha, attempt=1, pr=None):
+def run(event_name, run_id, sha, attempt=1, pr=None, ref="refs/heads/main"):
     event = {"pull_request": {"number": pr, "head": {"sha": sha}}} if pr is not None else {}
+    ref = f"refs/pull/{pr}/merge" if pr is not None else ref
     context = {"github": {"event_name": event_name, "run_id": run_id, "run_attempt": attempt, "sha": sha,
-                          "event": event}}
+                          "ref": ref, "event": event}}
     return render(CONCURRENCY["group"], context), bool(render(CONCURRENCY["cancel-in-progress"], context))
 
 
@@ -144,14 +150,23 @@ def cancels(newer, running):
 
 
 class ConcurrencyTests(unittest.TestCase):
-    def test_retry_of_an_older_head_cannot_cancel_the_latest_head(self):
-        for attempt in (2, "2", 3, "3"):
+    def test_retry_of_an_older_head_or_push_cannot_cancel_the_latest_run(self):
+        for event, pr in (("pull_request", 42), ("push", None)):
+            for attempt in (2, "2", 3, "3"):
+                with self.subTest(event=event, attempt=attempt):
+                    latest = run(event, 200, "b" * 40, attempt=1, pr=pr)
+                    retry = run(event, 100, "a" * 40, attempt=attempt, pr=pr)
+                    self.assertNotEqual(retry[0], latest[0])
+                    self.assertFalse(cancels(retry, latest))
+                    self.assertFalse(cancels(latest, retry))
+
+    def test_a_newer_main_push_cancels_the_run_it_supersedes(self):
+        for attempt in (1, "1"):
             with self.subTest(attempt=attempt):
-                latest = run("pull_request", 200, "b" * 40, attempt=1, pr=42)
-                retry = run("pull_request", 100, "a" * 40, attempt=attempt, pr=42)
-                self.assertNotEqual(retry[0], latest[0])
-                self.assertFalse(cancels(retry, latest))
-                self.assertFalse(cancels(latest, retry))
+                older = run("push", 100, "a" * 40, attempt=attempt)
+                newer = run("push", 200, "b" * 40, attempt=attempt)
+                self.assertEqual(newer[0], older[0])
+                self.assertTrue(cancels(newer, older))
 
     def test_successive_initial_heads_share_the_group_and_cancel_superseded_work(self):
         for attempt in (1, "1"):
@@ -161,14 +176,13 @@ class ConcurrencyTests(unittest.TestCase):
                 self.assertEqual(newer[0], older[0])
                 self.assertTrue(cancels(newer, older))
 
-    def test_runs_outside_one_pull_requests_initial_attempts_are_isolated(self):
+    def test_runs_outside_one_initial_group_are_isolated(self):
         initial = run("pull_request", 100, "a" * 40, pr=42)
         others = [
             run("pull_request", 101, "a" * 40, pr=43),
             run("pull_request", 102, "a" * 40, attempt="2", pr=42),
             run("push", 103, "a" * 40),
             run("push", 104, "a" * 40, attempt=2),
-            run("push", 105, "c" * 40),
             run("workflow_dispatch", 106, "a" * 40),
             run("workflow_dispatch", 107, "a" * 40),
         ]
@@ -177,6 +191,14 @@ class ConcurrencyTests(unittest.TestCase):
         for other in others:
             self.assertFalse(cancels(other, initial), other)
             self.assertFalse(cancels(initial, other), other)
+
+    def test_the_failure_handoff_skips_a_run_a_newer_push_cancelled(self):
+        condition = WORKFLOW["jobs"]["alert"]["if"]
+        for cancelled, expected in ((False, True), (True, False)):
+            with self.subTest(cancelled=cancelled):
+                context = {"cancelled": cancelled, "needs": {"gate": {"result": "failure"}},
+                           "github": {"repository": "MaudeCode/talaria", "event_name": "push", "ref": "refs/heads/main"}}
+                self.assertIs(evaluate(condition, context), expected)
 
     def test_a_retry_keeps_its_own_runs_group(self):
         self.assertEqual(run("push", 103, "a" * 40, attempt=2)[0], run("push", 103, "a" * 40, attempt=3)[0])
