@@ -36,8 +36,9 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(test["run"], %q(trap 'kill "${reporter}" 2>/dev/null || true' EXIT))
     assert_includes(test["run"], '[[ "${status}" != 0 ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "${FAILURE_STATUS}"')
     # One status per shard, so a passing shard never replaces another shard's failure (TAL-1550). A selected run's and
-    # a diagnostic's statuses have names of their own, so neither replaces a full run's (TAL-2390).
-    assert_equal("${{ inputs.diagnostic && format('App test diagnostics {0}', github.run_id) || format('{0} {1}', " \
+    # a diagnostic's statuses have names of their own, so neither replaces a full run's (TAL-2390), and so do the
+    # repeats' (TAL-2402).
+    assert_equal("${{ inputs.diagnostic && format('App test diagnostics {0}', github.run_id) || matrix.repeat && 'App repeated test failures' || format('{0} {1}', " \
                  "inputs.hosted_lane == 'explicit' && 'App selected hosted test failures' || 'App hosted test failures', matrix.shard) }}",
                  shard["env"]["FAILURE_STATUS"])
     assert_equal("${{ github.token }}", test["env"]["GH_TOKEN"])
@@ -247,18 +248,19 @@ class TestIOSRunnerTest < Minitest::Test
     # TalariaKit's tests run with `swift test` on hosted macOS: no simulator, no app host (TAL-399). In hosted mode they
     # run on the build's runner after its upload, whatever the build's result, so the build job and four hosted test
     # shards are the five macOS jobs and the shards' download never waits on them (TAL-1891). Build and contracts modes
-    # run them in their own job, from the start (TAL-1896).
+    # run them in their own job, from the start (TAL-1896), and so does a selective or repeat-only hosted run, whose few
+    # shards leave slots for it (TAL-2402).
     assert_nil(package["needs"], "The package tests start beside a build-mode build")
-    assert_equal("inputs.mode != 'hosted' && inputs.package_tests", package["if"])
+    assert_equal("(inputs.mode != 'hosted' || inputs.hosted_lane != 'full') && inputs.package_tests", package["if"])
     # An explicit lane runs only its identifiers, and the job that runs them takes a name no full suite carries, so a
     # subset never reports as the suite (TAL-2390).
     assert_equal("${{ inputs.package_lane == 'explicit' && 'App selected package tests' || 'App package tests' }}", package["name"])
-    selected_build = "${{ inputs.mode == 'hosted' && inputs.package_lane == 'explicit' && 'App build and selected package tests' || 'App build' }}"
+    selected_build = "${{ inputs.mode == 'hosted' && inputs.hosted_lane == 'full' && inputs.package_lane == 'explicit' && 'App build and selected package tests' || 'App build' }}"
     assert_equal([selected_build] * 2, [build["name"], YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)["env"]["BUILD_JOB"]])
     build_names = build["steps"].map { |step| step["name"] || step["uses"] }
     assert_equal("Upload the test build", build_names[-2], "The shards' download must never wait on the package tests")
     # Every caller runs them but a release's hosted-tests call, whose contracts job runs the same suite (TAL-414).
-    assert_equal("${{ !cancelled() && inputs.mode == 'hosted' && inputs.package_tests }}", build["steps"].last["if"])
+    assert_equal("${{ !cancelled() && inputs.mode == 'hosted' && inputs.hosted_lane == 'full' && inputs.package_tests }}", build["steps"].last["if"])
     [build["steps"].last, package["steps"].last].each do |caller|
       assert_equal("./.github/actions/app-package-tests", caller["uses"])
       assert_equal({ "contracts" => "${{ inputs.contracts }}", "plan" => "${{ inputs.package_lane == 'explicit' && inputs.plan || '' }}" },
@@ -328,7 +330,8 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal({ "fail-fast" => false, "max-parallel" => "${{ inputs.shards_at_once }}",
                    "matrix" => { "include" => "${{ fromJSON(needs.build-started.outputs.shards) }}" } }, shard["strategy"])
     assert_equal({ "type" => "number", "default" => 4 }, app_tests[true]["workflow_call"]["inputs"]["shards_at_once"])
-    assert_equal("${{ inputs.hosted_lane == 'explicit' && 'App selected hosted tests' || 'App hosted tests' }} ${{ matrix.shard }}",
+    # The repeat shard runs a pull request's added and changed tests under its own name (TAL-2402).
+    assert_equal("${{ matrix.repeat && 'App repeated tests' || format('{0} {1}', inputs.hosted_lane == 'explicit' && 'App selected hosted tests' || 'App hosted tests', matrix.shard) }}",
                  shard["name"])
     shard["steps"].select { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }.each do |upload|
       assert_match(/-\$\{\{ matrix\.shard \}\}\z/, upload["with"]["name"], "shards overwrite each other's #{upload["name"]}")
@@ -336,7 +339,7 @@ class TestIOSRunnerTest < Minitest::Test
     # "App hosted tests" is the suite's one result, the job a release reuses: every shard passed and every planned
     # identifier ran exactly once. A selected run's gate is its own job, "App selected hosted tests", with the same proof.
     gates = jobs.values_at("app-test-gate", "app-test-selected-gate")
-    assert_equal([["App hosted tests", %w[build-started app-test], "inputs.mode == 'hosted' && inputs.hosted_lane != 'explicit'", "ubuntu-latest"],
+    assert_equal([["App hosted tests", %w[build-started app-test], "inputs.mode == 'hosted' && inputs.hosted_lane == 'full'", "ubuntu-latest"],
                   ["App selected hosted tests", %w[build-started app-test], "inputs.mode == 'hosted' && inputs.hosted_lane == 'explicit'", "ubuntu-latest"]],
                  gates.map { |gate| gate.values_at("name", "needs", "if", "runs-on") })
     assert_equal(*gates.map { |gate| gate["steps"] })
@@ -377,13 +380,15 @@ class TestIOSRunnerTest < Minitest::Test
     # Main pushes, manual runs and labelled pull requests run the hosted tests; other pull requests only build and run
     # the package tests (TAL-1896). A labelled pull request whose plan reaches no hosted test only builds, and a pull
     # request passes its plan's lanes; any other event, or a failed classification, runs both targets in full (TAL-2390).
+    # Without the label a pull request still runs its explicit hosted identifiers, and repeats the hosted tests it adds
+    # or changes; an unlabelled full hosted target runs only those repeats (TAL-2402).
     app = workflow_jobs("ci.yml").fetch("app")
     assert_equal("./.github/workflows/app-tests.yml", app["uses"])
-    assert_equal("${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && ((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'hosted-tests')) && needs.changes.outputs.app_hosted != 'empty' && 'hosted' || 'build') || 'contracts' }}",
+    assert_equal("${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && ((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'hosted-tests') || needs.changes.outputs.app_hosted == 'explicit' || needs.changes.outputs.app_hosted_repeat == 'true') && needs.changes.outputs.app_hosted != 'empty' && 'hosted' || 'build') || 'contracts' }}",
                  app["with"]["mode"])
     assert_equal(["${{ needs.changes.result != 'success' || needs.changes.outputs.app_package != 'empty' }}",
                   "${{ needs.changes.result == 'success' && needs.changes.outputs.app_package || 'full' }}",
-                  "${{ needs.changes.result == 'success' && needs.changes.outputs.app_hosted || 'full' }}",
+                  "${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'hosted-tests') && needs.changes.outputs.app_hosted == 'full' && 'empty' || (needs.changes.result == 'success' && needs.changes.outputs.app_hosted || 'full') }}",
                   "${{ needs.changes.result == 'success' && needs.changes.outputs.app_plan || '' }}"],
                  app["with"].values_at("package_tests", "package_lane", "hosted_lane", "plan"))
     # Every run keeps the hosted tests' performance budget measurements.

@@ -173,6 +173,26 @@ if [[ "${selectors[0]:-}" == *ConnectedBeforeSuite* || "${selectors[0]:-}" == *R
 fi
 # The runner connects and reports its first suite.
 printf '%s\n' '{"name":{"_value":"testSuiteStarted"}}' >> "$result_stream"
+# Repeats until interrupted (passing after 50 tests otherwise), its first test finishing after two seconds; records how many had finished (TAL-2402).
+# Python, since a background job's bash ignores SIGINT and cannot trap it.
+if [[ "${selectors[0]:-}" == *UntilInterrupted* ]]; then
+    printf '%s\n' "$destination|$result_bundle|${selectors[*]}|$parallel" >> "$state/runs"
+    exec python3 -c '
+import signal, sys, time
+stream, receipt = sys.argv[1:]
+finished = 0
+def stop(*_):
+    open(receipt, "w").write(f"{finished}\n")
+    sys.exit(65)
+signal.signal(signal.SIGINT, stop)
+time.sleep(2)
+for _ in range(50):
+    with open(stream, "a") as handle:
+        handle.write("{\"name\":{\"_value\":\"testFinished\"}}\n")
+    finished += 1
+    time.sleep(0.2)
+' "$result_stream" "$state/interrupted-after"
+fi
 [[ ! -e TalariaTests/VisualReferences/.record ]] || printf '%s\n' "${selectors[0]:-}" >> "$state/recorded"
 [[ ! -e .codex-tmp/xctest/test-screenshots ]] || printf '%s\n' "${selectors[0]:-}" >> "$state/screenshots"
 if [[ -e .codex-tmp/xctest/native-history-drag ]]; then
@@ -389,6 +409,16 @@ grep -Eq "The test runner on iOS Test [12] \([A-F-]+\) failed to launch before a
 grep -q "stopping the run as a runner fault" "$state/LaunchFaultAlways.log"
 faulted_bundle=$(grep -m1 -- 'TalariaTests/LaunchFaultOnce|' "$state/runs" | cut -d'|' -f2)
 [[ -d "${faulted_bundle%.xcresult}-launch-1.xcresult" ]]
+
+# A repeated run's time budget interrupts xcodebuild once it is spent and a complete attempt finished (TAL-2402).
+if TALARIA_TEST_BUDGET=1 TALARIA_TEST_BUDGET_AFTER=1 "$repo/scripts/test-ios" TalariaTests/UntilInterrupted > "$state/budget.log" 2>&1; then
+    echo "Expected the interrupted run to keep xcodebuild's failing status." >&2
+    exit 1
+else
+    [[ $? == 65 ]]
+fi
+grep -q 'The 1s test budget is spent after [1-9][0-9]* finished test(s); stopping the run.' "$state/budget.log"
+(( $(<"$state/interrupted-after") >= 1 )) || { echo "The budget interrupted the run before its first finished test." >&2; exit 1; }
 
 lock_file="$repo/.codex-tmp/xctest/runner.lock"
 sleep 0.01 &

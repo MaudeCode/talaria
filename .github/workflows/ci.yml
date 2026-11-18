@@ -4,7 +4,9 @@
 # unit tests (TalariaTests) in up to four simulator jobs split by class (TAL-1896); a failure on main reaches the repair
 # handoff (docs/main-ci-repair.md). A pull request runs only the App tests its diff reaches (TAL-2390): the router's App
 # test plan narrows each target to explicit identifiers, or leaves it out, and anything it cannot bound runs that target
-# in full. Main pushes and manual runs always run both in full; `gh workflow run ci.yml --ref <branch>` is the one-command
+# in full. Its explicit hosted identifiers run without the label; a full hosted target still needs it. The test methods
+# it adds or changes also run repeatedly within a time budget, whatever the label (TAL-2402). Main pushes and manual
+# runs always run both in full; `gh workflow run ci.yml --ref <branch>` is the one-command
 # full run for a branch. A pull request also gets a Playwright plan (TAL-2391): no browser job when only Vitest tests
 # changed, only the changed spec files when they are all it touches, and every shard otherwise. No labeled trigger: a label event would start a run that cancels the PR's running
 # one through the concurrency group, so a label added after a run started takes effect on the next push.
@@ -55,6 +57,7 @@ jobs:
       # events, which run both targets in full.
       app_package: ${{ steps.filter.outputs.app_package }}
       app_hosted: ${{ steps.filter.outputs.app_hosted }}
+      app_hosted_repeat: ${{ steps.filter.outputs.app_hosted_repeat }}
       app_plan: ${{ steps.filter.outputs.app_plan }}
       # A pull request's Playwright plan: none, specs (web_browser_specs) or full. Empty on other events, which run every
       # shard.
@@ -134,12 +137,14 @@ jobs:
       statuses: write
     uses: ./.github/workflows/app-tests.yml
     with:
-      mode: ${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && ((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'hosted-tests')) && needs.changes.outputs.app_hosted != 'empty' && 'hosted' || 'build') || 'contracts' }}
+      # Simulators for a full run, the label, explicit hosted identifiers or hosted repeats (TAL-2402).
+      mode: ${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && ((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'hosted-tests') || needs.changes.outputs.app_hosted == 'explicit' || needs.changes.outputs.app_hosted_repeat == 'true') && needs.changes.outputs.app_hosted != 'empty' && 'hosted' || 'build') || 'contracts' }}
       contracts: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
       # The package tests run unless the plan left them out; package_lane says whether all of them.
       package_tests: ${{ needs.changes.result != 'success' || needs.changes.outputs.app_package != 'empty' }}
       package_lane: ${{ needs.changes.result == 'success' && needs.changes.outputs.app_package || 'full' }}
-      hosted_lane: ${{ needs.changes.result == 'success' && needs.changes.outputs.app_hosted || 'full' }}
+      # An unlabelled pull request's full hosted target runs only its repeats.
+      hosted_lane: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'hosted-tests') && needs.changes.outputs.app_hosted == 'full' && 'empty' || (needs.changes.result == 'success' && needs.changes.outputs.app_hosted || 'full') }}
       plan: ${{ needs.changes.result == 'success' && needs.changes.outputs.app_plan || '' }}
 
   tooling:

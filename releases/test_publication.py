@@ -696,7 +696,8 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(app_tests["jobs"]["app-test"]["if"], "inputs.mode == 'hosted'")
         # The release's hosted call leaves out the package tests hosted mode runs in the build job (TAL-1891).
         self.assertEqual(app_tests["jobs"]["app-build"]["steps"][-1]["uses"], "./.github/actions/app-package-tests")
-        self.assertEqual(app_tests["jobs"]["app-build"]["steps"][-1]["if"], "${{ !cancelled() && inputs.mode == 'hosted' && inputs.package_tests }}")
+        self.assertEqual(app_tests["jobs"]["app-build"]["steps"][-1]["if"],
+                         "${{ !cancelled() && inputs.mode == 'hosted' && inputs.hosted_lane == 'full' && inputs.package_tests }}")
 
     def test_publication_waits_for_build_gate_and_deploys_relay_first(self):
         # Nothing publishes before build-gate joined every gate and build, and the alternate dry/signed App build is
@@ -750,10 +751,14 @@ class PublicationTests(unittest.TestCase):
             return str(job.get("runs-on", "")).startswith(("xcode-", "macos-"))
 
         # The called workflows' macOS jobs. app-tests.yml in hosted mode without package tests runs its build beside the
-        # shards it lets run at once; its package-test job needs another mode or the package tests.
+        # shards it lets run at once; its package-test job needs another mode, a selective hosted lane or the package
+        # tests, and its package-repeat job a pull request's plan (TAL-2402), which a release never passes.
         app_tests, ios_build = workflow("app-tests.yml")["jobs"], workflow("ios-release-build.yml")["jobs"]
-        self.assertEqual({name for name, job in app_tests.items() if macos(job)}, {"app-build", "package-test", "app-test"})
-        self.assertEqual(app_tests["package-test"]["if"], "inputs.mode != 'hosted' && inputs.package_tests")
+        self.assertEqual({name for name, job in app_tests.items() if macos(job)},
+                         {"app-build", "package-test", "package-repeat", "app-test"})
+        self.assertEqual(app_tests["package-test"]["if"],
+                         "(inputs.mode != 'hosted' || inputs.hosted_lane != 'full') && inputs.package_tests")
+        self.assertEqual(app_tests["package-repeat"]["if"], "fromJSON(inputs.plan || '{}').lanes.TalariaKitTests.repeat[0] != null")
         self.assertEqual(app_tests["app-test"]["strategy"]["max-parallel"], "${{ inputs.shards_at_once }}")
         self.assertEqual({name for name, job in ios_build.items() if macos(job)}, {"build"})
 
