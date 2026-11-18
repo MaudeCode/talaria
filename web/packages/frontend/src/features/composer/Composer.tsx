@@ -41,7 +41,7 @@ import { PHONE_QUERY } from '../../shell/useShellState'
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
 
 /** Keyboard input only: Ctrl is the send chord on Windows/Linux when that setting is enabled. */
-export function effectiveBusyMode(mode: BusyMode, modifiers: { ctrlKey: boolean; altKey: boolean; shiftKey: boolean }, platform: string, sendKey: string): BusyMode {
+function effectiveBusyMode(mode: BusyMode, modifiers: { ctrlKey: boolean; altKey: boolean; shiftKey: boolean }, platform: string, sendKey: string): BusyMode {
   if (modifiers.altKey) return 'interrupt'
   const alternate = modifiers.ctrlKey && (sendKey !== 'ctrl+enter' || /mac/i.test(platform) || modifiers.shiftKey)
   return alternate ? mode === 'queue' ? 'steer' : 'queue' : mode

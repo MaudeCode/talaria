@@ -25,7 +25,7 @@ const ICONS: Record<Icon, LucideIcon> = {
  * Device-local presentation state (TAL-1617). This browser keeps the server's opaque token per Web origin (local
  * storage) and signed-in user; anonymous use has its own scope. The server decides eligibility from it (TAL-1616).
  */
-export const whatsNewScope = (user: string | null | undefined) => `talaria-whats-new:${user ? `user:${user}` : 'anonymous'}`
+const whatsNewScope = (user: string | null | undefined) => `talaria-whats-new:${user ? `user:${user}` : 'anonymous'}`
 
 const listeners = new Set<() => void>()
 let manual = false
@@ -125,7 +125,7 @@ const editable = (el: EventTarget | null) => el instanceof HTMLInputElement || e
  * pages of four with dots and arrows; Continue turns the page until the last, where it closes, and a skip line under it
  * closes the dialog from any earlier page (TAL-2174). Every way of closing it acknowledges every row.
  */
-export function WhatsNewDialog({ announcement, open, onDismiss }: { announcement: WhatsNewAnnouncement; open: boolean; onDismiss: () => void }) {
+function WhatsNewDialog({ announcement, open, onDismiss }: { announcement: WhatsNewAnnouncement; open: boolean; onDismiss: () => void }) {
   const pages: WhatsNewAnnouncement['rows'][] = []
   for (let i = 0; i < announcement.rows.length; i += ROWS_PER_PAGE) pages.push(announcement.rows.slice(i, i + ROWS_PER_PAGE))
   const [page, setPage] = useState(0)

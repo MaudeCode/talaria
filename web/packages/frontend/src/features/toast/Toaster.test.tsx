@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Toaster } from './Toaster'
-import { dismissToast, removeToast, showRichToast, TOAST_EXIT_MS } from './toast'
+import { dismissToast, removeToast, showRichToast } from './toast'
+
+/** A dismissed toast animates out for 480 ms before it unmounts. */
+const TOAST_EXIT_MS = 480
 
 describe('notification toasts', () => {
   beforeEach(() => {
@@ -77,7 +80,7 @@ describe('notification toasts', () => {
     act(() => removeToast(`room-${kind}`))
   })
 
-  it('keeps a dismissed toast mounted and closed for TOAST_EXIT_MS, then removes it', async () => {
+  it('keeps a dismissed toast mounted and closed for its 480 ms exit, then removes it', async () => {
     vi.useFakeTimers()
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1 })
     act(() => showRichToast({ id: 'exit', text: 'Leaving', ttl: 0, kind: 'info', dismissible: true, actions: [] }))

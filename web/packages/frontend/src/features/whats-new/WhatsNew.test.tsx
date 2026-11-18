@@ -15,7 +15,7 @@ import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import { Dialog } from '../../ui/Dialog'
 import { AboutSection } from '../settings/AboutSection'
-import { WhatsNew, WhatsNewDialog, whatsNewScope } from './WhatsNew'
+import { WhatsNew } from './WhatsNew'
 
 // The shared Web/App fixture the server suite composes (contracts/fixtures/whats-new.json).
 const shared = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/whats-new.json'), 'utf8')) as { state: WhatsNewState }
@@ -24,7 +24,8 @@ const ACK = shared.state.acknowledgement!
 const eligible: WhatsNewState = { announcement, presentation: announcement, eligible: true, observation: null, acknowledgement: ACK }
 const quiet: WhatsNewState = { announcement, presentation: null, eligible: false, observation: ACK, acknowledgement: null }
 const fetchMock = vi.mocked(fetchWhatsNew)
-const SCOPE = whatsNewScope(null)
+// The persisted acknowledgement key, per signed-in user or anonymous use.
+const SCOPE = 'talaria-whats-new:anonymous'
 const TITLE = "What's New in Talaria Web"
 /** Settings › About's Help row that replays the announcement (TAL-2146). */
 const REPLAY = "What's New"
@@ -147,12 +148,12 @@ describe("What's New (TAL-1617)", () => {
   })
 
   it('keeps each signed-in user and anonymous use in its own scope', async () => {
-    window.localStorage.setItem(whatsNewScope('alice'), 'web:1.0.0')
+    window.localStorage.setItem('talaria-whats-new:user:alice', 'web:1.0.0')
     fetchMock.mockResolvedValue(eligible)
     renderShell(<WhatsNew />, 'alice')
     await userEvent.click(await screen.findByRole('button', { name: 'Continue' }))
-    expect(window.localStorage.getItem(whatsNewScope('alice'))).toBe(ACK)
-    expect(window.localStorage.getItem(whatsNewScope('bob'))).toBeNull()
+    expect(window.localStorage.getItem('talaria-whats-new:user:alice')).toBe(ACK)
+    expect(window.localStorage.getItem('talaria-whats-new:user:bob')).toBeNull()
     expect(window.localStorage.getItem(SCOPE)).toBeNull()
   })
 
@@ -189,30 +190,26 @@ describe("What's New pages (TAL-2174)", () => {
   const nine = { ...announcement, rows: Array.from({ length: 9 }, (_, i) => ({ id: `TAL-${String(100 + i)}-1`, icon: 'sparkles' as const, title: `Row ${String(i + 1)}`, description: `About row ${String(i + 1)}.` })) }
   const visibleTitles = (dialog: HTMLElement) => within(dialog).getAllByRole('listitem').map((row) => row.querySelector('p')?.textContent)
   const dots = (dialog: HTMLElement) => [...dialog.querySelectorAll('[data-page-dot]')].map((dot) => dot.getAttribute('data-page-dot'))
-  const presentNine = async () => {
+  const presentNine = async (shown = nine) => {
     window.localStorage.setItem(SCOPE, 'web:1.0.0')
-    fetchMock.mockResolvedValue({ ...eligible, announcement: nine, presentation: nine, acknowledgement: 'web:rows:TAL-100-1' })
+    fetchMock.mockResolvedValue({ ...eligible, announcement: shown, presentation: shown, acknowledgement: 'web:rows:TAL-100-1' })
     renderShell()
     const dialog = await screen.findByRole('dialog', { name: TITLE })
     await waitFor(() => { expect(within(dialog).getByRole('button', { name: 'Continue' })).toHaveFocus() })
     return dialog
   }
 
-  it('keeps four rows on one page with no dots, arrows or skip line, and Continue closes it', () => {
-    const onDismiss = vi.fn()
-    render(<WhatsNewDialog announcement={{ ...nine, rows: nine.rows.slice(0, 4) }} open onDismiss={onDismiss} />)
-    const dialog = screen.getByRole('dialog', { name: TITLE })
+  it('keeps four rows on one page with no dots, arrows or skip line, and Continue closes it', async () => {
+    const dialog = await presentNine({ ...nine, rows: nine.rows.slice(0, 4) })
     expect(visibleTitles(dialog)).toEqual(['Row 1', 'Row 2', 'Row 3', 'Row 4'])
     expect(dots(dialog)).toEqual([])
     expect(within(dialog).getAllByRole('button').map((b) => b.textContent)).toEqual(['Continue'])
     act(() => { within(dialog).getByRole('button', { name: 'Continue' }).click() })
-    expect(onDismiss).toHaveBeenCalledTimes(1)
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
   })
 
   it('pages nine rows four at a time with dots, arrows and arrow keys', async () => {
-    const onDismiss = vi.fn()
-    render(<WhatsNewDialog announcement={nine} open onDismiss={onDismiss} />)
-    const dialog = screen.getByRole('dialog', { name: TITLE })
+    const dialog = await presentNine()
     const previous = within(dialog).getByRole('button', { name: 'Previous page' })
     const next = within(dialog).getByRole('button', { name: 'Next page' })
     const live = dialog.querySelector('[aria-live="polite"]')!
@@ -244,7 +241,7 @@ describe("What's New pages (TAL-2174)", () => {
     act(() => { dialog.focus() })
     await userEvent.keyboard('{ArrowLeft}')
     expect(visibleTitles(dialog)).toEqual(['Row 1', 'Row 2', 'Row 3', 'Row 4'])
-    expect(onDismiss).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: TITLE })).toBe(dialog)
   })
 
   it('turns the page with Continue until the last page, where it closes once and acknowledges all nine rows', async () => {
@@ -263,22 +260,19 @@ describe("What's New pages (TAL-2174)", () => {
   })
 
   it('offers the skip line on every page but the last', async () => {
-    const onDismiss = vi.fn()
-    render(<WhatsNewDialog announcement={nine} open onDismiss={onDismiss} />)
-    const dialog = screen.getByRole('dialog', { name: TITLE })
+    const dialog = await presentNine()
     const skip = () => within(dialog).queryByRole('button', { name: 'Skip, I like surprises' })
     expect(skip()).not.toBeNull()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Next page' }))
     expect(skip()).not.toBeNull()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Next page' }))
     expect(skip()).toBeNull()
-    expect(onDismiss).not.toHaveBeenCalled()
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Continue' }))
-    expect(onDismiss).toHaveBeenCalledTimes(1)
-    onDismiss.mockClear()
+    expect(screen.getByRole('dialog', { name: TITLE })).toBe(dialog)
+    // Continue on the last page is the paging test's; the skip line closes from an earlier page and acknowledges every row.
     await userEvent.click(within(dialog).getByRole('button', { name: 'Previous page' }))
     await userEvent.click(skip()!)
-    expect(onDismiss).toHaveBeenCalledTimes(1)
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(window.localStorage.getItem(SCOPE)).toBe('web:rows:TAL-100-1')
   })
 
   it.each([
