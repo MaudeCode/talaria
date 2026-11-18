@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import { expect, settle, test } from './fixtures'
 import { routePlugins } from './plugins'
 
@@ -77,25 +78,25 @@ test('TAL-1829: a long update reason stays on its plugin row without widening th
   await page.screenshot({ path: testInfo.outputPath(`after-${testInfo.project.name}.png`) })
 })
 
-test('TAL-1914: the switch, Update all and a behind catalog row work and fit the page', async ({ page }) => {
-  let autoApply = false
-  let updated = false
+/** TAL-1914: the Plugins section with Weather one revision behind, over a stand-in server that follows each write. */
+async function openUpdates(page: Page) {
+  const state = { autoApply: false, updated: false }
   const sha = 'b'.repeat(40)
   await routePlugins(page, () => ({
     read_only: false,
-    auto_update: { auto_apply: autoApply, check_hours: 24, inactive_reason: null },
+    auto_update: { auto_apply: state.autoApply, check_hours: 24, inactive_reason: null },
     plugins: [
-      { key: 'weather', name: 'Weather', version: updated ? '2.0.0' : '1.0.0', description: 'Local weather tools', enabled: true, activation: 'enabled', update: { available: !updated, latest_revision: sha } },
+      { key: 'weather', name: 'Weather', version: state.updated ? '2.0.0' : '1.0.0', description: 'Local weather tools', enabled: true, activation: 'enabled', update: { available: !state.updated, latest_revision: sha } },
       { key: 'notes', name: 'Notes', version: '1.0.0', description: 'Read and write project notes', enabled: false, activation: 'disabled' },
     ],
   }))
   await page.route('**/api/plugins/catalog?*', (route) => route.fulfill({ json: { supported: true, read_only: false, total: 1, next_offset: null, entries: [
-    { name: 'weather-catalog', title: 'Weather', description: 'Local weather tools', repo: 'https://example.invalid/plugins/weather', sha, tier: 'verified', category: 'tools', requirements: [], installed_key: 'weather', installed_sha: 'a'.repeat(40), can_install: false, refusal: null, can_update: !updated },
+    { name: 'weather-catalog', title: 'Weather', description: 'Local weather tools', repo: 'https://example.invalid/plugins/weather', sha, tier: 'verified', category: 'tools', requirements: [], installed_key: 'weather', installed_sha: 'a'.repeat(40), can_install: false, refusal: null, can_update: !state.updated },
   ] } }))
   await page.route('**/api/plugins/auto-update', (route) => {
     const body = route.request().postDataJSON() as { enabled: boolean }
-    autoApply = body.enabled
-    return route.fulfill({ json: { auto_apply: autoApply, check_hours: 24, inactive_reason: null } })
+    state.autoApply = body.enabled
+    return route.fulfill({ json: { auto_apply: state.autoApply, check_hours: 24, inactive_reason: null } })
   })
   await page.route('**/api/plugins/update-all', (route) => route.fulfill({ json: { current: 1, results: [
     { name: 'notes', status: 'current', detail: '' },
@@ -105,24 +106,33 @@ test('TAL-1914: the switch, Update all and a behind catalog row work and fit the
     const body = route.request().postDataJSON() as { key: string; accept_caution: boolean; consent_token?: string }
     if (!body.accept_caution) return route.fulfill({ json: { key: body.key, status: 'needs_consent', verdict: 'widened', findings: "Updating 'weather' to bbbbbbbb adds tools: forecast. Confirm to continue.", consent_token: 'synthetic-consent' } })
     expect(body.consent_token).toBe('synthetic-consent')
-    updated = true
+    state.updated = true
     return route.fulfill({ json: { key: body.key, status: 'updated' } })
   })
   await page.goto('/settings/tools?tab=plugins')
   await settle(page)
-  const section = page.locator('[data-section="plugins"]')
-  const toggle = section.getByRole('switch', { name: 'Update automatically' })
+  return { state, section: page.locator('[data-section="plugins"]') }
+}
 
+test('TAL-1914: the Update automatically switch saves and shows the check interval', async ({ page }) => {
+  const { state, section } = await openUpdates(page)
+  const toggle = section.getByRole('switch', { name: 'Update automatically' })
   await toggle.click()
   await expect(toggle).toBeChecked()
   await expect(section.getByText('Every 24 h', { exact: true })).toBeVisible()
-  await expect.poll(() => autoApply).toBe(true)
+  await expect.poll(() => state.autoApply).toBe(true)
+})
 
+test('TAL-1914: Update all lists each plugin result without widening the page', async ({ page }) => {
+  const { section } = await openUpdates(page)
   await section.getByRole('button', { name: 'Update all', exact: true }).click()
   const results = section.getByRole('list', { name: 'Update all results' })
   await expect(results.getByRole('listitem').nth(1)).toContainText('Needs review')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
 
+test('TAL-1914: a behind catalog row updates through the consent dialog', async ({ page }) => {
+  const { section } = await openUpdates(page)
   await page.getByRole('button', { name: 'Add plugin', exact: true }).click()
   const catalog = page.getByRole('dialog', { name: 'Add plugin' })
   await catalog.getByRole('button', { name: 'Update', exact: true }).click()

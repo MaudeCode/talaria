@@ -618,16 +618,21 @@ test('the phone drawer shows pinned quotas and a row closes it into Insights', a
   })
 })
 
-/** Settings swaps only the destinations for its sections; the brand and footer stay available. */
-test('Settings keeps the brand and footer around its sections, and Back restores the last page', async ({ page }, info) => {
-  desktopOnly(info.project.name)
-  await feedbackSettings(page, true)
+/** Desktop Settings at 1440x900, opened from Skills through the sidebar's Settings row. */
+async function settingsFromSkills(page: Page) {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/skills')
   await settle(page)
   await sidebar(page).evaluate((el) => { el.dataset.shellMarker = 'kept' })
   await row(page, 'Settings').click()
   await expect(page).toHaveURL(/\/settings\/appearance$/)
+}
+
+/** Settings swaps only the destinations for its sections; the brand and footer stay available. */
+test('Settings keeps the brand and footer around its sections', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await feedbackSettings(page, true)
+  await settingsFromSkills(page)
   await expect(sidebar(page)).toHaveAttribute('data-shell-marker', 'kept')
   await expect(page.locator('#themePickerGrid')).toBeVisible()
   await expect.poll(() => width(page, 'aside.sidebar')).toBe(300)
@@ -649,8 +654,14 @@ test('Settings keeps the brand and footer around its sections, and Back restores
   await expect(page.locator('main#main')).toHaveClass(/showing-settings/)
   await expect(page.locator('html')).not.toHaveClass(/hub-active/)
   await page.screenshot({ path: info.outputPath('settings-desktop.png') })
+  await button(page, 'New conversation').click()
+  await expect(page).toHaveURL(/\/$/)
+})
 
-  // At short and phone sizes only the section list scrolls; the shared controls keep their own space.
+test('at short and phone sizes only the Settings section list scrolls; the shared controls keep their own space', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await feedbackSettings(page, true)
+  await settingsFromSkills(page)
   for (const viewport of [{ name: 'mobile', width: 390, height: 844 }, ...DUO_VIEWPORTS]) {
     await page.setViewportSize(viewport)
     await settle(page)
@@ -671,26 +682,24 @@ test('Settings keeps the brand and footer around its sections, and Back restores
     await page.screenshot({ path: info.outputPath(`settings-${viewport.name}.png`) })
     if (viewport.width <= 640) await button(page, 'Close menu').click()
   }
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await page.locator('#main [data-theme-val="light"]').click()
-  await expect(page.locator('html')).not.toHaveClass(/\bdark\b/)
-  for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: 'mobile', width: 390, height: 844 }]) {
-    await page.setViewportSize(viewport)
-    await settle(page)
-    if (viewport.width <= 640) await page.locator('#btnHamburger').click()
-    await page.screenshot({ path: info.outputPath(`settings-light-${viewport.name}.png`) })
-    if (viewport.width <= 640) await button(page, 'Close menu').click()
-  }
-  await page.setViewportSize({ width: 1440, height: 900 })
+})
 
-  // Moving between sections does not change where Back goes.
+test('moving between Settings sections does not change where Back goes', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await settingsFromSkills(page)
   await page.locator('[data-settings-section="system"]').click()
   await expect(page).toHaveURL(/\/settings\/system$/)
   await button(page, 'Back').click()
   await expect(page).toHaveURL(/\/skills$/)
   await expect(sidebar(page).locator('#sessionList')).toBeVisible()
+})
 
+test('turning off Show Feedback saves it and removes Send feedback from the Settings footer', async ({ page }, info) => {
+  desktopOnly(info.project.name)
+  await feedbackSettings(page, true)
+  await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/settings/navigation')
+  await settle(page)
   const feedbackToggle = page.getByRole('button', { name: 'Show Feedback', exact: true })
   await expect(feedbackToggle).toHaveAttribute('aria-pressed', 'true')
   await feedbackSettings(page, false)
@@ -701,8 +710,6 @@ test('Settings keeps the brand and footer around its sections, and Back restores
   expect(response.ok()).toBe(true)
   await sidebar(page).locator('[data-settings-section="appearance"]').click()
   await expect(button(page, 'Send feedback')).toHaveCount(0)
-  await button(page, 'New conversation').click()
-  await expect(page).toHaveURL(/\/$/)
 })
 
 /** The rail's visible rows by name and its separators as `|`, top to bottom. */

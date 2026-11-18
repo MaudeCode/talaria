@@ -151,28 +151,40 @@ for (const width of [1280, 390]) {
   })
 }
 
+/** The Delegation editor at `width`, over a stand-in server that starts on `fixture` and follows each write. */
+async function openDelegation(page: Page, width: number, fixture: 'missing' | 'default' | 'readonly') {
+  const { default: fixtures } = await import('../../../../contracts/fixtures/delegation-settings.json', { with: { type: 'json' } })
+  let delegation: DelegationSettings = structuredClone(fixtures[fixture])
+  const tasks = () => [...auxiliary.tasks, { task: 'delegation', label: 'Delegation', description: 'subagent model (delegate_task)', provider: 'auto', model: '', is_auto: true, changed: delegation.configured !== 'default', value_label: '', provider_label: '', selected_option_id: null, in_catalog: true, inherit_from: null, reasoning_effort: '', reasoning: reasoning('delegation') }]
+  await page.setViewportSize({ width, height: width > 600 ? 900 : 844 })
+  await page.route('**/api/model/auxiliary', (route) => route.fulfill({ json: { ...auxiliary, tasks: tasks(), delegation } }))
+  await page.route('**/api/models', (route) => route.fulfill({ json: models }))
+  await page.route('**/api/model/auxiliary/delegation', async (route) => {
+    const write = route.request().postDataJSON() as { action: string; backend: string; block: typeof delegation.model_map }
+    if (write.action === 'backend') delegation = counted({ ...fixtures.default, configured: write.backend, effective: write.backend, fixed_model_active: write.backend === 'default' })
+    else delegation = counted({ ...delegation, [write.backend]: write.block })
+    await route.fulfill({ json: { ...auxiliary, tasks: tasks(), delegation } })
+  })
+  await page.goto('/settings/models')
+  await settle(page)
+  if (fixture === 'readonly') await expect(page.getByRole('button', { name: 'Reset all to auto' })).toBeDisabled()
+  await taskTable(page).getByRole('button', { name: /Delegation/ }).click()
+}
+const fits = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
+
 for (const width of [1280, 390]) {
-  test(`delegation mode recovery and route editing fit at ${width}px`, async ({ page }, testInfo) => {
-    const { default: fixtures } = await import('../../../../contracts/fixtures/delegation-settings.json', { with: { type: 'json' } })
-    let delegation: DelegationSettings = structuredClone(fixtures.missing)
-    const tasks = () => [...auxiliary.tasks, { task: 'delegation', label: 'Delegation', description: 'subagent model (delegate_task)', provider: 'auto', model: '', is_auto: true, changed: delegation.configured !== 'default', value_label: '', provider_label: '', selected_option_id: null, in_catalog: true, inherit_from: null, reasoning_effort: '', reasoning: reasoning('delegation') }]
-    await page.setViewportSize({ width, height: width > 600 ? 900 : 844 })
-    await page.route('**/api/model/auxiliary', (route) => route.fulfill({ json: { ...auxiliary, tasks: tasks(), delegation } }))
-    await page.route('**/api/models', (route) => route.fulfill({ json: models }))
-    await page.route('**/api/model/auxiliary/delegation', async (route) => {
-      const write = route.request().postDataJSON() as { action: string; backend: string; block: typeof delegation.model_map }
-      if (write.action === 'backend') delegation = counted({ ...fixtures.default, configured: write.backend, effective: write.backend, fixed_model_active: write.backend === 'default' })
-      else delegation = counted({ ...delegation, [write.backend]: write.block })
-      await route.fulfill({ json: { ...auxiliary, tasks: tasks(), delegation } })
-    })
-    await page.goto('/settings/models')
-    await settle(page)
-    await taskTable(page).getByRole('button', { name: /Delegation/ }).click()
+  test(`a saved delegation mode that is missing says so and Restore Default recovers it, at ${width}px`, async ({ page }, testInfo) => {
+    await openDelegation(page, width, 'missing')
     await expect(taskRow(page, 'delegation').getByRole('status')).toContainText('Install or enable')
     await expect(page.getByRole('button', { name: 'Fixed model' })).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath(`delegation-unavailable-${String(width)}.png`) })
     await page.getByRole('button', { name: 'Restore Default' }).click()
     await expect(page.getByRole('combobox', { name: 'Mode', exact: true })).toContainText('Default')
+    expect(await fits(page)).toBe(true)
+  })
+
+  test(`named model routes switch on, rename and delete a route, at ${width}px`, async ({ page }, testInfo) => {
+    await openDelegation(page, width, 'default')
     await page.getByRole('combobox', { name: 'Mode', exact: true }).click()
     await page.getByRole('option', { name: 'Named model routes', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Fixed model' })).toHaveCount(0)
@@ -190,7 +202,11 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('button', { name: 'Edit Deep research' })).toBeVisible()
     await page.getByRole('button', { name: 'Delete Deep research' }).click()
     await expect(page.getByRole('button', { name: 'Edit Deep research' })).toHaveCount(0)
-    await page.locator('main#main').getByRole('button', { name: 'Back', exact: true }).click()
+    expect(await fits(page)).toBe(true)
+  })
+
+  test(`a profile route saves only after lending consent, at ${width}px`, async ({ page }, testInfo) => {
+    await openDelegation(page, width, 'default')
     await page.getByRole('button', { name: 'Profile routes', exact: true }).click()
     await page.getByRole('button', { name: 'Add route', exact: true }).click()
     await expect(page.getByText('This profile lends its credentials, SOUL, skills and terminal policy to subagents.')).toBeVisible()
@@ -203,12 +219,11 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('combobox', { name: 'Default', exact: true })).toContainText('No default')
     await expect(page.getByRole('button', { name: 'Edit research' })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath(`delegation-created-profile-${String(width)}.png`) })
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    delegation = structuredClone(fixtures.readonly)
-    await page.reload()
-    await settle(page)
-    await expect(page.getByRole('button', { name: 'Reset all to auto' })).toBeDisabled()
-    await taskTable(page).getByRole('button', { name: /Delegation/ }).click()
+    expect(await fits(page)).toBe(true)
+  })
+
+  test(`server-denied delegation management is read-only, at ${width}px`, async ({ page }, testInfo) => {
+    await openDelegation(page, width, 'readonly')
     await expect(page.getByRole('combobox', { name: 'Mode', exact: true })).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Profile routes', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Restore Default' })).toHaveCount(0)
