@@ -197,8 +197,16 @@ describe('the notify agent tool (TAL-1970)', () => {
     const states = vi.spyOn(ActivityStates.prototype, 'states')
     try {
       const snapshots = relay.snapshots().length
+      // The publisher wakes on the change and publishes once; wait for that publish itself.
+      const publisher = s.deps.relay.current()!
+      const publishSnapshot = publisher.publishSnapshot.bind(publisher)
+      let published!: () => void
+      const publish = new Promise<void>((resolve) => { published = resolve })
+      const snapshot = vi.spyOn(publisher, 'publishSnapshot').mockImplementation(async (...args) => { await publishSnapshot(...args); published() })
       s.deps.events.publish('turn_started', { sessionId: CALLER })
-      await vi.waitFor(() => { expect(relay.snapshots().length).toBeGreaterThan(snapshots) })
+      await publish
+      snapshot.mockRestore()
+      expect(relay.snapshots().length).toBeGreaterThan(snapshots)
       await s.deps.webPush.idle()
       expect(builds).toHaveBeenCalledTimes(1)
       const rows = await Promise.all(states.mock.results.map((result) => result.value as ReturnType<ActivityStates['states']>))
