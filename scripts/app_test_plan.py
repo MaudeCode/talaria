@@ -266,6 +266,7 @@ class Universe:
             self.files[path], self.lines[path] = scan(text, path)
         self.units = [decl for decls in self.files.values() for decl in walk(decls)]
         self.trail = set()
+        self.scanned = {}  # Name set -> (tests, trail it added): see reached().
         self.declared = {decl.name for decl in self.units if decl.parent is None}  # What the tested revision still has.
         self.superclass = {}
         for decl in self.units:
@@ -346,6 +347,19 @@ class Universe:
         self.trail |= names - seeds
         return result | self.whole(names & self.test_classes)
 
+    def reached(self, names):
+        """`reach`, scanned once per distinct name set: every changed line of one declaration seeds the same names, and
+        a diff of hundreds of lines repeated the whole-universe fixpoint for each (TAL-2473). A repeat replays the trail
+        the scan added, since the caller resets `trail` for each file it explains."""
+        key = frozenset(names)
+        if key not in self.scanned:
+            trail, self.trail = self.trail, set()
+            self.scanned[key] = (self.reach(key), self.trail)
+            self.trail = trail
+        found, added = self.scanned[key]
+        self.trail |= added
+        return found
+
     def changed(self, decls, lines, numbers):
         """The tests a file's changed lines reach, resolved by name in this universe: a test deleted or renamed since
         that side resolves to nothing, and its new name, if any, is on the other side of the diff."""
@@ -359,9 +373,9 @@ class Universe:
                         break
                     value = TOP_LEVEL_VALUE.match(lines[above - 1])
                 if value and not lines[number - 1].lstrip().startswith("import "):
-                    result |= self.reach({value.group(1)})
+                    result |= self.reached({value.group(1)})
                 else:  # An import or an unreadable top-level statement: everything the file declares.
-                    result |= self.reach({decl.name for decl in decls}) | self.whole({decl.name for decl in decls})
+                    result |= self.reached({decl.name for decl in decls}) | self.whole({decl.name for decl in decls})
                 continue
             top, deepest = chain[0], chain[-1]
             cls = top.name if top.is_type and top.name in self.test_classes else None
@@ -369,18 +383,18 @@ class Universe:
                     top.name in self.superclass:  # Present at the tested revision, under a base this target lacks.
                 raise Uncertain(f"cannot tell whether {top.name} is a test class: its superclass is outside {self.target}")
             if cls and len(chain) == 2 and is_test_method(deepest):
-                result |= self.method(cls, deepest.name) | self.reach({deepest.name})
+                result |= self.method(cls, deepest.name) | self.reached({deepest.name})
             elif cls:
                 member = chain[1] if len(chain) > 1 else None
                 names = {cls} if member is None or implicit(member) else {cls, member.name}
-                result |= self.whole({cls}) | self.reach(names)
+                result |= self.whole({cls}) | self.reached(names)
             else:
                 owner = deepest if deepest.is_type else (deepest.parent or deepest)
                 if any(name.startswith("XCTest") and name != "XCTestCase" for name in owner.inherits):  # XCTestObservation
                     raise Uncertain(f"{owner.name} conforms to {', '.join(owner.inherits)}: XCTest invokes it for every test")
                 names = ({deepest.name} if plain(deepest) else set()) | \
                     ({owner.name} if implicit(deepest) or deepest.is_type else set())
-                found = self.reach(names)
+                found = self.reached(names)
                 if not found and (implicit(deepest) or deepest.is_type) and owner.name in self.declared:
                     raise Uncertain(f"no test names {owner.name}, so the runtime may invoke {deepest.name}")
                 result |= found
@@ -639,7 +653,7 @@ class Planner:
             target = PACKAGE if reader.startswith(PACKAGE_DIR) else HOSTED
             universe = self.universe(target)
             if isinstance(universe, Universe) and reader in universe.files:
-                found = universe.reach({decl.name for decl in universe.files[reader]})
+                found = universe.reached({decl.name for decl in universe.files[reader]})
                 self.lanes[target].add(found, f"{path}: {len(found)} test identifier(s) read it through {reader}.")
                 return
             reason = f"{path}: its reader {reader} is not readable in {target}."
