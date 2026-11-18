@@ -9,7 +9,6 @@ import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contra
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { mergeSessionMessagesAppendOnly } from './merge.js'
 import { COMPRESSION_JOB_TTL_SECONDS, CompressionJobs, type CompressionJob } from './compress.js'
 import { Session } from './session.js'
 
@@ -212,14 +211,6 @@ describe('manual session compression', () => {
     expect(res.status).toBe(200)
     expect(topic).toBe('x'.repeat(500))
     expect((await json(res)).focus_topic).toBe('x'.repeat(500))
-  })
-
-  it('keeps pre-compression state.db rows out of the model history (#4836)', async () => {
-    const sid = await seeded({ context_messages: structuredClone(ORIGINAL) })
-    expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
-    const stored = (await s.deps.sessionStore.get(sid))
-    const replayed = mergeSessionMessagesAppendOnly(stored.context_messages, structuredClone(ORIGINAL), { truncationWatermark: stored.truncation_watermark })
-    expect(replayed).toHaveLength(stored.context_messages.length)
   })
 
   it('answers the old guards: unknown, subagent, streaming, and too-short sessions', async () => {

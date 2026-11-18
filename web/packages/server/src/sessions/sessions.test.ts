@@ -2528,7 +2528,6 @@ describe('session detail collapses very long message bodies (TAL-456)', () => {
     await s.deps.sessionStore.save(session)
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
     expect(served).toEqual(fixture.messages)
-    if (process.env.RECORD_TAL460) { const path = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'); const all = JSON.parse(readFileSync(path, 'utf8')) as Json; (all.background_update_session as Json).messages = served; writeFileSync(path, `${JSON.stringify(all, null, 2)}\n`) }
   })
 
   it('serves the shared collapsible-prompt example exactly as the contract fixture records it (TAL-452)', async () => {

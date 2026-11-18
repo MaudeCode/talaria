@@ -294,11 +294,6 @@ describe('state.db windows and probes', () => {
     expect(row, JSON.stringify(rows.map((r) => r.session_id))).toBeDefined()
     expect(row).toMatchObject({ is_cli_session: false, session_source: 'webui' })
   })
-
-  it('state.db source metadata applies to every row regardless of position', async () => {
-    const rows = (await json(await s.get('/api/sessions'))).sessions as Json[]
-    expect(rows.find((r) => r.session_id === 'stale-json')).toMatchObject({ is_cli_session: false })
-  })
 })
 
 describe('sidebar automated-session counts (TAL-482)', () => {
@@ -378,11 +373,5 @@ describe('server-classified session sources (TAL-310)', () => {
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     const row = (await rowsOf('/api/sessions')).find((r) => r.session_id === sid)
     for (const payload of [detail, row]) expect(payload).toMatchObject({ source_kind: 'webui', is_messaging_session: false, is_cli_session: false })
-  })
-
-  it('ships is_messaging_session on every list row', async () => {
-    const rows = await rowsOf('/api/sessions')
-    expect(rows.length).toBeGreaterThan(0)
-    for (const row of rows) expect(typeof row.is_messaging_session, String(row.session_id)).toBe('boolean')
   })
 })

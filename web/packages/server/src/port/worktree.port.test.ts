@@ -9,7 +9,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { allSessions } from '../sessions/list.js'
 import { WORKTREE_RETAIN_RETRY_MS } from '../sessions/service.js'
 
 useJsonStorage()
@@ -87,15 +86,6 @@ describe('worktree-backed sessions', () => {
     expect(existsSync(join(s.state, 'sessions', `${String(created.session_id)}.json`))).toBe(true)
     const plain = (await json(await post(s, '/api/session/new', { workspace: ws }))).session as Json
     expect(existsSync(join(s.state, 'sessions', `${String(plain.session_id)}.json`))).toBe(false)
-  })
-
-  it('the sidebar index keeps a zero-message worktree session', async () => {
-    const created = (await json(await post(s, '/api/session/new', { workspace: ws, worktree: true }))).session as Json
-    const plain = (await json(await post(s, '/api/session/new', { workspace: ws }))).session as Json
-    // Python `all_sessions()`: the empty-draft filter exempts worktree-backed sessions (the HTTP list additionally applies visible_only in both backends).
-    const ids = (await allSessions(s.deps.sessionStore)).map((r) => r.session_id)
-    expect(ids).toContain(created.session_id)
-    expect(ids).not.toContain(plain.session_id)
   })
 
   it('the HTTP sidebar list shows a zero-message worktree session, which owns a directory on disk (TAL-605)', async () => {

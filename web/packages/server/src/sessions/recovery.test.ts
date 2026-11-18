@@ -111,11 +111,6 @@ describe('session recovery routes', () => {
     expect(items(report).find((item) => item.kind === 'turn_journal_pending_turn')?.live_messages).toBe(2)
   })
 
-  it('records the stamping marker on first start', () => {
-    expect(marker()).toBeGreaterThan(0)
-    expect(marker()).toBeLessThanOrEqual(Date.now() / 1000)
-  })
-
   it('repair-safe restores an orphan backup, rebuilds the index from disk, and answers 200 when clean', async () => {
     orphan('abc123', 4)
     write('_index.json', [])

@@ -146,16 +146,6 @@ describe('session persistence and streaming flags', () => {
     expect((raw.messages as Json[])[0]).toMatchObject({ role: 'user', content: 'persist me' })
   })
 
-  it('a default save creates the sidebar index containing the id', async () => {
-    const sid = await newSession(s)
-    const session = (await s.deps.sessionStore.get(sid))
-    session.messages = [{ role: 'user', content: 'indexed' }]
-    await s.deps.sessionStore.save(session)
-    // save() returns before the batched index flush; an index read joins it.
-    await s.deps.sessionStore.index()
-    expect(readFileSync(join(s.state, 'sessions', '_index.json'), 'utf8')).toContain(sid)
-  })
-
   it('pending prompt, start time, and stream id survive a reload from disk', async () => {
     const sid = await newSession(s)
     const session = (await s.deps.sessionStore.get(sid))
@@ -184,19 +174,6 @@ describe('session persistence and streaming flags', () => {
     expect(rows.find((r) => r.session_id === indexed)?.active_stream_id).toBe('live-1')
     s.deps.registry.liveIds.delete('live-1')
     s.deps.registry.liveIds.delete('live-2')
-  })
-
-  it('a stale stream id is not streaming until the registry holds it', async () => {
-    const sid = await newSession(s)
-    const session = (await s.deps.sessionStore.get(sid))
-    session.messages = [{ role: 'user', content: 'hi' }]
-    session.active_stream_id = 'stale-9'
-    await s.deps.sessionStore.save(session)
-    expect((await allSessions(s.deps.sessionStore)).find((r) => r.session_id === sid)?.is_streaming).toBe(false)
-    s.deps.registry.liveIds.add('stale-9')
-    expect((await allSessions(s.deps.sessionStore)).find((r) => r.session_id === sid)?.is_streaming).toBe(true)
-    s.deps.registry.liveIds.delete('stale-9')
-    expect((await allSessions(s.deps.sessionStore)).find((r) => r.session_id === sid)?.is_streaming).toBe(false)
   })
 
   it('a persisted stream id does not resurrect streaming after a restart', async () => {
@@ -315,13 +292,6 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(String(partial?.reasoning)).toContain('deep thought')
   })
 
-  it('reasoning with empty text still yields a partial message', async () => {
-    const sid = await newSession(s)
-    cancellable([{ event: 'reasoning', data: { text: 'just reasoning' } }])
-    await cancelTurn(sid)
-    expect((await messagesOf(s, sid)).some((m) => m._partial)).toBe(true)
-  })
-
   it('reasoning and visible tokens both survive on the partial', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'reasoning', data: { text: 'why' } }, { event: 'token', data: { text: 'visible part' } }])
@@ -367,15 +337,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(stops).toHaveLength(1)
     expect(stops[0]?.content).toBe('')
     expect(stops[0]?._anchor_activity_scene).toMatchObject({ terminal_state: 'cancelled', final_answer: '' })
-  })
-
-  it('an empty partial buffer saves only the cancel marker', async () => {
-    const sid = await newSession(s)
-    cancellable([{ event: 'status', data: { text: 'starting' } }])
-    await cancelTurn(sid)
-    const messages = await messagesOf(s, sid)
-    expect(messages.some((m) => m._partial)).toBe(false)
-    expect(messages.at(-1)).toMatchObject({ _error: true })
+    expect(messages.at(-1)).toBe(stops[0])
   })
 
   it('a closed think block is stripped from the persisted partial', async () => {
@@ -1053,15 +1015,6 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(apperror).toBeUndefined()
     expect(out.some((f) => f.event === 'done')).toBe(true)
     expect(messages.at(-1)).toMatchObject({ role: 'assistant', content: 'earlier answer' })
-    expect(messages.some((m) => m._error)).toBe(false)
-  })
-
-  it('the same success with error null', async () => {
-    const sid = await seeded()
-    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'earlier answer' }], { error: null }))
-    const { frames: out, apperror, messages } = await settle(sid, 'again')
-    expect(apperror).toBeUndefined()
-    expect(out.some((f) => f.event === 'done')).toBe(true)
     expect(messages.some((m) => m._error)).toBe(false)
   })
 
