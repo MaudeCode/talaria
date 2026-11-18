@@ -33,7 +33,8 @@ async function makeStore(env: Record<string, string> = {}, opts: { keys?: boolea
   const settings = new SettingsStore({ documents: new JsonDocuments(dir), env, stateDir: dir, defaultWorkspace: join(dir, 'workspace'), botName: 'Hermes' })
   const store = new AuthStore({ documents: new JsonDocuments(dir), env, settings, now: clock, log: opts.log ?? (() => undefined), ...(opts.sessionSignatures ? { sessionSignatures: () => opts.sessionSignatures } : {}), ...(opts.persistWrite ? { persistWrite: (key: string, text: string) => opts.persistWrite!(join(dir, key === 'sessions' ? '.sessions.json' : '.login_attempts.json'), text) } : {}) })
   settings.hooks = { hashPassword: async (pw) => (await store.hashPassword(pw)), onPasswordChanged: () => { store.invalidatePasswordHashCache() } }
-  if (opts.keys ?? true) store.setKeysForTest(PBKDF2_KEY, SIGNING_KEY)
+  // The Python key files, where the store reads its keys at startup.
+  if (opts.keys ?? true) for (const [file, key] of [['.pbkdf2_key', PBKDF2_KEY], ['.signing_key', SIGNING_KEY]] as const) writeFileSync(join(dir, file), key, { mode: 0o600 })
   await settings.load()
   await store.initialize()
   stores.push(store)
@@ -53,6 +54,12 @@ function gatedWriter() {
   }
   return { writes, write, open }
 }
+
+/**
+ * One event-loop turn: every promise chain a held write leaves runnable has settled. The store's waits are promise
+ * chains on its writers, so a revoke or flush that does not wait for the held write has resolved by then.
+ */
+const settle = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve) })
 
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'talaria-auth-')); now = 1_800_000_000; stores = [] })
 afterEach(async () => {
@@ -393,7 +400,8 @@ describe('write-behind persistence', () => {
     store.persistWrite = writer.write
     let revoked = 0
     const revokes = [store.revokeSession(cookie), store.revokeSession(cookie)].map((pending) => pending.then(() => { revoked += 1 }))
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(writer.writes).toHaveLength(1)
+    await settle()
     expect(revoked).toBe(0)
     writer.open()
     await Promise.all(revokes)
@@ -412,7 +420,8 @@ describe('write-behind persistence', () => {
     // A request still being served (a restart keeps the listener open) starts a sessions write after the flush began.
     const cookie = store.createSession()
     attempts.open()
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await settle()
+    expect(JSON.parse(readFileSync(attemptsFile(), 'utf8'))).toHaveProperty('1.2.3.4')
     expect(flushed).toBe(false)
     sessions.open()
     await flushing
@@ -428,7 +437,8 @@ describe('write-behind persistence', () => {
     store.recordLoginAttempt('1.2.3.4')
     let flushed = false
     const flushing = store.flushPersistence().then(() => { flushed = true })
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(writer.writes.map(({ file }) => file).sort()).toEqual([attemptsFile(), sessionsFile()].sort())
+    await settle()
     expect(flushed).toBe(false)
     writer.open()
     await flushing

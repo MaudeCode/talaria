@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { join, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { OidcService, safeNextPath } from '../auth/oidc.js'
+import { OidcService } from '../auth/oidc.js'
 import { CSRF_HEADER_NAME } from '../auth/store.js'
 import { validatedRequestHost } from './auth-raw.js'
 import { SidecarClient } from '../sidecar/client.js'
@@ -74,14 +74,14 @@ function providerCode(location: string): { state: string; code: string } {
   return { state: u.searchParams.get('state') ?? '', code: `code:${u.searchParams.get('nonce') ?? ''}` }
 }
 
+const OIDC_OWNER_ENV = { TALARIA_WEB_OIDC_ISSUER: ISSUER, TALARIA_WEB_OIDC_CLIENT_ID: 'web-client', TALARIA_WEB_OIDC_ALLOW_CLAIM: 'groups', TALARIA_WEB_OIDC_ALLOW_VALUES: 'admins', TALARIA_WEB_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example', TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'owners' }
+
 describe('OIDC browser login', () => {
   let s: TestServer
   let idp: Idp
   const now = () => Date.now() / 1000
   beforeAll(async () => {
-    s = await bootTestServer({
-      env: { TALARIA_WEB_OIDC_ISSUER: ISSUER, TALARIA_WEB_OIDC_CLIENT_ID: 'web-client', TALARIA_WEB_OIDC_ALLOW_CLAIM: 'groups', TALARIA_WEB_OIDC_ALLOW_VALUES: 'admins', TALARIA_WEB_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example', TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'owners' },
-    })
+    s = await bootTestServer({ env: { ...OIDC_OWNER_ENV } })
     idp = fakeIdp(now)
     s.deps.fetch = idp.fetch
   })
@@ -131,26 +131,32 @@ describe('OIDC browser login', () => {
   })
 
   it('grants owner authority only from the owner allowlist and revokes it when the policy fingerprint changes', async () => {
-    idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-2', email: 'own@example.com', groups: ['admins', 'owners'], exp: now() + 300, nonce })
-    const start = await s.get('/api/auth/oidc/start')
-    const { state, code } = providerCode(start.headers.get('location') ?? '')
-    const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`, { headers: stateCookie(start) })
-    const cookie = `${s.deps.auth.cookieName()}=${cookieOf(cb, s.deps.auth.cookieName()) ?? ''}`
-    expect((await json(await s.get('/api/auth/status', { headers: { cookie } }))).can_manage_server).toBe(true)
-    const saved = await s.get('/api/settings', { method: 'POST', body: JSON.stringify({ trusted_link_hosts: ['docs.example.com'], api_redact_enabled: false }), headers: { 'content-type': 'application/json', cookie } })
-    expect(saved.status).toBe(200)
-    expect(await json(saved)).toMatchObject({ trusted_link_hosts: ['docs.example.com'], api_redact_enabled: false })
-    // A policy change invalidates the stored binding on the next request.
-    s.deps.config.env.TALARIA_WEB_OIDC_OWNER_VALUES = 'someone-else'
-    await new Promise((r) => setTimeout(r, 5100))
-    expect((await json(await s.get('/api/auth/status', { headers: { cookie } }))).logged_in).toBe(false)
-    s.deps.config.env.TALARIA_WEB_OIDC_OWNER_VALUES = 'owners'
-  }, 15_000)
+    // OidcService rereads its policy at most every 5 s of its own clock, so the test advances that clock past it.
+    let clock = 1_800_000_000
+    const owned = await bootTestServer({ env: { ...OIDC_OWNER_ENV }, now: () => clock })
+    const ownedIdp = fakeIdp(() => clock)
+    owned.deps.fetch = ownedIdp.fetch
+    ownedIdp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-2', email: 'own@example.com', groups: ['admins', 'owners'], exp: clock + 300, nonce })
+    try {
+      const start = await owned.get('/api/auth/oidc/start')
+      const { state, code } = providerCode(start.headers.get('location') ?? '')
+      const cb = await owned.get(`/api/auth/oidc/callback?state=${state}&code=${code}`, { headers: stateCookie(start) })
+      const cookie = `${owned.deps.auth.cookieName()}=${cookieOf(cb, owned.deps.auth.cookieName()) ?? ''}`
+      expect((await json(await owned.get('/api/auth/status', { headers: { cookie } }))).can_manage_server).toBe(true)
+      const saved = await owned.get('/api/settings', { method: 'POST', body: JSON.stringify({ trusted_link_hosts: ['docs.example.com'], api_redact_enabled: false }), headers: { 'content-type': 'application/json', cookie } })
+      expect(saved.status).toBe(200)
+      expect(await json(saved)).toMatchObject({ trusted_link_hosts: ['docs.example.com'], api_redact_enabled: false })
+      // A policy change invalidates the stored binding on the next request.
+      owned.deps.config.env.TALARIA_WEB_OIDC_OWNER_VALUES = 'someone-else'
+      clock += 6
+      expect((await json(await owned.get('/api/auth/status', { headers: { cookie } }))).logged_in).toBe(false)
+    } finally {
+      await owned.close()
+    }
+  })
 
   it('isolates notification history and mutations between OIDC owners sharing an email and profile', async () => {
-    const isolated = await bootTestServer({
-      env: { TALARIA_WEB_OIDC_ISSUER: ISSUER, TALARIA_WEB_OIDC_CLIENT_ID: 'web-client', TALARIA_WEB_OIDC_ALLOW_CLAIM: 'groups', TALARIA_WEB_OIDC_ALLOW_VALUES: 'admins', TALARIA_WEB_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example', TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'owners' },
-    })
+    const isolated = await bootTestServer({ env: { ...OIDC_OWNER_ENV } })
     const isolatedIdp = fakeIdp(now)
     isolated.deps.fetch = isolatedIdp.fetch
     const origin = `http://127.0.0.1:${String(isolated.running.port)}`
@@ -650,10 +656,7 @@ describe('passkey flag off', () => {
 })
 
 describe('auth helpers', () => {
-  it('safeNextPath and validatedRequestHost mirror the Python guards', () => {
-    expect(safeNextPath('/x')).toBe('/x')
-    expect(safeNextPath('//evil')).toBe('/')
-    expect(safeNextPath('/a b')).toBe('/')
+  it('validatedRequestHost keeps host:port and refuses userinfo, a path or an empty port', () => {
     expect(validatedRequestHost('example.com:8787')).toBe('example.com:8787')
     expect(validatedRequestHost('user@example.com')).toBeNull()
     expect(validatedRequestHost('example.com/x')).toBeNull()

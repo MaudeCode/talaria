@@ -6,6 +6,7 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
     ".login_attempts.json": "{"192.0.2.1":[1000]}",
     ".passkey_challenges.json": "{}",
     ".sessions.json": "{"0707070707070707070707070707070707070707070707070707070707070707":{"expiry":2593000,"auth_type":null,"username":"synthetic","bound_profile":null}}",
+    ".signing_key": "",
     "deleted-profiles.json": "["deleted"]",
     "extension-install-manifest.json": "{
   "version": 1,

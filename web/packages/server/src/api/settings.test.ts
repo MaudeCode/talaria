@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { createServer } from 'node:net'
 import { createServer as createHttpServer } from 'node:http'
 import { createHash } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { AccountUsageSnapshotSchema, BootstrapSchema, ProviderQuotaSchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -25,6 +25,10 @@ type Json = Record<string, unknown>
 const dictOf = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {})
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+/** Event-loop turns until `done` holds: a wait on an event, bounded only by the suite's test timeout. */
+const until = async (done: () => boolean): Promise<void> => { while (!done()) await new Promise<void>((resolve) => { setImmediate(resolve) }) }
+/** One event-loop turn: work that needs no I/O to reach its next step has taken it. */
+const settle = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve) })
 const tasksFrom = (body: Json): Record<string, { reasoning: Record<string, unknown> }> => Object.fromEntries(((dictOf(body.auxiliary).tasks ?? []) as { task: string; reasoning: Record<string, unknown> }[]).map((t) => [t.task, t]))
 
 const row = (name: string, extra: Json = {}): Json => ({ name, path: '', is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0, ...extra })
@@ -325,6 +329,12 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       })
     })
 
+    /** Waits for the millisecond clock the save stamps `saved_at` with to pass `mark`, and returns its reading. */
+    const clockPast = async (mark: number): Promise<number> => {
+      while (Date.now() <= mark) await new Promise<void>((resolve) => { setImmediate(resolve) })
+      return Date.now()
+    }
+
     /** A live gateway whose pid record was written `age` ms ago (negative: after every save in the test). */
     const gatewayStarted = (age: number) => {
       const record = join(s.state, 'gateway.pid')
@@ -388,10 +398,13 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     it('stays required for a gateway that started while the save was still writing, since it read the old file', async () => {
       vi.spyOn(s.deps.gatewayRestarts, 'gateways').mockResolvedValue([{ dir: s.state, pid: 10, start_time: 10 }])
       const write = sidecar.responderFor('config.set')!
+      // The gateway records its start strictly after the save began and strictly before the write returns.
       sidecar.respond('config.set', async (...call) => {
-        await new Promise((resolve) => setTimeout(resolve, 20))
-        writeFileSync(join(s.state, 'gateway.pid'), '{}')
-        await new Promise((resolve) => setTimeout(resolve, 20))
+        const at = await clockPast(Date.now())
+        const record = join(s.state, 'gateway.pid')
+        writeFileSync(record, '{}')
+        utimesSync(record, at / 1000, at / 1000)
+        await clockPast(at)
         return write(...call)
       })
       await withRootConfig({}, async () => {
@@ -860,22 +873,17 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
   })
 
   it('GET /api/providers filters rows by name and groups configured rows before available ones (TAL-2127)', async () => {
-    interface Row { id: string; display_name?: string; configured?: boolean }
+    // The keys the models test above leaves in place; OpenRouter is the one configured `open` row.
+    writeEnvFile(join(s.state, '.env'), { ANTHROPIC_API_KEY: 'sk-ant-test-1234', OPENROUTER_API_KEY: 'sk-or-test-1234' })
+    s.deps.catalog.invalidate()
     const all = await json(await s.get('/api/providers'))
-    const rows = all.providers as Row[]
     const res = await s.get('/api/providers?q=OPEN')
     expect(res.status).toBe(200)
     const body = await json(res)
-    const shown = (body.providers as Row[]).map((p) => p.id)
-    expect(shown).toContain('openai')
-    expect(shown).toEqual(rows.filter((p) => (p.display_name ?? p.id).toLowerCase().includes('open')).map((p) => p.id))
-    expect(shown.length).toBeLessThan(rows.length)
-    // Every kept row sits in exactly one group, configured first, in server order.
-    const groups = body.groups as { id: string; provider_ids: string[] }[]
-    expect(groups.map((g) => g.id)).toEqual(['configured', 'available'].filter((id) => groups.some((g) => g.id === id)))
-    expect(groups.flatMap((g) => g.provider_ids).sort()).toEqual([...shown].sort())
-    for (const g of groups) expect(g.provider_ids).toEqual(shown.filter((id) => (body.providers as Row[]).find((p) => p.id === id)?.configured === (g.id === 'configured')))
-    expect((all.groups as { provider_ids: string[] }[]).flatMap((g) => g.provider_ids)).toHaveLength(rows.length)
+    const available = ['openai', 'openai-api', 'openai-codex', 'opencode-go', 'opencode-zen']
+    expect((body.providers as { id: string }[]).map((p) => p.id)).toEqual(['openrouter', ...available])
+    expect(body.groups).toEqual([{ id: 'configured', provider_ids: ['openrouter'] }, { id: 'available', provider_ids: available }])
+    expect((all.groups as { provider_ids: string[] }[]).flatMap((g) => g.provider_ids)).toHaveLength((all.providers as unknown[]).length)
   })
 
   it('providerListing matches the id when a row has no display name and groups a keyed but unconfigured row as available (TAL-2127)', () => {
@@ -920,110 +928,135 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(runtime).toEqual([{ set: { DEEPSEEK_API_KEY: 'sk-caf\u00e9-12345' } }, { unset: ['DEEPSEEK_API_KEY'] }])
   })
 
-  it('a credential copied from the default profile .env at startup never counts for a named profile, and removing it retires the runtime copy', async () => {
+  describe('a credential copied from the default profile .env at startup', () => {
+    const profileRow = (name: string, path: string): Json => ({ name, path, is_default: name === 'default', gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 })
+    const envFile = (): string => join(s.state, '.env')
+    let dotenvBefore: string | null = null
     // Simulates `loadStartupEnv`: the default profile's .env put OPENAI_API_KEY into the process environment.
-    const env = s.deps.config.env
-    env.OPENAI_API_KEY = 'sk-from-home-dotenv-1234'
-    env.TALARIA_WEB_HOME_DOTENV_KEYS = 'OPENAI_API_KEY'
-    writeEnvFile(join(s.state, '.env'), { OPENAI_API_KEY: 'sk-from-home-dotenv-1234' })
-    mkdirSync(join(s.state, 'profiles', 'nokey'), { recursive: true })
-    sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'nokey', path: join(s.state, 'profiles', 'nokey'), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
-    s.deps.profiles.invalidate()
-    s.deps.catalog.invalidate()
-    try {
-      const rows = async (cookie?: string): Promise<{ id: string; has_key: boolean; key_source: string }[]> => ((await json(await s.get('/api/providers', cookie ? { headers: { cookie } } : {}))).providers as { id: string; has_key: boolean; key_source: string }[])
-      // TAL-641: the delete retires a startup copy of the .env key with the file entry, so the key is removable.
-      expect((await rows()).find((p) => p.id === 'openai')).toMatchObject({ has_key: true, removable: true })
-      const switched = await post(s, '/api/profile/switch', { name: 'nokey' })
-      const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
-      expect((await rows(cookie)).find((p) => p.id === 'openai')).toMatchObject({ has_key: false, key_source: 'none' })
-      // A key supplied by the process environment itself still applies everywhere.
-      env.DEEPSEEK_API_KEY = 'sk-deepseek-process-1234'
+    beforeEach(() => {
+      const env = s.deps.config.env
+      dotenvBefore = existsSync(envFile()) ? readFileSync(envFile(), 'utf8') : null
+      env.OPENAI_API_KEY = 'sk-from-home-dotenv-1234'
+      env.TALARIA_WEB_HOME_DOTENV_KEYS = 'OPENAI_API_KEY'
+      writeEnvFile(envFile(), { OPENAI_API_KEY: 'sk-from-home-dotenv-1234' })
+      mkdirSync(join(s.state, 'profiles', 'nokey'), { recursive: true })
+      sidecar.respond('profiles.list', () => ({ profiles: [profileRow('default', s.state), profileRow('nokey', join(s.state, 'profiles', 'nokey'))] as never }))
+      s.deps.profiles.invalidate()
       s.deps.catalog.invalidate()
-      // TAL-641: a process-environment key is not in .env, so the server offers no Remove for it.
-      expect((await rows(cookie)).find((p) => p.id === 'deepseek')).toMatchObject({ has_key: true, key_source: 'env_var', removable: false })
-      // Removing the dotenv-owned key on the default profile clears the runtime copy and tells the sidecar.
+    })
+    afterEach(() => {
+      const env = s.deps.config.env
+      for (const key of ['OPENAI_API_KEY', 'DEEPSEEK_API_KEY', 'ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY', 'TALARIA_WEB_HOME_DOTENV_KEYS']) Reflect.deleteProperty(env, key)
+      chmodSync(s.state, 0o700)
+      if (dotenvBefore === null) rmSync(envFile(), { force: true })
+      else writeFileSync(envFile(), dotenvBefore, { mode: 0o600 })
+      sidecar.status = 'ready'
+      sidecar.respond('runtime.env', () => ({ ok: true as const }))
+      sidecar.respond('profiles.list', () => ({ profiles: [profileRow('default', s.state)] as never }))
+      s.deps.profiles.invalidate()
+      s.deps.catalog.invalidate()
+    })
+    const rows = async (cookie?: string): Promise<{ id: string; has_key: boolean; key_source: string }[]> => ((await json(await s.get('/api/providers', cookie ? { headers: { cookie } } : {}))).providers as { id: string; has_key: boolean; key_source: string }[])
+    const nokeyCookie = async (): Promise<string> => ((await post(s, '/api/profile/switch', { name: 'nokey' })).headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    const runtimeEnvSince = (from: number): unknown[] => sidecar.calls.slice(from).filter((c) => c.method === 'runtime.env').map((c) => c.params)
+
+    // TAL-641: the delete retires a startup copy of the .env key with the file entry, so the key is removable.
+    it('counts for the default profile, removable', async () => {
+      expect((await rows()).find((p) => p.id === 'openai')).toMatchObject({ has_key: true, removable: true })
+    })
+
+    it('never counts for a named profile', async () => {
+      expect((await rows(await nokeyCookie())).find((p) => p.id === 'openai')).toMatchObject({ has_key: false, key_source: 'none' })
+    })
+
+    // TAL-641: a process-environment key is not in .env, so the server offers no Remove for it.
+    it('a key the process environment supplied applies to a named profile too, with no Remove', async () => {
+      s.deps.config.env.DEEPSEEK_API_KEY = 'sk-deepseek-process-1234'
+      expect((await rows(await nokeyCookie())).find((p) => p.id === 'deepseek')).toMatchObject({ has_key: true, key_source: 'env_var', removable: false })
+    })
+
+    it('a delete leaves a key the process environment supplied', async () => {
+      s.deps.config.env.DEEPSEEK_API_KEY = 'sk-deepseek-process-1234'
+      await post(s, '/api/providers/delete', { provider: 'deepseek' })
+      expect(s.deps.config.env.DEEPSEEK_API_KEY).toBe('sk-deepseek-process-1234')
+    })
+
+    it('removing it on the default profile clears the runtime copy and tells the sidecar', async () => {
+      const env = s.deps.config.env
       const before = sidecar.calls.length
       expect((await json(await post(s, '/api/providers/delete', { provider: 'openai' }))).action).toBe('removed')
       expect(env.OPENAI_API_KEY).toBeUndefined()
       expect(env.TALARIA_WEB_HOME_DOTENV_KEYS).toBe('')
       expect(sidecar.calls.slice(before).find((c) => c.method === 'runtime.env')?.params).toEqual({ unset: ['OPENAI_API_KEY'] })
       expect((await rows()).find((p) => p.id === 'openai')).toMatchObject({ has_key: false })
-      // A process-environment key is not touched by a delete.
-      await post(s, '/api/providers/delete', { provider: 'deepseek' })
-      expect(env.DEEPSEEK_API_KEY).toBe('sk-deepseek-process-1234')
-      // A key the default profile did not have at startup becomes dotenv-owned and reaches the runtime and sidecar.
+    })
+
+    it('a key the default profile did not have at startup becomes dotenv-owned and reaches the runtime and sidecar', async () => {
+      const env = s.deps.config.env
+      Reflect.deleteProperty(env, 'OPENAI_API_KEY')
+      env.TALARIA_WEB_HOME_DOTENV_KEYS = ''
+      writeEnvFile(envFile(), { OPENAI_API_KEY: null })
       const added = sidecar.calls.length
       expect((await json(await post(s, '/api/providers', { provider: 'openai', api_key: 'sk-added-later-1234' }))).action).toBe('updated')
       expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
       expect(env.TALARIA_WEB_HOME_DOTENV_KEYS).toBe('OPENAI_API_KEY')
       expect(sidecar.calls.slice(added).find((c) => c.method === 'runtime.env')?.params).toEqual({ set: { OPENAI_API_KEY: 'sk-added-later-1234' } })
-      // The sidecar must confirm the change: a refused refresh fails the edit and leaves the file and runtime as they were.
+    })
+
+    it('a sidecar that refuses the change fails the edit and leaves the file and runtime as they were', async () => {
       sidecar.respond('runtime.env', () => { throw new Error('sidecar busy') })
       const refused = await post(s, '/api/providers/delete', { provider: 'openai' })
       expect(refused.status).toBe(503)
       expect(String((await json(refused)).error)).toContain('did not apply')
-      expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
-      expect(loadEnvFile(join(s.state, '.env')).OPENAI_API_KEY).toBe('sk-added-later-1234')
-      sidecar.respond('runtime.env', () => ({ ok: true as const }))
-      // A write failure after the sidecar accepted the change rolls the sidecar back to the previous value.
+      expect(s.deps.config.env.OPENAI_API_KEY).toBe('sk-from-home-dotenv-1234')
+      expect(loadEnvFile(envFile()).OPENAI_API_KEY).toBe('sk-from-home-dotenv-1234')
+    })
+
+    it('a write failure after the sidecar accepted the change rolls the sidecar back to the previous value', async () => {
       chmodSync(s.state, 0o500)
-      try {
-        const envCalls = sidecar.calls.length
-        const failed = await post(s, '/api/providers/delete', { provider: 'openai' })
-        expect(failed.status).toBe(400)
-        const runtimeEnv = sidecar.calls.slice(envCalls).filter((c) => c.method === 'runtime.env').map((c) => c.params)
-        expect(runtimeEnv).toEqual([{ unset: ['OPENAI_API_KEY'] }, { set: { OPENAI_API_KEY: 'sk-added-later-1234' } }])
-        expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
-      } finally {
-        chmodSync(s.state, 0o700)
-      }
-      // If the compensating call fails too, the divergent child is recycled so its replacement starts from the unchanged environment.
-      let envCalls2 = 0
-      sidecar.respond('runtime.env', () => { envCalls2 += 1; if (envCalls2 === 2) throw new Error('sidecar restarting'); return { ok: true as const } })
+      const envCalls = sidecar.calls.length
+      const failed = await post(s, '/api/providers/delete', { provider: 'openai' })
+      expect(failed.status).toBe(400)
+      expect(runtimeEnvSince(envCalls)).toEqual([{ unset: ['OPENAI_API_KEY'] }, { set: { OPENAI_API_KEY: 'sk-from-home-dotenv-1234' } }])
+      expect(s.deps.config.env.OPENAI_API_KEY).toBe('sk-from-home-dotenv-1234')
+    })
+
+    it('a failed compensating call recycles the divergent child so its replacement starts from the unchanged environment', async () => {
+      let envCalls = 0
+      sidecar.respond('runtime.env', () => { envCalls += 1; if (envCalls === 2) throw new Error('sidecar restarting'); return { ok: true as const } })
       chmodSync(s.state, 0o500)
-      try {
-        const recycledBefore = sidecar.recycled.length
-        expect((await post(s, '/api/providers/delete', { provider: 'openai' })).status).toBe(400)
-        expect(sidecar.recycled.length).toBe(recycledBefore + 1)
-        expect(sidecar.recycled.at(-1)).toContain('OPENAI_API_KEY')
-        expect(env.OPENAI_API_KEY).toBe('sk-added-later-1234')
-      } finally {
-        chmodSync(s.state, 0o700)
-        sidecar.status = 'ready'
-        sidecar.respond('runtime.env', () => ({ ok: true as const }))
-      }
-      // Two overlapping root-profile edits run as one transaction each: the second sidecar apply waits for the first
-      // edit to commit (out-of-order sidecar replies can no longer commit the wrong value), and both keep ownership.
+      const recycledBefore = sidecar.recycled.length
+      expect((await post(s, '/api/providers/delete', { provider: 'openai' })).status).toBe(400)
+      expect(sidecar.recycled.length).toBe(recycledBefore + 1)
+      expect(sidecar.recycled.at(-1)).toContain('OPENAI_API_KEY')
+      expect(s.deps.config.env.OPENAI_API_KEY).toBe('sk-from-home-dotenv-1234')
+    })
+
+    // Two overlapping root-profile edits run as one transaction each: the second sidecar apply waits for the first
+    // edit to commit (out-of-order sidecar replies can no longer commit the wrong value), and both keep ownership.
+    it('overlapping root-profile edits apply one at a time and both keep ownership', async () => {
       const gates: (() => void)[] = []
       sidecar.respond('runtime.env', () => new Promise((resolve) => { gates.push(() => { resolve({ ok: true as const }) }) }))
+      // Each edit names its profile as it enters the shared credential chain; nothing after that waits on I/O before its sidecar apply.
+      const entered = vi.spyOn(s.deps, 'isRootProfile')
       const a = post(s, '/api/providers', { provider: 'anthropic', api_key: 'sk-ant-overlap-1234' })
       const b = post(s, '/api/providers', { provider: 'openrouter', api_key: 'sk-or-overlap-1234' })
-      const waitForGates = async (n: number): Promise<void> => { const until = Date.now() + 5000; while (gates.length < n && Date.now() < until) await new Promise((r) => setTimeout(r, 10)) }
-      await waitForGates(1)
-      await new Promise((r) => setTimeout(r, 50))
+      await until(() => entered.mock.calls.length === 2 && gates.length >= 1)
+      await settle()
       expect(gates).toHaveLength(1)
       gates[0]!()
-      await waitForGates(2)
-      expect(gates).toHaveLength(2)
+      await until(() => gates.length === 2)
       gates[1]!()
-      sidecar.respond('runtime.env', () => ({ ok: true as const }))
       expect((await a).status).toBe(200)
       expect((await b).status).toBe(200)
-      expect(env.TALARIA_WEB_HOME_DOTENV_KEYS?.split(',').sort()).toEqual(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY'])
-      delete env.ANTHROPIC_API_KEY
-      delete env.OPENROUTER_API_KEY
-      // ...while an explicitly supplied process value keeps precedence when its provider key is (re)written.
+      expect(s.deps.config.env.TALARIA_WEB_HOME_DOTENV_KEYS?.split(',').sort()).toEqual(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY'])
+    })
+
+    it('a value the process environment supplied explicitly keeps precedence when its provider key is written', async () => {
+      s.deps.config.env.DEEPSEEK_API_KEY = 'sk-deepseek-process-1234'
       expect((await json(await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-deepseek-file-1234' }))).action).toBe('updated')
-      expect(env.DEEPSEEK_API_KEY).toBe('sk-deepseek-process-1234')
-    } finally {
-      delete env.OPENAI_API_KEY
-      delete env.DEEPSEEK_API_KEY
-      delete env.TALARIA_WEB_HOME_DOTENV_KEYS
-      sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
-      s.deps.profiles.invalidate()
-      s.deps.catalog.invalidate()
-    }
+      expect(s.deps.config.env.DEEPSEEK_API_KEY).toBe('sk-deepseek-process-1234')
+    })
   })
 
   it('deleting a provider credential removes YAML blocks stored under any alias of the provider', async () => {
@@ -1174,7 +1207,9 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
-  it('quota sources list each source id once, ordered by provider, account label, then source id (TAL-272)', async () => {
+  it('quota sources list each source id once, ordered by provider (TAL-272)', async () => {
+    // The keys the models test above leaves in place.
+    writeEnvFile(join(s.state, '.env'), { ANTHROPIC_API_KEY: 'sk-ant-test-1234', OPENROUTER_API_KEY: 'sk-or-test-1234' })
     const saved = configs.get(s.state)
     const reset = (config: Json | undefined): void => { configs.set(s.state, config ?? {}); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
     // `My LLM` and `my-llm` share the `custom:my-llm` slug, so both entries derive one source id.
@@ -1188,10 +1223,9 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       const ids = sources.map((q) => q.source_id)
       expect(ids).toEqual([...new Set(ids)])
       expect(sources.filter((q) => q.provider_id === 'custom:my-llm')).toHaveLength(1)
-      expect(sources.map((q) => q.provider_id)).toEqual(expect.arrayContaining(['custom:my-llm', 'custom:zeta']))
-      const key = (q: (typeof sources)[number]): string[] => [q.provider_id, q.account_label, q.source_id]
-      const ordered = [...sources].sort((a, b) => { const [x, y] = [key(a), key(b)]; for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i]! < y[i]! ? -1 : 1; return 0 })
-      expect(sources).toEqual(ordered)
+      expect(sources.filter((q) => q.provider_id === 'custom:zeta')).toHaveLength(1)
+      // The fixture lists Zeta first; the listing sorts it after my-llm.
+      expect(sources.map((q) => q.provider_id)).toEqual(['anthropic', 'custom:my-llm', 'custom:zeta', 'openrouter'])
     } finally {
       reset(saved)
     }
@@ -1397,58 +1431,70 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect((configs.get(s.state)?.auxiliary as Json).vision).toEqual({ provider: 'auto', model: '' })
   })
 
-  it('auxiliary slots are typed, server-matched against the catalog, written one at a time, and profile-scoped (TAL-388)', async () => {
-    const saved = configs.get(s.state)
-    const reset = (config: Json): void => { configs.set(s.state, config); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
+  describe('auxiliary slots are typed, server-matched against the catalog, written one at a time, and profile-scoped (TAL-388)', () => {
     interface Task { task: string; provider: string; model: string; is_auto: boolean; value_label: string | null; provider_label: string | null; selected_option_id: string | null; in_catalog: boolean }
+    interface Group { provider: string; provider_id: string; models: { id: string; label: string }[] }
+    const reset = (config: Json): void => { configs.set(s.state, config); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
     const tasksOf = (body: Json): Task[] => body.tasks as Task[]
     const read = async (headers: Record<string, string> = {}): Promise<Task[]> => tasksOf(await json(await s.get('/api/model/auxiliary', { headers })))
+    const groups = async (): Promise<Group[]> => (await json(await s.get('/api/models'))).groups as Group[]
+    const betaPick = async (): Promise<{ beta: Group; option: { id: string; label: string } }> => { const beta = (await groups()).find((g) => g.provider_id === 'custom:beta')!; return { beta, option: beta.models[0]! } }
+    const profileHome = (): string => join(s.state, 'profiles', 'auxp')
+    let saved: Json | undefined
     // Two custom providers list the same bare model id; only the saved provider's entry may match.
-    reset({
-      model: { default: 'claude-sonnet-4-6', provider: 'anthropic' },
-      custom_providers: [{ name: 'alpha', base_url: 'http://alpha.test/v1', model: 'llama3' }, { name: 'beta', base_url: 'http://beta.test/v1/', model: 'llama3' }],
-      auxiliary: { vision: { provider: 'openrouter', model: 'legacy/gone-model' } },
+    beforeEach(() => {
+      saved = configs.get(s.state)
+      reset({
+        model: { default: 'claude-sonnet-4-6', provider: 'anthropic' },
+        custom_providers: [{ name: 'alpha', base_url: 'http://alpha.test/v1', model: 'llama3' }, { name: 'beta', base_url: 'http://beta.test/v1/', model: 'llama3' }],
+        auxiliary: { vision: { provider: 'openrouter', model: 'legacy/gone-model' } },
+      })
     })
-    const profileHome = join(s.state, 'profiles', 'auxp')
-    try {
-      const groups = (await json(await s.get('/api/models'))).groups as { provider: string; provider_id: string; models: { id: string; label: string }[] }[]
-      const beta = groups.find((g) => g.provider_id === 'custom:beta')!
-      const alpha = groups.find((g) => g.provider_id === 'custom:alpha')!
-      const betaOption = beta.models[0]!
-      expect(alpha.models[0]!.id).not.toBe(betaOption.id)
-      const mainOption = groups.find((g) => g.provider_id === 'anthropic')!.models.find((m) => m.id.endsWith('claude-sonnet-4-6'))!
+    afterEach(() => {
+      Reflect.deleteProperty(s.deps.config.env, 'HERMES_MODEL')
+      sidecar.respond('profiles.list', () => ({ profiles: [row('default', { path: s.state, is_default: true })] as never }))
+      s.deps.profiles.invalidate()
+      configs.delete(profileHome())
+      if (saved) reset(saved)
+    })
 
-      // Read: server order, Auto, and a saved model the catalog no longer lists stay explicit.
-      let tasks = await read()
+    it('reads tasks in server order; Auto names the main model, and a saved model the catalog no longer lists stays explicit', async () => {
+      const mainOption = (await groups()).find((g) => g.provider_id === 'anthropic')!.models.find((m) => m.id.endsWith('claude-sonnet-4-6'))!
+      const tasks = await read()
       expect(tasks.map((t) => t.task)).toEqual(['vision', 'compression', 'approval', 'mcp', 'title_generation', 'review', 'memory_query_rewrite', 'tts_audio_tags', 'voice_chat', 'skills_hub', 'triage_specifier', 'kanban_decomposer', 'profile_describer', 'curator', 'delegation'])
       expect(tasks.find((t) => t.task === 'title_generation')).toMatchObject({ label: 'Title generation', provider: 'auto', model: '', is_auto: true, value_label: mainOption.label, provider_label: 'Anthropic', selected_option_id: null, in_catalog: true })
       expect(tasks.find((t) => t.task === 'vision')).toMatchObject({ is_auto: false, value_label: 'legacy/gone-model', provider_label: 'OpenRouter', selected_option_id: null, in_catalog: false })
-      // Auto names the effective main model, including an environment override the config section does not hold.
-      const otherOption = groups.find((g) => g.provider_id === 'anthropic')!.models.find((m) => !m.id.startsWith('@') && m.id !== 'claude-sonnet-4-6')!
+    })
+
+    it('Auto names the effective main model, including an environment override the config section does not hold', async () => {
+      const otherOption = (await groups()).find((g) => g.provider_id === 'anthropic')!.models.find((m) => !m.id.startsWith('@') && m.id !== 'claude-sonnet-4-6')!
       s.deps.config.env.HERMES_MODEL = otherOption.id
       s.deps.catalog.invalidate()
-      try {
-        expect((await read()).find((t) => t.task === 'title_generation')).toMatchObject({ is_auto: true, value_label: otherOption.label, provider_label: 'Anthropic' })
-      } finally {
-        Reflect.deleteProperty(s.deps.config.env, 'HERMES_MODEL')
-        s.deps.catalog.invalidate()
-      }
+      expect((await read()).find((t) => t.task === 'title_generation')).toMatchObject({ is_auto: true, value_label: otherOption.label, provider_label: 'Anthropic' })
+    })
 
-      // Write one task with the picked catalog id: it answers the refreshed state and ticks exactly the beta entry.
-      let res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'title_generation', provider: beta.provider_id, model: betaOption.id })
+    it('a write with the picked catalog id answers the refreshed state and ticks exactly that provider\'s entry', async () => {
+      const { beta, option } = await betaPick()
+      expect((await groups()).find((g) => g.provider_id === 'custom:alpha')!.models[0]!.id).not.toBe(option.id)
+      const res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'title_generation', provider: beta.provider_id, model: option.id })
       expect(res.status).toBe(200)
-      let body = await json(res)
+      const body = await json(res)
       expect(body).toMatchObject({ ok: true, task: 'title_generation', provider: 'custom:beta', model: 'llama3' })
-      const title = tasksOf(dictOf(body.auxiliary)).find((t) => t.task === 'title_generation')
-      expect(title).toMatchObject({ is_auto: false, value_label: betaOption.label, provider_label: beta.provider, selected_option_id: betaOption.id, in_catalog: true })
+      expect(tasksOf(dictOf(body.auxiliary)).find((t) => t.task === 'title_generation')).toMatchObject({ is_auto: false, value_label: option.label, provider_label: beta.provider, selected_option_id: option.id, in_catalog: true })
       expect((configs.get(s.state)?.auxiliary as Json).title_generation).toEqual({ provider: 'custom:beta', model: 'llama3', base_url: 'http://beta.test/v1' })
-      // The other slots and the main model are untouched.
-      tasks = await read()
+    })
+
+    it('a write of one task leaves the other slots and the main model untouched', async () => {
+      const { beta, option } = await betaPick()
+      expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: 'title_generation', provider: beta.provider_id, model: option.id })).status).toBe(200)
+      const tasks = await read()
       expect(tasks.filter((t) => t.task !== 'title_generation' && t.task !== 'vision').every((t) => t.is_auto)).toBe(true)
       expect(tasks.find((t) => t.task === 'vision')).toMatchObject({ provider: 'openrouter', model: 'legacy/gone-model' })
       expect(configs.get(s.state)?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
+    })
 
-      // Invalid input is rejected without changing saved state.
+    it('rejects invalid input without changing saved state', async () => {
+      const alpha = (await groups()).find((g) => g.provider_id === 'custom:alpha')!
       const before = JSON.stringify(configs.get(s.state))
       for (const bad of [
         { task: 'nope', provider: 'auto', model: '' },
@@ -1456,39 +1502,37 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
         { task: 'title_generation', provider: 'auto', model: '@nocolon' },
         { task: 'title_generation', provider: 'auto', model: '@openai:' },
       ]) {
-        res = await post(s, '/api/model/set', { scope: 'auxiliary', ...bad })
-        expect(res.status).toBe(400)
+        expect((await post(s, '/api/model/set', { scope: 'auxiliary', ...bad })).status, JSON.stringify(bad)).toBe(400)
       }
       expect(JSON.stringify(configs.get(s.state))).toBe(before)
+    })
 
-      // Auto clears the override, including the custom endpoint's base_url.
-      body = await json(await post(s, '/api/model/set', { scope: 'auxiliary', task: 'title_generation', provider: 'auto', model: '' }))
+    it('Auto clears the override, including the custom endpoint\'s base_url', async () => {
+      const { beta, option } = await betaPick()
+      expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: 'title_generation', provider: beta.provider_id, model: option.id })).status).toBe(200)
+      const body = await json(await post(s, '/api/model/set', { scope: 'auxiliary', task: 'title_generation', provider: 'auto', model: '' }))
       expect(tasksOf(dictOf(body.auxiliary)).find((t) => t.task === 'title_generation')).toMatchObject({ is_auto: true, selected_option_id: null })
       expect((configs.get(s.state)?.auxiliary as Json).title_generation).toEqual({ provider: 'auto', model: '' })
+    })
 
-      // Profiles keep separate selections.
-      mkdirSync(profileHome, { recursive: true })
-      writeFileSync(join(profileHome, 'config.yaml'), '# seed\n')
-      configs.set(profileHome, { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' } })
-      sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'auxp', path: profileHome, is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+    it('profiles keep separate selections', async () => {
+      mkdirSync(profileHome(), { recursive: true })
+      writeFileSync(join(profileHome(), 'config.yaml'), '# seed\n')
+      configs.set(profileHome(), { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' } })
+      sidecar.respond('profiles.list', () => ({ profiles: [row('default', { path: s.state, is_default: true }), row('auxp', { path: profileHome() })] as never }))
       s.deps.profiles.invalidate()
       const cookie = ((await post(s, '/api/profile/switch', { name: 'auxp' })).headers.get('set-cookie') ?? '').split(';')[0] ?? ''
-      res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'compression', provider: 'anthropic', model: 'claude-opus-4-7' }, { cookie })
-      expect(res.status).toBe(200)
+      expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: 'compression', provider: 'anthropic', model: 'claude-opus-4-7' }, { cookie })).status).toBe(200)
       expect((await read({ cookie })).find((t) => t.task === 'compression')).toMatchObject({ provider: 'anthropic', model: 'claude-opus-4-7' })
       expect((await read()).find((t) => t.task === 'compression')).toMatchObject({ is_auto: true })
       expect((await read({ cookie })).find((t) => t.task === 'vision')).toMatchObject({ is_auto: true })
+    })
 
-      // Reset all returns every slot to Auto.
-      body = await json(await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' }))
+    it('Reset All returns every slot to Auto and keeps the main model', async () => {
+      const body = await json(await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' }))
       expect(tasksOf(dictOf(body.auxiliary)).every((t) => t.is_auto)).toBe(true)
       expect(configs.get(s.state)?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
-    } finally {
-      sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
-      s.deps.profiles.invalidate()
-      configs.delete(profileHome)
-      if (saved) reset(saved)
-    }
+    })
   })
 
   it("auxiliary slots are the Agent's: voice_chat, profile plugin tasks, inherited values, and the static fallback (TAL-800)", async () => {
@@ -1631,104 +1675,122 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
-  it('auxiliary reasoning: server-supported efforts, explicit vs inherited, effort-only and combined writes, reconciliation, rejection, and reset (TAL-1285)', async () => {
-    const saved = configs.get(s.state)
-    const reset = (config: Json): void => { configs.set(s.state, config); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
+  describe('auxiliary reasoning: server-supported efforts, explicit vs inherited, effort-only and combined writes, reconciliation, rejection, and reset (TAL-1285)', () => {
     interface Reasoning { saved: string | null; effective: string | null; inherited: boolean; default_source: string; options: string[]; unavailable: string | null }
     interface Task { task: string; provider: string; model: string; reasoning: Reasoning }
+    const reset = (config: Json): void => { configs.set(s.state, config); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
     const read = async (): Promise<Record<string, Task>> => Object.fromEntries(((await json(await s.get('/api/model/auxiliary'))).tasks as Task[]).map((t) => [t.task, t]))
     const set = (body: Json): Promise<Response> => post(s, '/api/model/set', { scope: 'auxiliary', ...body })
     const aux = (): Json => dictOf(configs.get(s.state)?.auxiliary)
     const efforts: Record<string, string[]> = { 'claude-opus-4-7': ['low', 'medium', 'high'], 'claude-sonnet-4-6': ['low', 'medium', 'high'], 'small-model': ['low', 'high'] }
-    let effortReads = 0
-    sidecar.respond('models.reasoning_efforts', (params) => { effortReads += 1; return { efforts: efforts[params.model] ?? [], supports_reasoning: params.model in efforts } })
     const FULL = ['low', 'medium', 'high', 'none']
-    reset({ model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, agent: { reasoning_effort: 'high' }, auxiliary: { compression: { provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'medium' } }, delegation: { max_iterations: 50 } })
-    try {
-      // Read: an explicit override, an inherited default, slots the Agent says ignore an effort, and delegation's parent default.
-      let tasks = await read()
+    const MAIN = { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, agent: { reasoning_effort: 'high' } }
+    const pinnedCompression = (effort: string): Json => ({ ...MAIN, auxiliary: { compression: { provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: effort } }, delegation: { max_iterations: 50 } })
+    let effortReads = 0
+    let saved: Json | undefined
+    beforeEach(() => {
+      saved = configs.get(s.state)
+      effortReads = 0
+      sidecar.respond('models.reasoning_efforts', (params) => { effortReads += 1; return { efforts: efforts[params.model] ?? [], supports_reasoning: params.model in efforts } })
+      reset(pinnedCompression('medium'))
+    })
+    afterEach(() => {
+      sidecar.respond('aux.tasks', undefined)
+      sidecar.respond('models.reasoning_efforts', (params) => ({ efforts: params.model.startsWith('claude') ? ['low', 'medium', 'high'] : [], supports_reasoning: params.model.startsWith('claude') }))
+      if (saved) reset(saved)
+    })
+
+    it('reads an explicit override, an inherited default, slots the Agent says ignore an effort, and delegation\'s parent default', async () => {
+      const tasks = await read()
       expect(tasks.compression!.reasoning).toEqual({ saved: 'medium', effective: '', inherited: false, default_source: 'provider', options: FULL, unavailable: null })
       expect(tasks.title_generation!.reasoning).toMatchObject({ saved: null, inherited: true, default_source: 'provider', options: FULL, unavailable: null })
       expect(tasks.review!.reasoning).toMatchObject({ options: [], unavailable: 'slot' })
       expect(tasks.memory_query_rewrite!.reasoning).toMatchObject({ options: [], unavailable: 'slot' })
       expect(tasks.delegation!.reasoning).toMatchObject({ saved: null, inherited: true, default_source: 'parent', options: FULL })
-      // Each distinct route's capability is read once per listing: the pinned Opus route and the main Sonnet route.
+    })
+
+    it('reads each distinct route\'s capability once per listing: the pinned Opus route and the main Sonnet route', async () => {
+      await read()
       effortReads = 0
       await read()
       expect(effortReads).toBe(2)
+    })
 
-      // An effort-only write keeps the route; the global chat effort, the main model and the other slots stay as they were.
+    it('an effort-only write keeps the route; the global chat effort, the main model and the other slots stay as they were', async () => {
       expect((await set({ task: 'compression', reasoning_effort: 'high' })).status).toBe(200)
       expect(aux().compression).toEqual({ provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'high' })
       expect(configs.get(s.state)?.agent).toEqual({ reasoning_effort: 'high' })
       expect(configs.get(s.state)?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
       expect(Object.keys(aux())).toEqual(['compression'])
+    })
 
-      // Unsupported combinations are rejected and nothing is written, including a route change that carries a bad effort.
+    it('rejects unsupported combinations and writes nothing, including a route change that carries a bad effort', async () => {
       const before = JSON.stringify(configs.get(s.state))
       for (const bad of [
         { task: 'compression', reasoning_effort: 'xhigh' },
         { task: 'compression', reasoning_effort: 'bogus' },
         { task: 'review', reasoning_effort: 'low' },
         { task: 'compression', provider: 'openrouter', model: 'plain-model', reasoning_effort: 'low' },
-      ]) expect((await set(bad)).status).toBe(400)
+      ]) expect((await set(bad)).status, JSON.stringify(bad)).toBe(400)
       expect(JSON.stringify(configs.get(s.state))).toBe(before)
+    })
 
-      // A route change keeps a supported effort, steps an unsupported one down the ladder, and clears it when the model has no control.
+    it('a route change keeps a supported effort, steps an unsupported one down the ladder, and clears it when the model has no control', async () => {
+      reset(pinnedCompression('high'))
       expect((await set({ task: 'compression', provider: 'openai', model: 'small-model' })).status).toBe(200)
       expect(aux().compression).toEqual({ provider: 'openai', model: 'small-model', reasoning_effort: 'high' })
       expect((await set({ task: 'compression', provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'medium' })).status).toBe(200)
       expect((await set({ task: 'compression', provider: 'openai', model: 'small-model' })).status).toBe(200)
       expect(aux().compression).toEqual({ provider: 'openai', model: 'small-model', reasoning_effort: 'low' })
-      let res = await set({ task: 'compression', provider: 'openrouter', model: 'plain-model' })
+      const res = await set({ task: 'compression', provider: 'openrouter', model: 'plain-model' })
       expect(aux().compression).toEqual({ provider: 'openrouter', model: 'plain-model' })
       expect(tasksFrom(await json(res)).compression!.reasoning).toMatchObject({ saved: null, options: [], unavailable: 'model' })
+    })
 
-      // Model and effort persist together; null clears the override and keeps the route; Auto keeps an effort the main model supports.
+    it('model and effort persist together; null clears the override and keeps the route; Auto keeps an effort the main model supports', async () => {
       expect((await set({ task: 'title_generation', provider: 'openai', model: 'small-model', reasoning_effort: 'high' })).status).toBe(200)
       expect(aux().title_generation).toEqual({ provider: 'openai', model: 'small-model', reasoning_effort: 'high' })
-      res = await set({ task: 'title_generation', reasoning_effort: null })
+      const res = await set({ task: 'title_generation', reasoning_effort: null })
       expect(aux().title_generation).toEqual({ provider: 'openai', model: 'small-model' })
       expect(tasksFrom(await json(res)).title_generation!.reasoning).toMatchObject({ saved: null, inherited: true })
       expect((await set({ task: 'title_generation', reasoning_effort: 'low' })).status).toBe(200)
       expect((await set({ task: 'title_generation', provider: 'auto', model: '' })).status).toBe(200)
       expect(aux().title_generation).toEqual({ provider: 'auto', model: '', reasoning_effort: 'low' })
+    })
 
-      // The delegation slot's effort lives in the top-level section, never auxiliary.delegation.
+    it('the delegation slot\'s effort lives in the top-level section, never auxiliary.delegation', async () => {
       expect((await set({ task: 'delegation', reasoning_effort: 'low' })).status).toBe(200)
       expect(configs.get(s.state)?.delegation).toEqual({ max_iterations: 50, reasoning_effort: 'low' })
       expect(aux().delegation).toBeUndefined()
+    })
 
-      // Reset All returns every slot to Auto and clears every saved effort.
+    it('Reset All returns every slot to Auto and clears every saved effort', async () => {
+      reset({ ...MAIN, auxiliary: { compression: { provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'medium' }, title_generation: { provider: 'auto', model: '', reasoning_effort: 'low' } }, delegation: { max_iterations: 50, reasoning_effort: 'low' } })
       expect((await set({ task: '__reset__', provider: 'auto', model: '' })).status).toBe(200)
       expect(aux()).toMatchObject({ compression: { provider: 'auto', model: '' }, title_generation: { provider: 'auto', model: '' } })
       expect(Object.values(aux()).some((entry) => 'reasoning_effort' in dictOf(entry))).toBe(false)
       expect('reasoning_effort' in dictOf(configs.get(s.state)?.delegation)).toBe(false)
-      tasks = await read()
-      expect(Object.values(tasks).every((t) => t.reasoning.inherited)).toBe(true)
+      expect(Object.values(await read()).every((t) => t.reasoning.inherited)).toBe(true)
+    })
 
-      // An inheriting task leaving its pin for Auto is checked against the slot it now inherits, not the listing's stale pinned route.
+    it('an inheriting task leaving its pin for Auto is checked against the slot it now inherits, not the listing\'s stale pinned route', async () => {
       const { tasks: builtins, reserved } = loadSidecarFixtures().get('aux.tasks')![0]!.result as SidecarResult<'aux.tasks'>
       const sideTask = { key: 'side_task', label: 'Side model', description: 'side summaries', inherit_from: 'compression', reasoning_effort: 'high', effective: { provider: 'anthropic', model: 'claude-opus-4-7', base_url: '' }, takes_reasoning: true }
       sidecar.respond('aux.tasks', () => ({ tasks: [...builtins, sideTask], reserved }))
-      reset({ ...configs.get(s.state), auxiliary: { compression: { provider: 'openrouter', model: 'plain-model' }, side_task: { provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'high' } } })
+      reset({ ...MAIN, auxiliary: { compression: { provider: 'openrouter', model: 'plain-model' }, side_task: { provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'high' } } })
       expect((await set({ task: 'side_task', provider: 'auto', model: '', reasoning_effort: 'high' })).status).toBe(400)
       expect(aux().side_task).toEqual({ provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'high' })
       expect((await set({ task: 'side_task', provider: 'auto', model: '' })).status).toBe(200)
       expect(aux().side_task).toEqual({ provider: 'auto', model: '' })
-      sidecar.respond('aux.tasks', undefined)
+    })
 
-      // When the Agent cannot say which levels a route takes, nothing is offered or accepted, and a route change keeps the saved effort.
-      reset({ ...configs.get(s.state), auxiliary: { compression: { provider: 'anthropic', model: 'claude-opus-4-7', reasoning_effort: 'medium' } } })
+    it('when the Agent cannot say which levels a route takes, nothing is offered or accepted, and a route change keeps the saved effort', async () => {
       sidecar.respond('models.reasoning_efforts', () => { throw new SidecarError('no capability', { condition: 'sidecar_error' }) })
       expect((await read()).compression!.reasoning).toMatchObject({ saved: 'medium', options: [], unavailable: 'agent' })
       expect((await set({ task: 'compression', reasoning_effort: 'low' })).status).toBe(400)
       expect((await set({ task: 'compression', provider: 'anthropic', model: 'claude-sonnet-4-6' })).status).toBe(200)
       expect(aux().compression).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-6', reasoning_effort: 'medium' })
-    } finally {
-      sidecar.respond('models.reasoning_efforts', (params) => ({ efforts: params.model.startsWith('claude') ? ['low', 'medium', 'high'] : [], supports_reasoning: params.model.startsWith('claude') }))
-      if (saved) reset(saved)
-    }
+    })
   })
 
   it('auxiliary reads start the delegation, slot and reasoning reads together instead of one after another (TAL-1285)', async () => {
@@ -1847,76 +1909,119 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
-  it('profiles list/active/switch/create/delete go through the sidecar and set the profile cookie', async () => {
-    let res = await s.get('/api/profiles')
-    expect(res.status).toBe(200)
-    let body = await json(res)
-    expect(body.active).toBe('default')
-    expect(body.single_profile_mode).toBe(false)
-    expect((body.profiles as Json[])[0]).toMatchObject({ name: 'default', is_active: true, is_default: true })
-    res = await s.get('/api/profile/active')
-    body = await json(res)
-    expect(body).toMatchObject({ name: 'default', is_default: true, path: s.state })
-    expect(typeof body.default_workspace).toBe('string')
-    res = await post(s, '/api/profile/switch', {})
-    expect(res.status).toBe(400)
-    res = await post(s, '/api/profile/switch', { name: 'ghost' })
-    expect(res.status).toBe(404)
-    mkdirSync(join(s.state, 'profiles', 'alpha'), { recursive: true })
-    sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'alpha', path: join(s.state, 'profiles', 'alpha'), is_default: false, gateway_running: false, model: 'm', provider: 'p', has_env: false, visible: true, skill_count: 1, enabled_skills: 1, total_skills: 2 }] }))
-    res = await post(s, '/api/profile/switch', { profile: 'alpha' })
-    expect(res.status).toBe(200)
-    body = await json(res)
-    expect(body.active).toBe('alpha')
-    expect(body.is_default).toBe(false)
-    expect((body.profiles as Json[]).find((p) => p.name === 'alpha')).toMatchObject({ is_active: true })
-    expect(res.headers.get('set-cookie')).toContain('hermes_profile=')
-    res = await post(s, '/api/profile/create', { name: 'Bad Name' })
-    expect(res.status).toBe(400)
-    res = await post(s, '/api/profile/create', { name: 'beta', base_url: 'ftp://x' })
-    expect(res.status).toBe(400)
-    sidecar.respond('profiles.create', (params) => ({ profile: { name: params.name, path: join(s.state, 'profiles', params.name), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 } }))
-    res = await post(s, '/api/profile/create', { name: 'beta', api_key: 'sk-beta-12345', model_provider: 'anthropic', default_model: '@anthropic:claude-sonnet-4-6' })
-    expect(res.status).toBe(200)
-    body = await json(res)
-    expect(body.ok).toBe(true)
-    expect(loadEnvFile(join(s.state, 'profiles', 'beta', '.env')).ANTHROPIC_API_KEY).toBe('sk-beta-12345')
-    expect(configs.get(join(s.state, 'profiles', 'beta'))?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
-    res = await post(s, '/api/profile/create', { name: 'gamma', default_model: 'not-a-model', model_provider: 'anthropic' })
-    expect(res.status).toBe(400)
-    expect((await json(res)).error).toContain('not available for provider')
-    res = await post(s, '/api/profile/delete', { name: 'default' })
-    expect(res.status).toBe(400)
-    res = await post(s, '/api/profile/delete', { name: 'beta' })
-    expect(await json(res)).toEqual({ ok: true, name: 'beta' })
-    expect(sidecar.calls.some((c) => c.method === 'profiles.delete' && (c.params as Json).name === 'beta')).toBe(true)
+  describe('profiles list/active/switch/create/delete go through the sidecar and set the profile cookie', () => {
+    const home = (name: string): string => join(s.state, 'profiles', name)
+    const created = (name: string): { profile: never } => ({ profile: row(name, { path: home(name) }) as never })
+    let saved: { list: ReturnType<FakeSidecar['responderFor']>; create: ReturnType<FakeSidecar['responderFor']>; remove: ReturnType<FakeSidecar['responderFor']> }
+    beforeEach(() => {
+      saved = { list: sidecar.responderFor('profiles.list'), create: sidecar.responderFor('profiles.create'), remove: sidecar.responderFor('profiles.delete') }
+      sidecar.respond('profiles.create', (params) => created(params.name))
+    })
+    afterEach(() => {
+      sidecar.respond('profiles.list', saved.list)
+      sidecar.respond('profiles.create', saved.create)
+      sidecar.respond('profiles.delete', saved.remove)
+      s.deps.profiles.invalidate()
+    })
+
+    it('lists the default profile as the active one', async () => {
+      const res = await s.get('/api/profiles')
+      expect(res.status).toBe(200)
+      const body = await json(res)
+      expect(body.active).toBe('default')
+      expect(body.single_profile_mode).toBe(false)
+      expect((body.profiles as Json[])[0]).toMatchObject({ name: 'default', is_active: true, is_default: true })
+      const active = await json(await s.get('/api/profile/active'))
+      expect(active).toMatchObject({ name: 'default', is_default: true, path: s.state })
+      expect(typeof active.default_workspace).toBe('string')
+    })
+
+    it('switch refuses a missing name and an unknown profile', async () => {
+      expect((await post(s, '/api/profile/switch', {})).status).toBe(400)
+      expect((await post(s, '/api/profile/switch', { name: 'ghost' })).status).toBe(404)
+    })
+
+    it('switch to a listed profile answers it as active and sets the profile cookie', async () => {
+      mkdirSync(home('alpha'), { recursive: true })
+      sidecar.respond('profiles.list', () => ({ profiles: [row('default', { path: s.state, is_default: true }), row('alpha', { path: home('alpha'), model: 'm', provider: 'p', skill_count: 1, enabled_skills: 1, total_skills: 2 })] as never }))
+      const res = await post(s, '/api/profile/switch', { profile: 'alpha' })
+      expect(res.status).toBe(200)
+      const body = await json(res)
+      expect(body.active).toBe('alpha')
+      expect(body.is_default).toBe(false)
+      expect((body.profiles as Json[]).find((p) => p.name === 'alpha')).toMatchObject({ is_active: true })
+      expect(res.headers.get('set-cookie')).toContain('hermes_profile=')
+    })
+
+    it('create refuses an invalid name and a non-HTTP base URL', async () => {
+      expect((await post(s, '/api/profile/create', { name: 'Bad Name' })).status).toBe(400)
+      expect((await post(s, '/api/profile/create', { name: 'beta', base_url: 'ftp://x' })).status).toBe(400)
+    })
+
+    it('create writes the key to the new profile\'s .env and its model to its config', async () => {
+      const res = await post(s, '/api/profile/create', { name: 'beta', api_key: 'sk-beta-12345', model_provider: 'anthropic', default_model: '@anthropic:claude-sonnet-4-6' })
+      expect(res.status).toBe(200)
+      expect((await json(res)).ok).toBe(true)
+      expect(loadEnvFile(join(home('beta'), '.env')).ANTHROPIC_API_KEY).toBe('sk-beta-12345')
+      expect(configs.get(home('beta'))?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
+    })
+
+    it('create refuses a model its provider does not offer', async () => {
+      const res = await post(s, '/api/profile/create', { name: 'gamma', default_model: 'not-a-model', model_provider: 'anthropic' })
+      expect(res.status).toBe(400)
+      expect((await json(res)).error).toContain('not available for provider')
+    })
+
+    it('delete refuses the default profile', async () => {
+      expect((await post(s, '/api/profile/delete', { name: 'default' })).status).toBe(400)
+    })
+
+    it('delete removes a profile through the sidecar', async () => {
+      expect((await post(s, '/api/profile/create', { name: 'beta' })).status).toBe(200)
+      expect(await json(await post(s, '/api/profile/delete', { name: 'beta' }))).toEqual({ ok: true, name: 'beta' })
+      expect(sidecar.calls.some((c) => c.method === 'profiles.delete' && (c.params as Json).name === 'beta')).toBe(true)
+    })
+
     // A delete issued while the same profile is still being created waits for the creation (sidecar create and the
     // follow-up config/env writes) to finish, so it removes a fully configured home rather than a half-built one.
-    const order: string[] = []
-    let finishCreate: () => void = () => undefined
-    sidecar.respond('profiles.create', (params) => new Promise((resolve) => { finishCreate = () => { order.push('created'); resolve({ profile: { name: params.name, path: join(s.state, 'profiles', params.name), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 } }) } }))
-    sidecar.respond('profiles.delete', (params) => { order.push('deleted'); rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
-    const creating = post(s, '/api/profile/create', { name: 'delta', api_key: 'sk-delta-12345', model_provider: 'anthropic', default_model: '@anthropic:claude-sonnet-4-6' })
-    await new Promise((r) => setTimeout(r, 50))
-    const deleting = post(s, '/api/profile/delete', { name: 'delta' })
-    await new Promise((r) => setTimeout(r, 50))
-    expect(order).toEqual([])
-    finishCreate()
-    expect((await creating).status).toBe(200)
-    expect(configs.get(join(s.state, 'profiles', 'delta'))?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
-    expect(await json(await deleting)).toEqual({ ok: true, name: 'delta' })
-    expect(order).toEqual(['created', 'deleted'])
+    it('a delete issued while the same profile is being created waits for the creation to finish', async () => {
+      const order: string[] = []
+      let finishCreate: () => void = () => undefined
+      sidecar.respond('profiles.create', (params) => new Promise((resolve) => { finishCreate = () => { order.push('created'); resolve(created(params.name)) } }))
+      sidecar.respond('profiles.delete', (params) => { order.push('deleted'); rmSync(home(params.name), { recursive: true, force: true }); return { ok: true } })
+      const creating = post(s, '/api/profile/create', { name: 'delta', api_key: 'sk-delta-12345', model_provider: 'anthropic', default_model: '@anthropic:claude-sonnet-4-6' })
+      await until(() => sidecar.calls.some((c) => c.method === 'profiles.create' && (c.params as Json).name === 'delta'))
+      // Work in flight on the profile when the delete is admitted: a delete that checked for it then, instead of after
+      // the creation, would refuse. The delete joins the profile's lifecycle chain in the turn it is admitted.
+      const inFlight = s.deps.profileActivity('delta')
+      const admitted = vi.spyOn(s.deps.profiles, 'delete')
+      const deleting = post(s, '/api/profile/delete', { name: 'delta' })
+      await until(() => admitted.mock.calls.length === 1)
+      await settle()
+      expect(order).toEqual([])
+      inFlight()
+      finishCreate()
+      expect((await creating).status).toBe(200)
+      expect(configs.get(home('delta'))?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
+      expect(await json(await deleting)).toEqual({ ok: true, name: 'delta' })
+      expect(order).toEqual(['created', 'deleted'])
+    })
+
     // The deletion tombstone survives a failed recreation: a stale-cookie write is still refused afterwards, and only
     // a fully successful recreation lifts it.
-    const deltaCookie = 'hermes_profile=delta'
-    sidecar.respond('profiles.create', () => { throw new Error('disk full') })
-    expect((await post(s, '/api/profile/create', { name: 'delta' })).status).toBe(400)
-    const staleWrite = await post(s, '/api/model/set', { scope: 'main', model: '@anthropic:claude-sonnet-4-6', provider: 'anthropic' }, { cookie: deltaCookie })
-    expect(staleWrite.status).toBe(404)
-    sidecar.respond('profiles.create', (params) => ({ profile: { name: params.name, path: join(s.state, 'profiles', params.name), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 } }))
-    mkdirSync(join(s.state, 'profiles', 'delta'), { recursive: true })
-    expect((await post(s, '/api/profile/create', { name: 'delta' })).status).toBe(200)
-    expect((await post(s, '/api/model/set', { scope: 'main', model: '@anthropic:claude-sonnet-4-6', provider: 'anthropic' }, { cookie: deltaCookie })).status).toBe(200)
+    it('a deleted profile stays refused after a failed recreation until a recreation succeeds', async () => {
+      const omegaCookie = 'hermes_profile=omega'
+      expect((await post(s, '/api/profile/create', { name: 'omega' })).status).toBe(200)
+      expect((await post(s, '/api/profile/delete', { name: 'omega' })).status).toBe(200)
+      sidecar.respond('profiles.create', () => { throw new Error('disk full') })
+      expect((await post(s, '/api/profile/create', { name: 'omega' })).status).toBe(400)
+      const staleWrite = await post(s, '/api/model/set', { scope: 'main', model: '@anthropic:claude-sonnet-4-6', provider: 'anthropic' }, { cookie: omegaCookie })
+      expect(staleWrite.status).toBe(404)
+      sidecar.respond('profiles.create', (params) => created(params.name))
+      mkdirSync(home('omega'), { recursive: true })
+      expect((await post(s, '/api/profile/create', { name: 'omega' })).status).toBe(200)
+      expect((await post(s, '/api/model/set', { scope: 'main', model: '@anthropic:claude-sonnet-4-6', provider: 'anthropic' }, { cookie: omegaCookie })).status).toBe(200)
+    })
   })
 
   it('TAL-2176: a profile\'s avatar is served from its own assets, refused past them, and each row with one names its URL', async () => {
@@ -2042,8 +2147,11 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     const deleting = post(s, '/api/profile/delete', { name: 'zeta' })
     await deleteReachedSidecar
     let settled = false
+    // An update that skipped the delete's lifecycle chain would read the delete's mark as soon as it is admitted.
+    const admitted = vi.spyOn(s.deps.profiles, 'update')
     const updating = post(s, '/api/profile/update', { name: 'zeta', display_name: 'Late' }).then((r) => { settled = true; return r })
-    await new Promise((r) => setTimeout(r, 50))
+    await until(() => admitted.mock.calls.length === 1)
+    await settle()
     expect(settled).toBe(false)
     finishDelete()
     expect((await deleting).status).toBe(200)

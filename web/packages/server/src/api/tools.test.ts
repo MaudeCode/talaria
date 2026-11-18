@@ -2,7 +2,7 @@ import { updateNotificationOwner } from '../tools/update-notifications.js'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SidecarError } from '../sidecar/client.js'
 import { RPC_ERROR_CODES } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
@@ -15,9 +15,7 @@ import { buildInsights } from '../tools/insights.js'
 import { CLIENT_COMMANDS } from '../tools/commands.js'
 import { insightsSessionRows } from '../sessions/state-db.js'
 import { homeDotenvKeys, setHomeDotenvKeys } from '../cli/dotenv.js'
-import { serverSummary, maskSecrets } from '../tools/mcp.js'
-import { readProjectContext } from '../tools/memory.js'
-import { GitRunner } from '../workspace/git.js'
+import { serverSummary } from '../tools/mcp.js'
 import { toggleName, walkSkillFiles } from '../tools/skills.js'
 import { UpdateService, type UpdateServiceDeps } from '../tools/updates.js'
 
@@ -102,64 +100,98 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(await json(res)).toMatchObject({ error: 'Ambiguous skill name' })
   })
 
-  it('lists skills from the Agent, reads usage counters, and saves/toggles/deletes local skills', async () => {
-    sidecar.respond('skills.find', () => ({ found: false, skill_dir: null, skill_md: null }))
-    sidecar.respond('skills.list', (params) => ({ success: true, skills: [{ name: 'alpha', description: 'A', category: params.category ?? null, disabled: false, locked: false }, { name: 'beta', description: 'B', category: null, disabled: true, locked: false }], categories: [], count: 2 }))
-    let res = await s.get('/api/skills?category=tools')
-    expect(res.status).toBe(200)
-    expect(((await json(res)).skills as Json[]).map((r) => r.name)).toEqual(['alpha', 'beta'])
-    mkdirSync(join(s.state, 'skills'), { recursive: true })
-    writeFileSync(join(s.state, 'skills', '.usage.json'), JSON.stringify({ alpha: { use_count: 2, view_count: '1', last_used: 'x' }, weird: 'nope' }))
-    res = await s.get('/api/skills/usage')
-    const usage = await json(res)
-    expect(usage.total_invocations).toBe(3)
-    expect(usage.unique_skills_used).toBe(1)
-    expect((usage.usage as Json).alpha).toMatchObject({ use_count: 2, view_count: 1, patch_count: 0, last_used: 'x' })
-    expect(usage.skill_names).toEqual(['alpha', 'beta'])
-    const forgotten = () => sidecar.calls.filter((c) => c.method === 'profiles.skills_stats_invalidate').map((c) => c.params)
-    const before = forgotten().length
-    res = await post(s, '/api/skills/save', { name: 'My Skill', content: '---\nname: my-skill\n---\n# hi', category: 'custom' })
-    expect(res.status).toBe(200)
-    // TAL-1578: the sidecar's cached skill count for this home ends with the write.
-    expect(forgotten().slice(before)).toEqual([{ profile_home: s.state }])
-    const saved = await json(res)
-    expect(saved.name).toBe('my-skill')
-    expect(readFileSync(String(saved.path), 'utf8')).toContain('# hi')
-    expect(await walkSkillFiles(join(s.state, 'skills'))).toEqual([join(s.state, 'skills', 'custom', 'my-skill', 'SKILL.md')])
-    res = await post(s, '/api/skills/save', { name: '../escape', content: 'x' })
-    expect(res.status).toBe(400)
-    sidecar.respond('skills.find', (params) => ({ found: params.name === 'my-skill', skill_dir: params.name === 'my-skill' ? join(s.state, 'skills', 'custom', 'my-skill') : null, skill_md: params.name === 'my-skill' ? join(s.state, 'skills/custom/my-skill/SKILL.md') : null }))
-    res = await post(s, '/api/skills/toggle', { name: 'my-skill', enabled: false })
-    expect(await json(res)).toEqual({ ok: true, name: 'my-skill', enabled: false })
-    expect((configs.get(s.state)?.skills as Json).disabled).toEqual(['my-skill'])
-    res = await post(s, '/api/skills/toggle', { name: 'my-skill', enabled: true })
-    expect((configs.get(s.state)?.skills as Json).disabled).toEqual([])
-    res = await post(s, '/api/skills/toggle', { name: 'ghost', enabled: true })
-    expect(res.status).toBe(404)
-    writeFileSync(join(s.state, 'skills', 'custom', 'my-skill', 'notes.md'), 'linked')
-    res = await s.get('/api/skills/content?name=my-skill&file=notes.md')
-    expect(await json(res)).toEqual({ content: 'linked', path: 'notes.md' })
-    // A binary asset is classified, never decoded into replacement-character text.
-    mkdirSync(join(s.state, 'skills', 'custom', 'my-skill', 'assets'))
-    writeFileSync(join(s.state, 'skills', 'custom', 'my-skill', 'assets', 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff]))
-    res = await s.get('/api/skills/content?name=my-skill&file=assets/logo.png')
-    expect(await json(res)).toEqual({ path: 'assets/logo.png', size: 10, binary: true })
-    res = await s.get('/api/skills/content?name=my-skill&file=../../.usage.json')
-    expect(res.status).toBe(400)
-    res = await post(s, '/api/skills/delete', { name: 'my-skill' })
-    expect(await json(res)).toEqual({ ok: true, name: 'my-skill' })
-    expect(forgotten().slice(before)).toEqual([{ profile_home: s.state }, { profile_home: s.state }])
-    expect(existsSync(join(s.state, 'skills', 'custom', 'my-skill'))).toBe(false)
-    res = await post(s, '/api/skills/delete', { name: 'my-skill' })
-    expect(res.status).toBe(404)
-    // A category directory that is a symlink out of the skills root is never followed by the delete.
-    const outside = join(s.state, 'outside-skills')
-    mkdirSync(join(outside, 'victim-skill'), { recursive: true })
-    writeFileSync(join(outside, 'victim-skill', 'SKILL.md'), '# victim')
-    symlinkSync(outside, join(s.state, 'skills', 'linked-category'))
-    res = await post(s, '/api/skills/delete', { name: 'victim-skill' })
-    expect(res.status).toBe(404)
-    expect(existsSync(join(outside, 'victim-skill', 'SKILL.md'))).toBe(true)
+  describe('lists skills from the Agent, reads usage counters, and saves/toggles/deletes local skills', () => {
+    const skills = (): string => join(s.state, 'skills')
+    const mySkill = (): string => join(skills(), 'custom', 'my-skill')
+    const outside = (): string => join(s.state, 'outside-skills')
+    const forgotten = (): unknown[] => sidecar.calls.filter((c) => c.method === 'profiles.skills_stats_invalidate').map((c) => c.params)
+    beforeEach(() => {
+      rmSync(skills(), { recursive: true, force: true })
+      mkdirSync(skills(), { recursive: true })
+      sidecar.respond('skills.find', (params) => ({ found: params.name === 'my-skill' && existsSync(mySkill()), skill_dir: params.name === 'my-skill' ? mySkill() : null, skill_md: params.name === 'my-skill' ? join(mySkill(), 'SKILL.md') : null }))
+      sidecar.respond('skills.list', (params) => ({ success: true, skills: [{ name: 'alpha', description: 'A', category: params.category ?? null, disabled: false, locked: false }, { name: 'beta', description: 'B', category: null, disabled: true, locked: false }], categories: [], count: 2 }))
+    })
+    afterEach(() => {
+      rmSync(skills(), { recursive: true, force: true })
+      rmSync(outside(), { recursive: true, force: true })
+    })
+    const saveMySkill = (): Promise<Response> => post(s, '/api/skills/save', { name: 'My Skill', content: '---\nname: my-skill\n---\n# hi', category: 'custom' })
+
+    it('lists skills from the Agent', async () => {
+      const res = await s.get('/api/skills?category=tools')
+      expect(res.status).toBe(200)
+      expect(((await json(res)).skills as Json[]).map((r) => r.name)).toEqual(['alpha', 'beta'])
+    })
+
+    it('reads usage counters, coercing counts and skipping a malformed row', async () => {
+      writeFileSync(join(skills(), '.usage.json'), JSON.stringify({ alpha: { use_count: 2, view_count: '1', last_used: 'x' }, weird: 'nope' }))
+      const usage = await json(await s.get('/api/skills/usage'))
+      expect(usage.total_invocations).toBe(3)
+      expect(usage.unique_skills_used).toBe(1)
+      expect((usage.usage as Json).alpha).toMatchObject({ use_count: 2, view_count: 1, patch_count: 0, last_used: 'x' })
+      expect(usage.skill_names).toEqual(['alpha', 'beta'])
+    })
+
+    it('saves a local skill under its declared name and ends the sidecar\'s cached skill count for the home', async () => {
+      const before = forgotten().length
+      const res = await saveMySkill()
+      expect(res.status).toBe(200)
+      // TAL-1578: the sidecar's cached skill count for this home ends with the write.
+      expect(forgotten().slice(before)).toEqual([{ profile_home: s.state }])
+      const saved = await json(res)
+      expect(saved.name).toBe('my-skill')
+      expect(readFileSync(String(saved.path), 'utf8')).toContain('# hi')
+      expect(await walkSkillFiles(skills())).toEqual([join(mySkill(), 'SKILL.md')])
+    })
+
+    it('refuses a save whose name leaves the skills root', async () => {
+      expect((await post(s, '/api/skills/save', { name: '../escape', content: 'x' })).status).toBe(400)
+    })
+
+    it('toggles a local skill in config and refuses an unknown one', async () => {
+      expect((await saveMySkill()).status).toBe(200)
+      expect(await json(await post(s, '/api/skills/toggle', { name: 'my-skill', enabled: false }))).toEqual({ ok: true, name: 'my-skill', enabled: false })
+      expect((configs.get(s.state)?.skills as Json).disabled).toEqual(['my-skill'])
+      await post(s, '/api/skills/toggle', { name: 'my-skill', enabled: true })
+      expect((configs.get(s.state)?.skills as Json).disabled).toEqual([])
+      expect((await post(s, '/api/skills/toggle', { name: 'ghost', enabled: true })).status).toBe(404)
+    })
+
+    it('reads a text file inside a skill', async () => {
+      expect((await saveMySkill()).status).toBe(200)
+      writeFileSync(join(mySkill(), 'notes.md'), 'linked')
+      expect(await json(await s.get('/api/skills/content?name=my-skill&file=notes.md'))).toEqual({ content: 'linked', path: 'notes.md' })
+    })
+
+    it('classifies a binary asset, never decoding it into replacement-character text', async () => {
+      expect((await saveMySkill()).status).toBe(200)
+      mkdirSync(join(mySkill(), 'assets'))
+      writeFileSync(join(mySkill(), 'assets', 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff]))
+      expect(await json(await s.get('/api/skills/content?name=my-skill&file=assets/logo.png'))).toEqual({ path: 'assets/logo.png', size: 10, binary: true })
+    })
+
+    it('refuses a file path that leaves the skill', async () => {
+      expect((await saveMySkill()).status).toBe(200)
+      writeFileSync(join(skills(), '.usage.json'), '{}')
+      expect((await s.get('/api/skills/content?name=my-skill&file=../../.usage.json')).status).toBe(400)
+    })
+
+    it('deletes a local skill, ending the cached skill count, and answers 404 once it is gone', async () => {
+      expect((await saveMySkill()).status).toBe(200)
+      const before = forgotten().length
+      expect(await json(await post(s, '/api/skills/delete', { name: 'my-skill' }))).toEqual({ ok: true, name: 'my-skill' })
+      expect(forgotten().slice(before)).toEqual([{ profile_home: s.state }])
+      expect(existsSync(mySkill())).toBe(false)
+      expect((await post(s, '/api/skills/delete', { name: 'my-skill' })).status).toBe(404)
+    })
+
+    it('never follows a category directory that is a symlink out of the skills root on delete', async () => {
+      mkdirSync(join(outside(), 'victim-skill'), { recursive: true })
+      writeFileSync(join(outside(), 'victim-skill', 'SKILL.md'), '# victim')
+      symlinkSync(outside(), join(skills(), 'linked-category'))
+      expect((await post(s, '/api/skills/delete', { name: 'victim-skill' })).status).toBe(404)
+      expect(existsSync(join(outside(), 'victim-skill', 'SKILL.md'))).toBe(true)
+    })
   })
 
   it('toggles a duplicate by its resolved load name, not a directory alias', async () => {
@@ -407,8 +439,6 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect((await json(res)).output).toContain('Reloaded skills')
     res = await post(s, '/api/commands/exec', { command: '' })
     expect(res.status).toBe(400)
-    sidecar.respond('commands.exec', () => { throw Object.assign(new Error('unknown command'), { name: 'SidecarError' }) })
-    const { SidecarError } = await import('../sidecar/client.js')
     sidecar.respond('commands.exec', () => { throw new SidecarError('unknown command', { condition: 'command_not_found' }) })
     res = await post(s, '/api/commands/exec', { command: '/nope' })
     expect(res.status).toBe(404)
@@ -1212,106 +1242,145 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
-  it('insights, logs, health, dashboard, plugins, and updates answer their shapes', async () => {
-    let res = await s.get('/api/insights?days=7')
-    expect(res.status).toBe(200)
-    let body = await json(res)
-    expect(body.period_days).toBe(7)
-    expect((body.daily_tokens as Json[]).length).toBe(7)
-    expect((body.daily_tokens as Record<string, unknown>[])[0]).toMatchObject({ total_tokens: 0 })
-    for (const row of body.models as Record<string, unknown>[]) expect(row).toHaveProperty('display_share')
-    expect((body.activity_by_day as Json[]).length).toBe(7)
-    res = await s.get('/api/logs?file=agent&tail=100')
-    body = await json(res)
-    expect(body).toMatchObject({ file: 'agent', tail: 100, lines: [], truncated: false, total_bytes: 0 })
-    mkdirSync(join(s.state, 'logs'), { recursive: true })
-    writeFileSync(join(s.state, 'logs', 'errors.log'), 'a\nb\nc\n')
-    res = await s.get('/api/logs?file=errors&tail=7')
-    body = await json(res)
-    expect(body).toMatchObject({ tail: 200, lines: ['a', 'b', 'c'], total_bytes: 6, hint: '' })
+  describe('insights, logs, health, dashboard, plugins, and updates answer their shapes', () => {
+    const logs = (): string => join(s.state, 'logs')
+    const bootstrapLog = (): string => join(s.deps.config.stateDir, `bootstrap-${String(s.deps.config.port)}.log`)
+    const gatewayLog = '2026-11-08 12:00:01,000 INFO gateway: up\n2026-11-08 12:00:02,000 ERROR gateway: mcp down\nTraceback (most recent call last):\n2026-11-08 12:00:03,000 WARNING gateway: slow mcp\n'
+    afterEach(() => {
+      rmSync(logs(), { recursive: true, force: true })
+      rmSync(bootstrapLog(), { force: true })
+      rmSync(join(s.state, 'outside-secret.txt'), { force: true })
+    })
+
+    it('insights answer one row per day of the period', async () => {
+      const res = await s.get('/api/insights?days=7')
+      expect(res.status).toBe(200)
+      const body = await json(res)
+      expect(body.period_days).toBe(7)
+      expect((body.daily_tokens as Json[]).length).toBe(7)
+      expect((body.daily_tokens as Record<string, unknown>[])[0]).toMatchObject({ total_tokens: 0 })
+      for (const row of body.models as Record<string, unknown>[]) expect(row).toHaveProperty('display_share')
+      expect((body.activity_by_day as Json[]).length).toBe(7)
+    })
+
+    it('a log that does not exist answers no lines', async () => {
+      expect(await json(await s.get('/api/logs?file=agent&tail=100'))).toMatchObject({ file: 'agent', tail: 100, lines: [], truncated: false, total_bytes: 0 })
+    })
+
+    it('a log tail below the minimum reads the minimum', async () => {
+      mkdirSync(logs(), { recursive: true })
+      writeFileSync(join(logs(), 'errors.log'), 'a\nb\nc\n')
+      expect(await json(await s.get('/api/logs?file=errors&tail=7'))).toMatchObject({ tail: 200, lines: ['a', 'b', 'c'], total_bytes: 6, hint: '' })
+    })
+
     // TAL-2139: classified entries, the listed files, counts over the tail and the filters' match count.
-    writeFileSync(join(s.state, 'logs', 'gateway.log'), '2026-11-08 12:00:01,000 INFO gateway: up\n2026-11-08 12:00:02,000 ERROR gateway: mcp down\nTraceback (most recent call last):\n2026-11-08 12:00:03,000 WARNING gateway: slow mcp\n')
-    res = await s.get('/api/logs?file=gateway&tail=2000')
-    body = await json(res)
-    expect(body).toMatchObject({ tail: 2000, counts: { error: 2, warning: 1, lines: 4 }, matched: 4 })
-    expect(body.lines).toHaveLength(4)
-    expect((body.files as Json[]).map((f) => [f.id, f.exists])).toEqual([['agent', false], ['webui', false], ['gateway', true]])
-    res = await s.get('/api/logs?file=gateway&level=error&q=MCP')
-    body = await json(res)
-    expect(body).toMatchObject({ lines: (body.lines as string[]).slice(0, 4), counts: { error: 2, warning: 1, lines: 4 }, matched: 1, entries: [{ time: '2026-11-08 12:00:02,000', level: 'error', text: 'gateway: mcp down', matches: [[9, 12]] }] })
-    expect((await s.get('/api/logs?file=gateway&level=info')).status).toBe(400)
-    expect((await s.get('/api/logs?file=constructor')).status).toBe(400)
-    // The server owner reads this server's own log.
-    writeFileSync(join(s.deps.config.stateDir, `bootstrap-${String(s.deps.config.port)}.log`), '[bootstrap] ERROR: port in use\n')
-    body = await json(await s.get('/api/logs?file=webui'))
-    expect(body).toMatchObject({ file: 'webui', entries: [{ level: 'error', text: '[bootstrap] port in use', time: null }] })
-    expect((body.files as Json[]).find((f) => f.id === 'webui')).toMatchObject({ exists: true, total_bytes: 31 })
-    res = await s.get('/api/logs?file=../etc/passwd')
-    expect(res.status).toBe(400)
-    // A log symlinked outside the logs directory is refused rather than followed.
-    writeFileSync(join(s.state, 'outside-secret.txt'), 'secret\n')
-    symlinkSync(join(s.state, 'outside-secret.txt'), join(s.state, 'logs', 'agent.log'))
-    res = await s.get('/api/logs?file=agent')
-    expect(res.status).toBe(400)
-    expect(JSON.stringify(await res.json())).not.toContain('secret')
-    rmSync(join(s.state, 'logs', 'agent.log'))
-    res = await s.get('/api/system/health')
-    body = await json(res)
-    expect(body.available).toBe(true)
-    expect(typeof (body.memory as Json).percent).toBe('number')
-    // Python `_webui_runtime_payload` sections.
-    expect(body.webui_runtime).toMatchObject({ sessions: { available: true }, streams: { available: true, active: 0, subscriber_dropped_events: 0 }, session_list_cache: { available: false }, models_cache: { available: true } })
-    expect(typeof ((body.webui_runtime as Json).sessions as Json).cap).toBe('number')
-    res = await s.get('/api/health/agent')
-    body = await json(res)
-    expect(body.alive).toBeNull()
-    expect(body.gateway_chat).toMatchObject({ enabled: false, backend: 'local' })
-    res = await s.get('/api/dashboard/status')
-    body = await json(res)
-    expect(body).toMatchObject({ running: true, enabled: 'auto', version: '9.9.9', host: '127.0.0.1', port: 9119 })
-    expect(fetched.some((u) => u === 'http://127.0.0.1:9119/api/status')).toBe(true)
-    sidecar.respond('plugins.list', () => ({ plugins: [{ name: 'p', key: 'memory/p', version: '1', description: '', enabled: false, kind: 'exclusive', activation: 'exclusive', hooks: [], is_active_provider: false }], supported_hooks: ['pre_tool_call'] }))
-    res = await s.get('/api/plugins')
-    body = await json(res)
-    expect(body.empty).toBe(false)
-    expect((body.plugins as Json[])[0]).toMatchObject({ key: 'memory/p' })
-    expect((body.plugins as Json[])[0]).not.toHaveProperty('settings')
+    it('a log read classifies its entries, counts them over the tail, and lists the log files', async () => {
+      mkdirSync(logs(), { recursive: true })
+      writeFileSync(join(logs(), 'gateway.log'), gatewayLog)
+      const body = await json(await s.get('/api/logs?file=gateway&tail=2000'))
+      expect(body).toMatchObject({ tail: 2000, counts: { error: 2, warning: 1, lines: 4 }, matched: 4 })
+      expect(body.lines).toHaveLength(4)
+      expect((body.files as Json[]).map((f) => [f.id, f.exists])).toEqual([['agent', false], ['webui', false], ['gateway', true]])
+    })
+
+    it('a log read filters entries by level and query, and refuses a level it does not filter by', async () => {
+      mkdirSync(logs(), { recursive: true })
+      writeFileSync(join(logs(), 'gateway.log'), gatewayLog)
+      const body = await json(await s.get('/api/logs?file=gateway&level=error&q=MCP'))
+      expect(body).toMatchObject({ lines: (body.lines as string[]).slice(0, 4), counts: { error: 2, warning: 1, lines: 4 }, matched: 1, entries: [{ time: '2026-11-08 12:00:02,000', level: 'error', text: 'gateway: mcp down', matches: [[9, 12]] }] })
+      expect((await s.get('/api/logs?file=gateway&level=info')).status).toBe(400)
+    })
+
+    it('a log read refuses a file outside the listed logs', async () => {
+      expect((await s.get('/api/logs?file=constructor')).status).toBe(400)
+      expect((await s.get('/api/logs?file=../etc/passwd')).status).toBe(400)
+    })
+
+    it('the server owner reads this server\'s own log', async () => {
+      writeFileSync(bootstrapLog(), '[bootstrap] ERROR: port in use\n')
+      const body = await json(await s.get('/api/logs?file=webui'))
+      expect(body).toMatchObject({ file: 'webui', entries: [{ level: 'error', text: '[bootstrap] port in use', time: null }] })
+      expect((body.files as Json[]).find((f) => f.id === 'webui')).toMatchObject({ exists: true, total_bytes: 31 })
+    })
+
+    it('a log symlinked outside the logs directory is refused rather than followed', async () => {
+      mkdirSync(logs(), { recursive: true })
+      writeFileSync(join(s.state, 'outside-secret.txt'), 'secret\n')
+      symlinkSync(join(s.state, 'outside-secret.txt'), join(logs(), 'agent.log'))
+      const res = await s.get('/api/logs?file=agent')
+      expect(res.status).toBe(400)
+      expect(JSON.stringify(await res.json())).not.toContain('secret')
+    })
+
+    it('system health reports memory and the Python runtime sections', async () => {
+      const body = await json(await s.get('/api/system/health'))
+      expect(body.available).toBe(true)
+      expect(typeof (body.memory as Json).percent).toBe('number')
+      // Python `_webui_runtime_payload` sections.
+      expect(body.webui_runtime).toMatchObject({ sessions: { available: true }, streams: { available: true, active: 0, subscriber_dropped_events: 0 }, session_list_cache: { available: false }, models_cache: { available: true } })
+      expect(typeof ((body.webui_runtime as Json).sessions as Json).cap).toBe('number')
+    })
+
+    it('agent health reports a local chat backend with no liveness probe', async () => {
+      const body = await json(await s.get('/api/health/agent'))
+      expect(body.alive).toBeNull()
+      expect(body.gateway_chat).toMatchObject({ enabled: false, backend: 'local' })
+    })
+
+    it('dashboard status reads the running dashboard\'s own status', async () => {
+      expect(await json(await s.get('/api/dashboard/status'))).toMatchObject({ running: true, enabled: 'auto', version: '9.9.9', host: '127.0.0.1', port: 9119 })
+      expect(fetched.some((u) => u === 'http://127.0.0.1:9119/api/status')).toBe(true)
+    })
+
+    it('plugins list the Agent\'s plugins without their settings', async () => {
+      sidecar.respond('plugins.list', () => ({ plugins: [{ name: 'p', key: 'memory/p', version: '1', description: '', enabled: false, kind: 'exclusive', activation: 'exclusive', hooks: [], is_active_provider: false }], supported_hooks: ['pre_tool_call'] }))
+      const body = await json(await s.get('/api/plugins'))
+      expect(body.empty).toBe(false)
+      expect((body.plugins as Json[])[0]).toMatchObject({ key: 'memory/p' })
+      expect((body.plugins as Json[])[0]).not.toHaveProperty('settings')
+    })
+
     // GET answers the cache without network or git work; POST runs the check (an npm install has no checkout to fast-forward).
-    res = await s.get('/api/updates/check')
-    body = await json(res)
-    expect(body).toMatchObject({ webui: null, agent: null, cached: true, channel: 'stable' })
-    res = await post(s, '/api/updates/check', { force: true })
-    body = await json(res)
-    // TAL-559: the server decides each target's status and apply availability.
-    expect((body.webui as Json)).toMatchObject({ name: 'webui', manual_update: true, no_git: true, current_version: 'web-v0.0.0-test', state: 'check_failed', can_apply: false, installed_unverified: false, manual_link: true, target_version: null })
-    expect((body.agent as Json)).toMatchObject({ name: 'agent', behind: null, no_git: true, state: 'manual', can_apply: false, manual_link: false })
-    expect((await json(await s.get('/api/updates/check'))).cached).toBe(true)
-    res = await post(s, '/api/updates/apply', { target: 'webui' })
-    body = await json(res)
-    expect(body).toMatchObject({ ok: false, manual_update: true })
-    res = await post(s, '/api/updates/apply', { target: 'agent' })
-    body = await json(res)
-    expect(body).toMatchObject({ ok: false, message: 'Not a git repository' })
-    expect(typeof body.notification_id).toBe('string')
-    res = await post(s, '/api/updates/apply', { target: 'x' })
-    expect(res.status).toBe(400)
+    it('an update check GET answers the cache, and a POST decides each target\'s status and apply availability', async () => {
+      expect(await json(await s.get('/api/updates/check'))).toMatchObject({ webui: null, agent: null, cached: true, channel: 'stable' })
+      const body = await json(await post(s, '/api/updates/check', { force: true }))
+      // TAL-559: the server decides each target's status and apply availability.
+      expect((body.webui as Json)).toMatchObject({ name: 'webui', manual_update: true, no_git: true, current_version: 'web-v0.0.0-test', state: 'check_failed', can_apply: false, installed_unverified: false, manual_link: true, target_version: null })
+      expect((body.agent as Json)).toMatchObject({ name: 'agent', behind: null, no_git: true, state: 'manual', can_apply: false, manual_link: false })
+      expect((await json(await s.get('/api/updates/check'))).cached).toBe(true)
+    })
+
+    it('an update apply answers a manual install, an Agent without a checkout, and refuses an unknown target', async () => {
+      expect(await json(await post(s, '/api/updates/apply', { target: 'webui' }))).toMatchObject({ ok: false, manual_update: true })
+      const agent = await json(await post(s, '/api/updates/apply', { target: 'agent' }))
+      expect(agent).toMatchObject({ ok: false, message: 'Not a git repository' })
+      expect(typeof agent.notification_id).toBe('string')
+      expect((await post(s, '/api/updates/apply', { target: 'x' })).status).toBe(400)
+    })
+
     // The server summarizes its own last check; clients send only the target.
-    expect((await post(s, '/api/updates/summary', { updates: { webui: { behind: 2 } }, target: 'webui' })).status).toBe(400)
-    expect(await json(await post(s, '/api/updates/summary', { target: 'webui' }))).toMatchObject({ ok: true, target: 'webui', generated_by: 'none', source: 'none', summary_sections: [] })
-    // A check made while Agent updates were ignored must not keep the Agent off once they are re-enabled.
-    await post(s, '/api/settings', { ignore_agent_updates: true })
-    expect((await json(await post(s, '/api/updates/check', { force: true }))).agent).toMatchObject({ ignored: true, state: 'off' })
-    await post(s, '/api/settings', { ignore_agent_updates: false })
-    expect((await json(await s.get('/api/updates/check'))).agent).toBeNull()
-    res = await post(s, '/api/settings', { check_for_updates: false })
-    expect(res.status).toBe(200)
-    res = await s.get('/api/updates/check')
-    const off = { state: 'off', can_apply: false, installed_unverified: false, manual_link: false, target_version: null, summary_available: false, versions: [], folded_count: 0 }
-    expect(await json(res)).toEqual({ disabled: true, webui: off, agent: { ...off, figure_tone: null } })
-    res = await post(s, '/api/updates/check', { force: true })
-    expect((await json(res)).channel).toBe('stable')
-    res = await s.get('/api/transcribe/capability')
-    expect(await json(res)).toEqual({ ok: true, available: false, provider: 'none', streaming: false, warm_supported: false })
+    it('an update summary refuses client-supplied updates and summarizes the server\'s own last check', async () => {
+      expect((await post(s, '/api/updates/summary', { updates: { webui: { behind: 2 } }, target: 'webui' })).status).toBe(400)
+      expect(await json(await post(s, '/api/updates/summary', { target: 'webui' }))).toMatchObject({ ok: true, target: 'webui', generated_by: 'none', source: 'none', summary_sections: [] })
+    })
+
+    it('a check made while Agent updates were ignored does not keep the Agent off once they are re-enabled', async () => {
+      await post(s, '/api/settings', { ignore_agent_updates: true })
+      expect((await json(await post(s, '/api/updates/check', { force: true }))).agent).toMatchObject({ ignored: true, state: 'off' })
+      await post(s, '/api/settings', { ignore_agent_updates: false })
+      expect((await json(await s.get('/api/updates/check'))).agent).toBeNull()
+    })
+
+    it('turning update checks off answers every target off, and a forced check keeps the channel', async () => {
+      expect((await post(s, '/api/settings', { check_for_updates: false })).status).toBe(200)
+      const off = { state: 'off', can_apply: false, installed_unverified: false, manual_link: false, target_version: null, summary_available: false, versions: [], folded_count: 0 }
+      expect(await json(await s.get('/api/updates/check'))).toEqual({ disabled: true, webui: off, agent: { ...off, figure_tone: null } })
+      expect((await json(await post(s, '/api/updates/check', { force: true }))).channel).toBe('stable')
+    })
+
+    it('transcription is unavailable without a provider', async () => {
+      expect(await json(await s.get('/api/transcribe/capability'))).toEqual({ ok: true, available: false, provider: 'none', streaming: false, warm_supported: false })
+    })
   })
 
   it('insights add CLI, messaging, and cron sessions from state.db, counting a Web session once (TAL-550)', async () => {
@@ -2024,7 +2093,7 @@ describe('tools helpers', () => {
     expect(status(true, ids({ raw_source: 'home_assistant', platform: 'home_assistant' }), { gateway_state: { nested: true } })).toMatchObject({ platforms: [{ name: 'home_assistant', label: 'Home_Assistant' }], health: { gateway_state: null } })
   })
 
-  it('window limiter, toggle list, mcp summary, project context', async () => {
+  it('the window limiter refuses a key past its count until the window passes', () => {
     let t = 0
     const limiter = new WindowLimiter(60, 2, () => t)
     expect(limiter.limited('a')).toBe(false)
@@ -2032,11 +2101,18 @@ describe('tools helpers', () => {
     expect(limiter.limited('a')).toBe(true)
     t = 61
     expect(limiter.limited('a')).toBe(false)
+  })
+
+  it('toggleName removes an enabled name from a comma list and adds a disabled one to an array', () => {
     expect(toggleName('a, b', 'b', true)).toEqual(['a'])
     expect(toggleName(['a'], 'b', false)).toEqual(['a', 'b'])
-    expect(maskSecrets({ API_KEY: 'x', nested: { token: 'y', ok: 'z' } })).toEqual({ API_KEY: '••••••', nested: { token: '••••••', ok: 'z' } })
+  })
+
+  it('the MCP summary of a connected stdio server counts its tools and masks its env', () => {
     expect(serverSummary('s', { command: 'run', env: { SECRET: 'x' } }, { connected: true, tools: [1, 2] })).toMatchObject({ transport: 'stdio', active: true, status: 'active', tool_count: 2, env: { SECRET: '••••••' } })
-    expect(await readProjectContext(null, new GitRunner({ env: {} }))).toMatchObject({ content: '', path: '' })
+  })
+
+  it('insights total the sessions inside the period and share them by model', async () => {
     const now = 1_760_000_000
     const insights = await buildInsights([{ created_at: now - 100, updated_at: now - 50, input_tokens: 10, output_tokens: 5, cache_read_tokens: 5, estimated_cost: '$0.5', message_count: 3, model: 'm' }, { created_at: now - 10 * 86_400 * 4 }], '3', now)
     expect(insights).toMatchObject({ period_days: 3, total_sessions: 1, total_messages: 3, total_tokens: 15, total_cost: 0.5, total_cache_hit_percent: 50 })

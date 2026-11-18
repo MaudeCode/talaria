@@ -245,12 +245,6 @@ export class AuthStore {
     return this.signingKeyCache
   }
 
-  /** Tests inject fixed keys to assert byte compatibility with Python outputs. */
-  setKeysForTest(pbkdf2Key: Buffer, signingKey: Buffer): void {
-    this.pbkdf2KeyCache = pbkdf2Key
-    this.signingKeyCache = signingKey
-  }
-
   async hashPassword(password: string, salt?: Buffer): Promise<string> {
     return hashPassword(password, salt ?? (await this.pbkdf2Key()))
   }
