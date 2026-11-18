@@ -174,7 +174,9 @@ back on `main`.
 
 ## Session authority
 
-A repair session may use, on this repository: needs-a-person issues,
+This is the owner-approved exception to the human gates in
+[AGENTS.md](../AGENTS.md) (2026-11-18). A repair session may use, on this
+repository: needs-a-person issues,
 `fix/TAL-<number>-<slug>` branches, one pull request to `main` per round,
 `@codex review` requests on it, merging it with `land`, and its Kanvil ticket.
 It uses the `gh` login and Kanvil connection T3 already holds; no token,

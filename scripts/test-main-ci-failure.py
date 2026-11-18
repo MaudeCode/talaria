@@ -1053,8 +1053,12 @@ class GuideTests(unittest.TestCase):
                 "Put every repair of the run in one pull request",
                 "Do not look again after that round",
                 "a flake never authorizes a release, a deploy or replaying a partial publication",
+                "This is the owner-approved exception to the human gates in [AGENTS.md](../AGENTS.md)",
                 "It never reads any comment, reply or review text"):
             self.assertIn(required, guide)
+        # The exception the guide claims is the one the repository's rules record.
+        rules = " ".join((Path(__file__).parent.parent / "AGENTS.md").read_text().split())
+        self.assertIn("So is a CI repair session (`docs/main-ci-repair.md`) pushing its", rules)
 
     def test_every_command_the_guide_names_is_one_the_script_takes(self):
         named = set(re.findall(r'python3 "\$S" (\w+)', self.GUIDE))

@@ -59,7 +59,11 @@ references); `scripts/check-committed-images.py` enforces this on every PR.
 Pushing, PR publication/updates, merging, releases, deployments, TestFlight
 uploads, repository administration, and archival retain explicit human gates.
 The scheduled Nightly workflow (`.github/workflows/nightly.yml`) uploading its
-build to TestFlight is owner-approved, not a release.
+build to TestFlight is owner-approved, not a release. So is a CI repair session
+(`docs/main-ci-repair.md`) pushing its `fix/TAL-<number>-<slug>` branch,
+publishing that pull request and merging it with `land` once CI Gate passes on
+the exact head (owner decision, 2026-11-18); its releases and everything else
+stay gated.
 Use `--repo MaudeCode/talaria` with repository-scoped `gh` commands.
 Preserve unrelated work and component runtime identities. Keep component
 credentials isolated. Do not change live services.
