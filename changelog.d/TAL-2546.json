@@ -1,0 +1,1 @@
+{"skip": "Test-only change: the Feedback paste hosted tests hand the paste control their own image providers instead of reading the shared simulator pasteboard."}
