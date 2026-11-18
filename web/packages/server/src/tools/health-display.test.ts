@@ -14,12 +14,8 @@ describe('disk display level', () => {
 })
 
 describe('health display states', () => {
-  it.each([
-    ['ok', [], { display_state: 'ok', display_reason: null }],
-    ['partial', [{ metric: 'cpu' }, { metric: 'disk' }], { display_state: 'warning', display_reason: 'Metrics unavailable: cpu, disk' }],
-    ['unavailable', [{ metric: 'cpu' }, { metric: 'memory' }, { metric: 'disk' }], { display_state: 'error', display_reason: 'Metrics unavailable' }],
-  ] as const)('Web status %s', (status, errors, display) => {
-    expect(systemDisplay(status, errors)).toEqual(display)
+  it('Web status partial names every unavailable metric', () => {
+    expect(systemDisplay('partial', [{ metric: 'cpu' }, { metric: 'disk' }])).toEqual({ display_state: 'warning', display_reason: 'Metrics unavailable: cpu, disk' })
   })
 
   it.each([

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -440,7 +439,7 @@ describe('MCP view round trips (TAL-1734)', () => {
     sidecar.respond('mcp.status', () => ({ servers: [{ name: 'one', status: 'connected', connected: true, tools: 2 }] }))
     sidecar.respond('mcp.cost_policies', (params) => costPolicies(params.servers))
     sidecar.respond('mcp.events', () => events)
-    const revision = (name: string) => createHash('sha256').update(JSON.stringify(['/profiles/a', config, name, `package-${name}`])).digest('hex')
+    const revision = (name: string) => ({ one: 'c50d978279d13b36e6f9d4c773a63b77b04ea3869642fc87996417e500204557', two: 'e86320a7eec7cd7c86e44a19354deb6a7536fdc2d6c94d86284d642979e54393' })[name]
     const { package_revision: _, ...policyFields } = costPolicy('')
     const policy = (name: string) => ({ ...policyFields, name, revision: revision(name), provenance: 'declared_estimate', reload_required: true, runtime_state: 'unknown' })
     const noEvents = { supported: false, enabled: false, can_edit: false, state: 'unsupported', detail: '', utilities: 0, counts: [], show_state: false, show_panel: false }

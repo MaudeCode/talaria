@@ -511,8 +511,8 @@ export async function checkoutRoot(webRoot: string | null, git: GitRun): Promise
 export interface NpmInstallInfo { packageRoot: string; version: string }
 
 /** A real global npm install of this package; local, npx, linked and container trees fail closed. */
-export async function npmInstallInfo(webRoot: string | null, npm: BuildRun = runPackageNpm, container = existsSync('/.within_container') || existsSync('/.dockerenv') || existsSync('/run/.containerenv')): Promise<NpmInstallInfo | null> {
-  if (container || !webRoot || !existsSync(webRoot)) return null
+export async function npmInstallInfo(webRoot: string | null, npm: BuildRun = runPackageNpm): Promise<NpmInstallInfo | null> {
+  if (existsSync('/.within_container') || existsSync('/.dockerenv') || existsSync('/run/.containerenv') || !webRoot || !existsSync(webRoot)) return null
   let metadata: Dict
   try { metadata = dict(JSON.parse(readFileSync(join(webRoot, 'package.json'), 'utf8'))) } catch { return null }
   if (metadata.name !== WEB_NPM_PACKAGE || typeof metadata.version !== 'string' || !(new RegExp(`^${VERSION}$`).test(metadata.version) || EXPERIMENTAL_VERSION.test(metadata.version))) return null
