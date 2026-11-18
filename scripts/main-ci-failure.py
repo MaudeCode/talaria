@@ -2,6 +2,8 @@
 """Map failed CI jobs to their evidence and reproduction: main's repair handoff (TAL-1103) and pull requests' report (TAL-2395).
 
 send    CI's alert job: posts one signed, bounded failure report for a main push run.
+base    CI's path detection on a main push: prints the commit of the last earlier main run that completed, whose
+        changes since a newer push's run tests (TAL-2461); nothing when none did.
 triage  The dispatcher: re-reads the run from GitHub and decides reject, noop, reuse or launch.
 prompt  Prints the dispatcher's scheduled-task prompt (docs/main-ci-repair.md).
 watch   A pull request run's reporter job: from the first failed job or test on, keeps one PR comment naming each
@@ -27,6 +29,9 @@ REPOSITORY = "MaudeCode/talaria"
 WORKFLOW = ".github/workflows/ci.yml"
 BRANCH = "main"
 GATE = "CI Gate"
+CHANGES = "Detect changed paths"
+# The notice CHANGES leaves on a main push: "since <commit>", or "every suite" (TAL-2461).
+RANGE = "Tested range"
 ALERT = "Hand the failure to T3"
 TIMEOUT_ANNOTATION = "exceeded the maximum execution time"
 TITLE = "Repair main CI"
@@ -44,7 +49,7 @@ ENDED = {"failed", "cancelled", "rolled_back"}
 FINISHED = ENDED | {"completed"}
 # The first segment of a job name routes it to the component check that reproduces it.
 COMPONENTS = {"App": "app", "App tooling": "app", "web": "web", "web-docker": "docker", "relay": "relay",
-              "Web contract probe": "contracts", "tooling": "tooling", "Detect changed paths": "tooling",
+              "Web contract probe": "contracts", "tooling": "tooling", CHANGES: "tooling",
               GATE: "tooling"}
 
 
@@ -171,6 +176,44 @@ def send(env, github, opener=urllib.request.urlopen, sleep=time.sleep, out=print
     return 0
 
 
+def main_runs(github):
+    """main's latest completed push runs of CI, newest first."""
+    return github.get(f"repos/{REPOSITORY}/actions/workflows/ci.yml/runs?branch={BRANCH}&event=push"
+                      "&status=completed&per_page=100").get("workflow_runs", [])
+
+
+def tested_base(runs, run_number):
+    """The commit of the last main run before `run_number` that completed, or None (TAL-2461).
+
+    A newer push cancels the run it supersedes, so a run tests every change since this commit. A run that failed
+    completed and was handed to a repair; a cancelled one did not complete, so its changes fall to the next run.
+    """
+    done = [item for item in runs if item.get("run_number", 0) < run_number
+            and item.get("conclusion") in ("success", "failure")
+            and re.fullmatch(r"[0-9a-f]{40}", str(item.get("head_sha", "")))]
+    return max(done, key=lambda item: item["run_number"])["head_sha"] if done else None
+
+
+def recorded_base(github, run_id):
+    """The commit a run's path detection tested from, as its notice recorded it; None when it ran every suite or left
+    no record, so a later lookup never narrows what the run tested."""
+    for job in jobs(github, run_id):
+        if job.get("name") == CHANGES:
+            for note in annotations(github, job):
+                found = re.fullmatch(r"since ([0-9a-f]{40})", str(note.get("message", "")))
+                if note.get("title") == RANGE and found:
+                    return found.group(1)
+    return None
+
+
+def tested_range(base, head):
+    """Where a main run's failure can be: the commits it tested."""
+    if base is None:
+        return "This run tested every suite: the failure can be in any commit up to it."
+    return (f"This run tested every change since {base}, the last main run that completed: the failure is in "
+            f"https://github.com/{REPOSITORY}/compare/{base}...{head}")
+
+
 def title(head):
     return f"{TITLE} {head[:12]}"
 
@@ -181,10 +224,12 @@ def components(failures):
     return sorted({COMPONENTS.get(job["name"].split(" / ")[0], "all") for job in named})
 
 
-def brief(run, failures, related=None):
+def brief(run, failures, related=None, base=None):
     head = run["head_sha"]
     lines = [
         f"Main CI failed on {REPOSITORY} at {head} (run {run['id']}, attempt {run['run_attempt']}): {run['html_url']}",
+        "",
+        tested_range(base, head),
         "",
         "Failed jobs, verified against GitHub by the dispatcher:",
         *(f"- {job['name']} ({job['conclusion']}): {job['url']}" for job in failures),
@@ -237,21 +282,21 @@ def triage(github, run_id, threads):
     failures = failed_jobs(github, run_id)
     if not failures:
         return {"action": "noop", "reason": "the latest attempt has no failed or timed-out job"}
-    newer = github.get(f"repos/{REPOSITORY}/actions/workflows/ci.yml/runs?branch={BRANCH}&event=push"
-                       "&status=completed&per_page=20").get("workflow_runs", [])
-    green = [item for item in newer if item.get("run_number", 0) > run.get("run_number", 0)
+    runs = main_runs(github)
+    green = [item for item in runs if item.get("run_number", 0) > run.get("run_number", 0)
              and item.get("head_sha") != head and item.get("conclusion") == "success"]
     if green:
         return {"action": "noop", "reason": f"superseded: main run {green[0]['id']} at {green[0]['head_sha']} passed"}
+    base = recorded_base(github, run_id)
     mine = [thread for thread in threads if thread.get("title") == title(head)]
     for thread in mine:
         if thread.get("status") not in ENDED:
-            return {"action": "reuse", "threadId": thread["threadId"], "message": brief(run, failures)}
+            return {"action": "reuse", "threadId": thread["threadId"], "message": brief(run, failures, base=base)}
     active = [thread for thread in threads if str(thread.get("title", "")).startswith(TITLE + " ")
               and thread.get("status") not in FINISHED]
     if active:
         return {"action": "reuse", "threadId": active[0]["threadId"], "message": brief(
-            run, failures, f"Main is red again at a newer head; fold this into your repair ({title(head)}).")}
+            run, failures, f"Main is red again at a newer head; fold this into your repair ({title(head)}).", base)}
     pulls = github.get(f"repos/{REPOSITORY}/pulls?state=open&base={BRANCH}&per_page=100")
     owners = [(pull, found.group(1)) for pull in pulls if (found := INCIDENT.search(pull.get("body") or ""))]
     if owners:
@@ -260,11 +305,11 @@ def triage(github, run_id, threads):
                        and thread.get("status") not in ENDED), None)
         if thread:
             return {"action": "reuse", "threadId": thread["threadId"], "message": brief(
-                run, failures, f"Main is red again while your PR #{owner['number']} is open; check it covers this.")}
+                run, failures, f"Main is red again while your PR #{owner['number']} is open; check it covers this.", base)}
         return {"action": "noop", "reason": f"open main CI repair PR #{owner['number']} owns the failure"}
     if len(mine) >= MAX_LAUNCHES:
         return {"action": "noop", "reason": f"{len(mine)} repair launches for {head[:12]} ended; an operator decides"}
-    return {"action": "launch", "title": title(head), "message": brief(run, failures),
+    return {"action": "launch", "title": title(head), "message": brief(run, failures, base=base),
             "workspaceStrategy": {"type": "worktree", "baseRef": BRANCH, "startFromOrigin": True}}
 
 
@@ -555,6 +600,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("send")
+    commands.add_parser("base")
     checker = commands.add_parser("triage")
     checker.add_argument("--run-id", required=True)
     checker.add_argument("--threads", required=True, help="JSON array of T3 threads: threadId, title, status")
@@ -563,6 +609,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.command == "send":
         return send(os.environ, GitHub())
+    if args.command == "base":
+        print(tested_base(main_runs(GitHub()), int(os.environ["GITHUB_RUN_NUMBER"])) or "")
+        return 0
     if args.command == "watch":
         return watch(os.environ, GitHub())
     if args.command == "prompt":

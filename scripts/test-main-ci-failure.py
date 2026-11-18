@@ -8,12 +8,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 import tempfile
 import threading
 import unittest
+from unittest import mock
 from contextlib import redirect_stdout
 
 SCRIPT = Path(__file__).with_name("main-ci-failure.py")
@@ -309,6 +311,67 @@ class TriageTests(unittest.TestCase):
         decision = self.triage(threads, pulls=pulls)
         self.assertEqual((decision["action"], decision["threadId"]), ("reuse", "owner"))
         self.assertIn("PR #9", decision["message"])
+
+    def test_the_repair_names_the_commits_the_run_recorded_it_tested(self):
+        tested = "d" * 40
+        # A completed run the lookup would find now, after the run tested from another commit or ran every suite.
+        runs = [{"id": 6, "run_number": 1974, "head_sha": NEWER, "conclusion": "success"}]
+        message = self.triage(runs=runs, annotations={1: [{"title": "Tested range", "message": f"since {tested}"}]})["message"]
+        self.assertIn(f"https://github.com/{REPO}/compare/{tested}...{HEAD}", message)
+        for notes in ([{"title": "Tested range", "message": "every suite"}], []):
+            with self.subTest(notes=notes):
+                message = self.triage(runs=runs, annotations={1: notes})["message"]
+                self.assertIn("tested every suite", message)
+                self.assertNotIn("/compare/", message)
+
+
+class SupersededRunTests(unittest.TestCase):
+    """A newer main push cancels the run it supersedes (TAL-2461), so its run tests every change since the last main
+    run that completed, through the `base` command CI's path detection runs."""
+
+    def git(self, *args):
+        return subprocess.check_output(["git", "-c", "user.name=Synthetic", "-c", "user.email=test@example.invalid",
+                                        "-c", "commit.gpgsign=false", *args], cwd=self.root, text=True,
+                                       env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}).strip()
+
+    def commit(self, path):
+        (self.root / path).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / path).write_text(path)
+        self.git("add", ".")
+        self.git("commit", "-m", path)
+        return self.git("rev-parse", "HEAD")
+
+    def selected(self, base, head):
+        output = subprocess.run([os.sys.executable, str(SCRIPT.with_name("changed-components.py")), f"--base={base}",
+                                 f"--head={head}"], cwd=self.root, text=True, capture_output=True, check=True).stdout
+        return {line.split("=")[0] for line in output.splitlines() if line.endswith("=true")}
+
+    def base(self, runs, run_number):
+        output = io.StringIO()
+        with mock.patch.object(handoff, "GitHub", lambda: FakeGitHub([], runs=runs)), \
+                mock.patch.dict(os.environ, {"GITHUB_RUN_NUMBER": str(run_number)}), redirect_stdout(output):
+            self.assertEqual(handoff.main(["base"]), 0)
+        return output.getvalue().strip()
+
+    def test_a_push_that_cancelled_a_web_change_runs_the_web_suites(self):
+        temporary = tempfile.TemporaryDirectory(prefix="talaria-superseded-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.git("init", "-b", "main")
+        tested = self.commit("README.md")
+        web = self.commit("web/packages/server/src/index.ts")  # Commit A: its run was cancelled by B's.
+        app = self.commit("app/Talaria/App.swift")  # Commit B: changes only the App.
+        runs = [{"id": 3, "run_number": 12, "head_sha": web, "conclusion": "cancelled"},
+                {"id": 2, "run_number": 11, "head_sha": tested, "conclusion": "success"}]
+        base = self.base(runs, 13)
+        self.assertEqual(base, tested)
+        self.assertLessEqual({"web_server", "web_frontend", "app"}, self.selected(base, app))
+
+    def test_a_failed_run_completed_and_no_completed_run_means_every_suite(self):
+        cancelled = {"id": 3, "run_number": 12, "head_sha": NEWER, "conclusion": "cancelled"}
+        later = {"id": 4, "run_number": 14, "head_sha": "e" * 40, "conclusion": "success"}
+        self.assertEqual(self.base([later, {**cancelled, "conclusion": "failure"}], 13), NEWER)
+        self.assertEqual(self.base([later, cancelled], 13), "")
 
 
 PR = 1810

@@ -578,28 +578,37 @@ class RealDiffTests(unittest.TestCase):
         without_workflow = self.commit("delete the workflow")
         self.assertEqual(self.classify(with_workflow, without_workflow), {"tooling"})
 
-    def test_a_change_to_only_the_ci_app_tooling_job_selects_app_tooling(self):
-        original = ("name: CI\non: push\njobs:\n  changes:\n    runs-on: ubuntu-latest\n"
+    def test_a_ci_workflow_change_selects_the_suites_of_the_jobs_it_changes(self):
+        # A ci.yml change runs the suites of the jobs and keys it changes (TAL-2461). Column-0 comments, concurrency and
+        # the jobs every pull request run executes in full (path detection, the gate, the failure report and handoff)
+        # need only the tooling checks. Path detection's outputs feed every job, so they keep the whole ci.yml route,
+        # as do triggers, permissions and added, removed or renamed jobs.
+        original = ("# Header.\nname: CI\non: push\nconcurrency:\n  group: ci\njobs:\n  changes:\n    runs-on: ubuntu-latest\n"
+                    "    outputs:\n      app: x\n    steps:\n      - run: classify\n"
                     "  app-tooling:\n    runs-on: macos-latest\n    steps:\n      - run: old-check\n"
-                    "  app:\n    uses: ./.github/workflows/app-tests.yml\n")
+                    "  app:\n    uses: ./.github/workflows/app-tests.yml\n"
+                    "  alert:\n    if: always()\n    steps:\n      - run: send\n")
+        ci = routing.WORKFLOWS["ci.yml"]
+        cases = [
+            ("a header comment", ("# Header.", "# Another header."), {"tooling"}),
+            ("concurrency", ("group: ci", "group: ci-main"), {"tooling"}),
+            ("path detection's steps", ("run: classify", "run: classify --since"), {"tooling"}),
+            ("the failure handoff", ("if: always()", "if: '!cancelled()'"), {"tooling"}),
+            ("the App tooling job", ("old-check", "catalog-check"), {"app_tooling", "tooling"}),
+            ("the App job", ("app-tests.yml", "app-tests.yml\n    with: {mode: build}"), {"app", "contracts", "tooling"}),
+            ("path detection's outputs", ("app: x", "app: y"), ci),
+            ("the trigger", ("on: push", "on: pull_request"), ci),
+            ("a job's name", ("  app-tooling:", "  renamed-tooling:"), ci),
+            ("an added job", ("  alert:", "  extra:\n    runs-on: ubuntu-latest\n  alert:"), ci),
+            ("permissions", ("jobs:", "permissions:\n  contents: write\njobs:"), ci),
+        ]
         workflow = ".github/workflows/ci.yml"
         self.write(workflow, original)
-        workflow_base = self.commit("fixture CI workflow")
-        self.write(workflow, original.replace("old-check", "catalog-check"))
-        tooling_head = self.commit("change only App tooling job")
-        self.assertEqual(self.classify(workflow_base, tooling_head), {"app_tooling", "tooling"})
-        self.write(workflow, original.replace("old-check", "catalog-check").replace("on: push", "on: pull_request"))
-        trigger_head = self.commit("change workflow trigger too")
-        self.assertEqual(self.classify(workflow_base, trigger_head), routing.WORKFLOWS["ci.yml"])
-        self.write(workflow, original.replace("app-tooling:", "renamed-tooling:"))
-        renamed_head = self.commit("rename App tooling job")
-        self.assertEqual(self.classify(workflow_base, renamed_head), routing.WORKFLOWS["ci.yml"])
-        last_job = original[:original.index("  app:\n")]
-        self.write(workflow, last_job + "permissions:\n  contents: read\n")
-        permissions_base = self.commit("App tooling is last before a global workflow key")
-        self.write(workflow, last_job + "permissions:\n  contents: write\n")
-        permissions_head = self.commit("change global workflow permissions")
-        self.assertEqual(self.classify(permissions_base, permissions_head), routing.WORKFLOWS["ci.yml"])
+        base = self.commit("fixture CI workflow")
+        for name, (old, new), expected in cases:
+            with self.subTest(name):
+                self.write(workflow, original.replace(old, new, 1))
+                self.assertEqual(self.classify(base, self.commit(name)), expected)
 
     def test_check_diff_rejects_whitespace_errors_in_the_checked_range(self):
         self.write("README.md", "base\n")
