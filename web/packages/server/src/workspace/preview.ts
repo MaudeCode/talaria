@@ -2,10 +2,10 @@
  * `/api/file` previews (TAL-566): the server names how a workspace file renders, so clients only map the kind to an
  * element. Media files are only stat'ed; their bytes stream from `/api/file/raw`.
  */
-import { extname } from 'node:path'
+import { basename, dirname, extname, relative, sep } from 'node:path'
 import type { FilePreviewKind } from '@maudecode/talaria-web-contracts'
 import { signAssetGrant, assetGrantValue } from '../auth/crypto.js'
-import { readFileContent, type FileContent } from './fs.js'
+import { readFileContent, safeResolve, type FileContent } from './fs.js'
 import { AUDIO_VIDEO_PDF_TYPES, INLINE_IMAGE_TYPES, mimeFor } from './media.js'
 
 /** Rows a CSV preview ships, header included; the rest stay in the editable text. */
@@ -38,20 +38,38 @@ export function readFilePreview(workspace: string, rel: string): FilePreview {
 export const PREVIEW_PREFIX = '/workspace-preview/'
 
 /**
- * The HTML preview frame's URL: `workspace-preview/<grant>/<path>`, where the grant signs the workspace root with an
- * expiry 1 to 2 hours out (fixed within each hour, so a refetch keeps the same URL and the frame does not reload). The
- * sandboxed frame has an opaque origin and sends no cookie, so the grant, minted only after the caller could read
- * the file, is what authorizes the page and its relative assets.
+ * The preview route's policy (TAL-2196): scripts, styles and assets from the page's own grant URL, inline or `data:`
+ * and `blob:`, no fetch, XHR, WebSocket or form target, no `<base>`, and popups that stay sandboxed.
+ */
+export const PREVIEW_CSP = "sandbox allow-scripts allow-popups; default-src 'self' 'unsafe-inline' data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'"
+
+/**
+ * The HTML preview frame's URL: `workspace-preview/<grant>/<basename>`, where the grant signs the folder holding the
+ * file, resolved inside the workspace, with an expiry 1 to 2 hours out (fixed within each hour, so a refetch keeps the
+ * same URL and the frame does not reload). The sandboxed frame has an opaque origin and sends no cookie, so the grant,
+ * minted only after the caller could read the file, is what authorizes the page and its relative assets in that folder
+ * and below; `../` assets and dot-prefixed paths do not load. The page's CSP denies network calls, but it can still
+ * navigate itself to another URL carrying its own address; that leak is accepted because the address unlocks only this
+ * folder, minus dotfiles, until the grant expires.
  */
 export function previewUrl(key: Buffer, root: string, rel: string, now = Date.now()): string {
-  const grant = signAssetGrant(key, 'preview', root, now)
-  const path = rel.split('/').filter((part) => part && part !== '.').map(encodeURIComponent).join('/')
-  return `${PREVIEW_PREFIX.slice(1)}${grant}/${path}`
+  const target = safeResolve(root, rel)
+  return `${PREVIEW_PREFIX.slice(1)}${signAssetGrant(key, 'preview', dirname(target), now)}/${encodeURIComponent(basename(target))}`
 }
 
-/** The workspace root a grant path segment authorizes, or null when it is forged or expired. */
+/** The folder a grant path segment authorizes, or null when it is forged or expired. */
 export function previewGrantRoot(key: Buffer, segment: string, now = Date.now()): string | null {
   return assetGrantValue(key, 'preview', segment, now)
+}
+
+/** The file `rel` names under a grant's folder, or null when it escapes the folder or has a dot-prefixed segment. */
+export function previewTarget(dir: string, rel: string): string | null {
+  try {
+    const target = safeResolve(dir, rel)
+    return relative(dir, target).split(sep).some((part) => part.startsWith('.')) ? null : target
+  } catch {
+    return null
+  }
 }
 
 /** RFC 4180 rows (quoted fields, doubled quotes, CRLF), skipping blank lines; stops after `limit` rows. */
