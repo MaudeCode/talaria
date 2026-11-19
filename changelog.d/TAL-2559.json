@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats in the iPhone Duo sidebar no longer all show a grey background when nothing is swiped; only a row you swipe shows it.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

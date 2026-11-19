@@ -187,7 +187,7 @@ extension View {
 
     /// A `SidebarList` row's List insets, hidden separator and background.
     func sidebarListRow() -> some View {
-        sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+        modifier(SidebarListRow())
     }
 
     /// The shared selection chrome and VoiceOver trait, with optional List-specific insets. A row with swipe actions
@@ -204,34 +204,76 @@ extension View {
     }
 }
 
-/// The sidebar's selection shape. A swiped row shows it in grey, since the system's own swipe shape cannot take the
-/// selection's corners and insets; the row knows it is swiped when its content slides from where it rests.
-private struct SidebarRowHighlight: ViewModifier {
-    let isSelected: Bool
-    let revealsSwipe: Bool
-    @State private var resting: CGRect?
+/// A sidebar row's List traits. A swipe slides the whole List cell, while every layout (a column or drawer sliding in, a
+/// bar or inset, rotation) leaves the cell at its List's leading edge. So the row is swiped exactly while its cell sits
+/// off that edge, read fresh whenever the cell moves rather than against an earlier layout (TAL-2559).
+private struct SidebarListRow: ViewModifier {
+    @State private var cell = SidebarCellProbes()
     @State private var isSwiped = false
 
     func body(content: Content) -> some View {
-        if revealsSwipe {
-            highlighted(content)
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .scrollView) } action: { frame in
-                    // A new width is a new layout (rotation, a bar appearing), never a swipe; a swipe can move the width by
-                    // a fraction of a point.
-                    if abs((resting?.width ?? -1) - frame.width) > 1 { resting = frame }
-                    isSwiped = abs(frame.minX - (resting?.minX ?? frame.minX)) > 0.5
-                }
-        } else {
-            highlighted(content)
+        content
+            .environment(\.sidebarRowIsSwiped, isSwiped)
+            .sessionsScreenListRow(
+                insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12),
+                background: Color(.systemBackground)
+                    .background(SidebarCellProbe(probes: cell))
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { _ in
+                        isSwiped = abs(cell.slide) > 0.5
+                    }
+            )
+    }
+}
+
+/// How far a row's List cell sits from its collection view's leading edge. SwiftUI cannot measure it: a List cell lies
+/// outside every coordinate space but the global one, which also moves with the column or drawer around the List. The
+/// List can host a row's background more than once (sizing, reuse), so each host gets its own probe view.
+@MainActor
+private final class SidebarCellProbes {
+    private let views = NSHashTable<UIView>.weakObjects()
+
+    func add(_ view: UIView) { views.add(view) }
+
+    var slide: CGFloat {
+        for view in views.allObjects where view.window != nil {
+            let list = sequence(first: view.superview, next: { $0?.superview }).first { $0 is UICollectionView }
+            if let list = list as? UIView { return view.convert(view.bounds, to: list).minX }
         }
+        return 0
+    }
+}
+
+private struct SidebarCellProbe: UIViewRepresentable {
+    let probes: SidebarCellProbes
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        probes.add(view)
+        return view
     }
 
-    private func highlighted(_ content: Content) -> some View {
+    func updateUIView(_ uiView: UIView, context: Context) {}
+}
+
+extension EnvironmentValues {
+    /// Whether the enclosing `sidebarListRow()` cell is sliding open.
+    @Entry var sidebarRowIsSwiped = false
+}
+
+/// The sidebar's selection shape. A swiped row shows it in grey, since the system's own swipe shape cannot take the
+/// selection's corners and insets.
+private struct SidebarRowHighlight: ViewModifier {
+    @Environment(\.sidebarRowIsSwiped) private var isSwiped
+    let isSelected: Bool
+    let revealsSwipe: Bool
+
+    func body(content: Content) -> some View {
         content.background(fill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var fill: Color {
         if isSelected { return Color.accentColor.opacity(0.12) }
-        return isSwiped ? Color(.secondarySystemFill) : .clear
+        return revealsSwipe && isSwiped ? Color(.secondarySystemFill) : .clear
     }
 }

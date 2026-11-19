@@ -181,9 +181,14 @@ struct SessionArchiveUndoToast: View {
 
 extension View {
     func sessionsScreenListRow(insets: EdgeInsets = EdgeInsets()) -> some View {
+        sessionsScreenListRow(insets: insets, background: Color(.systemBackground))
+    }
+
+    /// The same row with its own List cell background, for a background that also measures the cell.
+    func sessionsScreenListRow(insets: EdgeInsets, background: some View) -> some View {
         listRowInsets(insets)
             .listRowSeparator(.hidden)
-            .listRowBackground(Color(.systemBackground))
+            .listRowBackground(background)
     }
 
 }
