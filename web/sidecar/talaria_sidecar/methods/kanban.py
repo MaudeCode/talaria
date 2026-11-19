@@ -475,6 +475,43 @@ def _visible_task(params, conn, task_id, *, write=False, missing="task not found
     return task
 
 
+_WRITE_SCOPE_ERROR = "Kanban task write is outside the allowed assignee scope"
+
+
+def _guard_task_writes(conn, params, task_ids=()):
+    """Bind the policy to the connection's writes, including Agent helpers' own transactions."""
+    allowed = params.get("allowed_assignees")
+    if allowed is None:
+        return
+    targets = frozenset(task_ids)
+    conn.create_function("talaria_writable_assignee", 1, frozenset(allowed).__contains__, deterministic=True)
+    conn.create_function("talaria_write_target", 1, targets.__contains__, deterministic=True)
+    # Guard only direct task updates. Agent helpers can also recompute dependent task readiness.
+    conn.execute(f"""
+        CREATE TEMP TRIGGER talaria_kanban_update BEFORE UPDATE ON main.tasks
+        WHEN talaria_write_target(OLD.id)
+             AND NOT (talaria_writable_assignee(OLD.assignee) AND talaria_writable_assignee(NEW.assignee))
+        BEGIN SELECT RAISE(ABORT, '{_WRITE_SCOPE_ERROR}'); END
+    """)
+    conn.execute(f"""
+        CREATE TEMP TRIGGER talaria_kanban_insert BEFORE INSERT ON main.tasks
+        WHEN NOT talaria_writable_assignee(NEW.assignee)
+        BEGIN SELECT RAISE(ABORT, '{_WRITE_SCOPE_ERROR}'); END
+    """)
+    for operation, row in (("INSERT", "NEW"), ("DELETE", "OLD")):
+        conn.execute(f"""
+            CREATE TEMP TRIGGER talaria_kanban_link_{operation} BEFORE {operation} ON main.task_links
+            WHEN (SELECT COUNT(*) FROM tasks WHERE id IN ({row}.parent_id, {row}.child_id)
+                  AND talaria_writable_assignee(assignee)) != 2
+            BEGIN SELECT RAISE(ABORT, '{_WRITE_SCOPE_ERROR}'); END
+        """)
+    conn.execute(f"""
+        CREATE TEMP TRIGGER talaria_kanban_comment BEFORE INSERT ON main.task_comments
+        WHEN NOT EXISTS (SELECT 1 FROM tasks WHERE id = NEW.task_id AND talaria_writable_assignee(assignee))
+        BEGIN SELECT RAISE(ABORT, '{_WRITE_SCOPE_ERROR}'); END
+    """)
+
+
 def inspection_payload(params: dict) -> dict:
     """Read only the selected profile's live boards, with shared global row/edge budgets.
 
@@ -590,6 +627,7 @@ def create_task_payload(params: dict) -> dict:
     status = _validate_status(body.get("status")) if body.get("status") else None
     kb = _kb()
     with _conn(board=_board(params)) as conn:
+        _guard_task_writes(conn, params)
         if params.get("allowed_assignees") is not None:
             for parent in body.get("parents") or ():
                 _visible_task(params, conn, parent, write=True)
@@ -602,21 +640,23 @@ def create_task_payload(params: dict) -> dict:
             idempotency_key=body.get("idempotency_key") or None, max_runtime_seconds=body.get("max_runtime_seconds") or None, skills=body.get("skills") or None,
         )
         if status:
+            if params.get("allowed_assignees") is not None:
+                conn.create_function("talaria_write_target", 1, lambda candidate: candidate == task_id, deterministic=True)
             _patch_task(conn, task_id, {"status": status})
-        return {"task": _task_dict(kb.get_task(conn, task_id), conn), "read_only": False}
+        return {"task": _task_dict(_visible_task(params, conn, task_id, write=True), conn), "read_only": False}
 
 
 def patch_task_payload(params: dict) -> dict:
     task_id = str(params.get("task_id") or "").strip()
     if not task_id:
         raise InvalidParams("task_id is required")
-    kb = _kb()
     with _conn(board=_board(params)) as conn:
+        _guard_task_writes(conn, params, (task_id,))
         patch = params.get("patch") or {}
         task = _visible_task(params, conn, task_id, write=True)
         _require_assignee(params, patch.get("assignee", task.assignee))
         _patch_task(conn, task_id, patch)
-        return {"task": _task_dict(kb.get_task(conn, task_id), conn), "read_only": False}
+        return {"task": _task_dict(_visible_task(params, conn, task_id, write=True), conn), "read_only": False}
 
 
 def comment_payload(params: dict) -> dict:
@@ -628,6 +668,7 @@ def comment_payload(params: dict) -> dict:
         raise InvalidParams("body is required")
     kb = _kb()
     with _conn(board=_board(params)) as conn:
+        _guard_task_writes(conn, params, (task_id,))
         _visible_task(params, conn, task_id, write=True)
         comment_id = kb.add_comment(conn, task_id, params.get("author") or "webui", body)
         return {"ok": True, "comment_id": comment_id, "read_only": False}
@@ -639,6 +680,7 @@ def link_payload(params: dict, *, unlink: bool) -> dict:
         raise InvalidParams("parent_id and child_id are required")
     kb = _kb()
     with _conn(board=_board(params)) as conn:
+        _guard_task_writes(conn, params, (parent_id, child_id))
         _visible_task(params, conn, parent_id, write=True, missing="parent task not found")
         _visible_task(params, conn, child_id, write=True, missing="child task not found")
         if unlink:
@@ -795,6 +837,7 @@ def bulk_payload(params: dict) -> dict:
     kb = _kb()
     results = []
     with _conn(board=_board(params)) as conn:
+        _guard_task_writes(conn, params, ids)
         for task_id in ids:
             entry: dict[str, Any] = {"id": task_id, "ok": True}
             try:
@@ -850,6 +893,7 @@ def task_action_payload(params: dict) -> dict:
     if not task_id:
         raise InvalidParams("task_id is required")
     with _conn(board=_board(params)) as conn:
+        _guard_task_writes(conn, params, (task_id,))
         _visible_task(params, conn, task_id, write=True)
         if action == "block":
             ok = _fenced(conn, task_id, lambda: kb.block_task(conn, task_id, reason=params.get("reason")), confirm_running_exit=bool(params.get("confirm_running_exit")))
@@ -859,7 +903,7 @@ def task_action_payload(params: dict) -> dict:
             raise InvalidParams(f"invalid action: {action}")
         if not ok:
             raise Conflict(f"{action} refused")
-        return {"task": _task_dict(kb.get_task(conn, task_id), conn), "read_only": False}
+        return {"task": _task_dict(_visible_task(params, conn, task_id, write=True), conn), "read_only": False}
 
 
 def list_boards_payload(params: dict) -> dict:
@@ -992,6 +1036,10 @@ def register(registry) -> None:
                         raise RpcError("Owner session required", condition="forbidden")
                     return _func(params)
                 except RpcError:
+                    raise
+                except sqlite3.IntegrityError as exc:
+                    if str(exc) == _WRITE_SCOPE_ERROR:
+                        raise NotFound("task not found") from exc
                     raise
                 except LookupError as exc:
                     raise RpcError(str(exc), condition="not_found") from exc

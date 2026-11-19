@@ -1,6 +1,7 @@
 """Board and event polls against a disposable board database and stand-in Agent boundaries, with every statement traced."""
 
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from types import SimpleNamespace
 
@@ -86,3 +87,20 @@ def test_reassignment_invalidates_scoped_readers_without_disclosing_task_data(bo
     assert result["events"] == [
         {"id": 2, "task_id": None, "run_id": None, "kind": "invalidate", "payload": None, "created_at": None},
     ]
+
+
+def test_scoped_sql_write_guard_is_connection_local_and_checks_the_current_row(tmp_path) -> None:
+    database = tmp_path / "board.db"
+    with closing(sqlite3.connect(database, isolation_level=None)) as scoped, closing(sqlite3.connect(database, isolation_level=None)) as owner:
+        scoped.executescript(
+            "CREATE TABLE tasks (id TEXT PRIMARY KEY, assignee TEXT, title TEXT);"
+            "CREATE TABLE task_links (parent_id TEXT, child_id TEXT);"
+            "CREATE TABLE task_comments (task_id TEXT);"
+            "INSERT INTO tasks VALUES ('task', 'alpha', 'Original');"
+        )
+        kanban._guard_task_writes(scoped, {"allowed_assignees": ["alpha"]}, ("task",))
+        scoped.execute("UPDATE tasks SET title = 'Allowed' WHERE id = 'task'")
+        owner.execute("UPDATE tasks SET assignee = 'beta' WHERE id = 'task'")
+        with pytest.raises(sqlite3.IntegrityError, match="outside the allowed assignee scope"):
+            scoped.execute("UPDATE tasks SET title = 'Denied' WHERE id = 'task'")
+        assert owner.execute("SELECT title FROM tasks WHERE id = 'task'").fetchone() == ("Allowed",)
