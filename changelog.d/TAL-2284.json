@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "While a reply runs, the Web composer's hint shows the keyboard shortcuts that steer, queue or interrupt, named for your platform and send key.",
+      "highlight": false,
+      "announce": false,
+      "components": ["web"]
+    }
+  ]
+}

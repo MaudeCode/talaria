@@ -110,7 +110,7 @@ for (const [name, typed, answer] of [
     try {
       await page.goto('/session/steer-clears')
       const msg = page.locator('#msg')
-      await expect(msg).toHaveAttribute('placeholder', 'Enter = steer | /queue | /background | /interrupt')
+      await expect(msg).toHaveAttribute('placeholder', /^Enter = steer \| /)
       await msg.fill(typed)
       // The send arrow beside Stop steers like Enter does; a touch keyboard's Enter types a newline.
       await page.locator('#btnSend').click()

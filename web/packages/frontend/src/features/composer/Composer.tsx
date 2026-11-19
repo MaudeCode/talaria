@@ -46,6 +46,13 @@ function effectiveBusyMode(mode: BusyMode, modifiers: { ctrlKey: boolean; altKey
   const alternate = modifiers.ctrlKey && (sendKey !== 'ctrl+enter' || /mac/i.test(platform) || modifiers.shiftKey)
   return alternate ? mode === 'queue' ? 'steer' : 'queue' : mode
 }
+/** TAL-2284: the keys for the default busy send, the Ctrl alternate and Alt's interrupt, as `onKeyDown` and `effectiveBusyMode` read them. */
+function busyChords(platform: string, sendKey: string) {
+  const mac = /mac/i.test(platform)
+  const ctrlSend = sendKey === 'ctrl+enter'
+  if (mac) return { send: ctrlSend ? '⌘Enter' : 'Enter', alternate: '⌃Enter', interrupt: ctrlSend ? '⌥⌘Enter' : '⌥Enter' }
+  return { send: ctrlSend ? 'Ctrl+Enter' : 'Enter', alternate: ctrlSend ? 'Ctrl+Shift+Enter' : 'Ctrl+Enter', interrupt: ctrlSend ? 'Ctrl+Alt+Enter' : 'Alt+Enter' }
+}
 /** TAL-2155: moves this chat's draft text and staged files to the composer of another chat, which adopts them. */
 export interface DraftHandover { handTo: (sessionId: string) => void }
 
@@ -793,7 +800,12 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   // While a clarification owns the box, the message-only controls leave the footer (docs/ui-ux clarify-card).
   const hide = (key: string) => hideComposerControl(settings, answering, key)
   const addressee = m.composer_placeholder({ name: room?.name ?? bootstrap.bot_name })
-  const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy && !nativeOwner && settings?.show_busy_placeholder_hint !== false ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : addressee
+  // A phone sends from the button, so its hint names the slash commands rather than keyboard chords.
+  const chords = busyChords(platform, sendKey)
+  const busyHint = phone
+    ? busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()
+    : busyMode === 'queue' ? m.composer_placeholder_busy_keys_queue(chords) : busyMode === 'interrupt' ? m.composer_placeholder_busy_keys_interrupt(chords) : m.composer_placeholder_busy_keys_steer(chords)
+  const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy && !nativeOwner && settings?.show_busy_placeholder_hint !== false ? busyHint : addressee
   const onCompress = () => { void onLocalCommand('compress', '') }
   const context: ContextFigures = ({
     planGauge: session?.plan_gauge, sessionId: sessionId ?? undefined, detailKey: session?.context_detail_key,

@@ -1194,7 +1194,22 @@ describe('Composer', () => {
     const view = renderComposer(writable, running(), noop, { default_message_mode: 'queue', show_busy_placeholder_hint: false })
     expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', expect.stringMatching(/^Message /))
     view.rerenderSettings({ default_message_mode: 'queue', show_busy_placeholder_hint: true })
-    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Enter = queue | /interrupt | /background | /steer')
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Enter = queue | Ctrl+Enter = steer | Alt+Enter = interrupt')
+  })
+
+  // Each chord shown is one the routing table above sends with; a phone keeps the slash commands (TAL-2284).
+  it.each([
+    ['MacIntel', 'enter', 'steer', false, 'Enter = steer | ⌃Enter = queue | ⌥Enter = interrupt'],
+    ['Linux x86_64', 'enter', 'steer', false, 'Enter = steer | Ctrl+Enter = queue | Alt+Enter = interrupt'],
+    ['Win32', 'ctrl+enter', 'queue', false, 'Ctrl+Enter = queue | Ctrl+Shift+Enter = steer | Ctrl+Alt+Enter = interrupt'],
+    ['MacIntel', 'ctrl+enter', 'interrupt', false, '⌘Enter = interrupt | ⌃Enter = queue'],
+    ['Linux x86_64', 'enter', 'steer', true, 'Enter = steer | /queue | /background | /interrupt'],
+  ] as const)('hints %s %s busy %s chords (phone %s) as %s (TAL-2284)', (platform, sendKey, mode, phone, hint) => {
+    window.matchMedia = vi.fn(() => ({ matches: phone, addEventListener: noop, removeEventListener: noop })) as unknown as typeof window.matchMedia
+    const platformGetter = vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform)
+    renderComposer(writable, running(), noop, { send_key: sendKey, default_message_mode: mode })
+    platformGetter.mockRestore()
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', hint)
   })
 
   it('labels the mid-turn arrow by the queue busy mode and queues on click', async () => {
