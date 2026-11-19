@@ -486,7 +486,7 @@ recording is the visual check. A ticket in the last column is an open gap.
 | Duo outer ↔ inner | `ChatHostedTests.testBookFoldMovesComposerAndUnfoldingRetainsItsEditorAndDraft`, `DuoFoldHostedTests` | TAL-2565 |
 | Rotation | TalariaKit `ComposerCardSizingTests`, `SessionListHostedTests.testResizingAnOpenOverlayIntoTilingConsumesDrawerIntentAndRotationCollapsesTheColumn` | TAL-2569 |
 | Chat A → B → A | TalariaKit `ChatDraftStoreTests` | TAL-2384, TAL-2566 |
-| Sidebar interruption and cancel | `SidebarEdgePanGestureTests`, TalariaKit `SessionNavigationStateTests.testSidebarGestureLeavesEdgeSwipeToAStackThatCanPop` | TAL-2567, TAL-2568, TAL-2570 |
+| Sidebar interruption and cancel | `SidebarEdgePanGestureTests`, TalariaKit `SessionNavigationStateTests.testSidebarGestureLeavesEdgeSwipeToAStackThatCanPop` | TAL-2567, TAL-2570 |
 | Settings push and return | `SessionListHostedTests.testSidebarSectionIsARootAndSettingsIsAModalOverIt`, TalariaKit `SessionNavigationStateTests.testSettingsRoutingLeavesTheUnderlyingRootAndPagesUnchanged` | |
 
 ### Checking a transition
