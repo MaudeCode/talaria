@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "A workspace link to the filesystem root no longer opens outside the workspace, and an opened outside folder never reaches a system directory inside it.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

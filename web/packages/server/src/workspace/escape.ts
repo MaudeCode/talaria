@@ -100,7 +100,8 @@ export class EscapeGrants {
 
   /**
    * Python `resolve_authorized_escape_request`: re-check the grant, then re-root a request path under the link onto
-   * the grant root. A path outside the link answers "Path traversal blocked".
+   * the grant root. A path outside the link answers "Path traversal blocked"; one that resolves into a system
+   * directory answers like a system-directory link.
    */
   resolve(workspace: string, sessionId: string, profile: string | null, token: string, rel: string): EscapeRequest {
     const grant = this.check(workspace, sessionId, profile, token)
@@ -108,6 +109,9 @@ export class EscapeGrants {
     const under = grant.surfacePath === '.' ? requestPath : requestPath === grant.surfacePath ? '.' : requestPath.startsWith(`${grant.surfacePath}/`) ? requestPath.slice(grant.surfacePath.length + 1) : null
     if (under === null) throw new PathTraversalError(`Path traversal blocked: ${rel}`)
     const externalRel = grant.externalEntryRel === '.' ? under : under === '.' ? grant.externalEntryRel : `${grant.externalEntryRel}/${under}`
+    // A grant on a permitted parent never reaches a system directory below it (TAL-2218).
+    const target = safeResolveWs(grant.externalRoot, externalRel)
+    if (isBlockedSystemPath(target)) throw new NotFoundError(`Path points to a system directory: ${target}`)
     return { surfacePath: grant.surfacePath, requestPath, externalRoot: grant.externalRoot, rootId: grant.rootId, externalRel }
   }
 

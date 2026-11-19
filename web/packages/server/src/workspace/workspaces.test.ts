@@ -110,6 +110,7 @@ describe('blocked system paths (TAL-1725)', () => {
   })
 
   it.each<[string, boolean]>([
+    ['/', true],
     ['/etc/hosts', true],
     [symlinkedEtc, true],
     ['/usr/share', true],
