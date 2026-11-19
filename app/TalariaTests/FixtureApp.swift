@@ -440,7 +440,18 @@ extension XCTestCase {
     @MainActor
     func sendFromComposer(_ message: String, in window: UIWindow) async throws {
         try await typeIntoComposer(message, in: window)
-        HostedAccessibility.activate(try await requireElement(in: window, label: "Send"))
+        try await activateSend(in: window)
+    }
+
+    /// Activates Send once the composer has enabled it. Typed text enables the button only on SwiftUI's next render,
+    /// and a disabled button drops the activation, which a slow host showed as a send that never started (TAL-2549).
+    @MainActor
+    func activateSend(in window: UIWindow, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let enabled = await awaitCondition {
+            HostedAccessibility.element(in: window, label: "Send")?.accessibilityTraits.contains(.notEnabled) == false
+        }
+        XCTAssertTrue(enabled, "Send never enabled for the typed draft", file: file, line: line)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Send", file: file, line: line))
     }
 
     /// Elements whose label or identifier is `name`, as XCUITest's `matching(identifier:)` counted them.

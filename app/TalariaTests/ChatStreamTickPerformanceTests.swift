@@ -117,12 +117,13 @@ private struct ChatStreamTickHarness {
         // The keyboard's first show shrinks the viewport and the long transcript's lazy rows re-measure under it. A pass
         // that moves the offset before the content height reads as the reader scrolling away and can release follow,
         // which left the stream ticks scrolling an unfollowed transcript on a slow host. Raise the keyboard first and send
-        // from the composer, as a reader does: the send re-arms follow once the re-measure has settled (TAL-2002).
-        let composer = try await Self.focusComposer(in: window, test: test)
+        // from the composer, as a reader does: the send re-arms follow once the re-measure has settled (TAL-2002). An
+        // empty composer that loses focus while the keyboard comes up folds back into its shell, so the send types into
+        // whichever composer is mounted by then, not the one focused first (TAL-2549).
+        _ = try await Self.focusComposer(in: window, test: test)
         let keyboardSettled = await test.awaitQuiet { recorder.counts.values.reduce(0, +) }
         XCTAssertNotNil(keyboardSettled, "The chat must settle under the keyboard before the send")
-        composer.insertText("Show the change")
-        HostedAccessibility.activate(try await test.requireElement(in: window, label: "Send"))
+        try await test.sendFromComposer("Show the change", in: window)
         let started = await test.awaitCondition { viewModel.activeStreamID != nil }
         XCTAssertTrue(started, "The composer's send never started the reply")
         stream.emit(.token(Self.token(0)))
