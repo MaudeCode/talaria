@@ -69,7 +69,8 @@ export interface ComposerProps {
   onEnsureSession: (onCreated?: (sessionId: string) => void) => Promise<Session>
   onLocalCommand: (name: string, args: string, draft?: DraftHandover) => Promise<boolean | 'refused'>
   terminalOpen: boolean
-  onToggleTerminal: () => void
+  /** Absent for a session without owner authority: the host terminal is owner-only (TAL-2201). */
+  onToggleTerminal?: (() => void) | undefined
   onModelChange: (model: string, provider: string | null) => void
   onWorkspaceChange: (path: string, draft?: DraftHandover) => void
   onNewWorktreeChat?: ((workspace: string | undefined) => void) | undefined

@@ -53,7 +53,7 @@ export function ComposerControls({ placement, sessionId, session, settings, pend
       {stage === 'burger' && !hide('hide_composer_model') && <ModelChip row {...modelChoice} onChange={onModelChange} />}
       {stage === 'burger' && reasoningShown && <ReasoningChip row value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} />}
       {/* The chat header carries the terminal toggle above phone width. */}
-      {stage === 'burger' && phone && <button type="button" className={cn('icon-btn', terminalOpen && 'active')} id="btnTerminal" title={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => { setConfigOpen(false); onToggleTerminal() }}><TerminalSquare size={16} aria-hidden="true" /><span className="composer-mobile-config-value">{m.composer_terminal_toggle()}</span></button>}
+      {stage === 'burger' && phone && onToggleTerminal && <button type="button" className={cn('icon-btn', terminalOpen && 'active')} id="btnTerminal" title={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => { setConfigOpen(false); onToggleTerminal() }}><TerminalSquare size={16} aria-hidden="true" /><span className="composer-mobile-config-value">{m.composer_terminal_toggle()}</span></button>}
       {configOpen && stage === 'burger' && quotaChipShown(settings) && <QuotaChip row {...chatModelChoice(session, pendingChoices)} />}
       {configOpen && stage === 'burger' && !hide('hide_composer_context') && <ContextRow {...context} />}
     </div>

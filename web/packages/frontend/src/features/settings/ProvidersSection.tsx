@@ -30,6 +30,7 @@ import { SETTINGS_PAGE, SettingLink, SettingsGroup, SettingsStats, type Settings
 import { useOpenRouterCostHistory } from './OpenRouterCost'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 import { usePluginInstall } from './usePluginInstall'
+import { useBootstrap } from '../../app/bootstrap'
 import { useSetting } from '../../app/queries'
 
 const setProviderKey = (provider: string, api_key: string | null) => post('api/providers', { provider, api_key }, OkSchema, { retries: 0 })
@@ -130,6 +131,8 @@ export function ProvidersSection() {
   const navigate = useNavigate()
   const { saveKey, saveHosted, refreshModels, invalidate } = useProviderWrites({ onSaved: () => setEditing(null) })
   const install = usePluginInstall()
+  // TAL-2201: adding a provider writes its credential or endpoint, which only the server owner may do.
+  const canManage = useBootstrap().auth.can_manage_server
   const thresholds = useSetting('provider_quota_thresholds')
   const locale = useLocale()
   // TAL-2136: a key set from Add a provider opens that provider's own page once the server confirms it. It reads only the
@@ -163,7 +166,8 @@ export function ProvidersSection() {
           </RowList>
         </SettingsGroup>
       )}
-      <section className="flex flex-col gap-3" data-section="providers-available">
+      {!canManage && yours.length === 0 && <EmptyState compact>{m.providers_empty()}</EmptyState>}
+      {canManage && <section className="flex flex-col gap-3" data-section="providers-available">
         <SectionHeader detail={available.length}>{m.providers_group_add()}</SectionHeader>
         <TextInput type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={m.providers_filter()} aria-label={m.providers_filter()} />
         {providers.data.providers.length === 0 && <EmptyState compact>{q ? m.providers_filter_empty() : m.providers_empty()}</EmptyState>}
@@ -184,7 +188,7 @@ export function ProvidersSection() {
         {!q && available.length > ADD_SHOWN && <button type="button" aria-expanded={allShown} className="self-start py-2 text-xs text-muted hover:text-text" onClick={() => setAllShown((v) => !v)}>
           {allShown ? m.providers_models_fewer() : m.providers_models_more({ n: available.length - ADD_SHOWN })}
         </button>}
-      </section>
+      </section>}
       {install.consent}
     </div>
   )

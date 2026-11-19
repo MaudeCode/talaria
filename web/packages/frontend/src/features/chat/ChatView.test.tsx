@@ -15,7 +15,7 @@ const { renders, navigate, composer, chatRenders, sidePanel, references, search,
 vi.mock('@tanstack/react-router', async (original) => ({ ...await original<object>(), useNavigate: () => navigate, useSearch: () => search() }))
 vi.mock('../../shell/AppShell', () => ({ MAIN_VIEW: '' }))
 vi.mock('../../app/bootstrap', async (original) => {
-  const bootstrap = { profile: { name: 'default' }, assistant_name: 'Assistant', features: {} }
+  const bootstrap = { profile: { name: 'default' }, assistant_name: 'Assistant', features: {}, auth: { can_manage_server: true } }
   // ChatView is the only caller here (the Composer is mocked), so each call is one ChatView render.
   return { ...await original<object>(), useBootstrap: () => { chatRenders(); return bootstrap } }
 })

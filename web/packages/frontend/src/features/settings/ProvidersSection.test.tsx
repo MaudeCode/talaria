@@ -39,18 +39,20 @@ vi.mock('../../api/client', async (original) => ({ ...await original<typeof impo
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { post } from '../../api/client'
+import { BootstrapContext } from '../../app/bootstrap'
+import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import { ProvidersPage, ProvidersSection } from './ProvidersSection'
 import { ProviderDetail } from './ProviderDetail'
 import { QuotaAlertsPage } from './QuotaAlerts'
 
 const renderSection = (ui = <ProvidersSection />) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
+  render(<BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><QueryClientProvider client={qc}>{ui}</QueryClientProvider></BootstrapContext.Provider>)
 }
 /** Settings › Providers and each provider's own page under one router, as the app routes them. */
 async function renderAt(path = '/settings/providers') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  const root = createRootRoute({ component: () => <QueryClientProvider client={qc}><Outlet /></QueryClientProvider> })
+  const root = createRootRoute({ component: () => <BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><QueryClientProvider client={qc}><Outlet /></QueryClientProvider></BootstrapContext.Provider> })
   const list = createRoute({ getParentRoute: () => root, path: '/settings/$section', component: () => <ProvidersPage /> })
   const detail = createRoute({ getParentRoute: () => root, path: '/settings/providers/$providerId', component: function Detail() { return <ProviderDetail id={useParams({ strict: false }).providerId ?? ''} /> } })
   const alerts = createRoute({ getParentRoute: () => root, path: '/settings/providers/quota-alerts', component: QuotaAlertsPage })

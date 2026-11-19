@@ -109,6 +109,8 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
   const terminalOpen = terminal !== 'closed'
   const [dismissedApproval, setDismissedApproval] = useState<string | undefined>()
   const onToggleTerminal = () => setTerminal((t) => t === 'closed' ? 'open' : 'closed')
+  // TAL-2201: the host terminal is owner-only; a session without owner authority gets no way to open it.
+  const canOpenTerminal = bootstrap.auth.can_manage_server
   // TAL-1974: a `terminal_open` card opens this session's pane, expanded; the pane takes the request and focuses itself.
   useEffect(() => onOpenTerminalRequest(() => { if (sessionId && peekOpenTerminalRequest(sessionId)) setTerminal('open') }), [sessionId])
   const { sidePanelOpen } = useShellState()
@@ -522,7 +524,7 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
             {session && meta && <div className="chat-header-meta hidden text-[11px] text-muted whitespace-nowrap overflow-hidden text-ellipsis font-mono" id="topbarMeta">{meta}</div>}
           </div>
           {/* T3 Code keeps the terminal toggle in the thread header; phones reach it from the composer's overflow menu. */}
-          {sessionId && <button type="button" className={cn('icon-btn has-tooltip has-tooltip--left', terminalOpen && 'active')} id="btnTerminalInline" data-tooltip={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={onToggleTerminal}><TerminalSquare size={16} aria-hidden="true" /></button>}
+          {sessionId && canOpenTerminal && <button type="button" className={cn('icon-btn has-tooltip has-tooltip--left', terminalOpen && 'active')} id="btnTerminalInline" data-tooltip={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={onToggleTerminal}><TerminalSquare size={16} aria-hidden="true" /></button>}
           {/* TAL-373: the side panel's edge tab is hidden below 901px; tablets open it here, phones from the titlebar. */}
           {sessionId && <button type="button" className={cn('icon-btn chat-header-side-panel has-tooltip has-tooltip--left', sidePanelOpen && 'active')} id="btnSidePanelInline" data-tooltip={m.panel_label()} aria-label={m.panel_label()} aria-pressed={sidePanelOpen} onClick={toggleSidePanel}><PanelRight size={16} aria-hidden="true" /></button>}
         </div>
@@ -594,7 +596,7 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
           onEnsureSession={ensureSession}
           onLocalCommand={onLocalCommand}
           terminalOpen={terminalOpen}
-          onToggleTerminal={onToggleTerminal}
+          onToggleTerminal={canOpenTerminal ? onToggleTerminal : undefined}
           onModelChange={onModelChange}
           onWorkspaceChange={onWorkspaceChange}
           // The server refuses worktrees for a profile without local I/O (a remote terminal backend), so none is offered.
