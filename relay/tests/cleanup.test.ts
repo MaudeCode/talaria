@@ -98,3 +98,29 @@ it("ignores superseded continuations and lets the next trigger resume an interru
   await drain();
   expect(await remaining()).toEqual(each(0));
 });
+
+it("expires unacknowledged completions after 30 days and acknowledged ones after seven", async () => {
+  const backend = convexTest(schema, modules);
+  workpoolTest.register(backend, "apnsWorkpool");
+  const day = 24 * 60 * 60 * 1_000;
+  const start = Date.now();
+  const grant = await backend.run((ctx) => ctx.db.insert("publisherGrants", {
+    userId: "user", publisherOwnerUserId: "owner", publisherId: "https://hermes.example", profileId: "profile", createdAt: start, updatedAt: start,
+  }));
+  const insertAt = (age: number, runKey: string, acknowledged: boolean) => {
+    vi.setSystemTime(start + 31 * day - age * day);
+    return backend.run((ctx) => ctx.db.insert("completions", {
+      userId: "user", grantId: grant, publisherOwnerUserId: "owner", profileId: "profile", runKey, acknowledged,
+      row: { publisherId: "https://hermes.example", publisherLabel: "Home", sessionId: runKey, title: "Run", phase: "completed", status: "Done", updatedAt: start, deepLink: `/sessions/${runKey}` },
+    }));
+  };
+  await insertAt(31, "unacknowledged-31d", false);
+  await insertAt(31, "acknowledged-31d", true);
+  await insertAt(21, "unacknowledged-21d", false);
+  await insertAt(6, "acknowledged-6d", true);
+  vi.setSystemTime(start + 31 * day);
+
+  await backend.mutation(internal.cleanup.prune, {});
+  const kept = (await backend.run((ctx) => ctx.db.query("completions").collect())).map((row) => row.runKey).sort();
+  expect(kept).toEqual(["acknowledged-6d", "unacknowledged-21d"]);
+});

@@ -255,7 +255,7 @@ describe("Convex relay state", () => {
       label: "iPhone",
       bundleId: "dev.kil.talaria",
       apsEnvironment: "sandbox",
-      pushToken: "push-token",
+      pushToken: "ab".repeat(32),
       preferences: defaultNotificationPreferences,
     };
     const putDevice = (body: unknown) =>
@@ -3090,5 +3090,54 @@ describe("Convex relay state", () => {
       kind: "live_activity_update",
       activityId: "seeded-activity",
     });
+  });
+
+  it("stores APNs tokens as lower-case hex and refuses every other spelling", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    const token = (digit: string) => `${digit}0`.repeat(32);
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("relayUsers", { userId: "user-1", appleSubjectHash: "apple-user-1", createdAt: now, updatedAt: now });
+      await ctx.db.insert("userSessions", {
+        userId: "user-1", sessionId: "session-1", tokenHash: await sha256("session-token"), expiresAt: now + 60_000, createdAt: now,
+      });
+      await ctx.db.insert("devices", {
+        userId: "other-user", deviceId: "foreign-device", label: "iPhone", bundleId: "dev.kil.talaria", apsEnvironment: "sandbox",
+        pushToken: token("f"), preferences: defaultNotificationPreferences, createdAt: now, updatedAt: now,
+      });
+    });
+    const headers = { authorization: "Bearer session-token", "content-type": "application/json" };
+    const device = { label: "iPhone", bundleId: "dev.kil.talaria", apsEnvironment: "sandbox", preferences: defaultNotificationPreferences };
+    const putDevice = (tokens: object) => backend.fetch("/v1/devices/device-1", {
+      method: "PUT", headers, body: JSON.stringify({ ...device, ...tokens }),
+    });
+    const putActivity = (activityPushToken: string) => backend.fetch("/v1/devices/device-1/live-activities/activity-1", {
+      method: "PUT", headers, body: JSON.stringify({
+        mode: "all_running", attributesType: "TalariaAggregateActivityAttributes", schemaVersion: 1, activityPushToken,
+      }),
+    });
+
+    expect((await putDevice({ pushToken: token("A"), pushToStartToken: token("B") })).status).toBe(200);
+    const stored = await backend.run((ctx) => ctx.db.query("devices").withIndex("by_user_id_and_device_id", (query) =>
+      query.eq("userId", "user-1").eq("deviceId", "device-1")).unique());
+    expect([stored?.pushToken, stored?.pushToStartToken]).toEqual([token("a"), token("b")]);
+
+    const malformed = [`${token("a")}/x`, `${token("a")}?`, ` ${token("a")}`, `${token("a")}\n`, token("g"), "a".repeat(63), "a".repeat(201)];
+    for (const value of malformed) {
+      for (const field of ["pushToken", "pushToStartToken"]) {
+        const response = await putDevice({ [field]: value });
+        expect(response.status, JSON.stringify({ field, value })).toBe(400);
+        await expect(response.json()).resolves.toEqual({ error: "invalid_device" });
+      }
+      const activity = await putActivity(value);
+      expect(activity.status, JSON.stringify({ field: "activityPushToken", value })).toBe(400);
+      await expect(activity.json()).resolves.toEqual({ error: "invalid_device" });
+    }
+
+    // Another user's token in upper case is that user's token, so the ownership check refuses it.
+    expect((await putDevice({ pushToken: token("F") })).status).toBe(401);
+    const foreign = await backend.run((ctx) => ctx.db.query("devices").withIndex("by_push_token", (query) =>
+      query.eq("pushToken", token("f"))).collect());
+    expect(foreign.map((row) => row.userId)).toEqual(["other-user"]);
   });
 });
