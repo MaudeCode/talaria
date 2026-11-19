@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { CreateBucketCommand, DeleteBucketCommand, DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3'
 import { runBlobStoreConformance } from './blob-conformance.js'
-import { LocalBlobStore, materializeAttachment, type BlobStore } from './blobs.js'
+import { attachmentSessionName, LocalBlobStore, materializeAttachment, type BlobStore } from './blobs.js'
 import { S3BlobStore } from './blobs-s3.js'
 import { copyBlobs, runStorage } from '../../cli/storage.js'
 import { loadConfig } from '../../config.js'
@@ -54,8 +54,6 @@ it.each(['missing', 'startup alias', 'symlink loop'])('keeps the startup share a
   const privateImage = Buffer.concat([png, Buffer.from('outside-private')])
   const attachmentImage = Buffer.concat([png, Buffer.from('original-attachment')])
   for (const root of [workspace, original, outside]) mkdirSync(root)
-  writeFileSync(join(outside, 'secret.png'), privateImage)
-  writeFileSync(join(original, 'allowed.png'), attachmentImage)
   writeFileSync(join(workspace, 'workspace.png'), png)
   if (kind !== 'missing') symlinkSync(kind === 'startup alias' ? original : configured, configured)
   const s = await bootTestServer({ env: { TALARIA_WEB_ATTACHMENT_DIR: configured, TALARIA_WEB_DEFAULT_WORKSPACE: workspace } })
@@ -66,9 +64,14 @@ it.each(['missing', 'startup alias', 'symlink loop'])('keeps the startup share a
       symlinkSync(outside, configured)
     }
     const session = await s.deps.sessionStore.newSession()
+    // TAL-2205: a share reaches only its own session's attachment folder, so every attachment sits in that folder.
+    const folder = attachmentSessionName(session.session_id)
+    for (const root of [outside, original]) mkdirSync(join(root, folder))
+    writeFileSync(join(outside, folder, 'secret.png'), privateImage)
+    writeFileSync(join(original, folder, 'allowed.png'), attachmentImage)
     session.messages = [{ role: 'assistant', content: [
-      join(configured, 'secret.png'), join(outside, 'secret.png'), 'secret.png', 'workspace.png',
-      ...(kind === 'startup alias' ? [join(original, 'allowed.png')] : []),
+      join(configured, folder, 'secret.png'), join(outside, folder, 'secret.png'), 'secret.png', 'workspace.png',
+      ...(kind === 'startup alias' ? [join(original, folder, 'allowed.png')] : []),
     ].map((ref) => `MEDIA:${ref}`).join('\n') }]
     await s.deps.sessionStore.save(session)
     await s.deps.sessions.createShare(session.session_id)

@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Talaria Web serves a non-owner login media only from its own profile and session, and a public share embeds only its own session's attachments.",
+      "highlight": false,
+      "announce": false,
+      "components": ["web"]
+    }
+  ]
+}

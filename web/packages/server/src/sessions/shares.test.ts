@@ -1,7 +1,7 @@
 /** Public share snapshots embed only images read through the anchored walk from an allowed root. */
 import { chmodSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { Session } from './session.js'
 import { buildShareSnapshot, embedShareMedia, shareMediaPaths } from './shares.js'
@@ -90,6 +90,35 @@ describe('embedShareMedia', () => {
   })
 })
 
+describe('share attachment reach (TAL-2205)', () => {
+  it('embeds the shared session\'s own attachments and workspace images, never another session\'s', () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'share-reach-')))
+    try {
+      const attachments = join(home, '.hermes', 'webui', 'attachments')
+      const workspace = join(home, 'ws')
+      const image = (path: string, marker: string): string => {
+        mkdirSync(dirname(path), { recursive: true })
+        const bytes = Buffer.concat([png, Buffer.from(marker)])
+        writeFileSync(path, bytes)
+        return bytes.toString('base64')
+      }
+      const own = image(join(attachments, 'session-a', 'image.png'), 'synthetic-session-a')
+      const other = image(join(attachments, 'session-b', 'image.png'), 'synthetic-session-b')
+      const chart = image(join(workspace, 'chart.png'), 'synthetic-workspace')
+      const session = new Session({ session_id: 'session-a', title: 'Reach', messages: [] }, { workspace, model: null })
+      const refs = ['~/.hermes/webui/attachments/session-b/image.png', join(attachments, 'session-b', 'image.png'), join(attachments, 'session-a', 'image.png'), 'chart.png']
+      const rows = refs.map((ref, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `see MEDIA:${ref} here` }))
+      const text = JSON.stringify(buildShareSnapshot(session, rows, { hermesHome: join(home, '.hermes'), attachmentRoot: attachments, home }))
+      expect(text).not.toContain(other)
+      expect(text.match(/Local attachment omitted/g)).toHaveLength(2)
+      expect(text).toContain(own)
+      expect(text).toContain(chart)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('buildShareSnapshot lookup failures', () => {
   // The later namesake carries its own marker bytes, so any embed of it is visible in the snapshot.
   const namesake = Buffer.concat([png, Buffer.from('TAL1604-LATER-NAMESAKE-BYTES')])
@@ -101,9 +130,10 @@ describe('buildShareSnapshot lookup failures', () => {
     attachments = realpathSync(mkdtempSync(join(tmpdir(), 'share-att-')))
     mkdirSync(join(workspace, 'sub'))
     writeFileSync(join(workspace, 'sub', 'image.png'), png)
-    mkdirSync(join(attachments, 'sub'))
-    writeFileSync(join(attachments, 'sub', 'image.png'), namesake)
-    writeFileSync(join(attachments, 'only-later.png'), namesake)
+    // TAL-2205: the later root is the shared session's own attachment folder.
+    mkdirSync(join(attachments, 'lookup', 'sub'), { recursive: true })
+    writeFileSync(join(attachments, 'lookup', 'sub', 'image.png'), namesake)
+    writeFileSync(join(attachments, 'lookup', 'only-later.png'), namesake)
   })
   afterAll(() => {
     Object.assign(fault, { path: '', code: '' })
@@ -112,7 +142,7 @@ describe('buildShareSnapshot lookup failures', () => {
   })
   const share = (ref: string): string => {
     fault.open.clear()
-    const snapshot = buildShareSnapshot(new Session({ title: 'Lookup', messages: [] }, { workspace, model: null }), [{ role: 'assistant', content: `see MEDIA:${ref} here` }], { hermesHome: join(workspace, '.hermes'), attachmentRoot: attachments, home: workspace })
+    const snapshot = buildShareSnapshot(new Session({ session_id: 'lookup', title: 'Lookup', messages: [] }, { workspace, model: null }), [{ role: 'assistant', content: `see MEDIA:${ref} here` }], { hermesHome: join(workspace, '.hermes'), attachmentRoot: attachments, home: workspace })
     expect([...fault.open], 'every opened descriptor is closed').toEqual([])
     return JSON.stringify(snapshot)
   }
@@ -286,21 +316,23 @@ describe('public share root acquisition', () => {
   beforeAll(() => { base = realpathSync(mkdtempSync(join(tmpdir(), 'share-acquire-'))) })
   afterAll(() => { rmSync(base, { recursive: true, force: true }) })
 
-  /** `<base>/<case>/anc/ws/pic.png` is the approved image; `<base>/<case>/evil/ws/pic.png` mirrors it outside every root. */
+  /** `<base>/<case>/anc/ws/pic.png` is the approved image; `<base>/<case>/evil/ws/pic.png` mirrors it outside every root, and `evil/ws/swap/pic.png` mirrors the session's attachment folder. */
   function layout(name: string): { dir: string; ws: string; attach: string } {
     const dir = join(base, name)
     mkdirSync(join(dir, 'anc', 'ws', 'sub'), { recursive: true })
     mkdirSync(join(dir, 'evil', 'ws', 'sub'), { recursive: true })
+    mkdirSync(join(dir, 'evil', 'ws', 'swap'))
     mkdirSync(join(dir, 'attach'))
     writeFileSync(join(dir, 'anc', 'ws', 'pic.png'), inside)
     writeFileSync(join(dir, 'anc', 'ws', 'sub', 'pic.png'), inside)
     writeFileSync(join(dir, 'evil', 'ws', 'pic.png'), outsidePrivate)
     writeFileSync(join(dir, 'evil', 'ws', 'sub', 'pic.png'), outsidePrivate)
+    writeFileSync(join(dir, 'evil', 'ws', 'swap', 'pic.png'), outsidePrivate)
     return { dir, ws: join(dir, 'anc', 'ws'), attach: join(dir, 'attach') }
   }
 
   function snapshotText(ws: string, attach: string, ref: string): string {
-    const session = new Session({ title: 'Swap', messages: [] }, { workspace: ws, model: null })
+    const session = new Session({ session_id: 'swap', title: 'Swap', messages: [] }, { workspace: ws, model: null })
     return JSON.stringify(buildShareSnapshot(session, [{ role: 'assistant', content: `see MEDIA:${ref} here` }], { hermesHome: join(base, '.hermes'), attachmentRoot: attach, home: base }))
   }
 
@@ -310,7 +342,7 @@ describe('public share root acquisition', () => {
     const trustedRoot = blobs.attachmentRoot()
     rmSync(attach, { recursive: true })
     symlinkSync(kind === 'symlink loop' ? attach : join(dir, 'evil', 'ws'), attach)
-    for (const ref of [join(attach, 'pic.png'), join(dir, 'evil', 'ws', 'pic.png'), 'pic.png']) {
+    for (const ref of [join(attach, 'swap', 'pic.png'), join(dir, 'evil', 'ws', 'pic.png'), 'pic.png']) {
       // No workspace fallback: the relative reference can only come from the trusted attachment root.
       const text = snapshotText('', trustedRoot, ref)
       expect.soft(text, ref).toContain('Local attachment omitted')

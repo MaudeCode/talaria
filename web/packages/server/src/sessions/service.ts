@@ -42,9 +42,9 @@ import { settledActivityPhase, withBackgroundLinks, type Receipt } from './backg
 import { messagesForLimitedPayload, messageCountsAsRenderable, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactString, redactText } from '../redact.js'
 import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } from '../workspace/workspaces.js'
-import { buildShareSnapshot, SHARE_MATERIALIZE_MAX_BYTES, shareAllowedRoots, shareEmbeddable, shareMediaPaths, type ShareStore } from './shares.js'
+import { buildShareSnapshot, SHARE_MATERIALIZE_MAX_BYTES, shareAllowedRoots, shareAttachmentDir, shareEmbeddable, shareMediaPaths, type ShareStore } from './shares.js'
 import { attachmentPrefix, blobKeyForPath, type BlobStore } from './storage/blobs.js'
-import { mediaAccessResolver, resolveMediaAccess, mediaRefTarget, type MediaAccessDeps } from '../workspace/media.js'
+import { mediaAccessFor, mediaAccessResolver, resolveMediaAccess, mediaRefTarget, type MediaAccessBase } from '../workspace/media.js'
 import { meshyDirectives, projectMediaRefs, type MediaProjection, type MeshyDirective } from '../workspace/media-refs.js'
 import { projectBindings, type ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
@@ -244,7 +244,7 @@ export interface SessionServiceDeps {
   /** Python `commit_session_memory` (fire-and-forget): the cached Agent flushes memory for a session the user left. */
   commitSessionMemory?: (sid: string) => Promise<void>
   /** TAL-186: the `/api/media` allow-list the transcript media projection rewrites against; without it nothing local is rewritten. */
-  media?: { access: MediaAccessDeps; localIo: (profile: string | null) => boolean }
+  media?: { access: MediaAccessBase; localIo: (profile: string | null) => boolean; serverOwner: () => Promise<boolean> }
 }
 
 /** TAL-536: the most of a dead run's journal stale-stream cleanup reads (Python's recovery window). */
@@ -341,7 +341,8 @@ export class SessionService {
    */
   async mediaProjector(s: Session): Promise<(text: string) => MediaProjection | null> {
     const media = this.deps.media
-    const access = media ? await resolveMediaAccess(media.access) : null
+    // TAL-2205: the viewer's authority, as `/api/media` applies it; a visible session is in the viewer's profile.
+    const access = media ? await resolveMediaAccess(mediaAccessFor(media.access, await media.serverOwner(), s.profile ?? null, s.session_id)) : null
     const served = new Map<string, string | null>()
     let anchor: ReturnType<typeof mediaAccessResolver> | null = null
     const localUrl = (path: string): string | null => {
@@ -3641,7 +3642,7 @@ export class SessionService {
       const blobs = this.deps.blobs
       const attachmentRoot = this.deps.shareAttachmentRoot
       let budget = SHARE_MATERIALIZE_MAX_BYTES
-      for (const path of shareMediaPaths(s.messages, shareAllowedRoots(s, attachmentRoot, this.deps.home), attachmentRoot, this.deps.home)) {
+      for (const path of shareMediaPaths(s.messages, shareAllowedRoots(s, attachmentRoot, this.deps.home), shareAttachmentDir(s, attachmentRoot), this.deps.home)) {
         const key = blobKeyForPath(attachmentRoot, path)
         const stat = key ? await blobs.stat(key) : null
         if (!key || !stat || !shareEmbeddable(key, stat.size) || stat.size > budget) continue
