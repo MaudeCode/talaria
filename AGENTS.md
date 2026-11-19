@@ -70,6 +70,8 @@ credentials isolated. Do not change live services.
 Tests must own synthetic disposable state and never depend on live accounts.
 Before writing, changing or fixing a test, read `docs/testing.md`: the test-audit
 defect rules with Talaria's helpers, the CI test checks, and the defect loop.
+Fixing a bad test always writes its rule into the test-audit skill in the same
+change; a test fix without its rule is unfinished.
 Do not add third-party dependencies without approval.
 
 Pre-push hook: run `scripts/install-git-hooks` once per clone; linked worktrees

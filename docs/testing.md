@@ -34,6 +34,6 @@ A test that failed intermittently, ran over budget or covered too much follows t
 
 1. Reproduce the failure. For an App hosted test, run it on its own and alongside its shard; for Web, run it with `--repeat-each` or in a loop under parallel load.
 2. Name the defect rule it broke in the PR body. If the test was right and caught a product race, as with TAL-2344 and TAL-2398, fix the product and name no rule.
-3. A cause no rule names gets a new rule, with its Talaria before and after, in the test-audit skill alongside the fix. If a diff can show the cause, add a pattern to `scripts/test-rules.json` too.
+3. Write the rule, on every fix, including one whose cause an existing rule already names. Add the imperative clause that would have stopped this test being written to the test-audit skill's defect rules, or a new rule when none fits. Add its Talaria before and after to the skill's defect examples. Deliver it in the same change, or in a skills commit the PR links, and name the rule edit in the PR body. If a diff can show the cause, add a pattern to `scripts/test-rules.json` too. A fix without its rule is unfinished.
 
 Never retry, skip, loosen an assertion or raise a timeout to get green.
