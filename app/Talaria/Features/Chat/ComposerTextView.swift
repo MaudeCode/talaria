@@ -4,9 +4,46 @@ import UIKit
 import UniformTypeIdentifiers
 
 /// The composer's text view while it is on screen, so text dropped on the composer goes in at its caret (TAL-1461).
+/// The chat keeps it across a layout replacement, so the next editor takes over focus and selection (TAL-2565).
 @MainActor
 final class ComposerCaret {
     weak var textView: UITextView?
+    /// The editing a replaced editor held: its draft and selected UTF-16 range, for the editor mounted in its place.
+    private(set) var handoff: (source: ObjectIdentifier, text: String, selection: NSRange)?
+
+    /// Records the focused editor's text and selection before navigation replaces it; an unfocused one records nothing.
+    func captureEditingForReplacement() {
+        guard let textView, textView.window != nil, textView.isFirstResponder else {
+            handoff = nil
+            return
+        }
+        handoff = (ObjectIdentifier(textView), textView.text, textView.selectedRange)
+    }
+
+    func discardHandoff() { handoff = nil }
+
+    /// Gives the replacing editor the handed-over selection once it is focused and shows the same draft.
+    func restoreHandoff(in textView: UITextView) {
+        guard let handoff, ObjectIdentifier(textView) != handoff.source,
+              textView.isFirstResponder, textView.text == handoff.text else { return }
+        self.handoff = nil
+        textView.selectedRange = handoff.selection
+    }
+
+    /// An editor began editing. The replaced one doing so was never replaced, so it hands nothing over.
+    func editingDidBegin(in textView: UITextView) {
+        if let handoff, ObjectIdentifier(textView) == handoff.source {
+            self.handoff = nil
+        } else {
+            restoreHandoff(in: textView)
+        }
+    }
+
+    /// An editor other than the replaced one stopped editing: the keyboard was dismissed, so nothing is handed over.
+    func editingDidEnd(in textView: UITextView) {
+        guard let handoff, ObjectIdentifier(textView) != handoff.source else { return }
+        self.handoff = nil
+    }
 
     /// Inserts `text` at the caret, over any selection, through the text view's own input path so the draft follows.
     /// With no text view on screen, as in the one-line shell, it goes at the draft's end.
@@ -63,7 +100,7 @@ struct ComposerTextView: UIViewRepresentable {
         if let textDropInteraction = textView.textDropInteraction {
             textView.removeInteraction(textDropInteraction)
         }
-        applyInputHandling(to: textView)
+        applyInputHandling(to: textView, coordinator: context.coordinator)
         context.coordinator.reportHeight(for: textView)
         return textView
     }
@@ -77,6 +114,7 @@ struct ComposerTextView: UIViewRepresentable {
         context.coordinator.onHeightChange = onHeightChange
         context.coordinator.maximumHeight = maximumHeight
         context.coordinator.applyBoundText(text, revision: revision, to: textView)
+        caret?.restoreHandoff(in: textView)
         // Mirror the chat RTL toggle onto the text view itself (#259): SwiftUI's
         // layoutDirection environment does not propagate into a wrapped UITextView,
         // so set the base direction directly so the cursor/empty-field rests on the
@@ -87,13 +125,14 @@ struct ComposerTextView: UIViewRepresentable {
         textView.textAlignment = isRTL ? .right : .natural
         context.coordinator.applyEditability(!isDisabled, to: textView)
         textView.textColor = isDisabled ? .secondaryLabel : .label
-        applyInputHandling(to: textView)
+        applyInputHandling(to: textView, coordinator: context.coordinator)
         context.coordinator.syncFocus(for: textView, shouldFocus: isFocused, isDisabled: isDisabled)
         context.coordinator.reportHeight(for: textView)
     }
 
-    private func applyInputHandling(to textView: PastingTextView) {
+    private func applyInputHandling(to textView: PastingTextView, coordinator: Coordinator) {
         caret?.textView = textView
+        coordinator.caret = caret
         textView.isKeyboardSendEnabled = isKeyboardSendEnabled
         textView.keyboardSendKey = keyboardSendKey
         textView.alternateSendBehavior = alternateSendBehavior
@@ -109,6 +148,7 @@ struct ComposerTextView: UIViewRepresentable {
         @Binding var text: String
         @Binding var isFocused: Bool
         var onHeightChange: (_ height: CGFloat, _ oneLineHeight: CGFloat) -> Void
+        var caret: ComposerCaret?
         var maximumHeight: CGFloat = 96
         private var pendingFocusTarget: Bool?
         // The newest draft revision this coordinator has acted on. An update carrying
@@ -219,10 +259,12 @@ struct ComposerTextView: UIViewRepresentable {
             if !isFocused {
                 isFocused = true
             }
+            caret?.editingDidBegin(in: textView)
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
             flushPendingExternalText(into: textView)
+            caret?.editingDidEnd(in: textView)
             if isFocused {
                 isFocused = false
             }

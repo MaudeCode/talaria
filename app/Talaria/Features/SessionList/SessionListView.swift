@@ -982,6 +982,7 @@ struct SessionListView: View {
         withTransaction(.unanimated) {
             if let appliedSidebarLayout, appliedSidebarLayout.sizeClass != layout.sizeClass {
                 conversationRootHasAppeared = false
+                chats.prepareForLayoutReplacement()
             }
             appliedSidebarLayout = layout
             isCompactWidth = layout.sizeClass == .compact
