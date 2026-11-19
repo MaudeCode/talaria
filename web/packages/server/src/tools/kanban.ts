@@ -1,3 +1,4 @@
+import type { SidecarMethodName, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 /** Kanban HTTP shapes over the sidecar `kanban.*` namespace (Python `api/kanban_bridge.py`). */
 import { createHash } from 'node:crypto'
 import type { SidecarLike } from '../sidecar/client.js'
@@ -28,6 +29,7 @@ export function kanbanFailure(error: unknown): never {
     if (error.condition === 'sidecar_unavailable') throw new HttpFailure(503, `kanban unavailable: ${error.message}`)
     // Python: `ImportError` (hermes_cli missing) → 503 with the text.
     if (error.condition === 'kanban_unavailable') throw new HttpFailure(503, error.message)
+    if (error.condition === 'forbidden') throw new HttpFailure(403, error.message)
     if (error.condition === 'not_found') throw new HttpFailure(404, error.message)
     if (error.condition === 'invalid_params' || error.code === -32602) throw new HttpFailure(400, error.message)
     if (error.condition === 'refused' || error.condition === 'conflict') throw new HttpFailure(409, error.message)
@@ -61,6 +63,7 @@ export interface KanbanTaskActions { block: boolean; unblock: boolean; complete:
 
 /** The card actions offered for a sidecar task; an unknown status offers none. */
 export function kanbanTaskActions(task: Dict): KanbanTaskActions {
+  if (task.read_only === true) return { block: false, unblock: false, complete: false, archive: false, move_to: [] }
   const s = str(task.status)
   // Block and a direct status change release a live worker's claim without stopping it, and the Agent refuses to complete
   // under a live claim, so such a card offers only Archive, which terminates the worker. Unknown liveness counts as live.
@@ -82,7 +85,7 @@ export function withTaskPolicy(task: unknown): unknown {
   const t: Dict = { ...(task as Dict) }
   const available_actions = kanbanTaskActions(t)
   delete t.agent_move_targets
-  return { ...t, available_actions, requires_running_exit_confirmation: str(t.status) === 'running' }
+  return { ...t, available_actions, requires_running_exit_confirmation: t.read_only !== true && str(t.status) === 'running' }
 }
 
 /** Agent event kinds a Block or Unblock writes (`block_task` routes a block to `blocked`, or to `triage`/`todo` with its own kind). */
@@ -335,8 +338,12 @@ class KanbanBoardPoll {
           events = Array.isArray(page.events) ? page.events : []
           cursor = Number(page.cursor) || since
         } catch { events = [] }
-        if (events.length) for (const sub of group) if (this.subscribers.has(sub)) sub.deliver({ events, cursor })
-        return events.length > 0
+        for (const sub of group) {
+          if (!this.subscribers.has(sub)) continue
+          if (events.length) sub.deliver({ events, cursor })
+          else if (cursor > since) sub.cursor = cursor
+        }
+        return events.length > 0 || cursor > since
       }))
       fresh = pages.includes(true)
     }
@@ -348,17 +355,19 @@ class KanbanBoardPoll {
   }
 }
 
+type KanbanMethod = Extract<SidecarMethodName, `kanban.${string}`>
+
 export class KanbanService {
   private readonly polls = new Map<string, KanbanBoardPoll>()
 
   constructor(private readonly deps: { sidecar: () => SidecarLike | null; config: AgentConfig; settings: SettingsStore }) {}
 
   /** A stream's place on the board's shared event poll, which starts with the first stream and stops with the last. */
-  subscribe(home: string, board: string | null, cursor: number): KanbanSubscription {
-    const key = JSON.stringify([home, board])
+  subscribe(home: string, board: string | null, cursor: number, allowed: string[] | null = null): KanbanSubscription {
+    const key = JSON.stringify([home, board, allowed])
     let poll = this.polls.get(key)
     if (!poll) {
-      const created = new KanbanBoardPoll((since) => this.events(home, board, since, 200), () => { if (this.polls.get(key) === created) this.polls.delete(key) })
+      const created = new KanbanBoardPoll((since) => this.events(home, board, since, 200, allowed), () => { if (this.polls.get(key) === created) this.polls.delete(key) })
       this.polls.set(key, created)
       poll = created
     }
@@ -368,31 +377,35 @@ export class KanbanService {
     return sub
   }
 
-  sidecar(): SidecarLike {
+  call<M extends KanbanMethod>(method: M, params: SidecarParams<M>, allowed: string[] | null): Promise<SidecarResult<M>> {
+    return this.sidecar().call(method, { ...params, allowed_assignees: allowed })
+  }
+
+  private sidecar(): SidecarLike {
     const s = this.deps.sidecar()
     if (!s) throw new HttpFailure(503, 'kanban unavailable: Hermes Agent sidecar is not running')
     return s
   }
 
-  async boards(home: string, profile: string, includeArchived: boolean): Promise<Dict> {
-    const result = await this.sidecar().call('kanban.boards', { profile_home: home, include_archived: includeArchived }).catch(kanbanFailure)
+  async boards(home: string, profile: string, includeArchived: boolean, allowed: string[] | null): Promise<Dict> {
+    const result = await this.call('kanban.boards', { profile_home: home, include_archived: includeArchived }, allowed).catch(kanbanFailure)
     const active = new Set(result.boards.filter(b => !b.archived).map(b => b.slug))
     const pinned = (await this.deps.settings.kanbanPins(profile)).filter(slug => active.has(slug))
     return { ...result, boards: result.boards.map(b => ({ ...b, removable: b.slug !== 'default' && !b.archived })), pinned }
   }
 
-  async inspection(home: string, q: { board?: string | undefined; search?: string | undefined; assignee?: string | undefined; tenant?: string | undefined; only_mine?: string | undefined; include_archived?: string | undefined; running_only?: string | undefined }, activeProfile: string): Promise<Dict> {
+  async inspection(home: string, q: { board?: string | undefined; search?: string | undefined; assignee?: string | undefined; tenant?: string | undefined; only_mine?: string | undefined; include_archived?: string | undefined; running_only?: string | undefined }, activeProfile: string, allowed: string[] | null): Promise<Dict> {
     // Only mine filters by the active profile, so it replaces any chosen assignee.
     const assignee = truthyQuery(q.only_mine) ? activeProfile || 'default' : str(q.assignee).trim() || null
-    const snapshot = await this.sidecar().call('kanban.inspection', { profile_home: home, board: str(q.board).trim() || null, include_archived: truthyQuery(q.include_archived), search: str(q.search).trim() || null, assignee }).catch(kanbanFailure)
+    const snapshot = await this.call('kanban.inspection', { profile_home: home, board: str(q.board).trim() || null, include_archived: truthyQuery(q.include_archived), search: str(q.search).trim() || null, assignee }, allowed).catch(kanbanFailure)
     return withKanbanPolicy({ ...snapshot, inspection_filters: { tenant: str(q.tenant), include_archived: truthyQuery(q.include_archived), running_only: truthyQuery(q.running_only) } })
   }
 
-  async board(home: string, q: { board?: string | undefined; tenant?: string | undefined; assignee?: string | undefined; include_archived?: string | undefined; only_mine?: string | undefined; since?: string | undefined; search?: string | undefined }, activeProfile: string): Promise<Dict> {
+  async board(home: string, q: { board?: string | undefined; tenant?: string | undefined; assignee?: string | undefined; include_archived?: string | undefined; only_mine?: string | undefined; since?: string | undefined; search?: string | undefined }, activeProfile: string, allowed: string[] | null): Promise<Dict> {
     const since = intQuery(q.since, null, 0)
     // Only mine filters by the active profile, so it replaces any chosen assignee.
     const onlyMine = truthyQuery(q.only_mine)
-    const board = await this.sidecar().call('kanban.board', { profile_home: home, board: str(q.board).trim() || null, tenant: str(q.tenant).trim() || null, assignee: onlyMine ? null : str(q.assignee).trim() || null, include_archived: truthyQuery(q.include_archived), only_mine: onlyMine, since, profile: activeProfile || 'default' }).catch(kanbanFailure)
+    const board = await this.call('kanban.board', { profile_home: home, board: str(q.board).trim() || null, tenant: str(q.tenant).trim() || null, assignee: onlyMine ? null : str(q.assignee).trim() || null, include_archived: truthyQuery(q.include_archived), only_mine: onlyMine, since, profile: activeProfile || 'default' }, allowed).catch(kanbanFailure)
     const lane_by_profile = await this.laneByProfile(home)
     const out: Dict = { ...withKanbanPolicy(board), bulk_move_targets: [...KANBAN_BULK_MOVE_TARGETS], create_statuses: [...KANBAN_CREATE_STATUSES], lane_by_profile }
     if (!Array.isArray(out.columns)) return out
@@ -407,11 +420,11 @@ export class KanbanService {
     return dict(dict(dict(config).dashboard).kanban).lane_by_profile !== false
   }
 
-  events(home: string, board: string | null, since: unknown, limit: unknown): Promise<Dict> {
-    return this.sidecar().call('kanban.events', { profile_home: home, board, since: intQuery(since, 0, 0) ?? 0, limit: intQuery(limit, 200, 1, 200) ?? 200 }).catch(kanbanFailure)
+  events(home: string, board: string | null, since: unknown, limit: unknown, allowed: string[] | null): Promise<Dict> {
+    return this.call('kanban.events', { profile_home: home, board, since: intQuery(since, 0, 0) ?? 0, limit: intQuery(limit, 200, 1, 200) ?? 200 }, allowed).catch(kanbanFailure)
   }
 
-  async updateConfig(home: string, body: Dict): Promise<Dict> {
+  async updateConfig(home: string, body: Dict, allowed: string[] | null): Promise<Dict> {
     if (!('lane_by_profile' in body)) throw new HttpFailure(400, 'lane_by_profile is required')
     if (typeof body.lane_by_profile !== 'boolean') throw new HttpFailure(400, 'lane_by_profile must be boolean')
     const lane = body.lane_by_profile
@@ -420,7 +433,7 @@ export class KanbanService {
       dashboard.kanban = { ...dict(dashboard.kanban), lane_by_profile: lane }
       c.dashboard = dashboard
     })
-    const payload = await this.sidecar().call('kanban.config', { profile_home: home, board: null }).catch(kanbanFailure)
+    const payload = await this.call('kanban.config', { profile_home: home, board: null }, allowed).catch(kanbanFailure)
     return { ...payload, lane_by_profile: lane }
   }
 }

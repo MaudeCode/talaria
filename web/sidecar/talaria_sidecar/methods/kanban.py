@@ -12,6 +12,7 @@ import json
 import secrets
 import sqlite3
 import time
+from collections import Counter
 from contextlib import closing
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
@@ -191,11 +192,13 @@ def _running_claims(conn) -> dict:
     return {row["id"]: row for row in conn.execute("SELECT * FROM tasks WHERE status = 'running'")}
 
 
-def _task_dict(task, conn, claims=None):
+def _task_dict(task, conn, claims=None, *, allowed=None):
     """``claims`` holds already loaded claim rows by task id; a row that carries the claim columns itself needs no read."""
     data = _obj_dict(task)
     if not data:
         return data
+    if allowed is not None:
+        data["read_only"] = data.get("assignee") not in allowed
     # Facts the server's card policy needs (TAL-557): the Agent completes a non-review task only with
     # stored or supplied evidence, and refuses to release a live worker's claim.
     running = data.get("status") == "running"
@@ -227,10 +230,19 @@ def _latest_event_id(conn) -> int:
         return 0
 
 
-def _link_counts(conn, tasks):
+def _link_counts(conn, tasks, *, allowed=None):
     counts = {task.id: {"parents": 0, "children": 0} for task in tasks}
     try:
-        rows = conn.execute("SELECT parent_id, child_id FROM task_links").fetchall()
+        if allowed is None:
+            rows = conn.execute("SELECT parent_id, child_id FROM task_links").fetchall()
+        else:
+            scope, args = _visibility_sql(allowed)
+            rows = conn.execute(
+                f"WITH visible AS (SELECT id FROM tasks t WHERE {scope}) "
+                "SELECT parent_id, child_id FROM task_links "
+                "WHERE parent_id IN visible AND child_id IN visible",
+                args,
+            ).fetchall()
     except Exception:  # noqa: BLE001
         return counts
     for row in rows:
@@ -371,7 +383,7 @@ def _board_meta(meta):
     return out
 
 
-def _board_counts(slug):
+def _board_counts(slug, allowed):
     kb = _kb()
     if not kb.board_exists(slug):
         return {}
@@ -382,7 +394,8 @@ def _board_counts(slug):
     except Exception:  # noqa: BLE001
         return {}
     try:
-        rows = conn.execute("SELECT status, COUNT(*) AS n FROM tasks WHERE status != 'archived' GROUP BY status").fetchall()
+        scope, args = _visibility_sql(allowed)
+        rows = conn.execute(f"SELECT status, COUNT(*) AS n FROM tasks t WHERE status != 'archived' AND {scope} GROUP BY status", args)
         return {row["status"]: int(row["n"] or 0) for row in rows}
     except Exception:  # noqa: BLE001
         return {}
@@ -445,6 +458,69 @@ def _bool(params: dict, key: str, default: bool = False) -> bool:
 
 # ── payload builders ──────────────────────────────────────────────────────
 
+def _visibility_sql(allowed):
+    if allowed is None:
+        return "1", ()
+    return "(t.assignee IS NULL OR t.assignee = '' OR t.assignee IN (SELECT value FROM json_each(?)))", (json.dumps(allowed),)
+
+
+def _visible(params, assignee):
+    allowed = params.get("allowed_assignees")
+    return allowed is None or not assignee or assignee in allowed
+
+
+def _require_assignee(params, assignee):
+    allowed = params.get("allowed_assignees")
+    if allowed is not None and (not isinstance(assignee, str) or not assignee or assignee not in allowed):
+        raise RpcError("Execution profile is not accessible", condition="forbidden")
+
+
+def _visible_task(params, conn, task_id, *, write=False, missing="task not found"):
+    task = _kb().get_task(conn, task_id)
+    if not task or not _visible(params, task.assignee):
+        raise NotFound(missing)
+    if write:
+        _require_assignee(params, task.assignee)
+    return task
+
+
+_WRITE_SCOPE_ERROR = "Kanban task write is outside the allowed assignee scope"
+
+
+def _guard_task_writes(conn, params, task_ids=()):
+    """Bind the policy to the connection's writes, including Agent helpers' own transactions."""
+    allowed = params.get("allowed_assignees")
+    if allowed is None:
+        return
+    targets = frozenset(task_ids)
+    conn.create_function("talaria_writable_assignee", 1, frozenset(allowed).__contains__, deterministic=True)
+    conn.create_function("talaria_write_target", 1, targets.__contains__, deterministic=True)
+    # Guard only direct task updates. Agent helpers can also recompute dependent task readiness.
+    conn.execute(f"""
+        CREATE TEMP TRIGGER talaria_kanban_update BEFORE UPDATE ON main.tasks
+        WHEN talaria_write_target(OLD.id)
+             AND NOT (talaria_writable_assignee(OLD.assignee) AND talaria_writable_assignee(NEW.assignee))
+        BEGIN SELECT RAISE(ABORT, '{_WRITE_SCOPE_ERROR}'); END
+    """)
+    conn.execute(f"""
+        CREATE TEMP TRIGGER talaria_kanban_insert BEFORE INSERT ON main.tasks
+        WHEN NOT talaria_writable_assignee(NEW.assignee)
+        BEGIN SELECT RAISE(ABORT, '{_WRITE_SCOPE_ERROR}'); END
+    """)
+    for operation, row in (("INSERT", "NEW"), ("DELETE", "OLD")):
+        conn.execute(f"""
+            CREATE TEMP TRIGGER talaria_kanban_link_{operation} BEFORE {operation} ON main.task_links
+            WHEN (SELECT COUNT(*) FROM tasks WHERE id IN ({row}.parent_id, {row}.child_id)
+                  AND talaria_writable_assignee(assignee)) != 2
+            BEGIN SELECT RAISE(ABORT, '{_WRITE_SCOPE_ERROR}'); END
+        """)
+    conn.execute(f"""
+        CREATE TEMP TRIGGER talaria_kanban_comment BEFORE INSERT ON main.task_comments
+        WHEN NOT EXISTS (SELECT 1 FROM tasks WHERE id = NEW.task_id AND talaria_writable_assignee(assignee))
+        BEGIN SELECT RAISE(ABORT, '{_WRITE_SCOPE_ERROR}'); END
+    """)
+
+
 def inspection_payload(params: dict) -> dict:
     """Read only the selected profile's live boards, with shared global row/edge budgets.
 
@@ -455,6 +531,10 @@ def inspection_payload(params: dict) -> dict:
     selected = _board(params)
     search, assignee = (_str(params, "search") or "").lower(), _str(params, "assignee")
     clauses, args = ([] if _bool(params, "include_archived") else ["t.status != 'archived'"]), []
+    if params.get("allowed_assignees") is not None:
+        scope, scope_args = _visibility_sql(params["allowed_assignees"])
+        clauses.append(scope)
+        args.extend(scope_args)
     if assignee:
         clauses.append("t.assignee = ?")
         args.append(assignee)
@@ -488,7 +568,7 @@ def inspection_payload(params: dict) -> dict:
             rows = rows[:remaining]
             ids = [row["id"] for row in rows]
             for row in rows:
-                task = _task_dict(dict(row), conn)
+                task = _task_dict(dict(row), conn, allowed=params.get("allowed_assignees"))
                 nodes.append({"key": f"{slug}/{row['id']}", "board": slug, "board_name": meta.get("name") or slug, "task": task})
             if ids:
                 placeholders = ",".join("?" for _ in ids)
@@ -516,12 +596,14 @@ def board_payload(params: dict) -> dict:
         # A worker that dies writes no event, yet its card's actions follow its liveness: only live claims stay unchanged.
         if since is not None and since >= latest and all(_row_claim_live(row) for row in _running_claims(conn).values()):
             return {"changed": False, "latest_event_id": latest, "read_only": False}
-        _clear_stale_fences(conn)
+        if params.get("allowed_assignees") is None:
+            _clear_stale_fences(conn)
         tasks = kb.list_tasks(conn, tenant=tenant, assignee=assignee, include_archived=include_archived)
-        link_counts, comment_counts, claims = _link_counts(conn, tasks), _comment_counts(conn), _running_claims(conn)
+        tasks = [task for task in tasks if _visible(params, task.assignee)]
+        link_counts, comment_counts, claims = _link_counts(conn, tasks, allowed=params.get("allowed_assignees")), _comment_counts(conn), _running_claims(conn)
 
         def row(task):
-            data = _task_dict(task, conn, claims)
+            data = _task_dict(task, conn, claims, allowed=params.get("allowed_assignees"))
             data["link_counts"] = link_counts.get(task.id, {"parents": 0, "children": 0})
             data["comment_count"] = comment_counts.get(task.id, 0)
             return data
@@ -542,6 +624,7 @@ def board_payload(params: dict) -> dict:
 
 def create_task_payload(params: dict) -> dict:
     body = params.get("task") or {}
+    _require_assignee(params, body.get("assignee"))
     title = str(body.get("title") or "").strip()
     if not title:
         raise InvalidParams("title is required")
@@ -553,6 +636,12 @@ def create_task_payload(params: dict) -> dict:
     status = _validate_status(body.get("status")) if body.get("status") else None
     kb = _kb()
     with _conn(board=_board(params)) as conn:
+        _guard_task_writes(conn, params)
+        if params.get("allowed_assignees") is not None:
+            for parent in body.get("parents") or ():
+                _visible_task(params, conn, parent, write=True)
+            if body.get("idempotency_key"):
+                raise InvalidParams("idempotency_key is unavailable for restricted sessions")
         task_id = kb.create_task(
             conn, title=title, body=body.get("body") or None, assignee=body.get("assignee") or None, created_by=body.get("created_by") or "webui",
             tenant=body.get("tenant") or None, priority=priority, parents=body.get("parents") or (), triage=bool(body.get("triage") or False),
@@ -560,18 +649,23 @@ def create_task_payload(params: dict) -> dict:
             idempotency_key=body.get("idempotency_key") or None, max_runtime_seconds=body.get("max_runtime_seconds") or None, skills=body.get("skills") or None,
         )
         if status:
+            if params.get("allowed_assignees") is not None:
+                conn.create_function("talaria_write_target", 1, lambda candidate: candidate == task_id, deterministic=True)
             _patch_task(conn, task_id, {"status": status})
-        return {"task": _task_dict(kb.get_task(conn, task_id), conn), "read_only": False}
+        return {"task": _task_dict(_visible_task(params, conn, task_id, write=True), conn), "read_only": False}
 
 
 def patch_task_payload(params: dict) -> dict:
     task_id = str(params.get("task_id") or "").strip()
     if not task_id:
         raise InvalidParams("task_id is required")
-    kb = _kb()
     with _conn(board=_board(params)) as conn:
-        _patch_task(conn, task_id, params.get("patch") or {})
-        return {"task": _task_dict(kb.get_task(conn, task_id), conn), "read_only": False}
+        _guard_task_writes(conn, params, (task_id,))
+        patch = params.get("patch") or {}
+        task = _visible_task(params, conn, task_id, write=True)
+        _require_assignee(params, patch.get("assignee", task.assignee))
+        _patch_task(conn, task_id, patch)
+        return {"task": _task_dict(_visible_task(params, conn, task_id, write=True), conn), "read_only": False}
 
 
 def comment_payload(params: dict) -> dict:
@@ -583,8 +677,8 @@ def comment_payload(params: dict) -> dict:
         raise InvalidParams("body is required")
     kb = _kb()
     with _conn(board=_board(params)) as conn:
-        if not kb.get_task(conn, task_id):
-            raise NotFound("task not found")
+        _guard_task_writes(conn, params, (task_id,))
+        _visible_task(params, conn, task_id, write=True)
         comment_id = kb.add_comment(conn, task_id, params.get("author") or "webui", body)
         return {"ok": True, "comment_id": comment_id, "read_only": False}
 
@@ -595,10 +689,9 @@ def link_payload(params: dict, *, unlink: bool) -> dict:
         raise InvalidParams("parent_id and child_id are required")
     kb = _kb()
     with _conn(board=_board(params)) as conn:
-        if not kb.get_task(conn, parent_id):
-            raise NotFound("parent task not found")
-        if not kb.get_task(conn, child_id):
-            raise NotFound("child task not found")
+        _guard_task_writes(conn, params, (parent_id, child_id))
+        _visible_task(params, conn, parent_id, write=True, missing="parent task not found")
+        _visible_task(params, conn, child_id, write=True, missing="child task not found")
         if unlink:
             changed = kb.unlink_tasks(conn, parent_id, child_id)
             return {"ok": True, "changed": bool(changed), "parent_id": parent_id, "child_id": child_id, "read_only": False}
@@ -610,22 +703,23 @@ def task_detail_payload(params: dict) -> dict:
     task_id = str(params.get("task_id") or "").strip()
     kb = _kb()
     with _conn(board=_board(params)) as conn:
-        task = kb.get_task(conn, task_id)
-        if not task:
-            raise NotFound("task not found")
-        data = _task_dict(task, conn)
+        task = _visible_task(params, conn, task_id)
+        data = _task_dict(task, conn, allowed=params.get("allowed_assignees"))
         # ``started_at`` is the first-ever start; a retried task's run clock counts from its current run (TAL-809).
         data["current_run_started_at"] = kb.current_run_started_ats(conn, [task_id]).get(task_id)
         links = {"parents": kb.parent_ids(conn, task_id), "children": kb.child_ids(conn, task_id)}
-        linked = (kb.get_task(conn, link_id) for link_id in dict.fromkeys([*links["parents"], *links["children"]]))
+        linked = {link_id: kb.get_task(conn, link_id) for link_id in dict.fromkeys([*links["parents"], *links["children"]])}
+        if params.get("allowed_assignees") is not None:
+            linked = {link_id: t for link_id, t in linked.items() if t and _visible(params, t.assignee)}
+            links = {kind: [link_id for link_id in ids if link_id in linked] for kind, ids in links.items()}
         return {
             "task": data,
             "comments": [_obj_dict(c) for c in kb.list_comments(conn, task_id)],
             "events": [_obj_dict(e) for e in kb.list_events(conn, task_id)],
             "links": links,
-            "link_tasks": [{"id": t.id, "title": t.title, "status": t.status} for t in linked if t],
+            "link_tasks": [{"id": t.id, "title": t.title, "status": t.status} for t in linked.values() if t],
             "runs": [_obj_dict(r) for r in kb.list_runs(conn, task_id)],
-            "read_only": False,
+            "read_only": data.get("read_only", False),
         }
 
 
@@ -634,33 +728,44 @@ def events_payload(params: dict) -> dict:
     limit = _int(params, "limit", 200, minimum=1, maximum=200)
     kb = _kb()
     with _conn(board=_board(params)) as conn:
-        rows = conn.execute(
-            "SELECT id, task_id, run_id, kind, payload, created_at FROM task_events WHERE id > ? ORDER BY id ASC LIMIT ?", (since, limit)
-        ).fetchall()
+        allowed = params.get("allowed_assignees")
+        if allowed is None:
+            rows = conn.execute(
+                "SELECT id, task_id, run_id, kind, payload, created_at FROM task_events WHERE id > ? ORDER BY id ASC LIMIT ?",
+                (since, limit),
+            ).fetchall()
+        else:
+            scope, args = _visibility_sql(allowed)
+            rows = conn.execute(
+                f"SELECT e.*, ({scope} AND t.id IS NOT NULL) AS visible FROM task_events e LEFT JOIN tasks t ON t.id = e.task_id "
+                "WHERE e.id > ? ORDER BY e.id ASC LIMIT ?", (*args, since, limit),
+            ).fetchall()
         events, cursor = [], since
         for row in rows:
+            cursor = int(row["id"])
+            if allowed is not None and not row["visible"]:
+                if row["kind"] == "assigned":
+                    # A prior viewer may still have the card cached. Refresh without disclosing its identity or new scope.
+                    events.append({"id": cursor, "task_id": None, "run_id": None, "kind": "invalidate", "payload": None, "created_at": None})
+                continue
             try:
                 payload = json.loads(row["payload"]) if row["payload"] else None
             except Exception:  # noqa: BLE001
                 payload = None
             events.append({"id": row["id"], "task_id": row["task_id"], "run_id": row["run_id"], "kind": row["kind"], "payload": payload, "created_at": kb._to_epoch(row["created_at"])})
-            cursor = int(row["id"])
         latest = _latest_event_id(conn)
-        if not events:
+        if not rows:
             cursor = latest if since >= latest else since
         return {"events": events, "cursor": cursor, "latest_event_id": cursor, "read_only": False}
 
 
 def config_payload(params: dict) -> dict:
-    kb = _kb()
-    try:
-        with _conn(board=_board(params)) as conn:
-            try:
-                assignees = list(kb.known_assignees(conn))
-            except Exception:  # noqa: BLE001
-                assignees = []
-    except Exception:  # noqa: BLE001
-        assignees = []
+    assignees = params.get("allowed_assignees")
+    if assignees is None:
+        try:
+            assignees = assignees_payload(params)["assignees"]
+        except Exception:  # noqa: BLE001
+            assignees = []
     try:
         from hermes_cli.config import load_config
 
@@ -682,10 +787,30 @@ def stats_payload(params: dict) -> dict:
 def _stats(params: dict) -> dict:
     kb = _kb()
     with _conn(board=_board(params)) as conn:
-        return kb.board_stats(conn)
+        allowed = params.get("allowed_assignees")
+        if allowed is None:
+            return kb.board_stats(conn)
+        scope, args = _visibility_sql(allowed)
+        rows = conn.execute(
+            f"SELECT assignee, status, COUNT(*) AS n, MIN(created_at) AS oldest FROM tasks t WHERE status != 'archived' AND {scope} GROUP BY assignee, status",
+            args,
+        )
+        by_status, by_assignee, oldest = Counter(), {}, None
+        for row in rows:
+            status, assignee = row["status"], row["assignee"]
+            by_status[status] += row["n"]
+            if assignee:
+                by_assignee.setdefault(assignee, {})[status] = row["n"]
+            if status == "ready" and row["oldest"] is not None:
+                oldest = min(oldest, row["oldest"]) if oldest is not None else row["oldest"]
+        now = int(time.time())
+        return {"by_status": dict(by_status), "by_assignee": by_assignee, "oldest_ready_age_seconds": now - int(oldest) if oldest is not None else None, "now": now}
 
 
 def assignees_payload(params: dict) -> dict:
+    allowed = params.get("allowed_assignees")
+    if allowed is not None:
+        return {"assignees": allowed}
     kb = _kb()
     with _conn(board=_board(params)) as conn:
         try:
@@ -701,8 +826,7 @@ def task_log_payload(params: dict) -> dict:
     kb = _kb()
     tail = _int(params, "tail", None, minimum=1, maximum=2_000_000)
     with _conn(board=_board(params)) as conn:
-        if not kb.get_task(conn, task_id):
-            raise NotFound("task not found")
+        _visible_task(params, conn, task_id)
     content = kb.read_worker_log(task_id, tail_bytes=tail)
     log_path = kb.worker_log_path(task_id)
     try:
@@ -714,19 +838,25 @@ def task_log_payload(params: dict) -> dict:
 
 def bulk_payload(params: dict) -> dict:
     body = params.get("bulk") or {}
+    if "assignee" in body:
+        _require_assignee(params, body["assignee"])
     ids = [str(i).strip() for i in (body.get("ids") or []) if str(i).strip()]
     if not ids:
         raise InvalidParams("ids is required")
     kb = _kb()
     results = []
     with _conn(board=_board(params)) as conn:
+        _guard_task_writes(conn, params, ids)
         for task_id in ids:
             entry: dict[str, Any] = {"id": task_id, "ok": True}
             try:
-                if not kb.get_task(conn, task_id):
+                if params.get("allowed_assignees") is None and not kb.get_task(conn, task_id):
                     entry.update(ok=False, error="not found")
                     results.append(entry)
                     continue
+                if params.get("allowed_assignees") is not None:
+                    task = _visible_task(params, conn, task_id, write=True)
+                    _require_assignee(params, body.get("assignee", task.assignee))
                 if body.get("archive"):
                     # Bulk carries no running-exit confirmation, so a running row is refused like a card write.
                     if not _fenced(conn, task_id, lambda: kb.archive_task(conn, task_id), confirm_running_exit=False, releases_claim=False):
@@ -772,8 +902,8 @@ def task_action_payload(params: dict) -> dict:
     if not task_id:
         raise InvalidParams("task_id is required")
     with _conn(board=_board(params)) as conn:
-        if not kb.get_task(conn, task_id):
-            raise NotFound("task not found")
+        _guard_task_writes(conn, params, (task_id,))
+        _visible_task(params, conn, task_id, write=True)
         if action == "block":
             ok = _fenced(conn, task_id, lambda: kb.block_task(conn, task_id, reason=params.get("reason")), confirm_running_exit=bool(params.get("confirm_running_exit")))
         elif action == "unblock":
@@ -782,7 +912,7 @@ def task_action_payload(params: dict) -> dict:
             raise InvalidParams(f"invalid action: {action}")
         if not ok:
             raise Conflict(f"{action} refused")
-        return {"task": _task_dict(kb.get_task(conn, task_id), conn), "read_only": False}
+        return {"task": _task_dict(_visible_task(params, conn, task_id, write=True), conn), "read_only": False}
 
 
 def list_boards_payload(params: dict) -> dict:
@@ -803,7 +933,7 @@ def list_boards_payload(params: dict) -> dict:
         if slug is None:
             continue
         meta["is_current"] = slug == current
-        meta["counts"] = _board_counts(slug)
+        meta["counts"] = _board_counts(slug, params.get("allowed_assignees"))
         meta["total"] = sum(meta["counts"].values()) if meta["counts"] else 0
         out.append(meta)
     return {"boards": out, "current": current, "read_only": False}
@@ -900,13 +1030,25 @@ METHODS = {
 
 def register(registry) -> None:
     for name, func in METHODS.items():
-        def handler(ctx: CallContext, params: dict, _func=func):
+        def handler(ctx: CallContext, params: dict, _func=func, _name=name):
             # Predecessor ``handle_kanban_*`` mapping of the store's exceptions: LookupError → 404, ValueError → 400,
             # RuntimeError → 409; anything else stays an internal error (Python's opaque 500).
             with scoped_home(profile_home_param(params)):
                 try:
+                    allowed = params.get("allowed_assignees")
+                    if allowed is not None and (not isinstance(allowed, list) or any(not isinstance(name, str) or not name for name in allowed)):
+                        raise InvalidParams("allowed_assignees must be null or an array of profile names")
+                    if allowed is not None and _name in {
+                        "kanban.dispatch", "kanban.delete_board", "kanban.switch_board",
+                        "kanban.update_board", "kanban.create_board",
+                    }:
+                        raise RpcError("Owner session required", condition="forbidden")
                     return _func(params)
                 except RpcError:
+                    raise
+                except sqlite3.IntegrityError as exc:
+                    if str(exc) == _WRITE_SCOPE_ERROR:
+                        raise NotFound("task not found") from exc
                     raise
                 except LookupError as exc:
                     raise RpcError(str(exc), condition="not_found") from exc

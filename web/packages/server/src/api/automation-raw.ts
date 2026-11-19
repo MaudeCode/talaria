@@ -8,7 +8,7 @@ import { isServerOwned } from '../spa.js'
 import { ExtensionError, EXTENSION_PANEL_SANDBOX_CSP, EXTENSION_ROUTE_PREFIX, normalizeProxyPath, validId } from '../tools/extensions.js'
 import { kanbanFailure } from '../tools/kanban.js'
 import { HttpFailure } from '../sessions/service.js'
-import { terminalGate } from './automation-router.js'
+import { kanbanAssignees, terminalGate } from './automation-router.js'
 import { checkSameOriginBrowserRequest, csrfRejectionError } from '../http/origin.js'
 import { str } from '../util.js'
 import { readCapped } from '../http/capped.js'
@@ -37,9 +37,10 @@ export async function handleKanbanEventsStream(ctx: RequestContext): Promise<voi
   const cursor = eventCursor(ctx.header('last-event-id')) ?? eventCursor(ctx.query.get('since')) ?? 0
   const home = ctx.deps.profileHome(activeProfileName(ctx))
   // Python `_resolve_board` normalised the slug before the `hello` frame carried it.
+  const allowed = await kanbanAssignees(ctx)
   let helloBoard = board
   if (board) {
-    try { helloBoard = (await ctx.deps.kanban.sidecar().call('kanban.normalize_board', { profile_home: home, board })).board } catch (error) {
+    try { helloBoard = (await ctx.deps.kanban.call('kanban.normalize_board', { profile_home: home, board }, allowed)).board } catch (error) {
       try { kanbanFailure(error) } catch (mapped) { if (mapped instanceof HttpFailure) { (await ctx.json({ error: mapped.message }, { status: mapped.status })); return } }
       throw error
     }
@@ -48,7 +49,7 @@ export async function handleKanbanEventsStream(ctx: RequestContext): Promise<voi
   if (!sse) return
   const abort = new AbortController()
   ctx.res.on('close', () => { abort.abort() })
-  const sub = ctx.deps.kanban.subscribe(home, helloBoard, cursor)
+  const sub = ctx.deps.kanban.subscribe(home, helloBoard, cursor, allowed)
   try {
     sse.start()
     sse.event('hello', { cursor, board: helloBoard })

@@ -25,6 +25,7 @@ const ROUTES: { method: string; path: string; owner: boolean }[] = [
   { method: 'GET', path: '/api/onboarding/status', owner: false },
   { method: 'GET', path: '/api/providers', owner: false },
   ...['/api/providers', '/api/providers/self-hosted', '/api/providers/delete'].map((path) => ({ method: 'POST', path, owner: true })),
+  { method: 'POST', path: '/api/kanban/dispatch', owner: true },
   { method: 'GET', path: '/api/dashboard/config', owner: true },
   { method: 'POST', path: '/api/dashboard/config', owner: true },
 ]
@@ -45,11 +46,12 @@ it('reads a target with doubled or backslashed leading slashes as its path, neve
 describe('owner-only routes (TAL-2201)', () => {
   let server: TestServer
   let open: TestServer
+  const sidecar = new FakeSidecar()
   const sessions: Record<'bound' | 'person' | 'owner', Record<string, string>> = { bound: {}, person: {}, owner: {} }
   const issuer = 'https://identity.invalid'
 
   beforeAll(async () => {
-    server = await bootTestServer({ sidecar: new FakeSidecar(), env: {
+    server = await bootTestServer({ sidecar, env: {
       TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_GROUP_PROFILE_MAP: '{}',
       TALARIA_WEB_OIDC_ISSUER: issuer, TALARIA_WEB_OIDC_CLIENT_ID: 'synthetic-client',
       TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'admins',
@@ -67,6 +69,38 @@ describe('owner-only routes (TAL-2201)', () => {
       const got = await Promise.all(ROUTES.map(async (route) => `${route.method} ${route.path} ${await decision(server, route, sessions[who])}`))
       expect(got, who).toEqual(ROUTES.map((route) => `${route.method} ${route.path} ${route.owner ? 'owner_required' : 'passed'}`))
     }
+  })
+
+  it('passes the bound profile to the Kanban RPC and gives owner calls unrestricted scope', async () => {
+    sidecar.respond('kanban.assignees', () => ({ assignees: [] }))
+    const after = sidecar.calls.length
+    for (const who of ['bound', 'owner'] as const) {
+      const response = await server.get('/api/kanban/assignees', { headers: sessions[who] })
+      expect(response.status).toBe(200)
+    }
+    const calls = sidecar.calls.slice(after).filter(call => call.method === 'kanban.assignees')
+    expect(calls.map(call => call.params)).toEqual([
+      expect.objectContaining({ allowed_assignees: ['default'] }),
+      expect.objectContaining({ allowed_assignees: null }),
+    ])
+  })
+
+  it('supplies the bound profile when Kanban task creation omits an assignee', async () => {
+    sidecar.respond('kanban.create_task', () => ({
+      task: {
+        id: 'task', title: 'Synthetic task', status: 'todo', priority: 0,
+        claim_live: false, has_completion_evidence: false, agent_move_targets: null,
+      },
+      read_only: false,
+    }))
+    const after = sidecar.calls.length
+    const response = await server.get('/api/kanban/tasks', {
+      method: 'POST', headers: { ...sessions.bound, 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Synthetic task', status: 'todo' }),
+    })
+    expect(sidecar.calls.slice(after).find(call => call.method === 'kanban.create_task')?.params)
+      .toMatchObject({ task: { assignee: 'default' } })
+    await response.text()
   })
 
   it('lists the terminal command for no client of a session without owner authority', async () => {

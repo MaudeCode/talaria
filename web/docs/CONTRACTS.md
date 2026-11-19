@@ -402,6 +402,14 @@ other boards. Profile switching clears the existing Query cache and closes the
 previous detail selection. The shared fixture is
 `contracts/fixtures/kanban-inspection.json` at the repository root.
 
+Kanban requests carry an RPC-only `allowed_assignees` value derived from the
+authenticated session. Owners and auth-off requests use `null`. Restricted
+requests can read tasks assigned to their accessible profiles and unassigned
+tasks. Restricted task writes require an allowed assignee. If a create request
+omits the assignee, the server assigns it to the session’s bound or active
+profile. Reassignment can send a payload-free event to invalidate scoped reads.
+Manual dispatch and shared board management require owner authority.
+
 ## Model favorites
 
 `GET /api/models` carries `favorites`, the active profile's starred

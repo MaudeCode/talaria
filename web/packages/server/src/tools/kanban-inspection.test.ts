@@ -64,3 +64,8 @@ describe('Kanban inspection projection', () => {
     expect(view.truncated).toBe(true)
   })
 })
+
+it('offers no card mutations for a read-only Kanban task', () => {
+  const result = withKanbanPolicy({ task: { status: 'ready', read_only: true, agent_move_targets: null } })
+  expect(result.task).toMatchObject({ available_actions: { block: false, unblock: false, complete: false, archive: false, move_to: [] } })
+})

@@ -1,10 +1,10 @@
 /** Crons, kanban, extensions, and terminal procedures (Python `api/routes.py` cron/terminal/extension sections, `api/kanban_bridge.py`). */
 import { implement } from '@orpc/server'
-import { automationContract } from '@maudecode/talaria-web-contracts'
+import { automationContract, type SidecarMethodName, type SidecarParams } from '@maudecode/talaria-web-contracts'
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
-import { activeProfileName } from '../auth/gate.js'
+import { activeProfileName, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { ConfigUnavailable, type Dict } from '../config/agent-config.js'
@@ -45,6 +45,28 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 
 const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfileName(ctx))
 const boardOf = (v: unknown): string | null => str(v).trim() || null
+
+export async function kanbanAssignees(ctx: RequestContext): Promise<string[] | null> {
+  const session = await ensureTrustedAuthSession(ctx)
+  if (await sessionCanManageServer(ctx, session)) return null
+  const bound = session?.bound_profile?.trim()
+  return bound ? [bound] : ctx.deps.crons.accessibleProfileNames(activeProfileName(ctx))
+}
+
+export async function kanbanCall<M extends Extract<SidecarMethodName, `kanban.${string}`>>(ctx: RequestContext, method: M, params: SidecarParams<M>) {
+  const allowed = await kanbanAssignees(ctx)
+  if (method === 'kanban.create_task' && allowed !== null) {
+    const { task } = params as SidecarParams<'kanban.create_task'>
+    // The allowed scope starts with the session's bound or active profile. Persist that assignment for callers that omit it.
+    if (task.assignee === undefined && allowed[0]) task.assignee = allowed[0]
+    if (task.workspace_kind === 'dir' || task.workspace_kind === 'worktree' || task.workspace_path) {
+      const raw = str(task.workspace_path).trim()
+      if (!raw) throw new HttpFailure(400, 'workspace_path is required')
+      task.workspace_path = await ctx.deps.workspaces.resolveTrusted(raw, activeProfileName(ctx))
+    }
+  }
+  return ctx.deps.kanban.call(method, params, allowed)
+}
 
 /** Kanban dispatcher mapping: sidecar refusals → 400/404/409 like Python. Every returned task carries its card policy. */
 async function kb<T>(fn: () => Promise<T>): Promise<T> {
@@ -96,47 +118,47 @@ export const automationRouter = os.router({
     resume: os.crons.resume.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.resume(home(ctx), str(input.job_id)) as Promise<never>)),
   },
   kanban: {
-    inspection: os.kanban.inspection.handler(({ input, context: { ctx } }) => run(() => ctx.deps.kanban.inspection(home(ctx), input, activeProfileName(ctx)) as Promise<never>)),
-    boards: os.kanban.boards.handler(({ input, context: { ctx } }) => run(() => ctx.deps.kanban.boards(home(ctx), activeProfileName(ctx), truthyQuery(input.include_archived)))),
-    board: os.kanban.board.handler(({ input, context: { ctx } }) => run(() => ctx.deps.kanban.board(home(ctx), input, activeProfileName(ctx)) as Promise<never>)),
-    config: os.kanban.config.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.config', { profile_home: home(ctx), board: boardOf(input.board) })))),
-    updateConfig: os.kanban.updateConfig.handler(({ input, context: { ctx } }) => run(() => ctx.deps.kanban.updateConfig(home(ctx), input))),
-    stats: os.kanban.stats.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.stats', { profile_home: home(ctx), board: boardOf(input.board) }).then(withStatsTotals)))),
-    assignees: os.kanban.assignees.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.assignees', { profile_home: home(ctx), board: boardOf(input.board) })))),
-    events: os.kanban.events.handler(({ input, context: { ctx } }) => run(() => ctx.deps.kanban.events(home(ctx), boardOf(input.board), input.since, input.limit) as Promise<never>)),
+    inspection: os.kanban.inspection.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.inspection(home(ctx), input, activeProfileName(ctx), await kanbanAssignees(ctx)) as Promise<never>)),
+    boards: os.kanban.boards.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.boards(home(ctx), activeProfileName(ctx), truthyQuery(input.include_archived), await kanbanAssignees(ctx)))),
+    board: os.kanban.board.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.board(home(ctx), input, activeProfileName(ctx), await kanbanAssignees(ctx)) as Promise<never>)),
+    config: os.kanban.config.handler(({ input, context: { ctx } }) => run(() => kb(() => kanbanCall(ctx, 'kanban.config', { profile_home: home(ctx), board: boardOf(input.board) })))),
+    updateConfig: os.kanban.updateConfig.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.updateConfig(home(ctx), input, await kanbanAssignees(ctx)))),
+    stats: os.kanban.stats.handler(({ input, context: { ctx } }) => run(() => kb(() => kanbanCall(ctx, 'kanban.stats', { profile_home: home(ctx), board: boardOf(input.board) }).then(withStatsTotals)))),
+    assignees: os.kanban.assignees.handler(({ input, context: { ctx } }) => run(() => kb(() => kanbanCall(ctx, 'kanban.assignees', { profile_home: home(ctx), board: boardOf(input.board) })))),
+    events: os.kanban.events.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.events(home(ctx), boardOf(input.board), input.since, input.limit, await kanbanAssignees(ctx)) as Promise<never>)),
     createBoard: os.kanban.createBoard.handler(({ input, context: { ctx } }) => run(() => kb(async () => {
       const spec: Dict = { ...input }
       // A board named without a slug gets one from its name.
       if (!str(spec.slug).trim()) spec.slug = boardSlug(str(spec.name))
       if ('default_workdir' in spec) { const raw = str(spec.default_workdir).trim(); spec.default_workdir = raw ? (await ctx.deps.workspaces.resolveTrusted(raw, activeProfileName(ctx))) : '' }
-      return ctx.deps.kanban.sidecar().call('kanban.create_board', { profile_home: home(ctx), board_spec: spec })
+      return kanbanCall(ctx, 'kanban.create_board', { profile_home: home(ctx), board_spec: spec })
     }))),
-    switchBoard: os.kanban.switchBoard.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.switch_board', { profile_home: home(ctx), slug: pathParam(ctx, 'slug', input.slug) })))),
+    switchBoard: os.kanban.switchBoard.handler(({ input, context: { ctx } }) => run(() => kb(() => kanbanCall(ctx, 'kanban.switch_board', { profile_home: home(ctx), slug: pathParam(ctx, 'slug', input.slug) })))),
     updateBoard: os.kanban.updateBoard.handler(({ input, context: { ctx } }) => run(() => kb(async () => {
       const { slug, ...spec } = input
       if ('default_workdir' in spec) { const raw = str(spec.default_workdir).trim(); spec.default_workdir = raw ? (await ctx.deps.workspaces.resolveTrusted(raw, activeProfileName(ctx))) : '' }
       if (typeof spec.archived === 'string') spec.archived = truthyQuery(spec.archived)
-      return ctx.deps.kanban.sidecar().call('kanban.update_board', { profile_home: home(ctx), slug: pathParam(ctx, 'slug', slug), board_spec: spec })
+      return kanbanCall(ctx, 'kanban.update_board', { profile_home: home(ctx), slug: pathParam(ctx, 'slug', slug), board_spec: spec })
     }))),
-    deleteBoard: os.kanban.deleteBoard.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.delete_board', { profile_home: home(ctx), slug: pathParam(ctx, 'slug', input.slug), delete: truthyQuery(input.delete) })))),
-    dispatch: os.kanban.dispatch.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.dispatch', { profile_home: home(ctx), board: boardOf(input.board), dry_run: truthyQuery(input.dry_run), max: intQuery(input.max, 8, 1, 100) ?? 8 })))),
-    bulk: os.kanban.bulk.handler(({ input, context: { ctx } }) => run(() => kb(() => { const { board, ...bulk } = input; return ctx.deps.kanban.sidecar().call('kanban.bulk', { profile_home: home(ctx), board: boardOf(board), bulk }) }))),
-    createTask: os.kanban.createTask.handler(({ input, context: { ctx } }) => run(() => kb(() => { const { board, ...task } = input; return ctx.deps.kanban.sidecar().call('kanban.create_task', { profile_home: home(ctx), board: boardOf(board), task }) }))),
+    deleteBoard: os.kanban.deleteBoard.handler(({ input, context: { ctx } }) => run(() => kb(() => kanbanCall(ctx, 'kanban.delete_board', { profile_home: home(ctx), slug: pathParam(ctx, 'slug', input.slug), delete: truthyQuery(input.delete) })))),
+    dispatch: os.kanban.dispatch.handler(({ input, context: { ctx } }) => run(() => kb(() => kanbanCall(ctx, 'kanban.dispatch', { profile_home: home(ctx), board: boardOf(input.board), dry_run: truthyQuery(input.dry_run), max: intQuery(input.max, 8, 1, 100) ?? 8 })))),
+    bulk: os.kanban.bulk.handler(({ input, context: { ctx } }) => run(() => kb(() => { const { board, ...bulk } = input; return kanbanCall(ctx, 'kanban.bulk', { profile_home: home(ctx), board: boardOf(board), bulk }) }))),
+    createTask: os.kanban.createTask.handler(({ input, context: { ctx } }) => run(() => kb(() => { const { board, ...task } = input; return kanbanCall(ctx, 'kanban.create_task', { profile_home: home(ctx), board: boardOf(board), task }) }))),
     link: os.kanban.link.handler(({ input, context: { ctx } }) => run(() => kb(() => linkCall(ctx, input, false)))),
     unlink: os.kanban.unlink.handler(({ input, context: { ctx } }) => run(() => kb(() => linkCall(ctx, input, true)))),
     unlinkDelete: os.kanban.unlinkDelete.handler(({ input, context: { ctx } }) => run(() => kb(() => linkCall(ctx, input, true)))),
-    task: os.kanban.task.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.task', { profile_home: home(ctx), board: boardOf(input.board), task_id: pathParam(ctx, 'task_id', input.task_id) })))),
-    taskLog: os.kanban.taskLog.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.task_log', { profile_home: home(ctx), board: boardOf(input.board), task_id: pathParam(ctx, 'task_id', input.task_id), ...(intQuery(input.tail, null, 1, 2_000_000) !== null ? { tail: intQuery(input.tail, null, 1, 2_000_000) ?? 0 } : {}) })))),
+    task: os.kanban.task.handler(({ input, context: { ctx } }) => run(() => kb(() => kanbanCall(ctx, 'kanban.task', { profile_home: home(ctx), board: boardOf(input.board), task_id: pathParam(ctx, 'task_id', input.task_id) })))),
+    taskLog: os.kanban.taskLog.handler(({ input, context: { ctx } }) => run(() => kb(() => kanbanCall(ctx, 'kanban.task_log', { profile_home: home(ctx), board: boardOf(input.board), task_id: pathParam(ctx, 'task_id', input.task_id), ...(intQuery(input.tail, null, 1, 2_000_000) !== null ? { tail: intQuery(input.tail, null, 1, 2_000_000) ?? 0 } : {}) })))),
     comment: os.kanban.comment.handler(({ input, context: { ctx } }) => run(() => kb(() => {
       const { board, body, author } = input
       const task_id = pathParam(ctx, 'task_id', input.task_id)
       if (!str(task_id).trim()) throw new HttpFailure(400, 'task_id is required')
       if (!str(body).trim()) throw new HttpFailure(400, 'body is required')
-      return ctx.deps.kanban.sidecar().call('kanban.comment', { profile_home: home(ctx), board: boardOf(board), task_id: task_id.trim(), body: str(body).trim(), ...(author ? { author: str(author) } : {}) })
+      return kanbanCall(ctx, 'kanban.comment', { profile_home: home(ctx), board: boardOf(board), task_id: task_id.trim(), body: str(body).trim(), ...(author ? { author: str(author) } : {}) })
     }))),
     // Python: `body.get("reason") or body.get("block_reason")` — an empty reason falls through to `block_reason`.
-    block: os.kanban.block.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.task_action', { profile_home: home(ctx), board: boardOf(input.board), task_id: pathParam(ctx, 'task_id', input.task_id).trim(), action: 'block', reason: str(input.reason) || str(input.block_reason) || null, confirm_running_exit: input.confirm_running_exit === true })))),
-    unblock: os.kanban.unblock.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.task_action', { profile_home: home(ctx), board: boardOf(input.board), task_id: pathParam(ctx, 'task_id', input.task_id).trim(), action: 'unblock' })))),
+    block: os.kanban.block.handler(({ input, context: { ctx } }) => run(() => kb(() => kanbanCall(ctx, 'kanban.task_action', { profile_home: home(ctx), board: boardOf(input.board), task_id: pathParam(ctx, 'task_id', input.task_id).trim(), action: 'block', reason: str(input.reason) || str(input.block_reason) || null, confirm_running_exit: input.confirm_running_exit === true })))),
+    unblock: os.kanban.unblock.handler(({ input, context: { ctx } }) => run(() => kb(() => kanbanCall(ctx, 'kanban.task_action', { profile_home: home(ctx), board: boardOf(input.board), task_id: pathParam(ctx, 'task_id', input.task_id).trim(), action: 'unblock' })))),
     patch: os.kanban.patch.handler(({ input, context: { ctx } }) => run(() => kb(() => patchCall(ctx, input)))),
     patchTask: os.kanban.patchTask.handler(({ input, context: { ctx } }) => run(() => kb(() => patchCall(ctx, input)))),
   },
@@ -248,14 +270,14 @@ function linkCall(ctx: RequestContext, input: Dict, unlink: boolean): Promise<Di
   const child = str(input.child_id).trim()
   if (!parent || !child) throw new HttpFailure(400, 'parent_id and child_id are required')
   const params = { profile_home: home(ctx), board: boardOf(input.board), parent_id: parent, child_id: child }
-  return unlink ? ctx.deps.kanban.sidecar().call('kanban.unlink', params) : ctx.deps.kanban.sidecar().call('kanban.link', params)
+  return unlink ? kanbanCall(ctx, 'kanban.unlink', params) : kanbanCall(ctx, 'kanban.link', params)
 }
 
 function patchCall(ctx: RequestContext, input: { task_id: string } & Dict): Promise<never> {
   const { task_id, board, ...patch } = input
   const id = pathParam(ctx, 'task_id', str(task_id)).trim()
   if (!id) throw new HttpFailure(400, 'task_id is required')
-  return ctx.deps.kanban.sidecar().call('kanban.patch_task', { profile_home: home(ctx), board: boardOf(board), task_id: id, patch }) as Promise<never>
+  return kanbanCall(ctx, 'kanban.patch_task', { profile_home: home(ctx), board: boardOf(board), task_id: id, patch }) as Promise<never>
 }
 
 /**

@@ -1,6 +1,7 @@
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, diagnostics (Python `api/routes.py` handlers of the same paths). */
 import type { InferContractRouterInputs } from '@orpc/contract'
 import { implement } from '@orpc/server'
+import { kanbanCall } from './automation-router.js'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { toolsContract, type GatewayLifecycle, type GatewayMode, type GatewayStatus, type PluginAutoUpdateView, type PluginOAuthClientView, type PluginSettingField, type SidecarMethodName, type SidecarParams, type SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -782,7 +783,7 @@ export const toolsRouter = os.router({
       return projectOsDashboard(str(input.board), {
         localIo: ctx.deps.workspaces.profileSupportsLocalIo(profile),
         lastWorkspace: (await ctx.deps.workspaces.lastWorkspace(profile)),
-        boards: async () => (await runningSidecar(ctx).call('kanban.boards', { profile_home: home(ctx), include_archived: true })).boards,
+        boards: async () => (await kanbanCall(ctx, 'kanban.boards', { profile_home: home(ctx), include_archived: true })).boards,
         git: async (repoRoot) => gitBadge(await ctx.deps.git.status(repoRoot, { useCache: true })),
         cwd: process.cwd(),
       })

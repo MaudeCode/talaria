@@ -24,7 +24,7 @@ def test_inspection_reads_only_live_profile_boards_and_bounds_sql(tmp_path, monk
     monkeypatch.setattr(kanban, "_kb", lambda: kb)
     monkeypatch.setattr(kanban, "_board", lambda p: p.get("board"))
     monkeypatch.setattr(kanban, "_normalize_existing_slug", lambda slug: slug)
-    monkeypatch.setattr(kanban, "_task_dict", lambda row, _: row)
+    monkeypatch.setattr(kanban, "_task_dict", lambda row, _, **kwargs: row)
     view = kanban.inspection_payload({})
     assert [n["key"] for n in view["nodes"]] == ["default/same", "ops/same"]
     assert [n["task"]["current_run_started_at"] for n in view["nodes"]] == [100, 100]
@@ -54,7 +54,7 @@ def test_inspection_filters_by_search_and_assignee_before_the_row_budget(tmp_pat
     monkeypatch.setattr(kanban, "_kb", lambda: kb)
     monkeypatch.setattr(kanban, "_board", lambda p: p.get("board"))
     monkeypatch.setattr(kanban, "_normalize_existing_slug", lambda slug: slug)
-    monkeypatch.setattr(kanban, "_task_dict", lambda row, _: row)
+    monkeypatch.setattr(kanban, "_task_dict", lambda row, _, **kwargs: row)
     view = kanban.inspection_payload({"search": " äpi ", "assignee": "ops"})
     assert [n["task"]["id"] for n in view["nodes"]] == ["z1", "z2", "z4"]
     assert view["truncated"] is False
