@@ -110,7 +110,7 @@ for (const rows of [600, 1_200]) {
 }
 
 /** A 300-turn history whose session reports a running turn; its fake run stream starts the turn and holds open. */
-async function liveHistory(page: Page) {
+async function liveHistory(page: Page, beforeHistory?: () => Promise<void>) {
   const sid = 'contained-history', streamId = 'contained-run'
   const messages = transcript(sid, 300).map((message) => message.role === 'assistant' ? {
     ...message,
@@ -131,7 +131,10 @@ async function liveHistory(page: Page) {
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Missing fixture port')
   await page.route('**/api/settings', (route) => route.fulfill({ json: { virtualize_transcript: false } }))
-  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Long history', messages, active_stream_id: streamId } } }))
+  await page.route('**/api/session?**', async (route) => {
+    await beforeHistory?.()
+    await route.fulfill({ json: { session: { session_id: sid, title: 'Long history', messages, active_stream_id: streamId } } })
+  })
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: streamId, replay_available: true } }))
   await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}/stream` }))
   const close = async () => {
@@ -143,14 +146,18 @@ async function liveHistory(page: Page) {
 
 test('long history beside a live run renders on a slow CPU', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'CPU throttling is a Chromium desktop measurement')
-  const history = await liveHistory(page)
-  // The history mounts once the renderer has loaded (TAL-2410), so its answers render in one pass beside the live run.
   const cpu = await page.context().newCDPSession(page)
+  // Boot at native speed. Throttle before delivering the history so its first render and stream attachment still run at 4x.
+  const history = await liveHistory(page, async () => {
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 })
+  })
   try {
     // TAL-1592: rendering 300 rows takes longer than the live turn's one-second elapsed tick, which used to restart
     // the history's Markdown on every tick so it never appeared.
-    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 })
-    await page.goto(`/session/${history.sid}`)
+    await Promise.all([
+      page.waitForResponse((response) => new URL(response.url()).pathname === '/api/session'),
+      page.goto(`/session/${history.sid}`),
+    ])
     // TAL-1883: the live turn mounts at the end of a serial chain: boot, the session read, the 600-row history commit,
     // then the attach effect's stream-status read and connect. On a slow shared runner the whole chain can outlast one
     // assertion's budget, so wait on each observable step in the order the client takes them.
