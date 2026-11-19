@@ -404,6 +404,24 @@ extension XCTestCase {
         add(attachment)
     }
 
+    /// The bytes of each of `points` in one 1x drawing of `window`.
+    @MainActor
+    func windowPixels(_ window: UIWindow, at points: [CGPoint]) -> [[UInt8]] {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        guard let cgImage = image.cgImage, let data = cgImage.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else {
+            return points.map { _ in [] }
+        }
+        let pixelBytes = cgImage.bitsPerPixel / 8
+        return points.map { point in
+            let offset = Int(point.y) * cgImage.bytesPerRow + Int(point.x) * pixelBytes
+            return Array(UnsafeBufferPointer(start: bytes + offset, count: pixelBytes))
+        }
+    }
+
     @MainActor
     private func windowImage(_ window: UIWindow, size: CGSize) -> UIImage {
         UIGraphicsImageRenderer(size: size).image { _ in

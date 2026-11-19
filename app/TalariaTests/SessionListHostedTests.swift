@@ -259,6 +259,18 @@ final class SessionListHostedTests: XCTestCase {
         element.accessibilityLabel?.hasPrefix(sessionTitle) == true
     }
 
+    /// The List cell under the row whose label starts with `title`.
+    private func listCell(holding title: String, in window: UIWindow, file: StaticString = #filePath,
+                          line: UInt = #line) async throws -> UICollectionViewCell {
+        func cells(in view: UIView) -> [UICollectionViewCell] {
+            view.subviews.flatMap { ($0 as? UICollectionViewCell).map { [$0] } ?? cells(in: $0) }
+        }
+        let row = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix(title) == true }
+        let frame = window.convert(row.accessibilityFrame, from: window.screen.coordinateSpace)
+        return try XCTUnwrap(cells(in: window).first { $0.convert($0.bounds, to: window).contains(CGPoint(x: frame.midX, y: frame.midY)) },
+                             "No List cell holds \(title)", file: file, line: line)
+    }
+
     private func isSettingsAvatar(_ element: NSObject) -> Bool {
         // The hidden navigation drawer also has a Settings row.
         element.accessibilityLabel == "Settings" &&
@@ -918,15 +930,8 @@ final class SessionListHostedTests: XCTestCase {
             window.rootViewController?.additionalSafeAreaInsets.right = trailingBar
             window.layoutIfNeeded()
             settle()
-            func cells(in view: UIView) -> [UICollectionViewCell] {
-                view.subviews.flatMap { ($0 as? UICollectionViewCell).map { [$0] } ?? cells(in: $0) }
-            }
             for title in ["Inset row A", "Inset row B"] {
-                let shown = await awaitElement(in: window) { $0.accessibilityLabel?.hasPrefix(title) == true }
-                let row = try XCTUnwrap(shown, "\(style): \(title) did not render")
-                let center = window.convert(row.accessibilityFrame, from: window.screen.coordinateSpace)
-                let cell = try XCTUnwrap(cells(in: window).first { $0.convert($0.bounds, to: window).contains(CGPoint(x: center.midX, y: center.midY)) },
-                                         "\(style): no List cell holds \(title)")
+                let cell = try await listCell(holding: title, in: window)
                 XCTAssertEqual(cell.bounds.height, rowHeight, accuracy: 1, "\(style): \(title)'s cell must hug the row, without default list-row insets")
                 XCTAssertEqual(cell.convert(cell.bounds, to: window).maxX, window.bounds.width - trailingBar, accuracy: 1.5,
                                "\(style): \(title)'s cell must end at the trailing bar, not run underneath it")
@@ -934,6 +939,34 @@ final class SessionListHostedTests: XCTestCase {
             attachHostedScreenshot(window, name: "\(style) session rows")
             window.isHidden = true
             window.rootViewController = nil
+        }
+    }
+
+    /// Rows that load behind the closed drawer rest clear once it slides in. A swipe slides a row's List cell off its
+    /// List's edge; the drawer slides the whole List, which every row once read as a swipe (TAL-2559). The swipe itself
+    /// is a system gesture a hosted test cannot drive; the phone check covers its grey shape.
+    func testSidebarRowsLoadedBehindTheClosedDrawerRestClearOnceItOpens() async throws {
+        let fixture = try FixtureApp(for: self)
+        let list = SessionListViewModel(server: UITestFixtureEnvironment.serverURL, client: fixture.client)
+        let window = try hostWindow(fixture.sessionList(viewModel: list), size: HostedSize.duoInner)
+        let loaded = await awaitCondition { list.sessions.contains { $0.title == "Fixture Session 02" } }
+        XCTAssertTrue(loaded, "The fixture chats never loaded")
+        // The App lays its rows out behind the closed drawer before anyone opens it.
+        let laidOut = await awaitRenderedQuiet(in: window) { list.sessions.count }
+        XCTAssertTrue(laidOut)
+        try await openSidebar(in: window)
+        attachHostedScreenshot(window, name: "duo-sidebar-resting-rows")
+        let titles = ["Fixture Session 01", "Fixture Session 02"]
+        var points: [CGPoint] = []
+        for title in titles {
+            let cell = try await listCell(holding: title, in: window)
+            let frame = cell.convert(cell.bounds, to: window)
+            // Inside the row's rounded shape past its title, and the cell's own background beside the shape.
+            points += [CGPoint(x: frame.maxX - 24, y: frame.midY), CGPoint(x: frame.maxX - 6, y: frame.midY)]
+        }
+        let pixels = windowPixels(window, at: points)
+        for (index, title) in titles.enumerated() {
+            XCTAssertEqual(pixels[2 * index], pixels[2 * index + 1], "\(title) shows the grey swipe shape at rest")
         }
     }
 

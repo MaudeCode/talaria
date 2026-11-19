@@ -432,7 +432,7 @@ final class SettingsPlacementHostedTests: XCTestCase {
             }, size: CGSize(width: 390, height: 844)) { $0.userInterfaceStyle = style }
             let referenceList = try XCTUnwrap(reference.firstView(ofType: UICollectionView.self))
             let referenceFrame = try XCTUnwrap(referenceList.collectionViewLayout.layoutAttributesForItem(at: IndexPath(item: 0, section: 0))).frame
-            let referenceBackground = edgePixel(in: reference)
+            let referenceBackground = windowPixels(reference, at: [CGPoint(x: 2, y: 400)])[0]
             XCTAssertFalse(referenceBackground.isEmpty, "The baseline background must render")
             reference.isHidden = true
             reference.rootViewController = nil
@@ -500,7 +500,7 @@ final class SettingsPlacementHostedTests: XCTestCase {
                 if let table = window.firstView(ofType: UITableView.self) {
                     XCTAssertEqual(table.style, .plain, name)
                 }
-                XCTAssertEqual(edgePixel(in: window), referenceBackground, "\(name) must use Chats' system background")
+                XCTAssertEqual(windowPixels(window, at: [CGPoint(x: 2, y: 400)])[0], referenceBackground, "\(name) must use Chats' system background")
                 window.isHidden = true
                 window.rootViewController = nil
             }
@@ -524,17 +524,6 @@ final class SettingsPlacementHostedTests: XCTestCase {
         XCTAssertTrue(alert.message?.contains("They hide while you type or read older messages.") == true)
         attachHostedScreenshot(window, name: "settings-composer-help")
         XCTAssertTrue(HostedAccessibility.tap("OK", in: alert))
-    }
-
-    private func edgePixel(in window: UIWindow) -> [UInt8] {
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let image = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1), format: format).image { context in
-            context.cgContext.translateBy(x: -2, y: -400)
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        }
-        guard let data = image.cgImage?.dataProvider?.data else { return [] }
-        return Array(UnsafeBufferPointer(start: CFDataGetBytePtr(data), count: CFDataGetLength(data)))
     }
 
     func testProfileSwitchConvergesOnTheServerSelectionAfterForegroundRefresh() async throws {
