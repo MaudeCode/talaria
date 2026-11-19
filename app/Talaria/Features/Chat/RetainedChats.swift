@@ -61,10 +61,12 @@ final class RetainedChat {
 }
 
 /// The open chats the session list keeps above its regular and compact layouts, so both hand the same chat to their
-/// `ChatView` (TAL-1477). Only the chat navigation shows stays, so a chat opened again later starts afresh.
+/// `ChatView` (TAL-1477). Only the chat navigation shows stays, so a chat opened again later starts afresh, except for
+/// the row its reader left it at, which this window keeps for the chat's next visit (TAL-2566).
 @MainActor
 final class ChatViewModelCache {
     static let capacity = 3
+    static let bookmarkCapacity = 50
 
     private struct Key: Equatable {
         let server: URL
@@ -72,6 +74,8 @@ final class ChatViewModelCache {
     }
 
     private var entries: [(key: Key, chat: RetainedChat)] = []
+    /// Reading rows of released chats, most recent first. A chat left following its latest message has none.
+    private var bookmarks: [(key: Key, rowID: String)] = []
 
     var count: Int { entries.count }
 
@@ -94,7 +98,7 @@ final class ChatViewModelCache {
     }
 
     private func chat(key: Key, matchingSessionID: String? = nil, make: () -> RetainedChat) -> RetainedChat {
-        entries.removeAll { $0.key.server != key.server }
+        release { $0.key.server != key.server }
         if let index = entries.firstIndex(where: {
             $0.key == key || (matchingSessionID != nil && $0.chat.session?.sessionId == matchingSessionID)
         }) {
@@ -103,9 +107,24 @@ final class ChatViewModelCache {
             return entry.chat
         }
         let chat = make()
+        // A mounted chat handed back in keeps its own place.
+        if !chat.isLive, let index = bookmarks.firstIndex(where: { $0.key == key }) {
+            chat.readingRowID = bookmarks.remove(at: index).rowID
+        }
         entries.insert((key, chat), at: 0)
-        entries.removeLast(max(0, entries.count - Self.capacity))
+        let overflow = Set(entries.dropFirst(Self.capacity).map { ObjectIdentifier($0.chat) })
+        if !overflow.isEmpty { release { overflow.contains(ObjectIdentifier($0.chat)) } }
         return chat
+    }
+
+    /// Drops the matching chats, keeping where each reader was.
+    private func release(where shouldRelease: ((key: Key, chat: RetainedChat)) -> Bool) {
+        for entry in entries where shouldRelease(entry) {
+            bookmarks.removeAll { $0.key == entry.key }
+            if let rowID = entry.chat.readingRowID { bookmarks.insert((entry.key, rowID), at: 0) }
+        }
+        bookmarks.removeLast(max(0, bookmarks.count - Self.bookmarkCapacity))
+        entries.removeAll(where: shouldRelease)
     }
 
     func prepareForWidthChange() {
@@ -124,7 +143,7 @@ final class ChatViewModelCache {
 
     /// A removed parent stays while its mounted navigation stack still depends on it.
     func keepOnly(sessionIDs: Set<String>) {
-        entries.removeAll { entry in
+        release { entry in
             guard !sessionIDs.contains(entry.key.sessionID) else { return false }
             // An empty selection can still show a pending New Chat, which has no server ID yet.
             guard let sessionID = entry.chat.session?.sessionId else { return !sessionIDs.isEmpty }

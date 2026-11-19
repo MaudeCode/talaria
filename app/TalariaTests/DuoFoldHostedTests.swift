@@ -260,18 +260,7 @@ final class DuoFoldHostedTests: XCTestCase {
     func testTheReadersRowStaysAtTheTopAcrossClosingAndOpening() async throws {
         let folding = try await openChatOnInnerDisplay()
         let window = folding.window
-        _ = try await requireElement(in: window, "The transcript never loaded", where: FixtureApp.isLoadedTranscriptRow)
-        settle(0.5)
-        let scroll = try transcriptScrollView(in: window)
-        let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
-        // A reader drags up into the middle of the transcript and lets go there.
-        coordinator.scrollPositionController?.userDidBeginDragging()
-        coordinator.onFollowEvent(.userScrollBegin)
-        scroll.contentOffset.y = max(0, scroll.contentSize.height / 2)
-        // The rows around the reader are built and measured before the finger lifts, as during a drag.
-        _ = await awaitCondition { coordinator.scrollPositionController?.isRealizingRows == false }
-        coordinator.onFollowEvent(.userScrollEnd(isAtBottom: false))
-        let reading = try XCTUnwrap(readingRow(in: window), "No row at the top of the transcript")
+        let reading = try await scrollReaderToMiddle(in: window)
         await attachRealizedTranscript(window, name: "duo-reader-1-open")
 
         for closed in [true, false] {
@@ -445,6 +434,141 @@ final class DuoFoldHostedTests: XCTestCase {
         XCTAssertTrue(kept, "Closing the Duo mid-drag moved the reader from \(reading) to \(readingRow(in: window) ?? "nothing")")
     }
 
+    /// TAL-2566: leaving a chat for another one and coming back from the sidebar reopens the reader's row, not the latest
+    /// message, beside the list and in the closed Duo's drawer.
+    func testRevisitingAChatBesideTheListReopensTheReadersRow() async throws {
+        try await assertRevisitKeepsTheReadersRow(closed: false)
+    }
+
+    func testRevisitingAChatFromTheDrawerReopensTheReadersRow() async throws {
+        try await assertRevisitKeepsTheReadersRow(closed: true)
+    }
+
+    private func assertRevisitKeepsTheReadersRow(closed: Bool) async throws {
+        let folding = try await openChatOnInnerDisplay()
+        let window = folding.window
+        if closed {
+            _ = try await requireElement(in: window, "The transcript never loaded", where: FixtureApp.isLoadedTranscriptRow)
+            fold(folding, closed: true)
+        }
+        let reading = try await scrollReaderToMiddle(in: window)
+
+        try await openOtherChat(in: window)
+        let otherRow = readingRow(in: window)
+        // Every frame that draws the returning transcript's rows draws them at the reader's row, never the latest first.
+        var drawnRows = Set<String>()
+        try await sampleCommittedLayouts(in: window) {
+            guard let row = self.readingRow(in: window), row != otherRow,
+                  let scroll = self.mountedTranscriptScrollView(in: window), self.drawsContent(scroll) else { return }
+            drawnRows.insert(row)
+        } during: {
+            try await reopenFixtureChat(in: window)
+            let kept = await awaitCondition { self.readingRow(in: window) == reading }
+            XCTAssertTrue(kept, "Revisiting the chat moved the reader from \(reading) to \(readingRow(in: window) ?? "nothing")")
+            let drawn = await awaitCondition { self.mountedTranscriptScrollView(in: window).map(self.drawsContent) == true }
+            XCTAssertTrue(drawn, "The revisited transcript never drew its rows")
+        }
+        XCTAssertEqual(drawnRows, [reading], "Revisiting the chat drew other rows at the top before the reader's")
+        await attachRealizedTranscript(window, name: closed ? "revisit-drawer" : "revisit-beside-list")
+    }
+
+    /// A reader who scrolled back down to the latest message reopens following it, so replies that arrive are in view.
+    func testRevisitingAChatLeftAtTheLatestMessageReopensThere() async throws {
+        let chats = ChatViewModelCache()
+        let window = try await openChatOnInnerDisplay { AnyView($0.sessionList(chats: chats)) }.window
+        _ = try await scrollReaderToMiddle(in: window)
+        let scrolled = try transcriptScrollView(in: window)
+        let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
+        coordinator.onFollowEvent(.userScrollBegin)
+        scrolled.contentOffset.y = scrolled.contentSize.height - scrolled.bounds.height + scrolled.adjustedContentInset.bottom
+        coordinator.onFollowEvent(.userScrollEnd(isAtBottom: true))
+        XCTAssertTrue(isAtBottom(scrolled))
+
+        try await revisitThroughAnotherChat(in: window)
+        let scroll = try transcriptScrollView(in: window)
+        let atLatest = await awaitCondition { self.isAtBottom(scroll) }
+        XCTAssertTrue(atLatest, "A chat left on its latest message reopened away from it")
+        XCTAssertNil(fixtureChat(in: chats).readingRowID, "A chat left on its latest message reopened anchored to a row")
+    }
+
+    /// A row the transcript no longer has opens on the latest message, which keeps following.
+    func testRevisitingAChatWhoseRowIsGoneOpensAtTheLatestMessage() async throws {
+        let chats = ChatViewModelCache()
+        let window = try await openChatOnInnerDisplay { AnyView($0.sessionList(chats: chats)) }.window
+        _ = try await scrollReaderToMiddle(in: window)
+        fixtureChat(in: chats).readingRowID = "chat-row-deleted"
+
+        try await revisitThroughAnotherChat(in: window)
+        let scroll = try transcriptScrollView(in: window)
+        let atLatest = await awaitCondition { self.isAtBottom(scroll) }
+        XCTAssertTrue(atLatest, "A chat whose reading row is gone did not open on its latest message")
+        let following = await awaitCondition { self.fixtureChat(in: chats).readingRowID == nil }
+        XCTAssertTrue(following, "A chat whose reading row is gone did not follow its latest message")
+    }
+
+    /// The fixture chat the list keeps while it is open.
+    private func fixtureChat(in chats: ChatViewModelCache) -> RetainedChat {
+        let summary = SessionSummary(sessionId: UITestFixtureURLProtocol.sessionID, title: UITestFixtureURLProtocol.sessionTitle)
+        return chats.chat(for: summary, server: UITestFixtureEnvironment.serverURL) {
+            XCTFail("The open chat was made again")
+            return ChatView.makeViewModel(session: summary, server: UITestFixtureEnvironment.serverURL)
+        }
+    }
+
+    /// Opens "Fixture Session 01" from the sidebar, then the fixture chat again.
+    private func revisitThroughAnotherChat(in window: UIWindow) async throws {
+        try await openOtherChat(in: window)
+        try await reopenFixtureChat(in: window)
+        _ = try await requireElement(in: window, "The transcript never reloaded", where: FixtureApp.isLoadedTranscriptRow)
+    }
+
+    private func openOtherChat(in window: UIWindow) async throws {
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix("Fixture Session 01") == true
+        })
+        _ = try await requireElement(in: window, label: "Fixture Session 01 reply")
+    }
+
+    private func reopenFixtureChat(in window: UIWindow) async throws {
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        })
+    }
+
+    /// Whether `view` draws anything besides one background color, as its committed layers render.
+    private func drawsContent(_ view: UIView) -> Bool {
+        let size = CGSize(width: 32, height: 48)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            context.cgContext.scaleBy(x: size.width / view.bounds.width, y: size.height / view.bounds.height)
+            context.cgContext.translateBy(x: -view.bounds.minX, y: -view.bounds.minY)
+            view.layer.render(in: context.cgContext)
+        }
+        guard let data = image.cgImage?.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return false }
+        let count = CFDataGetLength(data)
+        return stride(from: 4, to: count, by: 4).contains { pixel in
+            (0..<4).contains { abs(Int(bytes[pixel + $0]) - Int(bytes[$0])) > 8 }
+        }
+    }
+
+    /// A reader drags up into the middle of the transcript and lets go there; returns the row at its top.
+    private func scrollReaderToMiddle(in window: UIWindow) async throws -> String {
+        _ = try await requireElement(in: window, "The transcript never loaded", where: FixtureApp.isLoadedTranscriptRow)
+        settle(0.5)
+        let scroll = try transcriptScrollView(in: window)
+        let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
+        coordinator.scrollPositionController?.userDidBeginDragging()
+        coordinator.onFollowEvent(.userScrollBegin)
+        scroll.contentOffset.y = max(0, scroll.contentSize.height / 2)
+        // The rows around the reader are built and measured before the finger lifts, as during a drag.
+        _ = await awaitCondition { coordinator.scrollPositionController?.isRealizingRows == false }
+        coordinator.onFollowEvent(.userScrollEnd(isAtBottom: false))
+        return try XCTUnwrap(readingRow(in: window), "No row at the top of the transcript")
+    }
+
     /// The window once the transcript has built the rows around the reader. Row building runs on the main actor, which
     /// `settle()` keeps busy, so this waits by sleeping.
     private func attachRealizedTranscript(_ window: UIWindow, name: String) async {
@@ -462,12 +586,16 @@ final class DuoFoldHostedTests: XCTestCase {
     private func transcriptScrollView(in window: UIWindow, timeout: TimeInterval = 10) throws -> UIScrollView {
         var scroll: UIScrollView?
         waitUntil(timeout: timeout) {
-            scroll = window.firstView(ofType: ChatMessageMenuHostView.self)?.superview.flatMap {
-                sequence(first: $0, next: \.superview).first { $0 is UIScrollView } as? UIScrollView
-            }
+            scroll = mountedTranscriptScrollView(in: window)
             return scroll != nil
         }
         return try XCTUnwrap(scroll, "The transcript's native scroll handler did not attach")
+    }
+
+    private func mountedTranscriptScrollView(in window: UIWindow) -> UIScrollView? {
+        window.firstView(ofType: ChatMessageMenuHostView.self)?.superview.flatMap {
+            sequence(first: $0, next: \.superview).first { $0 is UIScrollView } as? UIScrollView
+        }
     }
 }
 
@@ -572,6 +700,26 @@ final class ChatViewModelCacheTests: XCTestCase {
         let other = URL(string: "https://two.invalid")!
         _ = cache.chat(for: session("a"), server: other) { viewModel("a", on: other) }
         XCTAssertEqual(cache.count, 1)
+    }
+
+    /// TAL-2566: a released chat's reading row comes back with the chat, on its own server only.
+    func testAReleasedChatsReadingRowReturnsOnlyOnItsServer() {
+        let cache = ChatViewModelCache()
+        cache.chat(for: session("a"), server: server) { viewModel("a") }.readingRowID = "row-a"
+        cache.keepOnly(sessionIDs: [])
+        let other = URL(string: "https://two.invalid")!
+        XCTAssertNil(cache.chat(for: session("a"), server: other) { viewModel("a", on: other) }.readingRowID)
+        XCTAssertEqual(cache.chat(for: session("a"), server: server) { viewModel("a") }.readingRowID, "row-a")
+    }
+
+    func testOnlyTheMostRecentReadingRowsStay() {
+        let cache = ChatViewModelCache()
+        for index in 0...ChatViewModelCache.bookmarkCapacity {
+            cache.chat(for: session("\(index)"), server: server) { viewModel("\(index)") }.readingRowID = "row-\(index)"
+        }
+        cache.keepOnly(sessionIDs: [])
+        XCTAssertNil(cache.chat(for: session("0"), server: server) { viewModel("0") }.readingRowID)
+        XCTAssertEqual(cache.chat(for: session("1"), server: server) { viewModel("1") }.readingRowID, "row-1")
     }
 
     func testOnlyTheChatNavigationShowsStays() {
