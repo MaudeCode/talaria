@@ -876,8 +876,7 @@ struct SessionListView: View {
         let sizeClass = horizontalSizeClass
         return NavigationStack(path: sectionPath) {
             withDrawerButton(ZStack {
-                navigationDestination(navigationState.destination ?? .newChat(emptyChatRoute),
-                                      rootHasAppeared: conversationRootHasAppeared)
+                conversationRoot
                     .id(navigationState.chatRootRevision)
             })
                 .background {
@@ -902,6 +901,22 @@ struct SessionListView: View {
         .environment(\.navigationHasVerticalToolbar, detailHasVerticalBar)
         .onToolbarVerticalEdgeChange { hasVerticalBar in
             observeSidebarLayout { $0.hasVerticalBar = hasVerticalBar }
+        }
+    }
+
+    /// A linked chat still resolving shows the transcript's loading presentation, never New Chat (TAL-2564).
+    @ViewBuilder
+    private var conversationRoot: some View {
+        if let destination = navigationState.destination {
+            navigationDestination(destination, rootHasAppeared: conversationRootHasAppeared)
+        } else if navigationState.awaitsLinkedSession(pendingID: pendingDeepLinkedSessionID) {
+            ChatTranscriptLoadingSkeletonView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .adaptiveReadableContent(maxWidth: AdaptiveReadableContentWidth.chat)
+                // The linked chat is not a new empty one, so the stack keeps its compose action.
+                .onAppear { chatShowsEmptyTranscript = false }
+        } else {
+            navigationDestination(.newChat(emptyChatRoute), rootHasAppeared: conversationRootHasAppeared)
         }
     }
 

@@ -234,6 +234,12 @@ public struct SessionNavigationState: Equatable, Sendable {
         deepLinkedSessionLoadID = nil
     }
 
+    /// No root is open yet and a linked chat is waiting or loading, so the root shows that chat loading rather than
+    /// New Chat (TAL-2564). A failed link clears both and leaves New Chat.
+    public func awaitsLinkedSession(pendingID: String?) -> Bool {
+        destination == nil && (deepLinkedSessionLoadID != nil || Self.normalized(pendingID) != nil)
+    }
+
     /// Consumes the launch-only restore decision from local summaries. A miss or an explicit route settles it too;
     /// later network rows must never replace the root already on screen. The caller installs a hit synchronously.
     public mutating func sessionToRestore(

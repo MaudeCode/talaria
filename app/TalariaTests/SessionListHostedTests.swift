@@ -864,6 +864,51 @@ final class SessionListHostedTests: XCTestCase {
         }
     }
 
+    /// TAL-2564: a cold launch into an uncached linked chat shows that chat loading in every committed frame, while the
+    /// link resolves and while its first transcript read is out: never the New Chat root or the empty-conversation prompt.
+    func testColdLinkedLaunchShowsTheLinkedChatLoadingUntilItsRowsArrive() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.forkSessionArgument, UITestFixtureEnvironment.holdDeepLinkedForkArgument,
+                                      UITestFixtureEnvironment.holdForkTranscriptArgument], for: self)
+        fixture.pendingSessionID = UITestFixtureURLProtocol.forkSessionID
+        let linked = "chat-detail:Fixture Session 01"
+        var window: UIWindow?
+        var gaps = Set<String>()
+        func held(messages: Bool) -> Bool {
+            UITestFixtureHold.shared.pendingRequests.count == 1 && UITestFixtureHold.shared.pendingRequests.allSatisfy {
+                ($0.url?.query?.contains("messages=0") == false) == messages
+            }
+        }
+        try await sampleCommittedLayouts(in: try HostedScene.window()) {
+            guard let window, window.rootViewController != nil else { return }
+            for element in HostedAccessibility.elements(in: window) {
+                if let id = HostedAccessibility.identifier(of: element), id.hasPrefix("chat-detail:"), id != linked { gaps.insert(id) }
+            }
+            if HostedAccessibility.element(in: window, label: "Send a message to start the conversation.") != nil {
+                gaps.insert("empty prompt")
+            }
+            if HostedAccessibility.element(in: window, label: "Loading messages") == nil,
+               HostedAccessibility.element(in: window, label: "Fork fixture reply") == nil {
+                gaps.insert("loading presentation")
+            }
+            for title in ["Open navigation", "New Chat"] where HostedAccessibility.toolbarItem(title, in: window) == nil {
+                gaps.insert(title)
+            }
+        } during: {
+            window = try hostWindow(fixture.sessionList())
+            let lookup = await awaitCondition { held(messages: false) }
+            XCTAssertTrue(lookup, "The cold link must look up the linked chat")
+            fixture.releaseHeldLoads()
+            let transcript = await awaitCondition { held(messages: true) }
+            XCTAssertTrue(transcript, "The linked chat must read its transcript")
+            let opened = await awaitElement(in: try XCTUnwrap(window)) { HostedAccessibility.identifier(of: $0) == linked }
+            XCTAssertNotNil(opened, "The linked chat must open while its transcript loads")
+            fixture.releaseHeldLoads()
+            _ = try await requireElement(in: try XCTUnwrap(window), label: "Fork fixture reply")
+        }
+        XCTAssertTrue(gaps.isEmpty, "A cold linked launch drew another route or an empty chat: \(gaps.sorted())")
+        XCTAssertNil(fixture.pendingSessionID)
+    }
+
     func testSidebarToolbarHasNoNestedMoreMenu() async throws {
         let fixture = try FixtureApp(for: self)
         let window = try hostWindow(fixture.sessionList())
