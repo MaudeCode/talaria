@@ -28,7 +28,8 @@ struct ComposerTextView: UIViewRepresentable {
     let keyboardSendKey: ComposerSendKey
     let alternateSendBehavior: StreamingSendBehavior
     let onKeyboardSend: (StreamingSendBehavior?) -> Void
-    let onHeightChange: (CGFloat) -> Void
+    /// The text's height, capped at `maximumHeight`, and its height at one line of the current font.
+    let onHeightChange: (_ height: CGFloat, _ oneLineHeight: CGFloat) -> Void
     var maximumHeight: CGFloat = 96
     let onPasteFileProviders: ([NSItemProvider]) -> Void
     let onPasteFileURLs: ([URL]) -> Void
@@ -107,7 +108,7 @@ struct ComposerTextView: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         @Binding var text: String
         @Binding var isFocused: Bool
-        var onHeightChange: (CGFloat) -> Void
+        var onHeightChange: (_ height: CGFloat, _ oneLineHeight: CGFloat) -> Void
         var maximumHeight: CGFloat = 96
         private var pendingFocusTarget: Bool?
         // The newest draft revision this coordinator has acted on. An update carrying
@@ -124,7 +125,7 @@ struct ComposerTextView: UIViewRepresentable {
         init(
             text: Binding<String>,
             isFocused: Binding<Bool>,
-            onHeightChange: @escaping (CGFloat) -> Void
+            onHeightChange: @escaping (_ height: CGFloat, _ oneLineHeight: CGFloat) -> Void
         ) {
             _text = text
             _isFocused = isFocused
@@ -269,9 +270,11 @@ struct ComposerTextView: UIViewRepresentable {
         func reportHeight(for textView: UITextView) {
             guard textView.bounds.width > 0 else { return }
 
+            // The font follows Dynamic Type, so one line can be far taller than the default body size (TAL-2569).
+            let oneLineHeight = max(ComposerCardSizing.defaultOneLineInputHeight, ceil(textView.font?.lineHeight ?? 0))
             let fittingSize = CGSize(width: textView.bounds.width, height: .greatestFiniteMagnitude)
             let height = ceil(textView.sizeThatFits(fittingSize).height)
-            onHeightChange(min(maximumHeight, max(22, height)))
+            onHeightChange(min(max(maximumHeight, oneLineHeight), max(oneLineHeight, height)), oneLineHeight)
         }
     }
 

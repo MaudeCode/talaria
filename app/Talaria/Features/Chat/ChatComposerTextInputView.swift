@@ -16,6 +16,8 @@ struct ComposerTextInputView: View {
     @Binding var isFocused: Bool
     @Binding var inputHeight: CGFloat
     @Binding var measuredHeight: CGFloat
+    /// The text's height at one line of its current font.
+    @Binding var oneLineHeight: CGFloat
 
     let isDisabled: Bool
     let isKeyboardSendEnabled: Bool
@@ -69,13 +71,17 @@ struct ComposerTextInputView: View {
         .frame(minHeight: 42, alignment: .topLeading)
     }
 
-    private func updateMeasuredHeight(_ newHeight: CGFloat) {
-        guard inputHeight != newHeight || measuredHeight != newHeight else { return }
+    private func updateMeasuredHeight(_ newHeight: CGFloat, oneLineHeight newLineHeight: CGFloat) {
+        func changed() -> Bool {
+            inputHeight != newHeight || measuredHeight != newHeight || oneLineHeight != newLineHeight
+        }
+        guard changed() else { return }
 
         DispatchQueue.main.async {
-            guard inputHeight != newHeight || measuredHeight != newHeight else { return }
+            guard changed() else { return }
             inputHeight = newHeight
             measuredHeight = newHeight
+            oneLineHeight = newLineHeight
         }
     }
 }

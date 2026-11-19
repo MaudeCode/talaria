@@ -157,7 +157,8 @@ struct MessageComposerView: View {
     @State private var twoRowComposerHeight: CGFloat = 0
     @State private var twoRowInputHeight: CGFloat = 0
     @GestureState private var clarificationResizeTranslation: CGFloat = 0
-    @State private var textInputHeight: CGFloat = 22
+    @State private var textInputHeight = ComposerCardSizing.defaultOneLineInputHeight
+    @State private var textLineHeight = ComposerCardSizing.defaultOneLineInputHeight
     @State private var noticeMessage: String?
     @State private var showsAllModelsSheet = false
     @State private var showsWorkspaceSheet = false
@@ -774,6 +775,7 @@ struct MessageComposerView: View {
                         isFocused: $isFocused,
                         inputHeight: $textInputHeight,
                         measuredHeight: $textFieldHeight,
+                        oneLineHeight: $textLineHeight,
                         isDisabled: isReadOnly || (isAnsweringClarification && isSending),
                         isKeyboardSendEnabled: !showsStopButton && !isActionButtonDisabled,
                         keyboardSendKey: ComposerSendKey.storedValue(sendKeyRawValue),
@@ -817,6 +819,7 @@ struct MessageComposerView: View {
             tabletopHeight: tabletopHeight,
             twoRowCardHeight: twoRowComposerHeight,
             twoRowInputHeight: twoRowInputHeight,
+            oneLineInputHeight: textLineHeight,
             allowsOneRowCard: !usesSingleLineShell && !isAnsweringClarification
         )
     }
