@@ -338,6 +338,12 @@ export class CronService {
     return names
   }
 
+  /** TAL-2585: `scope` is the router's `executionProfileScope`; `null` (the owner) keeps the active profile's reach. */
+  private async requireExecutionProfile(active: string, profile: string, scope: string[] | null): Promise<void> {
+    const allowed = scope ?? await this.accessibleProfileNames(active)
+    if (!allowed.some((name) => this.deps.profilesMatch(name, profile))) throw new HttpFailure(403, 'Execution profile is not accessible')
+  }
+
   async availableProfileNames(): Promise<Set<string>> {
     const names = new Set(['default'])
     try { for (const row of await this.deps.profileNames()) if (row.name.trim()) names.add(row.name.trim()) } catch { /* sidecar down: default only */ }
@@ -470,11 +476,11 @@ export class CronService {
     return exact.length === 1 ? { home, profile: active, job: exact[0]!, managed: true } : this.resolveStore(home, ref)
   }
 
-  async contextSources(home: string, input: { profile?: string | undefined; editing_job_id?: string | undefined; exclude_job_id?: string | undefined; selected_refs?: string[] | undefined }): Promise<CronContextSources> {
+  async contextSources(home: string, input: { profile?: string | undefined; editing_job_id?: string | undefined; exclude_job_id?: string | undefined; selected_refs?: string[] | undefined }, scope: string[] | null = null): Promise<CronContextSources> {
     const active = await this.profileForHome(home)
     const editing = input.editing_job_id ? await this.resolveStore(home, input.editing_job_id) : null
     const profile = await this.normalizeProfile(input.profile)
-    if (profile && !(await this.accessibleProfileNames(active)).some((name) => this.deps.profilesMatch(name, profile))) throw new HttpFailure(403, 'Execution profile is not accessible')
+    if (profile) await this.requireExecutionProfile(active, profile, scope)
     const executionHome = profile ? this.deps.profileHome(profile) : editing?.home ?? home
     const rows = await this.storedJobs(active)
     const inStore = rows.filter((row) => row.home === executionHome)
@@ -559,12 +565,12 @@ export class CronService {
     return { completions, since }
   }
 
-  async create(home: string, body: Dict): Promise<Dict> {
+  async create(home: string, body: Dict, scope: string[] | null = null): Promise<Dict> {
     if (!('schedule' in body) || body.schedule === null || body.schedule === undefined) throw new HttpFailure(400, 'Missing required field(s): schedule')
     if (!body.prompt && !body.script && !body.skills) throw new HttpFailure(400, 'Missing required field(s): prompt')
     const profile = await this.normalizeProfile(body.profile)
     const active = await this.profileForHome(home)
-    if (profile && !(await this.accessibleProfileNames(active)).some((name) => this.deps.profilesMatch(name, profile))) throw new HttpFailure(403, 'Execution profile is not accessible')
+    if (profile) await this.requireExecutionProfile(active, profile, scope)
     const executionHome = profile ? this.deps.profileHome(profile) : home
     const [model, provider] = modelSelection(body.model, body.provider)
     const job: Dict = { prompt: body.prompt ?? '', schedule: body.schedule, name: body.name ?? null, deliver: body.deliver ?? 'local', skills: body.skills ?? [], model, provider, ...jobFieldUpdates(body) }
@@ -583,7 +589,7 @@ export class CronService {
     }
   }
 
-  async update(home: string, body: Dict): Promise<Dict> {
+  async update(home: string, body: Dict, scope: string[] | null = null): Promise<Dict> {
     const jobId = str(body.job_id)
     if (!jobId) throw new HttpFailure(400, 'Missing required field(s): job_id')
     const store = await this.resolveStore(home, jobId)
@@ -595,6 +601,7 @@ export class CronService {
       if (k === 'job_id' || k === 'id' || k === 'owner_profile') continue
       if (k === 'profile') {
         const profile = await this.normalizeProfile(v)
+        if (profile) await this.requireExecutionProfile(await this.profileForHome(pickerHome), profile, scope)
         if (profile && !this.deps.profilesMatch(profile, store.profile)) throw new HttpFailure(400, 'To change the execution profile, duplicate the task in that profile and delete the old task')
         updates.profile = profile
       }

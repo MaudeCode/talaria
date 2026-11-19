@@ -8,7 +8,7 @@ import { isServerOwned } from '../spa.js'
 import { ExtensionError, EXTENSION_PANEL_SANDBOX_CSP, EXTENSION_ROUTE_PREFIX, normalizeProxyPath, validId } from '../tools/extensions.js'
 import { kanbanFailure } from '../tools/kanban.js'
 import { HttpFailure } from '../sessions/service.js'
-import { kanbanAssignees, terminalGate } from './automation-router.js'
+import { executionProfileScope, terminalGate } from './automation-router.js'
 import { checkSameOriginBrowserRequest, csrfRejectionError } from '../http/origin.js'
 import { str } from '../util.js'
 import { readCapped } from '../http/capped.js'
@@ -37,7 +37,7 @@ export async function handleKanbanEventsStream(ctx: RequestContext): Promise<voi
   const cursor = eventCursor(ctx.header('last-event-id')) ?? eventCursor(ctx.query.get('since')) ?? 0
   const home = ctx.deps.profileHome(activeProfileName(ctx))
   // Python `_resolve_board` normalised the slug before the `hello` frame carried it.
-  const allowed = await kanbanAssignees(ctx)
+  const allowed = await executionProfileScope(ctx)
   let helloBoard = board
   if (board) {
     try { helloBoard = (await ctx.deps.kanban.call('kanban.normalize_board', { profile_home: home, board }, allowed)).board } catch (error) {
