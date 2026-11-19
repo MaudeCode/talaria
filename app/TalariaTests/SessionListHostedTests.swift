@@ -1755,21 +1755,29 @@ final class RegularSplitHostedTests: XCTestCase {
         try await assertSectionStateStaysInTheFoldPane("Kanban", UITestFixtureEnvironment.panelUnavailableArgument, "The Kanban server is unavailable.")
     }
 
-    func testInsightsLoadingStaysInTheFoldPane() async throws {
-        try await assertSectionStateStaysInTheFoldPane("Insights", UITestFixtureEnvironment.panelLoadingArgument, "Loading analytics…")
+    func testInsightsLoadingStaysInTheBookPane() async throws {
+        try await assertSectionStateStaysInTheFoldPane("Insights", UITestFixtureEnvironment.panelLoadingArgument,
+                                                       "Loading analytics…", poses: ["book"])
+    }
+
+    func testInsightsLoadingStaysInTheTabletopPane() async throws {
+        try await assertSectionStateStaysInTheFoldPane("Insights", UITestFixtureEnvironment.panelLoadingArgument,
+                                                       "Loading analytics…", poses: ["tabletop"])
     }
 
     func testInsightsErrorStaysInTheFoldPane() async throws {
         try await assertSectionStateStaysInTheFoldPane("Insights", UITestFixtureEnvironment.panelUnavailableArgument, "Could Not Load Analytics")
     }
 
-    private func assertSectionStateStaysInTheFoldPane(_ section: String, _ flag: String, _ label: String) async throws {
+    private func assertSectionStateStaysInTheFoldPane(
+        _ section: String, _ flag: String, _ label: String, poses: Set<String> = ["book", "tabletop"]
+    ) async throws {
         let size = HostedSize.duoInnerLandscape
-        let poses = [
+        let folds = [
             ("book", CGRect(x: 455, y: -100, width: 40, height: 2000)),
             ("tabletop", CGRect(x: -100, y: 300, width: 2000, height: 40))
         ]
-        for (pose, fold) in poses {
+        for (pose, fold) in folds where poses.contains(pose) {
             let fixture = try FixtureApp([flag], for: self)
             let window = try hostWindow(fixture.sessionList()
                 .environment(\.chatDivisionFramesForTesting, [fold]).ignoresSafeArea(), size: size) {
@@ -3383,7 +3391,22 @@ extension RegularSplitHostedTests {
         attachHostedScreenshot(window, name: "duo-book-two-chats")
     }
 
-    func testOpenBesideIsAbsentOnPhoneAndPortrait() async throws {
+    func testOpenBesideIsAbsentOnPhoneInPortrait() async throws {
+        try await assertOpenBesideIsAbsent(size: HostedSize.phone, horizontal: .compact, vertical: .regular, name: "phone")
+    }
+
+    func testOpenBesideIsAbsentOnPhoneInLandscape() async throws {
+        try await assertOpenBesideIsAbsent(size: HostedSize.phoneLandscape, horizontal: .regular, vertical: .compact,
+                                           name: "phone-landscape")
+    }
+
+    func testOpenBesideIsAbsentOnDuoInPortrait() async throws {
+        try await assertOpenBesideIsAbsent(size: HostedSize.duoInner, horizontal: .regular, vertical: .regular, name: "duo-portrait")
+    }
+
+    private func assertOpenBesideIsAbsent(
+        size: CGSize, horizontal: UIUserInterfaceSizeClass, vertical: UIUserInterfaceSizeClass, name: String
+    ) async throws {
         // Keep the session rows visible in the short landscape drawer. Their placement is covered separately.
         let keys = [SectionVisibilitySettings.tasksKey, SectionVisibilitySettings.kanbanKey,
                     SectionVisibilitySettings.skillsKey, SectionVisibilitySettings.memoryKey, SectionVisibilitySettings.insightsKey]
@@ -3392,28 +3415,22 @@ extension RegularSplitHostedTests {
             for (key, value) in zip(keys, previous) { UserDefaults.standard.set(value, forKey: key) }
         }
         for key in keys { UserDefaults.standard.set(false, forKey: key) }
-        for (name, size, horizontal, vertical) in [
-            ("phone", HostedSize.phone, UIUserInterfaceSizeClass.compact, UIUserInterfaceSizeClass.regular),
-            ("phone-landscape", HostedSize.phoneLandscape, .regular, .compact),
-            ("duo-portrait", HostedSize.duoInner, .regular, .regular)
-        ] {
-            let fixture = try FixtureApp(for: self)
-            let window = try hostWindow(fixture.sessionList(), size: size) {
-                $0.horizontalSizeClass = horizontal
-                $0.verticalSizeClass = vertical
-            }
-            try await openSidebar(in: window)
-            HostedAccessibility.activate(try await requireElement(in: window) {
-                $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
-            })
-            _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
-            try await openSidebar(in: window)
-            let row = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Fixture Session 01") == true }
-            XCTAssertFalse(row.accessibilityCustomActions?.contains { $0.name == "Open Beside" } == true)
-            attachHostedScreenshot(window, name: "\(name)-no-open-beside")
-            window.isHidden = true
-            window.rootViewController = nil
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList(), size: size) {
+            $0.horizontalSizeClass = horizontal
+            $0.verticalSizeClass = vertical
         }
+        try await openSidebar(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        })
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        try await openSidebar(in: window)
+        let row = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Fixture Session 01") == true }
+        XCTAssertFalse(row.accessibilityCustomActions?.contains { $0.name == "Open Beside" } == true)
+        attachHostedScreenshot(window, name: "\(name)-no-open-beside")
+        window.isHidden = true
+        window.rootViewController = nil
     }
 
     /// TAL-2389: a sidebar with every section row shown, opened in an iPad landscape window with `opener`.

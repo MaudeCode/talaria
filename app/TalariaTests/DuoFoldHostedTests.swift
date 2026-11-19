@@ -27,10 +27,21 @@ final class DuoFoldHostedTests: XCTestCase {
         size inner: CGSize = HostedSize.duoInner,
         list: @MainActor (FixtureApp) async throws -> AnyView = { AnyView($0.sessionList()) }
     ) async throws -> Folding {
+        try await openChatOnDuo(scenario, size: inner, closed: false, list: list)
+    }
+
+    private func openChatOnDuo(
+        _ scenario: [String] = [],
+        size inner: CGSize = HostedSize.duoInner,
+        closed: Bool,
+        list: @MainActor (FixtureApp) async throws -> AnyView = { AnyView($0.sessionList()) }
+    ) async throws -> Folding {
         let fixture = try FixtureApp(scenario, for: self)
         let display = HostedDuoDisplay()
-        let window = try hostWindow(FoldingDisplay(display: display, content: try await list(fixture)), size: inner) {
-            $0.horizontalSizeClass = .regular
+        display.sizeClass = closed ? .compact : .regular
+        let size = closed ? HostedSize.duoOuter : inner
+        let window = try hostWindow(FoldingDisplay(display: display, content: try await list(fixture)), size: size) {
+            $0.horizontalSizeClass = closed ? .compact : .regular
             $0.verticalSizeClass = .regular
         }
         try await openSidebar(in: window)
@@ -39,7 +50,7 @@ final class DuoFoldHostedTests: XCTestCase {
         }
         HostedAccessibility.activate(row)
         let opened = await awaitCondition { self.composerDraftText(in: window) != nil }
-        XCTAssertTrue(opened, "The chat never opened beside the list")
+        XCTAssertTrue(opened, "The fixture chat never opened")
         return Folding(fixture: fixture, window: window, display: display, inner: inner)
     }
 
@@ -140,9 +151,9 @@ final class DuoFoldHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "Stopped", "The run's end never reached the transcript")
     }
 
-    /// The chat on the inner display with a message queued behind its held run.
-    private func openChatWithAQueuedMessage() async throws -> Folding {
-        let folding = try await openChatOnInnerDisplay(["--ui-test-chat-controls"])
+    /// A chat with a message queued behind its held run.
+    private func openChatWithAQueuedMessage(closed: Bool = false) async throws -> Folding {
+        let folding = try await openChatOnDuo(["--ui-test-chat-controls"], closed: closed)
         try await sendFromComposer("Run the deterministic fixture", in: folding.window)
         _ = try await requireElement(in: folding.window, label: "Waiting for control input.")
         try await sendFromComposer("/queue Queued across folding", in: folding.window)
@@ -152,23 +163,27 @@ final class DuoFoldHostedTests: XCTestCase {
 
     /// TAL-850: folding hands the chat to a new view without leaving it, so a queued message stays queued and the draft
     /// stays as typed.
-    func testAQueuedMessageStaysQueuedAcrossFolding() async throws {
-        let folding = try await openChatWithAQueuedMessage()
-        let window = folding.window
-        settle(0.3)
-        attachHostedScreenshot(window, name: "queued-before-leaving")
+    func testAQueuedMessageStaysQueuedWhenClosingTheDuo() async throws {
+        try await assertQueuedMessageSurvivesFold(closed: true)
+    }
 
-        for closed in [true, false] {
-            let moment = closed ? "Closing" : "Opening"
-            fold(folding, closed: closed)
-            _ = try await requireElement(in: window, label: "1 queued", "\(moment) the Duo lost the queue")
-            // Runs the main-actor work the fold queued, so a release the handover failed to cancel gets to run.
-            _ = await awaitRenderedQuiet(in: window) {
-                [HostedAccessibility.element(in: window, label: "1 queued") == nil ? "" : "queued", self.composerDraftText(in: window) ?? ""]
-            }
-            XCTAssertNotNil(HostedAccessibility.element(in: window, label: "1 queued"), "\(moment) the Duo emptied the queue")
-            XCTAssertEqual(composerDraftText(in: window), "", "\(moment) the Duo moved the queue into the draft")
+    func testAQueuedMessageStaysQueuedWhenOpeningTheDuo() async throws {
+        try await assertQueuedMessageSurvivesFold(closed: false)
+    }
+
+    private func assertQueuedMessageSurvivesFold(closed: Bool) async throws {
+        let folding = try await openChatWithAQueuedMessage(closed: !closed)
+        let window = folding.window
+        let moment = closed ? "Closing" : "Opening"
+        fold(folding, closed: closed)
+        _ = try await requireElement(in: window, label: "1 queued", "\(moment) the Duo lost the queue")
+        // Runs the main-actor work the fold queued, so a release the handover failed to cancel gets to run.
+        _ = await awaitRenderedQuiet(in: window) {
+            [HostedAccessibility.element(in: window, label: "1 queued") == nil ? "" : "queued", self.composerDraftText(in: window) ?? ""]
         }
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "1 queued"), "\(moment) the Duo emptied the queue")
+        XCTAssertEqual(composerDraftText(in: window), "", "\(moment) the Duo moved the queue into the draft")
+        attachHostedScreenshot(window, name: closed ? "queued-on-cover" : "queued-on-inner-display")
     }
 
     /// TAL-850: leaving the chat moves its queued message into the draft, and returning sends nothing.
