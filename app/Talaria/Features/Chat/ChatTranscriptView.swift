@@ -300,7 +300,7 @@ struct ChatTranscriptView: View {
                     scrollPositionController.holdVisiblePosition()
                 }
                 // A server window replacing the cached one can drop the row before the reader reaches it.
-                .onChange(of: isPlacingRestoredReader ? displayedTranscriptMessages.map(\.renderID) : []) {
+                .onChange(of: rowIDsWhilePlacingRestoredReader) {
                     if isPlacingRestoredReader { placeRestoredReader() }
                 }
                 .onChange(of: messages.count) {
@@ -379,6 +379,11 @@ struct ChatTranscriptView: View {
     /// Identifies the whole transcript content so a scroll to its top can be
     /// expressed through SwiftUI.
     private var transcriptContentID: String { "chat-transcript-content" }
+
+    /// The transcript's rows while they are hidden for a restored reader; empty otherwise, so nothing is compared.
+    private var rowIDsWhilePlacingRestoredReader: [String] {
+        isPlacingRestoredReader ? displayedTranscriptMessages.map(\.renderID) : []
+    }
 
     /// Scrolls the hidden rows to the restored reader's row, or to the latest message, following it, when the transcript
     /// no longer has that row (TAL-2566). The rows show once that scroll lands.
