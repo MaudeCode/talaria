@@ -858,8 +858,8 @@ describe('server.project_*, workspace_*, profile_list, goal_get, goal_set (TAL-1
   const route = async (path: string, body?: unknown): Promise<unknown> => (await (body === undefined ? s.get(path) : postRaw(s, path, body))).json()
   const createProject = async (name: string, callerId = 'agentcaller') => (await ask('server.project_create', { name }, callerId) as { result: { project: { project_id: string; profile: string } } }).result.project
   const syntheticRepo = () => {
-    mkdirSync(join(s.state, 'synthetic-repo'), { recursive: true })
-    return realpathSync(join(s.state, 'synthetic-repo'))
+    mkdirSync(join(s.workspace, 'synthetic-repo'), { recursive: true })
+    return realpathSync(join(s.workspace, 'synthetic-repo'))
   }
   const goalState = { goal: 'Ship the release notes', status: 'active', turns_used: 0, max_turns: 20, last_verdict: null, last_reason: null, paused_reason: null }
   const goalCommands = () => sidecar.calls.filter((c) => c.method === 'goals.command').map((c) => c.params as { session_id: string; args: string })

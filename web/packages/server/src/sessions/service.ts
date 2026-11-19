@@ -2086,14 +2086,14 @@ export class SessionService {
    * any Agent import. That owner reads no profile default, so the launch route is explicit: the requested model, else this
    * profile's default as a normal chat starts, with that provider's configured endpoint.
    */
-  async createDiagnostic(body: Record<string, unknown>, mode: 'ignore_config' | 'safe'): Promise<Record<string, unknown>> {
+  async createDiagnostic(body: Record<string, unknown>, mode: 'ignore_config' | 'safe', serverOwner: boolean): Promise<Record<string, unknown>> {
     const profile = (typeof body.profile === 'string' && body.profile) || this.deps.activeProfile()
     if (profile !== this.deps.activeProfile()) throw new HttpFailure(400, 'A diagnostic chat starts in the active profile')
     if (!this.owner) throw new HttpFailure(409, 'The Agent cannot start a chat in this mode', { code: 'execution_mode_unavailable', reason: 'gateway_unavailable' })
     const defaults = await this.store.deps.defaults(profile)
     let workspace: string | null
     try {
-      workspace = await this.resolveNewSessionWorkspace(body, null, profile)
+      workspace = await this.resolveNewSessionWorkspace(body, null, profile, serverOwner)
     } catch (error) {
       throw new HttpFailure(400, (error as Error).message)
     }

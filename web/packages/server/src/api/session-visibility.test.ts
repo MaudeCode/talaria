@@ -316,7 +316,7 @@ describe.each(['json', 'sqlite'])('a refused session request on %s storage', (ba
         expect((await post(s, root, '/api/chat/start', { session_id: sid, message: 'hi', profile: 'default' })).status).toBe(404)
       })
     }
-    const placeholder = await seed({ messages: [] })
+    const placeholder = await seed({ messages: [], workspace: s.workspace })
     await untouched(placeholder, async () => {
       expect((await post(s, root, '/api/chat/start', { session_id: placeholder, message: 'hi' })).status).toBe(404)
     })

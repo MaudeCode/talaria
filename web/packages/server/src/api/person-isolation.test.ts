@@ -84,6 +84,26 @@ describe('workspace authority from the request', () => {
     expect(add.mock.calls.some(([path, , serverOwner]) => path === workspace && !serverOwner)).toBe(true)
   })
 
+  it.each(['safe', 'ignore_config'])('passes restricted authority for %s diagnostic creation', async (mode) => {
+    const server = await boot(true)
+    const client = signIn(server, 'alice')
+    const workspace = server.deps.config.defaultWorkspace
+    const resolve = vi.spyOn(server.deps.workspaces, 'resolveTrusted')
+    await post(server, client, '/api/session/new', { execution_mode: mode, workspace })
+    expect(resolve).toHaveBeenCalledWith(workspace, 'default', false)
+  })
+
+  it('passes restricted authority to native workspace mutations', async () => {
+    const server = await boot(true)
+    const client = signIn(server, 'alice')
+    const sid = await chat(server, client)
+    const owner = server.deps.sessions.owner!
+    const action = vi.spyOn(owner, 'action').mockRejectedValue(new Error('Synthetic native owner refusal'))
+    const body = { session_id: sid, action: 'mutate', request_id: 'workspace-change', expected_revision: 0, execution_generation: 0, operation: 'workspace', payload: { cwd: server.workspace } }
+    await post(server, client, '/api/chat/owner-action', body)
+    expect(action).toHaveBeenCalledWith(sid, expect.objectContaining(body), false)
+  })
+
   it('uses the last authorized workspace for an implicit new session', async () => {
     const server = await boot(true)
     const client = signIn(server, 'alice')

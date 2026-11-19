@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import type { RuntimeDescribe } from '@maudecode/talaria-web-contracts'
 import type { AppDeps } from '../http/context.js'
@@ -54,7 +54,7 @@ vi.mock('../config.js', async (original) => {
   const config = await original<typeof import('../config.js')>()
   return { ...config, loadConfig: (opts: Parameters<typeof config.loadConfig>[0]) => config.loadConfig({ ...opts, env: {
     HOME: trial.state, HERMES_HOME: trial.state, TALARIA_WEB_STATE_DIR: trial.state,
-    TALARIA_WEB_DEFAULT_WORKSPACE: join(trial.state, 'workspace'),
+    TALARIA_WEB_DEFAULT_WORKSPACE: join(dirname(trial.state), 'workspace'),
     TALARIA_WEB_CLAUDE_PROJECTS_DIR: join(trial.state, 'claude-projects'),
     TALARIA_WEB_HOST: trial.host, TALARIA_WEB_PORT: '0',
   } }) }
@@ -89,7 +89,9 @@ vi.mock('../server.js', async (original) => {
 import { main } from './main.js'
 
 it('serves auth and refuses chat while the sidecar handshake is pending', async () => {
-  trial.state = mkdtempSync(join(tmpdir(), 'talaria-main-test-'))
+  const root = mkdtempSync(join(tmpdir(), 'talaria-main-test-'))
+  trial.state = join(root, 'state')
+  mkdirSync(trial.state)
   const fake = new FakeSidecar({ status: 'starting' })
   const describe = fake.describe!
   fake.describe = null
@@ -135,14 +137,16 @@ it('serves auth and refuses chat while the sidecar handshake is pending', async 
     })
     vi.unstubAllEnvs()
     vi.restoreAllMocks()
-    rmSync(trial.state, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
   expect(failure).toBeUndefined()
   void serving
 })
 
 it('closes its sidecar and rejects with the fatal exit code when the listener refuses an unauthenticated bind (TAL-2197)', async () => {
-  trial.state = mkdtempSync(join(tmpdir(), 'talaria-main-test-'))
+  const root = mkdtempSync(join(tmpdir(), 'talaria-main-test-'))
+  trial.state = join(root, 'state')
+  mkdirSync(trial.state)
   trial.host = '0.0.0.0'
   const fake = new FakeSidecar({ status: 'starting' })
   const close = vi.spyOn(fake, 'close')
@@ -160,6 +164,6 @@ it('closes its sidecar and rejects with the fatal exit code when the listener re
     trial.host = '127.0.0.1'
     vi.unstubAllEnvs()
     vi.restoreAllMocks()
-    rmSync(trial.state, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true })
   }
 })

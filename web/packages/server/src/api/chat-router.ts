@@ -211,7 +211,7 @@ export const chatRouter = os.router({
       let draft: string | undefined
       if (input.action === 'retry') {
         draft = await owner.retry(input.session_id, input.admission_id, input.execution_generation)
-      } else await owner.action(input.session_id, input)
+      } else await owner.action(input.session_id, input, await requestCanManageServer(ctx))
       const session = await ctx.deps.sessions.detail(input.session_id, {})
       const model_change = (session.owner_attachment as OwnerAttachment | undefined)?.model_change
       return { ok: true as const, session: session as never, ...(draft === undefined ? {} : { draft }), ...(model_change ? { model_change } : {}) }
