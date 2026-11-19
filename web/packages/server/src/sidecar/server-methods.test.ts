@@ -913,6 +913,18 @@ describe('server.project_*, workspace_*, profile_list, goal_get, goal_set (TAL-1
     expect(workspaces).toEqual({ result: await route('/api/workspaces') })
   })
 
+  it.each([false, true])('passes an authenticated agent turn’s server-owner authority (%s) to workspace registration', async (workspaceServerOwner) => {
+    vi.spyOn(s.deps.auth, 'isAuthEnabled').mockResolvedValue(true)
+    const path = syntheticRepo()
+    s.deps.registry.activeRuns.set('workspace-tool-run', {
+      stream_id: 'workspace-tool-run', session_id: 'agentcaller', started_at: 1, phase: 'running',
+      workspace: s.workspace, model: null, provider: null, ephemeral: false, workspaceServerOwner,
+    })
+    const validate = vi.spyOn(s.deps.workspaces, 'validateToAdd')
+    await ask('server.workspace_add', { path, name: 'Synthetic' })
+    expect(validate).toHaveBeenCalledWith(path, 'default', workspaceServerOwner)
+  })
+
   it('refuses an invalid workspace path with the route\'s own validation error', async () => {
     const missing = join(s.state, 'no-such-folder')
     const invalid = await ask('server.workspace_add', { path: missing })

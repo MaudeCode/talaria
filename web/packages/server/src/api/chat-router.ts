@@ -137,7 +137,7 @@ export async function goalCommand(deps: AppDeps, body: Record<string, unknown>, 
   if (kickoff) {
     const workspace = (await deps.sessions.turnWorkspace(s, body.workspace, serverOwner))
     const [model, provider, normalized] = deps.sessions.turnModel(s, body)
-    const started = (await deps.turns.start(s, { msg: kickoff, attachments: [], workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true }))
+    const started = (await deps.turns.start(s, { msg: kickoff, attachments: [], workspace, workspaceServerOwner: serverOwner, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true }))
     if (started._status !== undefined && started._status >= 400) {
       try { await deps.sessions.assertWritable(s); await sidecar.call('goals.restore', { session_id: sid, profile_home: profileHome, snapshot: snapshot.snapshot }) } catch { /* best effort */ }
       await deps.turns.refreshGoal(s)

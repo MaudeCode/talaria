@@ -221,19 +221,19 @@ export async function cancelSessionStream(deps: AppDeps, streamId: string, sid: 
  * TAL-1165: the agent tool `session_send`. A running target gets `message` as a pending steer, the composer's queue; an
  * idle one starts a turn. A running turn that refuses the steer is the tool's error, never a second turn.
  */
-export async function sendSessionMessage(deps: AppDeps, sid: string, message: string, activity?: TalariaActivity): Promise<SidecarServerResultInput<'server.session_send'>> {
+export async function sendSessionMessage(deps: AppDeps, sid: string, message: string, activity?: TalariaActivity, serverOwner = true): Promise<SidecarServerResultInput<'server.session_send'>> {
   if (activity && await deps.sessions.owner?.isOwned(sid)) {
-    const started = await startSessionChat(deps, { session_id: sid, message }, { talariaActivity: activity })
+    const started = await startSessionChat(deps, { session_id: sid, message }, { talariaActivity: activity }, undefined, undefined, serverOwner)
     return { outcome: 'started', stream_id: started.stream_id ? str(started.stream_id) : null, steer_id: null }
   }
   if (deps.registry.activeRunStreamForSession(sid)) {
-    const steered = await steerSessionChat(deps, sid, message, '', `steer-${randomUUID()}`, (body) => startSessionChat(deps, body, { talariaActivity: activity }), activity)
+    const steered = await steerSessionChat(deps, sid, message, '', `steer-${randomUUID()}`, (body) => startSessionChat(deps, body, { talariaActivity: activity }, undefined, undefined, serverOwner), activity)
     if (steered.started_turn) return { outcome: 'started', stream_id: steered.stream_id ?? null, steer_id: null }
     if (steered.accepted) return { outcome: 'queued', stream_id: steered.stream_id ?? null, steer_id: steered.steer_id ?? null }
     if (steered.outcome_unknown === true) throw new HttpFailure(409, 'The message may have reached the agent. Reconcile the session before sending it again.', { code: 'send_unconfirmed', outcome_unknown: true })
     if (deps.registry.activeRunStreamForSession(sid)) throw new HttpFailure(409, `the session's running turn did not take the message (${steered.fallback ?? 'refused'})`, { code: 'steer_refused' })
   }
-  const started = await startSessionChat(deps, { session_id: sid, message }, { talariaActivity: activity })
+  const started = await startSessionChat(deps, { session_id: sid, message }, { talariaActivity: activity }, undefined, undefined, serverOwner)
   return { outcome: 'started', stream_id: started.stream_id ? str(started.stream_id) : null, steer_id: null }
 }
 
