@@ -28,8 +28,18 @@ function endpointOf(cfg: Dict): string {
 
 /** TAL-2207: listings redact tokens in a URL or argv element. */
 const redacted = (value: unknown): unknown => typeof value === 'string' ? redactString(value) : value
-/** A submitted value equal to the redacted listing of the stored one keeps the stored one. */
-const unredacted = (submitted: unknown, stored: unknown): unknown => typeof stored === 'string' && submitted === redactString(stored) ? stored : submitted
+/** The masks `redactString` writes: `***`, a `[REDACTED …]` label, or a token cut to its ends (`sk-abc...wxyz`). */
+const REDACTION_MASK_RE = /\*{3,}|\[REDACTED[^\]]*\]|[^\s/?#&=]{0,6}\.\.\.[^\s/?#&=]{0,4}/g
+/**
+ * A submitted URL or argv element: the redacted listing of `stored` saved back unchanged keeps `stored`; one edited
+ * around a mask that listing put in place of a stored token is refused, so the mask is never saved as the credential.
+ */
+function unredacted(submitted: unknown, stored: unknown, listed: unknown[]): unknown {
+  if (typeof stored === 'string' && submitted === redactString(stored)) return stored
+  const masks = listed.flatMap((value) => typeof value === 'string' ? [...redactString(value).matchAll(REDACTION_MASK_RE)].map((m) => m[0]).filter((mask) => !value.includes(mask)) : [])
+  if (typeof submitted === 'string' && masks.some((mask) => submitted.includes(mask))) throw new HttpFailure(400, 'Enter the hidden credential again to change this URL or argument')
+  return submitted
+}
 
 function maskSecrets(obj: unknown): unknown {
   if (!isDict(obj)) return obj
@@ -425,12 +435,12 @@ export class McpService {
           if (Object.keys(lifecycle).length) server.lifecycle = lifecycle
           else Reflect.deleteProperty(server, 'lifecycle')
         }
-        server.url = unredacted(str(body.url).trim(), existing.url)
+        server.url = unredacted(str(body.url).trim(), existing.url, [existing.url])
       } else if (body.command) {
         for (const key of ['url', 'headers', 'auth', 'oauth', 'ssl_verify', 'client_cert', 'client_key', 'skip_preflight', 'transport', 'identity_header', 'strict_redirect_headers']) Reflect.deleteProperty(server, key)
         server.command = str(body.command).trim()
         const storedArgs = Array.isArray(existing.args) ? existing.args : []
-        if (body.args) server.args = (Array.isArray(body.args) ? body.args : [body.args]).map((arg, i) => unredacted(arg, storedArgs[i]))
+        if (body.args) server.args = (Array.isArray(body.args) ? body.args : [body.args]).map((arg, i) => unredacted(arg, storedArgs[i], storedArgs))
       } else throw new HttpFailure(400, 'url or command is required')
       // TAL-2207: credentials stay with the endpoint they were saved for; a new one gets only what the body sends.
       const moved = endpointOf(existing) !== endpointOf(server)

@@ -6,6 +6,7 @@ import { JoplinError, joplinSearch, McpService, notesSources, serverSummary } fr
 import { FakeSidecar } from '../sidecar/fake.js'
 import { McpHealthProber, probeServer } from './mcp-health.js'
 import type { AgentConfig, Dict } from '../config/agent-config.js'
+import { str } from '../util.js'
 
 describe('MCP config updates', () => {
   const http = { url: 'https://old.example/mcp', headers: { Authorization: 'Bearer synthetic-secret' } }
@@ -81,6 +82,10 @@ describe('MCP config updates', () => {
     expect(rows.local!.args).toEqual(['serve', expect.stringMatching(/^--token=/)])
     await service.update('/profiles/test', 'remote', { url: rows.remote!.url, headers: rows.remote!.headers })
     await service.update('/profiles/test', 'local', { command: 'old-mcp', args: rows.local!.args, env: rows.local!.env })
+    expect(cfg.mcp_servers).toEqual({ remote: { url: stored.url, headers: stored.headers }, local: { command: 'old-mcp', args: stored.args, env: stored.env } })
+    // Editing around a listed placeholder never saves the placeholder as the credential.
+    await expect(service.update('/profiles/test', 'remote', { url: str(rows.remote!.url).replace('/mcp', '/v2/mcp') })).rejects.toMatchObject({ status: 400 })
+    await expect(service.update('/profiles/test', 'local', { command: 'old-mcp', args: ['serve', str((rows.local!.args as unknown[])[1]).replace('--token', '--api-token')] })).rejects.toMatchObject({ status: 400 })
     expect(cfg.mcp_servers).toEqual({ remote: { url: stored.url, headers: stored.headers }, local: { command: 'old-mcp', args: stored.args, env: stored.env } })
   })
 
