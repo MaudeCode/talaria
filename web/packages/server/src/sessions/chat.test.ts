@@ -3061,6 +3061,8 @@ describe('chat turns through the sidecar', () => {
     const refused = await post(s, '/api/goal', { session_id: sid, args: 'gate add true' })
     expect(refused.status).toBe(400)
     expect(await json(refused)).toMatchObject({ ok: false, error: '/goal gate add: no active goal', message: '/goal gate add: no active goal' })
+    // TAL-2198: with auth off every request has owner authority, so the route authorizes the gate.
+    expect(sidecar.calls.filter((c) => c.method === 'goals.command').at(-1)?.params).toMatchObject({ args: 'gate add true', authorize_gate: true })
   })
 
   it.each([

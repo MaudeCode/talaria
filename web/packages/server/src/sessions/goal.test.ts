@@ -428,3 +428,34 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     expect(calls('goals.evaluate').map((p) => p.last_response)).toEqual([`re: ${GOAL}`, 'user answer'])
   })
 })
+
+describe('/goal gate add needs owner authority (TAL-2198)', () => {
+  const REFUSAL = 'Gate commands must be added by the server owner from the chat composer.'
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar, env: { TALARIA_WEB_PASSWORD: 'synthetic-test-password' } })
+    sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
+    // The sidecar's own rule (its test owns it): `gate add` stores a gate only with `authorize_gate: true`.
+    sidecar.respond('goals.command', (params) => params.authorize_gate === true
+      ? { ok: true, action: 'gate', message: `Added gate: ${params.args}`, goal: state }
+      : { ok: false, action: 'gate', error: 'invalid_command', message: REFUSAL, goal: state })
+  })
+  afterAll(() => s.close())
+
+  it.each([
+    { login: 'owner', bound: false, status: 200, authorized: true },
+    { login: 'profile-bound', bound: true, status: 400, authorized: undefined },
+  ])('authorizes the gate from the $login login, never from the request body', async ({ bound, status, authorized }) => {
+    const value = s.deps.auth.createSession({ authType: 'password', ...(bound ? { boundProfile: 'default' } : {}) })
+    const headers = { cookie: `${s.deps.auth.cookieName()}=${value}`, origin: s.base, 'x-csrf-token': s.deps.auth.csrfTokenForSession(value) ?? '', 'content-type': 'application/json' }
+    const request = (path: string, body: unknown) => s.get(path, { method: 'POST', body: JSON.stringify(body), headers })
+    const sid = str(((await json(await request('/api/session/new', {}))).session as Json).session_id)
+    sidecar.calls.length = 0
+    const res = await request('/api/goal', { session_id: sid, args: 'gate add true', authorize_gate: true })
+    expect(res.status).toBe(status)
+    if (!authorized) expect(await json(res)).toMatchObject({ ok: false, error: REFUSAL })
+    expect(sidecar.calls.filter((c) => c.method === 'goals.command').map((c) => (c.params as Json).authorize_gate)).toEqual([authorized])
+  })
+})
