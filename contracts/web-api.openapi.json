@@ -169673,6 +169673,49 @@
         }
       }
     },
+    "/api/remote-image": {
+      "get": {
+        "summary": "TAL-2199: a media tool's remote image, relayed so the page CSP needs no remote `img-src`. Serves only a URL the server read from a tool result and named in a result view's `media` URL; https on the default port, no redirects, at most 16 MB, sandboxed. Clients load the `url` they were sent, never one of their own.",
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "description": "Opaque relay id from a result view's media `url`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Image bytes, `Cache-Control: private, max-age=300`.",
+            "content": {
+              "image/png": {},
+              "image/jpeg": {},
+              "image/webp": {},
+              "image/gif": {},
+              "image/avif": {}
+            }
+          },
+          "404": {
+            "description": "An id the server never vouched for, or has forgotten since a restart.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "502": {
+            "description": "The remote host failed, redirected, or answered with no allowed image within the cap.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
     "/api/folder/download": {
       "get": {
         "summary": "ZIP of a workspace folder (symlinks escaping the workspace are skipped).",
