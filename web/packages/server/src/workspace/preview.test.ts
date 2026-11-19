@@ -20,7 +20,7 @@ describe('workspace preview route', () => {
     s = await bootTestServer({ env: { TALARIA_WEB_PASSWORD: PASSWORD } })
     const login = await s.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: PASSWORD }) })
     cookie = (login.headers.getSetCookie()[0] ?? '').split(';')[0] ?? ''
-    ws = realpathSync(join(s.state, 'workspace'))
+    ws = realpathSync(s.workspace)
     const put = (rel: string, text: string) => { writeFileSync(join(ws, rel), text) }
     for (const dir of ['docs/site/img', 'docs/site/.git', 'docs/other', '.git']) mkdirSync(join(ws, dir), { recursive: true })
     put('docs/site/index.html', '<html><head><link rel="stylesheet" href="app.css"></head><body><script src="app.js"></script></body></html>')

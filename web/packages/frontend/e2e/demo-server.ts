@@ -84,7 +84,7 @@ async function seed(server: Awaited<ReturnType<typeof discussionServer>>['server
   await server.deps.settings.save({ show_quota_chip: true })
   server.deps.agentConfig.invalidate()
   server.deps.catalog.invalidate()
-  const workspace = join(server.state, 'workspace')
+  const workspace = server.workspace
   mkdirSync(workspace, { recursive: true })
   // The Agent's MemoryStore separates entries with a `§` line; the Memory page shows each as its own block.
   mkdirSync(join(server.state, 'memories'), { recursive: true })

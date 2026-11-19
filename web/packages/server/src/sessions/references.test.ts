@@ -90,7 +90,7 @@ describe('new-chat conversation references', () => {
 
   it('recovers a project creation by its original request after the project defaults change (TAL-1032)', async () => {
     await seed('first')
-    const [one, two] = ['one', 'two'].map((name) => join(s.state, 'workspace', name))
+    const [one, two] = ['one', 'two'].map((name) => join(s.workspace, name))
     for (const dir of [one!, two!]) mkdirSync(dir, { recursive: true })
     const setDefault = (dir: string) => s.deps.projects.mutate((rows) => {
       const row = rows.find((p) => p.project_id === 'refproject1')
@@ -130,11 +130,11 @@ describe('new-chat conversation references', () => {
     await seed('first')
     vi.spyOn(s.deps.sessions, 'resolveNewSessionWorkspace').mockImplementationOnce(async () => {
       await s.deps.sessionStore.delete('first')
-      return join(s.state, 'workspace')
+      return s.workspace
     })
     vi.spyOn(s.deps.git, 'holdWrite').mockImplementation(async (_path, action) => action())
     const worktree = vi.spyOn(s.deps.worktrees, 'create').mockResolvedValue({ path: join(s.state, 'worktree'), branch: 'synthetic', repo_root: s.state, created_at: 1 })
-    const res = await post(s, { source_references: [ref('first')], request_id: 'changed-before-worktree', worktree: true, workspace: join(s.state, 'workspace') })
+    const res = await post(s, { source_references: [ref('first')], request_id: 'changed-before-worktree', worktree: true, workspace: s.workspace })
     expect(res.status).toBe(409)
     expect(worktree).not.toHaveBeenCalled()
   })

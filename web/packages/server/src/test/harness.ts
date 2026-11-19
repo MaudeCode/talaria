@@ -25,6 +25,7 @@ export interface TestServer {
   running: RunningServer
   base: string
   state: string
+  workspace: string
   logs: string[]
   /** `fetch` that never follows redirects. */
   get: (path: string, init?: RequestInit) => Promise<Response>
@@ -96,14 +97,16 @@ function usePostgres(env: Env): string {
 }
 
 export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer> {
-  const state = mkdtempSync(join(tmpdir(), 'talaria-server-test-'))
+  const root = mkdtempSync(join(tmpdir(), 'talaria-server-test-'))
+  const state = join(root, 'state')
+  const workspace = join(root, 'workspace')
   const logs = opts.logs ?? []
   const env: Env = {
     PATH: process.env.PATH,
     HOME: process.env.HOME,
     HERMES_HOME: state,
     TALARIA_WEB_STATE_DIR: state,
-    TALARIA_WEB_DEFAULT_WORKSPACE: join(state, 'workspace'),
+    TALARIA_WEB_DEFAULT_WORKSPACE: workspace,
     // Never scan the real ~/.claude/projects (TAL-551).
     TALARIA_WEB_CLAUDE_PROJECTS_DIR: join(state, 'claude-projects'),
     TALARIA_WEB_HOST: '127.0.0.1',
@@ -124,6 +127,7 @@ export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer
     running,
     base,
     state,
+    workspace,
     logs,
     get: (path, init) => fetch(base + path, { redirect: 'manual', ...init }),
     sse: async (path, until, sseOpts = {}) => {
@@ -167,7 +171,7 @@ export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer
       await running.close()
       // A test that names its own state directory may boot it again, like a SQLite database inside it.
       if (postgresSchema && env.TALARIA_WEB_STATE_DIR === state) await dropTestSchema(env.TALARIA_STORAGE_URL ?? '', postgresSchema)
-      rmSync(state, { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true })
     },
   }
 }

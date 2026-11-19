@@ -719,7 +719,7 @@ describe('state.db projection', () => {
   it('file operations resolve an Agent-owned state.db session without a sidecar file to the active workspace', async () => {
     expect(stateDbHasSession(join(s.state, 'no-such.db'), 'tg-external-files')).toBe(false)
     insertSession(db, { id: 'tg-external-files', source: 'telegram', started_at: 300, title: 'From Telegram', messages: [['user', 301]] })
-    const ws = realpathSync(join(s.state, 'workspace'))
+    const ws = realpathSync(s.workspace)
     writeFileSync(join(ws, 'from-agent.txt'), 'hello')
     const res = await s.get('/api/list?session_id=tg-external-files&path=.')
     expect(res.status).toBe(200)

@@ -254,7 +254,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   })
 
   it('reads and writes memory files, honours config flags, and reports project context', async () => {
-    const ws = join(s.state, 'workspace')
+    const ws = s.workspace
     mkdirSync(ws, { recursive: true })
     writeFileSync(join(ws, 'AGENTS.md'), '---\ntitle: x\n---\n\n# Rules\nsk-live-1234567890abcdefghij')
     writeFileSync(join(ws, 'CLAUDE.md'), 'shadowed')

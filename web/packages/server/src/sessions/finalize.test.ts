@@ -1,4 +1,3 @@
-import { join } from 'node:path'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer } from '../test/harness.js'
@@ -11,7 +10,7 @@ describe('session finalize (TAL-937)', () => {
     const sidecar = new FakeSidecar()
     const server = await bootTestServer({ sidecar })
     onTestFinished(() => server.close())
-    const session = await server.deps.sessionStore.newSession({ workspace: join(server.state, 'workspace') })
+    const session = await server.deps.sessionStore.newSession({ workspace: server.workspace })
     session.messages = [{ role: 'user', content: 'old conversation' }, { role: 'assistant', content: 'old answer' }]
     await server.deps.sessionStore.save(session)
     return { sidecar, server, session }
@@ -157,7 +156,7 @@ describe('session finalize (TAL-937)', () => {
     const response = await server.get('/api/session/archive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: session.session_id, archived: true }) })
     expect(response.status).toBe(404)
     expect(session.archived).toBe(false)
-    const empty = await server.deps.sessionStore.newSession({ workspace: join(server.state, 'workspace') })
+    const empty = await server.deps.sessionStore.newSession({ workspace: server.workspace })
     await server.deps.sessionStore.save(empty)
     expect(await server.deps.sessions.cleanup(true)).toMatchObject({ ok: true, cleaned: 1 })
     expect(sidecar.calls.filter((c) => c.method === task)).toEqual([])

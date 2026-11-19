@@ -290,6 +290,10 @@ export async function sessionCanManageServer(ctx: { deps: Pick<AppDeps, 'auth' |
   return !(info.bound_profile ?? '').trim()
 }
 
+export async function requestCanManageServer(ctx: RequestContext): Promise<boolean> {
+  return ctx.personAccess?.serverOwner ?? await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))
+}
+
 // ── login redirect ────────────────────────────────────────────────────────
 
 function isLoginShaped(probe: string): boolean {

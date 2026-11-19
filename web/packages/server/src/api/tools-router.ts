@@ -9,7 +9,7 @@ import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { clientStreamKey } from './sse-routes.js'
-import { activeProfileName, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
+import { activeProfileName, ensureTrustedAuthSession, sessionCanManageServer, requestCanManageServer } from '../auth/gate.js'
 import { currentChatReadiness, HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { stateDbSessionReadAsync } from '../sessions/state-db.js'
@@ -474,7 +474,7 @@ async function memoryWorkspace(ctx: RequestContext, sessionId: string, workspace
   if (!ctx.deps.workspaces.profileSupportsLocalIo(profile)) return null
   const raw = workspace || (ctx.deps.config.env.TERMINAL_CWD ?? '') || (await ctx.deps.workspaces.lastWorkspace(profile))
   if (!raw) return null
-  try { return (await ctx.deps.workspaces.resolveTrusted(raw, profile)) } catch { return null }
+  try { return (await ctx.deps.workspaces.resolveTrusted(raw, profile, await requestCanManageServer(ctx))) } catch { return null }
 }
 
 /** The external notes drawer's Joplin access; 404 while the drawer is disabled. */

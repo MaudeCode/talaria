@@ -1,5 +1,4 @@
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { bootTestServer } from '../../server/dist/test/harness.js'
 import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
 import { Session } from '../../server/dist/sessions/session.js'
@@ -20,7 +19,7 @@ test('a terminal the agent opened shows its card, and Open focuses the live pane
   const now = Math.floor(Date.now() / 1000)
   const shot = async (name: string) => { if (process.env.TAL1974_SHOTS) await page.screenshot({ path: `${process.env.TAL1974_SHOTS}/${name}-${testInfo.project.name}.png` }) }
   try {
-    const workspace = join(server.state, 'workspace')
+    const workspace = server.workspace
     mkdirSync(workspace, { recursive: true })
     await server.deps.sessionStore.save(new Session({ session_id: sid, title: 'Release build', profile: 'default', workspace, messages: [] }, { workspace, model: null }))
     const args = { command: 'for step in compile bundle; do echo "step $step done"; done; echo BUILD-OK', title: 'Release build' }
@@ -84,7 +83,7 @@ test('Open on a terminal whose shell already exited shows its output closed and 
   const sid = '20261109_090000_exited'
   const now = Math.floor(Date.now() / 1000)
   try {
-    const workspace = join(server.state, 'workspace')
+    const workspace = server.workspace
     mkdirSync(workspace, { recursive: true })
     await server.deps.sessionStore.save(new Session({ session_id: sid, title: 'One-shot', profile: 'default', workspace, messages: [] }, { workspace, model: null }))
     const args = { command: 'echo DONE-AND-EXIT; exit 3' }

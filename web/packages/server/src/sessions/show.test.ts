@@ -39,7 +39,7 @@ describe('show blocks (TAL-1968)', () => {
   beforeEach(async () => {
     sidecar = new FakeSidecar()
     s = await bootTestServer({ sidecar, now: () => clock, storage: async (config) => { const backend = await createStorage(config, () => clock); documents = backend.documents; return backend } })
-    workspace = join(s.state, 'workspace')
+    workspace = s.workspace
     mkdirSync(join(workspace, 'reports'), { recursive: true })
     await s.deps.sessionStore.save(new Session({ session_id: CALLER, title: CALLER, profile: 'default', workspace, updated_at: clock, messages: [{ role: 'user', content: 'hi', timestamp: clock }] }, { workspace, model: null }))
   })

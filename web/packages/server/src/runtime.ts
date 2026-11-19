@@ -274,6 +274,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const runningCronJobs = new Map<string, number>()
   const workspaces = new WorkspaceRegistry({
     documents: storage.documents,
+    stateDir: config.stateDir,
+    hermesHome: config.hermesHome,
     defaultWorkspace: () => config.defaultWorkspace,
     profileHome,
     activeProfile,
@@ -968,7 +970,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     'server.project_rename': ({ caller_session_id, project_id, name }) => asCaller(caller_session_id, () => projectRename(deps, { project_id, name })),
     // The workspace entries' type is erased as the routers do.
     'server.workspace_list': ({ caller_session_id }) => asCaller(caller_session_id, async () => (await workspaceList(deps)) as never),
-    'server.workspace_add': ({ caller_session_id, path, name }) => asCaller(caller_session_id, async () => (await workspaceAdd(deps, { path, name })) as never),
+    'server.workspace_add': ({ caller_session_id, path, name }) => asCaller(caller_session_id, async () => (await workspaceAdd(deps, { path, name }, true)) as never),
     'server.workspace_rename': ({ caller_session_id, path, name }) => asCaller(caller_session_id, async () => (await workspaceRename(deps, { path, name })) as never),
     'server.profile_list': ({ caller_session_id }) => asCaller(caller_session_id, () => profileList(deps)),
     // TAL-1170: `/api/goal` on a session in the caller's profile. A new goal starts the target's turn, so, as

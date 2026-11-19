@@ -37,7 +37,7 @@ describe('request_secret (TAL-1969)', () => {
     sidecar = new FakeSidecar()
     s = await bootTestServer({ sidecar })
     sidecar.respond('runtime.env', () => ({ ok: true }))
-    const workspace = join(s.state, 'workspace')
+    const workspace = s.workspace
     mkdirSync(workspace, { recursive: true })
     await s.deps.sessionStore.save(new Session({ session_id: CALLER, title: 'Report', profile: 'default', workspace, messages: [] }, { workspace, model: null }))
   })
@@ -81,7 +81,7 @@ describe('request_secret (TAL-1969)', () => {
 
   it('keeps the first of two overlapping saves of a new name and refuses the second', async () => {
     const other = '20261109_090000_other'
-    const workspace = join(s.state, 'workspace')
+    const workspace = s.workspace
     await s.deps.sessionStore.save(new Session({ session_id: other, title: 'Other', profile: 'default', workspace, messages: [] }, { workspace, model: null }))
     const first = ask()
     const second = sidecar.serverRequest('server.secret_request', { ...fixture.params, caller_session_id: other })
@@ -154,7 +154,7 @@ describe('request_secret for a non-owner (TAL-1969)', () => {
       return { cookie: `${s.deps.auth.cookieName()}=${value}`, origin: s.base, 'x-csrf-token': s.deps.auth.csrfTokenForSession(value) ?? '' }
     }
     try {
-      const workspace = join(s.state, 'workspace')
+      const workspace = s.workspace
       mkdirSync(workspace, { recursive: true })
       await s.deps.sessionStore.save(new Session({ session_id: CALLER, title: 'Report', profile: 'default', workspace, messages: [] }, { workspace, model: null }))
       const reply = sidecar.serverRequest('server.secret_request', fixture.params)

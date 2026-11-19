@@ -99,12 +99,12 @@ async function requireSupportedChatCommand(deps: AppDeps, msg: string): Promise<
  * not one. One the Agent cannot expand is
  * refused with the catalog's message instead of reaching the model raw. Without a sidecar the turn reports that itself.
  */
-export async function expandPromptBuiltin(deps: AppDeps, s: Session, msg: string, workspace: unknown): Promise<string | null> {
+export async function expandPromptBuiltin(deps: AppDeps, s: Session, msg: string, workspace: unknown, serverOwner = true): Promise<string | null> {
   const sidecar = deps.sidecar()
   if (!msg.startsWith('/') || !sidecar) return null
   // Only `/init` reads the workspace, and the sidecar refuses it without one; the turn reports a bad workspace itself.
   let cwd = ''
-  try { cwd = (await deps.sessions.turnWorkspace(s, workspace)) } catch { cwd = '' }
+  try { cwd = (await deps.sessions.turnWorkspace(s, workspace, serverOwner)) } catch { cwd = '' }
   let expanded: SidecarResult<'commands.expand_prompt'>
   try {
     expanded = await sidecar.call('commands.expand_prompt', {
@@ -120,7 +120,7 @@ export async function expandPromptBuiltin(deps: AppDeps, s: Session, msg: string
   return expanded.message
 }
 
-export async function startSessionChat(deps: AppDeps, body: Record<string, unknown>, settle: Pick<StartTurnOptions, 'onDone' | 'onFailed' | 'talariaActivity'> = {}, timing?: StartupTiming, fence?: QueueAdmissionFence): Promise<Record<string, unknown>> {
+export async function startSessionChat(deps: AppDeps, body: Record<string, unknown>, settle: Pick<StartTurnOptions, 'onDone' | 'onFailed' | 'talariaActivity'> = {}, timing?: StartupTiming, fence?: QueueAdmissionFence, serverOwner = true): Promise<Record<string, unknown>> {
   const measure = <T>(name: Parameters<NonNullable<typeof timing>['measure']>[0], fn: () => Promise<T> | T): Promise<T> => timing ? timing.measure(name, fn) : Promise.resolve(fn())
   requireField(body, 'session_id')
   timing?.identify(str(body.session_id))
@@ -170,7 +170,7 @@ export async function startSessionChat(deps: AppDeps, body: Record<string, unkno
   const attachments = normalizeChatAttachments(body.attachments).slice(0, MAX_CHAT_ATTACHMENTS)
   // TAL-276: an attached file alone makes a turn; one with neither text nor a file path is refused.
   if (!msg && !attachments.some((att) => str(att.path))) throw new HttpFailure(400, 'message is required')
-  const prompt = await measure('prompt_preparation', () => expandPromptBuiltin(deps, s, msg, body.workspace))
+  const prompt = await measure('prompt_preparation', () => expandPromptBuiltin(deps, s, msg, body.workspace, serverOwner))
   // TAL-460: the user's message never joins a background turn; that turn stops quietly and this one takes its place.
   const yielded = fence ? false : await measure('background_yield', () => deps.turns.yieldBackgroundTurn(sid))
   if (prompt !== null || yielded) {
@@ -181,7 +181,7 @@ export async function startSessionChat(deps: AppDeps, body: Record<string, unkno
   if (compressionRecoveryPayload(s) && !attachments.length && isGenericContinuationIntent(msg)) {
     throw new HttpFailure(409, 'This session exhausted context compression. Start a focused continuation, then describe the next narrow task.', { type: 'compression_recovery_required', compression_recovery: s.compression_recovery, session_id: s.session_id })
   }
-  const workspace = await measure('workspace_preparation', () => deps.sessions.turnWorkspace(s, body.workspace))
+  const workspace = await measure('workspace_preparation', () => deps.sessions.turnWorkspace(s, body.workspace, serverOwner))
   const [model, provider, normalized] = deps.sessions.turnModel(s, body)
   if (body.moa_config) throw new HttpFailure(503, 'MoA overrides need the Agent command registry (checkpoint 7).')
   const admissionCheck = fence ? (target: Session) => {

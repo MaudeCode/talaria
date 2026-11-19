@@ -29,7 +29,7 @@ describe('raw byte routes', () => {
   let sid: string
   beforeAll(async () => {
     s = await bootTestServer()
-    ws = realpathSync(join(s.state, 'workspace'))
+    ws = realpathSync(s.workspace)
     sid = await newSession(s, ws)
     writeFileSync(join(ws, 'photo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4, 5, 6]))
     writeFileSync(join(ws, 'page.html'), '<!doctype html><html><head><title>t</title></head><body>hi</body></html>')
@@ -166,7 +166,7 @@ describe('raw byte routes', () => {
     expect((await s.get(`/api/folder/download?session_id=${sid}&path=nope`)).status).toBe(404)
     const capped = await bootTestServer({ env: { TALARIA_WEB_FOLDER_ZIP_MAX_FILES: '1' } })
     try {
-      const cws = realpathSync(join(capped.state, 'workspace'))
+      const cws = realpathSync(capped.workspace)
       mkdirSync(join(cws, 'd'))
       writeFileSync(join(cws, 'd', '1'), '1')
       writeFileSync(join(cws, 'd', '2'), '2')
@@ -520,7 +520,7 @@ describe('worktree-backed sessions', () => {
       return { path, branch: 'hermes/wt', repo_root: params.repo_root, base: null }
     })
     s = await bootTestServer({ sidecar })
-    ws = realpathSync(join(s.state, 'workspace'))
+    ws = realpathSync(s.workspace)
     mkdirSync(join(ws, '.git'), { recursive: true })
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
   })
@@ -709,7 +709,7 @@ describe('worktree status against a real git worktree', () => {
   let sid = ''
   beforeAll(async () => {
     s = await bootTestServer()
-    const fixture = gitFixture(join(realpathSync(join(s.state, 'workspace')), 'git'))
+    const fixture = gitFixture(join(realpathSync(s.workspace), 'git'))
     repo = fixture.repo
     worktree = fixture.worktree
     sid = String(((await json(await post(s, '/api/session/new', { workspace: repo }))).session as Json).session_id)
@@ -754,7 +754,7 @@ describe('TAL-1254: a restarted sidecar retains the worktree chats before it is 
       return { results: Object.fromEntries(params.paths.filter((p) => !unconfirmed.has(p)).map((p) => [p, missing.has(p) ? 'missing' as const : 'retained' as const])) }
     })
     s = await bootTestServer({ sidecar })
-    ws = realpathSync(join(s.state, 'workspace'))
+    ws = realpathSync(s.workspace)
     mkdirSync(join(ws, '.git'), { recursive: true })
   })
   afterAll(() => s.close())

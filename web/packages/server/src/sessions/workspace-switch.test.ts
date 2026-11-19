@@ -18,8 +18,8 @@ describe('workspace switch on session update', () => {
   let second: string
   beforeAll(async () => {
     s = await bootTestServer({ sidecar: new FakeSidecar() })
-    first = join(s.state, 'workspace', 'switch-a')
-    second = join(s.state, 'workspace', 'switch-b')
+    first = join(s.workspace, 'switch-a')
+    second = join(s.workspace, 'switch-b')
     mkdirSync(first, { recursive: true })
     mkdirSync(second, { recursive: true })
     first = realpathSync(first)

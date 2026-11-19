@@ -1,5 +1,4 @@
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { bootTestServer } from '../../server/dist/test/harness.js'
 import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
 import { Session } from '../../server/dist/sessions/session.js'
@@ -27,7 +26,7 @@ test('shows a proposal on its tool card and applies it once approved', async ({ 
   const now = Math.floor(Date.now() / 1000)
   const shot = async (name: string) => { if (process.env.TAL1967_SHOTS) await page.screenshot({ path: `${process.env.TAL1967_SHOTS}/${name}-${testInfo.project.name}.png`, fullPage: true }) }
   try {
-    const workspace = join(server.state, 'workspace')
+    const workspace = server.workspace
     mkdirSync(workspace, { recursive: true })
     // The agent proposes from its own session, which must exist first.
     await server.deps.sessionStore.save(new Session({ session_id: sid, title: 'Tune the chat', profile: 'default', workspace, messages: [] }, { workspace, model: null }))

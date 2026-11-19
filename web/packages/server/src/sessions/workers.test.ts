@@ -1983,7 +1983,7 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
       })
       release()
       await s.deps.turns.finished(str(disk.active_stream_id))
-      restart = await bootTestServer({ sidecar, env: { HERMES_HOME: s.state, TALARIA_WEB_STATE_DIR: s.state, TALARIA_WEB_DEFAULT_WORKSPACE: join(s.state, 'workspace') } })
+      restart = await bootTestServer({ sidecar, env: { HERMES_HOME: s.state, TALARIA_WEB_STATE_DIR: s.state, TALARIA_WEB_DEFAULT_WORKSPACE: s.workspace } })
       await restart.deps.completions.processOne(event)
       expect(starts).toHaveLength(1)
     } finally {
@@ -2060,7 +2060,7 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
       sidecar.respond('process.format_notification', () => ({ text: '[Result deleg_held]' }))
       sidecar.respond('process.claim_delivery', () => ({ claim_id: '' }))
       await s.deps.completions.processOne({ type: 'async_delegation', process_id: 'deleg_held', delegation_id: 'deleg_held', origin_ui_session_id: sid, consumed: false })
-      restart = await bootTestServer({ sidecar, env: { HERMES_HOME: s.state, TALARIA_WEB_STATE_DIR: s.state, TALARIA_WEB_DEFAULT_WORKSPACE: join(s.state, 'workspace') } })
+      restart = await bootTestServer({ sidecar, env: { HERMES_HOME: s.state, TALARIA_WEB_STATE_DIR: s.state, TALARIA_WEB_DEFAULT_WORKSPACE: s.workspace } })
       await restart.deps.completions.drainOnce()
       await restart.deps.completions.drainDeferred(sid)
       expect((await restart.deps.turns.automaticTurnsHeld(sid))).toBe(true)

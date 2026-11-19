@@ -983,7 +983,7 @@ export class GatewaySessions {
     const target = await this.target(sid)
     if (!target) throw new HttpFailure(403, 'This session has no canonical owner')
     if (params.action === 'mutate' && params.operation === 'workspace') {
-      try { await this.deps.service.deps.workspaces.resolveTrusted(str(params.payload?.cwd), target.profile) }
+      try { await this.deps.service.deps.workspaces.resolveTrusted(str(params.payload?.cwd), target.profile, true) }
       catch { throw new HttpFailure(400, 'The workspace must be trusted before selecting it') }
     }
     const reasoningPick = params.action === 'mutate' && params.operation === 'reasoning'

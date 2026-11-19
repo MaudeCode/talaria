@@ -49,7 +49,7 @@ afterEach(async () => {
 
 async function fixture() {
   server = await bootTestServer({ sidecar: new FakeSidecar() })
-  const ws = realpathSync(join(server.state, 'workspace'))
+  const ws = realpathSync(server.workspace)
   const post = (path: string, body: unknown) => server!.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   const created = await post('/api/session/new', { workspace: ws })
   expect(created.status).toBe(200)

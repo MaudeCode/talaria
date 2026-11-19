@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from './fixtures'
-import { openServerState, openStateDb } from './server'
+import { openServerState, openServerWorkspace, openStateDb } from './server'
 import carrier from '../../server/src/test/fixtures/compaction-carrier.json' with { type: 'json' }
 
 test.use({ serviceWorkers: 'block' })
@@ -16,7 +16,7 @@ test('a kept-message summary renders once as a compaction card and survives refr
   try {
     db.exec('PRAGMA foreign_keys = OFF; DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS system_prompts')
     db.exec([...carrier.schema, ...carrier.snapshots.compacted].join('\n').replaceAll(carrier.sessionId, sid))
-    writeFileSync(sessionPath, JSON.stringify({ session_id: sid, title: 'Parser review', workspace: join(state, 'workspace'),
+    writeFileSync(sessionPath, JSON.stringify({ session_id: sid, title: 'Parser review', workspace: openServerWorkspace(),
       messages: carrier.before, context_messages: carrier.before, created_at: 1000, updated_at: 1003 }))
     await page.goto(`/session/${sid}`)
     await expect(page.locator('#messages')).toContainText('The parser interface is preserved.')

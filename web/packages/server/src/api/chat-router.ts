@@ -13,7 +13,7 @@ import type { Session } from '../sessions/session.js'
 import { isSafeSessionId } from '../sessions/session.js'
 import { messageText } from '../sessions/merge.js'
 import { str } from '../util.js'
-import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
+import { requestCanManageServer } from '../auth/gate.js'
 import { pendingForViewer } from '../sessions/pending.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { StartTurnOptions, TurnFailure } from '../sessions/turn.js'
@@ -100,7 +100,7 @@ async function getSession(deps: AppDeps, sid: string, metadataOnly = false): Pro
  * `authorizeGate` lets `/goal gate add` store a shell gate: only the route sets it, from the request's owner authority,
  * never from the body (TAL-2198).
  */
-export async function goalCommand(deps: AppDeps, body: Record<string, unknown>, authorizeGate = false) {
+export async function goalCommand(deps: AppDeps, body: Record<string, unknown>, authorizeGate = false, serverOwner = true) {
   requireField(body, 'session_id')
   const args = str(body.args || body.text)
   if (args.trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
@@ -135,7 +135,7 @@ export async function goalCommand(deps: AppDeps, body: Record<string, unknown>, 
   }
   const kickoff = str(payload.kickoff_prompt).trim()
   if (kickoff) {
-    const workspace = (await deps.sessions.turnWorkspace(s, body.workspace))
+    const workspace = (await deps.sessions.turnWorkspace(s, body.workspace, serverOwner))
     const [model, provider, normalized] = deps.sessions.turnModel(s, body)
     const started = (await deps.turns.start(s, { msg: kickoff, attachments: [], workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true }))
     if (started._status !== undefined && started._status >= 400) {
@@ -156,7 +156,7 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
   try {
     // TAL-1881: Retry showed the client a masked prompt; the turn runs the one the server held, whatever text came back.
     if (typeof body.retry_token === 'string') held = ctx.deps.sessions.claimRetryPrompt(str(body.session_id), body.retry_token)
-    const response = await startSessionChat(ctx.deps, held ? { ...body, message: held.prompt } : body, settle, timing ?? undefined)
+    const response = await startSessionChat(ctx.deps, held ? { ...body, message: held.prompt } : body, settle, timing ?? undefined, undefined, await requestCanManageServer(ctx))
     if (!response.stream_id) timing?.finish('noop')
     return response
   } catch (error) {
@@ -282,7 +282,7 @@ export const chatRouter = os.router({
     })),
   },
   clarify: {
-    pending: os.clarify.pending.handler(({ input, context: { ctx } }) => run(async () => pendingPrompt(ctx.deps, str(input.session_id), 'clarify', await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))))),
+    pending: os.clarify.pending.handler(({ input, context: { ctx } }) => run(async () => pendingPrompt(ctx.deps, str(input.session_id), 'clarify', await requestCanManageServer(ctx)))),
     respond: os.clarify.respond.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id)
       if (!sid) throw new HttpError(400, 'session_id is required')
@@ -292,7 +292,7 @@ export const chatRouter = os.router({
       if (reply === '') throw new HttpError(400, 'response is required')
       // TAL-1969: the server answers an agent's secret request itself, and only for the server owner.
       if (ctx.deps.secrets.owns(str(input.clarify_id))) {
-        if (!(await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx)))) throw new HttpError(403, 'Only the server owner can answer a secret request.', { ok: false, code: 'not_owner' })
+        if (!(await requestCanManageServer(ctx))) throw new HttpError(403, 'Only the server owner can answer a secret request.', { ok: false, code: 'not_owner' })
         const value = reply === null ? null : typeof reply === 'object' && typeof reply.secret === 'string' ? reply.secret : undefined
         if (value === undefined) throw new HttpError(400, 'answers must carry the secret', { ok: false })
         await ctx.deps.secrets.answer(sid, str(input.clarify_id), value)
@@ -301,7 +301,10 @@ export const chatRouter = os.router({
       return clarifyRespond(ctx.deps, sid, str(input.clarify_id), reply)
     })),
   },
-  goal: os.goal.handler(({ input, context: { ctx } }) => run(async () => goalCommand(ctx.deps, input as Record<string, unknown>, await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))))),
+  goal: os.goal.handler(({ input, context: { ctx } }) => run(async () => {
+    const serverOwner = await requestCanManageServer(ctx)
+    return goalCommand(ctx.deps, input, serverOwner, serverOwner)
+  })),
   background: {
     start: os.background.start.handler(({ input, context: { ctx } }) => run(async () => {
       const body = input as Record<string, unknown>

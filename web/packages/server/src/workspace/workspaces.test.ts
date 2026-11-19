@@ -42,6 +42,46 @@ function fixture(profile = 'default') {
   return { registry, documents, profileConfig, file, bytes, entries, home }
 }
 
+describe('workspace authority', () => {
+  it('limits a restricted caller to its own workspace roots', async () => {
+    const { registry, home, profileConfig } = fixture('guest')
+    const allowed = join(home, '..', 'project')
+    profileConfig.mockReturnValue({})
+    registry.deps.defaultWorkspace = () => allowed
+    const unrelated = join(home, 'unrelated')
+    mkdirSync(unrelated)
+    await expect(registry.resolveTrusted(unrelated, 'guest', false)).rejects.toThrow('outside')
+    await expect(registry.resolveTrusted(unrelated, 'guest', true)).resolves.toBe(unrelated)
+    await expect(registry.resolveTrusted(allowed, 'guest', false)).resolves.toBe(allowed)
+  })
+
+  it('prioritizes protected boundaries over saved and configured workspaces', async () => {
+    const { registry, home, profileConfig } = fixture('guest')
+    const hermes = join(home, '.agent')
+    const state = join(hermes, 'web')
+    const profileHome = join(hermes, 'profiles', 'other')
+    const configured = join(home, 'configured')
+    const saved = join(home, '..', 'other')
+    for (const path of [state, profileHome, configured, join(saved, 'nested'), join(home, '.ssh')]) {
+      mkdirSync(path, { recursive: true })
+    }
+    registry.deps.hermesHome = hermes
+    registry.deps.stateDir = state
+    registry.deps.defaultWorkspace = () => home
+    profileConfig.mockReturnValue({ workspace: configured })
+
+    for (const path of [home, hermes, profileHome, state, join(home, '.ssh')]) {
+      await expect(registry.resolveTrusted(path, 'guest', false)).rejects.toThrow('outside')
+      await expect(registry.validateToAdd(path, 'guest', false)).rejects.toThrow('outside')
+    }
+    await expect(registry.resolveTrusted(home, 'guest', true)).resolves.toBe(home)
+    await expect(registry.resolveTrusted(state, 'guest', true)).rejects.toThrow('outside')
+    await expect(registry.resolveTrusted(configured, 'guest', false)).resolves.toBe(configured)
+    await expect(registry.resolveTrusted(join(saved, 'nested'), 'guest', false)).resolves.toBe(join(saved, 'nested'))
+  })
+
+})
+
 describe('blocked system paths (TAL-1725)', () => {
   const symlinkedEtc = join(realpathSync('/etc'), 'talaria-missing')
 
