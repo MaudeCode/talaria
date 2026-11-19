@@ -8146,7 +8146,7 @@
             "kind": "image"
           },
           {
-            "url": "https://cdn.example/cat-2.png",
+            "url": "./api/remote-image?id=3445fe4e07acfe4b73f54106bd5f9507",
             "name": "cat-2.png",
             "mime": "image/png",
             "kind": "image"
@@ -8358,7 +8358,7 @@
                     "kind": "image"
                   },
                   {
-                    "url": "https://cdn.example/cat-2.png",
+                    "url": "./api/remote-image?id=3445fe4e07acfe4b73f54106bd5f9507",
                     "name": "cat-2.png",
                     "mime": "image/png",
                     "kind": "image"
@@ -8744,7 +8744,7 @@
                         "kind": "image"
                       },
                       {
-                        "url": "https://cdn.example/cat-2.png",
+                        "url": "./api/remote-image?id=3445fe4e07acfe4b73f54106bd5f9507",
                         "name": "cat-2.png",
                         "mime": "image/png",
                         "kind": "image"
@@ -11791,7 +11791,7 @@
               "target": "Send email (work)",
               "app": {
                 "name": "Gmail",
-                "logo_url": "https://logos.example/gmail.svg"
+                "logo_url": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjZWE0MzM1Ii8+PC9zdmc+"
               },
               "function": {
                 "name": "connectors__gmail__GMAIL_SEND_EMAIL",
@@ -11970,7 +11970,7 @@
                   "target": "Send email (work)",
                   "app": {
                     "name": "Gmail",
-                    "logo_url": "https://logos.example/gmail.svg"
+                    "logo_url": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjZWE0MzM1Ii8+PC9zdmc+"
                   },
                   "args": {
                     "to": "team@example.com",

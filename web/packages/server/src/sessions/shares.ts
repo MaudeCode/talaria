@@ -4,7 +4,7 @@ import { str } from '../util.js'
  * of a conversation under `shares/<token>.json`. Only user/assistant prose is
  * published; credentials and local paths are always redacted; local MEDIA:
  * references become inline images only when they resolve inside an allowed
- * root and pass the image allow-list.
+ * root and pass the image allow-list; remote images become links.
  */
 import { closeSync, fstatSync, statSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
@@ -16,6 +16,7 @@ import { expandHome, isWithin, resolvePathLikePython } from '../workspace/paths.
 import { openAnchoredFd, readFdUpTo } from '../workspace/fs.js'
 import { isSafeSessionId, type Session } from './session.js'
 import { normalizeAssistantDisplay } from './merge.js'
+import { linkRemoteImages } from '../workspace/media-refs.js'
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 const SHARE_TOKEN_RE = /^[A-Za-z0-9_-]{8,64}$/
@@ -163,9 +164,9 @@ function omitInlineData(text: string): string {
   return out.replace(DATA_URI_RE, PLACEHOLDER)
 }
 
-/** The share-only pipeline every published string passes through: credentials, inline data, then local paths. */
+/** The share-only pipeline every published string passes through: credentials, inline data, remote images (TAL-2199), then local paths. */
 function sanitizeShareText(text: string, redactPaths: string[], embed: (text: string) => string = (t) => t): string {
-  return redactSharePaths(embed(omitInlineData(redactSensitive(text))), redactPaths)
+  return redactSharePaths(embed(linkRemoteImages(omitInlineData(redactSensitive(text)))), redactPaths)
 }
 
 /** Roots are already trusted: resolving them again would let a later symlink move the boundary. */

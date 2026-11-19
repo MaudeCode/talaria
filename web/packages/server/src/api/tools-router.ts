@@ -17,6 +17,7 @@ import { SidecarError } from '../sidecar/client.js'
 import { createPrompt, deletePrompt, externalNotesEnabled, loadPrompts, readMemory, requestPromptRefresh, writeMemory, previewMemoryCompaction, applyMemoryCompaction, type MemoryWriteDeps } from '../tools/memory.js'
 import { JoplinError, joplinNote, joplinSearch, notesSources, type JoplinDeps } from '../tools/mcp.js'
 import { catalogNames, connectorOperation, connectorsPage, connectorTools, offeredMove, rememberCatalogNames } from '../tools/connectors.js'
+import { rememberConnectorLogos } from '../sessions/tool-display.js'
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
 import { buildInsights } from '../tools/insights.js'
 import { canonicalExecCommand, commandCatalog, SESSION_EXEC_COMMANDS } from '../tools/commands.js'
@@ -821,6 +822,8 @@ export const toolsRouter = os.router({
         connectorRead(ctx, 'connectors.catalog'), connectorRead(ctx, 'connectors.accounts'), connectorRead(ctx, 'connectors.policy.get'),
       ])
       rememberCatalogNames(home(ctx), catalog.value?.connectors ?? [])
+      // TAL-2199: the page waits briefly for the logos it shows inline; one still loading shows the connector icon.
+      await Promise.race([rememberConnectorLogos(catalog.value?.connectors ?? [], ctx.deps.fetch), new Promise((resolve) => setTimeout(resolve, 2000).unref())])
       const page = connectorsPage(catalog.value?.connectors ?? [], accounts.value?.accounts ?? [], policy.value, policy.error,
         catalog.signInRequired || accounts.signInRequired || policy.signInRequired)
       // Accounts has already recorded native sightings, including connections made outside Web.

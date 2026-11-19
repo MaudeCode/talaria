@@ -1161,7 +1161,7 @@ final class SharedContractTests: XCTestCase {
             XCTAssertEqual(image.kind, .image)
             XCTAssertEqual(image.resultView?.media?.map(\.mediaKind), [.image, .image])
             XCTAssertEqual(image.resultView?.media?.first?.url, "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Fgenerated%2Fimages%2Fcat.png&session_id=media-session")
-            XCTAssertEqual(image.resultView?.media?.last?.url, "https://cdn.example/cat-2.png")
+            XCTAssertEqual(image.resultView?.media?.last?.url, "./api/remote-image?id=3445fe4e07acfe4b73f54106bd5f9507")
             XCTAssertEqual(AssistantActivitySummary.label(for: image), "Generated an image")
             XCTAssertEqual(AssistantActivitySummary.icon(for: image), "photo")
             let speech = try XCTUnwrap(byID["call-speech"])
@@ -1344,7 +1344,7 @@ final class SharedContractTests: XCTestCase {
             XCTAssertEqual(calls.map(\.kind), [.mcp, .connector, .connector])
             XCTAssertEqual(calls.map { AssistantActivitySummary.label(for: $0) }, ["GitHub · Create issue", "Gmail · Send email (work)", "Notion · Create page"])
             XCTAssertEqual(calls.map { AssistantActivitySummary.icon(for: $0) }, ["server.rack", "cable.connector", "cable.connector"])
-            XCTAssertEqual(calls.map { $0.app?.logoURL }, [nil, URL(string: "https://logos.example/gmail.svg"), nil])
+            XCTAssertEqual(calls.map { $0.app?.logoURL }, [nil, URL(string: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjZWE0MzM1Ii8+PC9zdmc+"), nil])
             var failed = try XCTUnwrap(calls.first)
             failed.isError = true
             XCTAssertEqual(AssistantActivitySummary.label(for: failed), "Failed to use GitHub · Create issue")

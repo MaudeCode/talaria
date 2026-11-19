@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "A remote image in a reply now shows as a link instead of loading by itself, so text the agent read can no longer make your browser send data to another site. Generated images and connector logos still show, loaded through Talaria.",
+      "highlight": false,
+      "components": [
+        "web",
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}

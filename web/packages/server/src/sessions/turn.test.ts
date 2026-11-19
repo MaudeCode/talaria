@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import type { SidecarParams, SidecarResultInput } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer } from '../test/harness.js'
+import { rememberConnectorLogos } from './tool-display.js'
+import { LOGO_DATA_URL, logoFetch } from '../test/logo-host.js'
 import { walkSkillFiles } from '../tools/skills.js'
 import { classifyProviderError } from './turn.js'
 import { mergeDisplayMessagesAfterAgentResult } from './merge.js'
@@ -412,6 +414,8 @@ describe('connector call logos (TAL-2330)', () => {
         { role: 'tool', tool_call_id: 'g1', content: '{"ok": true}' }, { role: 'tool', tool_call_id: 'g2', content: '{"ok": true}' },
         { role: 'assistant', content: 'answer' }] }
     })
+    // TAL-2199: the logo host is fake; inlining caches by URL, so the turn's catalog read reuses this fetch.
+    await rememberConnectorLogos([{ slug: 'logo-seed', logo_url: 'https://logos.example/gmail.svg' }], logoFetch)
     const server = await bootTestServer({ sidecar })
     try {
       const session = await server.deps.sessionStore.newSession()
@@ -422,7 +426,7 @@ describe('connector call logos (TAL-2330)', () => {
       expect(sidecar.calls.filter((c) => c.method === 'connectors.catalog')).toHaveLength(1)
       const detail = await (await server.get(`/api/session?session_id=${session.session_id}`)).json() as { session: { messages: { tool_calls?: Record<string, unknown>[] }[] } }
       const calls = detail.session.messages.flatMap((m) => m.tool_calls ?? [])
-      expect(calls.map((c) => [c.kind, c.target, c.app])).toEqual(Array(2).fill(['connector', 'Send email (work)', { name: 'Gmail', logo_url: 'https://logos.example/gmail.svg' }]))
+      expect(calls.map((c) => [c.kind, c.target, c.app])).toEqual(Array(2).fill(['connector', 'Send email (work)', { name: 'Gmail', logo_url: LOGO_DATA_URL }]))
     } finally { await server.close() }
   })
 })

@@ -13,6 +13,7 @@ import type { MeshyNativeLocalSchema, MeshyNativeRecentSchema, MeshyNativeTaskSc
 import type { RequestContext } from '../http/context.js'
 import { SidecarError } from '../sidecar/client.js'
 import { serveFileBytes } from '../workspace/media.js'
+import { fetchRemoteImage, fetchableImageUrl, RemoteImageError } from '../http/remote-image.js'
 import type { MeshyDirective } from '../workspace/media-refs.js'
 import type { AgentDashboardScope, DashboardPlugins } from './dashboard-plugins.js'
 import { ExtensionError } from './extensions.js'
@@ -27,7 +28,6 @@ const NAMESPACE = 'meshy-asset'
 const ASSET_HOST = 'assets.meshy.ai'
 /** The native viewer's own limit for one model. */
 export const MESHY_MAX_MODEL_BYTES = 128 * 1024 * 1024
-const MAX_REMOTE_IMAGE_BYTES = 16 * 1024 * 1024
 const REMOTE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 // glTF extensions whose decoders model-viewer would fetch from another origin.
 const DECODER_EXTENSIONS = new Set(['KHR_draco_mesh_compression', 'KHR_texture_basisu', 'EXT_meshopt_compression'])
@@ -219,26 +219,15 @@ export class MeshyHost {
     await ctx.send({ status: 200, headers: { 'Content-Type': image.type, 'Cache-Control': 'private, max-age=300', 'Content-Security-Policy': "default-src 'none'; sandbox" }, body: image.body })
   }
 
-  /** Meshy's asset host only, over https, no redirects, an image type and a size cap: refused before bytes are relayed. */
+  /** Meshy's asset host only (`fetchRemoteImage` checks the rest): refused before bytes are relayed. */
   private async remote(url: string, signal: AbortSignal): Promise<{ type: string; body: Buffer }> {
-    const parsed = new URL(url)
-    if (parsed.protocol !== 'https:' || parsed.hostname !== ASSET_HOST || parsed.port || parsed.username || parsed.password) throw new MeshyError('not found', 404)
-    let response: Response
-    try { response = await (this.deps.fetch ?? fetch)(url, { redirect: 'error', signal, headers: { accept: 'image/png,image/jpeg,image/webp' } }) } catch { throw new MeshyError('The image could not be fetched from Meshy.', 502) }
-    const type = (response.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
-    const declared = Number(response.headers.get('content-length') ?? '0')
-    if (response.status !== 200 || response.redirected || !REMOTE_IMAGE_TYPES.has(type) || declared > MAX_REMOTE_IMAGE_BYTES) {
-      await response.body?.cancel().catch(() => undefined)
-      throw new MeshyError(response.status === 403 || response.status === 404 || response.status === 410 ? 'This image expired on Meshy.' : 'Meshy did not return an image.', 502)
+    if (fetchableImageUrl(url)?.hostname !== ASSET_HOST) throw new MeshyError('not found', 404)
+    try { return await fetchRemoteImage(url, { ...(this.deps.fetch ? { fetch: this.deps.fetch } : {}), signal, types: REMOTE_IMAGE_TYPES }) } catch (error) {
+      if (!(error instanceof RemoteImageError)) throw error
+      if (error.reason === 'unreachable') throw new MeshyError('The image could not be fetched from Meshy.', 502)
+      if (error.reason === 'too_large') throw new MeshyError('The image is too large.', 502)
+      throw new MeshyError(error.status === 403 || error.status === 404 || error.status === 410 ? 'This image expired on Meshy.' : 'Meshy did not return an image.', 502)
     }
-    const chunks: Buffer[] = []
-    let total = 0
-    for await (const chunk of response.body ?? []) {
-      total += (chunk as Uint8Array).byteLength
-      if (total > MAX_REMOTE_IMAGE_BYTES) throw new MeshyError('The image is too large.', 502)
-      chunks.push(Buffer.from(chunk as Uint8Array))
-    }
-    return { type, body: Buffer.concat(chunks) }
   }
 }
 
