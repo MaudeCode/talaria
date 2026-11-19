@@ -74,46 +74,61 @@ final class UpdateSummaryTests: APIClientTestCase {
         XCTAssertEqual(taps, 1)
     }
 
-    /// TAL-2248: the System section checks for updates once and presents each summary sheet over Settings, once.
     @MainActor
-    func testSystemSummariesPresentOverSettingsOnceAndCheckOnce() async throws {
-        let system = try SystemSettingsFixture(test: self)
-        // Compact phone and the open Duo's regular display; the Settings sheet stands in for SessionListView's.
-        for (sizeName, size) in [("phone", HostedSize.phone), ("duo-inner", HostedSize.duoInner)] {
-            let (window, settings) = try await system.present(size: size)
-            for (index, name) in ["Talaria Web", "Hermes Agent"].enumerated() {
-                func chain() -> String {
-                    var controller = window.rootViewController
-                    var names: [String] = []
-                    while let next = controller?.presentedViewController {
-                        names.append("\(type(of: next))\(next === settings ? " (Settings)" : "")")
-                        controller = next
-                    }
-                    return names.joined(separator: " > ")
-                }
-                let button = HostedAccessibility.elements(in: window, labelContaining: "Summarize with AI")[index]
-                XCTAssertTrue(HostedAccessibility.activate(button))
-                let loaded = await awaitElement(in: window, label: "Chats open faster.")
-                XCTAssertNotNil(loaded, "\(name)'s summary loads: \(chain())")
-                let summary = try XCTUnwrap(settings.presentedViewController, "\(name)'s summary presents over Settings: \(chain())")
-                // The presentation's own record once its transition ends: Settings and the summary stay up, nothing leaves.
-                let presented = await awaitCondition { summary.transitionCoordinator == nil && settings.transitionCoordinator == nil }
-                XCTAssertTrue(presented, "\(name)'s summary finishes presenting: \(chain())")
-                XCTAssertTrue(window.rootViewController?.presentedViewController === settings, "Settings closed: \(chain())")
-                XCTAssertTrue(settings.presentedViewController === summary, "\(name)'s summary was replaced: \(chain())")
-                XCTAssertFalse(settings.isBeingDismissed || summary.isBeingDismissed, "\(name)'s summary or Settings is closing: \(chain())")
-                attachHostedScreenshot(window, name: "system-summary-over-settings-\(sizeName)-\(index)")
-                XCTAssertNil(summary.presentedViewController, "Exactly one summary sheet presents")
-                XCTAssertNotNil(HostedAccessibility.element(in: window, label: "What's new in \(name)"))
+    func testSystemWebSummaryPresentsOverSettingsOnPhone() async throws {
+        try await assertSystemSummaryPresentsOverSettings(index: 0, name: "Talaria Web", size: HostedSize.phone)
+    }
 
-                try HostedAccessibility.activate(XCTUnwrap(HostedAccessibility.toolbarAction("Done", in: window)))
-                let dismissed = await awaitCondition { settings.presentedViewController == nil }
-                XCTAssertTrue(dismissed, "Done dismisses \(name)'s summary")
-                XCTAssertTrue(window.rootViewController?.presentedViewController === settings, "Done leaves Settings open")
+    @MainActor
+    func testSystemWebSummaryPresentsOverSettingsOnDuo() async throws {
+        try await assertSystemSummaryPresentsOverSettings(index: 0, name: "Talaria Web", size: HostedSize.duoInner)
+    }
+
+    @MainActor
+    func testSystemAgentSummaryPresentsOverSettingsOnPhone() async throws {
+        try await assertSystemSummaryPresentsOverSettings(index: 1, name: "Hermes Agent", size: HostedSize.phone)
+    }
+
+    @MainActor
+    func testSystemAgentSummaryPresentsOverSettingsOnDuo() async throws {
+        try await assertSystemSummaryPresentsOverSettings(index: 1, name: "Hermes Agent", size: HostedSize.duoInner)
+    }
+
+    /// TAL-2248: Each summary presents once over Settings and dismisses back to it.
+    @MainActor
+    private func assertSystemSummaryPresentsOverSettings(index: Int, name: String, size: CGSize) async throws {
+        let system = try SystemSettingsFixture(test: self)
+        let (window, settings) = try await system.present(size: size)
+        defer { system.close(window) }
+        func chain() -> String {
+            var controller = window.rootViewController
+            var names: [String] = []
+            while let next = controller?.presentedViewController {
+                names.append("\(type(of: next))\(next === settings ? " (Settings)" : "")")
+                controller = next
             }
-            XCTAssertEqual(system.checks.value, 1, "Opening System checks for updates once, not once per row")
-            system.close(window)
+            return names.joined(separator: " > ")
         }
+        let buttons = HostedAccessibility.elements(in: window, labelContaining: "Summarize with AI")
+        let button = try XCTUnwrap(buttons.dropFirst(index).first)
+        XCTAssertTrue(HostedAccessibility.activate(button))
+        let loaded = await awaitElement(in: window, label: "Chats open faster.")
+        XCTAssertNotNil(loaded, "\(name)'s summary loads: \(chain())")
+        let summary = try XCTUnwrap(settings.presentedViewController, "\(name)'s summary presents over Settings: \(chain())")
+        // The presentation's own record once its transition ends: Settings and the summary stay up, nothing leaves.
+        let presented = await awaitCondition { summary.transitionCoordinator == nil && settings.transitionCoordinator == nil }
+        XCTAssertTrue(presented, "\(name)'s summary finishes presenting: \(chain())")
+        XCTAssertTrue(window.rootViewController?.presentedViewController === settings, "Settings closed: \(chain())")
+        XCTAssertTrue(settings.presentedViewController === summary, "\(name)'s summary was replaced: \(chain())")
+        XCTAssertFalse(settings.isBeingDismissed || summary.isBeingDismissed, "\(name)'s summary or Settings is closing: \(chain())")
+        XCTAssertNil(summary.presentedViewController, "Exactly one summary sheet presents")
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "What's new in \(name)"))
+
+        try HostedAccessibility.activate(XCTUnwrap(HostedAccessibility.toolbarAction("Done", in: window)))
+        let dismissed = await awaitCondition { settings.presentedViewController == nil }
+        XCTAssertTrue(dismissed, "Done dismisses \(name)'s summary")
+        XCTAssertTrue(window.rootViewController?.presentedViewController === settings, "Done leaves Settings open")
+        XCTAssertEqual(system.checks.value, 1, "Opening System checks for updates once, not once per row")
     }
 
     /// TAL-2248: Check Now and Update present their alerts over Settings, once, and cancelling leaves Settings open.
