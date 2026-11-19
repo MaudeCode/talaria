@@ -59,6 +59,7 @@ class PlanTests(unittest.TestCase):
                     values["ipaSha256"] = "c" * 64
                 elif name == "web":
                     values["image"] = "ghcr.io/maudecode/talaria-web@sha256:" + "f" * 64
+                    values["npm"] = f"@maudecode/talaria-web@{plan['components'][name]['version']}"
                 else:
                     values["deploymentId"] = "synthetic-relay"
                 result.append(receipt("build" + name.title(), **values))
@@ -71,6 +72,8 @@ class PlanTests(unittest.TestCase):
                 if published:
                     if name == "relay":
                         values["deployedRevision"] = plan["releaseSet"]
+                    if name == "web":
+                        values["npmIntegrity"] = "sha512-" + "a" * 86 + "=="
                     result.append(receipt({"app": "uploadApp", "web": "publishWeb", "relay": "deployRelay"}[name], **values))
         return result
 
@@ -92,6 +95,8 @@ class PlanTests(unittest.TestCase):
             assemble(plan, broken, self.notes)
         complete = assemble(plan, self.receipts(plan, published=True), self.notes, complete=True)
         self.assertEqual(complete["status"], "complete")
+        npm_integrity = next(entry["npmIntegrity"] for entry in self.receipts(plan, published=True) if entry["gate"] == "publishWeb")
+        self.assertEqual(complete["components"]["web"]["npmIntegrity"], npm_integrity)
         self.assertEqual(assemble(plan, list(reversed(self.receipts(plan, published=True))), self.notes, complete=True)["components"], complete["components"])
 
     def test_unchanged_components_reuse_exact_artifacts(self):

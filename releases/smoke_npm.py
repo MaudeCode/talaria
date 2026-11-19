@@ -49,9 +49,14 @@ def smoke(spec, timeout=60):
         for directory in (prefix, state / "workspace", state / "claude-projects"):
             directory.mkdir(parents=True)
         # The updater's install command (web/packages/server/src/tools/updates.ts).
-        subprocess.run(["npm", "install", "--global", "--prefix", str(prefix), "--no-audit", "--no-fund", spec],
+        subprocess.run(["npm", "install", "--global", "--prefix", str(prefix), "--no-audit", "--no-fund", "--ignore-scripts", spec],
                        check=True, stdout=sys.stderr)
         package = prefix / "lib/node_modules" / PACKAGE
+        manifest = json.loads((package / "package.json").read_text())
+        native_pty = "node-pty" in manifest.get("dependencies", {})
+        if native_pty:
+            subprocess.run(["npm", "rebuild", "node-pty", "--prefix", str(package), "--ignore-scripts=false"],
+                           cwd=package, check=True, stdout=sys.stderr)
         port = free_port()
         # The isolated environment of web/packages/frontend/e2e/server.ts, with the package's own replay sidecar.
         env = {key: value for key, value in os.environ.items() if not key.startswith(("HERMES_", "TALARIA_WEB_"))}
@@ -70,6 +75,9 @@ def smoke(spec, timeout=60):
             "TALARIA_WEB_SIDECAR_COMMAND": json.dumps([sys.executable, str(package / "sidecar/scripts/replay_sidecar.py")]),
             "AWS_EC2_METADATA_DISABLED": "true",
         })
+        if native_pty:
+            subprocess.run(["node", str(package / "dist/bin/talaria-web.js"), "self-check"],
+                           cwd=state, env=env, check=True, timeout=timeout, stdout=sys.stderr)
         log = root / "server.log"
         with log.open("wb") as output:
             server = subprocess.Popen(["node", str(package / "dist/bin/talaria-web.js"), "--foreground", "--no-browser"],

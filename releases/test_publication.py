@@ -1172,8 +1172,11 @@ class PublicationTests(unittest.TestCase):
                     patch.dict(os.environ, {"GITHUB_ACTOR": "bot", "GH_TOKEN": "t"}), patch("publish.write") as write, \
                     patch("publish.verify_npm", return_value=build["npm"]):
                 root = Path(temporary)
+                (root / "npm").mkdir()
+                tarball = root / "npm/maudecode-talaria-web-1.0.0.tgz"
+                tarball.write_bytes(b"synthetic server tarball")
                 commands, run = self.fake_skopeo(dict(registry), manifest)
-                with patch("publish.subprocess.run", side_effect=run), patch("publish.receipt", return_value={}):
+                with patch("publish.subprocess.run", side_effect=run), patch("publish.receipt", return_value={}) as receipt:
                     if error:
                         with self.assertRaisesRegex(ValueError, error):
                             publish.web(plan, build, root, root / "out.json")
@@ -1181,6 +1184,7 @@ class PublicationTests(unittest.TestCase):
                     else:
                         publish.web(plan, build, root, root / "out.json")
                         write.assert_called_once()
+                        self.assertEqual(receipt.call_args.kwargs["npmIntegrity"], publish.npm_integrity(tarball))
                 self.assertEqual([args[-2:] for args in commands if args[1] == "copy"],
                                  [] if error else [["oci-archive:" + str(root / "web.oci.tar"), "docker://" + tag]])
 
@@ -1210,7 +1214,7 @@ class PublicationTests(unittest.TestCase):
                         path = Path(args[2])
                         package = "@maudecode/talaria-web-contracts" if "contracts" in path.name else "@maudecode/talaria-web"
                         self.assertNotIn(f"{package}@1.0.0", registry)
-                        registry[f"{package}@1.0.0"] = {"integrity": "sha512-tampered" if tampered else publish._npm_integrity(path)}
+                        registry[f"{package}@1.0.0"] = {"integrity": "sha512-tampered" if tampered else publish.npm_integrity(path)}
                         tags.setdefault(package, {})[args[args.index("--tag") + 1]] = "1.0.0"
                         return SimpleNamespace(returncode=0, stdout="", stderr="")
                     self.fail("unexpected command " + " ".join(args))
@@ -1266,7 +1270,7 @@ class PublicationTests(unittest.TestCase):
                 if lookups[spec] <= 2:
                     return SimpleNamespace(returncode=1, stdout="", stderr="npm ERR! code E404")
                 path = contracts if "contracts" in spec else server
-                return SimpleNamespace(returncode=0, stdout=json.dumps(publish._npm_integrity(path)), stderr="")
+                return SimpleNamespace(returncode=0, stdout=json.dumps(publish.npm_integrity(path)), stderr="")
 
             with patch("publish.subprocess.run", side_effect=run), \
                     patch("publish.subprocess.check_output", return_value=json.dumps({"latest": "1.0.0"})), \
@@ -1298,7 +1302,7 @@ class PublicationTests(unittest.TestCase):
                     if views[args[2]] == 1:  # the preflight's stale read
                         return SimpleNamespace(returncode=1, stdout="", stderr="npm ERR! code E404")
                     path = contracts if "contracts" in args[2] else server
-                    return SimpleNamespace(returncode=0, stdout=json.dumps(publish._npm_integrity(path)), stderr="")
+                    return SimpleNamespace(returncode=0, stdout=json.dumps(publish.npm_integrity(path)), stderr="")
                 self.assertEqual(args[:2], ["npm", "publish"])
                 return SimpleNamespace(returncode=1, args=args, stdout="", stderr=(
                     "npm error 403 403 Forbidden - PUT https://registry.npmjs.org/x - "
@@ -1330,7 +1334,7 @@ class PublicationTests(unittest.TestCase):
 
             def run(args, **kwargs):
                 path = contracts if "contracts" in args[2] else server
-                return SimpleNamespace(returncode=0, stdout=json.dumps([publish._npm_integrity(path)]), stderr="")
+                return SimpleNamespace(returncode=0, stdout=json.dumps([publish.npm_integrity(path)]), stderr="")
 
             with patch.dict(os.environ, {"ACTIONS_ID_TOKEN_REQUEST_URL": "https://oidc.invalid", "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "synthetic"}), \
                     patch("publish.subprocess.run", side_effect=run), \

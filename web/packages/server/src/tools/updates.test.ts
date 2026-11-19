@@ -43,7 +43,7 @@ const cleanup = async (): Promise<void> => {
   await Promise.all(services.splice(0).map((svc) => svc.settled()))
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 }
-afterEach(cleanup)
+afterEach(async () => { await cleanup(); vi.unstubAllGlobals() })
 /** One event-loop turn: drains every microtask chain a synchronous call started, so absent work that needs no I/O has had its chance to run. */
 const macrotask = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve) })
 const tmp = (): string => { const d = mkdtempSync(join(tmpdir(), 'talaria-updates-')); dirs.push(d); return d }
@@ -84,7 +84,7 @@ function sourceInstall(): Install {
   // The production URL stays configured; only this fixture's transport is redirected to its own repository.
   git(client, 'remote', 'set-url', 'origin', 'https://github.com/MaudeCode/talaria.git')
   const runtime = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, contracts: { appWeb: [1], webRelay: [2] }, compatibleAgent: { ...PIN['x-talaria'], image: PIN.services['hermes-agent'].image } }
-  const release: PublishedRelease = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, image: `ghcr.io/maudecode/talaria-web@sha256:${'f'.repeat(64)}`, npm: null, manifestReleaseSet: latest, runtime, release_url: `${REPOSITORY_URL}/releases/tag/release-set-${latest}`, releasesBehind: 1, notes: [], versions: [] }
+  const release: PublishedRelease = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, image: `ghcr.io/maudecode/talaria-web@sha256:${'f'.repeat(64)}`, npm: null, npmIntegrity: null, manifestReleaseSet: latest, runtime, release_url: `${REPOSITORY_URL}/releases/tag/release-set-${latest}`, releasesBehind: 1, notes: [], versions: [] }
   const id = { release: DEV as Dict, stamped: DEV as Dict, running: null as string | null }
   const identity: ReleaseIdentity = { release: () => id.release, stamped: () => id.stamped, runningSourceRevision: () => id.running }
   const commands: string[][] = []
@@ -93,7 +93,7 @@ function sourceInstall(): Install {
   const getJson: GetJson = (path, { asset }) => {
     requests.push(path)
     const set = `release-set-${release.sourceRevision}`
-    if (asset) return Promise.resolve({ schemaVersion: 1, releaseSet: release.sourceRevision, status: 'complete', contracts: { appWeb: { web: [1] }, webRelay: { web: [2] } }, agent: release.runtime.compatibleAgent, components: { web: { tag: release.tag, version: release.version, sourceRevision: release.sourceRevision, releaseSet: release.sourceRevision, image: release.image, ...(release.npm ? { npm: release.npm } : {}) } } })
+    if (asset) return Promise.resolve({ schemaVersion: 1, releaseSet: release.sourceRevision, status: 'complete', contracts: { appWeb: { web: [1] }, webRelay: { web: [2] } }, agent: release.runtime.compatibleAgent, components: { web: { tag: release.tag, version: release.version, sourceRevision: release.sourceRevision, releaseSet: release.sourceRevision, image: release.image, ...(release.npm ? { npm: release.npm, npmIntegrity: release.npmIntegrity } : {}) } } })
     return Promise.resolve([{ tag_name: set, published_at: '2026-09-19T00:00:00Z', assets: [{ name: 'release-set.json', id: 123 }] }])
   }
   return { client, upstream, old, latest, release, identity, id, run, commands, getJson, requests }
@@ -647,6 +647,8 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   })
 
   /** `runtimeOf` stamps the installed package of each requested version; by default every install is `s.release`. */
+  const fixtureIntegrity = (version: string): string => `sha512-${createHash('sha512').update(version).digest('base64')}`
+
   function npmPackageInstall(s: Install, initial: 'success' | 'failure' | 'bad-stamp' | 'empty-dependency' | 'self-check-fails' | 'self-check-hangs' | 'legacy-bin' | 'legacy-bin-broken-pty' = 'success', runtimeOf?: (version: string) => Dict) {
     const mode = { outcome: initial }
     const globalRoot = join(tmp(), 'lib/node_modules')
@@ -655,15 +657,18 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     write(join(packageRoot, 'sidecar/agent_dependency.json'), JSON.stringify(PIN))
     write(join(packageRoot, 'contract_versions.json'), JSON.stringify(VERSIONS))
     s.release.npm = '@maudecode/talaria-web@2.0.0'
+    s.release.npmIntegrity = fixtureIntegrity('2.0.0')
+    vi.stubGlobal('fetch', (input: URL) => Promise.resolve(new Response(input.pathname.slice(1))))
     s.id.release = { ...s.release.runtime, tag: 'web-v1.0.0', version: '1.0.0', sourceRevision: s.old, releaseSet: s.old }
     const calls: string[][] = []
     const npm: BuildRun = (args) => {
       calls.push(args)
       if (args[0] === 'root') return Promise.resolve({ ok: true, out: globalRoot })
+      if (args[0] === 'view') return Promise.resolve({ ok: true, out: JSON.stringify(`https://registry.invalid/${args[1]!.split('@').at(-1)!}`) })
       if (args[0] === 'install') {
         if (mode.outcome === 'failure') return Promise.resolve({ ok: false, out: 'synthetic npm failure' })
         const candidate = join(args[args.indexOf('--prefix') + 1]!, 'lib/node_modules/@maudecode/talaria-web')
-        const version = runtimeOf ? /@maudecode\/talaria-web@(.+)$/.exec(args.at(-1)!)![1]! : '2.0.0'
+        const version = readFileSync(args.at(-1)!, 'utf8')
         write(join(candidate, 'package.json'), JSON.stringify({ name: '@maudecode/talaria-web', version, bin: { 'talaria-web': 'dist/bin/talaria-web.js', 'talaria-web-mcp': 'dist/bin/talaria-web-mcp.js' }, dependencies: { ws: '8.22.0' } }))
         mkdirSync(join(candidate, 'node_modules/ws'), { recursive: true })
         if (mode.outcome !== 'empty-dependency') write(join(candidate, 'node_modules/ws/package.json'), '{}')
@@ -784,7 +789,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const status = (await svc.check(true, false, 'stable')).webui as Dict
     expect(status).toMatchObject({ behind: 1, install_kind: 'npm', manual_update: false, npm: '@maudecode/talaria-web@2.0.0' })
     expect(await svc.autoApplyOnce()).toMatchObject({ ok: true, restart_scheduled: true, npm: '@maudecode/talaria-web@2.0.0' })
-    expect(n.calls.filter((c) => c[0] === 'install')).toEqual([['install', '--global', '--prefix', expect.stringContaining('.talaria-update-'), '--no-audit', '--no-fund', '@maudecode/talaria-web@2.0.0']])
+    expect(n.calls.filter((c) => c[0] === 'install')).toEqual([['install', '--global', '--prefix', expect.stringContaining('.talaria-update-'), '--no-audit', '--no-fund', '--ignore-scripts', expect.stringMatching(/talaria-web\.tgz$/)]])
     expect((JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version?: unknown }).version).toBe('2.0.0')
     expect(restarts).toEqual([1])
   })
@@ -1235,7 +1240,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       if (!asset) return Promise.resolve(sets.map(([, source], i) => ({ tag_name: `release-set-${source}`, published_at: `2026-09-1${String(9 - i)}T00:00:00Z`, assets: [{ name: 'release-set.json', id: 300 + i }] })))
       const [version, source] = sets[Number(path.split('/').pop()) - 300]!
       return Promise.resolve({ schemaVersion: 1, releaseSet: source, status: 'complete', contracts: { appWeb: { web: [1] }, webRelay: { web: [2] } }, agent: s.release.runtime.compatibleAgent,
-        components: { web: { tag: `web-v${version}`, version, sourceRevision: source, releaseSet: source, image: s.release.image, npm: `@maudecode/talaria-web@${version}` } } })
+        components: { web: { tag: `web-v${version}`, version, sourceRevision: source, releaseSet: source, image: s.release.image, npm: `@maudecode/talaria-web@${version}`, npmIntegrity: fixtureIntegrity(version) } } })
     }
     const n = npmPackageInstall(s, 'success', runtime)
     const restarts: number[] = []
@@ -1264,7 +1269,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   it('installs the exact npm package of an intermediate Stable Web release (TAL-946)', async () => {
     const h = stableHistory()
     expect(await h.svc.apply('webui', 'stable', () => true, { version: '1.2.0' })).toMatchObject({ ok: true, npm: '@maudecode/talaria-web@1.2.0', restart_scheduled: true })
-    expect(h.installs()).toEqual(['@maudecode/talaria-web@1.2.0'])
+    expect(h.installs()).toHaveLength(1)
     expect(h.version()).toBe('1.2.0')
     expect(h.restarts).toEqual([1])
   })
@@ -1272,7 +1277,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   it('without a version still installs the newest Stable Web release (TAL-946)', async () => {
     const h = stableHistory()
     expect(await applyWebUpdate(h.n.packageRoot, 'stable', h.s.run, h.getJson, h.s.identity, h.n.npm, () => true, { stateDir: tmp() })).toMatchObject({ ok: true, npm: '@maudecode/talaria-web@2.0.0' })
-    expect(h.installs()).toEqual(['@maudecode/talaria-web@2.0.0'])
+    expect(h.installs()).toHaveLength(1)
   })
 
   it('rejects an absent, installed, or Experimental Web version without installing anything (TAL-946)', async () => {

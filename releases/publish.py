@@ -2,7 +2,6 @@
 """Production operations authorized only by the main-branch cutover workflow."""
 
 import argparse
-import base64
 import contextlib
 import hashlib
 import json
@@ -19,7 +18,7 @@ from pathlib import Path
 
 from cli import REPOSITORY, ROOT, load, published_set, receipt, require_latest_predecessor, run_url, unused_release, write
 from plan import ROOT_TAG, git
-from release_set import BRIDGE_IMAGE, validate
+from release_set import BRIDGE_IMAGE, npm_integrity, validate
 
 # This publisher's own tree. Recovery runs a reviewed copy against an older source checkout (ROOT), so the notes
 # helper comes from beside this file, and recover-cutover.yml archives it.
@@ -160,8 +159,9 @@ def web(plan, build, directory, output):
     tag = f"ghcr.io/maudecode/talaria-web:{component['tag']}"
     with timed("npm readback before GHCR"):
         npm_identity = verify_npm(component, build, directory)
+        integrity = npm_integrity(directory / "npm" / f"maudecode-talaria-web-{component['version']}.tgz")
     publish_image(directory / "web.oci.tar", tag, image.split("@", 1)[1])
-    write(output, receipt("publishWeb", plan["releaseSet"], tag=component["tag"], image=image, npm=npm_identity))
+    write(output, receipt("publishWeb", plan["releaseSet"], tag=component["tag"], image=image, npm=npm_identity, npmIntegrity=integrity))
 
 
 def _tag_digest(auth, tag):
@@ -202,10 +202,6 @@ def bridge(plan, build, directory, output):
         raise ValueError("feedback bridge build receipt does not match the plan")
     publish_image(directory / "bridge.oci.tar", image["ref"], image["digest"])
     write(output, receipt("publishBridge", plan["releaseSet"], tag=component["tag"], bridgeImage=image))
-
-
-def _npm_integrity(path):
-    return "sha512-" + base64.b64encode(hashlib.sha512(path.read_bytes()).digest()).decode()
 
 
 def _npm_json(stdout):
@@ -249,7 +245,7 @@ def preflight_npm(component, build, directory):
     for name in ordered:
         spec = f"{packages[name]}@{component['version']}"
         existing = _npm_view(spec, "dist.integrity")
-        if existing is not None and existing != _npm_integrity(tarballs[name]):
+        if existing is not None and existing != npm_integrity(tarballs[name]):
             # Versions are immutable: a different tarball under this version came from another channel or build.
             raise ValueError(f"{spec} is already published with different contents; the version must be unique across channels")
         published[name] = existing is not None
@@ -295,7 +291,7 @@ def verify_npm(component, build, directory):
         for attempt in range(NPM_READBACK_ATTEMPTS):
             integrity = _npm_view(spec, "dist.integrity")
             tags = _npm_json(subprocess.check_output(["npm", "view", packages[name], "dist-tags", "--json", "--prefer-online"], text=True))
-            if integrity is not None and integrity != _npm_integrity(tarballs[name]):
+            if integrity is not None and integrity != npm_integrity(tarballs[name]):
                 raise ValueError("npm registry readback differs from the published tarball")
             if integrity is not None and tags.get(dist_tag) == component["version"]:
                 break

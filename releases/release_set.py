@@ -6,6 +6,8 @@ their consistency, not the authenticity of arbitrary JSON supplied by a caller.
 """
 
 import argparse
+import base64
+import hashlib
 import json
 from pathlib import Path
 
@@ -22,6 +24,10 @@ PUBLISH_GATES = {"app": "uploadApp", "web": "publishWeb", "relay": "deployRelay"
 # The Relay release also builds and publishes the feedback bridge image, tagged with Relay's plain version.
 BRIDGE_IMAGE = "ghcr.io/maudecode/talaria-feedback-bridge"
 BRIDGE_GATES = {"buildBridge", "publishBridge"}
+
+
+def npm_integrity(path):
+    return "sha512-" + base64.b64encode(hashlib.sha512(path.read_bytes()).digest()).decode()
 
 
 def require_version_advance(tag, prior_tag):

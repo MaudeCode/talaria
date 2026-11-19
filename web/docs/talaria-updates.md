@@ -64,7 +64,8 @@ GitHub asset redirect.
 See GitHub's [release permissions](https://docs.github.com/en/rest/releases/releases#list-releases)
 and [asset download API](https://docs.github.com/en/rest/releases/assets#get-a-release-asset).
 
-An npm update stages the new package beside the installed one, verifies its name, bins and release identity,
+An npm update stages the verified tarball beside the installed package and installs it with npm lifecycle scripts
+disabled. It verifies the installed name, bins and release identity, rebuilds `node-pty` explicitly,
 runs its `talaria-web self-check` (which loads the server code and native terminal binding under the running Node),
 and swaps it in only if the update settings are unchanged; any failure keeps the installed package. It then
 schedules a Web restart: once active work
@@ -180,12 +181,12 @@ stamps require manual inspection and are not overwritten.
 
 Direct global npm installations on Stable can update automatically. The updater
 requires the package root to match the global root reported by the npm executable
-beside the running Node process. It installs the exact
-`@maudecode/talaria-web@<version>` recorded by the completed release manifest into
-a temporary global prefix beside the running package. It verifies the version,
-CLI files, baked release metadata and that every dependency installed, runs the
-replacement's `talaria-web self-check` with a 30-second limit, then renames the
-replacement into place.
+beside the running Node process. The registry provides the tarball URL, and the
+completed release manifest provides the expected SHA-512 digest. The updater downloads
+the tarball and checks its digest before installing it from disk into a temporary
+global prefix. Stable targets without a digest are refused. This applies from the
+first release that publishes a digest, including upgrades from earlier installations.
+The packed shrinkwrap pins the production dependency graph from the Web workspace lock.
 Dependencies move with the package and the existing global CLI links keep working.
 Failed installation or verification preserves the previous package. The service
 user needs write access to the installation directory and room for both versions;
@@ -202,8 +203,8 @@ updater requests an anonymous pull token and reads the manifest. It requires the
 Experimental artifact type, one npm tarball layer, and revision and version
 annotations. It downloads the layer only through GHCR's redirect to
 `pkg-containers.githubusercontent.com` without the token, and requires the bytes to
-match the layer digest. The installation is behind when its release `sourceRevision`
-differs from the annotated revision. The reported count is the number of retained
+match the layer digest. For an existing Experimental installation, GitHub must report
+the annotated revision as ahead of the installed revision before it can update. The reported count is the number of retained
 `sha-<commit>` build tags on the annotated revision's GitHub history back to the
 installed revision, at least 1. The tarball installs into the same staged
 prefix, and its baked `_release.json` must match the annotations before the rename.
