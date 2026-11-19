@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "A sign-in bound to one profile can no longer schedule a cron job that runs as another profile.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

@@ -30,6 +30,13 @@ pair is supplied for an explicitly selected profile, the empty fields are pinned
 to that profile's main model at creation. A profile with no main model refuses
 agent-job creation; script-only jobs do not need a model.
 
+The profiles a login may choose follow the same scope as Kanban assignees
+(`executionProfileScope` in `web/packages/server/src/api/automation-router.ts`).
+A login bound to one profile may only choose that profile. The server owner and
+any other login may choose the active profile or, unless isolated profile mode
+is on, another visible profile. Create, update and the editor's context-source lookup
+refuse any other profile with `403 Execution profile is not accessible`.
+
 Jobs created before this behavior are not moved automatically. If a legacy job's
 selected profile differs from its store, recreate it in the intended execution
 profile. Web refuses manual run and resume for that mismatch; pause and delete

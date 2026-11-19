@@ -399,3 +399,66 @@ describe('cross-profile cron routes', () => {
     expect(sidecar.calls.filter((c) => c.method === 'cron.update').length).toBe(before)
   })
 })
+
+describe('cron execution profile scope by login (TAL-2585)', () => {
+  useJsonStorage()
+  const cronClock = freshCronListingsPerTest()
+  const issuer = 'https://identity.invalid'
+  const sidecar = new FakeSidecar()
+  const cronJobs = new Map<string, Json[]>()
+  const sessions: Record<'bound' | 'person' | 'owner', Record<string, string>> = { bound: {}, person: {}, owner: {} }
+  let s: TestServer
+  beforeAll(async () => {
+    sidecar.respond('profiles.list', () => ({ profiles: [row('default', { is_default: true, path: s.state }), row('research', { path: join(s.state, 'profiles', 'research') }), row('hidden', { visible: false, path: join(s.state, 'profiles', 'hidden') })] as never[] }))
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: {} }))
+    sidecar.respond('cron.list', (params) => ({ jobs: (cronJobs.get(params.profile_home) ?? []) as never[] }))
+    sidecar.respond('cron.create', (params) => { const job = { id: `job-${String(cronJobs.size + 1)}`, name: null, profile: null, toast_notifications: true, monitor: '', continuity: false, ...(params.job as Json) }; cronJobs.set(params.profile_home, [...(cronJobs.get(params.profile_home) ?? []), job]); return { job } })
+    sidecar.respond('cron.update', (params) => ({ job: { ...(cronJobs.get(params.profile_home) ?? []).find((j) => j.id === params.job_id), ...(params.updates as Json) } as never }))
+    s = await bootTestServer({ sidecar, now: cronClock.now, env: {
+      TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Remote-User', TALARIA_WEB_GROUP_PROFILE_MAP: '{}',
+      TALARIA_WEB_OIDC_ISSUER: issuer, TALARIA_WEB_OIDC_CLIENT_ID: 'synthetic-client',
+      TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'admins',
+    }, deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) } })
+    for (const p of ['research', 'hidden']) { mkdirSync(join(s.state, 'profiles', p), { recursive: true }); writeFileSync(join(s.state, 'profiles', p, 'config.yaml'), '# seed\n') }
+    const cookie = (value: string) => `${s.deps.auth.cookieName()}=${value}`
+    sessions.bound = { cookie: cookie(s.deps.auth.createSession({ authType: 'trusted', username: 'scoped-user', boundProfile: 'default' })), 'X-Remote-User': 'scoped-user' }
+    sessions.person = { cookie: cookie(s.deps.auth.createSession({ authType: 'oidc', username: 'alice', oidcBinding: { issuer, subject: 'alice' } })) }
+    sessions.owner = { cookie: cookie(s.deps.auth.createSession({ authType: 'password' })) }
+  })
+  afterAll(() => s.close())
+
+  const call = async (who: keyof typeof sessions, path: string, body: Json): Promise<string> => {
+    const res = await s.get(`/api/crons/${path}`, { method: 'POST', headers: { ...sessions[who], 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const payload = await json(res)
+    return res.status === 200 ? '200' : `${String(res.status)} ${String(payload.error)}`
+  }
+  const DENIED = '403 Execution profile is not accessible'
+
+  it('a profile-bound login may create, retarget and read context sources only as its bound profile', async () => {
+    cronJobs.clear()
+    cronJobs.set(s.state, [{ id: 'mine', name: 'mine', profile: null, owner_profile: 'default', toast_notifications: true, monitor: '', continuity: false }])
+    const job = { schedule: 'every 1h', prompt: 'hi' }
+    expect([
+      await call('bound', 'create', { ...job, profile: 'research' }),
+      await call('bound', 'update', { job_id: 'mine', profile: 'research' }),
+      await call('bound', 'context-sources', { profile: 'research' }),
+    ]).toEqual([DENIED, DENIED, DENIED])
+    expect([
+      await call('bound', 'create', { ...job, profile: 'default' }),
+      await call('bound', 'update', { job_id: 'mine', profile: 'default' }),
+      await call('bound', 'context-sources', { profile: 'default' }),
+    ]).toEqual(['200', '200', '200'])
+  })
+
+  it('an owner and an unbound non-owner reach every visible profile and no hidden one', async () => {
+    cronJobs.clear()
+    const job = { schedule: 'every 1h', prompt: 'hi' }
+    for (const who of ['owner', 'person'] as const) {
+      expect([
+        await call(who, 'create', { ...job, profile: 'research' }),
+        await call(who, 'context-sources', { profile: 'research' }),
+        await call(who, 'create', { ...job, profile: 'hidden' }),
+      ], who).toEqual(['200', '200', DENIED])
+    }
+  })
+})

@@ -47,7 +47,8 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfileName(ctx))
 const boardOf = (v: unknown): string | null => str(v).trim() || null
 
-export async function kanbanAssignees(ctx: RequestContext): Promise<string[] | null> {
+/** Profiles this login may run agent work as (Kanban assignees, cron execution profiles): `null` for the owner, `[bound]` for a profile-bound login, else the active profile's reach. */
+export async function executionProfileScope(ctx: RequestContext): Promise<string[] | null> {
   const session = await ensureTrustedAuthSession(ctx)
   if (await sessionCanManageServer(ctx, session)) return null
   const bound = session?.bound_profile?.trim()
@@ -55,7 +56,7 @@ export async function kanbanAssignees(ctx: RequestContext): Promise<string[] | n
 }
 
 export async function kanbanCall<M extends Extract<SidecarMethodName, `kanban.${string}`>>(ctx: RequestContext, method: M, params: SidecarParams<M>) {
-  const allowed = await kanbanAssignees(ctx)
+  const allowed = await executionProfileScope(ctx)
   if (method === 'kanban.create_task' && allowed !== null) {
     const { task } = params as SidecarParams<'kanban.create_task'>
     // The allowed scope starts with the session's bound or active profile. Persist that assignment for callers that omit it.
@@ -102,7 +103,7 @@ export const automationRouter = os.router({
   crons: {
     blueprints: os.crons.blueprints.handler(({ context: { ctx } }) => run(() => ctx.deps.crons.blueprints(home(ctx)))),
     blueprintFill: os.crons.blueprintFill.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.blueprintFill(home(ctx), input))),
-    contextSources: os.crons.contextSources.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.contextSources(home(ctx), input))),
+    contextSources: os.crons.contextSources.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.crons.contextSources(home(ctx), input, await executionProfileScope(ctx)))),
     list: os.crons.list.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.crons.list(activeProfileName(ctx), await requestProfileReach(ctx, input.all_profiles)) as Promise<never>)),
     history: os.crons.history.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.history(home(ctx), str(input.job_id), input.offset, input.limit))),
     output: os.crons.output.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.output(home(ctx), str(input.job_id), input.limit))),
@@ -110,8 +111,8 @@ export const automationRouter = os.router({
     status: os.crons.status.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.status(str(input.job_id)))),
     recent: os.crons.recent.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.recent(home(ctx), input.since))),
     deliveryOptions: os.crons.deliveryOptions.handler(({ context: { ctx } }) => run(() => ctx.deps.crons.deliveryOptions(home(ctx)))),
-    create: os.crons.create.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.create(home(ctx), input) as Promise<never>)),
-    update: os.crons.update.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.update(home(ctx), input) as Promise<never>)),
+    create: os.crons.create.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.crons.create(home(ctx), input, await executionProfileScope(ctx)) as Promise<never>)),
+    update: os.crons.update.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.crons.update(home(ctx), input, await executionProfileScope(ctx)) as Promise<never>)),
     delete: os.crons.delete.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.delete(home(ctx), str(input.job_id)) as Promise<never>)),
     runNow: os.crons.runNow.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.runNow(home(ctx), str(input.job_id)) as Promise<never>)),
     cancel: os.crons.cancel.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.cancel(home(ctx), str(input.job_id)) as Promise<never>)),
@@ -119,14 +120,14 @@ export const automationRouter = os.router({
     resume: os.crons.resume.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.resume(home(ctx), str(input.job_id)) as Promise<never>)),
   },
   kanban: {
-    inspection: os.kanban.inspection.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.inspection(home(ctx), input, activeProfileName(ctx), await kanbanAssignees(ctx)) as Promise<never>)),
-    boards: os.kanban.boards.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.boards(home(ctx), activeProfileName(ctx), truthyQuery(input.include_archived), await kanbanAssignees(ctx)))),
-    board: os.kanban.board.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.board(home(ctx), input, activeProfileName(ctx), await kanbanAssignees(ctx)) as Promise<never>)),
+    inspection: os.kanban.inspection.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.inspection(home(ctx), input, activeProfileName(ctx), await executionProfileScope(ctx)) as Promise<never>)),
+    boards: os.kanban.boards.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.boards(home(ctx), activeProfileName(ctx), truthyQuery(input.include_archived), await executionProfileScope(ctx)))),
+    board: os.kanban.board.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.board(home(ctx), input, activeProfileName(ctx), await executionProfileScope(ctx)) as Promise<never>)),
     config: os.kanban.config.handler(({ input, context: { ctx } }) => run(() => kb(() => kanbanCall(ctx, 'kanban.config', { profile_home: home(ctx), board: boardOf(input.board) })))),
-    updateConfig: os.kanban.updateConfig.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.updateConfig(home(ctx), input, await kanbanAssignees(ctx)))),
+    updateConfig: os.kanban.updateConfig.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.updateConfig(home(ctx), input, await executionProfileScope(ctx)))),
     stats: os.kanban.stats.handler(({ input, context: { ctx } }) => run(() => kb(() => kanbanCall(ctx, 'kanban.stats', { profile_home: home(ctx), board: boardOf(input.board) }).then(withStatsTotals)))),
     assignees: os.kanban.assignees.handler(({ input, context: { ctx } }) => run(() => kb(() => kanbanCall(ctx, 'kanban.assignees', { profile_home: home(ctx), board: boardOf(input.board) })))),
-    events: os.kanban.events.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.events(home(ctx), boardOf(input.board), input.since, input.limit, await kanbanAssignees(ctx)) as Promise<never>)),
+    events: os.kanban.events.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.kanban.events(home(ctx), boardOf(input.board), input.since, input.limit, await executionProfileScope(ctx)) as Promise<never>)),
     createBoard: os.kanban.createBoard.handler(({ input, context: { ctx } }) => run(() => kb(async () => {
       const spec: Dict = { ...input }
       // A board named without a slug gets one from its name.
