@@ -64,13 +64,24 @@ it('uses real npm to upgrade a global package and its dependencies while preserv
     expect(execFileSync(process.execPath, [join(prefix, 'bin/talaria-web')], { encoding: 'utf8' }).trim()).toBe('1.0.0 dependency-1.0.0')
     const packageRoot = join(prefix, 'lib/node_modules/@maudecode/talaria-web')
     const npm: BuildRun = (args, cwd, timeout) => run(args[0] === 'root' ? [...args, '--prefix', prefix] : args, cwd, timeout)
+    const bytes = packages.get('@maudecode/talaria-web')!.get('2.0.0')!
+    const integrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`
+    let npmIntegrity: string | undefined = `sha512-${createHash('sha512').update('different tarball').digest('base64')}`
     const getJson: GetJson = (_path, { asset }) => Promise.resolve(asset ? {
       schemaVersion: 1, status: 'complete', releaseSet: release.sourceRevision,
-      components: { web: { ...release, npm: '@maudecode/talaria-web@2.0.0', image: `ghcr.io/maudecode/talaria-web@sha256:${'d'.repeat(64)}` } },
+      components: { web: { ...release, npm: '@maudecode/talaria-web@2.0.0', npmIntegrity, image: `ghcr.io/maudecode/talaria-web@sha256:${'d'.repeat(64)}` } },
       contracts: { appWeb: { web: [1] }, webRelay: { web: [2] } }, agent: release.compatibleAgent,
     } : [{ tag_name: `release-set-${release.sourceRevision}`, published_at: '2026-01-01', assets: [{ name: 'release-set.json', id: 1 }] }])
     const id = { release: () => ({}), stamped: () => ({}), runningSourceRevision: () => null }
-    expect(await applyWebUpdate(packageRoot, 'stable', runGit, getJson, id, npm, () => true, { stateDir: join(root, 'state') })).toMatchObject({ ok: true })
+    const update = () => applyWebUpdate(packageRoot, 'stable', runGit, getJson, id, npm, () => true, { stateDir: join(root, 'state') })
+    expect(await update()).toMatchObject({ ok: false, verification_failed: true })
+    expect(execFileSync(process.execPath, [join(prefix, 'bin/talaria-web')], { encoding: 'utf8' }).trim()).toBe('1.0.0 dependency-1.0.0')
+    npmIntegrity = undefined
+    const missingIntegrity = await update()
+    expect(missingIntegrity).toMatchObject({ ok: false, verification_failed: true })
+    expect(missingIntegrity.message).toContain('lacks npm tarball integrity')
+    npmIntegrity = integrity
+    expect(await update()).toMatchObject({ ok: true })
     for (const bin of ['talaria-web', 'talaria-web-mcp']) {
       expect(execFileSync(process.execPath, [join(prefix, 'bin', bin)], { encoding: 'utf8' }).trim()).toBe('2.0.0 dependency-2.0.0')
     }

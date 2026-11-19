@@ -32,7 +32,7 @@ const EXPERIMENTAL = release(`web-exp-v${expVersion('2.0.0', NEW_EXP)}`, expVers
 const dirs: string[] = []
 const tmp = (): string => { const d = mkdtempSync(join(tmpdir(), 'talaria-exp-updates-')); dirs.push(d); return d }
 const write = (path: string, text: string): void => { mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, text) }
-afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }) })
+afterEach(() => { vi.unstubAllGlobals(); for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }) })
 
 function writePackage(root: string, version: string, stamp: Dict | null): void {
   write(join(root, 'package.json'), JSON.stringify({ name: '@maudecode/talaria-web', version, bin: { 'talaria-web': 'dist/bin/talaria-web.js', 'talaria-web-mcp': 'dist/bin/talaria-web-mcp.js' } }))
@@ -51,6 +51,7 @@ function npmInstall(installed: Dict, candidates: Record<string, Dict>) {
   const installs: string[] = []
   const npm: BuildRun = (args) => {
     if (args[0] === 'root') return Promise.resolve({ ok: true, out: globalRoot })
+    if (args[0] === 'view') return Promise.resolve({ ok: true, out: JSON.stringify('https://registry.invalid/stable') })
     if (args[0] !== 'install') return Promise.resolve({ ok: false, out: 'unexpected npm command' })
     const spec = args.at(-1)!
     installs.push(spec)
@@ -66,9 +67,11 @@ function npmInstall(installed: Dict, candidates: Record<string, Dict>) {
 
 const identity = (running: Dict): ReleaseIdentity => ({ release: () => running, stamped: () => running, runningSourceRevision: () => null })
 
-const stableGetJson: GetJson = (_path, { asset }) => Promise.resolve(asset ? {
+const STABLE_TARBALL = 'synthetic stable tarball'
+const stableTgzKey = `tgz:${createHash('sha256').update(STABLE_TARBALL).digest('hex')}`
+const stableGetJson: GetJson = (path, { asset }) => Promise.resolve(path.startsWith('/compare/') ? { status: 'ahead' } : asset ? {
   schemaVersion: 1, status: 'complete', releaseSet: STABLE_SOURCE,
-  components: { web: { ...STABLE, npm: '@maudecode/talaria-web@2.0.0', image: `ghcr.io/maudecode/talaria-web@sha256:${'f'.repeat(64)}` } },
+  components: { web: { ...STABLE, npm: '@maudecode/talaria-web@2.0.0', npmIntegrity: `sha512-${createHash('sha512').update(STABLE_TARBALL).digest('base64')}`, image: `ghcr.io/maudecode/talaria-web@sha256:${'f'.repeat(64)}` } },
   contracts: { appWeb: { web: [1] }, webRelay: { web: [2] } }, agent: COMPAT.compatibleAgent,
 } : [{ tag_name: `release-set-${STABLE_SOURCE}`, published_at: '2026-01-01', assets: [{ name: 'release-set.json', id: 1 }] }])
 
@@ -192,9 +195,10 @@ describe('Experimental npm updates (TAL-378)', () => {
       scheduleRestart: () => undefined, llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Dashboards sign in') }, log: () => undefined,
     })
     await svc.check(true, false, 'experimental')
-    expect(await svc.summarize('webui')).toMatchObject({ generated_by: 'fallback' })
+    expect((await svc.check(true, false, 'experimental')).webui).toMatchObject({ behind: 0, manual_update: true })
     expect(prompts).toHaveLength(0)
     diverged = false
+    await svc.check(true, false, 'experimental')
     expect(await svc.summarize('webui')).toMatchObject({ source: 'commits', generated_by: 'llm' })
     expect(prompts[0]).toContain('- TAL-2: Dashboards sign in with the owning profile\n- Merge pull request #2')
     expect(prompts[0]).not.toContain('Relay pairing')
@@ -273,14 +277,19 @@ describe('Experimental npm updates (TAL-378)', () => {
     expect(status.channel_switch).toBeUndefined()
   })
 
-  it('updates an Experimental npm install from the verified tarball without a backup', async () => {
+  it('keeps the installed Experimental build until the verified tarball is ahead', async () => {
     const running = release(`web-exp-v${expVersion('2.0.0', OLD_EXP)}`, expVersion('2.0.0', OLD_EXP), OLD_EXP)
     const n = npmInstall(running, { [tgzKey]: EXPERIMENTAL })
     const g = fakeGhcr(TARBALL)
     const state = tmp()
-    const result = await applyWebUpdate(n.packageRoot, 'experimental', runGit, stableGetJson, identity(running), n.npm, () => true, { registry: g.registry, stateDir: state })
-    expect(result).toMatchObject({ ok: true, sourceRevision: NEW_EXP })
-    expect(result.channel_switch).toBeUndefined()
+    let status = 'behind'
+    const getJson: GetJson = (path, opts) => path.startsWith('/compare/') ? Promise.resolve({ status }) : stableGetJson(path, opts)
+    const update = () => applyWebUpdate(n.packageRoot, 'experimental', runGit, getJson, identity(running), n.npm, () => true, { registry: g.registry, stateDir: state })
+    expect(await update()).toMatchObject({ ok: false, manual_update: true })
+    expect(n.installs).toEqual([])
+    expect(n.version()).toBe(running.version)
+    status = 'ahead'
+    expect(await update()).toMatchObject({ ok: true, sourceRevision: NEW_EXP })
     expect(n.version()).toBe(EXPERIMENTAL.version)
     expect(existsSync(join(state, 'backups'))).toBe(false)
     const blob = g.requests.find((r) => r.url.startsWith('https://pkg-containers.githubusercontent.com/'))
@@ -350,13 +359,14 @@ describe('Experimental npm updates (TAL-378)', () => {
 
   it('switches Experimental to Stable even when Stable has an older version', async () => {
     const running = release(`web-exp-v${expVersion('3.0.0', OLD_EXP)}`, expVersion('3.0.0', OLD_EXP), OLD_EXP)
-    const n = npmInstall(running, { '@maudecode/talaria-web@2.0.0': STABLE })
+    const n = npmInstall(running, { [stableTgzKey]: STABLE })
     const state = tmp()
     expect(await checkWebUpdate(n.packageRoot, 'web-exp', 'stable', runGit, stableGetJson, identity(running), n.npm, unusedRegistry))
       .toMatchObject({ behind: 1, channel_switch: true, manual_update: false, npm: '@maudecode/talaria-web@2.0.0' })
+    vi.stubGlobal('fetch', () => Promise.resolve(new Response(STABLE_TARBALL)))
     const result = await applyWebUpdate(n.packageRoot, 'stable', runGit, stableGetJson, identity(running), n.npm, () => true, { registry: unusedRegistry, stateDir: state })
     expect(result).toMatchObject({ ok: true, channel_switch: true, npm: '@maudecode/talaria-web@2.0.0' })
-    expect(n.installs).toEqual(['@maudecode/talaria-web@2.0.0'])
+    expect(n.installs).toEqual([expect.stringMatching(/talaria-web\.tgz$/)])
     expect(n.version()).toBe('2.0.0')
     expect(readdirSync(join(state, 'backups'))).toHaveLength(1)
   })
@@ -386,7 +396,7 @@ describe('Experimental npm updates (TAL-378)', () => {
 
   it('leaves Stable-to-Stable npm updates on the release-set path', async () => {
     const running = release('web-v1.0.0', '1.0.0', 'c'.repeat(40))
-    const n = npmInstall(running, { '@maudecode/talaria-web@2.0.0': STABLE })
+    const n = npmInstall(running, { [stableTgzKey]: STABLE })
     const state = tmp()
     const svc = new UpdateService({
       webRoot: n.packageRoot, npm: n.npm, getJson: stableGetJson, experimental: unusedRegistry, stateDir: state, identity: identity(running), webuiVersion: 'web-v1.0.0',
@@ -397,6 +407,7 @@ describe('Experimental npm updates (TAL-378)', () => {
     const status = (await svc.check(true, false, 'stable')).webui as Dict
     expect(status).toMatchObject({ behind: 1, install_kind: 'npm', manual_update: false })
     expect(status.channel_switch).toBeUndefined()
+    vi.stubGlobal('fetch', () => Promise.resolve(new Response(STABLE_TARBALL)))
     const result = await svc.apply('webui', 'stable')
     expect(result).toMatchObject({ ok: true, message: 'Updated Talaria Web to npm release 2.0.0.' })
     expect(result.channel_switch).toBeUndefined()

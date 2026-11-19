@@ -47,6 +47,7 @@ const SHA = /^[a-f0-9]{40}$/
 const VERSION = '(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)'
 const AGENT_TAG_GLOB = 'v*'
 const AGENT_RELEASE_TAG = new RegExp(`^v${VERSION}$`)
+const NPM_TARBALL_CAP = 200_000_000
 const WEB_NPM_PACKAGE = '@maudecode/talaria-web'
 const GIT_LOCK_SIGNATURES = ["index.lock': file exists", ".lock': file exists", 'another git process seems to be running', 'unable to create .git/index.lock']
 const NETWORK_FAILURES = ['could not resolve host', 'failed to connect', 'network is unreachable', 'no route to host', 'connection timed out', 'timed out after', 'connection reset by peer', 'remote end hung up unexpectedly', 'tls connection was non-properly terminated', 'ssl certificate problem']
@@ -276,7 +277,7 @@ export function githubJson(fetchImpl: typeof fetch, env: Record<string, string |
 }
 
 /** One completed release set's Web component. */
-export interface WebRelease { tag: string; version: string; sourceRevision: string; releaseSet: string; image: string; npm: string | null; manifestReleaseSet: string; runtime: Dict; release_url: string }
+export interface WebRelease { tag: string; version: string; sourceRevision: string; releaseSet: string; image: string; npm: string | null; npmIntegrity: string | null; manifestReleaseSet: string; runtime: Dict; release_url: string }
 export interface PublishedRelease extends WebRelease {
   /** Completed channel releases newer than the `installed` version passed to `publishedWebRelease`, this one included; 1 when it was not passed. */
   releasesBehind: number
@@ -355,6 +356,7 @@ export async function publishedWebRelease(channel: Channel, getJson: GetJson, no
       releaseSet: source,
       image: component.image,
       npm: typeof npm === 'string' ? npm : null,
+      npmIntegrity: typeof component.npmIntegrity === 'string' && /^sha512-[A-Za-z0-9+/]{86}==$/.test(component.npmIntegrity) ? component.npmIntegrity : null,
       manifestReleaseSet: str(m.releaseSet),
       runtime: { tag: componentTag, version: component.version, sourceRevision: source, releaseSet: source, contracts: supported, compatibleAgent: agent },
       release_url: `${REPOSITORY_URL}/releases/tag/${tag}`,
@@ -412,7 +414,6 @@ const EXPERIMENTAL_ARTIFACT_TYPE = 'application/vnd.maudecode.talaria-web.experi
 const EXPERIMENTAL_LAYER_TYPE = 'application/vnd.maudecode.talaria-web.npm.tgz'
 /** GHCR serves blobs by redirecting here; the pull token never follows. */
 const EXPERIMENTAL_BLOB_HOST = 'pkg-containers.githubusercontent.com'
-export const EXPERIMENTAL_TARBALL_CAP = 200_000_000
 const EXPERIMENTAL_VERSION = new RegExp(`^${VERSION}-exp\\.([a-f0-9]{12})$`)
 
 /** The `experimental` tag of the public GHCR artifact: identity from its annotations, content by digest. */
@@ -458,7 +459,7 @@ export function ghcrExperimental(fetchImpl: typeof fetch): ExperimentalRegistry 
       const version = annotations['org.opencontainers.image.version']
       const size = layer.size
       if (typeof sourceRevision !== 'string' || !SHA.test(sourceRevision) || typeof version !== 'string' || EXPERIMENTAL_VERSION.exec(version)?.[4] !== sourceRevision.slice(0, 12)
-        || typeof layer.digest !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(layer.digest) || typeof size !== 'number' || !Number.isInteger(size) || size < 1 || size > EXPERIMENTAL_TARBALL_CAP) {
+        || typeof layer.digest !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(layer.digest) || typeof size !== 'number' || !Number.isInteger(size) || size < 1 || size > NPM_TARBALL_CAP) {
         throw new ReleaseUnavailable('The Experimental artifact has malformed provenance')
       }
       return { tag: `web-exp-v${version}`, version, sourceRevision, digest: layer.digest, size }
@@ -598,6 +599,15 @@ async function aheadOfNightly(channel: WebChannel, switching: boolean, installed
   throw new ReleaseUnavailable('Cannot order this installation against the Nightly build', true)
 }
 
+async function experimentalUpdateBlocked(channel: WebChannel, switching: boolean, installed: string | null, target: string, getJson: GetJson): Promise<boolean> {
+  if (channel !== 'experimental' || switching || installed === target) return false
+  if (!installed || !SHA.test(installed)) return true
+  const status = dict(await getJson(`/compare/${installed}...${target}`, { asset: false })).status
+  return status !== 'ahead'
+}
+
+const EXPERIMENTAL_NOT_AHEAD = 'The Experimental build is not ahead of the installed revision.'
+
 /** An npm install on Experimental or Nightly: behind by its missed builds when its source differs from the channel's tag, or when switching from Stable. */
 async function checkNpmExperimental(result: Dict, installed: NpmInstallInfo, id: ReleaseIdentity, registry: ExperimentalRegistry, getJson: GetJson, channel: Exclude<WebChannel, 'stable'>): Promise<Dict> {
   const name = CHANNEL_NAMES[channel]
@@ -609,6 +619,9 @@ async function checkNpmExperimental(result: Dict, installed: NpmInstallInfo, id:
   try {
     release = await registry.release(channel)
     ahead = await aheadOfNightly(channel, switching, current, release.sourceRevision, getJson)
+    if (await experimentalUpdateBlocked(channel, switching, current, release.sourceRevision, getJson)) {
+      return { ...result, install_kind: 'npm', current_sha: current, behind: 0, manual_update: true, message: EXPERIMENTAL_NOT_AHEAD }
+    }
   } catch (error) {
     const unavailable = error instanceof ReleaseUnavailable ? error : new ReleaseUnavailable(`The ${name} artifact is unavailable`)
     return { ...result, install_kind: 'npm', manual_update: true, error: unavailable.message, ...(unavailable.transient ? { stale_check: true } : {}) }
@@ -688,7 +701,7 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: WebChannel, ge
   const switching = npmInstallChannel(installed, id) !== webFamily(channel)
   if (version !== undefined && (channel !== 'stable' || switching)) return { ok: false, target: 'webui', channel, message: ONLY_STABLE_VERSIONS }
   const onDisk = diskRelease(installed.packageRoot)
-  let target: { tag: string; version: string; sourceRevision: string; label: string; matches: (release: Dict | null) => boolean; npm?: string; experimental?: ExperimentalRelease }
+  let target: { tag: string; version: string; sourceRevision: string; label: string; matches: (release: Dict | null) => boolean; npm?: string; npmIntegrity?: string | null; experimental?: ExperimentalRelease }
   if (channel === 'stable') {
     const stableInstalled = new RegExp(`^${VERSION}$`).test(installed.version) ? installed.version : undefined
     let release: PublishedRelease
@@ -697,7 +710,7 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: WebChannel, ge
     try { chosen = (switching ? undefined : selectVersion(stableInstalled ? npmVersions(release, stableInstalled) : [], version, 'Talaria Web')) ?? release }
     catch (error) { return { ok: false, target: 'webui', channel, message: (error as Error).message } }
     if (!chosen.npm) return { ok: false, manual_update: true, message: 'The completed Stable release does not include an npm package identity.' }
-    target = { tag: chosen.tag, version: chosen.version, sourceRevision: chosen.sourceRevision, label: `npm release ${chosen.version}`, matches: (r) => same(r, chosen.runtime), npm: chosen.npm }
+    target = { tag: chosen.tag, version: chosen.version, sourceRevision: chosen.sourceRevision, label: `npm release ${chosen.version}`, matches: (r) => same(r, chosen.runtime), npm: chosen.npm, npmIntegrity: chosen.npmIntegrity }
     if (!switching) {
       if (!canApply()) return { ok: false, message: 'Web update deferred because its settings or lifecycle changed.' }
       const comparison = compareVersions(installed.version, chosen.version)
@@ -710,7 +723,9 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: WebChannel, ge
     let release: ExperimentalRelease
     try {
       release = await packaged.registry.release(channel)
-      if (await aheadOfNightly(channel, switching, str(onDisk?.sourceRevision ?? id.release().sourceRevision) || null, release.sourceRevision, getJson)) return { ok: false, manual_update: true, target: 'webui', channel, message: AHEAD_OF_NIGHTLY }
+      const installedRevision = str(onDisk?.sourceRevision ?? id.release().sourceRevision) || null
+      if (await experimentalUpdateBlocked(channel, switching, installedRevision, release.sourceRevision, getJson)) return { ok: false, manual_update: true, target: 'webui', channel, message: EXPERIMENTAL_NOT_AHEAD }
+      if (await aheadOfNightly(channel, switching, installedRevision, release.sourceRevision, getJson)) return { ok: false, manual_update: true, target: 'webui', channel, message: AHEAD_OF_NIGHTLY }
     } catch (error) { return { ok: false, message: error instanceof ReleaseUnavailable ? error.message : `The ${name} artifact is unavailable.` } }
     const identity = { tag: release.tag, version: release.version, sourceRevision: release.sourceRevision, releaseSet: release.sourceRevision }
     // validateReleaseInfo (in diskRelease) already applies Stable's contract and Agent-pin checks to the packaged files.
@@ -734,16 +749,35 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: WebChannel, ge
   let keepBackup = false
   let stores: string | null = null
   try {
-    let spec = target.npm ?? ''
-    if (target.experimental) {
-      let tarball: Buffer
-      try { tarball = await packaged.registry!.download(target.experimental) } catch (error) {
-        return { ok: false, verification_failed: true, target: 'webui', channel, message: `${error instanceof ReleaseUnavailable ? error.message : 'The Experimental download failed'}. The installed package was preserved.` }
+    let tarball: Buffer
+    try {
+      if (target.experimental) {
+        tarball = await packaged.registry!.download(target.experimental)
+      } else {
+        if (!target.npmIntegrity) throw new ReleaseUnavailable('The Stable release manifest lacks npm tarball integrity')
+        const metadata = await npmRun(['view', target.npm!, 'dist.tarball', '--json', '--prefer-online'], staging, WEB_BUILD_TIMEOUT_MS)
+        if (!metadata.ok) throw new ReleaseUnavailable('Cannot resolve the Stable npm tarball URL')
+        const value: unknown = JSON.parse(metadata.out)
+        const url = new URL(str(Array.isArray(value) && value.length === 1 ? value[0] : value))
+        if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new ReleaseUnavailable('Invalid Stable npm tarball URL')
+        const response = await fetch(url, { signal: AbortSignal.timeout(WEB_BUILD_TIMEOUT_MS) })
+        if (!response.ok) {
+          await response.body?.cancel()
+          throw new ReleaseUnavailable('Cannot download the Stable npm tarball')
+        }
+        const bytes = await readCapped(response, NPM_TARBALL_CAP)
+        if (!bytes) throw new ReleaseUnavailable('Stable npm tarball exceeds the download limit')
+        tarball = bytes
+        if (`sha512-${createHash('sha512').update(tarball).digest('base64')}` !== target.npmIntegrity) {
+          throw new ReleaseUnavailable('Stable npm tarball integrity verification failed')
+        }
       }
-      spec = join(staging, 'talaria-web-experimental.tgz')
-      writeFileSync(spec, tarball)
+    } catch (error) {
+      return { ok: false, verification_failed: true, target: 'webui', channel, message: `${error instanceof ReleaseUnavailable ? error.message : 'The npm tarball download failed'}. The installed package was preserved.` }
     }
-    const update = await npmRun(['install', '--global', '--prefix', staging, '--no-audit', '--no-fund', spec], staging, WEB_BUILD_TIMEOUT_MS)
+    const spec = join(staging, 'talaria-web.tgz')
+    writeFileSync(spec, tarball)
+    const update = await npmRun(['install', '--global', '--prefix', staging, '--no-audit', '--no-fund', '--ignore-scripts', spec], staging, WEB_BUILD_TIMEOUT_MS)
     if (!update.ok) return { ok: false, install_failed: true, target: 'webui', channel, message: `npm update failed: ${sanitizeGitDiagnostic(update.out, 1000) || 'unknown error'}` }
     const metadata = dict(JSON.parse(readFileSync(join(candidate, 'package.json'), 'utf8')))
     const bins = dict(metadata.bin)
@@ -754,6 +788,10 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: WebChannel, ge
     // npm can leave a dependency as an empty directory; swapping that in crash-loops the server (TAL-1010).
     const missing = Object.keys(dict(metadata.dependencies)).filter((name) => !existsSync(join(candidate, 'node_modules', name, 'package.json')))
     if (missing.length) return { ok: false, verification_failed: true, target: 'webui', channel, message: `The downloaded npm package is missing ${missing.join(', ')}. The installed package was preserved.` }
+    if (Object.hasOwn(dict(metadata.dependencies), 'node-pty')) {
+      const rebuilt = await npmRun(['rebuild', 'node-pty', '--prefix', candidate, '--ignore-scripts=false'], candidate, WEB_BUILD_TIMEOUT_MS)
+      if (!rebuilt.ok) return { ok: false, install_failed: true, target: 'webui', channel, message: `node-pty rebuild failed: ${sanitizeGitDiagnostic(rebuilt.out, 1000)}. The installed package was preserved.` }
+    }
     // Metadata checks cannot see a broken nested dependency, native binding, or dist file; loading the server code can (TAL-1012).
     const selfCheck = await runSelfCheck(candidate, packaged.selfCheckTimeoutMs ?? SELF_CHECK_TIMEOUT_MS)
     if (!selfCheck.ok) return { ok: false, verification_failed: true, target: 'webui', channel, message: `The downloaded npm package failed its self-check: ${sanitizeGitDiagnostic(selfCheck.out, 1000)}. The installed package was preserved.` }

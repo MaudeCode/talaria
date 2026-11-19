@@ -8,11 +8,11 @@ import re
 import subprocess
 import tarfile
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from cli import ROOT, load, receipt, run_url, write
 from plan import VERSION, git
-from release_set import BRIDGE_IMAGE
+from release_set import BRIDGE_IMAGE, npm_integrity
 from smoke_npm import smoke
 
 CONTRACTS = "@maudecode/talaria-web-contracts"
@@ -70,6 +70,101 @@ def bundled_peers(package):
         queue += manifest.get("dependencies", {})
         peers |= manifest.get("peerDependencies", {}).keys() & direct.keys()
     return sorted(peers - seen)
+
+
+def web_shrinkwrap(lock, server, contracts_tarball):
+    """Project the workspace lock onto the server's production dependency graph."""
+    packages = lock["packages"]
+    workspace = "packages/server"
+    root = {key: server[key] for key in ("name", "version", "dependencies", "bin", "engines")}
+    pinned = {"": root}
+    pending = [(workspace, root)]
+    while pending:
+        owner, entry = pending.pop()
+        dependencies = entry.get("dependencies", {}) | entry.get("optionalDependencies", {}) | entry.get("peerDependencies", {})
+        for name in dependencies:
+            for parent in (PurePosixPath(owner), *PurePosixPath(owner).parents):
+                if parent.name == "node_modules":
+                    continue
+                path = str(parent / "node_modules" / name)
+                if path in packages:
+                    break
+            else:
+                if name in entry.get("optionalDependencies", {}) or entry.get("peerDependenciesMeta", {}).get(name, {}).get("optional"):
+                    continue
+                raise ValueError(f"Web lock lacks {name} required by {owner}")
+            target = path.removeprefix(workspace + "/")
+            if target in pinned:
+                continue
+            package = dict(packages[path])
+            if package.get("link"):
+                if name != CONTRACTS or package["resolved"] != "packages/contracts":
+                    raise ValueError(f"Unexpected workspace dependency {path}")
+                package = dict(packages["packages/contracts"])
+                package.pop("devDependencies", None)
+                package.update(version=server["version"],
+                               resolved=f"https://registry.npmjs.org/{CONTRACTS}/-/{contracts_tarball.name.removeprefix('maudecode-')}",
+                               integrity=npm_integrity(contracts_tarball))
+                # The contracts workspace and the published package share hoisted dependencies.
+                pending.append(("packages/contracts", package))
+            else:
+                if not package.get("integrity"):
+                    raise ValueError(f"Web lock lacks integrity for {path}")
+                pending.append((path, package))
+            package.pop("dev", None)
+            pinned[target] = package
+    return {"name": server["name"], "version": server["version"], "lockfileVersion": 3, "requires": True, "packages": pinned}
+
+
+def pack_stable_web(web, npm_output, version):
+    subprocess.run(["npm", "pack", "--pack-destination", str(npm_output), "-w", "packages/contracts"], cwd=web, check=True)
+    contracts_tarball = npm_output / f"maudecode-talaria-web-contracts-{version}.tgz"
+    server = web / "packages/server"
+    shrinkwrap = server / "npm-shrinkwrap.json"
+    write(shrinkwrap, web_shrinkwrap(load(web / "package-lock.json"), load(server / "package.json"), contracts_tarball))
+    try:
+        subprocess.run(["npm", "pack", "--pack-destination", str(npm_output), "-w", "packages/server"], cwd=web, check=True)
+    finally:
+        shrinkwrap.unlink()
+
+
+def pack_experimental_web(web, npm_output, version):
+    # Experimental contracts are never published, so the one server tarball bundles them. npm bundles only
+    # what is installed under the package itself, never the workspace's hoisted links, so the packed server
+    # is staged and gets the packed contracts plus their dependency closure installed before repacking.
+    with tempfile.TemporaryDirectory(prefix="talaria-web-experimental-") as temporary:
+        stage = Path(temporary)
+        subprocess.run(["npm", "pack", "--pack-destination", str(stage), "-w", "packages/contracts", "-w", "packages/server"], cwd=web, check=True)
+        with tarfile.open(stage / f"maudecode-talaria-web-{version}.tgz") as archive:
+            archive.extractall(stage, filter="data")
+        package = stage / "package"
+        # Installs never use devDependencies, and their peer sets break npm's ideal tree here.
+        subprocess.run(["npm", "pkg", "delete", "devDependencies"], cwd=package, check=True)
+        contracts = stage / f"maudecode-talaria-web-contracts-{version}.tgz"
+        subprocess.run(["npm", "pkg", "set", f"dependencies.{CONTRACTS}=file:{contracts}"], cwd=package, check=True)
+        lock = web_shrinkwrap(load(web / "package-lock.json"), load(package / "package.json"), contracts)
+        pinned_contracts = lock["packages"][f"node_modules/{CONTRACTS}"]
+        published_url = pinned_contracts["resolved"]
+        pinned_contracts["resolved"] = f"file:{contracts}"
+        shrinkwrap = package / "npm-shrinkwrap.json"
+        write(shrinkwrap, lock)
+        subprocess.run(["npm", "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=package, check=True)
+        bundle = [CONTRACTS, *bundled_peers(package)]
+        subprocess.run(["npm", "pkg", "set", f"dependencies.{CONTRACTS}={version}",
+                        *(f"bundleDependencies[{index}]={name}" for index, name in enumerate(bundle))], cwd=package, check=True)
+        lock["packages"][""]["dependencies"][CONTRACTS] = version
+        pinned_contracts["resolved"] = published_url
+        shrinkwrap.unlink()
+        write(shrinkwrap, lock)
+        # The staged package already holds prepack's copies, and its prepack cannot see the Web root.
+        subprocess.run(["npm", "pack", "--ignore-scripts", "--pack-destination", str(npm_output)], cwd=package, check=True)
+    tarballs = list(npm_output.glob("*.tgz"))
+    if len(tarballs) != 1:
+        raise ValueError("npm pack must produce one Experimental server tarball")
+    require_bundled_contracts(tarballs[0], version)
+    # Install and boot the exact bytes users get: workspace checks never see a broken pack (TAL-1011).
+    smoke(tarballs[0])
+    return tarballs[0]
 
 
 def image_digest(metadata):
@@ -144,35 +239,11 @@ def main():
         subprocess.run(["npm", "pkg", "set", f"dependencies.{CONTRACTS}={component['version']}", "-w", "packages/server"], cwd=ROOT / "web", check=True)
         (output / "npm").mkdir()
         if experimental:
-            # Experimental contracts are never published, so the one server tarball bundles them. npm bundles only
-            # what is installed under the package itself, never the workspace's hoisted links, so the packed server
-            # is staged and gets the packed contracts plus their dependency closure installed before repacking.
-            with tempfile.TemporaryDirectory(prefix="talaria-web-experimental-") as temporary:
-                stage = Path(temporary)
-                subprocess.run(["npm", "pack", "--pack-destination", str(stage), "-w", "packages/contracts", "-w", "packages/server"], cwd=ROOT / "web", check=True)
-                with tarfile.open(stage / f"maudecode-talaria-web-{component['version']}.tgz") as archive:
-                    archive.extractall(stage, filter="data")
-                package = stage / "package"
-                # Installs never use devDependencies, and their peer sets break npm's ideal tree here.
-                subprocess.run(["npm", "pkg", "delete", "devDependencies"], cwd=package, check=True)
-                contracts = stage / f"maudecode-talaria-web-contracts-{component['version']}.tgz"
-                subprocess.run(["npm", "pkg", "set", f"dependencies.{CONTRACTS}=file:{contracts}"], cwd=package, check=True)
-                subprocess.run(["npm", "install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", "--no-package-lock"], cwd=package, check=True)
-                bundle = [CONTRACTS, *bundled_peers(package)]
-                subprocess.run(["npm", "pkg", "set", f"dependencies.{CONTRACTS}={component['version']}",
-                                *(f"bundleDependencies[{index}]={name}" for index, name in enumerate(bundle))], cwd=package, check=True)
-                # The staged package already holds prepack's copies, and its prepack cannot see the Web root.
-                subprocess.run(["npm", "pack", "--ignore-scripts", "--pack-destination", str(output / "npm")], cwd=package, check=True)
-            tarballs = list((output / "npm").glob("*.tgz"))
-            if len(tarballs) != 1:
-                raise ValueError("npm pack must produce one Experimental server tarball")
-            require_bundled_contracts(tarballs[0], component["version"])
-            # Install and boot the exact bytes users get: workspace checks never see a broken pack (TAL-1011).
-            smoke(tarballs[0])
+            tarball = pack_experimental_web(ROOT / "web", output / "npm", component["version"])
             write(output / "build-result.json", {"component": name, "sourceRevision": component["sourceRevision"], "result": "success",
-                                                 "tag": component["tag"], "version": component["version"], "tarball": tarballs[0].name})
+                                                 "tag": component["tag"], "version": component["version"], "tarball": tarball.name})
             return
-        subprocess.run(["npm", "pack", "--pack-destination", str(output / "npm"), "-w", "packages/contracts", "-w", "packages/server"], cwd=ROOT / "web", check=True)
+        pack_stable_web(ROOT / "web", output / "npm", component["version"])
         tarballs = sorted((output / "npm").glob("*.tgz"))
         if len(tarballs) != 2 or any(path.stat().st_size == 0 for path in tarballs):
             raise ValueError("npm pack must produce the contracts and server tarballs")

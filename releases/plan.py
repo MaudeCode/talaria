@@ -168,6 +168,10 @@ def assemble(plan, receipts, notes, previous=None, *, complete=False):
             web = document["components"]["web"]
             if receipt.get("image") != web.get("image") or receipt.get("tag") != web["tag"] or receipt.get("npm") != web.get("npm"):
                 raise ValueError("published Web image or npm package differs from its build")
+            if web.get("npm"):
+                if "npmIntegrity" not in receipt:
+                    raise ValueError("published Web npm package lacks tarball integrity")
+                web["npmIntegrity"] = receipt["npmIntegrity"]
         if gate == "uploadApp":
             app = document["components"]["app"]
             if receipt.get("buildNumber") != app["buildNumber"] or receipt.get("tag") != app["tag"]:
