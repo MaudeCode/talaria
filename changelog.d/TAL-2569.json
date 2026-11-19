@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "With the largest text sizes, typing in landscape with the keyboard up shows a whole line of your message instead of a thin strip.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

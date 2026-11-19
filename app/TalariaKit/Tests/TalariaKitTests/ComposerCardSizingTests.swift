@@ -13,7 +13,7 @@ final class ComposerCardSizingTests: XCTestCase {
     private let landscapeKeyboardUp: CGFloat = 200
 
     func testAGrowingDraftOnAShortPaneKeepsTwoRows() {
-        var measurement = (card: chrome + ComposerCardSizing.oneLineInputHeight, input: ComposerCardSizing.oneLineInputHeight)
+        var measurement = (card: chrome + ComposerCardSizing.defaultOneLineInputHeight, input: ComposerCardSizing.defaultOneLineInputHeight)
         for lines in 1...6 {
             let sizing = sizing(availableHeight: duoOuterKeyboardUp, card: measurement.card, input: measurement.input)
             XCTAssertFalse(sizing.usesOneRowCard, "switched to one row with \(lines - 1) lines typed")
@@ -25,7 +25,7 @@ final class ComposerCardSizingTests: XCTestCase {
     }
 
     func testTheTextStopsGrowingAtTheTranscriptsMinimum() {
-        var measurement = (card: chrome + ComposerCardSizing.oneLineInputHeight, input: ComposerCardSizing.oneLineInputHeight)
+        var measurement = (card: chrome + ComposerCardSizing.defaultOneLineInputHeight, input: ComposerCardSizing.defaultOneLineInputHeight)
         for lines in 1...6 {
             let sizing = sizing(availableHeight: duoOuterKeyboardUp, card: measurement.card, input: measurement.input)
             let input = min(textHeight(lines: lines), sizing.maximumInputHeight)
@@ -38,7 +38,7 @@ final class ComposerCardSizingTests: XCTestCase {
     func testAPaneTooShortForOneLineUsesOneRowAndStaysThere() {
         let twoRow = sizing(availableHeight: landscapeKeyboardUp, card: chrome + 22, input: 22)
         XCTAssertTrue(twoRow.usesOneRowCard)
-        XCTAssertEqual(twoRow.maximumInputHeight, ComposerCardSizing.oneLineInputHeight)
+        XCTAssertEqual(twoRow.maximumInputHeight, ComposerCardSizing.defaultOneLineInputHeight)
         // In one row the view keeps its last two-row measurement, so the shorter card does not switch it back.
         XCTAssertTrue(sizing(availableHeight: landscapeKeyboardUp, card: chrome + 22, input: 22).usesOneRowCard)
     }
@@ -57,25 +57,44 @@ final class ComposerCardSizingTests: XCTestCase {
 
     func testTabletopFitsTheTextInItsHalfAndNeverUsesOneRow() {
         let sizing = ComposerCardSizing(availableHeight: 150, tabletopHeight: 200,
-                                        twoRowCardHeight: chrome + 22, twoRowInputHeight: 22, allowsOneRowCard: true)
+                                        twoRowCardHeight: chrome + 22, twoRowInputHeight: 22, oneLineInputHeight: 22,
+                                        allowsOneRowCard: true)
         XCTAssertFalse(sizing.usesOneRowCard)
         XCTAssertEqual(sizing.maximumInputHeight, 200 - chrome - 8)
     }
 
     func testTheShellAndClarificationsNeverUseOneRowAndKeepTheLooseMaximum() {
         let sizing = ComposerCardSizing(availableHeight: landscapeKeyboardUp, tabletopHeight: nil,
-                                        twoRowCardHeight: chrome + 22, twoRowInputHeight: 22, allowsOneRowCard: false)
+                                        twoRowCardHeight: chrome + 22, twoRowInputHeight: 22, oneLineInputHeight: 22,
+                                        allowsOneRowCard: false)
         XCTAssertFalse(sizing.usesOneRowCard)
         XCTAssertEqual(sizing.maximumInputHeight, ComposerCardSizing.maximumLooseInputHeight)
     }
 
-    private func sizing(availableHeight: CGFloat, card: CGFloat, input: CGFloat) -> ComposerCardSizing {
-        ComposerCardSizing(availableHeight: availableHeight, tabletopHeight: nil,
-                           twoRowCardHeight: card, twoRowInputHeight: input, allowsOneRowCard: true)
+    /// TAL-2569: at the largest accessibility size one line of body text is 64 pt. A pane with room for a default line
+    /// but not that one gets the one-row card, and every arrangement leaves the text that whole line.
+    func testAnAccessibilityLineDecidesTheArrangementAndIsNeverCut() {
+        let line: CGFloat = 64
+        let between = chrome + ComposerCardSizing.minimumTranscriptHeight + 40
+        for availableHeight in [landscapeKeyboardUp, between] {
+            let sizing = sizing(availableHeight: availableHeight, card: chrome + line, input: line, line: line)
+            XCTAssertTrue(sizing.usesOneRowCard, "\(availableHeight) pt has no room for a \(line) pt line in two rows")
+            XCTAssertEqual(sizing.maximumInputHeight, line)
+        }
+        XCTAssertEqual(sizing(availableHeight: 0, card: 0, input: 0, line: 120).maximumInputHeight, 120)
+        let tabletop = ComposerCardSizing(availableHeight: 150, tabletopHeight: chrome + 40, twoRowCardHeight: chrome + line,
+                                          twoRowInputHeight: line, oneLineInputHeight: line, allowsOneRowCard: true)
+        XCTAssertEqual(tabletop.maximumInputHeight, line)
+    }
+
+    private func sizing(availableHeight: CGFloat, card: CGFloat, input: CGFloat,
+                        line: CGFloat = ComposerCardSizing.defaultOneLineInputHeight) -> ComposerCardSizing {
+        ComposerCardSizing(availableHeight: availableHeight, tabletopHeight: nil, twoRowCardHeight: card,
+                           twoRowInputHeight: input, oneLineInputHeight: line, allowsOneRowCard: true)
     }
 
     /// The text view's natural height: one line, then about 20 pt per wrapped line at the body size.
     private func textHeight(lines: Int) -> CGFloat {
-        ComposerCardSizing.oneLineInputHeight + CGFloat(lines - 1) * 20
+        ComposerCardSizing.defaultOneLineInputHeight + CGFloat(lines - 1) * 20
     }
 }

@@ -288,6 +288,48 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertTrue(editor.isFirstResponder)
     }
 
+    /// TAL-2569: at the largest accessibility text size, a landscape pane shortened by the keyboard still shows a whole
+    /// line of the draft with its caret, and Send stays inside the window, through a rotation and back.
+    func testAccessibilityTextKeepsAWholeDraftLineInAShortLandscapePane() async throws {
+        let fixture = try FixtureApp(for: self)
+        let session = try await fixture.session()
+        // The chat loads in portrait: at this size a landscape composer leaves the transcript no room.
+        let portrait = CGSize(width: 402, height: 874)
+        let window = try hostWindow(fixture.chat(session), size: portrait) {
+            $0.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
+        }
+        // At this size only the newest reply fits on screen.
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("FixturePlainLead") == true }
+        let draft = "Keep this accessibility draft visible"
+        try await typeIntoComposer(draft, in: window)
+        let loadedEditor = await composerTextView(in: window)
+        let editor = try XCTUnwrap(loadedEditor)
+        let lineHeight = try XCTUnwrap(editor.font).lineHeight
+        let selection = editor.selectedRange
+        // The keyboard leaves a landscape chat about 200 pt. Rotate there, back to portrait, and there again.
+        let landscape = CGSize(width: 874, height: 200)
+        for (size, name) in [(landscape, "landscape"), (portrait, "portrait"), (landscape, "landscape-again")] {
+            window.frame.size = size
+            let settled = await awaitRenderedQuiet(in: window) { editor.convert(editor.bounds, to: window) }
+            XCTAssertTrue(settled, "\(name): the composer must settle")
+            attachHostedScreenshot(window, name: "composer-accessibility-\(name)")
+            XCTAssertGreaterThanOrEqual(editor.bounds.height, lineHeight, "\(name): the editor cuts its line")
+            let caret = editor.caretRect(for: try XCTUnwrap(editor.selectedTextRange).end)
+            XCTAssertTrue(editor.bounds.insetBy(dx: -1, dy: -1).contains(caret),
+                          "\(name): the caret \(caret) is outside the editor's visible \(editor.bounds)")
+            let editorFrame = editor.convert(editor.bounds, to: window)
+            XCTAssertTrue(window.bounds.contains(editorFrame), "\(name): the editor \(editorFrame) leaves the window")
+            let send = try await requireElement(in: window, label: "Send")
+            // At this size Send is about half the pane tall, so its circle may meet the keyboard; its hit point may not.
+            let sendFrame = window.convert(send.accessibilityFrame, from: nil)
+            XCTAssertTrue(window.bounds.contains(CGPoint(x: sendFrame.midX, y: sendFrame.midY)),
+                          "\(name): Send \(sendFrame) has its hit point outside the window")
+            XCTAssertEqual(editor.text, draft, name)
+            XCTAssertEqual(editor.selectedRange, selection, name)
+            XCTAssertTrue(editor.isFirstResponder, name)
+        }
+    }
+
     /// The vertical bar has no keyboard accessory row, so it carries its own Hide Keyboard while the composer is
     /// focused (TAL-1584). A horizontal bar never shows it.
     func testVerticalBarHidesTheKeyboardWhileTheComposerIsFocused() async throws {

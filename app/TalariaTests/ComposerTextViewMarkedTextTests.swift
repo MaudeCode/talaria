@@ -14,6 +14,7 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
         var isFocused = false
         var inputHeight: CGFloat = 22
         var measuredHeight: CGFloat = 0
+        var oneLineHeight: CGFloat = 22
         var text = "" {
             didSet {
                 revision += 1
@@ -30,6 +31,7 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
             isFocused: Binding(get: { draft.isFocused }, set: { draft.isFocused = $0 }),
             inputHeight: Binding(get: { draft.inputHeight }, set: { draft.inputHeight = $0 }),
             measuredHeight: Binding(get: { draft.measuredHeight }, set: { draft.measuredHeight = $0 }),
+            oneLineHeight: Binding(get: { draft.oneLineHeight }, set: { draft.oneLineHeight = $0 }),
             isDisabled: false, isKeyboardSendEnabled: false, keyboardSendKey: .return,
             alternateSendBehavior: .steer, verticalPadding: 0, onKeyboardSend: { _ in },
             onPasteFileProviders: { _ in }, onPasteFileURLs: { _ in },
@@ -284,7 +286,7 @@ final class ComposerTextViewMarkedTextTests: XCTestCase {
         let coordinator = ComposerTextView.Coordinator(
             text: Binding(get: { draft.text }, set: { draft.text = $0 }),
             isFocused: Binding(get: { draft.isFocused }, set: { draft.isFocused = $0 }),
-            onHeightChange: { _ in }
+            onHeightChange: { _, _ in }
         )
         let textView = ComposerTextView.PastingTextView(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
         textView.delegate = coordinator
