@@ -1558,7 +1558,7 @@ final class SharedContractTests: XCTestCase {
         // TAL-1422: the row carries the publisher's plan and worker counts.
         XCTAssertEqual(aggregate?.rows.first?.workCounts?.text, "Plan 2/5 · 3 workers")
         try await client.registerPerSession(
-            activityID: "contract-activity", pushToken: "contract-activity-token",
+            activityID: "contract-activity", pushToken: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             publisherID: "https://contract.example", sessionID: "contract-session", streamID: "contract-stream"
         )
     }

@@ -157,6 +157,15 @@ export const storedSessionStateValidator = v.object({
   receivedAt: v.number(),
 });
 
+const apnsTokenPattern = /^[0-9a-f]{64,200}$/;
+
+/** TAL-2214: every APNs token field (device, push-to-start, activity) as lower-case hex; null for anything else. */
+export function apnsToken(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const token = value.toLowerCase();
+  return apnsTokenPattern.test(token) ? token : null;
+}
+
 export const apnsRequestValidator = v.object({
   token: v.string(),
   topic: v.string(),

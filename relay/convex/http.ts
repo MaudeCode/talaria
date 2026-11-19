@@ -28,6 +28,7 @@ import {
   type AgentNotify,
   type PublishedSessionState,
 } from "./lib/model";
+import { apnsToken } from "./lib/validators";
 
 const http = httpRouter();
 const jsonHeaders = { "content-type": "application/json" };
@@ -85,11 +86,17 @@ async function appleKeys(ctx: HttpActionCtx, now: number): Promise<JsonWebKey[] 
   return keys;
 }
 
+// TAL-2214: the unauthenticated health check answers from this isolate's last healthy result for a minute.
+// An unhealthy result is never reused, so a deployment that becomes ready reports it on the next poll.
+const healthCacheMs = 60_000;
+let healthCache: { body: unknown; expiresAt: number } | undefined;
+
 http.route({
   path: "/v1/health",
   method: "GET",
   handler: httpAction(async (ctx) => {
     const now = Date.now();
+    if (healthCache && healthCache.expiresAt > now) return json(200, healthCache.body);
     const [keys, apns, delivery] = await Promise.all([
       appleKeys(ctx, now),
       ctx.runAction(internal.apns.preflight, {}),
@@ -104,14 +111,16 @@ http.route({
       && authConfigured
       && audiences.length > 0
       && apns.ok;
-    return json(ok ? 200 : 503, {
+    const body = {
       ok,
       release: releaseInfo,
       appleKeys: Boolean(keys?.length),
       appleAuth: authConfigured && audiences.length > 0,
       apns: apns.ok,
       recentPermanentDeliveryFailure: delivery.recentPermanentFailure,
-    });
+    };
+    healthCache = ok ? { body, expiresAt: now + healthCacheMs } : undefined;
+    return json(ok ? 200 : 503, body);
   }),
 });
 
@@ -160,6 +169,11 @@ function optionalStringField(
 ): string | undefined | null {
   if (!(key in object) || object[key] === null) return undefined;
   return stringField(object, key, maximumLength);
+}
+
+function optionalApnsTokenField(object: Record<string, unknown>, key: string): string | undefined | null {
+  if (!(key in object) || object[key] === null) return undefined;
+  return apnsToken(object[key]);
 }
 
 function numberField(object: Record<string, unknown>, key: string): number | null {
@@ -809,13 +823,9 @@ http.route({
       const label = stringField(body, "label", 80);
       const apsEnvironment = body.apsEnvironment;
       const bundleId = talariaBundleId(stringField(body, "bundleId", 255) ?? "", apsEnvironment);
-      const pushToken = body.pushToken === null
-        ? undefined
-        : optionalStringField(body, "pushToken", 512);
+      const pushToken = optionalApnsTokenField(body, "pushToken");
       const clearPushToken = body.pushToken === null;
-      const pushToStartToken = body.pushToStartToken === null
-        ? undefined
-        : optionalStringField(body, "pushToStartToken", 512);
+      const pushToStartToken = optionalApnsTokenField(body, "pushToStartToken");
       const clearPushToStartToken = body.pushToStartToken === null;
       const preferences = parsePreferences(body.preferences);
       if (
@@ -855,7 +865,8 @@ http.route({
       const streamId = optionalStringField(body, "streamId", 191);
       const attributesType = stringField(body, "attributesType", 120);
       const schemaVersion = numberField(body, "schemaVersion");
-      const activityPushToken = stringField(body, "activityPushToken", 512);
+      const activityPushToken = optionalApnsTokenField(body, "activityPushToken");
+      if (activityPushToken === null) return json(400, { error: "invalid_device" });
       const seededLocally = body.seededLocally ?? false;
       if (
         !activityId ||

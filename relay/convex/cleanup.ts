@@ -37,7 +37,7 @@ async function prunePass(ctx: MutationCtx) {
   const now = Date.now();
   const oldJobCutoff = now - 7 * 24 * 60 * 60 * 1_000;
   const retiredCutoff = now - 30 * 24 * 60 * 60 * 1_000;
-  const [nonces, userSessions, appleTokens, invitations, sessions, expiredActivities, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions, deliveredFeedback, pendingFeedback, staleAttachments, rateLimits] = await Promise.all([
+  const [nonces, userSessions, appleTokens, invitations, sessions, expiredActivities, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions, unacknowledgedCompletions, deliveredFeedback, pendingFeedback, staleAttachments, rateLimits] = await Promise.all([
     ctx.db
       .query("publisherNonces")
       .withIndex("by_expires_at", (query) => query.lt("expiresAt", now))
@@ -110,6 +110,13 @@ async function prunePass(ctx: MutationCtx) {
         query.eq("acknowledged", true).lt("_creationTime", oldJobCutoff),
       )
       .take(batchSize),
+    // A completion no device acknowledged still holds its session title; it expires after 30 days.
+    ctx.db
+      .query("completions")
+      .withIndex("by_acknowledged", (query) =>
+        query.eq("acknowledged", false).lt("_creationTime", retiredCutoff),
+      )
+      .take(batchSize),
     ctx.db
       .query("feedbackReports")
       .withIndex("by_status_and_delivered_at", (query) =>
@@ -133,7 +140,7 @@ async function prunePass(ctx: MutationCtx) {
       .withIndex("by_window_started_at", (query) => query.lt("windowStartedAt", now - longestBudgetWindowMs))
       .take(batchSize),
   ]);
-  const full = [nonces, userSessions, appleTokens, invitations, sessions, expiredActivities, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions, deliveredFeedback, pendingFeedback, staleAttachments, rateLimits]
+  const full = [nonces, userSessions, appleTokens, invitations, sessions, expiredActivities, doneJobs, keys, pendingKeys, devices, activities, deadJobs, staleJobs, acknowledgedCompletions, unacknowledgedCompletions, deliveredFeedback, pendingFeedback, staleAttachments, rateLimits]
     .some((rows) => rows.length === batchSize);
   let revokedDevices = 0;
   for (const state of expiredActivities) {
@@ -163,6 +170,7 @@ async function prunePass(ctx: MutationCtx) {
     ...devices,
     ...activities,
     ...acknowledgedCompletions,
+    ...unacknowledgedCompletions,
     ...deliveredFeedback,
     ...pendingFeedback,
     ...rateLimits,

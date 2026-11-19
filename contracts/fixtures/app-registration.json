@@ -5,6 +5,6 @@
   "streamId": "contract-stream",
   "attributesType": "AgentRunActivityAttributes",
   "schemaVersion": 1,
-  "activityPushToken": "contract-activity-token",
+  "activityPushToken": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "seededLocally": false
 }

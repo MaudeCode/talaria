@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Relay accepts only well-formed APNs tokens, deletes unacknowledged completion results after 30 days, and answers repeated health checks from a one-minute cache.",
+      "highlight": false,
+      "components": [
+        "relay"
+      ],
+      "announce": false
+    }
+  ]
+}
