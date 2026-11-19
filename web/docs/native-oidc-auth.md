@@ -13,8 +13,9 @@ or perform other owner-only operations. When the operator configures
 `true` and may perform owner operations even while bound to a profile; every
 other OIDC session reports `false`, including unbound ones. The owner-only
 operations include the host terminal, MCP server writes, provider keys and
-endpoints, onboarding setup, and cron `script` / `no_agent`; `docs/CONTRACTS.md`
-("Owner-only routes") lists every route.
+endpoints, onboarding setup, and cron `script` / `no_agent`, monitor scripts
+and room delivery; `docs/CONTRACTS.md` ("Owner-only routes") lists every route,
+and [security-model.md](security-model.md) describes the whole model.
 
 ## Flow
 
@@ -45,7 +46,8 @@ endpoints, onboarding setup, and cron `script` / `no_agent`; `docs/CONTRACTS.md`
 - App state and flow identity are checked at callback and exchange. The exchange
   is also bound to the exact WebUI origin that created it.
 - Exchange codes are random, single-use, and expire after 60 seconds. Native
-  flows expire after 10 minutes and all pending maps are bounded.
+  flows expire after 10 minutes and all pending maps are bounded. A client may
+  start at most 10 native flows a minute; more answer 429.
 - A failed server, state, flow, or PKCE check consumes that exchange code. A
   cancelled flow invalidates pending provider and exchange phases.
 - Callback URLs never contain the WebUI session cookie, password, OIDC token,
@@ -66,6 +68,7 @@ endpoints, onboarding setup, and cron `script` / `no_agent`; `docs/CONTRACTS.md`
   affinity alone is insufficient because the app and external browser are
   separate clients before they share a cookie.
 
-Password login, passkeys, trusted-header auth, and browser OIDC keep their
-existing behavior. Native clients must fail closed when the capability flag is
-missing or false.
+Password login, passkeys, trusted-header auth, and browser OIDC are separate
+flows; [security-model.md](security-model.md#7-deployment) describes their
+limits, including browser OIDC's binding to the browser that started it.
+Native clients must fail closed when the capability flag is missing or false.

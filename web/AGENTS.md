@@ -23,6 +23,8 @@ For architecture, testing, or setup work, also read the matching reference:
 - `docs/onboarding.md` for first-run onboarding behavior
 - `docs/troubleshooting.md` for diagnostic flows
 - `docs/rfcs/README.md` for larger RFCs and state/durability contracts
+- `docs/security-model.md` before touching auth, path handling, uploads,
+  streaming, or environment handling
 
 For UI or UX work, read `../docs/design-system.md` first (every hub, list,
 settings and detail page: plain rows, no cards, the Insights pages as the
@@ -87,7 +89,8 @@ Follow that checklist's safety rules:
 - For runtime, streaming, recovery, replay, compression, or sidebar metadata
   changes, name the state layer being mutated and prove the relevant invariant.
 - Treat auth, path handling, uploads, streaming, and environment handling as
-  high-risk; say so in the PR body and explain how the change was verified.
+  high-risk: read `docs/security-model.md` first, keep it true in the same
+  change, say so in the PR body and explain how the change was verified.
 - For Docker build changes in `docker_init.bash`, mirror directory exclusions
   in both the `rsync` and `cp -a` paths — `/opt/hermes` may contain subdirectories
   with restricted permissions (e.g. `.playwright/`).
