@@ -101,14 +101,31 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         }
     }
 
-    /// Long turns arrive as a tail preview; this pages the earlier rows in, like Web's "Show earlier steps".
+    /// Long turns arrive as a tail preview; this pages the earlier rows in, like Web's "Show earlier steps". TAL-1961: it reads
+    /// as an activity row (untinted, the same icon slot, title and height), without a chevron since it loads rather than discloses.
     @ViewBuilder
     private var earlierStepsButton: some View {
         let remaining = (transcriptMessage.message.activityScene?.activityRowsOffset ?? 0) - earlierSceneRows.count
         if remaining > 0 {
-            Button(String(localized: "Earlier steps (\(remaining))"), action: onLoadEarlierSceneRows)
-                .font(AppFont.body())
-                .buttonStyle(.borderless)
+            let title = String(localized: "Earlier steps (\(remaining))")
+            Button(action: onLoadEarlierSceneRows) {
+                HStack(spacing: 8) {
+                    ToolActivityIcon(name: "arrow.up")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16, height: 16)
+
+                    Text(title)
+                        .font(AppFont.callout())
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 4)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityIdentifier("transcript-earlier-steps")
         }
     }
 

@@ -5,7 +5,6 @@ import { CornerUpRight } from 'lucide-react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { fetchAnchorScene } from '../../api/endpoints'
 import { m } from '../../paraglide/messages.js'
-import { Button } from '../../ui/Button'
 import { groupsById, sceneItems } from './turnActivity'
 import { Markdown } from './render/Markdown'
 import { ReasoningBlock } from './blocks/ReasoningBlock'
@@ -104,7 +103,8 @@ function ActivityHistory({ activity, history, mode, sessionId, scope }: { activi
   // TAL-2332: each page ships the records of its groups; the scene's own stay newest.
   const groups = Object.assign({}, ...pages.map((page) => groupsById(page.activity_groups)), activity.groups) as NonNullable<TurnActivity['groups']>
   const remaining = query.data?.pages.at(-1)?.start ?? history.before
-  const control = remaining > 0 ? <Button variant="ghost" disabled={query.isFetching} onClick={() => { void query.fetchNextPage() }}>{query.isFetching ? m.loading() : query.isError ? m.retry() : m.show_earlier_steps({ a0: String(remaining) })}</Button> : null
+  // TAL-1961: styled as the worklog's group summaries, so it reads as one of the turn's rows.
+  const control = remaining > 0 ? <button type="button" className="tool-worklog-summary tool-worklog-earlier" disabled={query.isFetching} onClick={() => { void query.fetchNextPage() }}><span className="tool-worklog-label">{query.isFetching ? m.loading() : query.isError ? m.retry() : m.show_earlier_steps({ a0: String(remaining) })}</span></button> : null
   return <ActivityBody activity={{ ...activity, items, groups }} mode={mode} earlier={control} sessionId={sessionId} />
 }
 

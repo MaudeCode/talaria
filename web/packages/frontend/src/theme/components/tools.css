@@ -22,11 +22,13 @@
 .tool-worklog-summary .tool-call-group-duration{margin-left:2px;flex-shrink:0}
 .tool-worklog-summary .tool-call-group-chevron{margin-left:0}
 .tool-worklog-group[data-tool-worklog-group="1"]:not([data-run-activity-group="1"]){margin-top:2px}
-.tool-worklog-group[data-tool-worklog-group="1"]:not([data-run-activity-group="1"]) > .tool-worklog-summary{display:inline-flex;width:auto;padding:2px 6px 2px 0;margin:0 0 6px;border-radius:0;background:transparent}
+.tool-worklog-group[data-tool-worklog-group="1"]:not([data-run-activity-group="1"]) > .tool-worklog-summary,.tool-worklog-earlier{display:inline-flex;width:auto;padding:2px 6px 2px 0;margin:0 0 6px;border-radius:0;background:transparent}
 @media (hover:none) and (pointer:coarse){.tool-worklog-summary{padding-top:2px;padding-bottom:2px;min-height:44px}}
-@media (hover:none) and (pointer:coarse){.tool-worklog-group[data-tool-worklog-group="1"]:not([data-run-activity-group="1"]) > .tool-worklog-summary{padding-top:2px;padding-bottom:2px;min-height:44px;box-sizing:border-box}}
-.tool-worklog-group[data-tool-worklog-group="1"]:not([data-run-activity-group="1"]) > .tool-worklog-summary .tool-worklog-label{color:color-mix(in srgb,var(--muted) 74%,var(--bg));font-size:calc(var(--message-body-font-size) * .9);font-weight:400;opacity:.82}
-.tool-worklog-group[data-tool-worklog-group="1"]:not([data-run-activity-group="1"]) .tool-worklog-summary:hover{background:transparent}
+@media (hover:none) and (pointer:coarse){.tool-worklog-group[data-tool-worklog-group="1"]:not([data-run-activity-group="1"]) > .tool-worklog-summary,.tool-worklog-earlier{padding-top:2px;padding-bottom:2px;min-height:44px;box-sizing:border-box}}
+.tool-worklog-group[data-tool-worklog-group="1"]:not([data-run-activity-group="1"]) > .tool-worklog-summary .tool-worklog-label,.tool-worklog-earlier .tool-worklog-label{color:color-mix(in srgb,var(--muted) 74%,var(--bg));font-size:calc(var(--message-body-font-size) * .9);font-weight:400;opacity:.82}
+.tool-worklog-group[data-tool-worklog-group="1"]:not([data-run-activity-group="1"]) .tool-worklog-summary:hover,.tool-worklog-earlier:hover{background:transparent}
+/* TAL-1961: the earlier-steps control shares the group summary's look and keeps its own width in a flex column. */
+.tool-worklog-earlier{align-self:flex-start;cursor:pointer}
 .tool-worklog-group[data-tool-worklog-group="1"]:not([data-run-activity-group="1"]) .as-dot{display:none}
 .tool-worklog-body{padding-left:0}
 /* Shut, the body is `hidden`; its open and shut motion is the shared height reveal (lib/motion.ts), not a transition. */
