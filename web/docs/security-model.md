@@ -33,9 +33,11 @@ any other with `403 Profile access forbidden` (`auth/gate.ts`
 
 A **person** exists only with `TALARIA_WEB_PERSON_ISOLATION` on and sign-in on;
 only a validated OIDC issuer and subject identify one (`auth/person.ts`
-`personIsolationEnabled`, `personIdentity`). A non-owner person sees only their
-own sessions. Sessions with no owner (legacy, imported, scheduled, Agent
-state) are visible only to the owner (`auth/person.ts` `personMaySee`).
+`personIsolationEnabled`, `personIdentity`). Every person, a server owner
+included, sees only the sessions they own; owner authority adds only the
+sessions no person owns (legacy, imported, scheduled, Agent state)
+(`auth/person.ts` `personMaySee`). Owner authority over the host and profiles
+is separate from that session boundary.
 
 | Actor | May reach | Enforced by |
 |---|---|---|
@@ -43,7 +45,7 @@ state) are visible only to the owner (`auth/person.ts` `personMaySee`).
 | Share-link holder | One sanitized session snapshot, until the share is revoked or its session is deleted | `sessions/shares.ts` `ShareStore` |
 | Sandboxed frame (HTML preview, `show` block, extension panel, dashboard plugin) | Its own grant's files. It cannot call `/api/` (an `Origin: null` request gets 403) and its CSP denies network calls | `app.ts` `createApp` dispatch; `workspace/preview.ts` `PREVIEW_CSP`; `sessions/show.ts` `SHOW_FRAME_CSP`; `tools/extensions.ts` `EXTENSION_PANEL_SANDBOX_CSP` |
 | Non-owner login (profile-bound, or a non-owner person) | Its own profile and the sessions it may see. No owner-only route (section 4), no all-profile listing, a fenced workspace (section 5), scoped media and Kanban | `auth/gate.ts` `isOperatorOnly`; `api/sessions-router.ts` `profileReach`; `workspace/workspaces.ts` `WorkspaceRegistry.resolveTrusted`; `workspace/media.ts` `mediaAccessFor`; `api/automation-router.ts` `kanbanAssignees` |
-| Server owner | Everything, including host code execution and every profile. A workspace inside Web state is still refused | `auth/gate.ts` `sessionCanManageServer`; `workspace/workspaces.ts` `WorkspaceRegistry.isInWebState` |
+| Server owner | Host administration, code execution and every profile. Under person isolation, only their own sessions plus unowned ones. A workspace inside Web state is still refused | `auth/gate.ts` `sessionCanManageServer`; `auth/person.ts` `personMaySee`; `workspace/workspaces.ts` `WorkspaceRegistry.isInWebState` |
 | Relay publisher (a Web server) | Signed writes of its own profiles' state to the Relay | `relay/convex/http.ts` `authenticatePublisher` |
 | Relay device (the Talaria app) | Its account's devices and the publisher state its account is granted. Nothing on any Web server | `relay/convex/http.ts` `authenticateUser`; `relay/convex/lib/publisherVisibility.ts` `isPublisherStateVisible` |
 
