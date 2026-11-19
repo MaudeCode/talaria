@@ -23,7 +23,8 @@ export const AuthStatusSchema = z.object({
   password_auth_enabled: z.boolean(),
   passwordless_enabled: z.boolean(),
   passkeys_enabled: z.boolean(),
-  passkeys_count: z.number().int(),
+  /** TAL-2216: omitted while auth is on and the request is not signed in. */
+  passkeys_count: z.number().int().optional(),
   passkey_feature_flag: z.boolean(),
   auth_disabled_acknowledged: z.boolean(),
   can_manage_server: z.boolean(),
@@ -58,7 +59,8 @@ export const BootstrapFeaturesSchema = z.object({
 export type BootstrapFeatures = z.infer<typeof BootstrapFeaturesSchema>
 
 export const BootstrapSchema = z.object({
-  webui_version: z.string(),
+  /** TAL-2216: omitted while auth is on and the request is not signed in. */
+  webui_version: z.string().optional(),
   max_upload_bytes: z.number().int().positive(),
   csrf_token: z.string(),
   /** The explicitly saved `language` setting; `` when none is saved or the request is unauthenticated. */
@@ -146,18 +148,22 @@ export const WhatsNewStateSchema = z.object({
 })
 export type WhatsNewState = z.infer<typeof WhatsNewStateSchema>
 
+/**
+ * TAL-2216: while auth is on, a request without a session gets only `status` and `agent`; the release identity,
+ * counters and activity times below need a session (or auth off), so every other field is optional.
+ */
 export const HealthSchema = z.object({
-  release: ReleaseInfoSchema,
+  release: ReleaseInfoSchema.optional(),
   status: z.enum(['ok', 'degraded', 'starting']),
   phase: z.string().optional(),
-  sessions: z.number().int(),
-  active_streams: z.number().int(),
-  active_runs: z.number().int(),
-  runs: z.array(z.record(z.string(), z.unknown())),
-  last_run_finished_at: z.number().nullable(),
-  server_started_at: z.number(),
-  uptime_seconds: z.number(),
-  accept_loop: z.object({ requests_total: z.number().int(), last_request_at: z.number() }),
+  sessions: z.number().int().optional(),
+  active_streams: z.number().int().optional(),
+  active_runs: z.number().int().optional(),
+  runs: z.array(z.record(z.string(), z.unknown())).optional(),
+  last_run_finished_at: z.number().nullable().optional(),
+  server_started_at: z.number().optional(),
+  uptime_seconds: z.number().optional(),
+  accept_loop: z.object({ requests_total: z.number().int(), last_request_at: z.number() }).optional(),
   checks: z.record(z.string(), z.unknown()).optional(),
   /** Hermes Agent sidecar readiness, separate from server liveness: chat needs `ready`; `unavailable` means no Agent is configured. */
   agent: z.object({ status: z.enum(['ready', 'starting', 'restarting', 'incompatible', 'stopped', 'unavailable']) }),

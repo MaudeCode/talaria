@@ -32,8 +32,8 @@ describe('open server (no auth)', () => {
     expect(res.status).toBe(200)
     const body = HealthSchema.parse(await res.json())
     expect(body.status).toBe('ok')
-    expect(body.release.version).toBe('development')
-    expect(body.accept_loop.requests_total).toBeGreaterThan(0)
+    expect(body.release?.version).toBe('development')
+    expect(body.accept_loop?.requests_total).toBeGreaterThan(0)
     expect(res.headers.get('cache-control')).toBe('no-store')
     expect(res.headers.get('content-security-policy')).toContain("frame-ancestors 'none'")
     expect(res.headers.get('content-security-policy-report-only')).toContain('report-uri /api/csp-report')
@@ -64,7 +64,7 @@ describe('open server (no auth)', () => {
       const body = HealthSchema.parse(await (await s.get('/health')).json())
       expect(body.active_runs).toBe(1)
       expect(JSON.stringify(body)).not.toContain('secret')
-      expect(body.runs[0]).toEqual({ phase: 'running', started_at: 1 })
+      expect(body.runs?.[0]).toEqual({ phase: 'running', started_at: 1 })
     } finally {
       s.deps.registry.activeRuns.delete('stream-secret')
     }
@@ -446,6 +446,25 @@ describe('password auth', () => {
     expect((await s.get('/health/')).status).toBe(200)
     const loop = await s.get('/session/login?next=/session/login%3Fnext%3D/x')
     expect(loop.headers.get('location')).toBe('../login')
+  })
+
+  it('TAL-2216: before sign-in, /health, /api/bootstrap and /api/auth/status name no build, activity or passkey count', async () => {
+    const health = await s.get('/health')
+    expect(health.status).toBe(200)
+    expect(await health.json()).toEqual({ status: 'ok', agent: { status: 'unavailable' } })
+    const status = await json(await s.get('/api/auth/status'))
+    expect(status).toMatchObject({ auth_enabled: true, logged_in: false, passkeys_enabled: false })
+    expect(status).not.toHaveProperty('passkeys_count')
+    const boot = await json(await s.get('/api/bootstrap'))
+    expect(boot).not.toHaveProperty('webui_version')
+    expect(boot.auth).not.toHaveProperty('passkeys_count')
+
+    const cookie = `${s.deps.auth.cookieName()}=${s.deps.auth.createSession({ authType: 'password' })}`
+    const signedIn = HealthSchema.parse(await (await s.get('/health', { headers: { cookie } })).json())
+    expect(signedIn.release?.version).toBe('development')
+    expect(signedIn.accept_loop?.requests_total).toBeGreaterThan(0)
+    expect(await json(await s.get('/api/auth/status', { headers: { cookie } }))).toMatchObject({ logged_in: true, passkeys_count: 0 })
+    expect(await json(await s.get('/api/bootstrap', { headers: { cookie } }))).toMatchObject({ webui_version: 'web-v0.0.0-test', auth: { passkeys_count: 0 } })
   })
 
   it('public paths stay reachable', async () => {

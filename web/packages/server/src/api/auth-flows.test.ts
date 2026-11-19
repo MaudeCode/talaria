@@ -540,7 +540,9 @@ describe('passkeys', () => {
     const stored = JSON.parse(readFileSync(join(s.state, 'passkeys.json'), 'utf8')) as Json[]
     expect(stored[0]).toMatchObject({ id: b64u(authenticator.credentialId), label: 'Laptop', sign_count: 0 })
     expect(statSync(join(s.state, 'passkeys.json')).mode & 0o777).toBe(0o600)
-    expect(await json(await s.get('/api/auth/status'))).toMatchObject({ auth_enabled: true, passkeys_enabled: true, passkeys_count: 1, passwordless_enabled: true, logged_in: false })
+    const signedOut = await json(await s.get('/api/auth/status'))
+    expect(signedOut).toMatchObject({ auth_enabled: true, passkeys_enabled: true, passwordless_enabled: true, logged_in: false })
+    expect(signedOut).not.toHaveProperty('passkeys_count')
     expect((await s.get('/api/sessions')).status).toBe(401)
 
     const loginOptions = (await json(await post(s, '/api/auth/passkey/options', {}, { origin }))).publicKey as Json

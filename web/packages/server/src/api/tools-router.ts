@@ -388,13 +388,24 @@ async function applyWithNotification(
 /** Rate limiter keyed by client IP over a sliding window (Python `_csp_report_rate_limited` / `_client_event_rate_limited`). */
 export class WindowLimiter {
   private readonly hits = new Map<string, number[]>()
+  private readonly dropped = new Map<string, number>()
   constructor(private readonly windowSeconds: number, private readonly max: number, private readonly now: () => number = () => Date.now() / 1000) {}
-  limited(key: string): boolean {
+  /** `onFirstDrop` runs for the first refusal of `key` in a window, so a caller logs a flood once (TAL-2216). */
+  limited(key: string, onFirstDrop?: () => void): boolean {
     const now = this.now()
     const cutoff = now - this.windowSeconds
     if (this.hits.size > 4096) for (const [k, ts] of this.hits) if (!ts.some((t) => t >= cutoff)) this.hits.delete(k)
     const stamps = (this.hits.get(key) ?? []).filter((t) => t >= cutoff)
-    if (stamps.length >= this.max) { this.hits.set(key, stamps); return true }
+    if (stamps.length >= this.max) {
+      this.hits.set(key, stamps)
+      const last = this.dropped.get(key)
+      if (last === undefined || last < cutoff) {
+        if (this.dropped.size > 4096) for (const [k, t] of this.dropped) if (t < cutoff) this.dropped.delete(k)
+        this.dropped.set(key, now)
+        onFirstDrop?.()
+      }
+      return true
+    }
     stamps.push(now)
     this.hits.set(key, stamps)
     return false

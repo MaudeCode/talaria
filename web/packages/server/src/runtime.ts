@@ -134,7 +134,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const recentErrors: string[] = []
   const output = opts.log ?? ((line: string) => { console.log(line) })
   const log = (line: string): void => {
-    if (/\b(?:error|failed|failure)\b/i.test(line) && !line.startsWith('[feedback]')) {
+    // A CSP report is visitor-written text (TAL-2216), never one of the server's own errors.
+    if (/\b(?:error|failed|failure)\b/i.test(line) && !line.startsWith('[feedback]') && !line.startsWith('[csp-report]')) {
       recentErrors.push(redactFeedbackText(line, config).split(/\r?\n/, 1)[0]!.slice(0, 300))
       if (recentErrors.length > 10) recentErrors.shift()
     }

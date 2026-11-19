@@ -94,7 +94,8 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
     features = deps.features()
   }
   return {
-    webui_version: deps.version,
+    // TAL-2216: the exact build is for a signed-in reader.
+    ...(authenticated ? { webui_version: deps.version } : {}),
     max_upload_bytes: deps.config.maxUploadBytes,
     csrf_token: csrfToken,
     language: authenticated ? (await shellLanguage(ctx)) : '',
@@ -157,7 +158,14 @@ export async function shellLanguage(ctx: RequestContext): Promise<string> {
   return SHELL_LANG_RE.test(lang) ? lang : ''
 }
 
-export function healthPayload(ctx: RequestContext, deep: boolean): { status: number; body: Health; headers?: Record<string, string> } {
+/** TAL-2216: while auth is on, a request without a session learns liveness and Agent readiness only, never the build or the owner's activity. */
+export async function healthPayload(ctx: RequestContext, deep: boolean): Promise<{ status: number; body: Health; headers?: Record<string, string> }> {
+  const result = fullHealthPayload(ctx, deep)
+  if (!(await ctx.deps.auth.isAuthEnabled()) || (await ensureTrustedAuthSession(ctx))) return result
+  return { ...result, body: { status: result.body.status, agent: result.body.agent } }
+}
+
+function fullHealthPayload(ctx: RequestContext, deep: boolean): { status: number; body: Health; headers?: Record<string, string> } {
   const { deps } = ctx
   const h = deps.health()
   const now = deps.auth.now()
@@ -186,9 +194,9 @@ export function healthPayload(ctx: RequestContext, deep: boolean): { status: num
 }
 
 export const coreRouter = os.router({
-  health: os.health.handler(({ input, context }) => {
+  health: os.health.handler(async ({ input, context }) => {
     const deep = ['1', 'true', 'yes', 'on'].includes((input.deep ?? '').toLowerCase())
-    const result = healthPayload(context.ctx, deep)
+    const result = await healthPayload(context.ctx, deep)
     if (result.status !== 200) throw new RawResponse(result.status, result.body, result.headers ?? {})
     return result.body
   }),

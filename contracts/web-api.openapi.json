@@ -223,16 +223,7 @@
                     }
                   },
                   "required": [
-                    "release",
                     "status",
-                    "sessions",
-                    "active_streams",
-                    "active_runs",
-                    "runs",
-                    "last_run_finished_at",
-                    "server_started_at",
-                    "uptime_seconds",
-                    "accept_loop",
                     "agent"
                   ]
                 }
@@ -411,7 +402,6 @@
                         "password_auth_enabled",
                         "passwordless_enabled",
                         "passkeys_enabled",
-                        "passkeys_count",
                         "passkey_feature_flag",
                         "auth_disabled_acknowledged",
                         "can_manage_server",
@@ -1304,7 +1294,6 @@
                     }
                   },
                   "required": [
-                    "webui_version",
                     "max_upload_bytes",
                     "csrf_token",
                     "language",
@@ -1728,7 +1717,6 @@
                     "password_auth_enabled",
                     "passwordless_enabled",
                     "passkeys_enabled",
-                    "passkeys_count",
                     "passkey_feature_flag",
                     "auth_disabled_acknowledged",
                     "can_manage_server",

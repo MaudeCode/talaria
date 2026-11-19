@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Before sign-in, Talaria Web no longer reveals its exact version, activity counts or how many passkeys are registered, and a flood of browser security reports can no longer fill the server log or the diagnostics attached to feedback.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}
