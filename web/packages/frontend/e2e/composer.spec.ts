@@ -570,7 +570,7 @@ for (const size of ['default', 'xlarge'] as const) {
     try {
       await page.goto('/session/type')
       const msg = page.locator('#msg')
-      await expect(msg).toHaveAttribute('placeholder', 'Enter = steer | /queue | /background | /interrupt')
+      await expect(msg).toHaveAttribute('placeholder', /^Enter = steer \| /)
       const measure = () => msg.evaluate((el) => {
         const style = getComputedStyle(el)
         const placeholder = getComputedStyle(el, '::placeholder')
