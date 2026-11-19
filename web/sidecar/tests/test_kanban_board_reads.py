@@ -33,7 +33,10 @@ def board(monkeypatch):
     statements = []
     conn.set_trace_callback(statements.append)
     kb = SimpleNamespace(
-        list_tasks=lambda c, **_: [Task(r["id"], r["status"], r["claim_lock"], r["worker_pid"], r["assignee"]) for r in c.execute("SELECT * FROM tasks ORDER BY id")],
+        list_tasks=lambda c, *, include_archived, **_: [
+            Task(r["id"], r["status"], r["claim_lock"], r["worker_pid"], r["assignee"])
+            for r in c.execute("SELECT * FROM tasks ORDER BY id") if include_archived or r["status"] != "archived"
+        ],
         # Liveness is the worker's PID plus its start fingerprint, so a reused PID is not the worker.
         _claim_is_live=lambda claim: claim["worker_started_at"] == 7,
         task_age=lambda task: 0,
@@ -74,7 +77,7 @@ def test_a_board_read_judges_each_running_claim_on_its_loaded_row(board) -> None
 
 def test_board_lists_only_visible_tasks(board) -> None:
     columns = kanban.board_payload({"allowed_assignees": ["alpha"]})["columns"]
-    assert {task["id"] for column in columns for task in column["tasks"]} == {"live", "idle"}
+    assert {task["id"]: task["read_only"] for column in columns for task in column["tasks"]} == {"live": False, "idle": True}
 
 
 def test_reassignment_invalidates_scoped_readers_without_disclosing_task_data(board) -> None:
@@ -104,3 +107,15 @@ def test_scoped_sql_write_guard_is_connection_local_and_checks_the_current_row(t
         with pytest.raises(sqlite3.IntegrityError, match="outside the allowed assignee scope"):
             scoped.execute("UPDATE tasks SET title = 'Denied' WHERE id = 'task'")
         assert owner.execute("SELECT title FROM tasks WHERE id = 'task'").fetchone() == ("Allowed",)
+
+
+def test_scoped_board_links_include_authorized_tasks_outside_display_filter(board) -> None:
+    conn, _ = board
+    conn.executescript(
+        "CREATE TABLE task_links (parent_id TEXT, child_id TEXT);"
+        "INSERT INTO tasks VALUES ('archived', 'archived', NULL, NULL, NULL, 'alpha');"
+        "INSERT INTO task_links VALUES ('archived', 'live'), ('reused', 'live');"
+    )
+    columns = kanban.board_payload({"allowed_assignees": ["alpha"]})["columns"]
+    live = next(task for column in columns for task in column["tasks"] if task["id"] == "live")
+    assert live["link_counts"] == {"parents": 1, "children": 0}

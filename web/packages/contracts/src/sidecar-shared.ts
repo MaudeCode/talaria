@@ -73,7 +73,7 @@ export const CommandBundleSchema = z.object({ name: z.string(), description: z.s
 export const CommandBundleInvocationSchema = z.object({ name: z.string(), source: z.literal('bundle'), message: z.string(), loaded_skills: z.array(z.string()), missing_skills: z.array(z.string()) })
 /** `claim_live`: a running task's worker still holds its claim. `has_completion_evidence`: the task stores a result, which the Agent requires to complete it (TAL-557).
  * `agent_move_targets`: the Agent workflow's manual moves from the task's status, `null` before Agent 0.21.6 (TAL-796). */
-export const KanbanTaskSchema = z.object({ id: z.string(), title: z.string(), status: z.string(), priority: z.number().int(), claim_live: z.boolean(), has_completion_evidence: z.boolean(), agent_move_targets: z.array(z.string()).nullable() }).catchall(Json)
+export const KanbanTaskSchema = z.object({ id: z.string(), title: z.string(), status: z.string(), priority: z.number().int(), read_only: z.boolean().optional(), claim_live: z.boolean(), has_completion_evidence: z.boolean(), agent_move_targets: z.array(z.string()).nullable() }).catchall(Json)
 /** Task detail's links (TAL-809): `link_tasks` names each linked task that still exists; `current_run_started_at` is the active run's start, `null` without one (`started_at` is the first-ever start). */
 export const KanbanTaskLinksShape = { links: z.object({ parents: z.array(z.string()), children: z.array(z.string()) }), link_tasks: z.array(z.object({ id: z.string(), title: z.string(), status: z.string() })) }
 export const KanbanRunStartShape = { current_run_started_at: z.number().nullable() }

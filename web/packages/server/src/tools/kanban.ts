@@ -63,6 +63,7 @@ export interface KanbanTaskActions { block: boolean; unblock: boolean; complete:
 
 /** The card actions offered for a sidecar task; an unknown status offers none. */
 export function kanbanTaskActions(task: Dict): KanbanTaskActions {
+  if (task.read_only === true) return { block: false, unblock: false, complete: false, archive: false, move_to: [] }
   const s = str(task.status)
   // Block and a direct status change release a live worker's claim without stopping it, and the Agent refuses to complete
   // under a live claim, so such a card offers only Archive, which terminates the worker. Unknown liveness counts as live.
@@ -84,7 +85,7 @@ export function withTaskPolicy(task: unknown): unknown {
   const t: Dict = { ...(task as Dict) }
   const available_actions = kanbanTaskActions(t)
   delete t.agent_move_targets
-  return { ...t, available_actions, requires_running_exit_confirmation: str(t.status) === 'running' }
+  return { ...t, available_actions, requires_running_exit_confirmation: t.read_only !== true && str(t.status) === 'running' }
 }
 
 /** Agent event kinds a Block or Unblock writes (`block_task` routes a block to `blocked`, or to `triage`/`todo` with its own kind). */

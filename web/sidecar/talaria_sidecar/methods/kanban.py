@@ -192,11 +192,13 @@ def _running_claims(conn) -> dict:
     return {row["id"]: row for row in conn.execute("SELECT * FROM tasks WHERE status = 'running'")}
 
 
-def _task_dict(task, conn, claims=None):
+def _task_dict(task, conn, claims=None, *, allowed=None):
     """``claims`` holds already loaded claim rows by task id; a row that carries the claim columns itself needs no read."""
     data = _obj_dict(task)
     if not data:
         return data
+    if allowed is not None:
+        data["read_only"] = data.get("assignee") not in allowed
     # Facts the server's card policy needs (TAL-557): the Agent completes a non-review task only with
     # stored or supplied evidence, and refuses to release a live worker's claim.
     running = data.get("status") == "running"
@@ -228,15 +230,22 @@ def _latest_event_id(conn) -> int:
         return 0
 
 
-def _link_counts(conn, tasks, *, scoped=False):
+def _link_counts(conn, tasks, *, allowed=None):
     counts = {task.id: {"parents": 0, "children": 0} for task in tasks}
     try:
-        rows = conn.execute("SELECT parent_id, child_id FROM task_links").fetchall()
+        if allowed is None:
+            rows = conn.execute("SELECT parent_id, child_id FROM task_links").fetchall()
+        else:
+            scope, args = _visibility_sql(allowed)
+            rows = conn.execute(
+                f"WITH visible AS (SELECT id FROM tasks t WHERE {scope}) "
+                "SELECT parent_id, child_id FROM task_links "
+                "WHERE parent_id IN visible AND child_id IN visible",
+                args,
+            ).fetchall()
     except Exception:  # noqa: BLE001
         return counts
     for row in rows:
-        if scoped and (row["parent_id"] not in counts or row["child_id"] not in counts):
-            continue
         counts.setdefault(row["parent_id"], {"parents": 0, "children": 0})["children"] += 1
         counts.setdefault(row["child_id"], {"parents": 0, "children": 0})["parents"] += 1
     return counts
@@ -559,7 +568,7 @@ def inspection_payload(params: dict) -> dict:
             rows = rows[:remaining]
             ids = [row["id"] for row in rows]
             for row in rows:
-                task = _task_dict(dict(row), conn)
+                task = _task_dict(dict(row), conn, allowed=params.get("allowed_assignees"))
                 nodes.append({"key": f"{slug}/{row['id']}", "board": slug, "board_name": meta.get("name") or slug, "task": task})
             if ids:
                 placeholders = ",".join("?" for _ in ids)
@@ -591,10 +600,10 @@ def board_payload(params: dict) -> dict:
             _clear_stale_fences(conn)
         tasks = kb.list_tasks(conn, tenant=tenant, assignee=assignee, include_archived=include_archived)
         tasks = [task for task in tasks if _visible(params, task.assignee)]
-        link_counts, comment_counts, claims = _link_counts(conn, tasks, scoped=params.get("allowed_assignees") is not None), _comment_counts(conn), _running_claims(conn)
+        link_counts, comment_counts, claims = _link_counts(conn, tasks, allowed=params.get("allowed_assignees")), _comment_counts(conn), _running_claims(conn)
 
         def row(task):
-            data = _task_dict(task, conn, claims)
+            data = _task_dict(task, conn, claims, allowed=params.get("allowed_assignees"))
             data["link_counts"] = link_counts.get(task.id, {"parents": 0, "children": 0})
             data["comment_count"] = comment_counts.get(task.id, 0)
             return data
@@ -695,7 +704,7 @@ def task_detail_payload(params: dict) -> dict:
     kb = _kb()
     with _conn(board=_board(params)) as conn:
         task = _visible_task(params, conn, task_id)
-        data = _task_dict(task, conn)
+        data = _task_dict(task, conn, allowed=params.get("allowed_assignees"))
         # ``started_at`` is the first-ever start; a retried task's run clock counts from its current run (TAL-809).
         data["current_run_started_at"] = kb.current_run_started_ats(conn, [task_id]).get(task_id)
         links = {"parents": kb.parent_ids(conn, task_id), "children": kb.child_ids(conn, task_id)}
@@ -710,7 +719,7 @@ def task_detail_payload(params: dict) -> dict:
             "links": links,
             "link_tasks": [{"id": t.id, "title": t.title, "status": t.status} for t in linked.values() if t],
             "runs": [_obj_dict(r) for r in kb.list_runs(conn, task_id)],
-            "read_only": False,
+            "read_only": data.get("read_only", False),
         }
 
 
