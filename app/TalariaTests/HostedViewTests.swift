@@ -875,19 +875,18 @@ final class SettingsPlacementHostedTests: XCTestCase {
 
     func testServerSettingsControlsAppearFromFixtureState() async throws {
         let fixture = try FixtureApp(for: self)
-        let pages = [
-            ("models", ["settings-chat-max-tokens", "settings-chat-compression-ahead"]),
-            ("system", ["settings-chat-title-refresh", "settings-system-check-updates", "settings-system-auto-apply", "settings-system-continue-interrupted", "settings-system-summarize",
+        let pages: [(SettingsCategory, [String])] = [
+            (.models, ["settings-chat-max-tokens", "settings-chat-compression-ahead"]),
+            (.system, ["settings-chat-title-refresh", "settings-system-check-updates", "settings-system-auto-apply", "settings-system-continue-interrupted", "settings-system-summarize",
                         "settings-system-web-channel", "settings-system-agent-channel", "settings-system-ignore-agent"]),
-            ("tools", ["settings-tools-agent-approvals"])
+            (.tools, ["settings-tools-agent-approvals"])
         ]
-        for (id, identifiers) in pages {
-            let category = try XCTUnwrap(SettingsCategory(rawValue: id), "The server settings category must exist")
-            let window = try hostWindow(NavigationStack {
-                SettingsPaneView(authManager: fixture.environment.authManager,
-                                 server: UITestFixtureEnvironment.serverURL, pane: .category(category))
-            })
-            await settleSettingsFixture(in: window)
+        for (category, identifiers) in pages {
+            let window = try await hostServerSettings(category, fixture: fixture)
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+            }
             // The server-settings rows carry no "Loading" label of their own, so the settle can pass before they arrive.
             var rows = allSettingsRows(in: window)
             _ = await awaitCondition {
@@ -897,120 +896,153 @@ final class SettingsPlacementHostedTests: XCTestCase {
             for identifier in identifiers {
                 XCTAssertTrue(rows.identifiers.contains(identifier), "Missing server setting: \(identifier)")
             }
-            attachHostedScreenshot(window, name: "server-settings-\(id)")
-            if id == "models" {
-                let row = try await requireElement(in: window) {
-                    $0.accessibilityLabel?.hasPrefix("Default Model") == true
-                }
-                XCTAssertTrue(HostedAccessibility.activate(row))
-                _ = try await requireElement(in: window, label: "Save Custom Model")
-                XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Filter Models"),
-                                "Both Settings model pickers must expose provider and Favorites filters")
-                let heading = try await requireElement(in: window) {
-                    $0.accessibilityTraits.contains(.header) && $0.accessibilityLabel?.hasPrefix("Fixture Provider") == true
-                }
-                let selectedDefault = await awaitCondition {
-                    HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model")?.accessibilityTraits.contains(.selected) == true
-                }
-                XCTAssertTrue(selectedDefault, "The server-selected default must retain its check after the shared catalog loads")
-                XCTAssertTrue(HostedAccessibility.activate(heading))
-                let collapsed = await awaitCondition { HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-alternative") == nil }
-                XCTAssertTrue(collapsed, "The provider header must collapse its provider-only rows")
-                XCTAssertNotNil(HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model"),
-                                "Favorites stay visible when their provider is collapsed")
-                XCTAssertTrue(HostedAccessibility.activate(heading))
-                let star = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-model-star-fixture-model" }
-                XCTAssertTrue(HostedAccessibility.activate(star))
-                _ = try await requireElement(in: window) {
-                    HostedAccessibility.identifier(of: $0) == "settings-model-star-fixture-model" && $0.accessibilityLabel?.hasPrefix("Add ") == true
-                }
-                XCTAssertTrue(HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model")?.accessibilityTraits.contains(.selected) == true,
-                              "Starring must not change the selected default")
-                let hide = HostedAccessibility.element(in: window, identifier: "settings-model-visibility-fixture-model")
-                XCTAssertNotNil(hide, "Hide must be directly available beside the star, without an overflow menu")
-                XCTAssertEqual(hide?.accessibilityLabel, "Hide Model")
-                XCTAssertEqual(hide?.accessibilityValue, "Fixture Model")
-                XCTAssertNil(HostedAccessibility.element(in: window, label: "Actions for Fixture Model, Fixture Provider"))
-                XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(hide)))
-                let hidden = await awaitCondition { HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model") == nil }
-                XCTAssertTrue(hidden, "Hide must remove the model from the visible catalog")
-                let filters = try await hostedMenuActions("Filter Models", readyAction: "Show Hidden", in: window)
-                XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(filters.first { $0.title == "Show Hidden" })))
-                let restored = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-model-option-fixture-model" }
-                XCTAssertTrue(restored.accessibilityLabel?.contains("Hidden") == true)
-                let unhide = try await requireElement(in: window) {
-                    HostedAccessibility.identifier(of: $0) == "settings-model-visibility-fixture-model" && $0.accessibilityLabel == "Unhide Model"
-                }
-                XCTAssertTrue(HostedAccessibility.activate(unhide))
-                _ = try await requireElement(in: window) {
-                    HostedAccessibility.identifier(of: $0) == "settings-model-option-fixture-model" && $0.accessibilityLabel?.contains("Hidden") == false
-                }
-                attachHostedScreenshot(window, name: "settings-default-model-navigation")
-                XCTAssertNil(window.rootViewController?.presentedViewController,
-                             "Default Model must push inside Settings, never present a sheet")
-                let navigation = try XCTUnwrap(window.navigationStacks.first { $0.viewControllers.count > 1 },
-                                              "The model picker must share Settings' back stack")
-                XCTAssertEqual(navigation.topViewController?.navigationItem.title, "Default Model")
-                XCTAssertNil(HostedAccessibility.toolbarItem("Cancel", in: window))
-                navigation.popViewController(animated: false)
-                _ = try await requireElement(in: window) {
-                    $0.accessibilityLabel?.hasPrefix("Default Model") == true
-                }
-                let auxiliary = try await requireElement(in: window) {
-                    $0.accessibilityLabel?.hasPrefix("Auxiliary Models") == true
-                }
-                XCTAssertTrue(HostedAccessibility.activate(auxiliary))
-                let vision = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true }
-                XCTAssertTrue(HostedAccessibility.activate(vision))
-                let modelRow = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "auxiliary-edit-model" }
-                XCTAssertNotNil(HostedAccessibility.toolbarItem("Save", in: window))
-                XCTAssertTrue(HostedAccessibility.activate(modelRow))
-                _ = try await requireElement(in: window, label: "Auto")
-                let offCatalog = try await requireElement(in: window) {
-                    $0.accessibilityLabel?.hasPrefix("legacy/vision-model") == true
-                }
-                XCTAssertTrue(offCatalog.accessibilityTraits.contains(.selected),
-                              "The Auxiliary leading section must announce the saved off-catalog model as selected")
-                XCTAssertEqual(HostedAccessibility.elements(in: window).filter { $0.accessibilityTraits.contains(.selected) }.count, 1)
-                XCTAssertNil(window.rootViewController?.presentedViewController,
-                             "Auxiliary task model pickers must also push inside Settings")
-                XCTAssertEqual(navigation.viewControllers.count, 4)
-                XCTAssertEqual(navigation.topViewController?.navigationItem.title, "Model")
-                XCTAssertNil(HostedAccessibility.toolbarItem("Cancel", in: window))
-                attachHostedScreenshot(window, name: "settings-auxiliary-model-navigation")
-                let selected = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-model-option-fixture-model" }
-                XCTAssertTrue(HostedAccessibility.activate(selected))
-                _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "auxiliary-edit-model" }
-                XCTAssertNotNil(HostedAccessibility.toolbarItem("Cancel", in: window))
-                _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "auxiliary-edit-reasoning" }
-                settle(0.3)
-                attachHostedScreenshot(window, name: "settings-auxiliary-task-draft")
-                let save = try XCTUnwrap(HostedAccessibility.toolbarAction("Save", in: window))
-                XCTAssertTrue(HostedAccessibility.activate(save))
-                let returned = await awaitCondition { navigation.viewControllers.count == 2 }
-                XCTAssertTrue(returned, "Save returns from the task editor to the task list")
-                _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true && $0.accessibilityLabel?.contains("fixture-model") == true }
-                settle(0.3)
-                attachHostedScreenshot(window, name: "settings-auxiliary-model-saved")
-            }
-            if id == "tools" {
-                let toggle = try XCTUnwrap(window.firstView(ofType: UISwitch.self))
-                XCTAssertTrue(toggle.isOn)
-                let reads = UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/settings" }.count }
-                toggle.setOn(false, animated: false)
-                toggle.sendActions(for: .valueChanged)
-                XCTAssertFalse(toggle.isOn)
-                let saved = await awaitCondition {
-                    UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/settings" }.count > reads }
-                }
-                XCTAssertTrue(saved)
-                let response = try await fixture.client.settings()
-                XCTAssertEqual(response.agentApprovals, false, "The visible Tools control must reach the shared settings writer")
-                attachHostedScreenshot(window, name: "server-settings-tools-approvals-disabled")
-            }
-            window.isHidden = true
-            window.rootViewController = nil
+            attachHostedScreenshot(window, name: "server-settings-\(category.rawValue)")
         }
+    }
+
+    func testDefaultModelPickerUsesSettingsNavigationAndKeepsSelection() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try await hostDefaultModelPicker(fixture: fixture)
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Filter Models"),
+                        "Both Settings model pickers must expose provider and Favorites filters")
+        let heading = try await requireElement(in: window) {
+            $0.accessibilityTraits.contains(.header) && $0.accessibilityLabel?.hasPrefix("Fixture Provider") == true
+        }
+        let selectedDefault = await awaitCondition {
+            HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model")?.accessibilityTraits.contains(.selected) == true
+        }
+        XCTAssertTrue(selectedDefault, "The server-selected default must retain its check after the shared catalog loads")
+        XCTAssertTrue(HostedAccessibility.activate(heading))
+        let collapsed = await awaitCondition { HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-alternative") == nil }
+        XCTAssertTrue(collapsed, "The provider header must collapse its provider-only rows")
+        XCTAssertNotNil(HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model"),
+                        "Favorites stay visible when their provider is collapsed")
+        XCTAssertTrue(HostedAccessibility.activate(heading))
+        let star = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-model-star-fixture-model" }
+        XCTAssertTrue(HostedAccessibility.activate(star))
+        _ = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "settings-model-star-fixture-model" && $0.accessibilityLabel?.hasPrefix("Add ") == true
+        }
+        XCTAssertTrue(HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model")?.accessibilityTraits.contains(.selected) == true,
+                      "Starring must not change the selected default")
+        attachHostedScreenshot(window, name: "settings-default-model-navigation")
+        XCTAssertNil(window.rootViewController?.presentedViewController,
+                     "Default Model must push inside Settings, never present a sheet")
+        let navigation = try XCTUnwrap(window.navigationStacks.first { $0.viewControllers.count > 1 },
+                                      "The model picker must share Settings' back stack")
+        XCTAssertEqual(navigation.topViewController?.navigationItem.title, "Default Model")
+        XCTAssertNil(HostedAccessibility.toolbarItem("Cancel", in: window))
+        navigation.popViewController(animated: false)
+        _ = try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix("Default Model") == true
+        }
+    }
+
+    func testDefaultModelPickerCanHideAndUnhideAModel() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try await hostDefaultModelPicker(fixture: fixture)
+        let hide = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "settings-model-visibility-fixture-model"
+        }
+        XCTAssertEqual(hide.accessibilityLabel, "Hide Model")
+        XCTAssertEqual(hide.accessibilityValue, "Fixture Model")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Actions for Fixture Model, Fixture Provider"))
+        XCTAssertTrue(HostedAccessibility.activate(hide))
+        let hidden = await awaitCondition { HostedAccessibility.element(in: window, identifier: "settings-model-option-fixture-model") == nil }
+        XCTAssertTrue(hidden, "Hide must remove the model from the visible catalog")
+        let filters = try await hostedMenuActions("Filter Models", readyAction: "Show Hidden", in: window)
+        XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(filters.first { $0.title == "Show Hidden" })))
+        let restored = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-model-option-fixture-model" }
+        XCTAssertTrue(restored.accessibilityLabel?.contains("Hidden") == true)
+        let unhide = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "settings-model-visibility-fixture-model" && $0.accessibilityLabel == "Unhide Model"
+        }
+        XCTAssertTrue(HostedAccessibility.activate(unhide))
+        _ = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "settings-model-option-fixture-model" && $0.accessibilityLabel?.contains("Hidden") == false
+        }
+    }
+
+    func testAuxiliaryModelPickerReplacesAnOffCatalogTaskSelection() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try await hostServerSettings(.models, fixture: fixture)
+        let auxiliary = try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix("Auxiliary Models") == true
+        }
+        XCTAssertTrue(HostedAccessibility.activate(auxiliary))
+        let vision = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true }
+        XCTAssertTrue(HostedAccessibility.activate(vision))
+        let modelRow = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "auxiliary-edit-model" }
+        XCTAssertNotNil(HostedAccessibility.toolbarItem("Save", in: window))
+        XCTAssertTrue(HostedAccessibility.activate(modelRow))
+        _ = try await requireElement(in: window, label: "Auto")
+        let offCatalog = try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix("legacy/vision-model") == true
+        }
+        XCTAssertTrue(offCatalog.accessibilityTraits.contains(.selected),
+                      "The Auxiliary leading section must announce the saved off-catalog model as selected")
+        XCTAssertEqual(HostedAccessibility.elements(in: window).filter { $0.accessibilityTraits.contains(.selected) }.count, 1)
+        XCTAssertNil(window.rootViewController?.presentedViewController,
+                     "Auxiliary task model pickers must also push inside Settings")
+        let navigation = try XCTUnwrap(window.navigationStacks.first { $0.viewControllers.count > 1 })
+        XCTAssertEqual(navigation.viewControllers.count, 4)
+        XCTAssertEqual(navigation.topViewController?.navigationItem.title, "Model")
+        XCTAssertNil(HostedAccessibility.toolbarItem("Cancel", in: window))
+        attachHostedScreenshot(window, name: "settings-auxiliary-model-navigation")
+        let selected = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "settings-model-option-fixture-model" }
+        XCTAssertTrue(HostedAccessibility.activate(selected))
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "auxiliary-edit-model" }
+        XCTAssertNotNil(HostedAccessibility.toolbarItem("Cancel", in: window))
+        _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "auxiliary-edit-reasoning" }
+        settle(0.3)
+        attachHostedScreenshot(window, name: "settings-auxiliary-task-draft")
+        let save = try XCTUnwrap(HostedAccessibility.toolbarAction("Save", in: window))
+        XCTAssertTrue(HostedAccessibility.activate(save))
+        let returned = await awaitCondition { navigation.viewControllers.count == 2 }
+        XCTAssertTrue(returned, "Save returns from the task editor to the task list")
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Vision") == true && $0.accessibilityLabel?.contains("fixture-model") == true }
+        settle(0.3)
+        attachHostedScreenshot(window, name: "settings-auxiliary-model-saved")
+    }
+
+    func testToolsAgentApprovalToggleWritesServerSettings() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try await hostServerSettings(.tools, fixture: fixture)
+        _ = try await requireElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == SettingsIndex.toolsAgentApprovals.id
+        }
+        let toggle = try XCTUnwrap(window.firstView(ofType: UISwitch.self))
+        XCTAssertTrue(toggle.isOn)
+        let reads = UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/settings" }.count }
+        toggle.setOn(false, animated: false)
+        toggle.sendActions(for: .valueChanged)
+        XCTAssertFalse(toggle.isOn)
+        let saved = await awaitCondition {
+            UITestFixtureURLProtocol.answeredPaths.withLock { $0.filter { $0 == "/api/settings" }.count > reads }
+        }
+        XCTAssertTrue(saved)
+        let response = try await fixture.client.settings()
+        XCTAssertEqual(response.agentApprovals, false, "The visible Tools control must reach the shared settings writer")
+        attachHostedScreenshot(window, name: "server-settings-tools-approvals-disabled")
+    }
+
+    private func hostDefaultModelPicker(fixture: FixtureApp) async throws -> UIWindow {
+        let window = try await hostServerSettings(.models, fixture: fixture)
+        let row = try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix("Default Model") == true
+        }
+        XCTAssertTrue(HostedAccessibility.activate(row))
+        _ = try await requireElement(in: window, label: "Save Custom Model")
+        return window
+    }
+
+    private func hostServerSettings(_ category: SettingsCategory, fixture: FixtureApp) async throws -> UIWindow {
+        let window = try hostWindow(NavigationStack {
+            SettingsPaneView(authManager: fixture.environment.authManager,
+                             server: UITestFixtureEnvironment.serverURL, pane: .category(category))
+        })
+        await settleSettingsFixture(in: window)
+        return window
     }
 
     /// TAL-2341: Chats' Transcript opens Tool Calls with a row that counts the switches the server sent.
