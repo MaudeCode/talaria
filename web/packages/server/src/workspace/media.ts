@@ -629,8 +629,7 @@ export function mediaRefTarget(ref: string): string {
 function mediaRootDecider(deps: MediaAccessDeps<string | null>): (target: string, real: string) => string | null | undefined {
   const baseHermes = join(deps.home, '.hermes')
   const caller = deps.caller
-  // TAL-2205: a restricted caller's session folder comes first, so it anchors before the attachment fence below.
-  const allowedRoots: string[] = caller ? [...(caller.sessionDir ? [caller.sessionDir] : []), caller.profileHome] : [deps.hermesHome, baseHermes]
+  const allowedRoots: string[] = caller ? [caller.profileHome] : [deps.hermesHome, baseHermes]
   const legacyTmp = safeLegacyTmpRoot([deps.home, deps.hermesHome, baseHermes])
   if (legacyTmp) allowedRoots.push(legacyTmp)
   const platformTemp = safePlatformTempRoot([deps.home, deps.hermesHome, baseHermes])
@@ -645,7 +644,9 @@ function mediaRootDecider(deps: MediaAccessDeps<string | null>): (target: string
       if (statSync(rp).isDirectory()) allowedRoots.push(rp)
     } catch { /* skip */ }
   }
-  const resolvedRoots: string[] = []
+  // TAL-2205: a restricted caller's session folder comes first, so it anchors before the attachment fence below. A
+  // remote store caches the folder only when it downloads a file into it, so it anchors before it exists.
+  const resolvedRoots: string[] = caller?.sessionDir ? [realOrResolved(caller.sessionDir)] : []
   for (const root of allowedRoots) {
     try { resolvedRoots.push(realpathSync(root)) } catch { /* a missing root authorizes nothing */ }
   }

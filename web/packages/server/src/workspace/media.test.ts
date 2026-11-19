@@ -412,4 +412,11 @@ describe('mediaAnchorRoot caller reach (TAL-2205)', () => {
     for (const [name, file] of Object.entries(files)) if (await mediaAnchorRoot(file, null, deps)) served.push(name)
     expect(served).toEqual(reached)
   })
+
+  it('anchors the caller\'s own session folder before a remote store has cached it', async () => {
+    deps.caller = caller('', 'session-c')
+    const uncached = join(deps.policy.stateDir, 'attachments', 'session-c', 'c.png')
+    expect(await mediaAnchorRoot(uncached, null, deps)).toBe(dirname(uncached))
+    expect(await mediaAnchorRoot(join(deps.policy.stateDir, 'attachments', 'session-d', 'd.png'), null, deps)).toBeNull()
+  })
 })
