@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Exported transcripts no longer keep links that hide a script behind control characters, and HTML in a reply can no longer take over the ids of Talaria's own controls. Footnotes and in-reply links now jump to their target.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

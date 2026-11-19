@@ -53,8 +53,21 @@ const urlTransform = (url: string): string => (/^\.?\/api\//.test(url) ? appUrl(
  * blocked label. The server already links remote images; this also covers Markdown it never saw, such as a live stream.
  */
 const [harden, hardenOptions] = defaultRehypePlugins.harden as [unknown, object]
+/** TAL-2217: every id in a reply gets this prefix, so its raw HTML can never shadow an app element such as `#fileInput`. */
+const CONTENT_ID_PREFIX = 'user-content-'
+const [sanitize, sanitizeSchema] = defaultRehypePlugins.sanitize as [unknown, object]
 const REHYPE_PLUGINS = Object.entries(defaultRehypePlugins).map(([name, plugin]) =>
-  name === 'harden' ? [harden, { ...hardenOptions, defaultOrigin: window.location.origin, allowedImagePrefixes: ['/'] }] : plugin) as NonNullable<StreamdownProps['rehypePlugins']>
+  name === 'harden' ? [harden, { ...hardenOptions, defaultOrigin: window.location.origin, allowedImagePrefixes: ['/'] }]
+  : name === 'sanitize' ? [sanitize, { ...sanitizeSchema, clobberPrefix: CONTENT_ID_PREFIX }]
+  : plugin) as NonNullable<StreamdownProps['rehypePlugins']>
+
+/** An in-document link (`#heading`, a footnote) scrolls to its prefixed target within the same reply. */
+function jumpWithin(reply: HTMLElement | null, fragment: string): void {
+  let id = fragment.slice(1)
+  try { id = decodeURIComponent(id) } catch { /* Keep the raw fragment. */ }
+  const target = [...(reply?.querySelectorAll('[id]') ?? [])].find((element) => element.id === CONTENT_ID_PREFIX + id)
+  target?.scrollIntoView({ block: 'start' })
+}
 const SHIKI_THEMES: [string, string] = ['github-light', 'github-dark']
 // Table Copy needs ClipboardItem, which only a secure context has and no shim can provide.
 const CONTROLS = { code: { copy: true, download: true }, table: { copy: window.isSecureContext, download: true }, mermaid: { copy: true, download: true, fullscreen: true, panZoom: true } }
@@ -103,6 +116,11 @@ export default function MarkdownRenderer({ text, streaming = false, fade = false
   const linkSafety: LinkSafetyConfig = ({
     enabled: true,
     onLinkCheck: async (url) => {
+      if (url.startsWith('#')) {
+        jumpWithin(heightRef.current, url)
+        // Streamdown opens a tab when the check passes and the warning when it fails; a jump needs neither, so this check never settles.
+        return new Promise<boolean>(() => undefined)
+      }
       if (!check) return false
       const answer = await askServer(check, url)
       hosts.current.set(url, answer.host)

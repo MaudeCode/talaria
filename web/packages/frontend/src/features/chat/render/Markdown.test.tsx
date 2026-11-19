@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Markdown from './MarkdownRenderer'
 import { stubAnimate } from '../../../test/animate'
@@ -79,6 +79,39 @@ describe('remote images (TAL-2199)', () => {
     await screen.findByRole('img', { name: 'local' })
     expect([...document.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toEqual([appUrl('api/media?path=%2Ftmp%2Fa.png').href])
     expect(document.body.innerHTML).not.toContain('evil.example')
+  })
+})
+
+describe('content ids (TAL-2217)', () => {
+  afterEach(() => { Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView') })
+
+  it('prefixes raw HTML ids, so a reply never shadows an app element', async () => {
+    render(<><div data-testid="reply"><Markdown text={'<a id="fileInput" href="https://evil.example">x</a> <div id="msg">m</div> <span id="rightpanelSlot">s</span>'} /></div><input id="fileInput" /></>)
+    const reply = screen.getByTestId('reply')
+    await within(reply).findByText('m')
+    expect([...reply.querySelectorAll('[id]')].map((element) => element.id)).toEqual(['user-content-msg', 'user-content-rightpanelSlot'])
+    expect(document.getElementById('fileInput')).toBe(document.querySelector('input'))
+  })
+
+  it('jumps an in-document or footnote link to its target in the same reply, without the link check', async () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
+    const open = openSpy()
+    const check = vi.fn(() => Promise.resolve<LinkCheck>({ opens_directly: true, host: null }))
+    render(
+      <LinkCheckContext value={check}>
+        <Markdown text={'An earlier note[^1].\n\n[^1]: Earlier footnote.'} />
+        <div data-testid="reply"><Markdown text={'<h2 id="heading">Heading</h2>\n\n[jump](#heading) and a note[^1].\n\n[^1]: Footnote text.'} /></div>
+      </LinkCheckContext>,
+    )
+    const reply = screen.getByTestId('reply')
+    await userEvent.click(await within(reply).findByRole('button', { name: 'jump' }))
+    await userEvent.click(within(reply).getByRole('button', { name: '1' }))
+    await waitFor(() => { expect(scrollIntoView).toHaveBeenCalledTimes(2) })
+    expect(scrollIntoView.mock.contexts).toEqual([within(reply).getByRole('heading', { name: 'Heading' }), within(reply).getByText('Footnote text.').closest('li')])
+    expect(check).not.toHaveBeenCalled()
+    expect(open).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })
 
