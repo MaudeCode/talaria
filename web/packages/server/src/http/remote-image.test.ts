@@ -57,6 +57,8 @@ describe('GET /api/remote-image', () => {
     expect([res.headers.get('content-type'), res.headers.get('content-security-policy')]).toEqual(['image/png', "default-src 'none'; sandbox"])
     expect([...new Uint8Array(await res.arrayBuffer())]).toEqual([...PNG])
     expect((await server.get(`/api/remote-image?id=${'0'.repeat(32)}`)).status).toBe(404)
+    // A HEAD would download a body only to drop it, so it fetches nothing.
+    expect((await server.get(`/${relay!.slice(2)}`, { method: 'HEAD' })).status).toBe(405)
     // A vouched URL can come from an imported session: one naming or resolving to a non-public address is never requested.
     for (const url of ['https://127.0.0.1/x.png', 'https://10.0.0.1/x.png', 'https://[::1]/x.png', 'https://intranet.example/x.png']) {
       expect((await server.get(`/${vouchRemoteImage(url)!.slice(2)}`)).status, url).toBe(502)

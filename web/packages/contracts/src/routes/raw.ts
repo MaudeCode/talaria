@@ -100,7 +100,7 @@ export const RAW_ROUTES: readonly RawRoute[] = [
   {
     method: 'GET', path: '/api/remote-image', summary: 'TAL-2199: a media tool\'s remote image, relayed so the page CSP needs no remote `img-src`. Serves only a URL the server read from a tool result and named in a result view\'s `media` URL; https on the default port, no redirects, at most 16 MB, sandboxed. Clients load the `url` they were sent, never one of their own.', tags: ['files'],
     query: { id: { description: 'Opaque relay id from a result view\'s media `url`.', required: true } },
-    responses: { 200: { description: 'Image bytes, `Cache-Control: private, max-age=300`.', contentType: ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif'] }, 404: { description: 'An id the server never vouched for, or has forgotten since a restart.', contentType: 'application/json' }, 502: { description: 'The remote host failed, redirected, or answered with no allowed image within the cap.', contentType: 'application/json' } },
+    responses: { 200: { description: 'Image bytes, `Cache-Control: private, max-age=300`.', contentType: ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif'] }, 404: { description: 'An id the server never vouched for, or has forgotten since a restart.', contentType: 'application/json' }, 405: { description: 'HEAD: nothing is fetched for a request that would drop the body.', contentType: 'application/json' }, 502: { description: 'The remote host failed, redirected, or answered with no allowed image within the cap.', contentType: 'application/json' } },
   },
   {
     method: 'GET', path: '/api/folder/download', summary: 'ZIP of a workspace folder (symlinks escaping the workspace are skipped).', tags: ['files'],

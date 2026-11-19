@@ -169707,6 +169707,12 @@
               "application/json": {}
             }
           },
+          "405": {
+            "description": "HEAD: nothing is fetched for a request that would drop the body.",
+            "content": {
+              "application/json": {}
+            }
+          },
           "502": {
             "description": "The remote host failed, redirected, or answered with no allowed image within the cap.",
             "content": {

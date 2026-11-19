@@ -36,7 +36,7 @@ import { handleOidcCallback, handleOidcStart } from './auth-raw.js'
 import { handleTranscribeStream } from './transcribe-stream.js'
 import { FEEDBACK_UPLOAD_MAX_BYTES, stageFeedbackAttachment } from '../feedback.js'
 import { MeshyError } from '../tools/meshy.js'
-import { fetchRemoteImage, publicImageFetch, RemoteImageError, vouchedRemoteImage } from '../http/remote-image.js'
+import { fetchRemoteImage, publicImageFetch, relaySlot, RemoteImageError, vouchedRemoteImage } from '../http/remote-image.js'
 import { dashboardScope } from '../tools/dashboard-plugins.js'
 import { ProfileError } from '../profiles/profiles.js'
 
@@ -279,11 +279,13 @@ async function handleMeshyAsset(ctx: RequestContext): Promise<void> {
 
 /** TAL-2199: a media tool's remote image, relayed from the URL `vouchRemoteImage` named by this id. */
 async function handleRemoteImage(ctx: RequestContext): Promise<void> {
+  // A HEAD would download the image only to drop it: nothing is fetched for one.
+  if (ctx.method === 'HEAD') throw new HttpError(405, 'GET only')
   const url = vouchedRemoteImage(ctx.query.get('id') ?? '')
   if (!url) throw new HttpError(404, 'not found')
   await untilClosed(ctx, async (signal) => {
     let image: { type: string; body: Buffer }
-    try { image = await fetchRemoteImage(url, { fetch: publicImageFetch(ctx.deps.dnsLookup, ctx.deps.pinnedFetch), signal }) } catch (error) {
+    try { image = await relaySlot(() => fetchRemoteImage(url, { fetch: publicImageFetch(ctx.deps.dnsLookup, ctx.deps.pinnedFetch), signal })) } catch (error) {
       if (error instanceof RemoteImageError) throw new HttpError(502, 'The image could not be loaded.')
       throw error
     }

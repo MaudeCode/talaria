@@ -78,8 +78,23 @@ const LOGO_TYPES: ReadonlySet<string> = new Set([...REMOTE_IMAGE_TYPES, 'image/s
 const MAX_LOGO_BYTES = 32 * 1024
 const LOGO_FETCHES = 8
 const inlined = new Map<string, Promise<string | null>>()
-let active = 0
-const waiting: (() => void)[] = []
+
+/** Runs at most `limit` calls at once; the rest wait their turn in order. */
+function fetchSlots(limit: number): <T>(fn: () => Promise<T>) => Promise<T> {
+  let active = 0
+  const waiting: (() => void)[] = []
+  return async (fn) => {
+    if (active >= limit) await new Promise<void>((resolve) => { waiting.push(resolve) })
+    active += 1
+    try { return await fn() } finally {
+      active -= 1
+      waiting.shift()?.()
+    }
+  }
+}
+const logoSlot = fetchSlots(LOGO_FETCHES)
+/** ponytail: one process-wide cap on relay downloads in flight, each up to 16 MiB; per-user limits if one user starves others. */
+export const relaySlot = fetchSlots(8)
 
 /**
  * A catalog logo as a `data:` URL, fetched once per URL; null when it is not an allowed image within the cap. At most
@@ -88,17 +103,12 @@ const waiting: (() => void)[] = []
 export function inlineRemoteImage(url: string, fetchImpl?: typeof fetch): Promise<string | null> {
   let pending = inlined.get(url)
   if (!pending) {
-    pending = (async () => {
-      if (active >= LOGO_FETCHES) await new Promise<void>((resolve) => { waiting.push(resolve) })
-      active += 1
+    pending = logoSlot(async () => {
       try {
         const image = await fetchRemoteImage(url, { types: LOGO_TYPES, maxBytes: MAX_LOGO_BYTES, signal: AbortSignal.timeout(10_000), ...(fetchImpl ? { fetch: fetchImpl } : {}) })
         return `data:${image.type};base64,${image.body.toString('base64')}`
-      } catch { return null } finally {
-        active -= 1
-        waiting.shift()?.()
-      }
-    })()
+      } catch { return null }
+    })
     inlined.set(url, pending)
   }
   return pending
