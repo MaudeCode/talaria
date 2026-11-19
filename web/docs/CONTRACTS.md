@@ -80,7 +80,9 @@ server with auth off, pass as before. `src/auth/gate.test.ts` owns the matrix.
   remove provider credentials, or make the server fetch a URL.
 
 A cron create or update stays open to non-owners, except that a body carrying
-`script` or `no_agent` is refused with the same 403. The server ships the
+`script` or `no_agent`, or giving the job a monitor script it does not already
+have (a `monitor` that is not a URL, or `monitor_script`), is refused with the
+same 403. The server ships the
 matching capability fields: `GET /api/mcp/servers` answers a non-owner with
 `toggle_supported: false` and every row's `can_toggle`, `events.can_edit` and
 `cost_policy.can_edit` false, and `GET /api/commands` lists `/terminal` for no

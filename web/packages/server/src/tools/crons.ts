@@ -36,7 +36,10 @@ export interface CronDeps {
 
 const JOB_ID_RE = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$/
 const ROOM_DELIVERY_RE = /^room:\s*([A-Za-z0-9][A-Za-z0-9._:-]*)(?:@([A-Za-z0-9_-]+))?$/i
-/** TAL-2201: a job's `script` runs on the host and `no_agent` runs it without the agent, so only the owner sets either. */
+/**
+ * TAL-2201: a job's `script` and `monitor_script` run on the host and `no_agent` runs a script without the agent, so only
+ * the owner sets `script` or `no_agent`, or gives a job a monitor script it does not already have.
+ */
 const OWNER_FIELDS = ['script', 'no_agent']
 const PASSTHROUGH_FIELDS = ['script', 'no_agent', 'context_from', 'reasoning_effort', 'timezone', 'catch_up', 'grace_minutes']
 interface StoredJob { home: string; profile: string; job: Dict; managed: boolean }
@@ -425,8 +428,14 @@ export class CronService {
     if (targetsRoom && !(await this.deps.callerIsOwner?.())) throw new HttpFailure(403, 'Owner session required for Group Chat delivery')
   }
 
-  private async requireOwnerFields(body: Dict): Promise<void> {
-    if (OWNER_FIELDS.some((key) => key in body) && !(await this.deps.callerIsOwner?.())) throw new HttpFailure(403, 'Owner session required')
+  /**
+   * `fields` are the job fields the write stores (a `monitor` already split into `monitor_script` / `monitor_url`), and
+   * `stored` the job before it, so resending a job's own monitor script unchanged stays an ordinary edit.
+   */
+  private async requireOwnerFields(body: Dict, fields: Dict, stored: Dict = {}): Promise<void> {
+    const monitor = str(fields.monitor_script).trim()
+    const newMonitorScript = monitor !== '' && monitor !== str(stored.monitor_script).trim()
+    if ((OWNER_FIELDS.some((key) => key in body) || newMonitorScript) && !(await this.deps.callerIsOwner?.())) throw new HttpFailure(403, 'Owner session required')
   }
 
   private async validateContext(home: string, fields: Dict): Promise<void> {
@@ -551,7 +560,6 @@ export class CronService {
 
   async create(home: string, body: Dict): Promise<Dict> {
     if (!('schedule' in body) || body.schedule === null || body.schedule === undefined) throw new HttpFailure(400, 'Missing required field(s): schedule')
-    await this.requireOwnerFields(body)
     if (!body.prompt && !body.script && !body.skills) throw new HttpFailure(400, 'Missing required field(s): prompt')
     const profile = await this.normalizeProfile(body.profile)
     const active = await this.profileForHome(home)
@@ -563,6 +571,7 @@ export class CronService {
     if (profile !== null) job.profile = profile
     if (body.toast_notifications === false) job.toast_notifications = false
     job.owner_profile = active
+    await this.requireOwnerFields(body, job)
     await this.requireRoomDeliveryAuthority(job)
     await this.validateContext(executionHome, job)
     try {
@@ -576,7 +585,6 @@ export class CronService {
   async update(home: string, body: Dict): Promise<Dict> {
     const jobId = str(body.job_id)
     if (!jobId) throw new HttpFailure(400, 'Missing required field(s): job_id')
-    await this.requireOwnerFields(body)
     const store = await this.resolveStore(home, jobId)
     const storedId = str(store.job.id)
     const pickerHome = home
@@ -602,6 +610,7 @@ export class CronService {
       try { currentContextFrom = (await this.sidecar().call('cron.get', { profile_home: home, job_id: storedId })).job?.context_from ?? null } catch { currentContextFrom = null }
     }
     Object.assign(updates, jobFieldUpdates(body, currentContextFrom))
+    await this.requireOwnerFields(body, updates, store.job)
     await this.requireRoomDeliveryAuthority(store.job, { ...store.job, ...updates })
     await this.validateContext(home, updates)
     try {
