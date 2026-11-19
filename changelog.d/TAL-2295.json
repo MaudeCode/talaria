@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Saving settings in Talaria Web no longer leaves config.yaml readable or writable by other users on the computer; group access stays for shared homes.",
+      "highlight": false,
+      "announce": false,
+      "components": ["web"]
+    }
+  ]
+}

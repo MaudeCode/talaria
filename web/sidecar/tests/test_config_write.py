@@ -310,3 +310,35 @@ for env, marker, expected in [("nixos", None, "nixos"), ("1", None, "nixos"), ("
         assert registry.methods["config.get"](None, params)["config"] == {"value": "original"}
     assert path.stat().st_mode & 0o777 == 0o640
 ''')
+
+
+@requires_agent
+@pytest.mark.parametrize("fallback", [False, True])
+def test_config_set_drops_other_access(hermes_home: pathlib.Path, fallback: bool) -> None:
+    agent_script(hermes_home, '''
+import os
+from pathlib import Path
+from unittest.mock import patch
+from talaria_sidecar.methods import Registry, config
+
+home = Path(os.environ["HERMES_HOME"])
+path = home / "config.yaml"
+registry = Registry(None)
+config.register(registry)
+original_import = config.importlib.import_module
+def import_module(name):
+    if FALLBACK and name == "hermes_cli.config":
+        raise ImportError("Agent config writer unavailable")
+    return original_import(name)
+
+# The Agent's own writers strip other access and keep group bits for shared-group homes.
+for initial, expected in [(0o644, 0o640), (0o666, 0o660), (0o640, 0o640), (None, 0o600)]:
+    path.unlink(missing_ok=True)
+    if initial is not None:
+        path.write_text("value: original\\n")
+        path.chmod(initial)
+    with patch.object(config.importlib, "import_module", side_effect=import_module):
+        registry.methods["config.set"](None, {"profile_home": str(home), "config": {"value": "changed"}})
+    assert config.read_config(path)["config"] == {"value": "changed"}
+    assert path.stat().st_mode & 0o777 == expected, (oct(initial or 0), oct(path.stat().st_mode & 0o777))
+'''.replace("FALLBACK", repr(fallback)))
