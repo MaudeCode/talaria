@@ -36,6 +36,7 @@ This is the v2 contract. The relay ignores v1 publishers, keys, nonces, and sess
 Talaria creates a ten-minute invitation with authenticated `POST /v1/pairings/publisher` with the JSON body `{"publisherId":"https://hermes.example.com"}` and passes the invitation through the authenticated Hermes API.
 Relay canonicalizes the origin and returns `400 invalid_pairing` for a missing or invalid origin.
 Both redemption routes return `400 invalid_invitation` for a different origin or for older invitations saved without an origin. A rejected request does not consume the invitation.
+A Relay user may hold at most 5 unused, unexpired invitations; another answers `429 too_many_invitations` until one is redeemed or expires.
 Pairing a new server requires an updated Talaria app. Existing pairings continue to work.
 See the [shared pairing fixture](../../contracts/fixtures/relay-pairing.json).
 
@@ -56,6 +57,8 @@ The Hermes owner registers the server once. Hermes generates an Ed25519 key loca
 The private key never leaves the Hermes machine.
 Repeating server registration requires an invitation from the publisher's Relay owner and a request signed with an existing non-revoked publisher key. Relay returns `400 publisher_already_registered` if proof is missing or invalid. If the owner revoked the registration and all its keys, recovery can proceed without a signature. A successful re-registration creates a replacement key. The relay activates it on first signed publication and then revokes the previous key without changing profile grants.
 Successful registration and enrollment responses include `protocolVersion: 2`. Registration also returns `profileIdPreserved`: `false` requires an exact echo of the requested scope, while `true` tells Hermes that owner key recovery retained the existing owner grant. Hermes rejects any unmarked scope mismatch before treating local configuration as valid.
+
+A Relay user may have at most 10 active (enabled) server registrations. Registering another origin, or re-enabling a revoked one, answers `400 too_many_publishers`; re-registering an active origin still succeeds, and users already above the cap keep their registrations.
 
 Registrations are keyed by relay owner plus server origin. Another relay user can claim the same public origin only inside their own account; that claim cannot reserve the origin, block the legitimate owner, authenticate the legitimate publisher, or receive its profile grants.
 
@@ -384,6 +387,7 @@ it never falls back to the unverified tier. A request without those headers is
 | Budget | Limit |
 |---|---|
 | Verified, per publisher registration (owner and origin) | 20 an hour |
+| Verified, per Relay owner across all its origins | 20 an hour |
 | Unverified, per `installId` | 5 an hour |
 | Unverified, all installs | 200 a day |
 | Every tier | 1000 a day |
@@ -423,6 +427,7 @@ reasons. A refused attachment charges no budget.
 | Byte budget (declared bytes of accepted attachments) | Limit |
 |---|---|
 | Verified, per publisher registration | 200 MB a day |
+| Verified, per Relay owner across all its origins | 200 MB a day |
 | All publishers | 600 MB a day and 6 GB per 30 days |
 
 Upload each accepted file with

@@ -73,7 +73,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_token_hash", ["tokenHash"])
-    .index("by_expires_at", ["expiresAt"]),
+    .index("by_expires_at", ["expiresAt"])
+    .index("by_user_id_and_expires_at", ["userId", "expiresAt"]),
 
   publishers: defineTable({
     version: v.optional(v.number()),
@@ -86,7 +87,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_version_and_owner_user_id_and_publisher_id", ["version", "ownerUserId", "publisherId"]),
+    .index("by_version_and_owner_user_id_and_publisher_id", ["version", "ownerUserId", "publisherId"])
+    .index("by_version_and_owner_user_id_and_enabled", ["version", "ownerUserId", "enabled"]),
 
   publisherKeys: defineTable({
     version: v.optional(v.number()),

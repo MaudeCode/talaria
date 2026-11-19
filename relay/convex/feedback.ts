@@ -141,9 +141,15 @@ export const submit = internalMutation({
     const publisher = args.publisher;
     const tier = publisher ? "verified" as const : "unverified" as const;
     // Registrations are per owner and origin, so another account registering the same origin gets its own budget.
-    const publisherKey = publisher && `${publisher.publisherOwnerUserId}:${publisher.publisherId}`;
+    // The owner's own budget is charged too, so registering more origins buys no more quota.
+    const owner = publisher?.publisherOwnerUserId;
+    const publisherKey = publisher && `${owner}:${publisher.publisherId}`;
     const budget = await consumeBudget(ctx, args.now, publisherKey
-      ? [{ key: `feedback:pub:${publisherKey}`, windowMs: hour, limit: 20 }, allTiers]
+      ? [
+          { key: `feedback:pub:${publisherKey}`, windowMs: hour, limit: 20 },
+          { key: `feedback:owner:${owner}`, windowMs: hour, limit: 20 },
+          allTiers,
+        ]
       : [
           { key: `feedback:install:${args.installHash}`, windowMs: hour, limit: 5 },
           { key: "feedback:unverified", windowMs: day, limit: 200 },
@@ -154,7 +160,10 @@ export const submit = internalMutation({
     // Attachment bytes have their own budgets; a refused attachment is charged nothing and never refuses the text.
     // Only verified reports may attach files, so only a publisher registration has a byte budget of its own.
     const byteBudgets: Budget[] = [
-      ...(publisherKey ? [{ key: `feedback-bytes:pub:${publisherKey}`, windowMs: day, limit: 200 * megabyte }] : []),
+      ...(publisherKey ? [
+        { key: `feedback-bytes:pub:${publisherKey}`, windowMs: day, limit: 200 * megabyte },
+        { key: `feedback-bytes:owner:${owner}`, windowMs: day, limit: 200 * megabyte },
+      ] : []),
       { key: "feedback-bytes:global", windowMs: day, limit: 600 * megabyte },
       { key: "feedback-bytes:global:30d", windowMs: longestBudgetWindowMs, limit: 6_000 * megabyte },
     ];
