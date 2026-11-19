@@ -591,6 +591,110 @@ final class TranscriptHostedTests: XCTestCase {
         XCTAssertNotNil(row, "An older server's known failure must remain a warning, while its success proves no parent review")
     }
 
+    /// TAL-1962: a background result is the marker's disclosure row: as tall, its icons and titles on the marker's
+    /// edges, quiet labels, one chevron centred on the lines that stays on screen past a long label, and a flat body
+    /// on the title's edge when it opens.
+    func testBackgroundResultLinesShareTheMarkerRowsChrome() async throws {
+        let long = String(repeating: "Apply approved default-profile plugin decisions ", count: 4)
+        let message = try DecisionReview.decoder.decode(ChatMessage.self, from: Data(#"""
+        {"role":"user","content":"Full result details.","message_id":"bg-1962","_display_truncated":true,"_display_excerpt":"Full result…",
+         "_background_update":{"lines":[{"kind":"agent","status":"failed","label":"\#(long)","review_state":"failed"},
+          {"kind":"command","status":"completed","label":"make test","review_state":"reviewing"}]}}
+        """#.utf8))
+        let update = try XCTUnwrap(message.backgroundUpdate)
+        let window = try hostWindow(VStack(alignment: .leading, spacing: 12) {
+            MarkerMessageCardView(kind: .contextCompaction, content: "Earlier turns were summarised.", stateID: "tal-1962")
+            BackgroundUpdateLinesView(update: update, message: message)
+        }.padding(), size: HostedSize.phone)
+        let marker = try await requireElement(in: window, label: "Context compaction")
+        let lines = try XCTUnwrap(HostedAccessibility.element(in: window, identifier: "background-update-lines"))
+        settle(0.2)
+        let markerRow = drawnLayers(in: window, within: marker.accessibilityFrame)
+        let (markerIcon, markerTitle) = (try XCTUnwrap(markerRow.first), markerRow[1])
+        var row = drawnLayers(in: window, within: lines.accessibilityFrame)
+        XCTAssertTrue(lines.accessibilityTraits.contains(.button), "The lines are not one button")
+        XCTAssertGreaterThanOrEqual(lines.accessibilityFrame.height.rounded(), 44)
+        var chevron = try XCTUnwrap(row.popLast(), "The lines have no chevron")
+        let icons = row.filter { $0.maxX <= markerTitle.minX }
+        let titles = row.filter { $0.minX >= markerTitle.minX }
+        XCTAssertEqual(icons.count, 2, "Each line has one icon, the reviewing spinner included")
+        XCTAssertEqual(titles.count, 2)
+        for icon in icons {
+            XCTAssertEqual(icon.midX, markerIcon.midX, accuracy: 1, "A line's icon is off the marker icon's 16pt frame")
+        }
+        let lineHeight = UIFont.preferredFont(forTextStyle: .callout).lineHeight
+        for title in titles {
+            XCTAssertEqual(title.minX, markerTitle.minX, accuracy: 0.5, "A line's title is off the marker title's edge")
+            XCTAssertLessThan(title.height, lineHeight * 1.5, "A label wrapped")
+            XCTAssertLessThan(title.maxX, chevron.minX, "A long label runs under the chevron")
+        }
+        XCTAssertLessThanOrEqual(chevron.maxX, window.bounds.maxX)
+        XCTAssertEqual(chevron.midX, markerRow[markerRow.count - 1].midX, accuracy: 0.5, "The chevron is off the marker's")
+        XCTAssertEqual(chevron.midY, lines.accessibilityFrame.midY, accuracy: 1, "The chevron is not centred on the lines")
+
+        // The failed icon keeps its orange; every label is as quiet as the marker title is not.
+        let failedIcon = try XCTUnwrap(icons.min { $0.minY < $1.minY })
+        XCTAssertGreaterThan(saturation(in: window, failedIcon), 100, "The failed icon lost its orange")
+        for title in titles {
+            XCTAssertLessThan(strongestInk(in: window, title), strongestInk(in: window, markerTitle) - 40, "A label is not secondary")
+        }
+        attachHostedScreenshot(window, name: "background-lines-collapsed")
+
+        HostedAccessibility.activate(lines)
+        let excerpt = try await requireElement(in: window, label: "Full result…")
+        settle(0.2)
+        row = drawnLayers(in: window, within: lines.accessibilityFrame)
+        chevron = try XCTUnwrap(row.last)
+        XCTAssertGreaterThan(chevron.width, chevron.height, "The chevron did not turn")
+        XCTAssertEqual(excerpt.accessibilityFrame.minX, markerTitle.minX, accuracy: 0.5, "The body is not indented 24pt")
+        let beside = CGPoint(x: (lines.accessibilityFrame.minX + excerpt.accessibilityFrame.minX) / 2, y: excerpt.accessibilityFrame.midY)
+        XCTAssertEqual(windowPixels(window, at: [beside])[0], windowPixels(window, at: [CGPoint(x: 4, y: beside.y)])[0], "The body sits on a surface")
+        attachHostedScreenshot(window, name: "background-lines-expanded")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Show more"))
+        _ = try await requireElement(in: window, label: "Full result details.")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Show less"))
+        _ = try await requireElement(in: window, label: "Full result…")
+    }
+
+    /// The frames, in window points and left to right, of what SwiftUI drew inside `rect`: each icon, label and chevron.
+    private func drawnLayers(in window: UIWindow, within rect: CGRect) -> [CGRect] {
+        var found: [CGRect] = []
+        func visit(_ layer: CALayer) {
+            let frame = layer.convert(layer.bounds, to: window.layer)
+            if (layer.sublayers ?? []).isEmpty, layer.contents != nil || "\(type(of: layer))".contains("ShapeLayer"),
+               rect.insetBy(dx: -1, dy: -1).contains(frame) { found.append(frame) }
+            layer.sublayers?.forEach(visit)
+        }
+        visit(window.layer)
+        return found.sorted { $0.minX == $1.minX ? $0.minY < $1.minY : $0.minX < $1.minX }
+    }
+
+    /// Every pixel of `rect` in a 3x drawing of `window`, as its colour channels: at 3x a glyph's stems are solid, so
+    /// its strongest pixel is its colour.
+    private func pixels(in window: UIWindow, _ rect: CGRect) -> [[Int]] {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 3
+        format.preferredRange = .standard
+        let image = UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        guard let cgImage = image.cgImage, let data = cgImage.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return [] }
+        let pixelBytes = cgImage.bitsPerPixel / 8
+        let (xs, ys) = (Int(rect.minX * 3)..<Int(rect.maxX * 3), Int(rect.minY * 3)..<Int(rect.maxY * 3))
+        return ys.flatMap { y in xs.map { x in (0..<3).map { Int(bytes[y * cgImage.bytesPerRow + x * pixelBytes + $0]) } } }
+    }
+
+    private func saturation(in window: UIWindow, _ rect: CGRect) -> Int {
+        pixels(in: window, rect).map { ($0.max() ?? 0) - ($0.min() ?? 0) }.max() ?? 0
+    }
+
+    /// How far the strongest pixel of `rect` stands from the window's background: primary text reaches further than
+    /// secondary in either appearance.
+    private func strongestInk(in window: UIWindow, _ rect: CGRect) -> Int {
+        let background = pixels(in: window, CGRect(x: 2, y: rect.midY, width: 1, height: 1)).first ?? [0, 0, 0]
+        return pixels(in: window, rect).map { zip($0, background).map { abs($0 - $1) }.reduce(0, +) / 3 }.max() ?? 0
+    }
+
     /// A compaction is its own row in its place, a flat disclosure line as tall as the transcript's other ones (TAL-1566).
     func testTheCompactionRowSitsInPlaceAsAFlatLine() async throws {
         let window = try await hostFixtureChat(["--ui-test-compaction-row"])
