@@ -160,7 +160,6 @@ export interface SessionServiceDeps {
   now: () => number
   log: (line: string) => void
   activeProfile: () => string
-  isolatedProfileMode: () => boolean
   profilesMatch: (a: string | null | undefined, b: string | null | undefined) => boolean
   /** The agent's display name for a session's profile (`assistant_name`). */
   assistantName: (profile: string | null) => string
@@ -240,6 +239,8 @@ export interface SessionServiceDeps {
   cliSessions: (profile: string, opts: { sourceFilter: string | null; sessionIds?: readonly string[]; keepEmpty?: boolean; sidebarRows?: boolean }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string>; storage: AgentStorage }>
   /** TAL-551: read-only Claude Code transcripts, listed with the CLI rows when both toggles are on. */
   claudeCode?: ClaudeCodeSessionSource
+  /** Whether the request's login has server-owner authority (`sessionCanManageServer`); absent means no. */
+  callerIsOwner?: () => Promise<boolean>
   profileHome: (profile: string) => string
   /** Python `commit_session_memory` (fire-and-forget): the cached Agent flushes memory for a session the user left. */
   commitSessionMemory?: (sid: string) => Promise<void>
@@ -386,8 +387,12 @@ export class SessionService {
     return owners.length ? owners.every((owner) => this.personMaySee(owner.owner_person_id)) : this.personMaySeeForeign(sid)
   }
 
-  /** A session with no Web document: an Agent-owned chat a person created, else unowned Agent state. */
+  /**
+   * A session with no Web document: an Agent-owned chat a person created, else unowned Agent state. A Claude Code
+   * transcript is the server owner's own `~/.claude`, outside every profile: only owner authority reads it (TAL-2202).
+   */
   async personMaySeeForeign(sid: string): Promise<boolean> {
+    if (isClaudeCodeSessionId(sid)) return this.callerIsOwner()
     if (!this.store.personAccess()) return true
     return this.personMaySee(await this.foreignOwnerOf(sid))
   }
@@ -886,7 +891,13 @@ export class SessionService {
     }
   }
 
+  /** Server-owner authority for this request; Claude Code transcripts reach no one else (TAL-2202). */
+  private async callerIsOwner(): Promise<boolean> {
+    return (await this.deps.callerIsOwner?.()) === true
+  }
+
   private async claudeCodeRows(): Promise<Row[]> {
+    if (!(await this.callerIsOwner())) return []
     return (await this.deps.claudeCode?.rows(await this.deps.workspaces.lastWorkspace(this.deps.activeProfile()))) ?? []
   }
 
@@ -1423,11 +1434,11 @@ export class SessionService {
   /** A session without a sidecar, synthesized from state.db for this profile; 404/409 like the detail. */
   private async foreignSession(sid: string, transcript = true): Promise<{ synth: Session; meta: Row | null; reads: SessionGateReads; summary?: StateDbMessageSummary }> {
     sid = await this.resolveSessionId(sid)
+    if (!(await this.personMaySeeForeign(sid))) throw new HttpFailure(404, 'Session not found')
     const reads = this.sessionGateReads(sid)
     const meta = (await reads.meta())
     const profile = str(meta?.profile) || null
     const profileAgnostic = str(meta?.source_tag || meta?.raw_source).trim().toLowerCase() === 'claude_code'
-    if (!(await this.personMaySeeForeign(sid))) throw new HttpFailure(404, 'Session not found')
     if (!profileAgnostic && !this.visibleToActiveProfile(profile)) {
       if (profile) throw new HttpFailure(409, 'Session belongs to a different profile', { code: 'session_profile_mismatch', session_id: sid, profile })
       throw new HttpFailure(404, 'Session not found')
@@ -1603,7 +1614,7 @@ export class SessionService {
     return { rows: [...new Map([...existing, ...extra.rows].map((row) => [str(row.session_id), row])).values()], storage: extra.storage }
   }
 
-  async list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'rowVisible' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources' | 'agentStorage' | 'pruneOrphanedImports' | 'webuiRows' | 'webDiagnosticIds'>): Promise<{ body: ListResponse; etag: string }> {
+  async list(params: Omit<ListParams, 'activeProfile' | 'profilesMatch' | 'rowVisible' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources' | 'agentStorage' | 'pruneOrphanedImports' | 'webuiRows' | 'webDiagnosticIds'>): Promise<{ body: ListResponse; etag: string }> {
     const activeProfile = this.deps.activeProfile()
     const webuiRows = (await allSessions(this.store, { sidebarMetadataOnly: true }))
     // TAL-2159: the Agent's database holds every outside source but Claude Code; it is read while any of them is shown.
@@ -1658,7 +1669,7 @@ export class SessionService {
     }
     const listedOwner = (row: Row): string | null => rowOwner(row) ?? resolved.get(str(row.session_id)) ?? null
     const lookups = await withStateDbListingReads(() => this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id))))
-    const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch, rowVisible: (row) => this.personMaySee(listedOwner(row)) }))
+    const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, profilesMatch: this.deps.profilesMatch, rowVisible: (row) => this.personMaySee(listedOwner(row)) }))
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), await this.workspaceNames([...payload.sessions, ...payload.sidebar_reference_sessions]), params.detailedRows === true)
   }
 

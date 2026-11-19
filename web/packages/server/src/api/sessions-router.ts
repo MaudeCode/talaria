@@ -34,6 +34,7 @@ import { ProfileError } from '../profiles/profiles.js'
 import type { Settings } from '../settings.js'
 import { ConfigUnavailable } from '../config/agent-config.js'
 import { projectBindings, type Project } from '../projects.js'
+import type { ProfileReach } from '../sessions/list.js'
 
 const os = implement({ ...sessionsContract, ...workspacesContract }).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -131,8 +132,18 @@ async function handoffInput(ctx: RequestContext, input: { session_id?: string | 
   return { sid, since }
 }
 
-function allProfilesEnabled(ctx: RequestContext, value: string | undefined): boolean {
-  return queryFlag(value) && !ctx.deps.isolatedProfileMode()
+/**
+ * TAL-2202: a listing's reach for an `all_profiles` flag. Other profiles' rows, and their count, reach only server-owner
+ * authority (`owner`), and no one in isolated mode; anyone else's flag is ignored, as isolated mode ignores it.
+ */
+export function profileReach(deps: Pick<AppDeps, 'isolatedProfileMode'>, owner: boolean, flag: string | undefined): ProfileReach {
+  if (deps.isolatedProfileMode() || !owner) return 'none'
+  return queryFlag(flag) ? 'all' : 'counted'
+}
+
+/** `profileReach` for an HTTP request's own authority. */
+export async function requestProfileReach(ctx: RequestContext, flag: string | undefined): Promise<ProfileReach> {
+  return profileReach(ctx.deps, await requestCanManageServer(ctx), flag)
 }
 
 /** Search inputs that select the sidebar rows rather than every stored session (TAL-308). */
@@ -140,14 +151,15 @@ const SIDEBAR_SEARCH_KEYS = ['project_id', 'sidebar_source', 'include_archived',
 
 /** The `/api/sessions` row selection for a list or sidebar-search query (TAL-308 shares it). */
 async function sidebarListParams(ctx: RequestContext, input: SessionsListQuery): Promise<Parameters<RequestContext['deps']['sessions']['list']>[0]> {
-  return sidebarListSelection(await ctx.deps.settings.load(), input, allProfilesEnabled(ctx, input.all_profiles))
+  return sidebarListSelection(await ctx.deps.settings.load(), input, await requestProfileReach(ctx, input.all_profiles))
 }
 
 /** The row selection `/api/sessions` makes for `input` under `settings`; the agent's `session_list` uses it with no input (TAL-1164). */
-export function sidebarListSelection(settings: Settings, input: SessionsListQuery, allProfiles: boolean): Parameters<RequestContext['deps']['sessions']['list']>[0] {
+export function sidebarListSelection(settings: Settings, input: SessionsListQuery, reach: ProfileReach): Parameters<RequestContext['deps']['sessions']['list']>[0] {
   const sidebarSourceRaw = (input.sidebar_source ?? '').trim().toLowerCase()
   return {
-    allProfiles,
+    allProfiles: reach === 'all',
+    countOtherProfiles: reach === 'counted',
     includeArchived: queryFlag(input.include_archived),
     visibleOnly: true,
     showCliSessions: queryBool(input.show_cli_sessions, Boolean(settings.show_cli_sessions)),
@@ -168,11 +180,12 @@ export function sidebarListSelection(settings: Settings, input: SessionsListQuer
  * The services behind `/api/projects{,/create,/rename}` and `/api/workspaces{,/add,/rename}`, in the request's profile.
  * The agent's project and workspace tools call them too (TAL-1170).
  */
-export async function projectList(deps: AppDeps, allProfiles: boolean) {
+export async function projectList(deps: AppDeps, reach: ProfileReach) {
   const activeProfile = deps.activeProfile()
   const all = (await deps.projects.load())
+  const allProfiles = reach === 'all'
   const scoped = allProfiles ? all : all.filter((p) => deps.profilesMatch(p.profile ?? null, activeProfile))
-  return { projects: await projectViews(deps, scoped), all_profiles: allProfiles, active_profile: activeProfile, other_profile_count: allProfiles || deps.isolatedProfileMode() ? 0 : all.length - scoped.length }
+  return { projects: await projectViews(deps, scoped), all_profiles: allProfiles, active_profile: activeProfile, other_profile_count: reach === 'counted' ? all.length - scoped.length : 0 }
 }
 
 export async function projectCreate(deps: AppDeps, input: { name: string; color?: string | null | undefined; profile?: string | null | undefined }) {
@@ -298,7 +311,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       // Python: `int(depth)` falls back to 5 when malformed.
       const depthRaw = (input.depth ?? '5').trim()
       const depth = /^[+-]?\d+$/.test(depthRaw) ? Math.max(0, Number.parseInt(depthRaw, 10)) : 5
-      const opts = { content: (input.content ?? '1') === '1', depth, allProfiles: allProfilesEnabled(ctx, input.all_profiles) }
+      const opts = { content: (input.content ?? '1') === '1', depth, allProfiles: (await requestProfileReach(ctx, input.all_profiles)) === 'all' }
       // TAL-308: any sidebar filter answers from the sidebar's own rows; without one the store-only search stays.
       if (SIDEBAR_SEARCH_KEYS.some((k) => input[k] !== undefined)) {
         return await ctx.deps.sessions.sidebarSearch(input.q ?? '', (await sidebarListParams(ctx, input)), { ...opts, projectId: input.project_id?.trim() || null }) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
@@ -590,7 +603,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
     })),
   },
   projects: {
-    list: os.projects.list.handler(({ input, context: { ctx } }) => run(() => projectList(ctx.deps, allProfilesEnabled(ctx, input.all_profiles)))),
+    list: os.projects.list.handler(({ input, context: { ctx } }) => run(async () => projectList(ctx.deps, await requestProfileReach(ctx, input.all_profiles)))),
     create: os.projects.create.handler(({ input, context: { ctx } }) => run(() => projectCreate(ctx.deps, input))),
     rename: os.projects.rename.handler(({ input, context: { ctx } }) => run(() => projectRename(ctx.deps, input))),
     setBindings: os.projects.setBindings.handler(({ input, context: { ctx } }) => run(async () => {

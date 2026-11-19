@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "In Talaria Web, only the server owner can list or search across all profiles or see Claude Code transcripts; other logins see their own profile only.",
+      "highlight": false,
+      "announce": false,
+      "components": ["web"]
+    }
+  ]
+}

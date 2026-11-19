@@ -48,7 +48,7 @@ import { StartupGate } from './startup.js'
 import { SessionNotFound, SessionStore } from './sessions/store.js'
 import { SidecarServerError } from './sidecar/server-methods.js'
 import { isSafeSessionId, type Session } from './sessions/session.js'
-import { projectCreate, projectList, projectRename, sidebarListSelection, workspaceAdd, workspaceList, workspaceRename } from './api/sessions-router.js'
+import { profileReach, projectCreate, projectList, projectRename, sidebarListSelection, workspaceAdd, workspaceList, workspaceRename } from './api/sessions-router.js'
 import { approvalRespond, clarifyRespond, goalCommand, pendingPrompt, sessionBackgroundTasks } from './api/chat-router.js'
 import { profileList } from './api/settings-router.js'
 import { HttpError } from './api/router.js'
@@ -162,6 +162,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   let oidc: OidcService | null = null
   let operatorConfigPeek: () => Record<string, unknown> | null = () => null
   const requestScope = new AsyncLocalStorage<RequestScope>()
+  /** Owner authority of the login the request scope carries; a scope without one (a session's tools) has none while sign-in is on. */
+  const callerIsOwner = (): Promise<boolean> => sessionCanManageServer({ deps }, requestScope.getStore()?.trusted?.reconciled ?? null)
   const auth = new AuthStore({
     documents: storage.documents, env, settings, log, now,
     sessionSignatures: () => requestScope.getStore()?.sessionSignatures,
@@ -392,6 +394,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     store,
     cliSessions: async (profile, o) => (await cliSessions.read(profile, o)),
     claudeCode: new ClaudeCodeSessionSource(() => claudeCodeProjectsDir(env, home)),
+    callerIsOwner,
     profileHome,
     // The commit runs detached from the request, so it is registered as profile activity until it settles: profile
     // deletion must not remove the memory files the cached Agent is still writing.
@@ -427,7 +430,6 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     now,
     log,
     activeProfile,
-    isolatedProfileMode,
     profilesMatch,
     assistantName,
     redactEnabled: () => { try { return settings.peekValue('api_redact_enabled') !== false } catch { return true } },
@@ -888,7 +890,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     return target
   }
   sidecar?.serveSidecarRequests?.({
-    'server.session_list': ({ caller_session_id, query }) => asCaller(caller_session_id, async (caller) => sessions.agentSessionList(caller.session_id, query ?? null, sidebarListSelection(await settings.load(), {}, false))),
+    'server.session_list': ({ caller_session_id, query }) => asCaller(caller_session_id, async (caller) => sessions.agentSessionList(caller.session_id, query ?? null, sidebarListSelection(await settings.load(), {}, profileReach(deps, await callerIsOwner(), undefined)))),
     'server.queue_list': ({ caller_session_id, session_id }) => asCaller(caller_session_id, async (caller) => sessions.agentQueue(await queueTarget(caller, session_id))),
     'server.queue_send_now': ({ caller_session_id, session_id, steer_id }) => asCaller(caller_session_id, async (caller) => turns.sendSteerNow((await queueTarget(caller, session_id)).session_id, steer_id)),
     'server.queue_withdraw': ({ caller_session_id, session_id, steer_id }) => asCaller(caller_session_id, async (caller) => turns.withdrawSteer((await queueTarget(caller, session_id)).session_id, steer_id, 'cancel')),
@@ -978,7 +980,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       return result
     }),
     // TAL-1170: the services behind `/api/projects`, `/api/workspaces` and `/api/profiles`, in the caller's profile.
-    'server.project_list': ({ caller_session_id }) => asCaller(caller_session_id, () => projectList(deps, false)),
+    'server.project_list': ({ caller_session_id }) => asCaller(caller_session_id, async () => projectList(deps, profileReach(deps, await callerIsOwner(), undefined))),
     'server.project_create': ({ caller_session_id, name }) => asCaller(caller_session_id, () => projectCreate(deps, { name })),
     'server.project_rename': ({ caller_session_id, project_id, name }) => asCaller(caller_session_id, () => projectRename(deps, { project_id, name })),
     // The workspace entries' type is erased as the routers do.
@@ -1156,7 +1158,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       updateInProgress: () => deps.updates.blocksNewWork(),
       modelOptions: (home) => catalog.modelOptionResolver(home),
       groupCatalog: (profile, offset) => deps.groups.catalog(deps.groups.scope(profile, requestScope.getStore()?.notificationOwner ?? 'local-owner'), offset),
-      callerIsOwner: () => sessionCanManageServer({ deps }, requestScope.getStore()?.trusted?.reconciled ?? null),
+      callerIsOwner,
     }),
     kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig, settings }),
     extensions: new ExtensionService({ documents: storage.documents, env, stateDir: config.stateDir, isAuthEnabled: () => auth.isAuthEnabled(), fetch: lazyFetch, log }),
