@@ -57,4 +57,3 @@ describe('resolveCommand', () => {
     expect(commands.resolveCommand('nope', catalog)).toBeUndefined()
   })
 })
-
