@@ -36,6 +36,7 @@ import { handleOidcCallback, handleOidcStart } from './auth-raw.js'
 import { handleTranscribeStream } from './transcribe-stream.js'
 import { FEEDBACK_UPLOAD_MAX_BYTES, stageFeedbackAttachment } from '../feedback.js'
 import { MeshyError } from '../tools/meshy.js'
+import { fetchRemoteImage, publicImageFetch, relaySlot, RemoteImageError, vouchedRemoteImage } from '../http/remote-image.js'
 import { dashboardScope } from '../tools/dashboard-plugins.js'
 import { ProfileError } from '../profiles/profiles.js'
 
@@ -52,6 +53,7 @@ export const RAW_GET_ROUTES: Record<string, RawHandler> = {
   '/api/escape/file/raw': handleEscapeFileRaw,
   '/api/media': handleMedia,
   '/api/meshy/asset': handleMeshyAsset,
+  '/api/remote-image': handleRemoteImage,
   '/api/profile/avatar': handleProfileAvatar,
   '/api/folder/download': handleFolderDownload,
   '/api/session/export': handleSessionExport,
@@ -267,13 +269,36 @@ async function handleMedia(ctx: RequestContext): Promise<void> {
 async function handleMeshyAsset(ctx: RequestContext): Promise<void> {
   const grant = ctx.query.get('grant') ?? ''
   if (!grant) throw new HttpError(400, 'grant parameter required')
+  await untilClosed(ctx, async (signal) => {
+    try { await ctx.deps.meshy.serve(ctx, grant, dashboardScope(ctx), signal) } catch (error) {
+      if (error instanceof MeshyError) throw new HttpError(error.status, error.message)
+      throw error
+    }
+  })
+}
+
+/** TAL-2199: a media tool's remote image, relayed from the URL `vouchRemoteImage` named by this id. */
+async function handleRemoteImage(ctx: RequestContext): Promise<void> {
+  // A HEAD would download the image only to drop it: nothing is fetched for one.
+  if (ctx.method === 'HEAD') throw new HttpError(405, 'GET only')
+  const url = vouchedRemoteImage(ctx.query.get('id') ?? '')
+  if (!url) throw new HttpError(404, 'not found')
+  await untilClosed(ctx, async (signal) => {
+    let image: { type: string; body: Buffer }
+    try { image = await relaySlot(() => fetchRemoteImage(url, { fetch: publicImageFetch(ctx.deps.dnsLookup, ctx.deps.pinnedFetch), signal })) } catch (error) {
+      if (error instanceof RemoteImageError) throw new HttpError(502, 'The image could not be loaded.')
+      throw error
+    }
+    await ctx.send({ status: 200, headers: { 'Content-Type': image.type, 'Cache-Control': 'private, max-age=300', 'Content-Security-Policy': "default-src 'none'; sandbox" }, body: image.body })
+  })
+}
+
+/** Runs `fn` with a signal that aborts when the client goes away. */
+async function untilClosed(ctx: RequestContext, fn: (signal: AbortSignal) => Promise<void>): Promise<void> {
   const abort = new AbortController()
   const close = (): void => { abort.abort() }
   ctx.res.once('close', close)
-  try { await ctx.deps.meshy.serve(ctx, grant, dashboardScope(ctx), abort.signal) } catch (error) {
-    if (error instanceof MeshyError) throw new HttpError(error.status, error.message)
-    throw error
-  } finally { ctx.res.off('close', close) }
+  try { await fn(abort.signal) } finally { ctx.res.off('close', close) }
 }
 
 /** TAL-2176: a profile's own avatar image for its Settings › Profiles block; owner only through `OPERATOR_ONLY_PATHS`. */

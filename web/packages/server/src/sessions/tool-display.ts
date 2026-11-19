@@ -11,6 +11,8 @@ import { expandHome } from '../workspace/paths.js'
 import { diffHunks, hunkTotals } from '../text/diff.js'
 import { isDict, messageText, TOOL_ARG_CONTENT_CAP, TOOL_ARG_CONTENT_KEYS } from './merge.js'
 import { displaySetting } from './display-settings.js'
+import { inlineRemoteImage, vouchRemoteImage } from '../http/remote-image.js'
+import { isRemoteImageSource } from '../workspace/media-refs.js'
 
 /** Only a structured tool reply supplies a locator. Its content/authority still comes from the registered backend. */
 export function outboundDraftRef(name: unknown, raw: unknown): OutboundDraftRef | undefined {
@@ -105,11 +107,20 @@ function actionPhrase(tool: string, app = ''): string {
   return head.toUpperCase() + rest.join('')
 }
 
-/** TAL-2330: each connector's catalog logo by slug, from the last catalog read; a connector call shows its app's. */
+/**
+ * TAL-2330: each connector's catalog logo by slug, from the last catalog read; a connector call shows its app's. TAL-2199:
+ * inline (`inlineRemoteImage`), so it loads under the page's CSP: null until its fetch lands, or when that fails.
+ */
 const connectorLogos = new Map<string, string | null>()
-export function rememberConnectorLogos(catalog: readonly { slug: string; logo_url: string | null }[]): void {
-  for (const row of catalog) connectorLogos.set(row.slug, row.logo_url)
+/** Settles once every logo of this catalog read has its inline form (or none). */
+export function rememberConnectorLogos(catalog: readonly { slug: string; logo_url: string | null }[], fetchImpl?: typeof fetch): Promise<void> {
+  return Promise.all(catalog.map(async (row) => {
+    if (!connectorLogos.has(row.slug)) connectorLogos.set(row.slug, null)
+    connectorLogos.set(row.slug, row.logo_url ? await inlineRemoteImage(row.logo_url, fetchImpl) : null)
+  })).then(() => undefined)
 }
+/** A connector's logo as clients show it. */
+export const connectorLogo = (slug: string): string | null => connectorLogos.get(slug) ?? null
 
 /** Connector slugs a catalog read was started for, so an app the catalog lacks is asked for once. */
 const logoReads = new Set<string>()
@@ -258,7 +269,7 @@ export function toolDisplay(name: unknown, args: unknown, workspace: string | nu
     const connector = app.kind === 'connector'
     const action = actionPhrase(app.tool, connector ? app.slug : '')
     const alias = connector ? arg(['connector_alias']).trim() : ''
-    return { kind, target: capped(alias ? `${action} (${alias})` : action), focus_path: focus(fileKind(name)), app: { name: appTitle(app.slug), logo_url: connector ? connectorLogos.get(app.slug) ?? null : null } }
+    return { kind, target: capped(alias ? `${action} (${alias})` : action), focus_path: focus(fileKind(name)), app: { name: appTitle(app.slug), logo_url: connector ? connectorLogo(app.slug) : null } }
   }
   const special = name === 'delegate_task' ? delegateTarget(arg) : bridge ? bridge.target(snapshotItems(snapshotArg(a, bridge.key) ?? '')) : ''
   const own = kind === 'talaria' ? arg(TALARIA_TARGET_KEYS[str(name)] ?? []) || str(name) : ''
@@ -617,7 +628,8 @@ export function resultPagesView(data: Record<string, unknown>): ResultPage[] | u
  * TAL-2323: a result view's `file_excerpt` and `matches` files with the `focus_path` each path names inside the session's
  * `workspace` (the call-level TAL-1458 rule). Callers pass the redacted view, so a focus path never shows more than its path.
  * Without a workspace an absolute path keeps the focus path it was given. TAL-2325: with the session's id, each local `media`
- * URL carries it, so the session's media grant serves a file the allowed roots do not.
+ * URL carries it, so the session's media grant serves a file the allowed roots do not. TAL-2199: a remote image loads
+ * through the server's relay, stored views included, or is a link when the server would not fetch it.
  */
 export function withResultFocusPaths<T extends Record<string, unknown>>(view: T, workspace: string | null, sessionId: string | null = null): T {
   const located = <F extends { path: string; focus_path?: string | undefined }>(item: F): F => {
@@ -627,14 +639,18 @@ export function withResultFocusPaths<T extends Record<string, unknown>>(view: T,
   }
   const excerpt = view.file_excerpt === undefined ? undefined : FileExcerptSchema.safeParse(view.file_excerpt).data
   const matches = view.matches === undefined ? undefined : SearchMatchesSchema.safeParse(view.matches).data
-  const media = sessionId && view.media !== undefined ? DisplayMediaSchema.array().safeParse(view.media).data : undefined
-  return { ...view, ...(excerpt ? { file_excerpt: located(excerpt) } : {}), ...(matches ? { matches: { ...matches, files: matches.files.map(located) } } : {}), ...(media && sessionId ? { media: media.map((item) => sessionMedia(item, sessionId)) } : {}) }
+  const media = view.media === undefined ? undefined : DisplayMediaSchema.array().safeParse(view.media).data
+  return { ...view, ...(excerpt ? { file_excerpt: located(excerpt) } : {}), ...(matches ? { matches: { ...matches, files: matches.files.map(located) } } : {}), ...(media ? { media: media.map((item) => shippedMedia(item, sessionId)) } : {}) }
 }
 
 const MEDIA_URL = './api/media?'
-/** TAL-2325: a local media URL with the session's id; a remote one as it is. */
-function sessionMedia(item: DisplayMedia, sessionId: string): DisplayMedia {
-  if (!item.url.startsWith(MEDIA_URL)) return item
+/** TAL-2325: a local media URL with the session's id, when there is one; TAL-2199: a remote image through the relay, else a link. */
+function shippedMedia(item: DisplayMedia, sessionId: string | null): DisplayMedia {
+  if (item.kind === 'image' && isRemoteImageSource(item.url)) {
+    const relayed = vouchRemoteImage(item.url)
+    return relayed ? { ...item, url: relayed } : { ...item, kind: 'file' }
+  }
+  if (!sessionId || !item.url.startsWith(MEDIA_URL)) return item
   const query = new URLSearchParams(item.url.slice(MEDIA_URL.length))
   query.set('session_id', sessionId)
   return { ...item, url: `${MEDIA_URL}${query.toString()}` }

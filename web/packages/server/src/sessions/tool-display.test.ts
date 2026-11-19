@@ -6,6 +6,8 @@ import { appTitle, decidedEditDiff, EDIT_DIFF_MAX_LINES, rememberConnectorLogos,
 import { stubDisplaySettings } from './display-settings.js'
 import { fullToolResult } from './anchor.js'
 import { approvalTool, publicToolFrame } from '../redact.js'
+import { vouchedRemoteImage } from '../http/remote-image.js'
+import { LOGO_DATA_URL, logoFetch } from '../test/logo-host.js'
 import { TALARIA_TOOL_NAMES, TOOL_PRESENTATIONS, type ToolResultView } from '@maudecode/talaria-web-contracts'
 
 // TAL-1537: a `~/` path expands against a stubbed home.
@@ -562,9 +564,14 @@ describe('media and analysis sections (TAL-2325)', () => {
     const media = [{ url: local('/srv/out/a.png'), name: 'a.png', mime: 'image/png', kind: 'image' as const }, { url: 'https://cdn.example/b.png', name: 'b.png', mime: 'image/png', kind: 'image' as const }]
     expect(decidedResultView({ media, analysis: 'x'.repeat(5000) })).toEqual({ media, analysis: toolResultSnippet('x'.repeat(5000)) })
     const frame = publicToolFrame({ name: 'image_generate', args: {}, result_view: { media } }, true, null, 'sid-1')
-    expect((frame.result_view as ToolResultView).media?.map((item) => item.url)).toEqual([`./api/media?${new URLSearchParams({ path: '/srv/out/a.png', session_id: 'sid-1' }).toString()}`, 'https://cdn.example/b.png'])
-    // Without a session the URL stays as built; restamping replaces, never repeats, the id.
-    expect((publicToolFrame({ name: 'image_generate', result_view: { media } }, true).result_view as ToolResultView).media).toEqual(media)
+    // TAL-2199: a remote image loads through the server's relay, which serves only what it vouched for.
+    const relayed = (frame.result_view as ToolResultView).media?.map((item) => item.url)
+    expect(relayed?.[0]).toBe(`./api/media?${new URLSearchParams({ path: '/srv/out/a.png', session_id: 'sid-1' }).toString()}`)
+    expect(vouchedRemoteImage(new URLSearchParams(relayed?.[1]?.split('?')[1]).get('id') ?? '')).toBe('https://cdn.example/b.png')
+    // Without a session a local URL stays as built; restamping replaces, never repeats, the id.
+    expect((publicToolFrame({ name: 'image_generate', result_view: { media } }, true).result_view as ToolResultView).media?.map((item) => item.url)).toEqual([local('/srv/out/a.png'), relayed?.[1]])
+    // One the server would not fetch is a link.
+    expect((publicToolFrame({ name: 'image_generate', result_view: { media: [{ ...media[1]!, url: 'http://cdn.example/b.png' }] } }, true).result_view as ToolResultView).media).toEqual([{ url: 'http://cdn.example/b.png', name: 'b.png', mime: 'image/png', kind: 'file' }])
     expect((publicToolFrame({ name: 'image_generate', result_view: frame.result_view }, true, null, 'sid-1').result_view as ToolResultView).media?.[0]?.url.match(/session_id/g)).toHaveLength(1)
   })
 })
@@ -867,12 +874,14 @@ describe('MCP and connector calls (TAL-2330)', () => {
     expect(toolKind('mcp__github__create_issue')).toBe('mcp')
   })
 
-  it('names a connector call by its app, its action without the vendor prefix and its account alias, with the catalog logo', () => {
-    rememberConnectorLogos([{ slug: 'gmail', logo_url: 'https://logos.example/gmail.svg' }, { slug: 'slack', logo_url: null }])
-    expect(toolDisplay('connectors__gmail__GMAIL_SEND_EMAIL', { to: 'a@example.com', connector_alias: 'work' })).toEqual({ kind: 'connector', target: 'Send email (work)', focus_path: null, app: { name: 'Gmail', logo_url: 'https://logos.example/gmail.svg' } })
+  it('names a connector call by its app, its action without the vendor prefix and its account alias, with the catalog logo inline', async () => {
+    // TAL-2199: the logo ships as a data URL, so it loads under an `img-src` with no remote host; one the host refuses is none.
+    await rememberConnectorLogos([{ slug: 'gmail', logo_url: 'https://logos.example/gmail.svg' }, { slug: 'slack', logo_url: null }, { slug: 'notion', logo_url: 'https://elsewhere.example/n.svg' }], logoFetch)
+    expect(toolDisplay('connectors__gmail__GMAIL_SEND_EMAIL', { to: 'a@example.com', connector_alias: 'work' })).toEqual({ kind: 'connector', target: 'Send email (work)', focus_path: null, app: { name: 'Gmail', logo_url: LOGO_DATA_URL } })
     expect(toolDisplay('connectors__slack__SLACK_SEND_MESSAGE', {})).toMatchObject({ kind: 'connector', target: 'Send message', app: { name: 'Slack', logo_url: null } })
+    expect(toolDisplay('connectors__notion__NOTION_CREATE_PAGE', {})).toMatchObject({ app: { name: 'Notion', logo_url: null } })
     // Live, the frame carries the same fields.
-    expect(publicToolFrame({ name: 'connectors__gmail__GMAIL_SEND_EMAIL', tid: 'g', args: { connector_alias: 'work' } }, true)).toMatchObject({ kind: 'connector', target: 'Send email (work)', app: { name: 'Gmail', logo_url: 'https://logos.example/gmail.svg' } })
+    expect(publicToolFrame({ name: 'connectors__gmail__GMAIL_SEND_EMAIL', tid: 'g', args: { connector_alias: 'work' } }, true)).toMatchObject({ kind: 'connector', target: 'Send email (work)', app: { name: 'Gmail', logo_url: LOGO_DATA_URL } })
   })
 
   it('titles apps as the Agent does: its known titles, else each word capitalized', () => {

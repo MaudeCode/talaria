@@ -9,8 +9,6 @@ const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../
 
 test('MCP and connector calls read as their app and action, under a connector\'s logo or the MCP and connector icons (TAL-2330)', async ({ page }, testInfo) => {
   const shot = (name: string) => page.screenshot({ path: testInfo.outputPath(`${name}-${testInfo.project.name}.png`), fullPage: true })
-  const logo = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" fill="#ea4335"/><path d="M3 5l5 4 5-4" stroke="#fff" stroke-width="1.6" fill="none"/></svg>'
-  await page.route('https://logos.example/**', (route) => route.fulfill({ body: logo, contentType: 'image/svg+xml' }))
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'app-session', title: 'File the bug and tell the team', messages: fixture.session.messages } } }))
 
   await page.goto('/session/app-session')
@@ -25,6 +23,7 @@ test('MCP and connector calls read as their app and action, under a connector\'s
   const mail = page.locator('[data-tool-id="call-mail"]')
   await expect(mail).toHaveAttribute('data-tool-kind', 'connector')
   await expect(mail.locator('.tool-card-name')).toHaveText('Gmail · Send email (work)')
+  // TAL-2199: the server ships the logo inline, so it loads under an img-src with no remote host.
   await expect.poll(() => mail.locator('.tool-card-icon img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0)
   const notion = page.locator('[data-tool-id="call-notion"]')
   await expect(notion.locator('.tool-card-name')).toHaveText('Notion · Create page')

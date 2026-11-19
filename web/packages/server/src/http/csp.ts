@@ -54,9 +54,10 @@ export function buildCspEnforcedPolicy(extras: CspExtras, frameAncestors = "'non
     "script-src 'self' https://static.cloudflareinsights.com; " +
     "worker-src 'self' blob:; " +
     "style-src 'self' 'unsafe-inline'; " +
-    "img-src 'self' data: https: blob:; " +
+    // TAL-2199: no remote image loads by itself; a media tool's comes through `/api/remote-image`, a connector logo inline.
+    "img-src 'self' data: blob:; " +
     "font-src 'self' data:; " +
-    // TAL-2325: a generated video or voice clip a provider hosts plays where it is, as a remote image shows.
+    // TAL-2325: a generated video or voice clip a provider hosts plays where it is.
     "media-src 'self' data: https: blob:; " +
     // `blob:`: the 3D viewer decodes a model's embedded textures from blob URLs it creates itself (TAL-1514).
     `connect-src ${CSP_CONNECT_BASE} blob:${extras.connect}; ` +

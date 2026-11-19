@@ -5,7 +5,7 @@
  * elsewhere and are never passed through here as HTML.
  */
 import { use, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Streamdown, parseMarkdownIntoBlocks, type AnimateOptions, type LinkSafetyConfig, type LinkSafetyModalProps } from 'streamdown'
+import { Streamdown, defaultRehypePlugins, parseMarkdownIntoBlocks, type AnimateOptions, type LinkSafetyConfig, type LinkSafetyModalProps, type StreamdownProps } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
 import { appUrl } from '../../../lib/appRoot'
 import { CodeBlock, LineEndedContext } from './CodeBlock'
@@ -48,6 +48,13 @@ function useLazyPlugin<T>(enabled: boolean, load: () => Promise<T>): T | null {
  * never to the current route or the origin root.
  */
 const urlTransform = (url: string): string => (/^\.?\/api\//.test(url) ? appUrl(url.replace(/^\./, '')).href : url)
+/**
+ * TAL-2199: an image loads only from this origin (server media, before `urlTransform`); any other shows Streamdown's
+ * blocked label. The server already links remote images; this also covers Markdown it never saw, such as a live stream.
+ */
+const [harden, hardenOptions] = defaultRehypePlugins.harden as [unknown, object]
+const REHYPE_PLUGINS = Object.entries(defaultRehypePlugins).map(([name, plugin]) =>
+  name === 'harden' ? [harden, { ...hardenOptions, defaultOrigin: window.location.origin, allowedImagePrefixes: ['/'] }] : plugin) as NonNullable<StreamdownProps['rehypePlugins']>
 const SHIKI_THEMES: [string, string] = ['github-light', 'github-dark']
 // Table Copy needs ClipboardItem, which only a secure context has and no shim can provide.
 const CONTROLS = { code: { copy: true, download: true }, table: { copy: window.isSecureContext, download: true }, mermaid: { copy: true, download: true, fullscreen: true, panZoom: true } }
@@ -119,6 +126,7 @@ export default function MarkdownRenderer({ text, streaming = false, fade = false
       controls={CONTROLS}
       lineNumbers={false}
       linkSafety={linkSafety}
+      rehypePlugins={REHYPE_PLUGINS}
       urlTransform={urlTransform}
     >
       {text}

@@ -15,6 +15,7 @@ import { SidecarError } from '../sidecar/client.js'
 import { str } from '../util.js'
 import { diffHunks } from '../text/diff.js'
 import { rememberConnectorLogos } from './tool-display.js'
+import { LOGO_DATA_URL, logoFetch } from '../test/logo-host.js'
 import { JsonJournalWriter as RunJournalWriter } from './storage/json-journal.js'
 import typedRows from '../test/fixtures/agent-typed-rows.json' with { type: 'json' }
 
@@ -3263,7 +3264,7 @@ describe('session detail ships Kanban rows (TAL-2327)', () => {
 
 describe('session detail names MCP and connector calls by app and action (TAL-2330)', () => {
   let s: TestServer
-  beforeAll(async () => { s = await bootTestServer(); rememberConnectorLogos([{ slug: 'gmail', logo_url: 'https://logos.example/gmail.svg' }, { slug: 'notion', logo_url: null }]) })
+  beforeAll(async () => { s = await bootTestServer(); await rememberConnectorLogos([{ slug: 'gmail', logo_url: 'https://logos.example/gmail.svg' }, { slug: 'notion', logo_url: null }], logoFetch) })
   afterAll(() => s.close())
 
   const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
@@ -3296,7 +3297,7 @@ describe('session detail names MCP and connector calls by app and action (TAL-23
       const display = (c: Json) => [c.kind, c.target, c.app]
       const expected = [
         ['mcp', 'Create issue', { name: 'GitHub', logo_url: null }],
-        ['connector', 'Send email (work)', { name: 'Gmail', logo_url: 'https://logos.example/gmail.svg' }],
+        ['connector', 'Send email (work)', { name: 'Gmail', logo_url: LOGO_DATA_URL }],
         ['connector', 'Create page', { name: 'Notion', logo_url: null }],
       ]
       expect((messages.find((m) => m.message_id === 'app-calls')?.tool_calls as Json[]).map(display), query).toEqual(expected)

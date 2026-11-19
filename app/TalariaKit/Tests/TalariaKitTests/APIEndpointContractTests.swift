@@ -1148,6 +1148,7 @@ final class SharedContractTests: XCTestCase {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-2325 has no such example.
         guard let example = object["tool_media_views"] as? [String: Any] else { return }
+        let expectedImageMedia = try XCTUnwrap(((example["expected"] as? [String: Any])?["call-image"] as? [String: Any])?["media"] as? [[String: Any]])
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
@@ -1161,7 +1162,8 @@ final class SharedContractTests: XCTestCase {
             XCTAssertEqual(image.kind, .image)
             XCTAssertEqual(image.resultView?.media?.map(\.mediaKind), [.image, .image])
             XCTAssertEqual(image.resultView?.media?.first?.url, "./api/media?path=%2Fsrv%2Fhermes%2Fcache%2Fgenerated%2Fimages%2Fcat.png&session_id=media-session")
-            XCTAssertEqual(image.resultView?.media?.last?.url, "https://cdn.example/cat-2.png")
+            // The remote image's URL is whatever this fixture's Web shipped: as written before TAL-2199, its relay after.
+            XCTAssertEqual(image.resultView?.media?.last?.url, expectedImageMedia.last?["url"] as? String)
             XCTAssertEqual(AssistantActivitySummary.label(for: image), "Generated an image")
             XCTAssertEqual(AssistantActivitySummary.icon(for: image), "photo")
             let speech = try XCTUnwrap(byID["call-speech"])
@@ -1333,6 +1335,10 @@ final class SharedContractTests: XCTestCase {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-2330 has no such example.
         guard let example = object["tool_app_views"] as? [String: Any] else { return }
+        // Only Gmail has a logo; its URL is whatever this fixture's Web shipped: remote before TAL-2199, inline after.
+        let rawCalls = (((example["session"] as? [String: Any])?["messages"] as? [[String: Any]])?.first { $0["message_id"] as? String == "app-calls" }?["tool_calls"] as? [[String: Any]]) ?? []
+        let expectedLogos = rawCalls.map { (($0["app"] as? [String: Any])?["logo_url"] as? String).flatMap(URL.init(string:)) }
+        XCTAssertEqual(expectedLogos.map { $0 != nil }, [false, true, false])
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
@@ -1344,7 +1350,7 @@ final class SharedContractTests: XCTestCase {
             XCTAssertEqual(calls.map(\.kind), [.mcp, .connector, .connector])
             XCTAssertEqual(calls.map { AssistantActivitySummary.label(for: $0) }, ["GitHub · Create issue", "Gmail · Send email (work)", "Notion · Create page"])
             XCTAssertEqual(calls.map { AssistantActivitySummary.icon(for: $0) }, ["server.rack", "cable.connector", "cable.connector"])
-            XCTAssertEqual(calls.map { $0.app?.logoURL }, [nil, URL(string: "https://logos.example/gmail.svg"), nil])
+            XCTAssertEqual(calls.map { $0.app?.logoURL }, expectedLogos)
             var failed = try XCTUnwrap(calls.first)
             failed.isError = true
             XCTAssertEqual(AssistantActivitySummary.label(for: failed), "Failed to use GitHub · Create issue")

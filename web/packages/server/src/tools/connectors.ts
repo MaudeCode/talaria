@@ -10,7 +10,7 @@ import { updateDocument } from '../sessions/storage/document.js'
 import type { DocumentBackend } from '../sessions/storage/backend.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { redactString } from '../redact.js'
-import { appTitle, rememberConnectorLogos } from '../sessions/tool-display.js'
+import { appTitle, connectorLogo, rememberConnectorLogos } from '../sessions/tool-display.js'
 
 const OfferRecord = z.object({ guest_id: z.string(), offer_id: z.string(), visible: z.boolean() })
 
@@ -84,7 +84,7 @@ const facetOf = (facet: string): Facet => FACETS.has(facet as Facet) ? facet as 
  */
 const catalogNameCache = new Map<string, Record<string, string>>()
 export function rememberCatalogNames(home: string, catalog: Catalog): Record<string, string> {
-  rememberConnectorLogos(catalog)
+  void rememberConnectorLogos(catalog)
   const names = Object.fromEntries(catalog.map((row) => [row.slug, row.name]))
   catalogNameCache.set(home, names)
   return names
@@ -120,7 +120,7 @@ export function connectorsPage(catalog: Catalog, accounts: Accounts, policy: Pol
       .sort((a, b) => Number(b.active) - Number(a.active) || b.created_at.localeCompare(a.created_at))
     const orgLocked = others.some((rules) => !allows(rules, slug))
     return {
-      slug, name: entry?.name || slug, description: entry?.description ?? '', category: entry?.category ?? '', logo_url: entry?.logo_url ?? null,
+      slug, name: entry?.name || slug, description: entry?.description ?? '', category: entry?.category ?? '', logo_url: connectorLogo(slug),
       connected: mine.length > 0,
       accounts: mine.map((row) => ({ connection_id: row.connection_id, name: row.alias?.trim() || row.label, problem: accountProblem(row.status), status_reason: row.status_reason?.trim() || null, active: row.active, created_at: row.created_at })),
       // The switch shows what Hermes gets: an app another layer locks off reads off, whatever the member rule says.

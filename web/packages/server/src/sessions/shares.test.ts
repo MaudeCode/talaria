@@ -213,14 +213,15 @@ describe('buildShareSnapshot inline data', () => {
     expect(shared.title).toContain('Look ')
   })
 
-  it('keeps ordinary prose, remote images, and server-embedded local images', () => {
-    const content = [
-      'metadata: rows', 'data: 5 rows', 'the data:key,value pair', 'an image of an img tag',
-      '![chart](https://example.com/c.png)', '<img src="https://example.com/a.png" alt="metadata: x">', 'MEDIA:chart.png',
-    ].join('\n')
+  it('keeps ordinary prose and server-embedded local images, and links remote images (TAL-2199)', () => {
+    const prose = ['metadata: rows', 'data: 5 rows', 'the data:key,value pair', 'an image of an img tag']
+    const content = [...prose, '![chart](https://example.com/c.png)', '<img src="https://example.com/a.png" alt="metadata: x">', 'MEDIA:chart.png'].join('\n')
     const [message] = snapshot(content).messages
     const text = String(message!.content)
-    for (const kept of content.split('\n').slice(0, -1)) expect(text).toContain(kept)
+    for (const kept of prose) expect(text).toContain(kept)
+    expect(text).toContain('[chart](https://example.com/c.png)')
+    expect(text).toContain('[metadata: x](https://example.com/a.png)')
+    expect(text).not.toMatch(/!\[chart\]|<img src="https/)
     expect(text).toMatch(/<img src="data:image\/png;base64,[^"]+" class="msg-media-img" alt="chart.png"/)
     expect(text).not.toContain('MEDIA:')
   })
