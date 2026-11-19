@@ -91,7 +91,12 @@ function buildCatalog(agent: readonly AgentCommand[]): { commands: Command[]; ge
   return { commands: [...CLIENT_COMMANDS, ...rows], generated }
 }
 
-export const commandCatalog = (agent: readonly AgentCommand[]): Command[] => buildCatalog(agent).commands
+/** TAL-2201: client commands that open an owner-only surface; no client runs them for a session without owner authority. */
+const OWNER_COMMANDS = new Set(['terminal'])
+const OWNER_ONLY_MESSAGE = 'Only the server owner can open the terminal.'
+
+export const commandCatalog = (agent: readonly AgentCommand[], owner = true): Command[] => buildCatalog(agent).commands
+  .map((command) => owner || !OWNER_COMMANDS.has(command.name) ? command : { ...command, clients: [], unsupported_message: OWNER_ONLY_MESSAGE })
 
 /**
  * `command` with a generated separator alias (TAL-1577) replaced by its command's name, which is what the sidecar

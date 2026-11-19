@@ -608,7 +608,7 @@ export const toolsRouter = os.router({
   },
   commands: {
     list: os.commands.list.handler(({ context: { ctx } }) => run(async () => {
-      return { commands: commandCatalog(await agentCommands(ctx)) }
+      return { commands: commandCatalog(await agentCommands(ctx), await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))) }
     })),
     exec: os.commands.exec.handler(({ input, signal, context: { ctx } }) => run(async () => {
       const typed = str(input.command).trim()
@@ -788,7 +788,7 @@ export const toolsRouter = os.router({
     restart: os.gateway.restart.handler(({ context: { ctx } }) => run(() => gatewayAction(ctx, 'restart'))),
   },
   mcp: {
-    servers: os.mcp.servers.handler(({ context: { ctx } }) => run(() => ctx.deps.mcp.servers(home(ctx)) as Promise<never>)),
+    servers: os.mcp.servers.handler(({ context: { ctx } }) => run(async () => ctx.deps.mcp.servers(home(ctx), await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))) as Promise<never>)),
     tools: os.mcp.tools.handler(({ input, context: { ctx } }) => run(() => ctx.deps.mcp.tools(home(ctx), input.q) as Promise<never>)),
     action: os.mcp.action.handler(({ input, context: { ctx } }) => run(async () => {
       const { name, ...body } = input

@@ -37,7 +37,28 @@ export const OPERATOR_ONLY_PATHS = new Set([
   '/api/auth/passkey/register/options', '/api/auth/passkey/register', '/api/auth/passkey/delete', '/api/auth/passkeys',
   // TAL-259: recovery acts on every session on the server.
   '/api/session/recovery/audit', '/api/session/recovery/repair-safe',
+  // TAL-2201: these re-point a profile's model endpoint, write provider credentials, or make the server fetch a URL.
+  '/api/onboarding/setup', '/api/onboarding/probe', '/api/onboarding/complete', '/api/providers/self-hosted', '/api/providers/delete', '/api/dashboard/config',
 ])
+
+/**
+ * TAL-2201: every route under these prefixes is owner-only. The host terminal runs a shell outside the agent's approval
+ * cards and the profile's toolsets; a device-code sign-in saves a provider credential.
+ */
+export const OPERATOR_ONLY_PREFIXES = ['/api/terminal/', '/api/onboarding/oauth/', '/api/groups/']
+
+/**
+ * TAL-2201: reads stay open, every other method is owner-only. An MCP server's `command` runs on the host with the next
+ * chat; `POST /api/providers` writes a provider key. Non-owners propose MCP servers through `/api/proposals`.
+ */
+export const OPERATOR_ONLY_WRITES = { paths: ['/api/mcp/servers', '/api/providers'], prefixes: ['/api/mcp/servers/'] }
+
+/** Whether `method path` needs owner authority; `path` is the gate's normalized request path. */
+export function isOperatorOnly(method: string, path: string): boolean {
+  if (OPERATOR_ONLY_PATHS.has(path) || path === '/api/groups' || OPERATOR_ONLY_PREFIXES.some((prefix) => path.startsWith(prefix))) return true
+  if (method === 'GET' || method === 'HEAD') return false
+  return OPERATOR_ONLY_WRITES.paths.includes(path) || OPERATOR_ONLY_WRITES.prefixes.some((prefix) => path.startsWith(prefix))
+}
 
 // `/api/process-complete-ack` only answers 410: an old tab without a token learns the replacement instead of a 403.
 const CSRF_EXEMPT_PATHS = new Set(['/api/auth/login', '/api/auth/passkey/options', '/api/auth/passkey/login', '/api/csp-report', '/api/process-complete-ack'])
@@ -359,9 +380,8 @@ export async function checkAuth(ctx: RequestContext): Promise<boolean> {
   }
   const info = await ensureTrustedAuthSession(ctx)
   if (info) {
-    // Discussions can execute several managed profiles, including through streams and files.
-    const operatorOnly = OPERATOR_ONLY_PATHS.has(path) || path === '/api/groups' || path.startsWith('/api/groups/')
-    if (operatorOnly && !(await sessionCanManageServer(ctx, info))) {
+    // Discussions (`/api/groups`) can execute several managed profiles, including through streams and files.
+    if (isOperatorOnly(ctx.method, path) && !(await sessionCanManageServer(ctx, info))) {
       await ctx.rawJson(403, { error: 'Owner session required' })
       return false
     }

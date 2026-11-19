@@ -11,7 +11,10 @@ disabled), `false` for profile-bound SSO sessions, which cannot apply updates
 or perform other owner-only operations. When the operator configures
 `webui_oidc.owner_claim` / `owner_values`, a matching OIDC identity reports
 `true` and may perform owner operations even while bound to a profile; every
-other OIDC session reports `false`, including unbound ones.
+other OIDC session reports `false`, including unbound ones. The owner-only
+operations include the host terminal, MCP server writes, provider keys and
+endpoints, onboarding setup, and cron `script` / `no_agent`; `docs/CONTRACTS.md`
+("Owner-only routes") lists every route.
 
 ## Flow
 

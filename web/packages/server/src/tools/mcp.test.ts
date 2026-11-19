@@ -123,6 +123,10 @@ describe('MCP declared cost policy', () => {
     const service = new McpService({ config, sidecar: () => sidecar })
     const row = ((await service.servers('/profiles/a')).servers as Dict[])[0]!
     expect(row.cost_policy).toMatchObject({ source: 'native', can_edit: true, valid: true, spend_limit: 5, reload_required: true, runtime_state: 'unknown', provenance: 'declared_estimate' })
+    // TAL-2201: a session without owner authority reads the same policy, with no edit and no toggle.
+    const viewer = await service.servers('/profiles/a', false)
+    expect(viewer.toggle_supported).toBe(false)
+    expect((viewer.servers as Dict[])[0]).toMatchObject({ can_toggle: false, cost_policy: { can_edit: false, spend_limit: 5 } })
     const policy = row.cost_policy as { revision: string }
     await service.update('/profiles/a', 'paid', { config_revision: policy.revision, cost_policy: { spend_limit: 0, cost_unit: 'USD' } })
     expect((cfg.mcp_servers as Dict).paid).toEqual({ command: 'paid-mcp', trust: 'full', enabled: false, tool_costs: { search: { credits: [1, 3], note: 'estimate' } }, spend_limit: 0, cost_unit: 'USD', future: 'keep' })
@@ -487,6 +491,10 @@ describe('MCP events opt-in and subscription health (TAL-1510)', () => {
     const states = (r: Dict) => Object.fromEntries((r.servers as Dict[]).map((s): [string, unknown[]] => { const events = s.events as { state: string; counts: unknown[] }; return [String(s.name), [events.state, events.counts]] }))
     expect(states(a)).toEqual({ events: ['subscribed', [{ state: 'active', count: 2 }]], other: ['ready', []] })
     expect(states(b)).toEqual({ events: ['needs_public_url', []] })
+    // TAL-2201: a session without owner authority sees the same opt-ins, and edits none of them.
+    const edit = (r: Dict) => (r.servers as Dict[]).map((s) => { const events = s.events as { can_edit: boolean; show_panel: boolean }; return [s.name, events.can_edit, events.show_panel] })
+    expect(edit(a)).toEqual([['events', true, true], ['other', true, true]])
+    expect(edit(await service.servers('/profiles/a', false))).toEqual([['events', false, true], ['other', false, true]])
   })
 
   it('edits only the events key through the existing update and never adds a public URL or listener', async () => {

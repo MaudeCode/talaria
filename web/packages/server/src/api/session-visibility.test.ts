@@ -84,13 +84,12 @@ describe('request-profile session visibility', () => {
     await s.deps.settings.save({ bot_name: 'Hermes' })
   })
 
+  // The `work` login is profile-bound, so `/api/terminal/*` answers it 403 at the gate first (TAL-2201, `auth/gate.test.ts`).
   it('a body session_id outside the request profile answers 404 on every contract route', async () => {
     for (const [path, body] of [
       ['/api/reasoning', { session_id: sid, effort: 'high' }],
       ['/api/reasoning', { session_id: sid, effort: '' }],
       ['/api/session/rename', { session_id: sid, title: 'x' }],
-      ['/api/terminal/start', { session_id: sid }],
-      ['/api/terminal/exec', { session_id: sid, mode: 'owner_command', target_key: 'foreign', command: 'pwd' }],
       ['/api/session/worktree/remove', { session_id: sid }],
       ['/api/chat/steer', { session_id: sid, message: 'hi' }],
     ] as const) {
@@ -103,13 +102,11 @@ describe('request-profile session visibility', () => {
     // A padded id is what a trimming handler would act on: it is checked as such, never waved through as "unsafe".
     for (const [path, body] of [
       ['/api/session/yolo', { session_id: ` ${sid}`, enabled: true }],
-      ['/api/terminal/start', { session_id: `${sid} ` }],
       ['/api/session/worktree/remove', { session_id: ` ${sid} ` }],
     ] as const) {
       const res = await post(s, work, path, body)
       expect(res.status, path).toBe(404)
     }
-    expect((await s.get(`/api/terminal/output?session_id=${encodeURIComponent(` ${sid}`)}`, { headers: work.headers })).status).toBe(404)
     expect((await post(s, work, '/api/session/rename', { session_id: 'not a session id', title: 'x' })).status).toBe(404)
   })
 

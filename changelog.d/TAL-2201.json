@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Only the server owner can use the Web terminal, change MCP servers, set up providers and their keys, run onboarding, or give a scheduled task a script; profile-bound and other non-owner logins no longer see those controls.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

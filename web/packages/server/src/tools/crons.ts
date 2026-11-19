@@ -27,7 +27,8 @@ export interface CronDeps {
   modelOptions?: (home: string) => Promise<(model: string | null, provider: string | null) => string | null>
   /** The existing room catalog, scoped to the requesting person's native grant. */
   groupCatalog?: (profile: string, offset: number) => Promise<GroupCatalog>
-  roomDeliveryAllowed?: () => Promise<boolean>
+  /** Whether the calling session has owner authority (`sessionCanManageServer`); absent means no. */
+  callerIsOwner?: () => Promise<boolean>
   /** Python `_RUNNING_CRON_JOBS`: job id → start time, read by the session list's `cron_running` stamp. */
   runningJobs?: Map<string, number>
   updateInProgress?: () => boolean
@@ -35,6 +36,8 @@ export interface CronDeps {
 
 const JOB_ID_RE = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$/
 const ROOM_DELIVERY_RE = /^room:\s*([A-Za-z0-9][A-Za-z0-9._:-]*)(?:@([A-Za-z0-9_-]+))?$/i
+/** TAL-2201: a job's `script` runs on the host and `no_agent` runs it without the agent, so only the owner sets either. */
+const OWNER_FIELDS = ['script', 'no_agent']
 const PASSTHROUGH_FIELDS = ['script', 'no_agent', 'context_from', 'reasoning_effort', 'timezone', 'catch_up', 'grace_minutes']
 interface StoredJob { home: string; profile: string; job: Dict; managed: boolean }
 /** What a probing list collects from each store: failing writes (TAL-810) and whether the Agent takes a per-job schedule policy (TAL-1820). */
@@ -419,7 +422,11 @@ export class CronService {
     const targetsRoom = jobs.some((job) => [job.deliver, job.failure_deliver].some((lane) =>
       (Array.isArray(lane) ? lane : [lane]).some((value) => /(?:^|,)[\s\u001c-\u001f\u0085]*room:/i.test(str(value))))
       || str((job.origin as Dict | null)?.platform).trim().toLowerCase() === 'room')
-    if (targetsRoom && !(await this.deps.roomDeliveryAllowed?.())) throw new HttpFailure(403, 'Owner session required for Group Chat delivery')
+    if (targetsRoom && !(await this.deps.callerIsOwner?.())) throw new HttpFailure(403, 'Owner session required for Group Chat delivery')
+  }
+
+  private async requireOwnerFields(body: Dict): Promise<void> {
+    if (OWNER_FIELDS.some((key) => key in body) && !(await this.deps.callerIsOwner?.())) throw new HttpFailure(403, 'Owner session required')
   }
 
   private async validateContext(home: string, fields: Dict): Promise<void> {
@@ -544,6 +551,7 @@ export class CronService {
 
   async create(home: string, body: Dict): Promise<Dict> {
     if (!('schedule' in body) || body.schedule === null || body.schedule === undefined) throw new HttpFailure(400, 'Missing required field(s): schedule')
+    await this.requireOwnerFields(body)
     if (!body.prompt && !body.script && !body.skills) throw new HttpFailure(400, 'Missing required field(s): prompt')
     const profile = await this.normalizeProfile(body.profile)
     const active = await this.profileForHome(home)
@@ -568,6 +576,7 @@ export class CronService {
   async update(home: string, body: Dict): Promise<Dict> {
     const jobId = str(body.job_id)
     if (!jobId) throw new HttpFailure(400, 'Missing required field(s): job_id')
+    await this.requireOwnerFields(body)
     const store = await this.resolveStore(home, jobId)
     const storedId = str(store.job.id)
     const pickerHome = home
@@ -725,7 +734,7 @@ export class CronService {
   /** Both picker choices and job labels use the catalog's redaction and manageable-room policy. */
   private async roomNames(profile: string): Promise<Map<string, string>> {
     const names = new Map<string, string>()
-    if (!this.deps.groupCatalog || !(await this.deps.roomDeliveryAllowed?.())) return names
+    if (!this.deps.groupCatalog || !(await this.deps.callerIsOwner?.())) return names
     let offset = 0
     try {
       for (;;) {
