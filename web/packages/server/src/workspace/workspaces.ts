@@ -478,24 +478,28 @@ export class WorkspaceRegistry {
     return !!this.deps.stateDir && isWithin(resolvePathLikePython(this.deps.stateDir, this.home), resolvePathLikePython(path, this.home))
   }
 
+  /**
+   * TAL-2200: a resolved path a non-owner may never work in or read through — one containing `$HOME`, or overlapping
+   * Hermes home, Web state or `~/.ssh`. Workspace authority and non-owner escape grants (TAL-2586) both use it.
+   */
+  protectedFromNonOwner(path: string): boolean {
+    const home = this.homePath()
+    const roots = [this.deps.hermesHome, this.deps.stateDir, resolve(home, '.ssh')]
+      .filter((root): root is string => !!root)
+      .map((root) => resolvePathLikePython(root, this.home))
+    return isWithin(home, path) || roots.some((root) => isWithin(path, root) || isWithin(root, path))
+  }
+
   private async assertWorkspaceAuthority(candidate: string, profile: string | null, serverOwner: boolean): Promise<void> {
     if (this.isInWebState(candidate)) throw this.outside(candidate)
     if (serverOwner) return
-
-    const home = this.homePath()
-    const protectedRoots = [this.deps.hermesHome, this.deps.stateDir]
-      .filter((path): path is string => !!path)
-      .map((path) => resolvePathLikePython(path, this.home))
-    protectedRoots.push(resolvePathLikePython(resolve(home, '.ssh'), this.home))
-    const protectedWorkspace = (path: string): boolean =>
-      isWithin(home, path) || protectedRoots.some((root) => isWithin(path, root) || isWithin(root, path))
-    if (protectedWorkspace(candidate)) throw this.outside(candidate)
+    if (this.protectedFromNonOwner(candidate)) throw this.outside(candidate)
 
     const saved = await this.entries(profile)
     const roots = [this.deps.defaultWorkspace(), this.profileConfigDefaultWorkspace(profile), ...saved.map((entry) => entry.path)]
     if (!roots.some((path) => {
       const root = this.resolvePath(path, profile)
-      return !protectedWorkspace(root) && isWithin(candidate, root)
+      return !this.protectedFromNonOwner(root) && isWithin(candidate, root)
     })) throw this.outside(candidate)
   }
 

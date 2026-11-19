@@ -66,6 +66,8 @@ export function parseSseChunk(buffer: string): { frames: SseFrame[]; rest: strin
 export interface BootOptions {
   env?: Env
   now?: () => number
+  /** The home directory the server's workspace rules see (TAL-2586), in place of the real one. */
+  home?: string
   storage?: import('../runtime.js').CreateDepsOptions['storage']
   deps?: (deps: AppDeps) => void
   sidecar?: SidecarLike | null
@@ -118,7 +120,7 @@ export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer
     ...opts.env,
   }
   const postgresSchema = env.TALARIA_STORAGE === 'postgres' ? usePostgres(env) : null
-  const deps = await createDeps({ ...(opts.storage ? { storage: opts.storage } : {}), env, webRoot: WEB_ROOT, log: (line) => logs.push(line), version: 'web-v0.0.0-test', ...(opts.now ? { now: opts.now } : {}), ...(opts.sidecar !== undefined ? { sidecar: opts.sidecar } : {}), ...(opts.gatewayPollMs !== undefined ? { gatewayPollMs: opts.gatewayPollMs } : {}) })
+  const deps = await createDeps({ ...(opts.storage ? { storage: opts.storage } : {}), env, webRoot: WEB_ROOT, log: (line) => logs.push(line), version: 'web-v0.0.0-test', ...(opts.now ? { now: opts.now } : {}), ...(opts.home ? { home: opts.home } : {}), ...(opts.sidecar !== undefined ? { sidecar: opts.sidecar } : {}), ...(opts.gatewayPollMs !== undefined ? { gatewayPollMs: opts.gatewayPollMs } : {}) })
   opts.deps?.(deps)
   const running = await startServer(createApp(deps), deps.config, { log: (line) => logs.push(line), signals: opts.signals ?? false, drain: opts.drain ?? TEST_DRAIN })
   const base = `http://127.0.0.1:${running.port}`
