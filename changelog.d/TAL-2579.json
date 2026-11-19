@@ -1,0 +1,1 @@
+{"skip":"CI only: leaves CPU headroom for Sidecar compatibility tests that start real Agent owners and workers."}

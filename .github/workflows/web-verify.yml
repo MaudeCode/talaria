@@ -207,7 +207,8 @@ jobs:
           RELEASE: ${{ matrix.release }}
           SHARD: ${{ matrix.shard }}
           SHARDS: ${{ needs.agent-releases.outputs.shard-count }}
-          TALARIA_SIDECAR_WORKERS: '4'
+          # Compatibility workers each launch Agent owners and managed workers. Leave CPU for those children.
+          TALARIA_SIDECAR_WORKERS: '2'
           # Read-only, for the Agent release API's published-release check.
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/check-agent-compatibility.py --skip-docker --release "$RELEASE" --shard "$SHARD/$SHARDS" --receipt "$RUNNER_TEMP/agent-compatibility/$RELEASE.shard-$SHARD.json"

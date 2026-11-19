@@ -340,7 +340,7 @@ CI_PARTS = {
 
 
 def workflow_parts(text):
-    """ci.yml's top-level keys, its jobs and each job's outputs as text. Column-0 comments are left out: YAML has no
+    """A workflow's top-level keys, its jobs and each job's outputs as text. Column-0 comments are left out: YAML has no
     other column-0 line starting with #, since a block scalar's content is indented."""
     parts, part, job = {}, None, None
     for line in text.splitlines():
@@ -358,21 +358,30 @@ def workflow_parts(text):
     return {part: "\n".join(lines).rstrip() for part, lines in parts.items()}
 
 
+WORKFLOW_PARTS = {
+    ".github/workflows/ci.yml": CI_PARTS,
+    ".github/workflows/web-verify.yml": {
+        ("job", "sidecar"): {"web_sidecar"},
+    },
+}
+
+
 def workflow_overrides(base, head, paths):
-    path = ".github/workflows/ci.yml"
-    if path not in paths:
-        return {}
-    try:
-        before = workflow_parts(git("show", f"{base}:{path}").decode())
-        after = workflow_parts(git("show", f"{head}:{path}").decode() if head else Path(path).read_text())
-    except (OSError, subprocess.CalledProcessError):
-        return {}
-    # A removed job stops running and nothing else: a job that needed it changes its own part, routed as that part.
-    removed = {part for part in before.keys() - after.keys() if part[0] in ("job", "outputs")}
-    changed = {part for part in before.keys() | after.keys() if before.get(part) != after.get(part)} - removed
-    if before.keys() - removed != after.keys() or not changed <= CI_PARTS.keys():
-        return {}
-    return {path: set().union({"tooling"}, *(CI_PARTS[part] for part in changed))}
+    overrides = {}
+    for path, routes in WORKFLOW_PARTS.items():
+        if path not in paths:
+            continue
+        try:
+            before = workflow_parts(git("show", f"{base}:{path}").decode())
+            after = workflow_parts(git("show", f"{head}:{path}").decode() if head else Path(path).read_text())
+        except (OSError, subprocess.CalledProcessError):
+            continue
+        # A removed job stops running. A job that needed it changes its own part.
+        removed = {part for part in before.keys() - after.keys() if part[0] in ("job", "outputs")}
+        changed = {part for part in before.keys() | after.keys() if before.get(part) != after.get(part)} - removed
+        if before.keys() - removed == after.keys() and changed <= routes.keys():
+            overrides[path] = set().union({"tooling"}, *(routes[part] for part in changed))
+    return overrides
 
 
 def check_diff(base, head, merge_base=False):
