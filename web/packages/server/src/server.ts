@@ -1,6 +1,6 @@
 /**
  * Listener lifecycle (Python `server.py` main): port exclusivity probe, HTTP or
- * TLS 1.2+ server with an HTTP fallback, keep-alive tuning, and orderly
+ * TLS 1.2+ server (fail-closed, TAL-2222), keep-alive tuning, and orderly
  * SIGTERM/SIGINT/SIGHUP shutdown.
  */
 import { createServer as createHttpServer, type Server } from 'node:http'
@@ -9,7 +9,7 @@ import { connect } from 'node:net'
 import { readFileSync } from 'node:fs'
 import type { App } from './app.js'
 import type { ServerConfig } from './config.js'
-import { fixCredentialPermissions, refuseUnauthenticatedBind, warnForwardedForWithoutProxy, warnTrustedHeaderWithoutProxy } from './startup.js'
+import { fixCredentialPermissions, refuseUnauthenticatedBind, StartupConfigError, warnForwardedForWithoutProxy, warnTrustedHeaderWithoutProxy } from './startup.js'
 import { stopStateDbWorker } from './sessions/state-db.js'
 import { closeTranscribeStreams } from './api/transcribe-stream.js'
 import { releaseDisplaySettings } from './sessions/display-settings.js'
@@ -65,14 +65,19 @@ export async function startServer(app: App, config: ServerConfig, opts: StartSer
   let server: Server
   const listener = (req: Parameters<App['handler']>[0], res: Parameters<App['handler']>[1]) => { void app.handler(req, res) }
   if (config.tlsCert && config.tlsKey) {
-    try {
-      server = createHttpsServer({ cert: readFileSync(config.tlsCert), key: readFileSync(config.tlsKey), minVersion: 'TLSv1.2', connectionsCheckingInterval: CONNECTIONS_CHECKING_INTERVAL_MS }, listener)
-      scheme = 'https'
-      log(`  TLS enabled: cert=${config.tlsCert}, key=${config.tlsKey}`)
-    } catch (error) {
-      log(`[!!] WARNING: TLS setup failed (${String(error)}), falling back to HTTP`)
-      server = createHttpServer({ connectionsCheckingInterval: CONNECTIONS_CHECKING_INTERVAL_MS }, listener)
+    // TAL-2222: a TLS pair that does not load stops startup; a plain-HTTP fallback would send passwords and session
+    // cookies in clear text. Errors name the setting and path, never file contents (Node and OpenSSL messages carry none).
+    const refuse = (what: string, error: unknown): never => {
+      throw new StartupConfigError(`Refusing to start: ${what} (${(error as Error).message}). Fix the file, or unset both TALARIA_WEB_TLS_CERT and TALARIA_WEB_TLS_KEY to serve plain HTTP.`)
     }
+    const read = (name: string, path: string): Buffer => { try { return readFileSync(path) } catch (error) { return refuse(`${name} ${path} cannot be read`, error) } }
+    const cert = read('TALARIA_WEB_TLS_CERT', config.tlsCert)
+    const key = read('TALARIA_WEB_TLS_KEY', config.tlsKey)
+    try {
+      server = createHttpsServer({ cert, key, minVersion: 'TLSv1.2', connectionsCheckingInterval: CONNECTIONS_CHECKING_INTERVAL_MS }, listener)
+    } catch (error) { return refuse(`the TLS certificate ${config.tlsCert} and key ${config.tlsKey} do not load as a pair`, error) }
+    scheme = 'https'
+    log(`  TLS enabled: cert=${config.tlsCert}, key=${config.tlsKey}`)
   } else {
     server = createHttpServer({ connectionsCheckingInterval: CONNECTIONS_CHECKING_INTERVAL_MS }, listener)
   }

@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadConfig, migrateLegacyWebEnv, platformDefaultHermesHome, type Env } from './config.js'
 import { loadStartupEnv } from './cli/dotenv.js'
+import { CONFIG_EXIT_CODE } from './cli/supervise.js'
 
 let home: string
 beforeEach(() => { home = mkdtempSync(resolve(tmpdir(), 'talaria-config-')) })
@@ -87,6 +88,16 @@ it('the standalone health probe honors legacy TLS settings in an independent pro
   expect(result.status, result.stderr).toBe(0)
   expect(JSON.parse(result.stdout)).toEqual({ ok: true })
   expect(result.stderr.match(/\[webui\] WARNING:/g)).toHaveLength(1)
+})
+
+it('rejects a partial direct TLS pair, naming the missing variable without echoing the configured path (TAL-2222)', () => {
+  const path = resolve(home, 'synthetic-tls.pem')
+  const advice = 'Set both to serve HTTPS directly, or neither to serve plain HTTP.'
+  const refusal = (env: Env): unknown => { try { return loadConfig({ home, webRoot: home, env }) } catch (error) { return error } }
+  // The whole message is matched, so it carries no configured value. Exit code 78 keeps a self-update from rolling back
+  // to a release that served plain HTTP for this configuration.
+  expect(refusal({ TALARIA_WEB_TLS_CERT: path })).toMatchObject({ exitCode: CONFIG_EXIT_CODE, message: `TALARIA_WEB_TLS_CERT is set but TALARIA_WEB_TLS_KEY is not. ${advice}` })
+  expect(refusal({ TALARIA_WEB_TLS_KEY: path, TALARIA_WEB_TLS_CERT: ' ' })).toMatchObject({ exitCode: CONFIG_EXIT_CODE, message: `TALARIA_WEB_TLS_KEY is set but TALARIA_WEB_TLS_CERT is not. ${advice}` })
 })
 
 it('selects JSON session storage by default, and each backend explicitly', () => {

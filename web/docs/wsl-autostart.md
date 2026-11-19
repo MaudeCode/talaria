@@ -28,7 +28,7 @@ export TALARIA_WEB_LOG_FILE="$LOG"
 mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"
 note() { printf '[%s] %s\n' "$(date '+%F %T')" "$*" >>"$LOG_DIR/autostart.log"; }
 probe() { curl -fsSk --max-time 3 "$1://127.0.0.1:$PORT/health" >/dev/null 2>&1; }
-# With TLS configured, try HTTPS first; the server falls back to HTTP when the cert or key cannot load.
+# With TLS configured, try HTTPS first, then HTTP.
 healthy() {
   if [[ -n "${TALARIA_WEB_TLS_CERT:-}" && -n "${TALARIA_WEB_TLS_KEY:-}" ]] && probe https; then return 0; fi
   probe http
@@ -55,7 +55,7 @@ It honours these variables:
 | `TALARIA_WEB_HOST` | `127.0.0.1` | Bind address passed to `talaria-web` |
 | `TALARIA_WEB_PORT` | `8787` | Server and health-check port |
 | `TALARIA_WEB_LOG_DIR` | `$HOME/.hermes/webui/logs` | `autostart.log`, `talaria-web.log`, and the pid file |
-| `TALARIA_WEB_TLS_CERT`, `TALARIA_WEB_TLS_KEY` | unset | When both are set, the health check tries HTTPS, then HTTP (the server's fallback when the cert or key cannot load) |
+| `TALARIA_WEB_TLS_CERT`, `TALARIA_WEB_TLS_KEY` | unset | When both are set, the health check tries HTTPS, then HTTP. The server itself never falls back to HTTP: a certificate or key that cannot load stops it |
 
 Run it once by hand to check it:
 

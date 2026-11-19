@@ -73,6 +73,8 @@ export interface BootOptions {
   signals?: boolean
   /** TAL-1628: the local-run drain budget `close` uses; a drain test passes its own. */
   drain?: import('../server.js').StartServerOptions['drain']
+  /** Collects the server's log lines, so a test can read them when startup rejects. */
+  logs?: string[]
 }
 
 /**
@@ -95,7 +97,7 @@ function usePostgres(env: Env): string {
 
 export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer> {
   const state = mkdtempSync(join(tmpdir(), 'talaria-server-test-'))
-  const logs: string[] = []
+  const logs = opts.logs ?? []
   const env: Env = {
     PATH: process.env.PATH,
     HOME: process.env.HOME,
