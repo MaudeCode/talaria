@@ -617,6 +617,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
             && ProcessInfo.processInfo.arguments.contains("--ui-test-hold-anchor-scene")
         let holdsCancel = url.path == "/api/chat/cancel"
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdChatCancelArgument)
+        let holdsRelayRevocation = url.path == "/v1/publisher-keys"
+            && ProcessInfo.processInfo.arguments.contains("--ui-test-hold-relay-revocation")
         let holdsSessionRemoval = Self.sessionRemovalPaths.contains(url.path)
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdSessionRemovalArgument)
         let holdsPanel = Self.isFullWidthPanelLoad(url) && Self.panelScenario == UITestFixtureEnvironment.panelLoadingArgument
@@ -631,7 +633,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 $0.contains(URLQueryItem(name: "session_id", value: Self.forkSessionID)) && !$0.contains(URLQueryItem(name: "messages", value: "0"))
             } == true
         if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsUpload || holdsSteer || holdsStart || holdsCancel || holdsPanel || holdsSessionRemoval
-            || holdsAnchorScene || holdsDeepLinkedFork || holdsForkTranscript {
+            || holdsAnchorScene || holdsDeepLinkedFork || holdsForkTranscript || holdsRelayRevocation {
             UITestFixtureHold.shared.hold(request: request) { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
@@ -755,11 +757,23 @@ final class UITestFixtureURLProtocol: URLProtocol {
         }
     }
 
+    private static let relayKeysRevoked = OSAllocatedUnfairLock(initialState: false)
+
     private static let compressionStartedAt = Date().timeIntervalSince1970 - 65
 
     private static func responseData(for request: URLRequest) -> Data {
         guard let url = request.url else { return json([:]) }
         switch url.path {
+        case "/v1/devices/fixture-device/publisher-subscriptions":
+            let revoked = relayKeysRevoked.withLock { $0 }
+            let publishers: [[String: Any]] = revoked ? [] : [[
+                "publisherId": UITestFixtureEnvironment.serverURL.absoluteString,
+                "label": "Fixture Server", "subscribed": true, "canRevokeKeys": true,
+            ]]
+            return json(["publishers": publishers])
+        case "/v1/publisher-keys" where request.httpMethod == "DELETE":
+            relayKeysRevoked.withLock { $0 = true }
+            return json(["ok": true])
         case "/health":
             return json(["status": "ok"])
         case "/api/auth/status" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.personIsolationArgument):

@@ -5,6 +5,7 @@ import Foundation
 /// The App's `UITestFixtureEnvironment` builds the fixture itself.
 public enum UITestFixtureLaunch {
     public static let launchArgument = "--ui-test-fixture"
+    public static let relayRecoveryArgument = "--ui-test-relay-recovery"
     public static let serverURL = URL(string: "https://ui-test.talaria.invalid")!
 }
 #endif

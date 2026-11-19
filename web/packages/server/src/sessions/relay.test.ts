@@ -421,6 +421,35 @@ describe('Talaria relay pairing and publishing', () => {
     expect((await loadRelayConfig(new JsonDocuments(s.state)))!.profiles.default).toEqual(config.profiles.default)
   })
 
+  it('signs owner re-registration with the stored key after Relay refuses enrollment', async () => {
+    await paired()
+    const originalKey = relay.publicKey
+    s.deps.fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (url.endsWith('/v1/pairings/profile/redeem')) return Promise.resolve(new Response(null, { status: 401 }))
+      return relay.fetch(input, init)
+    }
+    const before = relay.calls.length
+    const body = { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'recovery' }
+    await expect(s.deps.relay.pair(body, 'default', false)).rejects.toMatchObject({ status: 409 })
+    expect(relay.calls).toHaveLength(before)
+    await expect(s.deps.relay.pair(body, 'default', true)).resolves.toEqual({ ok: true, publisher_id: 'https://pub.example' })
+    verifySigned({ ...relay, publicKey: originalKey }, relay.calls[before]!, '/v1/pairings/publisher/redeem')
+  })
+
+  it('registers with a fresh invitation when the owner lost the local private key', async () => {
+    await paired()
+    const before = (await loadRelayConfig(new JsonDocuments(s.state)))!
+    rmSync(before.private_key_path)
+    const calls = relay.calls.length
+    const body = { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'recovery' }
+    await expect(s.deps.relay.pair(body, 'default', true)).resolves.toEqual({ ok: true, publisher_id: 'https://pub.example' })
+    expect(relay.calls[calls]).toMatchObject({
+      url: RELAY + '/v1/pairings/publisher/redeem', body: { invitation: 'recovery' },
+    })
+    expect(relay.calls[calls]!.headers['x-talaria-key-id']).toBeUndefined()
+  })
+
   it('surfaces relay rejections as 409/502 without persisting a broken registration', async () => {
     await paired()
     relay.snapshotStatus = 503

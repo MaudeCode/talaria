@@ -2,10 +2,12 @@ import { v } from "convex/values";
 
 import { internal } from "./_generated/api";
 import { internalMutation, internalQuery } from "./_generated/server";
+import { authorizePublisherMutation, publisherKeyRevokedAt } from "./publishers";
 
 export const createPublisherInvitation = internalMutation({
   args: {
     userId: v.string(),
+    publisherId: v.string(),
     tokenHash: v.string(),
     expiresAt: v.number(),
     now: v.number(),
@@ -19,6 +21,7 @@ export const createPublisherInvitation = internalMutation({
     if (!user || user.disabledAt !== undefined) return { ok: false };
     await ctx.db.insert("publisherInvitations", {
       userId: args.userId,
+      publisherId: args.publisherId,
       tokenHash: args.tokenHash,
       expiresAt: args.expiresAt,
       createdAt: args.now,
@@ -35,6 +38,13 @@ export const redeemPublisherInvitation = internalMutation({
     keyId: v.string(),
     label: v.string(),
     publicKey: v.string(),
+    authorization: v.optional(v.object({
+      publisherOwnerUserId: v.string(),
+      keyId: v.string(),
+      nonce: v.string(),
+      nonceExpiresAt: v.number(),
+      receivedAt: v.number(),
+    })),
     now: v.number(),
   },
   returns: v.union(
@@ -54,7 +64,9 @@ export const redeemPublisherInvitation = internalMutation({
       .query("publisherInvitations")
       .withIndex("by_token_hash", (query) => query.eq("tokenHash", args.tokenHash))
       .unique();
-    if (!invitation) return { ok: false as const, reason: "invalid_invitation" };
+    if (invitation?.publisherId !== args.publisherId) {
+      return { ok: false as const, reason: "invalid_invitation" };
+    }
     if (invitation.consumedAt !== undefined || invitation.expiresAt <= args.now) {
       return { ok: false as const, reason: "expired_invitation" };
     }
@@ -76,7 +88,16 @@ export const redeemPublisherInvitation = internalMutation({
           query.eq("userId", invitation.userId).eq("publisherId", args.publisherId),
         ).unique(),
     ]);
-    if (publisher && publisher.ownerUserId !== invitation.userId) {
+    if (publisher?.keysRevokedAt !== undefined && invitation.createdAt <= publisher.keysRevokedAt) {
+      return { ok: false as const, reason: "invalid_invitation" };
+    }
+    const currentKey = await ctx.db.query("publisherKeys")
+      .withIndex("by_owner_origin_revocation_and_creation", (query) =>
+        query.eq("version", 2).eq("ownerUserId", invitation.userId).eq("publisherId", args.publisherId)
+          .eq("revokedAt", undefined).gt("createdAt", publisher?.keysRevokedAt ?? -1),
+      )
+      .first();
+    if (currentKey && args.authorization?.publisherOwnerUserId !== invitation.userId) {
       return { ok: false as const, reason: "publisher_already_registered" };
     }
     const preservesGrant = ownerGrant?.publisherOwnerUserId === invitation.userId;
@@ -86,6 +107,15 @@ export const redeemPublisherInvitation = internalMutation({
         query.eq("version", 2).eq("userId", invitation.userId).eq("publisherId", args.publisherId),
       ).take(501);
     if (states.length > 500) return { ok: false as const, reason: "too_many_states" };
+    if (currentKey && args.authorization) {
+      const authorized = await authorizePublisherMutation(ctx, {
+        ...args.authorization,
+        publisherId: args.publisherId,
+      });
+      if (!authorized || authorized === "replay") {
+        return { ok: false as const, reason: "publisher_already_registered" };
+      }
+    }
     if (publisher) {
       await ctx.db.patch(publisher._id, { label: args.label, enabled: true, updatedAt: args.now });
     } else {
@@ -143,6 +173,7 @@ export const redeemProfileInvitation = internalMutation({
   args: {
     tokenHash: v.string(),
     publisherOwnerUserId: v.string(),
+    publisherKeyId: v.optional(v.string()),
     publisherId: v.string(),
     profileId: v.string(),
     now: v.number(),
@@ -162,7 +193,9 @@ export const redeemProfileInvitation = internalMutation({
       .query("publisherInvitations")
       .withIndex("by_token_hash", (query) => query.eq("tokenHash", args.tokenHash))
       .unique();
-    if (!invitation) return { ok: false as const, reason: "invalid_invitation" };
+    if (invitation?.publisherId !== args.publisherId) {
+      return { ok: false as const, reason: "invalid_invitation" };
+    }
     if (invitation.consumedAt !== undefined || invitation.expiresAt <= args.now) {
       return { ok: false as const, reason: "expired_invitation" };
     }
@@ -186,6 +219,16 @@ export const redeemProfileInvitation = internalMutation({
     ]);
     if (!user || user.disabledAt !== undefined) return { ok: false as const, reason: "unauthorized" };
     if (!publisher?.enabled) return { ok: false as const, reason: "publisher_not_registered" };
+    const { publisherKeyId } = args;
+    if (publisherKeyId !== undefined) {
+      const key = await ctx.db.query("publisherKeys")
+        .withIndex("by_version_and_key_id", (query) => query.eq("version", 2).eq("keyId", publisherKeyId))
+        .unique();
+      if (!key || key.ownerUserId !== args.publisherOwnerUserId || key.publisherId !== args.publisherId
+        || publisherKeyRevokedAt(publisher, key) !== undefined) {
+        return { ok: false as const, reason: "unauthorized" };
+      }
+    }
 
     if (grant) {
       if (
@@ -269,7 +312,7 @@ export const getPublisherKey = internalQuery({
       label: publisher.label,
       enabled: publisher.enabled,
       publicKey: key.publicKey,
-      revokedAt: key.revokedAt,
+      revokedAt: publisherKeyRevokedAt(publisher, key),
     };
   },
 });

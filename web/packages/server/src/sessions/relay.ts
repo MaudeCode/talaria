@@ -781,7 +781,7 @@ export class RelayService implements NotificationChannel {
     return run
   }
 
-  private async relayPost(url: string, body: string, headers: Record<string, string>, reject: string, failure?: (response: Response | null) => RelayPairingError, acceptedStatus?: number): Promise<Record<string, unknown>> {
+  private async relayPost(url: string, body: string, headers: Record<string, string>, reject: string, failure?: (response: Response | null) => RelayPairingError | undefined, acceptedStatus?: number): Promise<Record<string, unknown>> {
     let res: Response
     try {
       res = await this.deps.fetch()(url, { method: 'POST', body, headers, redirect: 'error', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
@@ -872,24 +872,42 @@ export class RelayService implements NotificationChannel {
       throw new RelayPairingError('Hermes profile is unavailable', 403)
     }
     const existing = (await loadRelayConfig(this.deps.documents))
-    if (existing) {
-      if (existing.url !== relayUrl || existing.publisher_id !== publisherId) throw new RelayPairingError('This Hermes server is registered to a different relay', 409)
+    if (existing && (existing.url !== relayUrl || existing.publisher_id !== publisherId)) {
+      throw new RelayPairingError('This Hermes server is registered to a different relay', 409)
+    }
+    const key = existing ? await loadKey(this.deps.documents, existing).catch((error: unknown) => {
+      if (!operator) throw error
+      return undefined
+    }) : undefined
+    if (existing && key) {
       const known = existing.profiles[canonical]
       const profileId = known?.identity === identity ? known.profile_id : `prf_${randomUUID().replace(/-/g, '')}`
       const requestBody = JSON.stringify({ invitation, publisherId, profileId })
       const path = '/v1/pairings/profile/redeem'
-      const payload = await this.relayPost(existing.url + path, requestBody, signedHeaders((await loadKey(this.deps.documents, existing)), existing.key_id, 'POST', path, requestBody, this.deps.now), 'Talaria Relay rejected the profile enrollment')
-      if (payload.protocolVersion !== 2 || payload.publisherId !== publisherId || payload.profileId !== profileId) throw new RelayPairingError('Talaria Relay returned an invalid response', 502)
-      const config: RelayConfig = { ...existing, profiles: { ...existing.profiles, [canonical]: { identity, profile_id: profileId } } }
-      await saveRelayConfig(this.deps.documents, config)
-      await this.configure(config, { profileId, identity })
-      return { ok: true, publisher_id: publisherId }
+      const rejectedEnrollment = new RelayPairingError('Talaria Relay rejected the profile enrollment (HTTP 401)', 409)
+      const payload = await this.relayPost(
+        existing.url + path, requestBody, signedHeaders(key, existing.key_id, 'POST', path, requestBody, this.deps.now),
+        'Talaria Relay rejected the profile enrollment', (response) => response?.status === 401 ? rejectedEnrollment : undefined,
+      ).catch((error: unknown) => {
+        if (error === rejectedEnrollment && operator) return null
+        throw error
+      })
+      if (payload) {
+        if (payload.protocolVersion !== 2 || payload.publisherId !== publisherId || payload.profileId !== profileId) throw new RelayPairingError('Talaria Relay returned an invalid response', 502)
+        const config: RelayConfig = { ...existing, profiles: { ...existing.profiles, [canonical]: { identity, profile_id: profileId } } }
+        await saveRelayConfig(this.deps.documents, config)
+        await this.configure(config, { profileId, identity })
+        return { ok: true, publisher_id: publisherId }
+      }
     }
     if (!operator) throw new RelayPairingError('An owner must register this Hermes server with Talaria Relay before profile enrollment', 409)
     const { privateKey, publicKey } = generateKeyPairSync('ed25519')
     const profileId = `prf_${randomUUID().replace(/-/g, '')}`
     const publicRaw = Buffer.from((publicKey.export({ format: 'jwk' }) as { x: string }).x, 'base64url')
-    const payload = await this.relayPost(relayUrl + '/v1/pairings/publisher/redeem', JSON.stringify({ invitation, publisherId, profileId, label, publicKey: b64u(publicRaw) }), { 'Content-Type': 'application/json' }, 'Talaria Relay rejected server registration')
+    const path = '/v1/pairings/publisher/redeem'
+    const requestBody = JSON.stringify({ invitation, publisherId, profileId, label, publicKey: b64u(publicRaw) })
+    const headers = existing && key ? signedHeaders(key, existing.key_id, 'POST', path, requestBody, this.deps.now) : { 'Content-Type': 'application/json' }
+    const payload = await this.relayPost(relayUrl + path, requestBody, headers, 'Talaria Relay rejected server registration')
     const keyId = payload.keyId
     const pairedPublisher = payload.publisherId
     const pairedProfile = payload.profileId
@@ -899,9 +917,10 @@ export class RelayService implements NotificationChannel {
     }
     let finalPublisher: string
     try { finalPublisher = validatedOrigin(pairedPublisher) } catch { throw new RelayPairingError('Talaria Relay returned an invalid response', 502) }
+    if (finalPublisher !== publisherId) throw new RelayPairingError('Talaria Relay returned an invalid response', 502)
     const keyDocument = createHash('sha256').update(keyId, 'utf8').digest('hex').slice(0, 16)
     await updateDocument(this.deps.documents, 'relay-keys', keyDocument, () => ({ value: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(), result: undefined }))
-    const config: RelayConfig = { url: relayUrl, publisher_id: finalPublisher, key_id: keyId, private_key_path: '', private_key_document: keyDocument, profiles: { [canonical]: { identity, profile_id: pairedProfile } } }
+    const config: RelayConfig = { url: relayUrl, publisher_id: finalPublisher, key_id: keyId, private_key_path: '', private_key_document: keyDocument, profiles: { ...existing?.profiles, [canonical]: { identity, profile_id: pairedProfile } } }
     await saveRelayConfig(this.deps.documents, config)
     await this.configure(config, { profileId: pairedProfile, identity })
     return { ok: true, publisher_id: finalPublisher }

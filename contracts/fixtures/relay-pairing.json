@@ -1,0 +1,20 @@
+{
+  "createInvitation": {
+    "publisherId": "https://hermes.example"
+  },
+  "invalidInvitation": {
+    "error": "invalid_invitation"
+  },
+  "publisherAlreadyRegistered": {
+    "error": "publisher_already_registered"
+  },
+  "ownerSubscription": {
+    "publisherId": "https://hermes.example",
+    "label": "Home",
+    "subscribed": false,
+    "canRevokeKeys": true
+  },
+  "publisherNotOwned": {
+    "error": "publisher_not_owned"
+  }
+}

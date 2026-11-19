@@ -38,7 +38,7 @@ FIXTURE_READERS = {
             "terminal-view.json", "vault-prompts.json", "web-native-work.json"},
     "relay": {"app-registration.json", "feedback-attachment-limits.json", "feedback-report.json",
               "feedback-report-agent.json", "notification-alerts.json", "publisher-session-started.json", "publisher-snapshot.json",
-              "relay-approval-alert.json", "relay-snapshot.json"},
+              "relay-approval-alert.json", "relay-pairing.json", "relay-snapshot.json"},
 }
 JOBS = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend", "web_sidecar"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
@@ -153,6 +153,8 @@ def path_suites(path):
     # Only Web's drift check reads the OpenAPI document; the contracts probe covers what the App decodes (TAL-1674).
     if path == "contracts/web-api.openapi.json":
         return {"web_server", "contracts"}
+    if path == "contracts/fixtures/relay-pairing.json":
+        return {"relay"}  # The Relay HTTP contract fixture is consumed by the Relay suite.
     if path.startswith("contracts/fixtures/"):
         name = path.removeprefix("contracts/fixtures/")
         return {"web_server", "web_frontend", "contracts"} | {suite for suite, names in FIXTURE_READERS.items() if name in names}
