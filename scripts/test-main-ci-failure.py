@@ -1075,7 +1075,8 @@ class GuideTests(unittest.TestCase):
         guide = " ".join(self.GUIDE.split())
         for required in (
                 "follow the defect loop in [testing.md](testing.md): name the test-audit defect rule it broke in the "
-                "PR body, and when no rule names the cause, add a rule to the shared test-audit skill alongside the fix",
+                "PR body, and write its rule in the shared test-audit skill alongside the fix, "
+                "even when an existing rule names the cause",
                 "(it failed intermittently, ran over its run-time budget or covered too much)",
                 "A product race the test rightly caught names no rule",
                 "Never retry, skip, loosen an assertion or raise a timeout", "never from a green retry",
