@@ -57,6 +57,8 @@ export async function kanbanCall<M extends Extract<SidecarMethodName, `kanban.${
   const allowed = await kanbanAssignees(ctx)
   if (method === 'kanban.create_task' && allowed !== null) {
     const { task } = params as SidecarParams<'kanban.create_task'>
+    // The allowed scope starts with the session's bound or active profile. Persist that assignment for callers that omit it.
+    if (task.assignee === undefined && allowed[0]) task.assignee = allowed[0]
     if (task.workspace_kind === 'dir' || task.workspace_kind === 'worktree' || task.workspace_path) {
       const raw = str(task.workspace_path).trim()
       if (!raw) throw new HttpFailure(400, 'workspace_path is required')

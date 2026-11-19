@@ -405,8 +405,10 @@ previous detail selection. The shared fixture is
 Kanban requests carry an RPC-only `allowed_assignees` value derived from the
 authenticated session. Owners and auth-off requests use `null`. Restricted
 requests can read tasks assigned to their accessible profiles and unassigned
-tasks. Restricted task writes require an allowed assignee. Manual dispatch
-and shared board management require owner authority.
+tasks. Restricted task writes require an allowed assignee. If a create request
+omits the assignee, the server assigns it to the session’s bound or active
+profile. Reassignment can send a payload-free event to invalidate scoped reads.
+Manual dispatch and shared board management require owner authority.
 
 ## Model favorites
 

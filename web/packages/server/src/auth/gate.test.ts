@@ -85,6 +85,24 @@ describe('owner-only routes (TAL-2201)', () => {
     ])
   })
 
+  it('supplies the bound profile when Kanban task creation omits an assignee', async () => {
+    sidecar.respond('kanban.create_task', () => ({
+      task: {
+        id: 'task', title: 'Synthetic task', status: 'todo', priority: 0,
+        claim_live: false, has_completion_evidence: false, agent_move_targets: null,
+      },
+      read_only: false,
+    }))
+    const after = sidecar.calls.length
+    const response = await server.get('/api/kanban/tasks', {
+      method: 'POST', headers: { ...sessions.bound, 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Synthetic task', status: 'todo' }),
+    })
+    expect(sidecar.calls.slice(after).find(call => call.method === 'kanban.create_task')?.params)
+      .toMatchObject({ task: { assignee: 'default' } })
+    await response.text()
+  })
+
   it('lists the terminal command for no client of a session without owner authority', async () => {
     const terminal = async (headers: Record<string, string>) => ((await (await server.get('/api/commands', { headers })).json()) as { commands: { name: string; clients: string[]; unsupported_message?: string }[] }).commands.find((c) => c.name === 'terminal')
     expect(await terminal(sessions.owner)).toMatchObject({ clients: ['web'] })

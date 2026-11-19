@@ -693,6 +693,9 @@ def events_payload(params: dict) -> dict:
         for row in rows:
             cursor = int(row["id"])
             if allowed is not None and not row["visible"]:
+                if row["kind"] == "assigned":
+                    # A prior viewer may still have the card cached. Refresh without disclosing its identity or new scope.
+                    events.append({"id": cursor, "task_id": None, "run_id": None, "kind": "invalidate", "payload": None, "created_at": None})
                 continue
             try:
                 payload = json.loads(row["payload"]) if row["payload"] else None
