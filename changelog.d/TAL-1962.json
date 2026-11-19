@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Background result lines in a chat now look like the other activity rows: muted labels, the same icons and a chevron that shows they open, with the full result underneath instead of in a box.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

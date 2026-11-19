@@ -93,14 +93,15 @@ export function agentsSummary(agents: BackgroundLink['agents']): string {
   return parts.join(' · ')
 }
 
-export function StatusIcon({ status }: { status: BackgroundTask['status'] | BackgroundReviewState }) {
-  if (status === 'waiting') return <Clock size={13} className="shrink-0 text-muted" aria-hidden="true" />
-  if (status === 'reviewing') return <LoaderCircle size={13} className="shrink-0 animate-spin motion-reduce:animate-none text-muted" aria-hidden="true" />
+/** `size`: 13 in the composer and on the Agents page; the transcript passes its rows' 14 (TAL-1962). */
+export function StatusIcon({ status, size = 13 }: { status: BackgroundTask['status'] | BackgroundReviewState; size?: number }) {
+  if (status === 'waiting') return <Clock size={size} className="shrink-0 text-muted" aria-hidden="true" />
+  if (status === 'reviewing') return <LoaderCircle size={size} className="shrink-0 animate-spin motion-reduce:animate-none text-muted" aria-hidden="true" />
   if (status === 'running') return <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" aria-hidden="true" />
-  if (status === 'completed' || status === 'reviewed') return <Check size={13} className="shrink-0 text-success" aria-hidden="true" />
-  if (status === 'unknown') return <CircleHelp size={13} className="shrink-0 text-muted" aria-hidden="true" />
-  if (status === 'cancelled') return <X size={13} className="shrink-0 text-muted" aria-hidden="true" />
-  return <AlertTriangle size={13} className="shrink-0 text-warning" aria-hidden="true" />
+  if (status === 'completed' || status === 'reviewed') return <Check size={size} className="shrink-0 text-success" aria-hidden="true" />
+  if (status === 'unknown') return <CircleHelp size={size} className="shrink-0 text-muted" aria-hidden="true" />
+  if (status === 'cancelled') return <X size={size} className="shrink-0 text-muted" aria-hidden="true" />
+  return <AlertTriangle size={size} className="shrink-0 text-warning" aria-hidden="true" />
 }
 
 /**

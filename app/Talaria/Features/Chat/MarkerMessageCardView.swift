@@ -11,7 +11,6 @@ struct MarkerMessageCardView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @Environment(\.chatOpenDecisionReview) private var openReview
     @ChatRetainedState("marker-expansion") private var isExpanded = false
 
@@ -41,18 +40,22 @@ struct MarkerMessageCardView: View {
         let body = (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
         VStack(alignment: .leading, spacing: isExpanded ? 6 : 0) {
-            if hasDetails || reviewID != nil {
-                Button {
-                    if let reviewID { openReview?(reviewID); return }
-                    chatDisclosureToggled()
-                    withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) { isExpanded.toggle() }
-                } label: { header }
-                .buttonStyle(.plain)
-                .accessibilityLabel(accessibilityTitle)
-                .accessibilityHint(body.isEmpty ? "" : isExpanded ? String(localized: "Double tap to collapse details.") : String(localized: "Double tap to expand details."))
-                .accessibilityIdentifier(activity == nil ? "transcript-marker" : "transcript-activity")
-            } else {
-                header.accessibilityElement(children: .ignore).accessibilityLabel(accessibilityTitle)
+            TranscriptDisclosureRow(
+                isExpanded: $isExpanded, isInteractive: hasDetails || reviewID != nil, showsChevron: hasDetails,
+                accessibilityLabel: accessibilityTitle, hintsExpansion: !body.isEmpty,
+                identifier: activity == nil ? "transcript-marker" : "transcript-activity",
+                tap: reviewID.map { id in { openReview?(id) } }
+            ) {
+                if activity != nil {
+                    SandalMark(height: 16, color: .secondary)
+                } else {
+                    Image(systemName: iconName).resizable().scaledToFit()
+                        .foregroundStyle(.secondary).frame(width: 16, height: 16)
+                }
+                Text(verbatim: title).font(AppFont.callout())
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                    .truncationMode(.tail)
+                    .foregroundStyle(activity == nil ? Color.primary : Color.secondary)
             }
             PendingSteerButtonsView(messageID: messageID)
 
@@ -70,27 +73,6 @@ struct MarkerMessageCardView: View {
         .contextMenu { PendingSteerButtonsView(messageID: messageID, inMenu: true) }
     }
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            if activity != nil {
-                SandalMark(height: 16, color: .secondary)
-            } else {
-                Image(systemName: iconName).resizable().scaledToFit()
-                    .foregroundStyle(.secondary).frame(width: 16, height: 16)
-            }
-            Text(verbatim: title).font(AppFont.callout())
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                .truncationMode(.tail)
-                .foregroundStyle(activity == nil ? Color.primary : Color.secondary)
-            Spacer(minLength: 4)
-            if hasDetails {
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary).rotationEffect(.degrees(isExpanded ? 90 : 0))
-            }
-        }
-        .frame(minHeight: 44).contentShape(Rectangle())
-    }
-
     private var iconName: String {
         switch kind {
         case .contextCompaction:
@@ -103,6 +85,52 @@ struct MarkerMessageCardView: View {
     }
 }
 
+/// The transcript's flat disclosure line (TAL-1962): `label` leads, a turning chevron trails, and the whole row is one
+/// plain button at least 44pt tall. Markers, branded activity and background results share it, so their chrome,
+/// motion and VoiceOver hint stay one. `tap` replaces the toggle (a decision review opens instead); a row with nothing
+/// to open is one static element with the same layout.
+struct TranscriptDisclosureRow<Label: View>: View {
+    @Binding var isExpanded: Bool
+    var isInteractive = true
+    var showsChevron = true
+    let accessibilityLabel: String
+    var hintsExpansion = true
+    let identifier: String
+    var tap: (() -> Void)?
+    @ViewBuilder let label: Label
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
+
+    var body: some View {
+        if isInteractive {
+            Button {
+                if let tap { tap(); return }
+                chatDisclosureToggled()
+                withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) { isExpanded.toggle() }
+            } label: { row }
+            .buttonStyle(.plain)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityHint(!hintsExpansion ? "" : isExpanded ? String(localized: "Double tap to collapse details.") : String(localized: "Double tap to expand details."))
+            .accessibilityIdentifier(identifier)
+        } else {
+            row.accessibilityElement(children: .ignore).accessibilityLabel(accessibilityLabel)
+        }
+    }
+
+    private var row: some View {
+        HStack(spacing: 8) {
+            label
+            Spacer(minLength: 4)
+            if showsChevron {
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary).rotationEffect(.degrees(isExpanded ? 90 : 0))
+            }
+        }
+        .frame(minHeight: 44).contentShape(Rectangle())
+    }
+}
+
 /// An automatic background wakeup (TAL-460): one quiet line per finished item, never the user's bubble. The Agent's
 /// reply follows as an ordinary message; tapping the lines shows the full notification.
 struct BackgroundUpdateLinesView: View {
@@ -110,7 +138,6 @@ struct BackgroundUpdateLinesView: View {
     let message: ChatMessage
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @ChatRetainedState("background-expansion") private var isExpanded = false
     @ChatRetainedState("background-body") private var showsFullBody = false
 
@@ -123,26 +150,11 @@ struct BackgroundUpdateLinesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Button {
-                chatDisclosureToggled()
-                withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
-                    isExpanded.toggle()
-                }
-            } label: {
+            TranscriptDisclosureRow(isExpanded: $isExpanded, accessibilityLabel: summaryAccessibilityLabel, identifier: "background-update-lines") {
                 summary
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(summaryAccessibilityLabel)
-            .accessibilityHint(isExpanded ? String(localized: "Double tap to collapse details.") : String(localized: "Double tap to expand details."))
-            .accessibilityIdentifier("background-update-lines")
-
             if isExpanded {
-                if message.talariaActivity != nil {
-                    detail.padding(.leading, 24).transition(.opacity)
-                } else {
-                    detail.padding(.horizontal, 10).padding(.vertical, 9)
-                        .accessorySurface(fallbackMaterial: .thinMaterial, cornerRadius: 10).transition(.opacity)
-                }
+                detail.padding(.leading, 24).transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -158,8 +170,6 @@ struct BackgroundUpdateLinesView: View {
                     BackgroundLineRow(line: line, parentReview: update.reviewState)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
         }
     }
 
@@ -172,7 +182,7 @@ struct BackgroundUpdateLinesView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(verbatim: bodyText)
                 .font(AppFont.caption())
-                .foregroundStyle(.primary)
+                .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if message.displayExcerpt != nil {
@@ -180,7 +190,8 @@ struct BackgroundUpdateLinesView: View {
                     showsFullBody.toggle()
                 }
                 .font(AppFont.caption())
-                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
             }
         }
     }
@@ -196,19 +207,21 @@ private struct BackgroundLineRow: View {
     let parentReview: BackgroundReviewState?
 
     var body: some View {
-        HStack(alignment: .center, spacing: 6) {
-            if line.reviewStateForDisplay == .reviewing {
-                ProgressView().controlSize(.mini)
-                    .accessibilityHidden(true)
-            } else {
-                Image(systemName: BackgroundWorkSheet.icon(line.reviewStateForDisplay))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(line.reviewStateForDisplay == .failed ? Color.orange : Color.secondary)
-                    .accessibilityHidden(true)
+        HStack(alignment: .center, spacing: 8) {
+            Group {
+                if line.reviewStateForDisplay == .reviewing {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: BackgroundWorkSheet.icon(line.reviewStateForDisplay))
+                        .font(.system(size: 14))
+                        .foregroundStyle(line.reviewStateForDisplay == .failed ? Color.orange : Color.secondary)
+                }
             }
+            .frame(width: 16, height: 16)
+            .accessibilityHidden(true)
             Text(verbatim: line.label)
-                .font(line.kind == .command ? AppFont.mono(style: .footnote) : AppFont.footnote())
-                .foregroundStyle(line.kind == .agent ? Color.primary : Color.secondary)
+                .font(line.kind == .command ? AppFont.mono(style: .callout) : AppFont.callout())
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }

@@ -156,8 +156,8 @@ function BackgroundLineRow({ line, parentReview }: { line: BackgroundLine; paren
   const description = reviewDescription(line, parentReview)
   return (
     <li className="flex items-center gap-2" aria-label={description} title={description}>
-      <StatusIcon status={lineReviewState(line)} />
-      <span className={cn('min-w-0 truncate', line.kind === 'agent' && 'text-text', line.kind === 'command' && 'font-mono')} title={line.label}>{line.label}</span>
+      <StatusIcon status={lineReviewState(line)} size={14} />
+      <span className={cn('min-w-0 truncate', line.kind === 'command' && 'font-mono')} title={line.label}>{line.label}</span>
     </li>
   )
 }
@@ -165,7 +165,7 @@ function BackgroundLineRow({ line, parentReview }: { line: BackgroundLine; paren
 /**
  * TAL-460: an automatic background wakeup the server marked `_background_update`, in its chronological place as one quiet
  * line per finished item, never as the user's own bubble. The Agent's reply follows as an ordinary assistant message;
- * the full notification (copyable) opens from the lines.
+ * the full notification (copyable) opens from the lines. TAL-1962: the lines are one marker-style disclosure.
  */
 export const BackgroundUpdateRow = memo(function BackgroundUpdateRow({ row }: { row: VisibleMessage }) {
   const update = row.message._background_update
@@ -185,18 +185,9 @@ export const BackgroundUpdateRow = memo(function BackgroundUpdateRow({ row }: { 
   if (row.message._talaria_activity) return <div className="msg-row" data-role="activity" data-origin={row.message._talaria_activity.origin} data-msg-idx={row.index} data-message-key={row.key}>
     <TranscriptActivityLine activity={row.message._talaria_activity} title={description} label={lines}>{body}</TranscriptActivityLine>
   </div>
-  return (
-    <div className="msg-row" data-role="background" data-msg-idx={row.index} data-message-key={row.key}>
-      <details className="background-update text-[13px] text-muted">
-        <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden" aria-label={description}>
-          {lines}
-        </summary>
-        <div className="mt-2 rounded-md border border-border bg-surface px-3 py-2">
-          {body}
-        </div>
-      </details>
-    </div>
-  )
+  return <div className="msg-row" data-role="background" data-msg-idx={row.index} data-message-key={row.key}>
+    <TranscriptActivityLine title={description} icon={null} label={lines}>{body}</TranscriptActivityLine>
+  </div>
 })
 
 /**
