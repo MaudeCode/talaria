@@ -2036,10 +2036,11 @@ export class SessionService {
     const candidate = body.workspace
     if (!candidate) {
       const ws = this.deps.workspaces
-      if (!serverOwner) return await ws.resolveTrusted(null, profile, false)
       const implicit = await ws.lastWorkspace(profile)
-      if (ws.profileSupportsLocalIo(profile) && ws.isInWebState(implicit)) return await ws.resolveTrusted(implicit, profile, true)
-      return null
+      if (!serverOwner || (ws.profileSupportsLocalIo(profile) && ws.isInWebState(implicit))) {
+        return await ws.resolveTrusted(implicit, profile, serverOwner)
+      }
+      return implicit
     }
     const value = str(candidate)
     if (body.workspace_inherited_from_prev_session !== true || !visiblePrevSessionId) return (await this.deps.workspaces.resolveTrusted(value, profile, serverOwner))

@@ -3,7 +3,8 @@
  * identities against one disposable server; each sees only their own sessions, an unowned (legacy) session reaches
  * only an owner, and nothing a client sends can name a different person.
  */
-import { dirname } from 'node:path'
+import { mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
 
@@ -81,6 +82,17 @@ describe('workspace authority from the request', () => {
     }
     await post(server, client, '/api/workspaces/add', { path: workspace })
     expect(add.mock.calls.some(([path, , serverOwner]) => path === workspace && !serverOwner)).toBe(true)
+  })
+
+  it('uses the last authorized workspace for an implicit new session', async () => {
+    const server = await boot(true)
+    const client = signIn(server, 'alice')
+    const last = join(server.deps.config.defaultWorkspace, 'last-selected')
+    mkdirSync(last)
+    await server.deps.workspaces.setLastWorkspace(last, 'default')
+    const response = await post(server, client, '/api/session/new', {})
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ session: { workspace: last } })
   })
 
   it('refuses protected file targets even when the workspace is trusted', async () => {
