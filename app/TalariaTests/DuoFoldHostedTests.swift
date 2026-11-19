@@ -712,6 +712,18 @@ final class ChatViewModelCacheTests: XCTestCase {
         XCTAssertEqual(cache.chat(for: session("a"), server: server) { viewModel("a") }.readingRowID, "row-a")
     }
 
+    /// A chat started from New Chat keeps its reading row for the sidebar row of the session it created.
+    func testANewChatsReadingRowReturnsWithItsCreatedSession() {
+        let cache = ChatViewModelCache()
+        let pending = cache.pendingChat(for: PendingNewChatRoute(), server: server) { provisional in
+            ChatViewModel(session: provisional, server: server)
+        }
+        pending.session = session("created")
+        pending.readingRowID = "row-created"
+        cache.keepOnly(sessionIDs: ["other"])
+        XCTAssertEqual(cache.chat(for: session("created"), server: server) { viewModel("created") }.readingRowID, "row-created")
+    }
+
     func testOnlyTheMostRecentReadingRowsStay() {
         let cache = ChatViewModelCache()
         for index in 0...ChatViewModelCache.bookmarkCapacity {

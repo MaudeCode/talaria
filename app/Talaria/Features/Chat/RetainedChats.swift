@@ -117,11 +117,14 @@ final class ChatViewModelCache {
         return chat
     }
 
-    /// Drops the matching chats, keeping where each reader was.
+    /// Drops the matching chats, keeping where each reader was under the session the chat shows, which a New Chat
+    /// adopts after its entry was keyed by its route.
     private func release(where shouldRelease: ((key: Key, chat: RetainedChat)) -> Bool) {
         for entry in entries where shouldRelease(entry) {
-            bookmarks.removeAll { $0.key == entry.key }
-            if let rowID = entry.chat.readingRowID { bookmarks.insert((entry.key, rowID), at: 0) }
+            let sessionID = entry.chat.session?.sessionId.flatMap { $0.isEmpty ? nil : $0 } ?? entry.key.sessionID
+            let key = Key(server: entry.key.server, sessionID: sessionID)
+            bookmarks.removeAll { $0.key == key }
+            if let rowID = entry.chat.readingRowID { bookmarks.insert((key, rowID), at: 0) }
         }
         bookmarks.removeLast(max(0, bookmarks.count - Self.bookmarkCapacity))
         entries.removeAll(where: shouldRelease)
