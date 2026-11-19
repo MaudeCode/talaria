@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Forged Apple sign-in requests can no longer block real sign-ins to Relay: the relay-wide limit counts only verified tokens, and unverified attempts are limited per address.",
+      "highlight": false,
+      "components": [
+        "relay"
+      ],
+      "announce": false
+    }
+  ]
+}

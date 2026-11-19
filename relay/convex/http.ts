@@ -6,6 +6,7 @@ import releaseInfo from "./releaseInfo.json";
 import { makeAggregate } from "./lib/aggregate";
 import {
   appleIdentityKeyId,
+  appleSigningKey,
   subjectHash,
   verifyAppleIdentityToken,
 } from "./lib/appleIdentity";
@@ -32,14 +33,11 @@ const http = httpRouter();
 const jsonHeaders = { "content-type": "application/json" };
 const maximumBodyCharacters = 512 * 1_024;
 let appleKeyCache: { keys: JsonWebKey[]; expiresAt: number } | undefined;
-let appleAuthWindow = { startedAt: 0, attempts: 0 };
 
-function allowAppleAuthAttempt(now: number): boolean {
-  if (now - appleAuthWindow.startedAt >= 60_000) {
-    appleAuthWindow = { startedAt: now, attempts: 0 };
-  }
-  appleAuthWindow.attempts += 1;
-  return appleAuthWindow.attempts <= 60;
+/** Convex puts the caller's address first in `x-forwarded-for`; callers without one share a budget. */
+async function appleAuthClientKey(request: Request): Promise<string> {
+  const address = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return `apple-auth-client:${address ? await sha256Hex(address) : "unknown"}`;
 }
 
 type HttpActionCtx = Parameters<Parameters<typeof httpAction>[0]>[0];
@@ -472,12 +470,15 @@ http.route({
     const subjectSecret = process.env.APPLE_SUBJECT_HASH_KEY?.trim();
     if (!identityToken || !nonce) return json(400, { error: "invalid_apple_credential" });
     if (!subjectSecret) return json(503, { error: "apple_auth_not_configured" });
-    if (!appleIdentityKeyId(identityToken)) {
-      return json(401, { error: "invalid_apple_credential" });
-    }
-    if (!allowAppleAuthAttempt(Date.now())) return json(429, { error: "rate_limited" });
-    const budget = await ctx.runMutation(internal.auth.consumeAppleAuthBudget, { now: Date.now() });
-    if (!budget.ok) return json(429, { error: "rate_limited" });
+    const keyId = appleIdentityKeyId(identityToken);
+    if (!keyId) return json(401, { error: "invalid_apple_credential" });
+    // Every attempt is unverified here, so it charges its client's budget; `acceptAppleSignIn`
+    // charges the relay-wide budget only once the token verified.
+    const attempt = await ctx.runMutation(internal.auth.consumeAppleAuthAttemptBudget, {
+      key: await appleAuthClientKey(request),
+      now: Date.now(),
+    });
+    if (!attempt.ok) return json(429, { error: "rate_limited" });
 
     try {
       const audiences = (process.env.APPLE_CLIENT_IDS ?? "dev.kil.talaria,dev.kil.talaria.branch")
@@ -487,6 +488,7 @@ http.route({
       const now = Date.now();
       const keys = await appleKeys(ctx, now);
       if (!keys) return json(503, { error: "apple_keys_unavailable" });
+      if (!appleSigningKey(keys, keyId)) return json(401, { error: "invalid_apple_credential" });
       const claims = await verifyAppleIdentityToken({
         token: identityToken,
         nonce,
@@ -508,9 +510,8 @@ http.route({
         sessionExpiresAt,
         now,
       });
-      return result.ok
-        ? json(201, { userId: result.userId, sessionToken, expiresAt: sessionExpiresAt })
-        : json(409, { error: result.reason });
+      if (result.ok) return json(201, { userId: result.userId, sessionToken, expiresAt: sessionExpiresAt });
+      return json(result.reason === "rate_limited" ? 429 : 409, { error: result.reason });
     } catch {
       return json(503, { error: "apple_auth_unavailable" });
     }

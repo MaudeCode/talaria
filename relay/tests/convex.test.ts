@@ -2,7 +2,7 @@ import workpoolTest from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
 import { readFileSync } from "node:fs";
 import { webcrypto } from "node:crypto";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
@@ -36,6 +36,134 @@ function testBackend() {
   return backend;
 }
 
+type TestBackend = ReturnType<typeof testBackend>;
+
+function rsaKeyPair(): Promise<CryptoKeyPair> {
+  return webcrypto.subtle.generateKey(
+    { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+    true,
+    ["sign", "verify"],
+  ) as Promise<CryptoKeyPair>;
+}
+
+/**
+ * Signs Apple-shaped identity tokens; `serveJwks` makes Apple's JWKS endpoint publish the key as "apple-live-shaped".
+ * Create it once per file: the relay caches Apple's keys per isolate, across test backends.
+ */
+async function appleIdentityFixture() {
+  const apple = await rsaKeyPair();
+  const forger = await rsaKeyPair();
+  const publicKey = await webcrypto.subtle.exportKey("jwk", apple.publicKey);
+  const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  let subject = 0;
+  const token = async ({ kid = "apple-live-shaped", forged = false } = {}) => {
+    const now = Math.floor(Date.now() / 1_000);
+    const header = encode({ alg: "RS256", kid });
+    subject += 1;
+    const claims = encode({
+      iss: "https://appleid.apple.com",
+      aud: "dev.kil.talaria",
+      sub: `apple-user-${subject}`,
+      exp: now + 600,
+      iat: now,
+      nonce: "hashed-nonce",
+    });
+    const signature = Buffer.from(await webcrypto.subtle.sign(
+      "RSASSA-PKCS1-v1_5",
+      (forged ? forger : apple).privateKey,
+      new TextEncoder().encode(`${header}.${claims}`),
+    )).toString("base64url");
+    return `${header}.${claims}.${signature}`;
+  };
+  const signIn = (backend: TestBackend, identityToken: string, clientAddress?: string) => backend.fetch("/v1/auth/apple", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(clientAddress ? { "x-forwarded-for": clientAddress } : {}) },
+    body: JSON.stringify({ identityToken, nonce: "hashed-nonce" }),
+  });
+  const globalBudget = (backend: TestBackend) => backend.run((ctx) => ctx.db
+    .query("authRateLimits")
+    .withIndex("by_key", (query) => query.eq("key", "apple-auth-global"))
+    .unique());
+  const serveJwks = () => {
+    const appleFetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({
+      keys: [{ ...publicKey, kid: "apple-live-shaped", alg: "RS256" }],
+    }), { status: 200 }));
+    process.env.APPLE_SUBJECT_HASH_KEY = "test-subject-hash-key-that-is-at-least-32-bytes";
+    process.env.APPLE_CLIENT_IDS = "dev.kil.talaria";
+    return () => {
+      appleFetch.mockRestore();
+      delete process.env.APPLE_SUBJECT_HASH_KEY;
+      delete process.env.APPLE_CLIENT_IDS;
+    };
+  };
+  return { token, signIn, globalBudget, serveJwks };
+}
+
+describe("Apple sign-in", () => {
+  let apple: Awaited<ReturnType<typeof appleIdentityFixture>>;
+  let stopServingJwks: () => void;
+  beforeAll(async () => { apple = await appleIdentityFixture(); });
+  beforeEach(() => { stopServingJwks = apple.serveJwks(); });
+  afterEach(() => { stopServingJwks(); });
+
+  it("accepts an Apple-shaped RS256 identity token through the HTTP router", async () => {
+    const backend = testBackend();
+    const response = await apple.signIn(backend, await apple.token());
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({ userId: expect.any(String) });
+  });
+
+  it("keeps forged tokens off the global budget so a real sign-in still succeeds", async () => {
+    const backend = testBackend();
+    const forged = await apple.token({ forged: true });
+    const statuses = new Set<number>();
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+      statuses.add((await apple.signIn(backend, forged, `10.0.${attempt >> 8}.${attempt & 255}`)).status);
+    }
+    expect([...statuses]).toEqual([401]);
+    expect(await apple.globalBudget(backend)).toBeNull();
+    const valid = await apple.token();
+    expect((await apple.signIn(backend, valid, "192.0.2.1")).status).toBe(201);
+    expect((await apple.signIn(backend, valid, "192.0.2.1")).status).toBe(409);
+    expect(await apple.globalBudget(backend)).toMatchObject({ attempts: 1 });
+  });
+
+  it("limits unverified attempts per client address", async () => {
+    const backend = testBackend();
+    const forged = await apple.token({ forged: true });
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      expect((await apple.signIn(backend, forged, "203.0.113.7")).status).toBe(401);
+    }
+    expect((await apple.signIn(backend, forged, "203.0.113.7, 10.9.9.9")).status).toBe(429);
+    expect((await apple.signIn(backend, forged, "198.51.100.2")).status).toBe(401);
+  });
+
+  it("rejects a key id missing from Apple's JWKS before any signature check or global charge", async () => {
+    const backend = testBackend();
+    const verify = vi.spyOn(globalThis.crypto.subtle, "verify");
+    try {
+      expect((await apple.signIn(backend, await apple.token({ kid: "unknown-kid" }), "203.0.113.7")).status).toBe(401);
+      expect(verify).not.toHaveBeenCalled();
+    } finally {
+      verify.mockRestore();
+    }
+    expect(await apple.globalBudget(backend)).toBeNull();
+  });
+
+  it("still limits verified sign-ins to 300 a minute across the relay", async () => {
+    const backend = testBackend();
+    const windowStartedAt = Date.now();
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("authRateLimits", { key: "apple-auth-global", windowStartedAt, attempts: 299 });
+    });
+    expect((await apple.signIn(backend, await apple.token(), "192.0.2.1")).status).toBe(201);
+    expect((await apple.signIn(backend, await apple.token(), "192.0.2.2")).status).toBe(429);
+    expect(await backend.run((ctx) => ctx.db.query("relayUsers").collect())).toHaveLength(1);
+    vi.setSystemTime(windowStartedAt + 60_000);
+    expect((await apple.signIn(backend, await apple.token(), "192.0.2.2")).status).toBe(201);
+  });
+});
+
 describe("Convex relay state", () => {
   it("coordinates Apple JWKS refreshes through durable relay state", async () => {
     const backend = testBackend();
@@ -59,59 +187,6 @@ describe("Convex relay state", () => {
     await expect(
       backend.mutation(internal.auth.claimAppleJwks, { now: now + 60_001 }),
     ).resolves.toEqual({ status: "refresh" });
-  });
-
-  it("accepts an Apple-shaped RS256 identity token through the HTTP router", async () => {
-    const backend = testBackend();
-    const keys = await webcrypto.subtle.generateKey(
-      {
-        name: "RSASSA-PKCS1-v1_5",
-        modulusLength: 2048,
-        publicExponent: new Uint8Array([1, 0, 1]),
-        hash: "SHA-256",
-      },
-      true,
-      ["sign", "verify"],
-    ) as CryptoKeyPair;
-    const publicKey = await webcrypto.subtle.exportKey("jwk", keys.publicKey);
-    const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
-    const now = Math.floor(Date.now() / 1_000);
-    const header = encode({ alg: "RS256", kid: "apple-live-shaped" });
-    const claims = encode({
-      iss: "https://appleid.apple.com",
-      aud: "dev.kil.talaria",
-      sub: "apple-user",
-      exp: now + 600,
-      iat: now,
-      nonce: "hashed-nonce",
-    });
-    const signature = Buffer.from(await webcrypto.subtle.sign(
-      "RSASSA-PKCS1-v1_5",
-      keys.privateKey,
-      new TextEncoder().encode(`${header}.${claims}`),
-    )).toString("base64url");
-    const appleFetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
-      keys: [{ ...publicKey, kid: "apple-live-shaped", alg: "RS256" }],
-    }), { status: 200 }));
-    process.env.APPLE_SUBJECT_HASH_KEY = "test-subject-hash-key-that-is-at-least-32-bytes";
-    process.env.APPLE_CLIENT_IDS = "dev.kil.talaria";
-    try {
-      const response = await backend.fetch("/v1/auth/apple", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          identityToken: `${header}.${claims}.${signature}`,
-          nonce: "hashed-nonce",
-        }),
-      });
-      expect(response.status).toBe(201);
-      await expect(response.json()).resolves.toMatchObject({ userId: expect.any(String) });
-      expect(appleFetch).toHaveBeenCalledTimes(1);
-    } finally {
-      appleFetch.mockRestore();
-      delete process.env.APPLE_SUBJECT_HASH_KEY;
-      delete process.env.APPLE_CLIENT_IDS;
-    }
   });
 
   it("canonicalizes publisher origins and rejects untrusted APNs topics at the HTTP boundary", async () => {
