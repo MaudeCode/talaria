@@ -20,7 +20,7 @@ import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { isLoopback } from '../http/origin.js'
 import { truthy } from '../config.js'
 import { AUDIO_VIDEO_PDF_TYPES, contentDispositionValue, INLINE_IMAGE_TYPES, mediaAnchorRoot, mediaTarget, mimeFor, previewHeaders, serveFileBytes, serveInlineHtmlPreview } from '../workspace/media.js'
-import { PREVIEW_PREFIX, previewGrantRoot } from '../workspace/preview.js'
+import { PREVIEW_CSP, PREVIEW_PREFIX, previewGrantRoot, previewTarget } from '../workspace/preview.js'
 import { SHOW_FRAME_CSP, SHOW_FRAME_PREFIX } from '../sessions/show.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -187,8 +187,9 @@ async function serveRawFile(ctx: RequestContext, anchorRoot: string, target: str
 
 /**
  * `/workspace-preview/<grant>/<path>` (TAL-566): the HTML preview frame and its relative assets, authorized by the
- * signed grant rather than a cookie. Every response carries the sandbox CSP and no CORS header, so the page's scripts
- * can run and load assets but cannot read workspace files.
+ * signed grant rather than a cookie. The grant names the previewed file's folder; only files in it and below, with no
+ * dot-prefixed segment, are served (TAL-2196). Every response carries `PREVIEW_CSP`, no referrer and no CORS header,
+ * so the page's scripts can run and load assets but cannot read workspace files or call out.
  */
 export async function handleWorkspacePreview(ctx: RequestContext): Promise<void> {
   const rest = ctx.path.slice(PREVIEW_PREFIX.length)
@@ -197,18 +198,17 @@ export async function handleWorkspacePreview(ctx: RequestContext): Promise<void>
   let target: string | null = null
   if (root) {
     try {
-      const rel = decodeURIComponent(rest.slice(slash + 1))
-      const resolved = rel.includes('\0') ? null : safeResolve(root, rel)
+      const resolved = previewTarget(root, decodeURIComponent(rest.slice(slash + 1)))
       if (resolved && existsSync(resolved) && statSync(resolved).isFile()) target = resolved
-    } catch { /* malformed escape or outside the root */ }
+    } catch { /* malformed escape */ }
   }
   if (!root || !target) {
     await ctx.json({ error: 'not found' }, { status: 404 })
     return
   }
   const mime = mimeFor(target)
-  if (mime === 'text/html') (await serveInlineHtmlPreview(ctx, target, 'no-store', SANDBOX_CSP, root))
-  else (await serveFileBytes(ctx, target, { mime, disposition: 'inline', cacheControl: 'no-store', csp: SANDBOX_CSP, anchorRoot: root }))
+  if (mime === 'text/html') (await serveInlineHtmlPreview(ctx, target, 'no-store', PREVIEW_CSP, root))
+  else (await serveFileBytes(ctx, target, { mime, disposition: 'inline', cacheControl: 'no-store', csp: PREVIEW_CSP, anchorRoot: root }))
 }
 
 /**

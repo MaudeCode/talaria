@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "An HTML file previewed in Talaria Web's Files page can load only files from its own folder, never dotfiles such as .env, and can no longer send requests to other sites.",
+      "highlight": false,
+      "announce": false,
+      "components": ["web"]
+    }
+  ]
+}

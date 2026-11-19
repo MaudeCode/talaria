@@ -297,6 +297,21 @@ Downloads are explicit, use the native writer (which never overwrites another
 file), and a partial image set reports what arrived. Follow-up actions only put
 the server's `draft` in a composer; nothing is sent or spent by Talaria.
 
+## Files HTML preview
+
+`files.read` answers an HTML file with `preview_url`,
+`workspace-preview/<grant>/<basename>`. The grant signs the folder that holds
+the file, resolved inside the workspace, and expires 1 to 2 hours out; the HMAC
+covers the folder, so a grant names no other folder. The route needs no cookie
+and serves only regular files in that folder and below: `../` paths, symlinks
+that resolve outside it, and any path with a dot-prefixed segment (`.env`,
+`.git/…`) answer 404. Every response carries `Referrer-Policy: no-referrer` and
+the CSP `sandbox allow-scripts allow-popups; default-src 'self' 'unsafe-inline'
+data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'`, so the
+page loads its own folder's assets but cannot fetch, post or open an unsandboxed
+popup. A page can still navigate itself to another site carrying its address;
+that address unlocks only its folder, minus dotfiles, until the grant expires.
+
 ## Managed session buffers
 
 The Files list/read/save procedures accept `source: "managed"` for the fixed

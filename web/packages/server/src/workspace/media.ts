@@ -190,9 +190,12 @@ export async function serveFileBytes(ctx: RequestContext, target: string, opts: 
   }
 }
 
-/** Sandboxed inline HTML keeps framing allowed (no X-Frame-Options) but pins CSP. */
+/**
+ * Sandboxed inline HTML keeps framing allowed (no X-Frame-Options) but pins CSP. It sends no referrer, so a page's
+ * `<meta name=referrer>` cannot widen what leaves with its own address (TAL-2196).
+ */
 export function previewHeaders(csp: string): Record<string, string> {
-  return { 'Content-Security-Policy': csp, 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'Permissions-Policy': PREVIEW_PERMISSIONS_POLICY }
+  return { 'Content-Security-Policy': csp, 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Permissions-Policy': PREVIEW_PERMISSIONS_POLICY }
 }
 
 export function htmlPreviewWithBlankBase(raw: Buffer): Buffer {

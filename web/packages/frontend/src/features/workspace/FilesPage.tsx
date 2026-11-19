@@ -290,7 +290,7 @@ function WorkspaceFiles({ workspace, sessionId, source, sourceControl, active, d
               {rendered && kind === 'html' && active && content.data.preview_url && (
                 // The server's preview URL serves the page and its relative assets with a sandbox CSP; the frame sandbox
                 // repeats it without same-origin.
-                <iframe src={appUrl(content.data.preview_url).href} title={file} sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" className="min-h-0 w-full flex-1 border-0 bg-white" />
+                <iframe src={appUrl(content.data.preview_url).href} title={file} sandbox="allow-scripts allow-popups" className="min-h-0 w-full flex-1 border-0 bg-white" />
               )}
               {!rendered && (
                 <textarea ref={textRef} readOnly={readOnly} value={text} onChange={(e) => setDraft(e.target.value)} spellCheck={false} aria-label={m.ws_panel_preview()} className="min-h-0 flex-1 resize-none bg-code-bg p-3 font-mono text-[12px] text-pre-text outline-none" />
