@@ -95,6 +95,28 @@ final class ToolbarPriorityHostedTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Files", in: window)).visibilityPriority, .high)
     }
 
+    /// TAL-2560: opening a chat that has a companion page puts Companion Page in the vertical bar where another chat
+    /// has Files. Like Files, it lets the bar infer its axis: a vertical preference made the Duo's bar grow a
+    /// screen-sized glass over the transcript on every switch into such a chat.
+    func testTheCompanionPageItemLetsTheVerticalBarInferItsAxis() async throws {
+        guard #available(iOS 27.1, *) else { throw XCTSkip("Requires the vertical-bar SDK") }
+        _ = try await landscapeScene()
+        let fixture = try FixtureApp(["--ui-test-chat-companion"], for: self)
+        let window = try hostWindow(fixture.sessionList(), size: HostedSize.duoOuterLandscape) {
+            $0.horizontalSizeClass = .regular
+            $0.verticalSizeClass = .regular
+        }
+        try await openSidebar(in: window)
+        let row = try await requireElement(in: window, "Missing deterministic session fixture") {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        }
+        HostedAccessibility.activate(row)
+        try await sendFromComposer("Write the demo files", in: window)
+        let shown = await awaitCondition { HostedAccessibility.toolbarItem("Companion Page", in: window) != nil }
+        XCTAssertTrue(shown, "Items: \(HostedAccessibility.toolbarItems(in: window).map { $0.title ?? $0.accessibilityLabel ?? "?" })")
+        XCTAssertEqual(try XCTUnwrap(HostedAccessibility.toolbarItem("Companion Page", in: window)).axisBehavior, .automatic)
+    }
+
     /// The vertical bar's badged work items replace their chips above the composer (TAL-1542). The keyboard folds those
     /// items into the bar's overflow menu, so the chips return while the composer is focused.
     func testVerticalBarWorkItemsReplaceTheirComposerChips() async throws {

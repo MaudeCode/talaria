@@ -977,8 +977,9 @@ struct ChatView: View {
         if let action = actions.first(where: { $0.action == identity }) {
             if #available(iOS 27.1, *) {
                 if identity == .dismissKeyboard { ToolbarSpacer(.flexible, placement: .topBarTrailing) }
+                // Every chat item lets the bar infer its axis. A vertical preference on one item that a chat switch
+                // inserts made the Duo's vertical bar grow a screen-sized glass before settling (TAL-2560).
                 ToolbarItem(placement: .topBarTrailing) { chatActionView(action) }
-                    .axisBehavior(identity == .chatCompanionPage ? .verticalPreferred : .automatic)
                     .overflowPriority(identity, includesHorizontal: identity == .chatBackgroundTasks || identity == .chatQueuedMessages)
             } else {
                 ToolbarItem(placement: .topBarTrailing) { chatActionView(action) }
