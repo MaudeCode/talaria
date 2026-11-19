@@ -2256,6 +2256,47 @@ extension ChatViewModelSendTests {
         )
         XCTAssertTrue(viewModel.earlierSceneRows(for: regeneratedMessage).isEmpty)
     }
+
+    /// TAL-1975: the earlier-steps control owns its read's state per turn; a failure stays on that control, never the chat.
+    @MainActor
+    func testEarlierSceneRowsLoadStateIsPerTurnAndAFailureStaysOnTheControl() async throws {
+        let requests = DeferredRequests()
+        let server = URL(string: "https://earlier-steps-state.test")!
+        DeferredMockURLProtocol.setOnRequest({ request in _ = requests.append(request) }, forHost: server.host!)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: server.host!) }
+        let viewModel = try makeViewModel(server: server, protocolClasses: [DeferredMockURLProtocol.self]) { _ in throw URLError(.badURL) }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        func turn(_ id: String, at index: Int) throws -> TranscriptMessage {
+            let message = try decoder.decode(ChatMessage.self, from: Data(#"""
+            {"role":"assistant","content":"Done.","message_id":"\#(id)","_turn_id":"\#(id)","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"Done.","activity_rows_offset":1,"activity_scene_ref":"\#(id)","activity_rows":[]}}
+            """#.utf8))
+            return TranscriptMessage(loadedIndex: index, renderID: "transcript:\(index)", anchorID: id, message: message,
+                                     assistantSegments: [TranscriptAssistantSegment(anchorID: id, message: message)])
+        }
+        let failing = try turn("run-1", at: 1)
+        let other = try turn("run-2", at: 3)
+
+        let first = Task { await viewModel.loadEarlierSceneRows(for: failing) }
+        try await waitUntil { requests.count == 1 }
+        XCTAssertEqual(viewModel.earlierSceneRowsLoadState(for: failing), .loading)
+        // Returns without a read: a second request would hold this call on its deferred answer.
+        await viewModel.loadEarlierSceneRows(for: failing)
+        XCTAssertEqual(requests.count, 1)
+        requests.request(at: 0).complete(withJSON: #"{"error":"Synthetic page failure"}"#, statusCode: 500)
+        await first.value
+        XCTAssertEqual(viewModel.earlierSceneRowsLoadState(for: failing), .failed)
+        XCTAssertNil(viewModel.errorMessage, "The failure must stay on the control, not the chat-wide error")
+        XCTAssertEqual(viewModel.earlierSceneRowsLoadState(for: other), .idle)
+
+        let retry = Task { await viewModel.loadEarlierSceneRows(for: failing) }
+        try await waitUntil { requests.count == 2 }
+        XCTAssertEqual(viewModel.earlierSceneRowsLoadState(for: failing), .loading)
+        requests.request(at: 1).complete(withJSON: #"{"scene_ref":"run-1","start":0,"end":1,"total":1,"complete":true,"rows":[{"row_id":"r0","order_index":0,"role":"prose","text":"First"}]}"#)
+        await retry.value
+        XCTAssertEqual(viewModel.earlierSceneRowsLoadState(for: failing), .idle)
+        XCTAssertEqual(viewModel.earlierSceneRows(for: failing).map(\.rowID), ["r0"])
+    }
 }
 
 /// TAL-331: a limited response clips a long tool result and flags its scene row; the app fetches the whole result on request.

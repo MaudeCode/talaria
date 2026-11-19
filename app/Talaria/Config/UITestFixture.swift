@@ -543,6 +543,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         backgroundDelegationStatus.withLock { $0 = nil }
         sessionDetail.withLock { $0 = nil }
         anchorScenePage.withLock { $0 = nil }
+        anchorScenePageStatus.withLock { $0 = 200 }
         ownerSettledAdmissions.withLock { $0 = [] }
         ownerWorkStopped.withLock { $0 = [] }
         ownerWorkControls.withLock { $0 = [] }
@@ -606,12 +607,15 @@ final class UITestFixtureURLProtocol: URLProtocol {
             && ProcessInfo.processInfo.arguments.contains("--ui-test-hold-steer")
         let holdsStart = url.path == "/api/chat/start"
             && ProcessInfo.processInfo.arguments.contains("--ui-test-hold-chat-start")
+        let holdsAnchorScene = url.path == "/api/session/anchor-scene"
+            && ProcessInfo.processInfo.arguments.contains("--ui-test-hold-anchor-scene")
         let holdsCancel = url.path == "/api/chat/cancel"
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdChatCancelArgument)
         let holdsSessionRemoval = Self.sessionRemovalPaths.contains(url.path)
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdSessionRemovalArgument)
         let holdsPanel = Self.isFullWidthPanelLoad(url) && Self.panelScenario == UITestFixtureEnvironment.panelLoadingArgument
-        if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsUpload || holdsSteer || holdsStart || holdsCancel || holdsPanel || holdsSessionRemoval {
+        if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsUpload || holdsSteer || holdsStart || holdsCancel || holdsPanel || holdsSessionRemoval
+            || holdsAnchorScene {
             UITestFixtureHold.shared.hold(request: request) { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
@@ -677,6 +681,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         else if Self.isFullWidthPanelLoad(url), Self.panelScenario == UITestFixtureEnvironment.panelUnavailableArgument { statusCode = 503 }
         else if refusesLogs { statusCode = 403 }
         else if refusesRemoval { statusCode = 409 }
+        else if url.path == "/api/session/anchor-scene" { statusCode = Self.anchorScenePageStatus.withLock { $0 } }
         else if Self.failsInitialUpload(url) { statusCode = 500 }
         else if Self.failsSessionCreation(url) {
             statusCode = ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-first-session-creation") ? 409 : 500
@@ -1382,6 +1387,8 @@ final class UITestFixtureURLProtocol: URLProtocol {
 
     /// TAL-1961: a hosted test's page of a scene's earlier rows (JSON), the answer to every `/api/session/anchor-scene` read.
     static let anchorScenePage = OSAllocatedUnfairLock<Data?>(initialState: nil)
+    /// TAL-1975: the status that page answers with, so a hosted test can fail a read and then let the retry through.
+    static let anchorScenePageStatus = OSAllocatedUnfairLock(initialState: 200)
 
     /// TAL-372: a running delegation and a finished `/background` task the server pins, until the task is dismissed.
     private static func backgroundTasks() -> [[String: Any]] {

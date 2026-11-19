@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The earlier-steps row in a long reply now reads Loading… while it fetches and Retry if the fetch fails, instead of looking unchanged.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
