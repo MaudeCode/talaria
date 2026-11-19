@@ -29,7 +29,7 @@ import { RelayPairingError } from '../sessions/relay.js'
 import { loginHash, WebPushRequestError, type WebPushRequester } from '../sessions/notify/web-push.js'
 import { activitySummary } from '../sessions/notify/activity.js'
 import { requestBaseUrl } from './auth-raw.js'
-import { EscapeGrantExpired, type EscapeRequest } from '../workspace/escape.js'
+import { EscapeGrantExpired, type EscapeFence, type EscapeRequest } from '../workspace/escape.js'
 import { ProfileError } from '../profiles/profiles.js'
 import type { Settings } from '../settings.js'
 import { ConfigUnavailable } from '../config/agent-config.js'
@@ -957,7 +957,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       if (!rel) throw new HttpError(400, 'path is required')
       const s = (await fileOpsSession(ctx, sid))
       try {
-        return ctx.deps.escapeGrants.authorize(s.workspace, sid, s.profile, rel)
+        return ctx.deps.escapeGrants.authorize(s.workspace, sid, s.profile, rel, await escapeFence(ctx))
       } catch (error) {
         throw fileError(error, 404)
       }
@@ -984,13 +984,19 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
   },
 })
 
+/** TAL-2586: a non-owner's escape grant stops at the same protected roots as its workspaces (TAL-2200); the owner's does not. */
+async function escapeFence(ctx: RequestContext): Promise<EscapeFence> {
+  if (await requestCanManageServer(ctx)) return () => false
+  return (path) => ctx.deps.workspaces.protectedFromNonOwner(path)
+}
+
 /** The escape routes' shared front half: required ids, the session, and the grant re-check (403 when it fails). */
 export async function escapeRequest(ctx: RequestContext, sid: string | undefined, token: string | undefined, rel: string): Promise<EscapeRequest> {
   if (!sid) throw new HttpError(400, 'session_id is required')
   if (!token) throw new HttpError(400, 'token is required')
   const s = (await fileOpsSession(ctx, sid))
   try {
-    const grant = ctx.deps.escapeGrants.resolve(s.workspace, sid, s.profile, token, rel)
+    const grant = ctx.deps.escapeGrants.resolve(s.workspace, sid, s.profile, token, rel, await escapeFence(ctx))
     assertWorkspaceFileAllowed(ctx, join(grant.externalRoot, grant.externalRel))
     return grant
   } catch (error) {

@@ -336,3 +336,71 @@ describe('EscapeGrants root pinning', () => {
     expect(() => grants.resolve(ws, 'sid', null, token, 'escape')).toThrow(EscapeGrantExpired)
   })
 })
+
+/**
+ * TAL-2586: a non-owner's escape grant obeys the TAL-2200 workspace fence. A link whose target contains `$HOME`, or
+ * overlaps Hermes home, Web state or `~/.ssh`, mints no grant for a non-owner; the owner keeps today's grants.
+ */
+describe('escape grants for a non-owner', () => {
+  const ISSUER = 'https://identity.invalid'
+  let s: TestServer
+  let root: string
+  let home: string
+  let ws: string
+  const headersFor = (owner: boolean): Record<string, string> => {
+    const cookie = s.deps.auth.createSession({ authType: 'oidc', username: 'person@example.invalid', oidcBinding: { issuer: ISSUER, subject: owner ? 'owner' : 'guest', ...(owner ? { owner: true } : {}) } })
+    return { cookie: `${s.deps.auth.cookieName()}=${cookie}`, origin: s.base, 'X-Hermes-CSRF-Token': s.deps.auth.csrfTokenForSession(cookie)!, 'content-type': 'application/json' }
+  }
+  const post = async (headers: Record<string, string>, path: string, body: unknown): Promise<{ status: number; body: Json }> => {
+    const res = await s.get(path, { method: 'POST', headers, body: JSON.stringify(body) })
+    return { status: res.status, body: (await res.json()) as Json }
+  }
+  const session = async (headers: Record<string, string>): Promise<string> => {
+    const { status, body } = await post(headers, '/api/session/new', { workspace: ws })
+    expect(status, JSON.stringify(body)).toBe(200)
+    return String((body.session as Json).session_id)
+  }
+
+  beforeAll(async () => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-escape-fence-')))
+    home = join(root, 'home')
+    mkdirSync(join(home, '.ssh'), { recursive: true })
+    s = await bootTestServer({
+      home,
+      env: { TALARIA_WEB_OIDC_ISSUER: ISSUER, TALARIA_WEB_OIDC_CLIENT_ID: 'synthetic-client', TALARIA_WEB_OIDC_ALLOW_CLAIM: 'email_verified', TALARIA_WEB_OIDC_ALLOW_VALUES: 'true', TALARIA_WEB_OIDC_OWNER_CLAIM: 'groups', TALARIA_WEB_OIDC_OWNER_VALUES: 'admins' },
+      deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) },
+    })
+    ws = realpathSync(s.workspace)
+    const hermes = realpathSync(s.state)
+    mkdirSync(join(hermes, 'profiles'), { recursive: true })
+    mkdirSync(join(root, 'plain'))
+    writeFileSync(join(root, 'plain', 'note.txt'), 'plain')
+    const links: [string, string][] = [['to-home', home], ['to-ssh', join(home, '.ssh')], ['to-hermes', hermes], ['to-profiles', join(hermes, 'profiles')], ['to-above-home', root], ['to-plain', join(root, 'plain')]]
+    for (const [name, target] of links) symlinkSync(target, join(ws, name))
+  })
+  afterAll(async () => {
+    await s.close()
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('mints no grant for a link into a protected root, and still grants an ordinary outside directory', async () => {
+    const guest = headersFor(false)
+    const sid = await session(guest)
+    for (const link of ['to-home', 'to-ssh', 'to-hermes', 'to-profiles', 'to-above-home']) {
+      const res = await post(guest, '/api/escape/authorize', { session_id: sid, path: link })
+      expect(res.status, link).toBe(404)
+      expect(res.body.token, link).toBeUndefined()
+    }
+    const plain = await post(guest, '/api/escape/authorize', { session_id: sid, path: 'to-plain' })
+    expect(plain.status).toBe(200)
+    expect(plain.body).toMatchObject({ path: 'to-plain', is_dir: true, read_only: true })
+  })
+
+  it('keeps the owner grants it had before', async () => {
+    const owner = headersFor(true)
+    const sid = await session(owner)
+    for (const link of ['to-home', 'to-ssh', 'to-above-home', 'to-plain']) {
+      expect((await post(owner, '/api/escape/authorize', { session_id: sid, path: link })).status, link).toBe(200)
+    }
+  })
+})

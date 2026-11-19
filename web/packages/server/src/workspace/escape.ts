@@ -57,8 +57,21 @@ function virtualPath(root: string, rel: string): string {
   return rel === '.' ? root : `${root}/${rel}`
 }
 
+/**
+ * The caller's extra refusal on top of system directories: a non-owner's is the workspace fence (TAL-2586), so a grant
+ * never reaches what that caller could not open as a workspace. A refused path answers like a system directory.
+ */
+export type EscapeFence = (path: string) => boolean
+
+const NO_FENCE: EscapeFence = () => false
+
+function assertReachable(target: string, fence: EscapeFence): void {
+  if (isBlockedSystemPath(target)) throw new NotFoundError(`Path points to a system directory: ${target}`)
+  if (fence(target)) throw new NotFoundError('Path points to a protected directory')
+}
+
 /** Python `_escape_surface_target`: the resolved target of an escaping, reachable, non-system workspace symlink. */
-function surfaceTarget(workspaceRoot: string, rel: string): string {
+function surfaceTarget(workspaceRoot: string, rel: string, fence: EscapeFence): string {
   const surfaceRel = normalizeWorkspaceRelPath(rel)
   const parentRel = posix.dirname(surfaceRel)
   const parent = parentRel === '.' ? workspaceRoot : safeResolveWs(workspaceRoot, parentRel)
@@ -74,7 +87,7 @@ function surfaceTarget(workspaceRoot: string, rel: string): string {
     throw new NotFoundError(`Path is no longer reachable: ${rel}`)
   }
   if (isWithin(target, workspaceRoot)) throw new NotFoundError(`Path does not escape workspace: ${rel}`)
-  if (isBlockedSystemPath(target)) throw new NotFoundError(`Path points to a system directory: ${target}`)
+  assertReachable(target, fence)
   return target
 }
 
@@ -84,9 +97,9 @@ export class EscapeGrants {
   constructor(private readonly now: () => number) {}
 
   /** Mint a grant for one surfaced escape-target symlink. */
-  authorize(workspace: string, sessionId: string, profile: string | null, rel: string): { token: string; path: string; is_dir: boolean; expires_at: number; expires_in: number; read_only: true } {
+  authorize(workspace: string, sessionId: string, profile: string | null, rel: string, fence: EscapeFence = NO_FENCE): { token: string; path: string; is_dir: boolean; expires_at: number; expires_in: number; read_only: true } {
     const workspaceRoot = resolvePathLikePython(workspace)
-    const target = surfaceTarget(workspaceRoot, rel)
+    const target = surfaceTarget(workspaceRoot, rel, fence)
     const isDir = statSync(target).isDirectory()
     const externalRoot = isDir ? target : dirname(target)
     const { dev, ino } = statSync(externalRoot)
@@ -103,15 +116,14 @@ export class EscapeGrants {
    * the grant root. A path outside the link answers "Path traversal blocked"; one that resolves into a system
    * directory answers like a system-directory link.
    */
-  resolve(workspace: string, sessionId: string, profile: string | null, token: string, rel: string): EscapeRequest {
-    const grant = this.check(workspace, sessionId, profile, token)
+  resolve(workspace: string, sessionId: string, profile: string | null, token: string, rel: string, fence: EscapeFence = NO_FENCE): EscapeRequest {
+    const grant = this.check(workspace, sessionId, profile, token, fence)
     const requestPath = normalizeWorkspaceRelPath(rel)
     const under = grant.surfacePath === '.' ? requestPath : requestPath === grant.surfacePath ? '.' : requestPath.startsWith(`${grant.surfacePath}/`) ? requestPath.slice(grant.surfacePath.length + 1) : null
     if (under === null) throw new PathTraversalError(`Path traversal blocked: ${rel}`)
     const externalRel = grant.externalEntryRel === '.' ? under : under === '.' ? grant.externalEntryRel : `${grant.externalEntryRel}/${under}`
     // A grant on a permitted parent never reaches a system directory below it (TAL-2218).
-    const target = safeResolveWs(grant.externalRoot, externalRel)
-    if (isBlockedSystemPath(target)) throw new NotFoundError(`Path points to a system directory: ${target}`)
+    assertReachable(safeResolveWs(grant.externalRoot, externalRel), fence)
     return { surfacePath: grant.surfacePath, requestPath, externalRoot: grant.externalRoot, rootId: grant.rootId, externalRel }
   }
 
@@ -138,12 +150,12 @@ export class EscapeGrants {
   }
 
   /** Python `_escape_authorization_record`: the link must still escape to the same reachable, non-system target and root inode. */
-  private check(workspace: string, sessionId: string, profile: string | null, token: string): EscapeGrant {
+  private check(workspace: string, sessionId: string, profile: string | null, token: string, fence: EscapeFence): EscapeGrant {
     this.prune()
     const grant = this.grants.get(token)
     if (grant?.sessionId !== sessionId || grant.profile !== profile || grant.workspaceRoot !== resolvePathLikePython(workspace)) throw new EscapeGrantExpired()
     try {
-      if (surfaceTarget(grant.workspaceRoot, grant.surfacePath) !== grant.surfaceTarget) throw new EscapeGrantExpired()
+      if (surfaceTarget(grant.workspaceRoot, grant.surfacePath, fence) !== grant.surfaceTarget) throw new EscapeGrantExpired()
       const root = statSync(grant.externalRoot)
       if (root.dev !== grant.rootId.dev || root.ino !== grant.rootId.ino) throw new EscapeGrantExpired()
     } catch {

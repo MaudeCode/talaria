@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A non-owner login can no longer open your home folder, Hermes home, Web state or ~/.ssh through a symlink in its workspace.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

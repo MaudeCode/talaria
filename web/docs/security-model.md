@@ -224,7 +224,8 @@ use as a session workspace:
 - A non-owner workspace must sit at or below the boot default, its profile's
   configured default, or one of its profile's saved workspaces. It must not
   contain `$HOME`, and it must not overlap Hermes home, Web state or `~/.ssh` in
-  either direction. A saved root that breaks those rules authorizes nothing.
+  either direction (`WorkspaceRegistry.protectedFromNonOwner`). A saved root
+  that breaks those rules authorizes nothing.
 - File operations recheck the session's stored root against the caller's
   authority on every request (`api/sessions-router.ts` `fileOpsSession`).
 
@@ -252,9 +253,14 @@ only through a read-only grant (`workspace/escape.ts` `EscapeGrants`):
   session, profile, workspace root and that root's device and inode.
 - `/` and system directories are never granted (`workspace/workspaces.ts`
   `isBlockedSystemPath`), and Web state is excluded.
+- For a non-owner, a link whose target contains `$HOME` or overlaps Hermes
+  home, Web state or `~/.ssh` answers 404 with no grant: the same
+  `WorkspaceRegistry.protectedFromNonOwner` fence as its workspaces
+  (`api/sessions-router.ts` `escapeFence`). The owner's grants carry no fence.
 - Every use rechecks the link target, root inode and expiry
   (`EscapeGrants.check`); a retargeted link deletes the grant.
-  `EscapeGrants.resolve` re-resolves each request path and refuses system paths.
+  `EscapeGrants.resolve` re-resolves each request path and refuses system paths
+  and, for a non-owner, fenced paths.
 
 **Media.** `/api/media` (`api/raw-routes.ts` `handleMedia`) serves from roots
 that `workspace/media.ts` `mediaAccessFor` derives from authority:
@@ -485,5 +491,3 @@ Open defects, tracked rather than accepted:
 - TAL-2585: a profile-bound login can give a cron job another visible profile
   as its execution profile (`tools/crons.ts`
   `CronService.accessibleProfileNames`).
-- TAL-2586: escape grants do not apply the non-owner workspace fence to a
-  link's target (`workspace/escape.ts` `EscapeGrants.authorize`).
