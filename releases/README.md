@@ -307,7 +307,7 @@ an unsigned App archive with verified bundle versions, the Web contracts and
 server npm tarballs plus a multi-platform OCI archive, or checked Relay functions validated against an
 anonymous local backend. `build.py bridge` builds Relay's feedback bridge as a linux/amd64 OCI archive through
 `relay/bridge/build-image.sh`, which loads those exact bytes and requires a non-root user, exit 2 naming `RELAY_URL`
-when unconfigured, and the `smoke.ts` sanitization check; the receipt records `bridgeImage` with its digest. Use an output directory outside the source checkout.
+when unconfigured, a non-root sanitizer mode on a read-only root, and the `smoke.ts` sanitization check against it; the receipt records `bridgeImage` with its digest. Use an output directory outside the source checkout.
 Local execution writes `build-result.json`; Actions execution additionally writes
 a receipt tied to the actual run. An unsigned App archive is not an installable
 device-validation build.

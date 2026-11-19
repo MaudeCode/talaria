@@ -378,7 +378,7 @@ a tracker credential. Every feedback route answers 404 until the deployment sets
 
 `contracts/fixtures/feedback-attachment-limits.json` is the single table of
 attachment types, sizes, counts, the 120-second video limit (enforced by the
-operator bridge, which can parse media), and which tier may attach which kind.
+operator bridge's sanitizer, which parses media), and which tier may attach which kind.
 
 Strings must not be blank. Optional fields are omitted, not `null`. Relay stores
 the text as given and never renders or interprets it. An unknown field at any
