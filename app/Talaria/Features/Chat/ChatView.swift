@@ -921,9 +921,14 @@ struct ChatView: View {
         splitFilesInspector?.reportShown(showsFilesInspector)
     }
 
+    /// An existing chat whose first read has not finished: it shows loading, never the empty prompt (TAL-2564).
+    private var awaitsInitialTranscript: Bool {
+        loadsInitialMessages && !isInitialComposerFocusContentReady && !resumesLoadedChat
+    }
+
     private var showsEmptyTranscript: Bool {
         // An unhydrated chat must not remove the stack's compose action while its messages load.
-        (!loadsInitialMessages || isInitialComposerFocusContentReady)
+        !awaitsInitialTranscript
             && !viewModel.hasMessages && viewModel.clarificationPrompt == nil && viewModel.activeStreamID == nil
     }
 
@@ -2018,7 +2023,7 @@ struct ChatView: View {
             let _ = recordBodyEvaluation?("messages")
 #endif
             ChatTranscriptView(
-                isLoading: viewModel.isLoading,
+                isLoading: viewModel.isLoading || chat.awaitsInitialTranscript,
                 errorMessage: viewModel.errorMessage,
                 messages: viewModel.messages,
                 excerptRevision: viewModel.excerptRevision,

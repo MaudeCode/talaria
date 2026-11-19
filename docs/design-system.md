@@ -481,7 +481,7 @@ recording is the visual check. A ticket in the last column is an open gap.
 
 | Case | Owner tests | Open gaps |
 | --- | --- | --- |
-| Cold linked launch | `SessionListHostedTests.testDeepLinkedChatKeepsNavigationStackAndToolbarMounted`, `testRelaunchShowsTheLastChatsBeforeTheServerAnswers` | TAL-2564 |
+| Cold linked launch | `SessionListHostedTests.testColdLinkedLaunchShowsTheLinkedChatLoadingUntilItsRowsArrive` (per committed frame), `testDeepLinkedChatKeepsNavigationStackAndToolbarMounted`, `testRelaunchShowsTheLastChatsBeforeTheServerAnswers` | |
 | Foreground return | `ChatHostedTests.testForegroundReturnRealizesZeroUnchangedTranscriptRows`, `SessionListHostedTests.testForegroundReturnPreservesTheSettledColumnChoice` | |
 | Duo outer ↔ inner | `ChatHostedTests.testBookFoldMovesComposerAndUnfoldingRetainsItsEditorAndDraft`, `DuoFoldHostedTests` | TAL-2565 |
 | Rotation | TalariaKit `ComposerCardSizingTests`, `SessionListHostedTests.testResizingAnOpenOverlayIntoTilingConsumesDrawerIntentAndRotationCollapsesTheColumn` | TAL-2569 |

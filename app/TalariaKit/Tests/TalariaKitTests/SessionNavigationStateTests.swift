@@ -172,6 +172,21 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertNil(restored)
     }
 
+    /// TAL-2564: the root waits on a linked chat from the pending link through its load, and only while nothing is open.
+    func testAwaitsLinkedSessionFromPendingLinkUntilItsLoadEnds() {
+        var state = SessionNavigationState()
+        XCTAssertFalse(state.awaitsLinkedSession(pendingID: "   "))
+        XCTAssertTrue(state.awaitsLinkedSession(pendingID: "linked"))
+
+        let id = state.beginDeepLinkedSessionLoad(id: "linked")
+        XCTAssertTrue(state.awaitsLinkedSession(pendingID: nil), "The consumed link still loads")
+        state.finishDeepLinkedSessionLoad(id: id)
+        XCTAssertFalse(state.awaitsLinkedSession(pendingID: nil), "A failed link leaves New Chat")
+
+        state.select(SessionSummary(sessionId: "open"))
+        XCTAssertFalse(state.awaitsLinkedSession(pendingID: "linked"), "An open chat keeps its root while a link loads")
+    }
+
     func testRestoreProceedsWhenPendingDeepLinkIDIsBlank() {
         let stored = SessionSummary(sessionId: "stored")
         var state = SessionNavigationState(lastSelectedSessionID: "stored")
