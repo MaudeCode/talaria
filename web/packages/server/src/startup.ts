@@ -86,12 +86,13 @@ export class StartupConfigError extends Error {
 /**
  * TAL-2197: a non-loopback bind with no sign-in method hands everyone who can reach the port a shell and the provider
  * keys, so startup refuses it before listening unless the operator accepts the risk with
- * `TALARIA_WEB_ALLOW_UNAUTHENTICATED=1`; then it warns. The host resolves as `listen` resolves it, so `localhost` and
- * every loopback spelling pass; an empty host listens on every interface.
+ * `TALARIA_WEB_ALLOW_UNAUTHENTICATED=1`; then it warns. Returns the address it checked, resolved once as `listen` would,
+ * and the listener binds exactly that, so a second DNS answer cannot move it off loopback; `localhost` and every loopback
+ * spelling pass. An empty host stays `undefined`: `listen` binds every interface.
  */
-export async function refuseUnauthenticatedBind(host: string, env: ServerConfig['env'], auth: { isAuthEnabled: () => Promise<boolean> }, log: (line: string) => void): Promise<void> {
-  const address = host ? (await lookup(host)).address : '::'
-  if (isLoopback(address) || await auth.isAuthEnabled()) return
+export async function refuseUnauthenticatedBind(host: string, env: ServerConfig['env'], auth: { isAuthEnabled: () => Promise<boolean> }, log: (line: string) => void): Promise<string | undefined> {
+  const address = host ? (await lookup(host)).address : undefined
+  if ((address !== undefined && isLoopback(address)) || await auth.isAuthEnabled()) return address
   if (!truthy(env.TALARIA_WEB_ALLOW_UNAUTHENTICATED)) {
     throw new StartupConfigError(`Refusing to listen on ${host || 'every interface'} with no sign-in method: anyone who can reach the port would get a shell and your provider keys. Set TALARIA_WEB_PASSWORD (or configure a passkey, OIDC, or a trusted auth header), bind to 127.0.0.1, or set TALARIA_WEB_ALLOW_UNAUTHENTICATED=1 to accept the risk.`)
   }
@@ -99,6 +100,7 @@ export async function refuseUnauthenticatedBind(host: string, env: ServerConfig[
   log('     Anyone on the network can access your filesystem and agent.')
   log('     Set a password via Settings or TALARIA_WEB_PASSWORD env var.')
   log('     To suppress: bind to 127.0.0.1 or set a password.')
+  return address
 }
 
 /**

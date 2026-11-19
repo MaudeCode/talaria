@@ -59,7 +59,7 @@ export async function startServer(app: App, config: ServerConfig, opts: StartSer
   if (await isAlreadyServing(config.host, config.port)) {
     throw new Error(`Another server is already responding on ${config.host}:${config.port}. Stop the existing instance first.`)
   }
-  await refuseUnauthenticatedBind(config.host, config.env, app.deps.auth, log)
+  const bindAddress = await refuseUnauthenticatedBind(config.host, config.env, app.deps.auth, log)
   fixCredentialPermissions(config, log)
   let scheme: 'http' | 'https' = 'http'
   let server: Server
@@ -88,7 +88,7 @@ export async function startServer(app: App, config: ServerConfig, opts: StartSer
   })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
-    server.listen(config.port, config.host, () => {
+    server.listen(config.port, bindAddress, () => {
       server.off('error', reject)
       resolve()
     })

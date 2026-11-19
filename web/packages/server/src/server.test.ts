@@ -3,8 +3,16 @@ import { chmodSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } 
 import { connect, createServer, type AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { CONFIG_EXIT_CODE } from './cli/supervise.js'
+
+// TAL-2197: a bind name whose answer this file controls; `.invalid` never resolves in real DNS, so only a listener that
+// uses the checked address can bind it.
+vi.mock('node:dns/promises', async (original) => {
+  const dns = await original<typeof import('node:dns/promises')>()
+  const lookup = ((host: string, ...rest: [never]) => host === 'rebind.invalid' ? Promise.resolve({ address: '127.0.0.1', family: 4 }) : dns.lookup(host, ...rest)) as typeof dns.lookup
+  return { ...dns, lookup }
+})
 import { REQUEST_TIMEOUT_MS } from './server.js'
 import { bootTestServer, type TestServer } from './test/harness.js'
 
@@ -103,6 +111,14 @@ describe('unauthenticated bind at startup (TAL-2197)', () => {
     await expect(refused).rejects.toMatchObject({ exitCode: CONFIG_EXIT_CODE })
     await expect(refused).rejects.toThrow(/TALARIA_WEB_PASSWORD[\s\S]*TALARIA_WEB_ALLOW_UNAUTHENTICATED=1/)
     expect(await bindable(port)).toBe(true)
+  })
+
+  it('listens on the address it checked rather than resolving the name again', async () => {
+    // A second lookup of the name (real DNS) fails, so the listener's address shows which resolution it used.
+    const booted = await bootTestServer({ env: { TALARIA_WEB_HOST: 'rebind.invalid' } }).catch((error: unknown) => ({ error }))
+    try { expect('running' in booted ? booted.running.server.address() : booted.error).toMatchObject({ address: '127.0.0.1' }) } finally {
+      if ('running' in booted) await booted.close()
+    }
   })
 
   it('starts 0.0.0.0 once a password or a trusted auth header is configured', async () => {
