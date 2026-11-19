@@ -1,7 +1,7 @@
 import sceneCases from '../src/features/chat/__fixtures__/activity-scene-boundaries.json' with { type: 'json' }
 import canonicalScene from '../src/features/chat/__fixtures__/activity-scene.json' with { type: 'json' }
 import { createServer, type ServerResponse } from 'node:http'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import { deferred } from '../src/test/fixtures'
 import { REVEAL_MS } from '../src/lib/motion'
@@ -358,29 +358,65 @@ test('a credential in a tool command never reaches the page, live or settled', a
   }
 })
 
-test('recovered worklog can fetch its omitted history', async ({ page }) => {
+test('recovered worklog can fetch its omitted history', async ({ page, errors }, testInfo) => {
+  const tool = (id: string, order_index: number) => ({ row_id: `tool:${id}`, order_index, role: 'tool', tool: { id, name: 'read_file', args: { path: `${id}.txt` }, preview: null, result: null, done: true, is_error: false, duration: null, cost_usd: null } })
+  let mode = 'compact_worklog'
+  await page.route('**/api/settings', (route) => route.fulfill({ json: { chat_activity_display_mode: mode } }))
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    // A server tail preview: the first two of three rows are omitted and fetched on demand.
+    // A server tail preview: the first two of four rows are omitted and fetched on demand.
     session_id: 'worklog-history', title: 'Recovered work', messages: [{ role: 'assistant', id: 4, content: 'Recovered answer', _anchor_activity_scene: {
       version: 'activity_scene_v1', final_answer: 'Recovered answer', terminal_state: 'completed', expanded_by_default: false,
-      activity_rows_total: 3, activity_rows_offset: 2, activity_rows_complete: false, activity_rows_omitted: 2, activity_scene_ref: 'scene-ref',
-      activity_rows: [{ row_id: 'last', order_index: 2, role: 'prose', text: 'Latest progress' }],
+      activity_rows_total: 4, activity_rows_offset: 2, activity_rows_complete: false, activity_rows_omitted: 2, activity_scene_ref: 'scene-ref',
+      activity_rows: [tool('late-a', 2), tool('late-b', 3)],
     } }],
   } } }))
-  await page.route('**/api/session/anchor-scene?**', (route) => {
+  // The first fetch fails; the retry is held until the loading state is checked.
+  let fetches = 0
+  const held = deferred<undefined>()
+  await page.route('**/api/session/anchor-scene?**', async (route) => {
     expect(new URL(route.request().url()).searchParams.get('before')).toBe('2')
-    return route.fulfill({ json: { scene_ref: 'scene-ref', start: 0, end: 2, total: 3, complete: true, rows: [
+    if (++fetches === 1) return route.fulfill({ status: 400, json: { error: 'Synthetic failure' } })
+    await held.promise
+    return route.fulfill({ json: { scene_ref: 'scene-ref', start: 0, end: 2, total: 4, complete: true, rows: [
       { row_id: 'first', order_index: 0, role: 'prose', text: 'Earlier progress' },
-      { row_id: 'tool:earlier', order_index: 1, role: 'tool', tool: { id: 'earlier', name: 'read_file', args: { path: 'earlier.txt' }, preview: null, result: null, done: true, is_error: false, duration: null, cost_usd: null } },
+      tool('earlier', 1),
     ] } })
+  })
+  // TAL-1961: the control reads as the turn's own rows: the neighbouring group summary's edge, size and label style.
+  const control = page.getByRole('button', { name: 'Show 2 earlier steps' })
+  const look = (target: Locator) => target.evaluate((el) => {
+    const label = getComputedStyle(el.querySelector('.tool-worklog-label') ?? el)
+    const box = el.getBoundingClientRect()
+    return { left: box.left, width: box.width, height: box.height, parent: el.parentElement!.getBoundingClientRect().width,
+      label: [label.fontSize, label.fontWeight, label.color, label.opacity] }
   })
   await page.goto('/session/worklog-history')
   await page.locator('.tool-worklog-summary').first().click()
-  await page.getByRole('button', { name: 'Show 2 earlier steps' }).click()
+  const summary = await look(page.locator('[data-activity-sequence-group] > .tool-worklog-summary'))
+  const compact = await look(control)
+  expect({ left: compact.left, label: compact.label }).toEqual({ left: summary.left, label: summary.label })
+  expect(compact.width).toBeLessThan(compact.parent / 2)
+  if (testInfo.project.name === 'mobile') expect(compact.height).toBeGreaterThanOrEqual(44)
+
+  await control.click()
+  await page.getByRole('button', { name: 'Retry' }).click()
+  await expect(page.getByRole('button', { name: 'Loading...' })).toBeDisabled()
+  // The refused first fetch is this test's own.
+  errors.splice(0, errors.length, ...errors.filter((e) => !/anchor-scene|status of 400/.test(e)))
+  held.resolve(undefined)
   await expect(page.getByText('Earlier progress', { exact: true })).toBeVisible()
-  await expect(page.locator('[data-tool-id="earlier"] > button')).toBeVisible()
+  await expect(page.locator('[data-tool-id="earlier"]')).toBeAttached()
   await expect(page.getByRole('button', { name: /earlier steps/ })).toHaveCount(0)
   await expect(page.getByText('Recovered answer', { exact: true })).toBeVisible()
+
+  // Outside a worklog (transparent mode) the control keeps the same look.
+  mode = 'transparent_stream'
+  await page.reload()
+  await expect.poll(() => control.evaluate((el) => el.closest('[data-tool-worklog-group]') === null)).toBe(true)
+  const transparent = await look(control)
+  expect(transparent.label).toEqual(compact.label)
+  expect(transparent.width).toBeLessThan(transparent.parent / 2)
+  if (testInfo.project.name === 'mobile') expect(transparent.height).toBeGreaterThanOrEqual(44)
 })
 
 test('a tool result a limited response clipped opens whole on request (TAL-331)', async ({ page }, testInfo) => {

@@ -664,6 +664,76 @@ final class TranscriptHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "activity-groups-merged-open")
     }
 
+    /// TAL-1961: the control that pages a long turn's earlier rows reads as one of its activity rows: the row's leading edge
+    /// and height, one button named with the remaining count. Tapping it loads the rows in a plain and a steered turn.
+    func testEarlierStepsSitInTheActivityColumnAndLoadThePagedRows() async throws {
+        let fixture = try FixtureApp(for: self)
+        let detail = try Self.earlierStepsDetail()
+        let page = try JSONSerialization.data(withJSONObject: ["start": 0, "rows": [
+            ["row_id": "earlier:prose", "order_index": 0, "role": "prose", "text": "Earlier progress"],
+            ["row_id": "earlier:more", "order_index": 1, "role": "prose", "text": "More earlier progress"],
+        ]])
+        UITestFixtureURLProtocol.sessionDetail.withLock { $0 = detail }
+        UITestFixtureURLProtocol.anchorScenePage.withLock { $0 = page }
+        let window = try hostWindow(fixture.chat(try await fixture.session()), size: HostedSize.phone)
+
+        let controls = { HostedAccessibility.elements(in: window, labelContaining: "Earlier steps (") }
+        let ready = await awaitCondition { controls().count == 2 }
+        XCTAssertTrue(ready, "Both turns do not offer their earlier steps")
+        let control = try XCTUnwrap(controls().first)
+        let activity = await awaitElement(in: window) { $0.accessibilityLabel?.hasPrefix("Completed activity") == true }
+        let row = try XCTUnwrap(activity, "The plain turn's activity row is missing")
+        XCTAssertEqual(control.accessibilityLabel, "Earlier steps (2)")
+        XCTAssertTrue(control.accessibilityTraits.contains(.button))
+        XCTAssertGreaterThanOrEqual(control.accessibilityFrame.height.rounded(), 44, "The control is not an activity row's height")
+        XCTAssertEqual(control.accessibilityFrame.minX, row.accessibilityFrame.minX, accuracy: 0.5, "The control does not share the activity row's leading edge")
+        XCTAssertEqual(HostedAccessibility.identifier(of: control), "transcript-earlier-steps")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "earlier-steps")
+
+        HostedAccessibility.activate(control)
+        let loaded = await awaitCondition { !HostedAccessibility.elements(in: window, labelContaining: "Earlier progress").isEmpty }
+        XCTAssertTrue(loaded, "The plain turn's earlier rows did not load")
+        let plainDone = await awaitCondition { controls().count == 1 }
+        XCTAssertTrue(plainDone, "The plain turn still offers earlier steps once none remain")
+        HostedAccessibility.activate(try XCTUnwrap(controls().first))
+        let steeredDone = await awaitCondition { controls().isEmpty }
+        XCTAssertTrue(steeredDone, "The steered turn still offers earlier steps once none remain")
+    }
+
+    /// Two settled tail previews that omit their first two rows: a plain turn with a group of calls, then a steered turn.
+    private nonisolated static func earlierStepsDetail() throws -> Data {
+        func tool(_ id: String, name: String, kind: String, group: String, order: Int) -> [String: Any] {
+            ["row_id": "tool:\(id)", "order_index": order, "role": "tool", "group_id": group,
+             "tool": ["id": id, "name": name, "kind": kind, "target": "\(id).swift", "args": [:], "done": true, "is_error": false]]
+        }
+        func scene(_ ref: String, answer: String, rows: [[String: Any]], groups: [[String: Any]] = []) -> [String: Any] {
+            ["version": "activity_scene_v1", "terminal_state": "completed", "final_answer": answer, "expanded_by_default": true,
+             "turn_duration": 9, "activity_rows_offset": 2, "activity_rows_total": rows.count + 2, "activity_scene_ref": ref,
+             "activity_rows": rows, "activity_groups": groups]
+        }
+        let plain = scene("plain", answer: "All read.", rows: [
+            tool("alpha", name: "read_file", kind: "read", group: "group:0", order: 2),
+            tool("list", name: "terminal", kind: "shell", group: "group:0", order: 3),
+        ], groups: [["group_id": "group:0", "parts": [["kind": "read", "count": 1, "failed": 0], ["kind": "shell", "count": 1, "failed": 0]], "failed": 0, "running": false]])
+        let steered = scene("steered", answer: "Docs checked.", rows: [
+            tool("beta", name: "read_file", kind: "read", group: "group:1", order: 2),
+            ["row_id": "steering:docs", "order_index": 3, "role": "steering", "text": "Also check the docs",
+             "steering": ["steer_id": "docs", "consumed": true]],
+            tool("docs", name: "read_file", kind: "read", group: "group:2", order: 4),
+        ])
+        let session: [String: Any] = [
+            "session_id": UITestFixtureURLProtocol.sessionID, "title": "Paged turns",
+            "messages": [
+                ["role": "user", "content": "Read the sources", "message_id": "plain-goal", "_turn_id": "plain"],
+                ["role": "assistant", "content": "All read.", "message_id": "plain-reply", "_turn_id": "plain", "_anchor_activity_scene": plain],
+                ["role": "user", "content": "Check the docs", "message_id": "steered-goal", "_turn_id": "steered"],
+                ["role": "assistant", "content": "Docs checked.", "message_id": "steered-reply", "_turn_id": "steered", "_anchor_activity_scene": steered],
+            ],
+        ]
+        return try JSONSerialization.data(withJSONObject: ["session": session])
+    }
+
     /// A settled turn as the server ships it: three merged reads and a command in one group, prose, then a web search.
     private nonisolated static func activityGroupDetail() throws -> Data {
         func tool(_ id: String, name: String, kind: String, target: String, group: String, extra: [String: Any] = [:]) -> [String: Any] {
