@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "The feedback bridge decodes report images and video in a separate sanitizer that holds no Relay or Kanvil credentials.",
+      "highlight": false,
+      "components": ["relay"],
+      "announce": false
+    }
+  ]
+}
