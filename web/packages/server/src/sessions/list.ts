@@ -346,9 +346,17 @@ function isCliSessionForSettings(row: Row): boolean {
   return ['', 'untitled', 'cli', 'cli session'].includes(title) || (title.endsWith(' session') && (!source || source === 'cli'))
 }
 
+/**
+ * TAL-2202: how far a listing reaches past the request's profile. `all` lists other profiles' rows; `counted` only counts
+ * them (`other_profile_count`, which offers "All profiles"); `none` does neither (isolated mode, or a non-owner).
+ */
+export type ProfileReach = 'all' | 'counted' | 'none'
+
 export interface ListParams {
   activeProfile: string
   allProfiles: boolean
+  /** Whether `other_profile_count` counts the rows other profiles hold. */
+  countOtherProfiles: boolean
   includeArchived: boolean
   visibleOnly: boolean
   showCliSessions: boolean
@@ -361,7 +369,6 @@ export interface ListParams {
   sidebarSource: 'webui' | 'cli' | null
   archivedLimit: number | null
   archivedOffset: number
-  isolatedProfileMode: boolean
   profilesMatch: (a: string | null | undefined, b: string | null | undefined) => boolean
   /** state.db rows for the sidebar (Python `get_cli_sessions`); omitted when no non-WebUI source is shown. */
   cliRows?: Row[]
@@ -841,9 +848,9 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
   let otherProfileCount = 0
   if (params.allProfiles) scoped = merged
   else {
-    // Claude Code transcripts belong to no Hermes profile, so every profile lists them (TAL-551).
+    // Claude Code transcripts belong to no Hermes profile, so every profile lists them for the owner (TAL-551, TAL-2202).
     scoped = merged.filter((r) => sourceKind(r) === 'claude_code' || params.profilesMatch(str(r.profile) || null, params.activeProfile))
-    otherProfileCount = params.isolatedProfileMode ? 0 : merged.length - scoped.length
+    otherProfileCount = params.countOtherProfiles ? merged.length - scoped.length : 0
   }
   const identity = params.gatewayIdentity ?? new Map<string, GatewayIdentity>()
   const indexedParents = new Map((await store.readIndexEntries().catch(() => [])).flatMap((row) => {

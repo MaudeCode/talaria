@@ -141,7 +141,7 @@ describe('sidebar_source per profile (TAL-1863)', () => {
       const params: ListParams = {
         webuiRows: rows, cliRows: [], activeProfile, allProfiles, includeArchived: false, visibleOnly: false, showCliSessions: true, showClaudeCodeSessions: false, showMessagingSessions: false,
         showPreviousMessagingSessions: false, showCronSessions: false, showWebhookSessions: false, showKanbanSessions: false, sidebarSource: null,
-        archivedLimit: null, archivedOffset: 0, isolatedProfileMode: false, profilesMatch: (a, b) => (a ?? 'default') === (b ?? 'default'),
+        archivedLimit: null, archivedOffset: 0, countOtherProfiles: true, profilesMatch: (a, b) => (a ?? 'default') === (b ?? 'default'),
       }
       const { sessions } = await buildSessionListPayload(server.deps.sessionStore, params)
       return Object.fromEntries(sessions.filter((r) => str(r.session_id).startsWith('child-')).map((r): [string, unknown] => [str(r.session_id), r.sidebar_source]))
@@ -186,7 +186,7 @@ describe('one switch per outside source (TAL-2159)', () => {
       const params: ListParams = {
         webuiRows: rows.web ?? WEB, cliRows: rows.agent ?? AGENT, activeProfile: 'default', allProfiles: false, includeArchived: false, visibleOnly: false,
         ...ALL_ON, ...switches, showPreviousMessagingSessions: rows.showPrevious ?? true, sidebarSource: null,
-        archivedLimit: null, archivedOffset: 0, isolatedProfileMode: false, profilesMatch: (a, b) => (a ?? 'default') === (b ?? 'default'),
+        archivedLimit: null, archivedOffset: 0, countOtherProfiles: true, profilesMatch: (a, b) => (a ?? 'default') === (b ?? 'default'),
       }
       const { sessions } = await buildSessionListPayload(server.deps.sessionStore, params)
       return sessions.map((r) => str(r.session_id)).sort()
@@ -213,7 +213,7 @@ describe('one switch per outside source (TAL-2159)', () => {
     try {
       const params: ListParams = {
         webuiRows: WEB, cliRows: AGENT, activeProfile: 'default', allProfiles: false, includeArchived: false, visibleOnly: false, ...ALL_ON,
-        showPreviousMessagingSessions: true, sidebarSource: null, archivedLimit: null, archivedOffset: 0, isolatedProfileMode: false, profilesMatch: () => true,
+        showPreviousMessagingSessions: true, sidebarSource: null, archivedLimit: null, archivedOffset: 0, countOtherProfiles: true, profilesMatch: () => true,
       }
       const { sessions } = await buildSessionListPayload(server.deps.sessionStore, params)
       expect(Object.fromEntries(sessions.map((r) => [str(r.session_id), r.visibility_setting]))).toEqual({
@@ -296,7 +296,7 @@ describe('Web-created diagnostic chats (TAL-1040)', () => {
       const params: ListParams = {
         webuiRows: [], cliRows: [tip, other], webDiagnosticIds: new Set(['root']), activeProfile: 'default', allProfiles: false, includeArchived: false, visibleOnly: false,
         showCliSessions: false, showClaudeCodeSessions: false, showMessagingSessions: false, showPreviousMessagingSessions: false, showCronSessions: false, showWebhookSessions: false, showKanbanSessions: false,
-        sidebarSource: null, archivedLimit: null, archivedOffset: 0, isolatedProfileMode: false, profilesMatch: () => true,
+        sidebarSource: null, archivedLimit: null, archivedOffset: 0, countOtherProfiles: true, profilesMatch: () => true,
       }
       expect((await buildSessionListPayload(server.deps.sessionStore, params)).sessions.map((r) => r.session_id)).toEqual(['tip'])
     } finally { await server.close() }
@@ -339,7 +339,7 @@ describe('parent snapshot lookup (TAL-1219)', () => {
         visibleOnly: false, showCliSessions: false, showClaudeCodeSessions: false, showMessagingSessions: true,
         showPreviousMessagingSessions: false, showCronSessions: false, showWebhookSessions: false,
         showKanbanSessions: false, sidebarSource: null,
-        archivedLimit: null, archivedOffset: 0, isolatedProfileMode: false, profilesMatch: () => true,
+        archivedLimit: null, archivedOffset: 0, countOtherProfiles: true, profilesMatch: () => true,
       }
       const expected = (snapshot ? [...rows].reverse() : [rows[49]!]).map((row) => ({ ...row, is_cli_session: false, sidebar_parent_session_id: null, sidebar_source: 'webui', visibility_setting: 'show_messaging_sessions' }))
       expect((await buildSessionListPayload(store, params)).sessions).toEqual(expected)

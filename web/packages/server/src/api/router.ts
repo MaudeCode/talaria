@@ -13,7 +13,7 @@ import { requestBaseUrl } from './auth-raw.js'
 import { AuthStore } from '../auth/store.js'
 import { loginHash } from '../sessions/notify/web-push.js'
 import { onboardingGateAllows, profileList, settingsPayload } from './settings-router.js'
-import { projectList, workspaceList } from './sessions-router.js'
+import { projectList, requestProfileReach, workspaceList } from './sessions-router.js'
 import { throttleClientIp } from '../http/origin.js'
 import { STARTUP_RECOVERY_CONDITION } from '../startup.js'
 import { displayBotName } from '../settings.js'
@@ -131,7 +131,7 @@ async function shellPayload(ctx: RequestContext): Promise<Pick<Bootstrap, 'shell
   let timer: NodeJS.Timeout | undefined
   const late = new Promise<null>((resolve) => { timer = setTimeout(() => { resolve(null) }, SHELL_BUDGET_MS) })
   try {
-    const reads = Promise.all([settingsPayload(ctx), profileList(deps), workspaceList(deps), projectList(deps, false)])
+    const reads = Promise.all([settingsPayload(ctx), profileList(deps), workspaceList(deps), requestProfileReach(ctx, undefined).then((reach) => projectList(deps, reach))])
     const loaded = await Promise.race([reads, late])
     if (!loaded) return {}
     const [settings, profiles, workspaces, projects] = loaded

@@ -15,6 +15,7 @@ import { boardSlug, intQuery, kanbanFailure, truthyQuery, withKanbanPolicy, with
 import { TerminalNotRunning } from '../tools/terminal.js'
 import { sessionTerminal, startSessionTerminal, terminalSlice, TerminalRefused } from '../tools/agent-terminal.js'
 import { onboardingGateAllows } from './settings-router.js'
+import { requestProfileReach } from './sessions-router.js'
 import { sanitizeError } from '../workspace/media.js'
 import { containsQuery, str } from '../util.js'
 
@@ -102,7 +103,7 @@ export const automationRouter = os.router({
     blueprints: os.crons.blueprints.handler(({ context: { ctx } }) => run(() => ctx.deps.crons.blueprints(home(ctx)))),
     blueprintFill: os.crons.blueprintFill.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.blueprintFill(home(ctx), input))),
     contextSources: os.crons.contextSources.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.contextSources(home(ctx), input))),
-    list: os.crons.list.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.list(activeProfileName(ctx), truthyQuery(input.all_profiles)) as Promise<never>)),
+    list: os.crons.list.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.crons.list(activeProfileName(ctx), await requestProfileReach(ctx, input.all_profiles)) as Promise<never>)),
     history: os.crons.history.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.history(home(ctx), str(input.job_id), input.offset, input.limit))),
     output: os.crons.output.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.output(home(ctx), str(input.job_id), input.limit))),
     run: os.crons.run.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.runDetail(home(ctx), str(input.job_id), str(input.filename)))),

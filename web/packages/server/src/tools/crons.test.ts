@@ -37,10 +37,10 @@ describe('per-job schedule policy (TAL-1820)', () => {
     sidecar.respond('cron.create', (params) => { calls.push(params.job); return { job: stored } })
     sidecar.respond('cron.update', (params) => { calls.push(params.updates); return { job: stored } })
     const service = new CronService({ sidecar: () => sidecar, profileHome: () => home, profileNames: () => Promise.resolve([{ name: 'default', visible: true }]), profilesMatch: (a, b) => a === b, isolatedProfileMode: () => false, log: () => undefined })
-    expect(await service.list('default', false)).toMatchObject({ schedule_policy_available: true })
+    expect(await service.list('default', 'counted')).toMatchObject({ schedule_policy_available: true })
     schedulePolicy = false
     vi.advanceTimersByTime(5 * 60_000)
-    expect(await service.list('default', false)).toMatchObject({ schedule_policy_available: false })
+    expect(await service.list('default', 'counted')).toMatchObject({ schedule_policy_available: false })
     await service.create(home, { schedule: '0 9 * * *', prompt: 'hi', timezone: 'America/New_York', catch_up: true, grace_minutes: 30 })
     expect(calls[0]).toMatchObject({ timezone: 'America/New_York', catch_up: true, grace_minutes: 30 })
     await service.update(home, { job_id: recurring.id, timezone: null, catch_up: null, grace_minutes: null })
@@ -162,7 +162,7 @@ describe('cron job payloads carry the derived fields', () => {
       { ...jobs[0]!, id: 'f00000000001', name: 'Legacy', next_run_at: undefined, next_run: 1_789_000_000 },
     )
     runningJobs.set('e00000000001', 1)
-    const listed = await service.list('default', false)
+    const listed = await service.list('default', 'counted')
     expect(listed.ordered).toBe(true)
     const ids = listed.jobs as Dict[]
     expect(ids.map((job) => job.id)).toEqual(['e00000000001', 'f00000000001', recurring.id, 'g00000000001', 'b00000000001', 'd00000000001', 'c00000000001'])
@@ -175,7 +175,7 @@ describe('cron job payloads carry the derived fields', () => {
     let probed = false
     sidecar.respond('cron.list', (params) => { probed ||= params.probe_store === true; return { jobs: jobs as never[], store_health: params.probe_store ? health : undefined } })
     Object.assign(jobs[0]!, { running_elsewhere: true, last_status: 'ok', last_failure: { at: '2026-10-10T08:00:00+00:00', detail: 'provider timeout' } })
-    const listed = await service.list('default', false)
+    const listed = await service.list('default', 'counted')
     expect(probed).toBe(true)
     expect(listed.unwritable_stores).toEqual([{ profile: 'default', store: health.store, error: health.error, fix: health.fix, since: Date.UTC(2026, 9, 11, 12) / 1000 }])
     expect(listed.jobs).toMatchObject([{ running: true, derived_state: 'active', last_failure: { at: Date.UTC(2026, 9, 10, 8) / 1000, detail: 'provider timeout' } }])
@@ -183,22 +183,22 @@ describe('cron job payloads carry the derived fields', () => {
     Object.assign(jobs[0]!, { running_elsewhere: false, last_failure: null })
     sidecar.respond('cron.list', () => ({ jobs: jobs as never[], store_health: null }))
     vi.advanceTimersByTime(5 * 60_000)
-    expect(await service.list('default', false)).toMatchObject({ unwritable_stores: [], jobs: [{ running: false, last_failure: null }] })
+    expect(await service.list('default', 'counted')).toMatchObject({ unwritable_stores: [], jobs: [{ running: false, last_failure: null }] })
   })
 
   it('offers Stop for a managed live run, then reports it stopping until the run ends (TAL-1819)', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     const { service, home, jobs, sidecar } = setup()
-    expect((await service.list('default', false)).jobs).toMatchObject([{ can_stop: false, stopping: false }])
+    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ can_stop: false, stopping: false }])
     Object.assign(jobs[0]!, { live_execution: { id: 'exec-1', stopping: false } })
     vi.advanceTimersByTime(2_000)
-    const [live] = (await service.list('default', false)).jobs as Dict[]
+    const [live] = (await service.list('default', 'counted')).jobs as Dict[]
     expect(live).toMatchObject({ can_stop: true, stopping: false })
     expect(live).not.toHaveProperty('live_execution')
     sidecar.respond('cron.cancel', (params) => { Object.assign(jobs[0]!, { live_execution: { id: 'exec-1', stopping: true } }); return { ok: true, job_id: params.job_id, status: 'stopping' } })
     expect(await service.cancel(home, String(recurring.id))).toEqual({ ok: true, job_id: recurring.id, status: 'stopping' })
     expect(sidecar.calls.find((call) => call.method === 'cron.cancel')?.params).toMatchObject({ profile_home: home, job_id: recurring.id, reason: 'Stopped from Talaria' })
-    expect((await service.list('default', false)).jobs).toMatchObject([{ can_stop: false, stopping: true }])
+    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ can_stop: false, stopping: true }])
   })
 
   it('refuses a Stop the sidecar refuses and never offers Stop on another profile\'s task (TAL-1819)', async () => {
@@ -208,14 +208,14 @@ describe('cron job payloads carry the derived fields', () => {
     const readOnly = new CronService({ sidecar: () => sidecar, profileHome: (name) => `/synthetic/${name}`, profileNames: () => Promise.resolve([{ name: 'default', visible: true }, { name: 'other', visible: true }]), profilesMatch: (a, b) => a === b, isolatedProfileMode: () => false, log: () => undefined })
     Object.assign(jobs[0]!, { live_execution: { id: 'exec-1', stopping: false } })
     sidecar.respond('cron.list', (params) => ({ jobs: params.profile_home === '/synthetic/other' ? jobs as never[] : [] }))
-    expect((await readOnly.list('default', true)).jobs).toMatchObject([{ read_only: true, can_stop: false }])
+    expect((await readOnly.list('default', 'all')).jobs).toMatchObject([{ read_only: true, can_stop: false }])
   })
 
   it('lists running from the manual-run map and returns pause/resume rows through the same shaping', async () => {
     const { service, home, runningJobs } = setup()
-    expect((await service.list('default', false)).jobs).toMatchObject([{ id: recurring.id, derived_state: 'active', resumable: false, running: false, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *' }])
+    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ id: recurring.id, derived_state: 'active', resumable: false, running: false, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *' }])
     runningJobs.set(String(recurring.id), 1)
-    expect((await service.list('default', false)).jobs).toMatchObject([{ running: true }])
+    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ running: true }])
     expect((await service.pause(home, String(recurring.id), null)).job).toMatchObject({ derived_state: 'paused', needs_attention: false, resumable: true, running: true, schedule_input: '0 9 * * *' })
     runningJobs.clear()
     expect((await service.resume(home, String(recurring.id))).job).toMatchObject({ derived_state: 'error', needs_attention: false, resumable: false, running: false, schedule_input: '0 9 * * *' })
@@ -236,8 +236,8 @@ describe('unwritable cron stores (TAL-810)', () => {
       isolatedProfileMode: () => false,
       log: () => undefined,
     })
-    expect(await service.list('default', false)).toMatchObject({ jobs: [], other_profile_count: 1, unwritable_stores: [] })
-    expect(await service.list('default', true)).toMatchObject({ unwritable_stores: [{ profile: 'research', store: `${homes.research}/cron`, since: null }] })
+    expect(await service.list('default', 'counted')).toMatchObject({ jobs: [], other_profile_count: 1, unwritable_stores: [] })
+    expect(await service.list('default', 'all')).toMatchObject({ unwritable_stores: [{ profile: 'research', store: `${homes.research}/cron`, since: null }] })
   })
 })
 

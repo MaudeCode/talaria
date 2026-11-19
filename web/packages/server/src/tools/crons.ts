@@ -7,6 +7,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import { stateDbSessionReadAsync } from '../sessions/state-db.js'
 import { stripToolCallXml } from '../sessions/merge.js'
+import type { ProfileReach } from '../sessions/list.js'
 import { str } from '../util.js'
 
 export interface CronDeps {
@@ -499,10 +500,10 @@ export class CronService {
   }
 
   /** Python `/api/crons`: the active profile's rows plus foreign rows (hidden unless `all_profiles`). */
-  async list(active: string, allProfiles: boolean): Promise<Dict> {
+  async list(active: string, reach: ProfileReach): Promise<Dict> {
     const pickerHome = this.deps.profileHome(active)
     const probe: StoreProbe = { unwritable: [], schedulePolicy: false }
-    const all = allProfiles && !this.deps.isolatedProfileMode()
+    const all = reach === 'all'
     let rows: StoredJob[]
     try { rows = await this.storedJobs(active, probe) } catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true, unwritable_stores: [], schedule_policy_available: false }; throw error }
     // TAL-1381: hidden foreign rows are only counted, so they cost no projection.
@@ -511,7 +512,7 @@ export class CronService {
     const shown = all ? [...managed, ...others] : managed
     // TAL-810: a failing store is reported for the active profile and for every store whose jobs this list shows.
     const shownStores = new Set([active, ...shown.map((row) => row.profile)])
-    return { jobs: (await this.views(shown, pickerHome)).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : others.length, unwritable_stores: probe.unwritable.filter((store) => shownStores.has(store.profile)), schedule_policy_available: probe.schedulePolicy }
+    return { jobs: (await this.views(shown, pickerHome)).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: reach === 'counted' ? others.length : 0, unwritable_stores: probe.unwritable.filter((store) => shownStores.has(store.profile)), schedule_policy_available: probe.schedulePolicy }
   }
 
   /**

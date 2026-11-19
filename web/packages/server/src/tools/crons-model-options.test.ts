@@ -66,7 +66,7 @@ describe('cron list model options (TAL-1381)', () => {
     const expected = new Map(pairs.map(([model, provider]) => [JSON.stringify([model, provider]), catalog.modelOptionFor(homes.default, model, provider)]))
     expect([...expected.values()].filter(Boolean)).toHaveLength(3)
     const before = poolReads()
-    const listed = await service.list('default', false)
+    const listed = await service.list('default', 'counted')
     expect(poolReads() - before).toBe(1)
     const jobs = listed.jobs as Dict[]
     expect(jobs).toHaveLength(100)
@@ -76,12 +76,12 @@ describe('cron list model options (TAL-1381)', () => {
   it('prepares no catalog for an empty list or a list of only hidden rows, and still counts hidden rows', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     const before = poolReads()
-    expect(await service.list('default', false)).toMatchObject({ jobs: [], other_profile_count: 0 })
+    expect(await service.list('default', 'counted')).toMatchObject({ jobs: [], other_profile_count: 0 })
     addJobs(homes.research, 3, { profile: 'research', owner_profile: 'research' })
     vi.advanceTimersByTime(2_000)
-    expect(await service.list('default', false)).toMatchObject({ jobs: [], other_profile_count: 3 })
+    expect(await service.list('default', 'counted')).toMatchObject({ jobs: [], other_profile_count: 3 })
     expect(poolReads() - before).toBe(0)
-    const all = await service.list('default', true)
+    const all = await service.list('default', 'all')
     expect(all).toMatchObject({ all_profiles: true, other_profile_count: 0 })
     expect(all.jobs as Dict[]).toHaveLength(3)
     expect(poolReads() - before).toBe(1)
@@ -89,10 +89,10 @@ describe('cron list model options (TAL-1381)', () => {
 
   it('observes a changed catalog source on the next list and keeps single-row responses on the same owner', async () => {
     stores.get(homes.default)!.push({ ...base, id: 'swap', name: 'Swap', model: 'new-model', provider: 'anthropic' })
-    expect(((await service.list('default', false)).jobs as Dict[])[0]!.model_option_id).toBeNull()
+    expect(((await service.list('default', 'counted')).jobs as Dict[])[0]!.model_option_id).toBeNull()
     config = { ...config, providers: { ...(config.providers as Dict), anthropic: { models: ['claude-sonnet-4', 'new-model'] } } }
     writeFileSync(join(homes.default, 'config.yaml'), '# synthetic config, edited\n')
-    const option = ((await service.list('default', false)).jobs as Dict[])[0]!.model_option_id
+    const option = ((await service.list('default', 'counted')).jobs as Dict[])[0]!.model_option_id
     expect(option).toEqual(expect.stringContaining('new-model'))
     const before = poolReads()
     expect((await service.pause(homes.default, 'swap', null)).job).toMatchObject({ id: 'swap', model_option_id: option })
@@ -103,7 +103,7 @@ describe('cron list model options (TAL-1381)', () => {
     const cold = new ProviderCatalog({ sidecar: () => null, config: new AgentConfig({ sidecar: () => null, env: {} }), env: {}, now: () => 1_800_000_000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
     const failing = new CronService({ sidecar: () => sidecar, profileHome: (name) => homes[name as keyof typeof homes], profileNames: () => Promise.resolve([{ name: 'default', visible: true }]), profilesMatch: (a, b) => a === b, isolatedProfileMode: () => false, log: () => undefined, modelOptions: (home) => cold.modelOptionResolver(home) })
     addJobs(homes.default, 5)
-    const jobs = (await failing.list('default', false)).jobs as Dict[]
+    const jobs = (await failing.list('default', 'counted')).jobs as Dict[]
     expect(jobs).toHaveLength(5)
     for (const job of jobs) expect(job.model_option_id).toBeNull()
   })

@@ -62,19 +62,19 @@ describe('cron store read cost (TAL-1716)', () => {
       held.push(() => { resolve({ jobs: [], ...(probe_store ? { schedule_policy: true, store_health: profile_home === homes.default ? health : null } : {}) }) })
     }))
     const release = async (count: number) => { await new Promise(setImmediate); expect(held).toHaveLength(count); for (const run of held.splice(0)) run() }
-    const first = service.list('default', false)
+    const first = service.list('default', 'counted')
     await release(4)
     await expect(first).resolves.toMatchObject({ schedule_policy_available: true, unwritable_stores: [{ profile: 'default', store: health.store }] })
     expect(listCalls(sidecar).filter((call) => call.probe_store)).toHaveLength(4)
 
     vi.advanceTimersByTime(5 * 60_000 - 1)
-    const memoized = service.list('default', false)
+    const memoized = service.list('default', 'counted')
     await release(4)
     await expect(memoized).resolves.toMatchObject({ schedule_policy_available: true, unwritable_stores: [{ profile: 'default', store: health.store }] })
     expect(listCalls(sidecar).filter((call) => call.probe_store)).toHaveLength(4)
 
     vi.advanceTimersByTime(1)
-    const expired = service.list('default', false)
+    const expired = service.list('default', 'counted')
     await release(4)
     await expired
     expect(listCalls(sidecar).filter((call) => call.probe_store)).toHaveLength(8)
@@ -82,7 +82,7 @@ describe('cron store read cost (TAL-1716)', () => {
 
   it('shares one probe between concurrent lists of a store', async () => {
     const { service, sidecar } = setup()
-    await Promise.all([service.list('default', false), service.list('default', true)])
+    await Promise.all([service.list('default', 'counted'), service.list('default', 'all')])
     const probes = listCalls(sidecar).filter((call) => call.probe_store).map((call) => call.profile_home)
     expect(probes).toEqual([...new Set(probes)])
   })
@@ -91,10 +91,10 @@ describe('cron store read cost (TAL-1716)', () => {
     const { service, sidecar, homes } = setup()
     const working = sidecar.responderFor('cron.list')!
     sidecar.respond('cron.list', () => { throw new SidecarError('store unreadable', { condition: 'internal' }) })
-    await expect(service.list('default', false)).rejects.toThrow('store unreadable')
+    await expect(service.list('default', 'counted')).rejects.toThrow('store unreadable')
     sidecar.respond('cron.list', working)
     sidecar.calls.length = 0
-    await service.list('default', false)
+    await service.list('default', 'counted')
     expect(listCalls(sidecar)).toContainEqual({ profile_home: homes.default, probe_store: true })
   })
 
@@ -111,23 +111,23 @@ describe('cron store read cost (TAL-1716)', () => {
   it('answers a repeat read within two seconds from the last listing, then lists again', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     const { service, sidecar, homes, stores } = setup()
-    await service.list('default', false)
+    await service.list('default', 'counted')
     const initial = listCalls(sidecar).length
     stores.get(homes.default)?.push({ id: 'external', profile: null, toast_notifications: true, monitor: '', continuity: false })
     vi.advanceTimersByTime(1_999)
-    expect((await service.list('default', false)).jobs).toEqual([])
+    expect((await service.list('default', 'counted')).jobs).toEqual([])
     expect(listCalls(sidecar)).toHaveLength(initial)
     vi.advanceTimersByTime(1)
-    expect((await service.list('default', false)).jobs).toMatchObject([{ id: 'external' }])
+    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ id: 'external' }])
   })
 
   it('shows a write made here on the very next read', async () => {
     const { service, homes } = setup()
-    await service.list('default', false)
+    await service.list('default', 'counted')
     await service.create(homes.default, { schedule: 'every 1h', prompt: 'x' })
-    expect((await service.list('default', false)).jobs).toMatchObject([{ id: 'new-job' }])
+    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ id: 'new-job' }])
     await service.update(homes.default, { job_id: 'new-job', name: 'renamed' })
-    expect((await service.list('default', false)).jobs).toMatchObject([{ name: 'renamed' }])
+    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ name: 'renamed' }])
   })
 
   it('offers Stop to the refetch that follows a manual run starting', async () => {
@@ -139,9 +139,9 @@ describe('cron store read cost (TAL-1716)', () => {
       job.live_execution = { id: 'exec-1', stopping: false }
       emit({ event: 'started', data: { job_id } })
     }))
-    await service.list('default', false)
+    await service.list('default', 'counted')
     await service.runNow(homes.default, 'manual')
-    expect((await service.list('default', false)).jobs).toMatchObject([{ id: 'manual', can_stop: true }])
+    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ id: 'manual', can_stop: true }])
   })
 
   it('shows a manual run\'s result to the refetch its completion event triggers', async () => {
@@ -156,10 +156,10 @@ describe('cron store read cost (TAL-1716)', () => {
     }))
     const completed = new Promise<void>((resolve) => { deps.publishSessionsChanged = () => { resolve() } })
     await service.runNow(homes.default, 'manual')
-    await service.list('default', false)
+    await service.list('default', 'counted')
     finish()
     await completed
-    expect((await service.list('default', false)).jobs).toMatchObject([{ id: 'manual', last_outcome: 'succeeded' }])
+    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ id: 'manual', last_outcome: 'succeeded' }])
   })
 })
 
@@ -169,8 +169,8 @@ describe('cross-profile cron ownership', () => {
   it('keeps recovery-only rows visible but excludes them from new task context', async () => {
     const { service, homes, stores } = setup()
     stores.get(homes.default)?.push({ id: 'retained', name: 'Retained task', profile: null, toast_notifications: true, monitor: '', continuity: false, recovery_only: true })
-    expect(await service.list('default', false)).toMatchObject({ jobs: [{ id: 'retained' }] })
-    expect(((await service.list('default', false)).jobs as Dict[])[0]).not.toHaveProperty('recovery_only')
+    expect(await service.list('default', 'counted')).toMatchObject({ jobs: [{ id: 'retained' }] })
+    expect(((await service.list('default', 'counted')).jobs as Dict[])[0]).not.toHaveProperty('recovery_only')
     expect(await service.contextSources(homes.default, {})).toEqual({ profile: 'default', sources: [] })
     expect(await service.contextSources(homes.default, { selected_refs: ['retained'] })).toEqual({ profile: 'default', sources: [{ job_id: 'retained', label: 'Retained task', selectable: false }] })
   })
@@ -203,7 +203,7 @@ describe('cross-profile cron ownership', () => {
     expect(stores.get(homes.default)).toHaveLength(0)
     expect(stores.get(homes.research)?.[0]?.owner_profile).toBe('default')
     expect(created.job).toMatchObject({ owner_profile: 'research', read_only: false })
-    expect(await service.list('default', false)).toMatchObject({ jobs: [{ id: 'new-job', owner_profile: 'research', read_only: false }] })
+    expect(await service.list('default', 'counted')).toMatchObject({ jobs: [{ id: 'new-job', owner_profile: 'research', read_only: false }] })
     await service.update(homes.default, { job_id: 'new-job', name: 'renamed', profile: 'research', owner_profile: 'hidden' })
     await service.pause(homes.default, 'new-job', null)
     await service.resume(homes.default, 'new-job')
@@ -291,7 +291,7 @@ describe('cross-profile cron ownership', () => {
     vi.advanceTimersByTime(2_000)
     await expect(service.runNow(homes.default, 'legacy')).rejects.toMatchObject({ status: 409 })
     await expect(service.resume(homes.default, 'legacy')).rejects.toMatchObject({ status: 409 })
-    const jobs = (await service.list('default', false)).jobs as Dict[]
+    const jobs = (await service.list('default', 'counted')).jobs as Dict[]
     expect(jobs.some((row) => row.id === 'legacy')).toBe(true)
     await service.pause(homes.default, 'legacy', null)
     await service.delete(homes.default, 'legacy')

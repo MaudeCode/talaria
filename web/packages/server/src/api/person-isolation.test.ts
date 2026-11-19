@@ -33,6 +33,11 @@ function signIn(server: TestServer, subject: string, owner = false): Client {
   return clientFor(server, server.deps.auth.createSession({ authType: 'oidc', username: `${subject}@example.invalid`, oidcBinding: { issuer: ISSUER, subject, ...(owner ? { owner: true } : {}) } }))
 }
 
+/** A password login bound to `profile`, as a profile-bound user gets. */
+function boundLogin(server: TestServer, profile: string): Client {
+  return clientFor(server, server.deps.auth.createSession({ authType: 'password', boundProfile: profile }))
+}
+
 /** The request headers of an existing login's cookie. */
 function clientFor(server: TestServer, cookie: string): Client {
   return { cookie, headers: { cookie: `${server.deps.auth.cookieName()}=${cookie}`, origin: server.base, 'X-Hermes-CSRF-Token': server.deps.auth.csrfTokenForSession(cookie)!, 'content-type': 'application/json' } }
@@ -291,5 +296,82 @@ describe('person isolation off', () => {
     const body = await status(server, alice)
     expect(body.person_isolation).toEqual({ version: 1, enabled: false })
     expect(body).not.toHaveProperty('person')
+  })
+})
+
+// TAL-2202: other profiles' rows and the owner's Claude Code transcripts reach only server-owner authority.
+describe('owner-only reach', () => {
+  const PROFILES = ['default', 'work']
+  /** A server holding one chat, project and cron job in each profile, all titled `needle`. */
+  async function seeded(isolation: boolean): Promise<TestServer> {
+    const sidecar = new FakeSidecar()
+    const server = await boot(isolation, sidecar)
+    const home = (profile: string): string => (profile === 'default' ? server.state : join(server.state, 'profiles', profile))
+    for (const profile of PROFILES) mkdirSync(home(profile), { recursive: true })
+    sidecar.respond('profiles.list', () => ({ profiles: PROFILES.map((name) => ({ name, path: home(name), is_default: name === 'default', gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 })) as never[] }))
+    sidecar.respond('cron.list', (params) => ({ jobs: PROFILES.filter((name) => home(name) === params.profile_home).map((name) => ({ id: `cron-${name}`, name: 'needle', profile: name === 'default' ? null : name, toast_notifications: true, monitor: '', continuity: false })) as never[] }))
+    for (const profile of PROFILES) {
+      const session = await server.deps.sessionStore.newSession({ profile })
+      session.title = 'needle'
+      await server.deps.sessionStore.save(session)
+      await withTurn(server, session.session_id)
+    }
+    await server.deps.projects.save(PROFILES.map((profile) => ({ project_id: `project-${profile}`, name: 'needle', profile })))
+    return server
+  }
+
+  /** Each listing's rows by profile, with its `all_profiles` and `other_profile_count`. */
+  async function reach(server: TestServer, viewer: Client, flag: string): Promise<Record<string, unknown>> {
+    const read = async (path: string, rows: string, profileOf: (row: Record<string, unknown>) => unknown) => {
+      const response = await server.get(`${path}${flag}`, { headers: viewer.headers })
+      expect(response.status, path).toBe(200)
+      const body = await response.json() as Record<string, unknown>
+      return { profiles: [...new Set((body[rows] as Record<string, unknown>[]).map(profileOf))].sort(), all_profiles: body.all_profiles, other_profile_count: body.other_profile_count }
+    }
+    return {
+      sessions: await read('/api/sessions?', 'sessions', (row) => row.profile),
+      search: await read('/api/sessions/search?q=needle&', 'sessions', (row) => row.profile),
+      projects: await read('/api/projects?', 'projects', (row) => row.profile),
+      crons: await read('/api/crons?', 'jobs', (row) => row.owner_profile),
+    }
+  }
+
+  it.each([
+    { viewer: 'a profile-bound login', owner: false },
+    { viewer: 'the owner', owner: true },
+  ])('all_profiles reaches other profiles only for $viewer', async ({ owner }) => {
+    const server = await seeded(false)
+    const viewer = owner ? signIn(server, 'olive', true) : boundLogin(server, 'work')
+    const own = owner ? 'default' : 'work'
+    // A non-owner is offered nothing beyond its profile, and its flag changes nothing.
+    const listing = (profiles: string[], all: boolean, others: number | undefined) => ({ profiles, all_profiles: all, other_profile_count: others })
+    const without = owner ? 1 : 0
+    const flagged = owner ? listing(PROFILES, true, 0) : listing([own], false, 0)
+    expect(await reach(server, viewer, 'all_profiles=1')).toEqual({ sessions: flagged, search: { ...flagged, other_profile_count: undefined }, projects: flagged, crons: flagged })
+    expect(await reach(server, viewer, '')).toEqual({ sessions: listing([own], false, without), search: listing([own], false, undefined), projects: listing([own], false, without), crons: listing([own], false, without) })
+  })
+
+  it.each([
+    { viewer: 'a profile-bound login', isolation: false, owner: false },
+    { viewer: 'a non-owner person', isolation: true, owner: false },
+    { viewer: 'the owner without person isolation', isolation: false, owner: true },
+    { viewer: 'the owner with person isolation', isolation: true, owner: true },
+  ])('Claude Code transcripts reach only owner authority: $viewer', async ({ isolation, owner }) => {
+    const server = await boot(isolation)
+    const project = join(server.state, 'claude-projects', '-repo')
+    mkdirSync(project, { recursive: true })
+    writeFileSync(join(project, 'one.jsonl'), JSON.stringify({ type: 'user', timestamp: '2026-10-01T10:00:00Z', message: { role: 'user', content: 'owner transcript' } }) + '\n')
+    const claudeCode = async (viewer: Client): Promise<string[]> => {
+      const response = await server.get('/api/sessions?show_claude_code_sessions=1', { headers: viewer.headers })
+      return ((await response.json()) as { sessions: { session_id: string; source_kind: string }[] }).sessions.filter((row) => row.source_kind === 'claude_code').map((row) => row.session_id)
+    }
+    const [sid] = await claudeCode(signIn(server, 'olive', true))
+    expect(sid).toMatch(/^claude_code_/)
+    const viewer = owner ? signIn(server, 'olive', true) : isolation ? signIn(server, 'alice') : boundLogin(server, 'work')
+    expect(await claudeCode(viewer)).toEqual(owner ? [sid] : [])
+    // An SSE stream the viewer may open stays open, so only a refused one is read. Export serves stored chats only.
+    for (const path of [`/api/session?session_id=${sid!}`, ...(owner ? [] : [`/api/session/stream?session_id=${sid!}`])]) {
+      expect((await server.get(path, { headers: viewer.headers })).status, path).toBe(owner ? 200 : 404)
+    }
   })
 })
