@@ -193,6 +193,70 @@ final class DuoFoldHostedTests: XCTestCase {
         XCTAssertEqual(starts(), startsBefore, "Returning sent the queued message")
     }
 
+    /// The editor mounted in the window, which a fold replaces with the other layout's.
+    private func mountedEditor(in window: UIWindow) -> UITextView? {
+        window.firstView(ofType: UITextView.self) { $0.isEditable }
+    }
+
+    /// TAL-2565: closing or opening the Duo replaces the chat's editor. A focused one hands over its draft, selection and
+    /// keyboard, so the next keystroke lands where the writer left it.
+    func testAFocusedDraftKeepsItsSelectionAndKeyboardAcrossClosingAndOpening() async throws {
+        let folding = try await openChatOnInnerDisplay()
+        let window = folding.window
+        _ = try await requireElement(in: window, "The transcript never loaded", where: FixtureApp.isLoadedTranscriptRow)
+        try await typeIntoComposer("Fold this draft", in: window)
+        var editor = try XCTUnwrap(mountedEditor(in: window))
+        XCTAssertTrue(editor.isFirstResponder)
+        // "this", in UTF-16 offsets.
+        var selection = NSRange(location: 5, length: 4)
+        editor.selectedRange = selection
+        var draft = "Fold this draft"
+        attachHostedScreenshot(window, name: "duo-focus-1-open-selected")
+
+        for (closed, typed) in [(true, "the"), (false, "!")] {
+            let moment = closed ? "Closing" : "Opening"
+            let replaced = editor
+            fold(folding, closed: closed)
+            let handedOver = await awaitCondition {
+                guard let mounted = self.mountedEditor(in: window), mounted !== replaced else { return false }
+                return mounted.isFirstResponder && mounted.text == draft && mounted.selectedRange == selection
+            }
+            let mounted = mountedEditor(in: window)
+            XCTAssertTrue(handedOver, """
+                \(moment) the Duo left \(mounted === replaced ? "the same editor" : "a new editor") with \
+                focus \(mounted?.isFirstResponder ?? false), text \(mounted?.text ?? "none"), \
+                selection \(mounted.map { NSStringFromRange($0.selectedRange) } ?? "none")
+                """)
+            attachHostedScreenshot(window, name: closed ? "duo-focus-2-closed" : "duo-focus-3-reopened")
+            editor = try XCTUnwrap(mounted)
+            editor.insertText(typed)
+            draft = (draft as NSString).replacingCharacters(in: selection, with: typed)
+            selection = NSRange(location: selection.location + (typed as NSString).length, length: 0)
+            let reached = await awaitCondition { self.composerDraftText(in: window) == draft }
+            XCTAssertTrue(reached, "Typing after \(moment.lowercased()) wrote \(composerDraftText(in: window) ?? "nothing")")
+        }
+    }
+
+    /// TAL-2565: only focus the writer left in place is handed over; a dismissed keyboard stays down.
+    func testADismissedKeyboardStaysDownAcrossClosingAndOpening() async throws {
+        let folding = try await openChatOnInnerDisplay()
+        let window = folding.window
+        _ = try await requireElement(in: window, "The transcript never loaded", where: FixtureApp.isLoadedTranscriptRow)
+        try await typeIntoComposer("Unfocused draft", in: window)
+        XCTAssertTrue(try XCTUnwrap(mountedEditor(in: window)).resignFirstResponder())
+
+        for closed in [true, false] {
+            fold(folding, closed: closed)
+            // Runs the rebuilt chat's main-actor work until the editor settles, so a focus request it queued gets to run.
+            _ = await awaitRenderedQuiet(in: window) {
+                [self.composerDraftText(in: window) ?? "", self.mountedEditor(in: window)?.isFirstResponder == true ? "focused" : ""]
+            }
+            XCTAssertEqual(composerDraftText(in: window), "Unfocused draft")
+            XCTAssertFalse(mountedEditor(in: window)?.isFirstResponder ?? false,
+                           "\(closed ? "Closing" : "Opening") the Duo raised a dismissed keyboard")
+        }
+    }
+
     func testTheReadersRowStaysAtTheTopAcrossClosingAndOpening() async throws {
         let folding = try await openChatOnInnerDisplay()
         let window = folding.window

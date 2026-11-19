@@ -155,6 +155,8 @@ struct ChatView: View {
     let paneUsesFoldRegions: Bool
     /// This chat's owner, shared with the session list when navigation moves it between layouts or panes (TAL-1477).
     @State private var retained: RetainedChat?
+    /// The retained chat's editor handle, shared by every composer this chat mounts.
+    @State private var composerCaret: ComposerCaret
     /// True while this view carries on a chat a replaced view was showing, which is still loaded and running.
     @State private var takesOverLiveChat: Bool
     /// The row a taken-over transcript reopens at, when its reader had scrolled away from the latest message.
@@ -343,6 +345,7 @@ struct ChatView: View {
             server: server
         ))
         _retained = State(initialValue: retained)
+        _composerCaret = State(initialValue: retained.composerCaret)
         _takesOverLiveChat = State(initialValue: retained.isLive)
         _restoredReadingRowID = State(initialValue: retained.readingRowID)
         _followLatch = State(initialValue: ChatScrollPolicy.FollowLatch(isFollowing: retained.readingRowID == nil))
@@ -564,6 +567,7 @@ struct ChatView: View {
             onExpandedPresentationRequirementChange: { isRequired in
                 composerRequiresExpandedPresentation = isRequired
             },
+            caret: composerCaret,
             clarificationPrompt: prompt,
             clarificationErrorMessage: viewModel.clarificationErrorMessage,
             clarificationSelectedChoices: viewModel.clarificationSelectedChoices,
@@ -896,6 +900,10 @@ struct ChatView: View {
                 guard !takesOverLiveChat else {
                     // Its stream, polling and Listen never stopped; only this view's own stall check restarts.
                     if viewModel.activeStreamID != nil { handleActiveStreamChange() }
+                    // A replaced editor that was focused hands its focus over; its selection follows (TAL-2565).
+                    if composerCaret.handoff != nil {
+                        if canFocusComposer { requestComposerFocusIfPossible() } else { composerCaret.discardHandoff() }
+                    }
                     return
                 }
                 Task {

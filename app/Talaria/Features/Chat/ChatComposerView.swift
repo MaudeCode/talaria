@@ -127,6 +127,8 @@ struct MessageComposerView: View {
     let onRefreshGitBranches: () -> Void
     let onVoiceInputRequestHandled: () -> Void
     let onExpandedPresentationRequirementChange: (Bool) -> Void
+    /// The chat's editor handle, which outlives this view across a layout replacement (TAL-2565).
+    let caret: ComposerCaret
 
     var clarificationPrompt: ClarificationPromptState? = nil
     var clarificationErrorMessage: String? = nil
@@ -177,7 +179,6 @@ struct MessageComposerView: View {
     @State private var voiceNoteCancelArmed = false
     @State private var didAutoStartVoiceInput = false
     @State private var isDropTargeted = false
-    @State private var caret = ComposerCaret()
     @AppStorage(ComposerSTTProviderPreference.storageKey) private var sttProviderPreferenceRawValue = ComposerSTTProviderPreference.defaultValue.rawValue
     @AppStorage(ComposerSendKey.storageKey) private var sendKeyRawValue = ComposerSendKey.defaultValue.rawValue
     @AppStorage(StreamingSendBehavior.storageKey) private var streamingSendBehaviorRawValue = StreamingSendBehavior.steer.rawValue

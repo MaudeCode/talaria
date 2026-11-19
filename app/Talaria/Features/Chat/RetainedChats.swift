@@ -13,6 +13,8 @@ final class RetainedChat {
     var creationExecutionMode: ExecutionMode?
     var didStartConversation = false
     let rows = ChatTranscriptRowCache()
+    /// The composer's editor, kept so a layout replacement hands its focus and selection to the next one (TAL-2565).
+    let composerCaret = ComposerCaret()
     var gitAvailability: GitWorkspaceAvailabilityViewModel?
     /// The row at the top of the transcript where the reader last let go of it; nil while it follows the latest message.
     var readingRowID: String?
@@ -52,6 +54,7 @@ final class RetainedChat {
             await Task.yield()
             guard !Task.isCancelled, shownViews == 0 else { return }
             pendingRelease = nil
+            composerCaret.discardHandoff()
             release()
         }
     }
@@ -108,6 +111,14 @@ final class ChatViewModelCache {
     func prepareForWidthChange() {
         for entry in entries where entry.chat.isLive {
             entry.chat.widthChangePreparation?.action()
+        }
+    }
+
+    /// Called before the compact and regular layouts replace each other: each shown chat's focused editor records its
+    /// draft and selection, which the editor mounted in its place takes over (TAL-2565).
+    func prepareForLayoutReplacement() {
+        for entry in entries where entry.chat.isLive {
+            entry.chat.composerCaret.captureEditingForReplacement()
         }
     }
 
