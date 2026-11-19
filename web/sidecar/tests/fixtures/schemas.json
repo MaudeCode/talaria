@@ -2913,6 +2913,9 @@
                   "minimum": -9007199254740991,
                   "maximum": 9007199254740991
                 },
+                "read_only": {
+                  "type": "boolean"
+                },
                 "claim_live": {
                   "type": "boolean"
                 },
@@ -3062,6 +3065,9 @@
                         "type": "integer",
                         "minimum": -9007199254740991,
                         "maximum": 9007199254740991
+                      },
+                      "read_only": {
+                        "type": "boolean"
                       },
                       "claim_live": {
                         "type": "boolean"
@@ -3370,6 +3376,9 @@
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
           },
+          "read_only": {
+            "type": "boolean"
+          },
           "claim_live": {
             "type": "boolean"
           },
@@ -3519,6 +3528,9 @@
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
           },
+          "read_only": {
+            "type": "boolean"
+          },
           "claim_live": {
             "type": "boolean"
           },
@@ -3581,6 +3593,9 @@
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
           },
+          "read_only": {
+            "type": "boolean"
+          },
           "claim_live": {
             "type": "boolean"
           },
@@ -3642,6 +3657,9 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
+          },
+          "read_only": {
+            "type": "boolean"
           },
           "claim_live": {
             "type": "boolean"
