@@ -80,9 +80,7 @@ export async function verifyAppleIdentityToken(input: {
   if (claims.iat !== undefined && claims.iat > input.nowSeconds + 5 * 60) return null;
   if (!timingSafeEqual(claims.nonce, input.nonce)) return null;
 
-  const jwk = input.keys.find(
-    (key) => key.kid === header.kid && key.kty === "RSA" && key.alg === "RS256",
-  );
+  const jwk = appleSigningKey(input.keys, header.kid);
   if (!jwk) return null;
   try {
     const key = await crypto.subtle.importKey(
@@ -102,6 +100,11 @@ export async function verifyAppleIdentityToken(input: {
   } catch {
     return null;
   }
+}
+
+/** The JWKS entry that can verify a token signed with `kid`, if Apple publishes one. */
+export function appleSigningKey(keys: readonly AppleJwk[], kid: string): AppleJwk | undefined {
+  return keys.find((key) => key.kid === kid && key.kty === "RSA" && key.alg === "RS256");
 }
 
 export function appleIdentityKeyId(token: string): string | null {

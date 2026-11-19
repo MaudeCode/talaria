@@ -251,15 +251,6 @@ describe("feedback budgets", () => {
     expect((await submit(report())).status).toBe(429);
     expect(await rows()).toHaveLength(5);
   });
-
-  it("keeps the Apple sign-in budget at three hundred attempts a minute", async () => {
-    const { backend } = await relay();
-    for (let index = 0; index < 300; index += 1) {
-      await expect(backend.mutation(internal.auth.consumeAppleAuthBudget, { now: start })).resolves.toEqual({ ok: true });
-    }
-    await expect(backend.mutation(internal.auth.consumeAppleAuthBudget, { now: start + 59_999 })).resolves.toEqual({ ok: false });
-    await expect(backend.mutation(internal.auth.consumeAppleAuthBudget, { now: start + 60_000 })).resolves.toEqual({ ok: true });
-  });
 });
 
 describe("feedback operator queue", () => {

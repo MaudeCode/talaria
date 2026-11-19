@@ -53,7 +53,7 @@ export const acceptAppleSignIn = internalMutation({
     now: v.number(),
   },
   returns: v.union(
-    v.object({ ok: v.literal(false), reason: v.literal("replay") }),
+    v.object({ ok: v.literal(false), reason: v.union(v.literal("replay"), v.literal("rate_limited")) }),
     v.object({ ok: v.literal(true), userId: v.string() }),
   ),
   handler: async (ctx, args) => {
@@ -62,6 +62,9 @@ export const acceptAppleSignIn = internalMutation({
       .withIndex("by_token_hash", (query) => query.eq("tokenHash", args.appleTokenHash))
       .unique();
     if (replay) return { ok: false as const, reason: "replay" as const };
+    // The relay-wide budget counts only verified, unreplayed tokens, so forged or replayed ones cannot exhaust it.
+    const budget = await consumeBudget(ctx, args.now, [{ key: "apple-auth-global", windowMs: 60_000, limit: 300 }]);
+    if (!budget.ok) return { ok: false as const, reason: "rate_limited" as const };
 
     const existingUser = await ctx.db
       .query("relayUsers")
@@ -137,11 +140,12 @@ export async function consumeBudget(
   return { ok: true };
 }
 
-export const consumeAppleAuthBudget = internalMutation({
-  args: { now: v.number() },
+/** Unverified Apple sign-in attempts from one client address, charged before any signature work. */
+export const consumeAppleAuthAttemptBudget = internalMutation({
+  args: { key: v.string(), now: v.number() },
   returns: v.object({ ok: v.boolean() }),
   handler: async (ctx, args) => {
-    const result = await consumeBudget(ctx, args.now, [{ key: "apple-auth-global", windowMs: 60_000, limit: 300 }]);
+    const result = await consumeBudget(ctx, args.now, [{ key: args.key, windowMs: 60_000, limit: 30 }]);
     return { ok: result.ok };
   },
 });

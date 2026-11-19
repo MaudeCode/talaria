@@ -27,7 +27,16 @@ These fields are diagnostics, not an exact peer-version requirement.
 }
 ```
 
-The relay verifies the ES256 signature against Apple's JWKS plus issuer, audience, expiry, nonce, and token replay. It returns an opaque 30-day relay session token. End it with `DELETE /v1/auth/session`.
+The relay verifies the RS256 signature against Apple's JWKS plus issuer, audience, expiry, nonce, and token replay. It returns an opaque 30-day relay session token. End it with `DELETE /v1/auth/session`.
+
+Two fixed one-minute budgets limit sign-in; either answers 429 `{error:"rate_limited"}`:
+
+| Budget | Limit | Charged |
+|---|---|---|
+| Per client address (the first `x-forwarded-for` entry, hashed; requests without one share a budget) | 30 a minute | Every attempt with a parseable RS256 header, before any signature work |
+| Relay-wide | 300 a minute | Only a token whose Apple signature and claims verified and that is not a replay |
+
+A token whose `kid` is not in Apple's cached JWKS answers 401 before any signature check, so forged tokens never reach the relay-wide budget.
 
 ## Server registration and profile enrollment
 
