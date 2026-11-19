@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On the iPhone Duo, opening a chat with a companion page no longer makes a large glass shape grow out of the vertical toolbar over the conversation.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}
