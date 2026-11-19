@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Pointing an MCP server or delegation route at a different host now drops its saved keys and headers instead of sending them to the new host, and MCP server lists hide tokens in URLs and command arguments.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

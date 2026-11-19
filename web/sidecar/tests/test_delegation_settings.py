@@ -62,6 +62,12 @@ with patch.object(socket.socket, 'connect', side_effect=AssertionError('No netwo
     assert explicit['fallback_providers'] == [] and 'api_key' not in explicit
     omitted = delegation.clean_routes('model_map', {'options': [{**row, 'service_tier': ''}], 'default': None}, block)['options'][0]
     assert 'service_tier' not in omitted
+    # TAL-2207: a stored key goes only to the endpoint it was saved for; a new provider or base URL gets only a key it is sent.
+    edit = {key: value for key, value in row.items() if key != 'api_key'}
+    assert delegation.clean_routes('model_map', {'options': [edit]}, block)['options'][0]['api_key'] == 'private-synthetic'
+    for change in ({'base_url': 'https://other.invalid/v1'}, {'provider': 'anthropic'}):
+        assert 'api_key' not in delegation.clean_routes('model_map', {'options': [{**edit, **change}]}, block)['options'][0], change
+        assert delegation.clean_routes('model_map', {'options': [{**edit, **change, 'api_key': 'new-synthetic'}]}, block)['options'][0]['api_key'] == 'new-synthetic'
     created = delegation.clean_routes('model_map', {'options': [{**row, 'name': 'new'}, row], 'default': 'new'}, block)
     assert [item['name'] for item in created['options']] == ['new', 'renamed'] and created['default'] == 'new'
     assert delegation.clean_routes('model_map', {'options': [], 'default': None}, block) == {'options': []}

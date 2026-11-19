@@ -14,6 +14,22 @@ export const MASK = '••••••'
 const STDIO_LIFECYCLE_KEYS = ['idle_timeout_seconds', 'max_lifetime_seconds']
 /** TAL-1967: an HTTP server's settings bound to its host: credentials, TLS identity and trust. `null` in an update clears each. */
 export const MCP_HOST_BOUND_KEYS = ['headers', 'auth', 'oauth', 'ssl_verify', 'client_cert', 'client_key', 'skip_preflight', 'identity_header', 'strict_redirect_headers', 'trust']
+/** TAL-2207: the credentials an update drops when the server is pointed at another endpoint. */
+const MCP_CREDENTIAL_KEYS = ['headers', 'auth', 'oauth', 'client_cert', 'client_key', 'identity_header', 'env']
+
+/** TAL-2207: where a server's credentials go: a remote URL's origin (the whole URL when it has none), or a stdio command and its argv. */
+function endpointOf(cfg: Dict): string {
+  if (!('url' in cfg)) return JSON.stringify(['stdio', cfg.command ?? '', cfg.args ?? []])
+  const url = str(cfg.url)
+  let origin = 'null'
+  try { origin = new URL(url).origin } catch { /* a template or invalid URL compares whole */ }
+  return JSON.stringify(['url', origin === 'null' ? url : origin])
+}
+
+/** TAL-2207: listings redact tokens in a URL or argv element. */
+const redacted = (value: unknown): unknown => typeof value === 'string' ? redactString(value) : value
+/** A submitted value equal to the redacted listing of the stored one keeps the stored one. */
+const unredacted = (submitted: unknown, stored: unknown): unknown => typeof stored === 'string' && submitted === redactString(stored) ? stored : submitted
 
 function maskSecrets(obj: unknown): unknown {
   if (!isDict(obj)) return obj
@@ -30,8 +46,9 @@ function stripMasked(submitted: unknown, existing: unknown): unknown {
   if (!isDict(submitted) || !isDict(existing)) return submitted
   const out: Dict = {}
   for (const [k, v] of Object.entries(submitted)) {
-    if (v === MASK && typeof existing[k] === 'string') out[k] = existing[k]
-    else if (isDict(v) && isDict(existing[k])) out[k] = stripMasked(v, existing[k])
+    // A mask with no stored secret behind it is absent, never saved as a value.
+    if (v === MASK) { if (typeof existing[k] === 'string') out[k] = existing[k] }
+    else if (isDict(v)) out[k] = stripMasked(v, isDict(existing[k]) ? existing[k] : {})
     else out[k] = v
   }
   return out
@@ -116,11 +133,11 @@ export function serverSummary(name: string, cfg: unknown, runtime: Dict | null):
   if ('url' in cfg) {
     out.transport = 'http'
     if ('headers' in cfg) out.headers = maskSecrets(cfg.headers)
-    out.url = cfg.url
+    out.url = redacted(cfg.url)
   } else if ('command' in cfg) {
     out.transport = 'stdio'
     out.command = cfg.command ?? ''
-    out.args = cfg.args ?? []
+    out.args = Array.isArray(cfg.args) ? cfg.args.map(redacted) : cfg.args ?? []
     if ('env' in cfg) out.env = maskSecrets(cfg.env)
   } else {
     out.transport = 'invalid'
@@ -408,14 +425,19 @@ export class McpService {
           if (Object.keys(lifecycle).length) server.lifecycle = lifecycle
           else Reflect.deleteProperty(server, 'lifecycle')
         }
-        server.url = str(body.url).trim()
-        if (body.headers) server.headers = stripMasked(body.headers, existing.headers ?? {})
+        server.url = unredacted(str(body.url).trim(), existing.url)
       } else if (body.command) {
         for (const key of ['url', 'headers', 'auth', 'oauth', 'ssl_verify', 'client_cert', 'client_key', 'skip_preflight', 'transport', 'identity_header', 'strict_redirect_headers']) Reflect.deleteProperty(server, key)
         server.command = str(body.command).trim()
-        if (body.args) server.args = Array.isArray(body.args) ? body.args : [body.args]
-        if (body.env) server.env = stripMasked(body.env, existing.env ?? {})
+        const storedArgs = Array.isArray(existing.args) ? existing.args : []
+        if (body.args) server.args = (Array.isArray(body.args) ? body.args : [body.args]).map((arg, i) => unredacted(arg, storedArgs[i]))
       } else throw new HttpFailure(400, 'url or command is required')
+      // TAL-2207: credentials stay with the endpoint they were saved for; a new one gets only what the body sends.
+      const moved = endpointOf(existing) !== endpointOf(server)
+      if (moved) for (const key of MCP_CREDENTIAL_KEYS) Reflect.deleteProperty(server, key)
+      const kept = moved ? {} : existing
+      if (body.url && body.headers) server.headers = stripMasked(body.headers, kept.headers ?? {})
+      if (!body.url && body.env) server.env = stripMasked(body.env, kept.env ?? {})
       for (const key of new Set(['headers', 'args', 'env', 'timeout', ...MCP_HOST_BOUND_KEYS])) {
         if (body[key] === null) Reflect.deleteProperty(server, key)
       }

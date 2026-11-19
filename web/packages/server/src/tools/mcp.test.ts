@@ -18,14 +18,18 @@ describe('MCP config updates', () => {
   const stdioOptions = { cwd: '/test/workspace', idle_timeout_seconds: 60, max_lifetime_seconds: 120, lifecycle: { idle_timeout_seconds: 30, max_lifetime_seconds: 90 } }
 
   it.each<{ name: string; existing: Dict; body: Dict; expected: Dict }>([
-    { name: 'URL-only edit', existing: http, body: { url: 'https://new.example/mcp' }, expected: { ...http, url: 'https://new.example/mcp' } },
-    { name: 'command-only edit', existing: stdio, body: { command: 'new-mcp' }, expected: { ...stdio, command: 'new-mcp' } },
+    // TAL-2207: a new origin, command or argv drops the credentials bound to the old endpoint; a masked value is not restored.
+    { name: 'URL edit to another origin', existing: http, body: { url: 'https://new.example/mcp' }, expected: { url: 'https://new.example/mcp' } },
+    { name: 'URL edit to another origin with masked secret', existing: http, body: { url: 'https://new.example/mcp', headers: { Authorization: '••••••', 'X-Team': 'docs' } }, expected: { url: 'https://new.example/mcp', headers: { 'X-Team': 'docs' } } },
+    { name: 'URL edit within the origin', existing: http, body: { url: 'https://old.example/v2/mcp', headers: { Authorization: '••••••' } }, expected: { ...http, url: 'https://old.example/v2/mcp' } },
+    { name: 'command-only edit', existing: stdio, body: { command: 'new-mcp' }, expected: { command: 'new-mcp', args: stdio.args } },
+    { name: 'args edit with masked secret', existing: stdio, body: { command: stdio.command, args: ['--new'], env: { API_KEY: '••••••', MODE: 'test' } }, expected: { command: stdio.command, args: ['--new'], env: { MODE: 'test' } } },
     { name: 'HTTP to stdio switch', existing: http, body: { command: 'new-mcp', args: ['--new'], env: { MODE: 'test' } }, expected: { command: 'new-mcp', args: ['--new'], env: { MODE: 'test' } } },
     { name: 'stdio to HTTP switch', existing: stdio, body: { url: 'https://new.example/mcp', headers: {} }, expected: { url: 'https://new.example/mcp', headers: {} } },
     { name: 'masked HTTP secret', existing: http, body: { url: http.url, headers: { Authorization: '••••••' }, timeout: '45' }, expected: { ...http, timeout: 45 } },
-    { name: 'masked stdio secret', existing: stdio, body: { command: stdio.command, args: [], env: { API_KEY: '••••••' } }, expected: { ...stdio, args: [] } },
-    { name: 'HTTP edit with transport options', existing: { ...http, ...httpOptions }, body: { url: 'https://new.example/mcp' }, expected: { ...http, ...httpOptions, url: 'https://new.example/mcp' } },
-    { name: 'stdio edit with lifecycle options', existing: { ...stdio, ...stdioOptions }, body: { command: 'new-mcp' }, expected: { ...stdio, ...stdioOptions, command: 'new-mcp' } },
+    { name: 'masked stdio secret', existing: stdio, body: { command: stdio.command, args: stdio.args, env: { API_KEY: '••••••' } }, expected: stdio },
+    { name: 'HTTP edit with transport options', existing: { ...http, ...httpOptions }, body: { url: 'https://new.example/mcp' }, expected: { url: 'https://new.example/mcp', ssl_verify: false, skip_preflight: true, transport: 'sse', strict_redirect_headers: true } },
+    { name: 'stdio edit with lifecycle options', existing: { ...stdio, ...stdioOptions }, body: { command: 'new-mcp' }, expected: { command: 'new-mcp', args: stdio.args, ...stdioOptions } },
     { name: 'HTTP to stdio switch with authentication and TLS', existing: { ...http, ...httpOptions }, body: { command: 'new-mcp' }, expected: { command: 'new-mcp' } },
     { name: 'stdio to HTTP switch with lifecycle options', existing: { ...stdio, ...stdioOptions }, body: { url: 'https://new.example/mcp' }, expected: { url: 'https://new.example/mcp' } },
     { name: 'stdio to HTTP switch with unknown lifecycle options', existing: { ...stdio, ...stdioOptions, lifecycle: { ...stdioOptions.lifecycle, future_option: 'keep' } }, body: { url: 'https://new.example/mcp' }, expected: { url: 'https://new.example/mcp', lifecycle: { future_option: 'keep' } } },
@@ -56,6 +60,30 @@ describe('MCP config updates', () => {
     expect(cfg.mcp_servers.paid).not.toHaveProperty(field)
   })
 
+  it('sends no stored credential to a server URL moved to another origin (TAL-2207)', async () => {
+    const cfg = { mcp_servers: { github: { ...http } } }
+    const config = { update: (_home: string, fn: (c: typeof cfg) => void) => { fn(cfg); return Promise.resolve() } } as unknown as AgentConfig
+    await new McpService({ sidecar: () => null, config }).update('/profiles/test', 'github', { url: 'https://attacker.example/mcp', headers: { Authorization: '••••••' } })
+    const sent: [string, Headers][] = []
+    const fetchImpl = ((url: string, init?: RequestInit) => { sent.push([url, new Headers(init?.headers)]); return Promise.resolve(new Response(null, { status: 401 })) }) as typeof fetch
+    await probeServer(cfg.mcp_servers.github, fetchImpl)
+    expect(sent.map(([url, headers]) => [url, headers.get('authorization')])).toEqual([['https://attacker.example/mcp', null]])
+  })
+
+  it('lists URL and argv tokens redacted and keeps them stored when the redacted form is saved back (TAL-2207)', async () => {
+    const stored = { url: 'https://old.example/mcp?api_key=sk-synthetic0123456789', headers: http.headers, args: ['serve', '--token=sk-synthetic0123456789'], env: stdio.env }
+    const cfg = { mcp_servers: { remote: { url: stored.url, headers: stored.headers }, local: { command: 'old-mcp', args: stored.args, env: stored.env } } }
+    const config = { read: () => Promise.resolve(cfg), update: (_home: string, fn: (c: typeof cfg) => void) => { fn(cfg); return Promise.resolve() } } as unknown as AgentConfig
+    const service = new McpService({ sidecar: () => null, config })
+    const rows = Object.fromEntries(((await service.servers('/profiles/test')).servers as Dict[]).map((r) => [String(r.name), r]))
+    expect(JSON.stringify(rows)).not.toContain('sk-synthetic0123456789')
+    expect(rows.remote!.url).toMatch(/^https:\/\/old\.example\/mcp\?api_key=/)
+    expect(rows.local!.args).toEqual(['serve', expect.stringMatching(/^--token=/)])
+    await service.update('/profiles/test', 'remote', { url: rows.remote!.url, headers: rows.remote!.headers })
+    await service.update('/profiles/test', 'local', { command: 'old-mcp', args: rows.local!.args, env: rows.local!.env })
+    expect(cfg.mcp_servers).toEqual({ remote: { url: stored.url, headers: stored.headers }, local: { command: 'old-mcp', args: stored.args, env: stored.env } })
+  })
+
   it.each<{ legacy: Dict; to: boolean }>([
     { legacy: { disabled: true, enabled: false }, to: true },
     { legacy: { disabled: 'yes', enabled: true }, to: true },
@@ -63,7 +91,7 @@ describe('MCP config updates', () => {
     { legacy: { disabled: ' On ', enabled: 'off' }, to: true },
     { legacy: { disabled: 'no', enabled: true }, to: false },
   ])('a switch to $to drops the legacy disabled in $legacy and keeps everything else', async ({ legacy, to }) => {
-    const retained = { command: 'paid-mcp', args: ['--x'], auth: 'oauth', oauth: { client_id: 'test-client' }, spend_limit: 5, tool_costs: { search: 1 }, trust: 'full' }
+    const retained = { command: 'paid-mcp', args: ['--x'], env: { API_KEY: 'synthetic-secret' }, auth: 'oauth', oauth: { client_id: 'test-client' }, spend_limit: 5, tool_costs: { search: 1 }, trust: 'full' }
     const cfg: Dict = { mcp_servers: { paid: { ...retained, ...legacy }, sibling: { command: 'sibling', disabled: true } } }
     const config = { read: () => Promise.resolve(cfg), update: (_home: string, fn: (c: Dict) => void) => { fn(cfg); return Promise.resolve() } } as unknown as AgentConfig
     const service = new McpService({ sidecar: () => null, config })
