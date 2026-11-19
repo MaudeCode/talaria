@@ -790,7 +790,8 @@ final class SessionListHostedTests: XCTestCase {
 
     func testDeepLinkedChatKeepsNavigationStackAndToolbarMounted() async throws {
         for size in [HostedSize.phone, HostedSize.padLandscape] {
-            let fixture = try FixtureApp([UITestFixtureEnvironment.forkSessionArgument], for: self)
+            let fixture = try FixtureApp([UITestFixtureEnvironment.forkSessionArgument, UITestFixtureEnvironment.holdDeepLinkedForkArgument],
+                                         for: self)
             let window = try await openChat(fixture, size: size)
             let navigation = try XCTUnwrap(HostedAccessibility.titleMenuController(in: window)?.navigationController)
             let ready = await awaitCondition {
@@ -801,15 +802,21 @@ final class SessionListHostedTests: XCTestCase {
             attachHostedScreenshot(window, name: "deep-link-before-\(Int(size.width))")
             var samples = 0
             var gaps = Set<String>()
-            try await sampleCommittedLayouts {
+            try await sampleCommittedLayouts(in: window) {
                 samples += 1
-                // The linked chat's title and title menu can land a committed layout after its content; they are
-                // checked once the replacement settles.
                 let current = HostedAccessibility.titleMenuController(in: window, filled: false)
                 if current?.navigationController !== navigation { gaps.insert("navigation controller") }
                 if self.composerDraftText(in: window) == nil { gaps.insert("composer") }
                 if current?.navigationItem.titleView == nil { gaps.insert("principal title") }
                 if current?.navigationItem.largeTitleDisplayMode != .never { gaps.insert("inline title") }
+                // The linked chat's bar commits with its content (TAL-2384).
+                if HostedAccessibility.element(in: window, identifier: "chat-detail:Fixture Session 01") != nil {
+                    if current?.navigationItem.title != "Fixture Session 01" { gaps.insert("new chat title") }
+                    if HostedAccessibility.titleMenuController(in: window) == nil { gaps.insert("title menu") }
+                    if HostedAccessibility.element(in: window, identifier: "chat-session-actions-title") == nil {
+                        gaps.insert("principal title content")
+                    }
+                }
                 for title in ["Notifications", "New Chat"] {
                     if HostedAccessibility.toolbarItem(title, in: window) == nil { gaps.insert(title) }
                 }
@@ -817,6 +824,10 @@ final class SessionListHostedTests: XCTestCase {
                 if HostedAccessibility.toolbarItem(sidebar, in: window) == nil { gaps.insert(sidebar) }
             } during: {
                 fixture.pendingSessionID = UITestFixtureURLProtocol.forkSessionID
+                // The chat swaps in from a reply that lands after its request, as on a real network.
+                let held = await awaitCondition { UITestFixtureHold.shared.pendingCount == 1 }
+                XCTAssertTrue(held, "The deep link must read the linked chat")
+                fixture.releaseHeldLoads()
                 _ = try await requireElement(in: window, label: "Fork fixture reply")
                 settle(0.2)
             }

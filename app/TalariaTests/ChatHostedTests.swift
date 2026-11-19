@@ -223,7 +223,7 @@ final class ChatHostedTests: XCTestCase {
         probe.window = try hostWindow(FixturePushHost(destination: chat), animationsEnabled: true)
         let window = try XCTUnwrap(probe.window)
         var shownTops: [CGFloat] = []
-        try await sampleCommittedLayouts {
+        try await sampleCommittedLayouts(in: window) {
             guard probe.atCompletion == nil else { return }
             let current = probe.composer()
             if current.opacity > 0 { shownTops.append(current.top) }

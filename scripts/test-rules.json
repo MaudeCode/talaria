@@ -40,6 +40,15 @@
       ],
       "message": "test-audit clock: assert work done (calls, renders, rows), never elapsed time (docs/testing.md)"
     },
+    "snapshot-runloop-sample": {
+      "paths": [
+        ""
+      ],
+      "patterns": [
+        "\\bCFRunLoopObserverCreate(?:WithHandler)?\\("
+      ],
+      "message": "test-audit snapshot: sample a per-frame check right after each display commit (sampleCommittedLayouts(in:), UIUpdateLink .afterCATransactionCommit), never from a run-loop observer (docs/testing.md)"
+    },
     "unheld-clock": {
       "paths": [
         ""

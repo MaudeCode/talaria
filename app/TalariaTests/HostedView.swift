@@ -360,15 +360,17 @@ extension XCTestCase {
         return actions
     }
 
-    /// Samples after UIKit's transaction observers, so assertions see each committed layout rather than settling only.
+    /// Samples every frame `window`'s scene commits, rather than only the settled one, right after UIKit sends it to the
+    /// render server. A run-loop observer is no substitute: it runs only when the run loop goes idle, so a busy main
+    /// thread commits frames it never sees, and it runs after SwiftUI may have updated its graph past the last commit,
+    /// so the accessibility tree and a bar's title menu read there show a frame no commit drew (TAL-2384).
     @MainActor
-    func sampleCommittedLayouts(_ sample: @escaping @MainActor () -> Void,
-                                during transition: () async throws -> Void) async rethrows {
-        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in
-            MainActor.assumeIsolated { sample() }
-        }
-        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
-        defer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+    func sampleCommittedLayouts(in window: UIWindow, _ sample: @escaping @MainActor () -> Void,
+                                during transition: () async throws -> Void) async throws {
+        let link = UIUpdateLink(windowScene: try XCTUnwrap(window.windowScene))
+        link.addAction(to: .afterCATransactionCommit) { _, _ in sample() }
+        link.isEnabled = true
+        defer { link.isEnabled = false }
         try await transition()
     }
 
