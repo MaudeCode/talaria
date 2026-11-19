@@ -182,15 +182,16 @@ function isTerminator(ch: string, fileUrl: boolean): boolean {
   return /\s/.test(ch) || ch === ')' || ch === ']' || (fileUrl && '<>"\''.includes(ch))
 }
 
-/** A Markdown image destination the server can serve: `file://`, absolute, `~/`, workspace-relative or `MEDIA:`. */
+/** A Markdown image destination the server can serve: `file://`, absolute, `~/`, workspace-relative (with or without `./`) or `MEDIA:`. */
 function imageDestinationRef(url: string, workspace: string | null): string | null {
   if (url.startsWith(MEDIA)) return url.slice(MEDIA.length)
   if (url.toLowerCase().startsWith(FILE_URL)) return fileUrlPath(url)
   // Destinations percent-encode spaces and punctuation; decoded once, as a file URL's path is.
   const path = safeDecode(url)
   if ((url.startsWith('/') && !url.startsWith('//')) || url.startsWith('~/')) return path
-  if ((url.startsWith('./') || url.startsWith('../')) && workspace && isAbsolute(workspace)) return resolve(workspace, path)
-  return null
+  // TAL-2363: any other destination without a scheme (`out/chart.png`, `./`, `../`) joins the workspace.
+  if (!url || /^([a-z][a-z\d+.-]*:|[/~#?])/i.test(url) || !workspace || !isAbsolute(workspace)) return null
+  return resolve(workspace, path)
 }
 
 /** TAL-2325: a media tool result's local file as its `/api/media` URL; the session's id joins it where the result ships (`withResultFocusPaths`). */

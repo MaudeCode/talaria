@@ -54,6 +54,8 @@ describe('projectMediaRefs (TAL-186)', () => {
     expect(display('![](</tmp/shots/final shot.png>)', r)).toBe(`![final shot.png](${url('/tmp/shots/final shot.png')})`)
     expect(display('![Build \\[1\\] (final)](/tmp/build(1)/shot.png)', r)).toBe(`![Build \\[1\\] (final)](${url('/tmp/build(1)/shot.png')})`)
     expect(display('![a](./shots/login.png) ![b](../other/x.png) ![c](./../other/../app/y.png)', r)).toBe(`![a](${url('/srv/workspaces/app/shots/login.png')}) ![b](${url('/srv/workspaces/other/x.png')}) ![c](${url('/srv/workspaces/app/y.png')})`)
+    // TAL-2363: a plain relative destination joins the workspace like `./`.
+    expect(display('![c](out/chart.png)', resolver('/w', () => true))).toBe(`![c](${url('/w/out/chart.png')})`)
     expect(display('Created file:///tmp/Q3%20report%20%28final%29.csv')).toBe(`Created [Q3 report (final).csv](${url('/tmp/Q3 report (final).csv')})`)
     const home = resolver(null, () => true)
     display('![shot](~/shots/login.png) MEDIA:out/chart.png', home)
@@ -63,14 +65,16 @@ describe('projectMediaRefs (TAL-186)', () => {
   it('leaves workspace-relative destinations as text without an absolute workspace', () => {
     expect(display('![shot](./shots/login.png)')).toBeNull()
     expect(display('![shot](./shots/login.png)', resolver('relative/root'))).toBeNull()
+    expect(display('![c](out/chart.png)')).toBeNull()
+    expect(display('![c](out/chart.png)', resolver('relative/root'))).toBeNull()
   })
 
-  it('rewrites a remote MEDIA: token to its URL, and leaves remote, data and bare relative images as written', () => {
+  it('rewrites a remote MEDIA: token to its URL, and leaves remote, data and anchor images as written', () => {
     const projected = projectMediaRefs('Generated MEDIA:https://cdn.example.test/output/image.png?variant=small and MEDIA:https://cdn.example.test/media/abc123', resolver())
     // An extensionless URL could be audio or video as well as an image: it is linked as a file, not shown as an image.
     expect(projected?.text).toBe('Generated ![image.png](https://cdn.example.test/output/image.png?variant=small) and [abc123](https://cdn.example.test/media/abc123)')
     expect(projected?.media.map((m) => m.kind)).toEqual(['image', 'file'])
-    for (const text of ['![remote](https://cdn.example.test/image.png)', '![data](data:image/png;base64,AAAA)', '![bare](shots/login.png)', '![proto](//cdn.example.test/a.png)']) {
+    for (const text of ['![remote](https://cdn.example.test/image.png)', '![data](data:image/png;base64,AAAA)', '![anchor](#figure-1)', '![empty]()', '![query](?v=2)', '![mail](mailto:a@example.test)', '![proto](//cdn.example.test/a.png)']) {
       expect(display(text, resolver('/srv/workspaces/app'))).toBeNull()
     }
   })
