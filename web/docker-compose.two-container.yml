@@ -115,6 +115,12 @@ services:
     environment:
       - TALARIA_WEB_HOST=0.0.0.0
       - TALARIA_WEB_PORT=8787
+      # Safe only because the port above is published on 127.0.0.1. Without a
+      # sign-in method Talaria Web refuses to listen beyond loopback, and inside
+      # the container it listens on 0.0.0.0, so this accepts that. Before you
+      # publish the port on any other address, set TALARIA_WEB_PASSWORD (or
+      # another sign-in method) and remove this line.
+      - TALARIA_WEB_ALLOW_UNAUTHENTICATED=1
       - TALARIA_RELEASE_TOKEN=${TALARIA_RELEASE_TOKEN:-}
       - TALARIA_WEB_STATE_DIR=/home/hermeswebui/.hermes/webui
       # Let the WebUI health/status checks reach the gateway container over

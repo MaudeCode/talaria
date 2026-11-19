@@ -6,6 +6,27 @@ If your symptom isn't listed and the diagnostics don't narrow it down, keep the 
 
 ---
 
+## Server exits: "Refusing to listen on … with no sign-in method"
+
+**Symptom.** Talaria Web stops right after startup with exit code 78, and the log shows
+`Refusing to listen on 0.0.0.0 with no sign-in method`. In Docker the container exits or restarts
+repeatedly with the same line.
+
+**Why.** `TALARIA_WEB_HOST` (or `--host`) names an address other than loopback, and no password,
+passkey, OIDC or trusted auth header is configured. Anyone who could reach the port would get a
+terminal and your provider keys, so the server refuses to listen. Its supervisor treats the exit as
+fatal and does not restart it or roll back an update.
+
+**Fix.** Pick one:
+
+- Set `TALARIA_WEB_PASSWORD` (or configure a passkey, OIDC, or a trusted auth header) and restart.
+- Bind to `127.0.0.1` and reach the server through an SSH tunnel or Tailscale.
+- If only trusted clients can reach the port, as with the shipped Compose files that publish on
+  `127.0.0.1` only, set `TALARIA_WEB_ALLOW_UNAUTHENTICATED=1`. The server starts and logs
+  `WARNING: Binding to … with NO PASSWORD SET`.
+
+---
+
 ## `421` "This server does not answer to host …"
 
 **Symptom.** After an update, the page or API answers `421` with an error naming

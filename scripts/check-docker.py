@@ -212,7 +212,8 @@ def smoke(variant, image, agent_image=None):
                 "docker", "run", "--rm", "--entrypoint", "/bin/sh", "-v", f"{data}:/fixture",
                 image, "-c", "chown 1001:1001 /fixture && chmod 777 /fixture",
             ], env=env, check=True)
-            environment = {"TALARIA_WEB_STATE_DIR": "/app/data"}
+            # Published on 127.0.0.1 only (below), like the shipped Compose files.
+            environment = {"TALARIA_WEB_STATE_DIR": "/app/data", "TALARIA_WEB_ALLOW_UNAUTHENTICATED": "1"}
             mounts = [f"{data}:/app/data"]
             if variant == "explicit-uid":
                 environment.update(WANTED_UID="1024", WANTED_GID="1024")

@@ -8,6 +8,7 @@ import { homeDotenvKeys, loadLauncherDotenv, loadStartupEnv, parseDotenv } from 
 import { agentDirFromHermesCli, detectSupervisor, parseBootstrapArgs, runBootstrap, waitForHealth } from './launcher.js'
 import { ctlPaths, launchdConflictPid, parseLaunchBinding, portIsBindable, readState, runCtl, systemdConflict, type CtlContext } from './ctl.js'
 import { LEGACY_WEB_ENV_PREFIX } from '../config.js'
+import { CONFIG_EXIT_CODE } from './supervise.js'
 import { bootTestServer } from '../test/harness.js'
 
 vi.mock('node:child_process', async (original) => {
@@ -110,7 +111,7 @@ describe('launcher', () => {
       const python = join(home, 'python')
       writeFileSync(python, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
       const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), TALARIA_WEB_AGENT_DIR: agent, TALARIA_WEB_PYTHON: python, TALARIA_WEB_STATE_DIR: join(home, 'state') }
-      const serve = vi.fn(() => Promise.resolve())
+      const serve = vi.fn(() => Promise.resolve(0))
       vi.mocked(spawnSync).mockClear()
       const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [], log: () => undefined }, { port: 8787, host: '127.0.0.1', noBrowser: true, skipAgentInstall: true, foreground: true }, serve)
       expect(code).toBe(0)
@@ -128,7 +129,7 @@ describe('launcher', () => {
     const script = `const http=require('node:http');const port=Number(process.argv[process.argv.indexOf('--host')+2]);http.createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({status:'ok'}))}).listen(port,'127.0.0.1');setInterval(()=>{},1000);setTimeout(()=>process.exit(0),8000)`
     const logs: string[] = []
     const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), TALARIA_WEB_SIDECAR_COMMAND: 'x', TALARIA_WEB_STATE_DIR: join(home, 'state') }
-    const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [process.execPath, '-e', script, '--'], log: (l) => logs.push(l) }, { port, host: '127.0.0.1', noBrowser: true, skipAgentInstall: true, foreground: false }, () => Promise.resolve())
+    const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [process.execPath, '-e', script, '--'], log: (l) => logs.push(l) }, { port, host: '127.0.0.1', noBrowser: true, skipAgentInstall: true, foreground: false }, () => Promise.resolve(0))
     expect(code).toBe(0)
     expect(logs.some((l) => l.includes(`127.0.0.1:${String(port)}`))).toBe(true)
   }, 20_000)
@@ -140,7 +141,7 @@ describe('launcher', () => {
     const script = `const http=require('node:http');const port=Number(process.argv[process.argv.indexOf('--host')+2]);http.createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({status:'ok'}))}).listen(port,'::');setInterval(()=>{},1000);setTimeout(()=>process.exit(0),8000)`
     const logs: string[] = []
     const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), TALARIA_WEB_SIDECAR_COMMAND: 'x', TALARIA_WEB_STATE_DIR: join(home, 'state') }
-    const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [process.execPath, '-e', script, '--'], log: (l) => logs.push(l) }, { port, host: '::', noBrowser: true, skipAgentInstall: true, foreground: false }, () => Promise.resolve())
+    const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [process.execPath, '-e', script, '--'], log: (l) => logs.push(l) }, { port, host: '::', noBrowser: true, skipAgentInstall: true, foreground: false }, () => Promise.resolve(0))
     expect(code).toBe(0)
     const ready = logs.find((l) => l.includes('Web UI is ready'))
     expect(ready).toContain(`http://localhost:${String(port)}`)
@@ -152,10 +153,18 @@ describe('launcher', () => {
     mkdirSync(join(home, 'web'), { recursive: true })
     const logs: string[] = []
     const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), TALARIA_WEB_SIDECAR_COMMAND: 'x', TALARIA_WEB_STATE_DIR: join(home, 'state') }
-    const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [process.execPath, '-e', '', '--'], log: (l) => logs.push(l) }, { port: 8787, host: '::', noBrowser: true, skipAgentInstall: true, foreground: true }, () => Promise.resolve())
+    const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [process.execPath, '-e', '', '--'], log: (l) => logs.push(l) }, { port: 8787, host: '::', noBrowser: true, skipAgentInstall: true, foreground: true }, () => Promise.resolve(0))
     expect(code).toBe(0)
     expect(logs.some((l) => l.includes('http://[::]:8787') && l.includes('foreground'))).toBe(true)
     expect(logs.some((l) => l.includes('http://:::8787'))).toBe(false)
+  })
+
+  it('a foreground launch exits with the server\'s exit code, so a refused configuration stays fatal (TAL-2197)', async () => {
+    const home = scratch()
+    mkdirSync(join(home, 'web'), { recursive: true })
+    const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, '.hermes'), TALARIA_WEB_SIDECAR_COMMAND: 'x', TALARIA_WEB_STATE_DIR: join(home, 'state') }
+    const code = await runBootstrap({ env, webRoot: join(home, 'web'), hermesHome: join(home, '.hermes'), home, compatibleAgentRevision: 'x', serveCommand: [], log: () => undefined }, { port: 8787, host: '0.0.0.0', noBrowser: true, skipAgentInstall: true, foreground: true }, () => Promise.resolve(CONFIG_EXIT_CODE))
+    expect(code).toBe(CONFIG_EXIT_CODE)
   })
 
   it('parses the bootstrap arguments and detects supervisors like bootstrap.py', () => {

@@ -14,5 +14,7 @@ try {
   else process.exitCode = await main(process.argv.slice(2))
 } catch (error) {
   console.error(`[${command === 'self-check' ? 'self-check' : 'bootstrap'}] ERROR: ${(error as Error).message}`)
-  process.exitCode = 1
+  // A refused configuration carries the exit code the supervisor treats as fatal (TAL-2197).
+  const { exitCode } = error as { exitCode?: unknown }
+  process.exitCode = typeof exitCode === 'number' ? exitCode : 1
 }

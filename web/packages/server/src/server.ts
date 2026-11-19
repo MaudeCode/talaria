@@ -9,7 +9,7 @@ import { connect } from 'node:net'
 import { readFileSync } from 'node:fs'
 import type { App } from './app.js'
 import type { ServerConfig } from './config.js'
-import { fixCredentialPermissions, warnForwardedForWithoutProxy, warnTrustedHeaderWithoutProxy, warnUnauthenticatedBind } from './startup.js'
+import { fixCredentialPermissions, refuseUnauthenticatedBind, warnForwardedForWithoutProxy, warnTrustedHeaderWithoutProxy } from './startup.js'
 import { stopStateDbWorker } from './sessions/state-db.js'
 import { closeTranscribeStreams } from './api/transcribe-stream.js'
 import { releaseDisplaySettings } from './sessions/display-settings.js'
@@ -59,6 +59,7 @@ export async function startServer(app: App, config: ServerConfig, opts: StartSer
   if (await isAlreadyServing(config.host, config.port)) {
     throw new Error(`Another server is already responding on ${config.host}:${config.port}. Stop the existing instance first.`)
   }
+  const bindAddress = await refuseUnauthenticatedBind(config.host, config.env, app.deps.auth, log)
   fixCredentialPermissions(config, log)
   let scheme: 'http' | 'https' = 'http'
   let server: Server
@@ -87,7 +88,7 @@ export async function startServer(app: App, config: ServerConfig, opts: StartSer
   })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
-    server.listen(config.port, config.host, () => {
+    server.listen(config.port, bindAddress, () => {
       server.off('error', reject)
       resolve()
     })
@@ -95,7 +96,6 @@ export async function startServer(app: App, config: ServerConfig, opts: StartSer
   const address = server.address()
   const port = typeof address === 'object' && address ? address.port : config.port
   log(`  Talaria Web listening on ${scheme}://${config.host}:${port}`)
-  await warnUnauthenticatedBind(config.host, typeof address === 'object' && address ? address.address : config.host, app.deps.auth, log)
   warnForwardedForWithoutProxy(config.env, log)
   warnTrustedHeaderWithoutProxy(config.env, app.deps.auth)
   const close = async () => {

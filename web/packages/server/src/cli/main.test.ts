@@ -6,9 +6,11 @@ import type { RuntimeDescribe } from '@maudecode/talaria-web-contracts'
 import type { AppDeps } from '../http/context.js'
 import type { RunningServer } from '../server.js'
 import { FakeSidecar } from '../sidecar/fake.js'
+import { CONFIG_EXIT_CODE } from './supervise.js'
 
 const trial = vi.hoisted(() => ({
   state: '',
+  host: '127.0.0.1',
   sidecar: null as (FakeSidecar & { start: () => Promise<RuntimeDescribe> }) | null,
   deps: null as AppDeps | null,
   listening: vi.fn<(running: RunningServer) => void>(),
@@ -54,7 +56,7 @@ vi.mock('../config.js', async (original) => {
     HOME: trial.state, HERMES_HOME: trial.state, TALARIA_WEB_STATE_DIR: trial.state,
     TALARIA_WEB_DEFAULT_WORKSPACE: join(trial.state, 'workspace'),
     TALARIA_WEB_CLAUDE_PROJECTS_DIR: join(trial.state, 'claude-projects'),
-    TALARIA_WEB_HOST: '127.0.0.1', TALARIA_WEB_PORT: '0',
+    TALARIA_WEB_HOST: trial.host, TALARIA_WEB_PORT: '0',
   } }) }
 })
 vi.mock('../runtime.js', async (original) => {
@@ -137,4 +139,27 @@ it('serves auth and refuses chat while the sidecar handshake is pending', async 
   }
   expect(failure).toBeUndefined()
   void serving
+})
+
+it('closes its sidecar and rejects with the fatal exit code when the listener refuses an unauthenticated bind (TAL-2197)', async () => {
+  trial.state = mkdtempSync(join(tmpdir(), 'talaria-main-test-'))
+  trial.host = '0.0.0.0'
+  const fake = new FakeSidecar({ status: 'starting' })
+  const close = vi.spyOn(fake, 'close')
+  trial.sidecar = Object.assign(fake, { start: () => new Promise<RuntimeDescribe>(() => undefined) })
+  const emitter: import('node:events').EventEmitter = process
+  const exitListeners = new Set(emitter.listeners('exit'))
+  vi.stubEnv('TALARIA_WEB_WORKER', '1')
+  try {
+    // A still-running sidecar child would keep the worker alive, unlistening, so its supervisor never saw the exit.
+    await expect(main(['serve'])).rejects.toMatchObject({ exitCode: CONFIG_EXIT_CODE })
+    expect(close).toHaveBeenCalledOnce()
+    expect(trial.listening).not.toHaveBeenCalled()
+  } finally {
+    for (const listener of emitter.listeners('exit')) if (!exitListeners.has(listener)) emitter.removeListener('exit', listener as (...args: unknown[]) => void)
+    trial.host = '127.0.0.1'
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+    rmSync(trial.state, { recursive: true, force: true })
+  }
 })

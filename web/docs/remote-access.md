@@ -78,7 +78,8 @@ tailscale serve --bg 8787
 
 Use direct tailnet access when Tailscale Serve is unavailable, disabled, or not
 permitted. Because this binds WebUI beyond loopback, always enable password
-auth:
+auth; without a sign-in method the server refuses to start on a non-loopback
+address:
 
 ```bash
 TALARIA_WEB_HOST=0.0.0.0 TALARIA_WEB_PASSWORD=your-secret talaria-web
@@ -93,8 +94,9 @@ protects the UI at the application level. You can add it to your home screen
 for an app-like experience.
 
 > **Tip:** If using Docker, set `TALARIA_WEB_HOST=0.0.0.0` in your
-> `docker-compose.yml` environment (already the default) and set
-> `TALARIA_WEB_PASSWORD`.
+> `docker-compose.yml` environment (already the default), set
+> `TALARIA_WEB_PASSWORD`, and remove `TALARIA_WEB_ALLOW_UNAUTHENTICATED=1`
+> once the port is published beyond `127.0.0.1`.
 
 ## Behind a reverse proxy
 
