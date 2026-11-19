@@ -5,6 +5,8 @@
  * text the agent writes is a link (`linkRemoteImages`), never fetched for it.
  */
 import { createHash } from 'node:crypto'
+import { isNonGlobalAddress } from './addresses.js'
+import { vettedAddresses, type DnsLookup, type PinnedFetch } from './pinned.js'
 
 export const REMOTE_IMAGE_TYPES: ReadonlySet<string> = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif'])
 const MAX_REMOTE_IMAGE_BYTES = 16 * 1024 * 1024
@@ -21,8 +23,19 @@ export function fetchableImageUrl(url: string): URL | null {
   return parsed.protocol === 'https:' && !parsed.port && !parsed.username && !parsed.password && parsed.hostname ? parsed : null
 }
 
+/** How an image is requested: `fetch`, or `publicImageFetch` where the URL's provenance is not trusted. */
+export type ImageGet = (url: string, init: { redirect: 'error'; signal?: AbortSignal; headers: Record<string, string> }) => Promise<Response>
+
+/**
+ * A request that connects only to the public addresses the URL's host resolves to, pinned so a record that rebinds cannot
+ * move it, and never follows a redirect: a relayed URL can come from an imported session, so it must not reach the
+ * server's own network.
+ */
+export const publicImageFetch = (lookup: DnsLookup, pinned: PinnedFetch): ImageGet => async (url, init) =>
+  pinned(url, { headers: init.headers, ...(init.signal ? { signal: init.signal } : {}) }, await vettedAddresses(new URL(url).hostname, isNonGlobalAddress, lookup))
+
 /** One image over https, no redirects, an allowed type and a size cap: refused before any bytes are relayed. */
-export async function fetchRemoteImage(url: string, opts: { fetch?: typeof fetch; signal?: AbortSignal; types?: ReadonlySet<string>; maxBytes?: number } = {}): Promise<{ type: string; body: Buffer }> {
+export async function fetchRemoteImage(url: string, opts: { fetch?: ImageGet; signal?: AbortSignal; types?: ReadonlySet<string>; maxBytes?: number } = {}): Promise<{ type: string; body: Buffer }> {
   const types = opts.types ?? REMOTE_IMAGE_TYPES
   const maxBytes = opts.maxBytes ?? MAX_REMOTE_IMAGE_BYTES
   if (!fetchableImageUrl(url)) throw new RemoteImageError('unreachable')

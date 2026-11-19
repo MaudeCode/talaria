@@ -43,9 +43,12 @@ describe('GET /api/remote-image', () => {
   let server: TestServer | undefined
   afterEach(async () => { await server?.close(); server = undefined })
 
-  it('relays a vouched image sandboxed, and 404s an id the server never vouched for without fetching', async () => {
-    const fetched: string[] = []
-    server = await bootTestServer({ deps: (deps) => { deps.fetch = (input) => { fetched.push(urlOf(input)); return Promise.resolve(png()) } } })
+  it('relays a vouched image sandboxed from a public address, and never one the server did not vouch for or a private address', async () => {
+    const fetched: { url: string; addresses: string[] }[] = []
+    server = await bootTestServer({ deps: (deps) => {
+      deps.dnsLookup = (host) => Promise.resolve(host === 'cdn.example' ? [{ address: '93.184.216.34', family: 4 }] : host === 'intranet.example' ? [{ address: '10.0.0.5', family: 4 }] : [])
+      deps.pinnedFetch = (url, _init, addresses) => { fetched.push({ url, addresses }); return Promise.resolve(png()) }
+    } })
     const relay = vouchRemoteImage('https://cdn.example/out/cat.png')
     expect(relay).toMatch(/^\.\/api\/remote-image\?id=[0-9a-f]{32}$/)
     expect(vouchRemoteImage('http://cdn.example/out/cat.png')).toBeNull()
@@ -54,6 +57,10 @@ describe('GET /api/remote-image', () => {
     expect([res.headers.get('content-type'), res.headers.get('content-security-policy')]).toEqual(['image/png', "default-src 'none'; sandbox"])
     expect([...new Uint8Array(await res.arrayBuffer())]).toEqual([...PNG])
     expect((await server.get(`/api/remote-image?id=${'0'.repeat(32)}`)).status).toBe(404)
-    expect(fetched).toEqual(['https://cdn.example/out/cat.png'])
+    // A vouched URL can come from an imported session: one naming or resolving to a non-public address is never requested.
+    for (const url of ['https://127.0.0.1/x.png', 'https://10.0.0.1/x.png', 'https://[::1]/x.png', 'https://intranet.example/x.png']) {
+      expect((await server.get(`/${vouchRemoteImage(url)!.slice(2)}`)).status, url).toBe(502)
+    }
+    expect(fetched).toEqual([{ url: 'https://cdn.example/out/cat.png', addresses: ['93.184.216.34'] }])
   })
 })
