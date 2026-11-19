@@ -44,6 +44,9 @@ struct UITestFixtureEnvironment {
     /// composer report it and retry (TAL-636).
     nonisolated static let failFirstSessionCreationArgument = "--ui-test-fail-first-session-creation"
     nonisolated static let forkSessionArgument = "--ui-test-fork-session"
+    /// Holds a deep link's read of the fork chat until the test releases it, so the chat swaps in from a reply that
+    /// lands after its request, as on a real network (TAL-2384).
+    nonisolated static let holdDeepLinkedForkArgument = "--ui-test-hold-deep-linked-fork"
     nonisolated static let holdSessionRemovalArgument = "--ui-test-hold-session-removal"
     nonisolated static let refuseSessionRemovalArgument = "--ui-test-refuse-session-removal"
     /// Keeps a chat archive's Undo offered for the whole test, so the five-second expiry cannot run
@@ -614,8 +617,13 @@ final class UITestFixtureURLProtocol: URLProtocol {
         let holdsSessionRemoval = Self.sessionRemovalPaths.contains(url.path)
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdSessionRemovalArgument)
         let holdsPanel = Self.isFullWidthPanelLoad(url) && Self.panelScenario == UITestFixtureEnvironment.panelLoadingArgument
+        let holdsDeepLinkedFork = url.path == "/api/session"
+            && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdDeepLinkedForkArgument)
+            && URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems.map {
+                $0.contains(URLQueryItem(name: "session_id", value: Self.forkSessionID)) && $0.contains(URLQueryItem(name: "messages", value: "0"))
+            } == true
         if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsUpload || holdsSteer || holdsStart || holdsCancel || holdsPanel || holdsSessionRemoval
-            || holdsAnchorScene {
+            || holdsAnchorScene || holdsDeepLinkedFork {
             UITestFixtureHold.shared.hold(request: request) { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)

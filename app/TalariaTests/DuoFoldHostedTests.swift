@@ -71,7 +71,7 @@ final class DuoFoldHostedTests: XCTestCase {
         }
         recorder.reset()
         var gaps = Set<String>()
-        try await sampleCommittedLayouts {
+        try await sampleCommittedLayouts(in: window) {
             for title in anchoredActions {
                 if HostedAccessibility.toolbarItem(title, in: window) == nil { gaps.insert(title) }
             }

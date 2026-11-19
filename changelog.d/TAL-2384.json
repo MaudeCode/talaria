@@ -1,0 +1,1 @@
+{"skip": "Hosted tests only: per-frame checks now sample right after each display commit, so the deep-link test checks the linked chat's title and title menu in every frame again; the App already commits them with the chat. No app behavior changes."}
