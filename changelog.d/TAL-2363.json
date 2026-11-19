@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An agent reply's image given as a plain relative path, like out/chart.png, now shows as the image instead of the path, on Web and the App.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
