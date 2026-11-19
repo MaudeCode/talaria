@@ -358,6 +358,36 @@ describe("Convex relay state", () => {
       await expect(redeem(backend, { keyId: "key-2" })).resolves.toEqual({ ok: false, reason: "expired_invitation" });
     });
 
+    it("refuses a sixth open invitation for one user until one is used or expires", async () => {
+      const backend = await signedIn();
+      for (let index = 0; index < 5; index += 1) await expect(invite(backend, `open-${index}`)).resolves.toEqual({ ok: true });
+      await expect(invite(backend, "sixth")).resolves.toEqual({ ok: false, reason: "too_many_invitations" });
+      await redeem(backend, { tokenHash: "open-0" });
+      await expect(invite(backend, "after-use")).resolves.toEqual({ ok: true });
+      await expect(invite(backend, "after-expiry", now + 60_000)).resolves.toEqual({ ok: true });
+    });
+
+    it("refuses an eleventh active publisher for one user and keeps the ones already registered", async () => {
+      const backend = await signedIn();
+      const origins = Array.from({ length: 10 }, (_, index) => `https://p${index}.example`);
+      await backend.run(async (ctx) => {
+        for (const origin of [...origins, publisherId]) {
+          await ctx.db.insert("publishers", {
+            version: 2, ownerUserId: "user-1", publisherId: origin, label: origin,
+            enabled: origin !== publisherId, createdAt: now, updatedAt: now,
+          });
+        }
+      });
+      await invite(backend, "invitation-hash");
+      await expect(redeem(backend)).resolves.toEqual({ ok: false, reason: "too_many_publishers" });
+      await backend.mutation(internal.pairing.createPublisherInvitation, {
+        userId: "user-1", publisherId: origins[0]!, tokenHash: "existing", expiresAt: now + 60_000, now,
+      });
+      await expect(redeem(backend, { tokenHash: "existing", publisherId: origins[0]! })).resolves.toMatchObject({ ok: true });
+      const enabled = await backend.run(async (ctx) => (await ctx.db.query("publishers").collect()).filter((row) => row.enabled).length);
+      expect(enabled).toBe(10);
+    });
+
     it("rejects unbound invitations and leaves an origin-bound invitation usable after a mismatch", async () => {
       const backend = await signedIn();
       await backend.run(async (ctx) => {

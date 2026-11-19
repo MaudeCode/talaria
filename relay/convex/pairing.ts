@@ -4,6 +4,10 @@ import { internal } from "./_generated/api";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { authorizePublisherMutation, publisherKeyRevokedAt } from "./publishers";
 
+/** Per Relay user, so one account cannot mint unbounded feedback budgets or registrations. */
+const maxActivePublishers = 10;
+const maxOpenInvitations = 5;
+
 export const createPublisherInvitation = internalMutation({
   args: {
     userId: v.string(),
@@ -12,13 +16,21 @@ export const createPublisherInvitation = internalMutation({
     expiresAt: v.number(),
     now: v.number(),
   },
-  returns: v.object({ ok: v.boolean() }),
+  returns: v.union(
+    v.object({ ok: v.literal(true) }),
+    v.object({ ok: v.literal(false), reason: v.union(v.literal("unauthorized"), v.literal("too_many_invitations")) }),
+  ),
   handler: async (ctx, args) => {
     const user = await ctx.db
       .query("relayUsers")
       .withIndex("by_user_id", (query) => query.eq("userId", args.userId))
       .unique();
-    if (!user || user.disabledAt !== undefined) return { ok: false };
+    if (!user || user.disabledAt !== undefined) return { ok: false as const, reason: "unauthorized" as const };
+    // ponytail: reads the user's invitations still inside their 10-minute window; the cap keeps that set small.
+    const open = (await ctx.db.query("publisherInvitations")
+      .withIndex("by_user_id_and_expires_at", (query) => query.eq("userId", args.userId).gt("expiresAt", args.now))
+      .collect()).filter((invitation) => invitation.consumedAt === undefined);
+    if (open.length >= maxOpenInvitations) return { ok: false as const, reason: "too_many_invitations" as const };
     await ctx.db.insert("publisherInvitations", {
       userId: args.userId,
       publisherId: args.publisherId,
@@ -26,7 +38,7 @@ export const createPublisherInvitation = internalMutation({
       expiresAt: args.expiresAt,
       createdAt: args.now,
     });
-    return { ok: true };
+    return { ok: true as const };
   },
 });
 
@@ -90,6 +102,14 @@ export const redeemPublisherInvitation = internalMutation({
     ]);
     if (publisher?.keysRevokedAt !== undefined && invitation.createdAt <= publisher.keysRevokedAt) {
       return { ok: false as const, reason: "invalid_invitation" };
+    }
+    // Only a registration that would turn on another origin counts; users already above the cap keep theirs.
+    if (!publisher?.enabled) {
+      const active = await ctx.db.query("publishers")
+        .withIndex("by_version_and_owner_user_id_and_enabled", (query) =>
+          query.eq("version", 2).eq("ownerUserId", invitation.userId).eq("enabled", true),
+        ).take(maxActivePublishers);
+      if (active.length >= maxActivePublishers) return { ok: false as const, reason: "too_many_publishers" };
     }
     const currentKey = await ctx.db.query("publisherKeys")
       .withIndex("by_owner_origin_revocation_and_creation", (query) =>

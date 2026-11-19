@@ -44,19 +44,23 @@ async function relay() {
   const backend = convexTest(schema, modules);
   workpoolTest.register(backend, "apnsWorkpool");
   // Two accounts may register the same origin; each registration authenticates independently.
+  // The feedback owner also registers a second origin.
   const signers: Record<string, CryptoKey> = {};
-  for (const owner of ["feedback-owner", "rival-owner"]) {
+  for (const [owner, publisherId, keyId] of [
+    ["feedback-owner", "https://feedback.example", "feedback-owner-key"],
+    ["rival-owner", "https://feedback.example", "rival-owner-key"],
+    ["feedback-owner", "https://second.example", "feedback-owner-second-key"],
+  ] as const) {
     const keys = await webcrypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]) as CryptoKeyPair;
     const publicKey = bytesToBase64Url(new Uint8Array(await webcrypto.subtle.exportKey("raw", keys.publicKey)));
-    signers[`${owner}-key`] = keys.privateKey;
+    signers[keyId] = keys.privateKey;
     await backend.run(async (ctx) => {
       await ctx.db.insert("publishers", {
-        version: 2, ownerUserId: owner, publisherId: "https://feedback.example",
+        version: 2, ownerUserId: owner, publisherId,
         label: "Feedback publisher", enabled: true, createdAt: start, updatedAt: start,
       });
       await ctx.db.insert("publisherKeys", {
-        version: 2, ownerUserId: owner, publisherId: "https://feedback.example",
-        keyId: `${owner}-key`, publicKey, activatedAt: start, createdAt: start,
+        version: 2, ownerUserId: owner, publisherId, keyId, publicKey, activatedAt: start, createdAt: start,
       });
     });
   }
@@ -190,6 +194,18 @@ describe("feedback budgets", () => {
     const limited = await signedSubmit(report({ installId: uuid() }));
     expect(limited.status).toBe(429);
     expect(retryAfter(limited)).toBe(3_600);
+    expect((await signedSubmit(report(), { keyId: "rival-owner-key" })).status).toBe(202);
+  });
+
+  it("limits one owner to twenty reports an hour across every origin it registered", async () => {
+    const { signedSubmit } = await relay();
+    for (let index = 0; index < 20; index += 1) {
+      const keyId = index % 2 ? "feedback-owner-second-key" : "feedback-owner-key";
+      expect((await signedSubmit(report({ installId: uuid() }), { keyId })).status).toBe(202);
+    }
+    for (const keyId of ["feedback-owner-key", "feedback-owner-second-key"]) {
+      expect((await signedSubmit(report({ installId: uuid() }), { keyId })).status).toBe(429);
+    }
     expect((await signedSubmit(report(), { keyId: "rival-owner-key" })).status).toBe(202);
   });
 
@@ -552,6 +568,18 @@ describe("feedback attachments", () => {
       expect(await response.json()).toEqual({ error: "invalid_feedback" });
     }
     expect(await rows()).toEqual([]);
+  });
+
+  it("limits one owner to 200 MB of attachments a day across every origin it registered", async () => {
+    const { signedSubmit, accepted } = await attachmentRelay();
+    const fifty = () => report({ attachments: Array.from({ length: 5 }, () => declared(10 * MB)) });
+    const statuses = async (keyId: string) =>
+      (await accepted(signedSubmit(fifty(), { keyId }))).attachments.map(({ status, reason }) => reason ?? status);
+    for (const keyId of ["feedback-owner-key", "feedback-owner-key", "feedback-owner-second-key", "feedback-owner-second-key"]) {
+      expect(await statuses(keyId)).toEqual(Array(5).fill("accepted"));
+    }
+    expect(await statuses("feedback-owner-second-key")).toEqual(Array(5).fill("quota"));
+    expect(await statuses("rival-owner-key")).toEqual(Array(5).fill("accepted"));
   });
 
   it("degrades to text when a byte budget or the storage ceiling is spent and charges refused files nothing", async () => {

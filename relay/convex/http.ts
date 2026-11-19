@@ -536,7 +536,8 @@ http.route({
       expiresAt,
       now,
     });
-    return result.ok ? json(201, { invitation: token, expiresAt }) : json(401, { error: "unauthorized" });
+    if (result.ok) return json(201, { invitation: token, expiresAt });
+    return result.reason === "too_many_invitations" ? json(429, { error: result.reason }) : json(401, { error: "unauthorized" });
   }),
 });
 

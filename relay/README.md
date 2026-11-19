@@ -106,7 +106,10 @@ the report is acknowledged only after every kept file is attached.
 Use the `intake` scope provided by KAN-67. It forces human triage and disables
 automation on created tickets; KAN-77 lets the same key attach files to the
 quarantined tickets it created and nothing else. The bridge sends exactly the `user-report`,
-trust-tier, and client-platform labels; Kanvil adds its own `intake` label.
+trust-tier (`signed-in` for a report from a self-registered server, or `unverified`), and
+client-platform labels; Kanvil adds its own `intake` label. The ticket title is `User report: `
+plus the submitted title with control characters, backticks and angle brackets removed, at most
+120 characters; the description repeats the original title inside a fence.
 Credentials stay in the cluster and are never logged. Missing variables or an
 invalid base URL exit 2 and name only the variable. Queue failures exit 1.
 Individual create or acknowledgement failures leave reports pending, continue

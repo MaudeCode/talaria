@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Relay budgets feedback per account across every server it registers, caps registrations and open invitations per account, and files report titles as plain text labeled signed-in rather than verified.",
+      "highlight": false,
+      "components": ["relay"],
+      "announce": false
+    }
+  ]
+}
