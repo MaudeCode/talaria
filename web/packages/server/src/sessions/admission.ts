@@ -187,7 +187,7 @@ export async function startSessionChat(deps: AppDeps, body: Record<string, unkno
   const admissionCheck = fence ? (target: Session) => {
     if (!deps.profilesMatch(target.profile, fence.profile) || target.project_id !== fence.project_id || target.archived) throw new HttpFailure(409, 'Queue target profile or project changed')
   } : undefined
-  const response = (await deps.turns.start(s, { timing, admissionCheck, msg, ...(prompt === null ? {} : { prompt }), attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', voiceTurn: body.voice_turn === true, connectCard: body.connect_card === true, skillSecret: body.skill_secret === true, ...settle }))
+  const response = (await deps.turns.start(s, { timing, admissionCheck, msg, ...(prompt === null ? {} : { prompt }), attachments, workspace, workspaceServerOwner: serverOwner, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', voiceTurn: body.voice_turn === true, connectCard: body.connect_card === true, skillSecret: body.skill_secret === true, ...settle }))
   if (response._status !== undefined && response._status >= 400) throw new HttpFailure(response._status, response.error ?? 'chat start failed', response.active_stream_id ? { active_stream_id: response.active_stream_id } : {})
   return startPayload(response)
 }

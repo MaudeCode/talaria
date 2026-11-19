@@ -6,6 +6,7 @@
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
 
 const ISSUER = 'https://identity.invalid'
@@ -17,8 +18,9 @@ interface AuthStatusBody { person_isolation?: { version: number; enabled: boolea
 let s: TestServer | null = null
 afterEach(async () => { await s?.close(); s = null })
 
-async function boot(isolation: boolean): Promise<TestServer> {
+async function boot(isolation: boolean, sidecar?: FakeSidecar): Promise<TestServer> {
   s = await bootTestServer({
+    ...(sidecar ? { sidecar } : {}),
     env: { ...OIDC_ENV, ...(isolation ? { TALARIA_WEB_PERSON_ISOLATION: '1' } : {}) },
     // The identity provider's proof is the boundary; the gate, owner policy and session access stay real.
     deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) },
@@ -102,6 +104,15 @@ describe('workspace authority from the request', () => {
     const body = { session_id: sid, action: 'mutate', request_id: 'workspace-change', expected_revision: 0, execution_generation: 0, operation: 'workspace', payload: { cwd: server.workspace } }
     await post(server, client, '/api/chat/owner-action', body)
     expect(action).toHaveBeenCalledWith(sid, expect.objectContaining(body), false)
+  })
+
+  it.each([false, true])('records server-owner authority (%s) at ordinary chat admission', async (serverOwner) => {
+    const server = await boot(true, new FakeSidecar())
+    const client = signIn(server, 'alice', serverOwner)
+    const sid = await chat(server, client)
+    const start = vi.spyOn(server.deps.turns, 'start').mockRejectedValue(new Error('Synthetic turn refusal'))
+    await post(server, client, '/api/chat/start', { session_id: sid, message: 'Synthetic prompt' })
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({ session_id: sid }), expect.objectContaining({ workspaceServerOwner: serverOwner }))
   })
 
   it('uses the last authorized workspace for an implicit new session', async () => {
