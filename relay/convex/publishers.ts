@@ -4,6 +4,7 @@ import { recordCompletion, retainedStates } from "./completions";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
+import { visiblePublisherStates } from "./lib/publisherVisibility";
 import { activityPhase, isCurrentActivityState, isTerminalPhase, type SessionPhase } from "./lib/model";
 import {
   sessionStateContentValidator,
@@ -479,7 +480,7 @@ export const listCurrentStates = internalQuery({
         query.eq("version", 2).eq("userId", args.userId).gt("expiresAt", args.now),
       ).take(500);
     return [
-      ...states.filter(isCurrentActivityState).map(exposedState),
+      ...(await visiblePublisherStates(ctx, args.userId, states.filter(isCurrentActivityState))).map(exposedState),
       ...(await retainedStates(ctx, args.userId)).map((state) => ({ ...state, deleted: false, receivedAt: state.updatedAt })),
     ];
   },

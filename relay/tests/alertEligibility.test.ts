@@ -10,6 +10,22 @@ async function jobs(backend: Backend) {
 }
 
 describe("publisher alert eligibility", () => {
+  it("stales a queued Live Activity start after owner key revocation", async ({ onTestFinished }) => {
+    vi.useFakeTimers({ now });
+    onTestFinished(() => { vi.useRealTimers(); });
+    const backend = await seed({ pushToStartToken: "start-token", activity: false });
+    await backend.mutation(internal.delivery.recompute, { userId: "user-1" });
+    const queued = await backend.run((ctx) => ctx.db.query("deliveryJobs").first());
+    expect(queued).toMatchObject({ kind: "live_activity_start", status: "queued" });
+    await backend.mutation(internal.subscriptions.revokePublisherKeys, {
+      userId: "user-1", publisherId, now: now + 1,
+    });
+    await expect(backend.mutation(internal.delivery.claimJob, { jobId: queued!._id, now: now + 2 }))
+      .resolves.toEqual({ status: "stale" });
+    await expect(backend.query(internal.publishers.listCurrentStates, { userId: "user-1", now: now + 2 }))
+      .resolves.toEqual([]);
+  });
+
   it("persists and silently delivers an ineligible transition without a later or duplicate alert", async () => {
     const backend = await seed({ pushToken: "push-token", activity: true });
     await backend.mutation(internal.publishers.acceptSnapshot, {

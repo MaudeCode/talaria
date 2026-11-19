@@ -208,7 +208,31 @@ export const revokePublisherKeys = internalMutation({
     if (!publisher) return { ok: false };
     if (publisher.enabled) {
       await ctx.db.patch(publisher._id, { enabled: false, keysRevokedAt: args.now, updatedAt: args.now });
+      await ctx.scheduler.runAfter(0, internal.subscriptions.recomputeRevokedPublisher, {
+        userId: args.userId, publisherId: args.publisherId, cursor: null,
+      });
     }
     return { ok: true };
+  },
+});
+
+
+export const recomputeRevokedPublisher = internalMutation({
+  args: { userId: v.string(), publisherId: v.string(), cursor: v.union(v.string(), v.null()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const page = await ctx.db.query("publisherGrants")
+      .withIndex("by_publisher_owner_user_id_and_publisher_id_and_profile_id", (query) =>
+        query.eq("publisherOwnerUserId", args.userId).eq("publisherId", args.publisherId),
+      ).paginate({ cursor: args.cursor, numItems: 100 });
+    for (const grant of page.page) {
+      await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId: grant.userId });
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.subscriptions.recomputeRevokedPublisher, {
+        ...args, cursor: page.continueCursor,
+      });
+    }
+    return null;
   },
 });

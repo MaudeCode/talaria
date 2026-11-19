@@ -2,6 +2,7 @@ import { v } from "convex/values";
 
 import { retainedStates } from "./completions";
 import { sha256 } from "./lib/crypto";
+import { isPublisherStateVisible, publisherForGrant, visiblePublisherStates } from "./lib/publisherVisibility";
 import { activityPhase, isCurrentActivityState, isTerminalPhase } from "./lib/model";
 import { internal } from "./_generated/api";
 import type { DataModel, Doc } from "./_generated/dataModel";
@@ -121,7 +122,7 @@ async function currentStates(ctx: MutationCtx, userId: string, now: number): Pro
     )
     .take(MAX_STATE_ROWS);
   return [
-    ...states.filter(isCurrentActivityState).map(asSessionState),
+    ...(await visiblePublisherStates(ctx, userId, states.filter(isCurrentActivityState))).map(asSessionState),
     ...await retainedStates(ctx, userId),
   ];
 }
@@ -372,7 +373,11 @@ export const recompute = internalMutation({
           }]
         : []
     );
+    const visibleTransitionStates = new Set(await visiblePublisherStates(
+      ctx, args.userId, transitions.flatMap((transition) => transition.state ? [transition.state] : []),
+    ));
     const changed = transitions.flatMap((transition) => {
+      if (transition.state && !visibleTransitionStates.has(transition.state)) return [];
       const state = transition.state ?? states.find(
         (candidate) =>
           candidate.publisherId === transition.publisherId &&
@@ -746,8 +751,10 @@ export const claimJob = internalMutation({
               .eq("publisherId", job.sourcePublisherId!).eq("sessionId", job.sourceSessionId!),
           )
           .unique() : null;
-        if (!device.preferences.liveActivitiesEnabled
-          || (source && !source.deleted && !alertForState(source, device.preferences))) {
+        const sourceVisible = !source || (!source.deleted
+          && (await visiblePublisherStates(ctx, job.userId, [source])).length > 0);
+        if (!device.preferences.liveActivitiesEnabled || !sourceVisible
+          || (source && !alertForState(source, device.preferences))) {
           const { alert: _alert, sound: _sound, ...aps } = payload.aps;
           request = { ...job.request, payloadJson: JSON.stringify({ ...payload, aps }) };
           await ctx.db.patch(job._id, { request });
@@ -829,10 +836,13 @@ export const claimJob = internalMutation({
             )
             .unique(),
         ]);
+        const publisher = grant ? await publisherForGrant(ctx, grant) : null;
         if (
           !grant ||
           !state ||
           state.deleted ||
+          !isPublisherStateVisible(publisher, state.receivedAt) ||
+          !isPublisherStateVisible(publisher, job.createdAt) ||
           // TAL-1970: a queued agent notice stays deliverable while its session state exists; the publisher decided muting.
           (job.sourceAgentNotifyId === undefined && (
             state.alertEligible === false ||

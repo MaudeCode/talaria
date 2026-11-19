@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { isPublisherStateVisible, publisherForGrant } from "./lib/publisherVisibility";
 import { paginationOptsValidator } from "convex/server";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
@@ -40,22 +41,20 @@ export function grantMatches(grant: Doc<"publisherGrants">, row: Doc<"completion
 }
 
 async function visibleCompletions(
-  ctx: QueryCtx | MutationCtx, rows: Doc<"completions">[],
+  ctx: QueryCtx | MutationCtx, rows: Doc<"completions">[], includeHistory = true,
 ): Promise<Doc<"completions">[]> {
   const grants = new Map<string, Doc<"publisherGrants"> | null>();
-  const enabled = new Map<string, boolean>();
+  const publishers = new Map<string, Doc<"publishers"> | null>();
   const visible: Doc<"completions">[] = [];
   for (const row of rows) {
     if (!grants.has(row.grantId)) grants.set(row.grantId, await ctx.db.get(row.grantId));
     const grant = grants.get(row.grantId);
     if (grant && grantMatches(grant, row)) {
-      if (!enabled.has(grant._id)) {
-        const publisher = await ctx.db.query("publishers")
-          .withIndex("by_version_and_owner_user_id_and_publisher_id", (q) => q.eq("version", 2)
-            .eq("ownerUserId", grant.publisherOwnerUserId).eq("publisherId", grant.publisherId)).unique();
-        enabled.set(grant._id, publisher?.enabled === true);
+      if (!publishers.has(grant._id)) {
+        publishers.set(grant._id, await publisherForGrant(ctx, grant));
       }
-      if (enabled.get(grant._id)) visible.push(row);
+      const publisher = publishers.get(grant._id) ?? null;
+      if (publisher?.enabled && (includeHistory || isPublisherStateVisible(publisher, row._creationTime))) visible.push(row);
     }
   }
   return visible;
@@ -67,7 +66,7 @@ export async function retainedStates(ctx: QueryCtx | MutationCtx, userId: string
     .withIndex("by_user_id_and_acknowledged", (q) => q.eq("userId", userId).eq("acknowledged", false))
     .order("desc").take(500);
   // A reply outcome cannot stand in for session settlement after an unconfirmed activity expires.
-  return (await visibleCompletions(ctx, rows)).filter((record) =>
+  return (await visibleCompletions(ctx, rows, false)).filter((record) =>
     record.activityPhase === undefined || isTerminalPhase(record.activityPhase),
   ).map((record) => {
     const { status: _status, ...row } = record.row;
