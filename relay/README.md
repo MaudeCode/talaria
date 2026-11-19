@@ -10,7 +10,7 @@ Talaria signs in natively with Apple and receives a relay session. An owner regi
 
 The v2 enrollment model intentionally does not accept v1 publisher credentials. Existing v1 rows remain inert so the schema can deploy without destructive cleanup; servers and users must register and enroll again.
 
-The relay accepts bounded semantic state only. It does not accept transcripts, commands, tool arguments, file paths, provider credentials, or Hermes authentication secrets.
+The relay accepts bounded semantic state only. It does not accept transcripts, provider credentials, or Hermes authentication secrets; a running tool is described by its kind and a target label of at most 64 characters.
 
 ## Local development
 
@@ -119,8 +119,8 @@ automation on created tickets; KAN-77 lets the same key attach files to the
 quarantined tickets it created and nothing else. The bridge sends exactly the `user-report`,
 trust-tier (`signed-in` for a report from a self-registered server, or `unverified`), and
 client-platform labels; Kanvil adds its own `intake` label. The ticket title is `User report: `
-plus the submitted title with control characters, backticks and angle brackets removed, at most
-120 characters; the description repeats the original title inside a fence.
+plus the submitted title with control characters removed and whitespace, backticks and angle
+brackets turned into single spaces, at most 120 characters; the description repeats the original title inside a fence.
 Credentials stay in the cluster and are never logged. Missing variables (including
 `SANITIZER_URL` and `SANITIZER_TOKEN`) or an invalid base URL exit 2 and name only the variable. Queue failures exit 1.
 Individual create or acknowledgement failures leave reports pending, continue
@@ -193,4 +193,5 @@ After Apple enables Sign in with Apple for the Talaria App ID and production con
 3. Start concurrent Hermes sessions and arm the aggregate Live Activity.
 4. Lock the phone and verify APNs update/end plus approval/input notification fallback.
 
-See [docs/http-api.md](docs/http-api.md) for the v1 contract.
+See [docs/http-api.md](docs/http-api.md) for the HTTP contract and
+[../web/docs/security-model.md](../web/docs/security-model.md#9-relay) for the Relay's credentials, storage and retention.

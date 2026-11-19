@@ -61,9 +61,11 @@ is edited.
 
 The auth gate (`packages/server/src/auth/gate.ts`) decides owner authority for
 every route below, on the normalized request path, before any handler runs. A
-session without `can_manage_server` (a profile-bound login or a non-owner
-person) gets `403 {"error":"Owner session required"}`; an owner session, and a
-server with auth off, pass as before. `src/auth/gate.test.ts` owns the matrix.
+session without `can_manage_server` gets `403 {"error":"Owner session required"}`;
+an owner session, and a server with auth off, pass as before. Who holds owner
+authority (including a profile-bound OIDC login with the owner claim) is defined
+in [security-model.md](security-model.md#1-who-is-trusted-for-what).
+`src/auth/gate.test.ts` owns the matrix.
 
 - Every method: the `OPERATOR_ONLY_PATHS` list, `/api/groups` and everything
   under `/api/groups/`, `/api/terminal/` (the host terminal, its output stream
@@ -85,9 +87,9 @@ model and its `advanced.service_tier`, but a non-owner whose `advanced` carries
 route or write its credential.
 
 A cron create or update stays open to non-owners, except that a body carrying
-`script` or `no_agent`, or giving the job a monitor script it does not already
-have (a `monitor` that is not a URL, or `monitor_script`), is refused with the
-same 403. The server ships the
+`script` or `no_agent`, giving the job a monitor script it does not already
+have (a `monitor` that is not a URL, or `monitor_script`), or delivering to a
+Group Chat room (`room:`), is refused with the same 403. The server ships the
 matching capability fields: `GET /api/mcp/servers` answers a non-owner with
 `toggle_supported: false` and every row's `can_toggle`, `events.can_edit` and
 `cost_policy.can_edit` false, and `GET /api/commands` lists `/terminal` for no
@@ -544,8 +546,8 @@ projects it as an assistant row with `scheduled: true` and `author` set to the
 redacted job name, falling back to the actor id without its prefix.
 Multi-profile discussions require the existing server-owner authority. The
 shared authentication gate protects the whole group API namespace, including
-streams and file downloads, before native RPC. A profile-bound trusted-header
-or OIDC login cannot use another managed profile through a room.
+streams and file downloads, before native RPC, so a non-owner login cannot use
+another managed profile through a room.
 App adoption is tracked separately in TAL-1378.
 
 ## Memory compaction
@@ -674,10 +676,11 @@ and delegation execution are separate. This extends sidecar RPC version 63.
 ## Project chat defaults
 
 A non-owner login may select or register a local workspace only at or below
-its profile's saved workspaces, configured default or the boot default.
-The user's home is reserved for owners. Restricted workspaces cannot overlap
-Hermes home or Web state, and workspace file operations recheck the stored
-root on each request. All workspace file operations exclude Web state.
+its profile's saved workspaces, configured default or the boot default. Its
+workspace cannot contain the user's home or overlap Hermes home, Web state or
+`~/.ssh`, and workspace file operations recheck the stored root on each
+request. All workspace file operations exclude Web state. The full rule is in
+[security-model.md](security-model.md#5-filesystem).
 If the boot workspace is inside Web state, configure a writable workspace
 outside it via `TALARIA_WEB_DEFAULT_WORKSPACE`.
 

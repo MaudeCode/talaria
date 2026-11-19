@@ -18,3 +18,8 @@ You should get an initial response within a week. Please give the maintainers a
 reasonable window to ship a fix before disclosing publicly.
 
 Report vulnerabilities in Hermes Agent itself to that project, not here.
+
+## Security model
+
+[web/docs/security-model.md](web/docs/security-model.md) describes who may do
+what in Talaria Web and the Relay, and where each rule is enforced.

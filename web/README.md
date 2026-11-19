@@ -420,6 +420,7 @@ outside contributions; see the [contribution policy](../CONTRIBUTING.md).
 - [docs/architecture/](docs/architecture/) — contract package, sidecar RPC, frontend layout
 - [docs/rfcs/](docs/rfcs/) — state and streaming contracts
 - [docs/CONTRACTS.md](docs/CONTRACTS.md) — index of subsystem contracts
+- [docs/security-model.md](docs/security-model.md) — who may do what, and where each rule is enforced
 
 ## Repo
 
