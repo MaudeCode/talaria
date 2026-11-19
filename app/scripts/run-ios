@@ -2,13 +2,15 @@
 
 set -euo pipefail
 
-open_simulator=true
-if [[ "${1:-}" == --no-open ]]; then
-    open_simulator=false
-    shift
-fi
+# open: Simulator window and fixture launch; no-open: fixture launch only;
+# prepare-only: install and hold the lease so T3's Device command owns the launch.
+mode=open
+case "${1:-}" in
+    --no-open) mode=no-open; shift ;;
+    --prepare-only) mode=prepare-only; shift ;;
+esac
 if (( $# != 0 )); then
-    echo "Usage: scripts/run-ios [--no-open]" >&2
+    echo "Usage: scripts/run-ios [--no-open | --prepare-only]" >&2
     exit 64
 fi
 
@@ -65,15 +67,20 @@ fi
 /usr/bin/codesign --verify --deep --strict "$app_path"
 xcrun simctl bootstatus "$simulator_id" -b >/dev/null
 xcrun simctl install "$simulator_id" "$app_path"
-if [[ "$open_simulator" == true ]]; then
+if [[ "$mode" == open ]]; then
     developer_dir=$(xcode-select -p)
     simulator_app="$developer_dir/Applications/Simulator.app"
     [[ -d "$simulator_app" ]] || simulator_app="$developer_dir/../Applications/DeviceHub.app"
     open "$simulator_app" --args -CurrentDeviceUDID "$simulator_id"
 fi
-xcrun simctl launch "$simulator_id" "$bundle_identifier" --ui-test-fixture
-
-echo "Talaria's deterministic fixture is running on $simulator_id. Press Control-C to end the session and release it."
+if [[ "$mode" == prepare-only ]]; then
+    echo "Simulator ID: $simulator_id"
+    echo "Fixture bundle ID: $bundle_identifier"
+    echo "Talaria is installed but not launched. Launch it from T3's Device panel; press Control-C to end the session and release the simulator."
+else
+    xcrun simctl launch "$simulator_id" "$bundle_identifier" --ui-test-fixture
+    echo "Talaria's deterministic fixture is running on $simulator_id. Press Control-C to end the session and release it."
+fi
 while true; do
     sleep 30
 done

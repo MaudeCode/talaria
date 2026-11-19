@@ -164,8 +164,10 @@ Agent/MCP flow:
   Simulator. Keep the command running for the manual session, then press Control-C
   to shut down the simulator and release its lease.
 - In T3 Code, follow the [Device panel workflow](../.agents/skills/talaria-ios-testing/SKILL.md#t3-code-device-panel).
-  `scripts/run-ios --no-open` keeps the same build and lease without opening the
-  desktop simulator window.
+  `scripts/run-ios --no-open` keeps the same build, lease and fixture launch
+  without opening the desktop simulator window. `scripts/run-ios --prepare-only`
+  also skips the launch, so the Device panel's command launches the fixture with
+  its own arguments.
 - Use `screenshot`, UI inspection, and log capture only when they help validate the slice.
 
 Human/CLI equivalents:
@@ -231,6 +233,40 @@ scripts/run-ios
 ```
 
 If the configured simulator is not installed, choose a nearby available iPhone simulator and update `../.xcodebuildmcp/config.yaml` only if that should become the shared repo default.
+
+### Record a screen transition
+
+A settled screenshot can miss a flash between two screens. In T3 Code, record the
+transition through the Device panel against the leased fixture build:
+
+1. Run `scripts/run-ios --prepare-only` in a persistent terminal. It leases a pool
+   simulator, builds the isolated `.xctest` app, verifies its signature and bundle
+   ID, installs it and prints `Simulator ID:` and `Fixture bundle ID:`. It holds
+   the lease without opening Simulator or launching the app.
+2. Call `device_list`, then `device_open` with that simulator ID and its host.
+   `AD` below is the exact command path `device_open` returns; it is already bound
+   to the device and session.
+3. Launch, record and build the contact sheet. The second fixture argument is an
+   optional scenario; the relaunch is the cold route, or drive the in-app
+   transition instead:
+
+   ```sh
+   "$AD" open dev.kil.talaria.xctest --launch-args=--ui-test-fixture --launch-args=--ui-test-long-bodies
+   "$AD" record start --scope device /tmp/transition.mp4
+   "$AD" open dev.kil.talaria.xctest --relaunch --launch-args=--ui-test-fixture --launch-args=--ui-test-long-bodies
+   "$AD" record stop
+   "$AD" record contact-sheet /tmp/transition.mp4 --out /tmp/transition-sheet.png
+   ```
+
+4. Read every cell of the sheet. The command prints `N cells over Ts (S sample
+   times, F frames decoded)`: a flash shorter than the gap between sample times is
+   not in the sheet, and fewer decoded frames than sample times leaves holes, so
+   scrub the movie around a suspect change.
+5. Run `"$AD" close` without `--shutdown`, call `device_close` with
+   `shutdown=false`, then press Control-C in the runner. Confirm the simulator is
+   `Shutdown` and its lease file is gone ([pool guide](docs/ios-simulator-pool.md)).
+
+Attach the sheet and movie to the PR; never commit them.
 
 ## Display-phase signposts
 

@@ -64,19 +64,22 @@ worktrees. Let the current run finish instead of starting an overlapping run.
 
 When T3's `device_*` tools are available:
 
-1. Start `scripts/run-ios --no-open` in a persistent terminal session. Keep the
-   runner alive throughout inspection; it owns the shared simulator lease, the
-   isolated app build, and the deterministic fixture. Wait for its fixture-ready
-   message and read the printed simulator UDID.
+1. Start `scripts/run-ios --prepare-only` in a persistent terminal session. Keep
+   the runner alive throughout inspection; it owns the shared simulator lease and
+   the isolated app build. Wait for it to print `Simulator ID:` and
+   `Fixture bundle ID:`.
 2. Call `device_list`, then `device_open` with that exact `deviceId` and its local
    `hostId`. Opening a default device can bypass the lease and select another
    worktree's simulator.
 3. Run every interaction through the exact `agent-device` command path that
    `device_open` returns; it is already bound to that device and session.
-   Establish the app session with `open dev.kil.talaria.xctest` (without
-   `--relaunch`, so the fixture launch stays), then use `snapshot -i` and its
-   element references for interactions. Capture visual evidence with
-   `device_screenshot`; keep evidence outside git. Pool simulators are shared
+   Launch the fixture with `open dev.kil.talaria.xctest
+   --launch-args=--ui-test-fixture`, adding a `--launch-args` per fixture
+   scenario, then use `snapshot -i` and its element references for interactions.
+   Capture visual evidence with `device_screenshot`; to record a transition
+   between screens, follow
+   [Record a screen transition](../../../app/DEVELOPMENT.md#record-a-screen-transition).
+   Keep evidence outside git. Pool simulators are shared
    across threads: if `open` reports `DEVICE_IN_USE` by another session, stop
    and ask the user. Never reuse or close another session.
 4. End the app session with `close` through that command, without `--shutdown`.
