@@ -88,8 +88,9 @@ function isBlockedPosixWorkspacePath(raw: string | null | undefined): boolean {
   return [...BLOCKED_RAW, '/private/etc', '/private/var'].some((b) => posixWithin(candidate, b))
 }
 
-/** Blocked system root check with user-tmp carve-outs (Python `_is_blocked_system_path`). */
+/** Blocked system root check with user-tmp carve-outs (Python `_is_blocked_system_path`); the filesystem root itself is blocked (TAL-2218). */
 export function isBlockedSystemPath(candidate: string): boolean {
+  if (candidate === '/') return true
   if (USER_TMP_PREFIXES.some((t) => isWithin(candidate, t))) return false
   return blockedPaths().roots.some((b) => isWithin(candidate, b))
 }
