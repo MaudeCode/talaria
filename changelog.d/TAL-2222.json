@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Talaria Web no longer falls back to plain HTTP when its direct TLS certificate or key is missing or cannot load; it refuses to start and names the setting to fix.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

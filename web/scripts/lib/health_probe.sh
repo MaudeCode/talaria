@@ -10,9 +10,10 @@
 #   1. Verified HTTPS.
 #   2. Self-signed fallback: if verification fails, retry without verification
 #      and print a one-line "self-signed certificate" warning (once).
-#   3. Plain HTTP: the server falls back to serving HTTP when the cert/key are
-#      present but unloadable (packages/server/src/server.ts). Probe HTTP last
-#      so that fallback is found instead of polling HTTPS forever.
+#   3. Plain HTTP last, for a listener that serves HTTP on the port (for
+#      example an older release that fell back to HTTP). The current server
+#      fails closed instead: a cert/key that cannot load stops startup
+#      (packages/server/src/server.ts).
 #
 # TALARIA_WEB_TLS_INSECURE_PROBE=1 is an explicit opt-in that skips verified
 # HTTPS and goes straight to the unverified attempt. By contract this is
@@ -103,9 +104,8 @@ _hermes_webui_http_get() {
 #
 # Side effect: sets the global _TALARIA_WEB_PROBE_SCHEME to the scheme that
 # actually answered ("https" or "http"). Callers that print a ready/already-up
-# URL should prefer this over the configured scheme, because the server falls
-# back to plain HTTP when the cert/key are unloadable — so the configured
-# scheme can be https:// while the live server speaks http://.
+# URL should prefer this over the configured scheme, because the listener on
+# the port may speak http:// while the configured scheme is https://.
 hermes_webui_probe_health() {
   local host="$1" port="$2" path="${3:-/health}" max_time="${4:-2}" direct="${5:-}"
   local scheme body

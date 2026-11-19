@@ -89,6 +89,14 @@ it('the standalone health probe honors legacy TLS settings in an independent pro
   expect(result.stderr.match(/\[webui\] WARNING:/g)).toHaveLength(1)
 })
 
+it('rejects a partial direct TLS pair, naming the missing variable without echoing the configured path (TAL-2222)', () => {
+  const path = resolve(home, 'synthetic-tls.pem')
+  const advice = 'Set both to serve HTTPS directly, or neither to serve plain HTTP.'
+  // The whole message is matched, so it carries no configured value.
+  expect(() => loadConfig({ home, webRoot: home, env: { TALARIA_WEB_TLS_CERT: path } })).toThrow(new Error(`TALARIA_WEB_TLS_CERT is set but TALARIA_WEB_TLS_KEY is not. ${advice}`))
+  expect(() => loadConfig({ home, webRoot: home, env: { TALARIA_WEB_TLS_KEY: path, TALARIA_WEB_TLS_CERT: ' ' } })).toThrow(new Error(`TALARIA_WEB_TLS_KEY is set but TALARIA_WEB_TLS_CERT is not. ${advice}`))
+})
+
 it('selects JSON session storage by default, and each backend explicitly', () => {
   expect(loadConfig({ home, webRoot: home, env: {} }).storage).toBe('json')
   const selected = (storage: string): string => { try { return loadConfig({ home, webRoot: home, env: { TALARIA_STORAGE: storage } }).storage } catch (error) { return (error as Error).message } }

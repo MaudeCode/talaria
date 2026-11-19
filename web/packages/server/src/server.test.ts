@@ -1,6 +1,8 @@
 /** Listener timeouts: a stalled request body cannot hold a socket open indefinitely, while responses stay unbounded. */
-import { chmodSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { connect, createServer, type AddressInfo } from 'node:net'
+import { connect as connectTls } from 'node:tls'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -86,24 +88,25 @@ describe('credential permissions at startup', () => {
   })
 })
 
+const freePort = async (): Promise<number> => {
+  const probe = createServer()
+  await new Promise<void>((resolve) => probe.listen(0, '0.0.0.0', resolve))
+  const { port } = probe.address() as AddressInfo
+  await new Promise((resolve) => probe.close(resolve))
+  return port
+}
+const bindable = (port: number, host = '0.0.0.0'): Promise<boolean> => new Promise((resolve) => {
+  const probe = createServer()
+  probe.once('error', () => { resolve(false) })
+  probe.listen(port, host, () => probe.close(() => { resolve(true) }))
+})
+
 describe('unauthenticated bind at startup (TAL-2197)', () => {
   const bootLogs = async (env: Record<string, string>) => {
     const s = await bootTestServer({ env })
     await s.close()
     return s.logs.join('\n')
   }
-  const freePort = async (): Promise<number> => {
-    const probe = createServer()
-    await new Promise<void>((resolve) => probe.listen(0, '0.0.0.0', resolve))
-    const { port } = probe.address() as AddressInfo
-    await new Promise((resolve) => probe.close(resolve))
-    return port
-  }
-  const bindable = (port: number): Promise<boolean> => new Promise((resolve) => {
-    const probe = createServer()
-    probe.once('error', () => { resolve(false) })
-    probe.listen(port, '0.0.0.0', () => probe.close(() => { resolve(true) }))
-  })
 
   it('refuses 0.0.0.0 with no sign-in method before listening, naming both fixes and the fatal exit code', async () => {
     const port = await freePort()
@@ -139,6 +142,60 @@ describe('unauthenticated bind at startup (TAL-2197)', () => {
       expect(logs, host).toContain('Talaria Web listening on')
       expect(logs, host).not.toContain('NO PASSWORD SET')
     }
+  })
+})
+
+describe('direct TLS at startup (TAL-2222)', () => {
+  let dir: string
+  let cert: string
+  let key: string
+  let otherKey: string
+  const PASSWORD = 'synthetic-tls-test-password'
+  const openssl = (...args: string[]) => execFileSync('openssl', args, { stdio: 'ignore' })
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'talaria-tls-'))
+    cert = join(dir, 'cert.pem')
+    key = join(dir, 'key.pem')
+    otherKey = join(dir, 'other-key.pem')
+    openssl('req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-subj', '/CN=localhost', '-days', '1', '-keyout', key, '-out', cert)
+    openssl('genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-out', otherKey)
+  })
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }) })
+
+  it('refuses to start before listening when the certificate or key is unreadable, malformed or mismatched, naming the setting and path only', async () => {
+    const malformed = join(dir, 'malformed.pem')
+    writeFileSync(malformed, '-----BEGIN CERTIFICATE-----\nc3ludGhldGljLW5vdC1hLWNlcnRpZmljYXRl\n-----END CERTIFICATE-----\n')
+    const cases = [
+      { name: 'unreadable certificate', cert: join(dir, 'missing-cert.pem'), key, names: ['TALARIA_WEB_TLS_CERT', join(dir, 'missing-cert.pem')] },
+      { name: 'unreadable key', cert, key: join(dir, 'missing-key.pem'), names: ['TALARIA_WEB_TLS_KEY', join(dir, 'missing-key.pem')] },
+      { name: 'malformed certificate', cert: malformed, key, names: [malformed] },
+      { name: 'mismatched key', cert, key: otherKey, names: [cert, otherKey] },
+    ]
+    const secrets = [PASSWORD, ...[cert, key, otherKey, malformed].flatMap((file) => readFileSync(file, 'utf8').split('\n').filter((line) => line.length > 20 && !line.startsWith('-----')))]
+    for (const c of cases) {
+      const port = await freePort()
+      const logs: string[] = []
+      const error = await bootTestServer({ logs, env: { TALARIA_WEB_PORT: String(port), TALARIA_WEB_PASSWORD: PASSWORD, TALARIA_WEB_TLS_CERT: c.cert, TALARIA_WEB_TLS_KEY: c.key } })
+        .then(async (s) => { await s.close(); return null }, (rejected: unknown) => rejected as Error)
+      expect(error, c.name).toMatchObject({ exitCode: CONFIG_EXIT_CODE })
+      for (const name of c.names) expect(error?.message, c.name).toContain(name)
+      const emitted = `${error?.message ?? ''}\n${logs.join('\n')}`
+      for (const secret of secrets) expect(emitted, c.name).not.toContain(secret)
+      expect(logs.join('\n'), c.name).not.toContain('listening on')
+      expect(await bindable(port, '127.0.0.1'), c.name).toBe(true)
+    }
+  })
+
+  it('serves HTTPS over TLS 1.2 or later from a valid certificate and key', async () => {
+    const s = await bootTestServer({ env: { TALARIA_WEB_TLS_CERT: cert, TALARIA_WEB_TLS_KEY: key } })
+    try {
+      expect(s.running.scheme).toBe('https')
+      const protocol = await new Promise<string | null>((resolve, reject) => {
+        const socket = connectTls({ host: '127.0.0.1', port: s.running.port, rejectUnauthorized: false }, () => { resolve(socket.getProtocol()); socket.end() })
+        socket.once('error', reject)
+      })
+      expect(['TLSv1.2', 'TLSv1.3']).toContain(protocol)
+    } finally { await s.close() }
   })
 })
 

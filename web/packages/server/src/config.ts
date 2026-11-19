@@ -178,11 +178,18 @@ export function loadConfig(opts: LoadConfigOptions): ServerConfig {
   const maxUploadBytes = envMbBytes(env.TALARIA_WEB_MAX_UPLOAD_MB, 20, warn, 'TALARIA_WEB_MAX_UPLOAD_MB')
   // Python `_max_extracted_bytes`: a positive (fractional) MB value, else ten times the upload cap.
   const extractedMb = Number((env.TALARIA_WEB_MAX_EXTRACTED_MB ?? '').trim() || Number.NaN)
+  const tlsCert = (env.TALARIA_WEB_TLS_CERT ?? '').trim() || null
+  const tlsKey = (env.TALARIA_WEB_TLS_KEY ?? '').trim() || null
+  // TAL-2222: half a pair would silently serve plain HTTP; direct TLS needs both, plain HTTP neither.
+  if (Boolean(tlsCert) !== Boolean(tlsKey)) {
+    const [set, missing] = tlsCert ? ['TALARIA_WEB_TLS_CERT', 'TALARIA_WEB_TLS_KEY'] : ['TALARIA_WEB_TLS_KEY', 'TALARIA_WEB_TLS_CERT']
+    throw new Error(`${set} is set but ${missing} is not. Set both to serve HTTPS directly, or neither to serve plain HTTP.`)
+  }
   return {
     host: env.TALARIA_WEB_HOST ?? '127.0.0.1',
     port,
-    tlsCert: (env.TALARIA_WEB_TLS_CERT ?? '').trim() || null,
-    tlsKey: (env.TALARIA_WEB_TLS_KEY ?? '').trim() || null,
+    tlsCert,
+    tlsKey,
     hermesHome,
     storage,
     blobs: loadBlobConfig(env, stateDir, warn),

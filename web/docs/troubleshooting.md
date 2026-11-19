@@ -27,6 +27,30 @@ fatal and does not restart it or roll back an update.
 
 ---
 
+## Server exits: "TALARIA_WEB_TLS_CERT is set but TALARIA_WEB_TLS_KEY is not" or "Refusing to start" naming a TLS file
+
+**Symptom.** Talaria Web stops right after startup. The log shows
+`TALARIA_WEB_TLS_CERT is set but TALARIA_WEB_TLS_KEY is not` (or the reverse), or
+`Refusing to start: TALARIA_WEB_TLS_CERT /path/cert.pem cannot be read (…)`, or
+`Refusing to start: the TLS certificate … and key … do not load as a pair (…)` with exit code 78.
+
+**Why.** Direct TLS fails closed. Serving plain HTTP instead would send passwords and session
+cookies across the network unencrypted, so the server does not start unless both
+`TALARIA_WEB_TLS_CERT` and `TALARIA_WEB_TLS_KEY` are set and both files load as a matching pair.
+The message names the setting and path, never the file contents.
+
+**Fix.**
+
+- Set both variables, or neither. Plain HTTP is served only when neither is set; a reverse proxy
+  that terminates TLS needs neither.
+- `cannot be read`: check the path, the mount (Docker volume or bind mount), and that the user
+  running the server can read the file.
+- `do not load as a pair`: check that the certificate is PEM, the key is the certificate's own
+  private key, and neither file is truncated. `key values mismatch` means the key belongs to a
+  different certificate.
+
+---
+
 ## `421` "This server does not answer to host …"
 
 **Symptom.** After an update, the page or API answers `421` with an error naming
