@@ -25,6 +25,13 @@ Talaria is a native SwiftUI iPhone client for a self-hosted Talaria Web server
   system background, no cards or grouped inset backgrounds, the Insights rows as
   the reference, shared components (`SidebarList`, `ProgressRailView`,
   `ProviderQuotaMetricCell`) over new ones.
+- A change that moves between screens, displays, sizes or chats follows
+  [Transitions](../docs/design-system.md#17-transitions-app) from design
+  through review: known route before content, empty only when confirmed,
+  focus, selection and draft kept, reader anchor or bottom-follow, one title
+  and toolbar owner, interrupted gestures continue, a full line at the active
+  text size. Check the touched cases frame by frame in the Device panel before
+  review.
 - Do not modify or restart the user's Hermes server, tunnel, macOS services, or
   Apple resources unless explicitly asked.
 
