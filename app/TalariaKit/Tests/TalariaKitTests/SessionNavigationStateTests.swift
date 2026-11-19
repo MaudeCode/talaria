@@ -523,7 +523,7 @@ final class SessionNavigationStateTests: XCTestCase {
         )
         XCTAssertEqual(
             AppSidebarGesturePolicy.progress(
-                isPresented: true,
+                startProgress: 1,
                 translationWidth: -180,
                 revealWidth: 360,
                 isRightToLeft: false
