@@ -95,8 +95,12 @@ async function getSession(deps: AppDeps, sid: string, metadataOnly = false): Pro
   }
 }
 
-/** `/api/goal`: run `/goal <args>` on a session and start its kickoff turn; the agent's goal tools call it too (TAL-1170). */
-export async function goalCommand(deps: AppDeps, body: Record<string, unknown>) {
+/**
+ * `/api/goal`: run `/goal <args>` on a session and start its kickoff turn; the agent's goal tools call it too (TAL-1170).
+ * `authorizeGate` lets `/goal gate add` store a shell gate: only the route sets it, from the request's owner authority,
+ * never from the body (TAL-2198).
+ */
+export async function goalCommand(deps: AppDeps, body: Record<string, unknown>, authorizeGate = false) {
   requireField(body, 'session_id')
   const args = str(body.args || body.text)
   if (args.trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
@@ -121,7 +125,7 @@ export async function goalCommand(deps: AppDeps, body: Record<string, unknown>) 
   try { const cfg = await deps.agentConfig.read(profileHome); const goals = cfg.goals; const raw = goals && typeof goals === 'object' && !Array.isArray(goals) ? (goals as Record<string, unknown>).max_turns : undefined; const n = Number.parseInt(str(raw ?? 20), 10); if (Number.isFinite(n)) defaultMaxTurns = Math.max(1, n || 20) } catch { defaultMaxTurns = 20 }
   const snapshot = await sidecar.call('goals.snapshot', { session_id: sid, profile_home: profileHome, default_max_turns: defaultMaxTurns })
   await deps.sessions.assertWritable(s)
-  const payload = await sidecar.call('goals.command', { session_id: sid, profile_home: profileHome, args, stream_running: streamRunning, default_max_turns: defaultMaxTurns, workspace: str(s.workspace) || undefined }) as Record<string, unknown>
+  const payload = await sidecar.call('goals.command', { session_id: sid, profile_home: profileHome, args, stream_running: streamRunning, default_max_turns: defaultMaxTurns, workspace: str(s.workspace) || undefined, ...(authorizeGate ? { authorize_gate: true } : {}) }) as Record<string, unknown>
   // TAL-808: the session `goal` follows the command before the client reloads the session.
   await deps.turns.refreshGoal(s)
   if (payload.ok === false) {
@@ -297,7 +301,7 @@ export const chatRouter = os.router({
       return clarifyRespond(ctx.deps, sid, str(input.clarify_id), reply)
     })),
   },
-  goal: os.goal.handler(({ input, context: { ctx } }) => run(() => goalCommand(ctx.deps, input as Record<string, unknown>))),
+  goal: os.goal.handler(({ input, context: { ctx } }) => run(async () => goalCommand(ctx.deps, input as Record<string, unknown>, await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))))),
   background: {
     start: os.background.start.handler(({ input, context: { ctx } }) => run(async () => {
       const body = input as Record<string, unknown>

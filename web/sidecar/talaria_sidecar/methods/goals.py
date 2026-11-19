@@ -152,6 +152,8 @@ def _manager_from(params: dict) -> _Manager:
     return _Manager(session_id, profile_home_param(params), int(max_turns), str(params.get("workspace") or "") or None)
 
 
+_GATE_REFUSAL = "Gate commands must be added by the server owner from the chat composer."
+
 #: The response ``action`` of each control verb the Agent dispatches; any other command sets the goal.
 _CONTROL_ACTIONS = {
     "": "status", "status": "status", "show": "show", "pause": "pause", "resume": "resume", "continue": "resume",
@@ -201,7 +203,10 @@ def register(registry) -> None:
         had_goal = bool(mgr.has_goal())
         # Only goal-setting text reads it: a re-pasted goal kicks off without repeating itself.
         last_user_message = mgr.scoped(agent_goals.last_user_message_from_db, mgr.session_id) if action == "set" else None
-        result = mgr.scoped(dispatch_goal_command, mgr._manager, text, authorize_gate=lambda: None, last_user_message=last_user_message)
+        # TAL-2198: a gate is a shell command run after each turn without an approval card. Only the server's owner
+        # `/api/goal` request carries `authorize_gate: true`; the model's `goal_set` tool and every other caller never do.
+        authorized = params.get("authorize_gate") is True
+        result = mgr.scoped(dispatch_goal_command, mgr._manager, text, authorize_gate=lambda: None if authorized else _GATE_REFUSAL, last_user_message=last_user_message)
         state = mgr.state
         if result.error:
             return _payload(ok=False, action=action, error="invalid_goal" if action == "set" else "invalid_command", message=result.output, state=state)

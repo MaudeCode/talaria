@@ -56,8 +56,9 @@ export const GoalDecisionSchema = z.object({
 })
 export const GOALS_METHODS = {
   'goals.get': { params: GoalSession, result: GoalStatusSchema },
-  // `workspace`: the session's declared workspace, where the Agent runs goal gates (TAL-882).
-  'goals.command': { params: GoalSession.extend({ args: z.string(), stream_running: z.boolean().optional(), workspace: z.string().optional() }), result: GoalCommandResultSchema },
+  // `workspace`: the session's declared workspace, where the Agent runs goal gates (TAL-882). `authorize_gate`: only an
+  // owner's own `/api/goal` request sets it; without it the sidecar refuses `gate add` (TAL-2198).
+  'goals.command': { params: GoalSession.extend({ args: z.string(), stream_running: z.boolean().optional(), workspace: z.string().optional(), authorize_gate: z.boolean().optional() }), result: GoalCommandResultSchema },
   'goals.snapshot': { params: GoalSession, result: z.object({ goal: GoalStateSchema.nullable(), snapshot: z.string().nullable() }) },
   'goals.restore': { params: GoalSession.extend({ snapshot: z.string().nullable() }), result: z.object({ goal: GoalStateSchema.nullable() }) },
   'goals.evaluate': { params: GoalSession.extend({ last_response: z.string(), user_initiated: z.boolean().optional(), workspace: z.string().optional() }), result: GoalDecisionSchema },

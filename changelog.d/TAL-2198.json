@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Only the server owner can add a /goal gate command from the chat composer; the agent's goal tool and profile-bound logins can no longer add one.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

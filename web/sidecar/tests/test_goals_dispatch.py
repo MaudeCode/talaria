@@ -36,7 +36,7 @@ def test_gate_runs_in_the_session_workspace(goal, tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     goal("ship the release notes", workspace=str(workspace))
-    added = goal("gate add pwd > gate-ran.txt", workspace=str(workspace))
+    added = goal("gate add pwd > gate-ran.txt", workspace=str(workspace), authorize_gate=True)
     assert added["ok"] and added["goal"]["goal"] == "ship the release notes", added
     goal.evaluate(workspace=str(workspace))
     marker = workspace / "gate-ran.txt"
@@ -46,7 +46,7 @@ def test_gate_runs_in_the_session_workspace(goal, tmp_path):
 
 def test_missing_workspace_pauses_with_the_agents_message(goal, tmp_path):
     goal("ship the release notes")
-    goal("gate add true")
+    goal("gate add true", authorize_gate=True)
     decision = goal.evaluate(workspace=str(tmp_path / "deleted"))
     assert decision["status"] == "paused" and "quality gates not run" in decision["message"], decision
     assert "message_key" not in decision, "a gate pause is not a budget pause"
@@ -54,7 +54,7 @@ def test_missing_workspace_pauses_with_the_agents_message(goal, tmp_path):
 
 def test_gate_list_and_clear(goal):
     goal("ship the release notes")
-    goal("gate add true")
+    goal("gate add true", authorize_gate=True)
     listed = goal("gate list")
     assert listed["ok"] and listed["action"] == "gate" and "$ true" in listed["message"], listed
     cleared = goal("gate clear")
