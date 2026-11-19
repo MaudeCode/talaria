@@ -94,7 +94,7 @@ export async function terminalGate(ctx: RequestContext): Promise<void> {
 export const automationRouter = os.router({
   promptQueues: {
     list: os.promptQueues.list.handler(({ context: { ctx } }) => run(() => ctx.deps.promptQueues.list())),
-    create: os.promptQueues.create.handler(({ input, context: { ctx } }) => run(() => ctx.deps.promptQueues.create(input.request_id, input.cards))),
+    create: os.promptQueues.create.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.promptQueues.create(input.request_id, input.cards, await requestCanManageServer(ctx)))),
     edit: os.promptQueues.edit.handler(({ input, context: { ctx } }) => run(() => ctx.deps.promptQueues.replace(input.id, input.revision, input.cards))),
     action: os.promptQueues.action.handler(({ input, context: { ctx } }) => run(() => ctx.deps.promptQueues.action(input.id, input.revision, input.action))),
   },

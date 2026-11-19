@@ -13,7 +13,7 @@ import { personIsolationActive, type PersonAccess } from '../auth/person.js'
 
 type Scope = Pick<UpdateNotificationScope, 'profile' | 'owner'>
 /** `person`: the creator's session authority under person isolation (TAL-48), which the detached worker acts with. */
-interface Stored { owner: string; run: PromptQueueRun; person?: PersonAccess }
+interface Stored { owner: string; run: PromptQueueRun; person?: PersonAccess; serverOwner?: boolean }
 const namespace = 'prompt-queues'
 const digest = (text: string) => createHash('sha256').update(text).digest('hex')
 const terminal = new Set(['completed', 'failed', 'refused'])
@@ -43,7 +43,7 @@ export class PromptQueues {
     const person = saved.person
     const access = person && typeof person === 'object' && (person.personId === null || typeof person.personId === 'string') && typeof person.serverOwner === 'boolean'
       ? { personId: person.personId, serverOwner: person.serverOwner } : null
-    return { owner: saved.owner, run: PromptQueueRunSchema.parse(saved.run), ...(access ? { person: access } : {}) }
+    return { owner: saved.owner, run: PromptQueueRunSchema.parse(saved.run), ...(access ? { person: access } : {}), ...(typeof saved.serverOwner === 'boolean' ? { serverOwner: saved.serverOwner } : {}) }
   }
   private owned(saved: Stored, scope: Scope): void {
     if (saved.owner !== scope.owner || saved.run.profile !== scope.profile) throw new HttpFailure(404, 'Queue not found')
@@ -99,7 +99,7 @@ export class PromptQueues {
     return cards
   }
 
-  async create(requestId: string, inputs: PromptQueueCardInput[]): Promise<PromptQueueRun> {
+  async create(requestId: string, inputs: PromptQueueCardInput[], serverOwner?: boolean): Promise<PromptQueueRun> {
     const scope = this.scope()
     const id = digest(JSON.stringify([scope, requestId]))
     const existing = await this.documents.get(namespace, id)
@@ -113,6 +113,8 @@ export class PromptQueues {
     }
     const cards = await this.cards(inputs, id)
     const run = view({ id, title: '', revision: 0, profile: scope.profile, phase: 'draft', current_step: 0, cards, actions: [], editable: true, error: null })
+    const person = this.deps().requestScope.getStore()?.personAccess
+    const workspaceOwner = serverOwner ?? person?.serverOwner ?? !(await this.deps().auth.isAuthEnabled())
     return updateDocument(this.documents, namespace, id, (raw) => {
       if (raw) {
         const saved = this.parse(raw)
@@ -120,8 +122,7 @@ export class PromptQueues {
         if (JSON.stringify(saved.run.cards.map(({ session_id, project_id, text }) => ({ session_id, project_id, text }))) !== JSON.stringify(inputs)) throw new HttpFailure(409, 'This queue creation identity was already used')
         return { value: saved, result: view(saved.run), skip: true }
       }
-      const person = this.deps().requestScope.getStore()?.personAccess
-      return { value: { owner: scope.owner, run, ...(person ? { person } : {}) }, result: run }
+      return { value: { owner: scope.owner, run, serverOwner: workspaceOwner, ...(person ? { person } : {}) }, result: run }
     })
   }
 
@@ -178,6 +179,8 @@ export class PromptQueues {
     const saved = await this.load(id)
     // TAL-48: the worker acts with its creator's person authority; a queue saved without one reaches no person's session.
     const personAccess = await personIsolationActive(this.deps().config.env, this.deps().auth) ? saved.person ?? { personId: null, serverOwner: false } : undefined
+    // Older queues have only the person-isolation record as evidence of server-owner authority.
+    const serverOwner = saved.serverOwner ?? saved.person?.serverOwner ?? !(await this.deps().auth.isAuthEnabled())
     await this.deps().requestScope.run({ requestProfile: saved.run.profile, notificationOwner: saved.owner, ...(personAccess ? { personAccess } : {}) }, async () => {
       for (let count = 0; count <= saved.run.cards.length && !this.stopped; count += 1) {
         const { run } = await this.load(id)
@@ -235,7 +238,7 @@ export class PromptQueues {
           const lease = await this.deps().profiles.beginWrite(run.profile)
           if (typeof lease !== 'function') throw new HttpFailure(409, 'Queue target profile is unavailable')
           let response: Record<string, unknown>
-          try { response = await startSessionChat(this.deps(), { session_id: card.session_id, message: card.text, submission_id: card.request_id }, {}, undefined, { ...card, profile: run.profile }) } finally { lease() }
+          try { response = await startSessionChat(this.deps(), { session_id: card.session_id, message: card.text, submission_id: card.request_id }, {}, undefined, { ...card, profile: run.profile }, serverOwner) } finally { lease() }
           await this.edit(id, ({ run: latest }) => {
             const current = latest.cards[latest.current_step]!
             current.stream_id = str(response.stream_id) || null
