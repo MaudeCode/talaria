@@ -162,7 +162,8 @@ export const COMMANDS_METHODS = {
 } as const
 
 // ── kanban ─────────────────────────────────────────────────────────────
-const Board = ProfileHomeParams.extend({ board: z.string().nullable().optional() })
+const KanbanHome = ProfileHomeParams.extend({ allowed_assignees: z.array(z.string()).nullable().optional() })
+const Board = KanbanHome.extend({ board: z.string().nullable().optional() })
 const TaskEnvelope = z.object({ task: KanbanTaskSchema, read_only: z.boolean() })
 export const KanbanBoardSchema = z.union([
   z.object({ changed: z.literal(false), latest_event_id: z.number().int(), read_only: z.boolean() }),
@@ -176,11 +177,11 @@ export const KanbanBoardSchema = z.union([
 export const KANBAN_METHODS = {
   'kanban.inspection': { params: Board.extend({ include_archived: z.boolean().optional(), search: z.string().nullable().optional(), assignee: z.string().nullable().optional() }), result: KanbanInspectionSnapshotSchema },
   'kanban.board': { params: Board.extend({ tenant: z.string().nullable().optional(), assignee: z.string().nullable().optional(), include_archived: z.boolean().optional(), only_mine: z.boolean().optional(), since: z.number().int().nullable().optional(), profile: z.string().nullable().optional() }), result: KanbanBoardSchema },
-  'kanban.boards': { params: ProfileHomeParams.extend({ include_archived: z.boolean().optional() }), result: z.object({ boards: z.array(KanbanBoardMetaSchema.extend({ is_current: z.boolean(), counts: z.record(z.string(), z.number().int()), total: z.number().int() })), current: z.string(), read_only: z.boolean() }) },
-  'kanban.create_board': { params: ProfileHomeParams.extend({ board_spec: Loose }), result: z.object({ board: KanbanBoardMetaSchema, current: z.string(), read_only: z.boolean() }) },
-  'kanban.update_board': { params: ProfileHomeParams.extend({ slug: z.string(), board_spec: Loose }), result: z.object({ board: KanbanBoardMetaSchema, read_only: z.boolean() }) },
-  'kanban.delete_board': { params: ProfileHomeParams.extend({ slug: z.string(), delete: z.boolean().optional() }), result: z.object({ result: Json, current: z.string(), read_only: z.boolean() }) },
-  'kanban.switch_board': { params: ProfileHomeParams.extend({ slug: z.string() }), result: z.object({ current: z.string(), read_only: z.boolean() }) },
+  'kanban.boards': { params: KanbanHome.extend({ include_archived: z.boolean().optional() }), result: z.object({ boards: z.array(KanbanBoardMetaSchema.extend({ is_current: z.boolean(), counts: z.record(z.string(), z.number().int()), total: z.number().int() })), current: z.string(), read_only: z.boolean() }) },
+  'kanban.create_board': { params: KanbanHome.extend({ board_spec: Loose }), result: z.object({ board: KanbanBoardMetaSchema, current: z.string(), read_only: z.boolean() }) },
+  'kanban.update_board': { params: KanbanHome.extend({ slug: z.string(), board_spec: Loose }), result: z.object({ board: KanbanBoardMetaSchema, read_only: z.boolean() }) },
+  'kanban.delete_board': { params: KanbanHome.extend({ slug: z.string(), delete: z.boolean().optional() }), result: z.object({ result: Json, current: z.string(), read_only: z.boolean() }) },
+  'kanban.switch_board': { params: KanbanHome.extend({ slug: z.string() }), result: z.object({ current: z.string(), read_only: z.boolean() }) },
   'kanban.task': { params: Board.extend({ task_id: z.string() }), result: z.object({ task: KanbanTaskSchema.extend(KanbanRunStartShape), comments: z.array(Loose), events: z.array(Loose), ...KanbanTaskLinksShape, runs: z.array(Loose), read_only: z.boolean() }) },
   'kanban.create_task': { params: Board.extend({ task: Loose }), result: TaskEnvelope },
   'kanban.patch_task': { params: Board.extend({ task_id: z.string(), patch: Loose }), result: TaskEnvelope },

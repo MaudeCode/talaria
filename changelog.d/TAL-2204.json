@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Kanban limits task access and assignment to profiles the session can use and reserves manual dispatch for the server owner.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

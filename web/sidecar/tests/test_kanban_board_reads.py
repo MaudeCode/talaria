@@ -69,3 +69,19 @@ def test_a_board_read_judges_each_running_claim_on_its_loaded_row(board) -> None
     live = {t["id"]: t["claim_live"] for c in columns for t in c["tasks"]}
     assert live == {"idle": False, "live": True, "reused": False}
     assert [s for s in board if "FROM tasks WHERE id" in s] == []
+
+
+def test_board_lists_only_visible_tasks(board) -> None:
+    kb = kanban._kb()
+    original = kb.list_tasks
+
+    def list_tasks(conn, **kwargs):
+        tasks = original(conn, **kwargs)
+        by_id = {task.id: task for task in tasks}
+        by_id["live"].assignee = "alpha"
+        by_id["reused"].assignee = "beta"
+        return tasks
+
+    kb.list_tasks = list_tasks
+    columns = kanban.board_payload({"allowed_assignees": ["alpha"]})["columns"]
+    assert {task["id"] for column in columns for task in column["tasks"]} == {"live", "idle"}

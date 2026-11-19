@@ -327,7 +327,7 @@ export class CronService {
     }
   }
 
-  private async profileNames(active: string): Promise<string[]> {
+  async accessibleProfileNames(active: string): Promise<string[]> {
     const names: string[] = []
     const seen = new Set<string>()
     const add = (raw: string): void => { const n = raw.trim(); if (n && !seen.has(n.toLowerCase())) { seen.add(n.toLowerCase()); names.push(n) } }
@@ -365,7 +365,7 @@ export class CronService {
   private async storedJobs(active: string, probe?: StoreProbe): Promise<StoredJob[]> {
     const stores: { profile: string; home: string; local: boolean }[] = []
     const seen = new Set<string>()
-    for (const profile of await this.profileNames(active)) {
+    for (const profile of await this.accessibleProfileNames(active)) {
       const local = this.deps.profilesMatch(profile, active)
       let home: string
       try { home = this.deps.profileHome(profile) } catch (error) { if (local) throw error; continue }
@@ -399,7 +399,7 @@ export class CronService {
     const optionFor = await this.deps.modelOptions?.(pickerHome)
     const targets = rows.map((row) => ROOM_DELIVERY_RE.exec(str(row.job.deliver).trim()))
     const profiles = [...new Set(targets.flatMap((target, i) => target ? [target[2] ?? rows[i]!.profile] : []))]
-    const allowed = profiles.length ? await this.profileNames(await this.profileForHome(pickerHome)) : []
+    const allowed = profiles.length ? await this.accessibleProfileNames(await this.profileForHome(pickerHome)) : []
     const roomNames = new Map(await Promise.all(profiles.filter((profile) => allowed.includes(profile)).map(async (profile) => [profile, await this.roomNames(profile)] as const)))
     return rows.map((row, i) => {
       const payload: Dict = { ...jobForApi(row.job, this.deps.runningJobs?.has(str(row.job.id)) ?? false), profile: str(row.job.profile).trim() || row.profile, owner_profile: row.profile, read_only: !row.managed }
@@ -473,7 +473,7 @@ export class CronService {
     const active = await this.profileForHome(home)
     const editing = input.editing_job_id ? await this.resolveStore(home, input.editing_job_id) : null
     const profile = await this.normalizeProfile(input.profile)
-    if (profile && !(await this.profileNames(active)).some((name) => this.deps.profilesMatch(name, profile))) throw new HttpFailure(403, 'Execution profile is not accessible')
+    if (profile && !(await this.accessibleProfileNames(active)).some((name) => this.deps.profilesMatch(name, profile))) throw new HttpFailure(403, 'Execution profile is not accessible')
     const executionHome = profile ? this.deps.profileHome(profile) : editing?.home ?? home
     const rows = await this.storedJobs(active)
     const inStore = rows.filter((row) => row.home === executionHome)
@@ -563,7 +563,7 @@ export class CronService {
     if (!body.prompt && !body.script && !body.skills) throw new HttpFailure(400, 'Missing required field(s): prompt')
     const profile = await this.normalizeProfile(body.profile)
     const active = await this.profileForHome(home)
-    if (profile && !(await this.profileNames(active)).some((name) => this.deps.profilesMatch(name, profile))) throw new HttpFailure(403, 'Execution profile is not accessible')
+    if (profile && !(await this.accessibleProfileNames(active)).some((name) => this.deps.profilesMatch(name, profile))) throw new HttpFailure(403, 'Execution profile is not accessible')
     const executionHome = profile ? this.deps.profileHome(profile) : home
     const [model, provider] = modelSelection(body.model, body.provider)
     const job: Dict = { prompt: body.prompt ?? '', schedule: body.schedule, name: body.name ?? null, deliver: body.deliver ?? 'local', skills: body.skills ?? [], model, provider, ...jobFieldUpdates(body) }
