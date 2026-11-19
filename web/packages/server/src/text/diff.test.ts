@@ -15,6 +15,13 @@ describe('renderMarkdown', () => {
     expect(html).toContain('<a href="https://x.example">link</a>')
     expect(html).not.toContain('javascript:')
   })
+
+  it('links only http(s), mailto, data images, fragments and root paths, whatever hides the scheme (TAL-2217)', () => {
+    const href = (url: string): string | undefined => /<a href="([^"]*)"/.exec(renderMarkdown(`[x](${url})`))?.[1]
+    for (const blocked of ['\x01javascript:alert(1)', ' \tjavascript:alert(1)', 'JaVaScRiPt:alert(1)', 'java\x00script:alert(1)', 'vbscript:msgbox(1)', 'data:text/html,<b>x</b>', 'foo/bar']) expect(href(blocked), JSON.stringify(blocked)).toBeUndefined()
+    for (const kept of ['https://example.com', 'mailto:a@example.com', '#top', '/x', 'data:image/png;base64,AAAA']) expect(href(kept)).toBe(kept)
+    expect(renderMarkdown('![shot](./shots/login.png) ![x](javascript:alert(1))')).toBe('<p><img alt="shot"> <img alt="x">)</p>')
+  })
 })
 
 describe('diffHunks (TAL-604)', () => {

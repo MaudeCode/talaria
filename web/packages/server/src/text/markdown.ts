@@ -8,11 +8,13 @@ export function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#x27;')
 }
 
+/**
+ * TAL-2217: browsers drop control characters and spaces from a URL, so they go before the scheme is read. An export
+ * has no base URL, so a relative value is dropped too.
+ */
 function safeUrl(url: string): string {
-  const trimmed = url.trim()
-  if (/^(?:https?:|mailto:|data:image\/)/i.test(trimmed) || trimmed.startsWith('#') || trimmed.startsWith('/')) return escapeHtml(trimmed)
-  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return ''
-  return escapeHtml(trimmed)
+  const cleaned = url.replace(/[\u0000-\u0020\u007f]/g, '')
+  return /^(?:https?:|mailto:|data:image\/|[#/])/i.test(cleaned) ? escapeHtml(cleaned) : ''
 }
 
 export function renderInline(text: string): string {
@@ -33,7 +35,7 @@ export function renderInline(text: string): string {
     const image = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/.exec(rest)
     if (image) {
       const src = safeUrl(image[2] ?? '')
-      push(src ? `<img src="${src}" alt="${escapeHtml(image[1] ?? '')}">` : escapeHtml(image[0]))
+      push(`<img${src ? ` src="${src}"` : ''} alt="${escapeHtml(image[1] ?? '')}">`)
       rest = rest.slice(image[0].length)
       continue
     }
