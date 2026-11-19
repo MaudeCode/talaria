@@ -2,7 +2,7 @@ import { updateNotificationOwner } from '../tools/update-notifications.js'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { SidecarError } from '../sidecar/client.js'
 import { RPC_ERROR_CODES } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
@@ -1948,6 +1948,23 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(204)
     expect(s.logs.some((l) => l.includes('[csp-report]') && l.includes('script-src'))).toBe(true)
   })
+
+  it('TAL-2216: an over-limit CSP flood logs one drop per window, and report text never reaches the feedback recent errors', async () => {
+    let t = 0
+    const original = s.deps.cspLimiter
+    s.deps.cspLimiter = new WindowLimiter(60, 1, () => t)
+    onTestFinished(() => { s.deps.cspLimiter = original })
+    const report = (): Promise<Response> => s.get('/api/csp-report', { method: 'POST', body: JSON.stringify({ 'csp-report': { 'script-sample': 'planted error failed' } }), headers: { 'content-type': 'application/csp-report' } })
+    const dropped = (): number => s.logs.filter((l) => l.startsWith('[csp-report] dropped')).length
+    const before = dropped()
+    for (let i = 0; i < 4; i += 1) expect((await report()).status).toBe(204)
+    expect(dropped() - before).toBe(1)
+    t = 61
+    await report()
+    await report()
+    expect(dropped() - before).toBe(2)
+    expect(s.deps.recentErrors().join('\n')).not.toContain('planted')
+  })
 })
 
 describe('agent health chat readiness', () => {
@@ -2113,6 +2130,19 @@ describe('tools helpers', () => {
     expect(limiter.limited('a')).toBe(true)
     t = 61
     expect(limiter.limited('a')).toBe(false)
+  })
+
+  it('the window limiter reports at most one drop per key per window', () => {
+    let t = 0
+    const limiter = new WindowLimiter(60, 1, () => t)
+    const drops: string[] = []
+    for (let i = 0; i < 1_001; i += 1) limiter.limited('a', () => { drops.push('a') })
+    limiter.limited('b', () => { drops.push('b') })
+    expect(drops).toEqual(['a'])
+    t = 61
+    limiter.limited('a', () => { drops.push('a') })
+    limiter.limited('a', () => { drops.push('a') })
+    expect(drops).toEqual(['a', 'a'])
   })
 
   it('toggleName removes an enabled name from a comma list and adds a disabled one to an array', () => {

@@ -9,7 +9,7 @@ and dashboard. When copying a multi-container setup, also include
 at its relative path. Agent startup refreshes the shared source volume from the
 image before WebUI starts; user state stays in the separate `hermes-home` volume.
 
-Published images carry the same release metadata as `/health` in the
+Published images carry the same release metadata as `/health` (signed in, or with sign-in off) in the
 `dev.talaria.provenance` label. The build rejects a label that differs from its
 stamped metadata. Local, unstamped images use an empty provenance label and
 report development metadata. Release identity contains no credentials or host

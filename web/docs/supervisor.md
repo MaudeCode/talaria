@@ -295,7 +295,9 @@ supervisor with an HTTP probe and force a restart when the probe fails.
 Talaria Web exposes two health levels:
 
 - ``/health`` — cheap liveness probe with ``active_streams``, uptime, and an
-  ``accept_loop`` heartbeat counter.
+  ``accept_loop`` heartbeat counter. With sign-in on, a request without a
+  session gets only ``status`` and ``agent.status``; the HTTP status still
+  answers liveness and readiness.
 - ``/health?deep=1`` — readiness probe that briefly acquires the stream lock,
   reads the sidebar/session path, reads projects state, and touches Hermes
   ``state.db`` if it exists. Use this for watchdogs.
@@ -317,7 +319,7 @@ Run it every few minutes from a separate ``StartInterval`` LaunchAgent. For
 systemd, prefer a timer/service pair that runs the same curl probe and
 ``systemctl --user restart hermes-webui.service`` on failure.
 
-The ``accept_loop.requests_total`` value should increase when probes arrive. If
+The ``accept_loop.requests_total`` value (signed in, or with sign-in off) should increase when probes arrive. If
 it stays flat while the process is still alive, the server accept loop is not
 making progress; capture logs/thread samples before restarting if you are
 collecting diagnostics for a bug report.

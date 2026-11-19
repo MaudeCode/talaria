@@ -129,8 +129,7 @@ class Probe:
             "health response",
             self.request("health response", "/health", fixture="health"),
             "status",
-            "sessions",
-            "uptime_seconds",
+            "agent",
         )
         if health["status"] != "ok":
             raise ContractFailure(

@@ -459,7 +459,8 @@ export async function authStatusPayload(ctx: RequestContext): Promise<AuthStatus
     password_auth_enabled: passwordAuthEnabled,
     passwordless_enabled: passkeys > 0 && !passwordAuthEnabled,
     passkeys_enabled: passkeys > 0,
-    passkeys_count: passkeys,
+    // TAL-2216: how many passkeys the owner registered is not for a visitor; the login page needs only `passkeys_enabled`.
+    ...(authEnabled && !loggedIn ? {} : { passkeys_count: passkeys }),
     passkey_feature_flag: passkeyFlag,
     auth_disabled_acknowledged: acknowledged,
     can_manage_server: canManageServer,

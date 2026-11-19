@@ -220,7 +220,9 @@ export async function healthLine(host: string, port: number, tls: boolean): Prom
   const data = (await healthBody(url)) ?? (tls ? await healthBody(`http://${host}:${String(port)}/health`) : null)
   if (!data) return `unreachable (${url})`
   const status = str(data.status) || 'ok'
-  return status === 'ok' ? `ok (${str(data.sessions) || '?'} sessions, ${str(data.active_streams) || '?'} active streams)` : status
+  // TAL-2216: with auth on, an anonymous probe gets no counts.
+  if (status !== 'ok' || data.sessions === undefined) return status
+  return `ok (${str(data.sessions)} sessions, ${str(data.active_streams) || '?'} active streams)`
 }
 
 /** Python `_port_is_bindable`: nothing accepts on the port and a listener can bind it. */

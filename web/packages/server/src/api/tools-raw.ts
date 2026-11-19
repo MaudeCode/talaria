@@ -134,8 +134,7 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
 /** Public sink: always 204, rate limited per client, payload logged. */
 export async function handleCspReport(ctx: RequestContext): Promise<void> {
   const peer = ctx.peer || 'unknown'
-  if (ctx.deps.cspLimiter.limited(peer)) {
-    ctx.deps.log(`[csp-report] dropped report from ${peer}: rate limit exceeded`)
+  if (ctx.deps.cspLimiter.limited(peer, () => { ctx.deps.log(`[csp-report] dropped reports from ${peer}: rate limit exceeded`) })) {
     await ctx.send({ status: 204, body: '' })
     return
   }
