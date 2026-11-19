@@ -124,6 +124,7 @@ Before adopting updated Compose templates, rename the password and allowed-host 
 | `TALARIA_WEB_CLAUDE_PROJECTS_DIR` | `~/.claude/projects` | Claude Code transcripts listed read-only when **Show Claude Code sessions** is on |
 | `TALARIA_WEB_DEFAULT_MODEL` | provider default | Optional model override |
 | `TALARIA_WEB_PASSWORD` | unset | Enables password authentication (required when binding beyond loopback) |
+| `TALARIA_WEB_ALLOW_UNAUTHENTICATED` | unset | `1` lets the server listen beyond loopback with no sign-in method (password, passkey, OIDC or trusted auth header). Without it the server refuses to start there and exits with code 78; with it, it starts and logs a warning. The shipped Compose files set it because they publish the port on `127.0.0.1` only |
 | `TALARIA_WEB_PASSKEY` | unset | Passkey availability flag (also `webui_passkey_enabled` in `config.yaml`). Off hides passkey sign-in and registration but keeps authentication on while a passkey is registered; to sign in again, turn it back on, or set `TALARIA_WEB_PASSWORD` and restart |
 | `TALARIA_WEB_TLS_CERT` / `TALARIA_WEB_TLS_KEY` | unset | Serve HTTPS directly (TLS 1.2+) |
 | `TALARIA_WEB_TRUSTED_PROXY_CIDRS`, `TALARIA_WEB_TRUST_FORWARDED_FOR`, `TALARIA_WEB_TRUST_FORWARDED_HOST`, `TALARIA_WEB_TRUST_FORWARDED_PROTO` | unset | Reverse-proxy trust |
@@ -329,7 +330,8 @@ An unavailable or incompatible route reports an error without saving. SOUL and p
 ### Remote access
 
 Bind to loopback and use an SSH tunnel or Tailscale, or set `TALARIA_WEB_HOST=0.0.0.0` with
-`TALARIA_WEB_PASSWORD`. See [docs/remote-access.md](docs/remote-access.md).
+`TALARIA_WEB_PASSWORD`. A non-loopback bind with no sign-in method refuses to start unless
+`TALARIA_WEB_ALLOW_UNAUTHENTICATED=1` accepts the risk. See [docs/remote-access.md](docs/remote-access.md).
 
 ## Docker
 

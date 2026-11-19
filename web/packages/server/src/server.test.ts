@@ -1,9 +1,10 @@
 /** Listener timeouts: a stalled request body cannot hold a socket open indefinitely, while responses stay unbounded. */
 import { chmodSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
-import { connect } from 'node:net'
+import { connect, createServer, type AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { CONFIG_EXIT_CODE } from './cli/supervise.js'
 import { REQUEST_TIMEOUT_MS } from './server.js'
 import { bootTestServer, type TestServer } from './test/harness.js'
 
@@ -77,20 +78,51 @@ describe('credential permissions at startup', () => {
   })
 })
 
-describe('unauthenticated bind warning at startup', () => {
+describe('unauthenticated bind at startup (TAL-2197)', () => {
   const bootLogs = async (env: Record<string, string>) => {
     const s = await bootTestServer({ env })
     await s.close()
     return s.logs.join('\n')
   }
-
-  it('warns when binding 0.0.0.0 with no auth method enabled', async () => {
-    expect(await bootLogs({ TALARIA_WEB_HOST: '0.0.0.0' })).toContain('[!!] WARNING: Binding to 0.0.0.0 with NO PASSWORD SET.')
+  const freePort = async (): Promise<number> => {
+    const probe = createServer()
+    await new Promise<void>((resolve) => probe.listen(0, '0.0.0.0', resolve))
+    const { port } = probe.address() as AddressInfo
+    await new Promise((resolve) => probe.close(resolve))
+    return port
+  }
+  const bindable = (port: number): Promise<boolean> => new Promise((resolve) => {
+    const probe = createServer()
+    probe.once('error', () => { resolve(false) })
+    probe.listen(port, '0.0.0.0', () => probe.close(() => { resolve(true) }))
   })
 
-  it('stays quiet on any loopback spelling or when a password is set', async () => {
-    for (const host of ['127.0.0.1', 'localhost', '0:0:0:0:0:0:0:1']) expect(await bootLogs({ TALARIA_WEB_HOST: host }), host).not.toContain('NO PASSWORD SET')
-    expect(await bootLogs({ TALARIA_WEB_HOST: '0.0.0.0', TALARIA_WEB_PASSWORD: 'correct horse' })).not.toContain('NO PASSWORD SET')
+  it('refuses 0.0.0.0 with no sign-in method before listening, naming both fixes and the fatal exit code', async () => {
+    const port = await freePort()
+    const refused = bootTestServer({ env: { TALARIA_WEB_HOST: '0.0.0.0', TALARIA_WEB_PORT: String(port) } })
+    await expect(refused).rejects.toMatchObject({ exitCode: CONFIG_EXIT_CODE })
+    await expect(refused).rejects.toThrow(/TALARIA_WEB_PASSWORD[\s\S]*TALARIA_WEB_ALLOW_UNAUTHENTICATED=1/)
+    expect(await bindable(port)).toBe(true)
+  })
+
+  it('starts 0.0.0.0 once a password or a trusted auth header is configured', async () => {
+    for (const env of [{ TALARIA_WEB_PASSWORD: 'correct horse' }, { TALARIA_WEB_TRUSTED_AUTH_HEADER: 'X-Forwarded-User' }]) {
+      expect(await bootLogs({ TALARIA_WEB_HOST: '0.0.0.0', ...env }), Object.keys(env)[0]).toContain('Talaria Web listening on http://0.0.0.0:')
+    }
+  })
+
+  it('starts 0.0.0.0 with no sign-in method when TALARIA_WEB_ALLOW_UNAUTHENTICATED=1, and still warns', async () => {
+    const logs = await bootLogs({ TALARIA_WEB_HOST: '0.0.0.0', TALARIA_WEB_ALLOW_UNAUTHENTICATED: '1' })
+    expect(logs).toContain('Talaria Web listening on http://0.0.0.0:')
+    expect(logs).toContain('[!!] WARNING: Binding to 0.0.0.0 with NO PASSWORD SET.')
+  })
+
+  it('starts on any loopback spelling with no sign-in method and no opt-out, without the warning', async () => {
+    for (const host of ['127.0.0.1', 'localhost', '0:0:0:0:0:0:0:1']) {
+      const logs = await bootLogs({ TALARIA_WEB_HOST: host })
+      expect(logs, host).toContain('Talaria Web listening on')
+      expect(logs, host).not.toContain('NO PASSWORD SET')
+    }
   })
 })
 

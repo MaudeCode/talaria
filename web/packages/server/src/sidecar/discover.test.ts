@@ -181,7 +181,7 @@ describe('Agent discovery', () => {
       f.record(next)
       rmSync(f.generation, { recursive: true })
       selected.push(discoverAgentPython({ ...env }, f.agent, f.hermesHome))
-      return Promise.resolve()
+      return Promise.resolve(0)
     })
     expect(code).toBe(0)
     expect(selected).toEqual(explicit ? [override, override] : [f.python, nextPython])

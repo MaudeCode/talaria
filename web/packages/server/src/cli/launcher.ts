@@ -133,7 +133,7 @@ export interface LaunchContext {
  * (`foreground`) or spawns it detached with `bootstrap-<port>.log`, waits
  * for `/health`, prints the ready URL, and opens the browser.
  */
-export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serveInProcess: () => Promise<void>): Promise<number> {
+export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serveInProcess: () => Promise<number>): Promise<number> {
   const { env, log } = ctx
   const discover = { env, hermesHome: ctx.hermesHome, webRoot: ctx.webRoot, home: ctx.home }
   let agentDir = discoverAgentDirForLaunch(discover)
@@ -161,8 +161,8 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
   const foregroundReason = args.foreground ? '--foreground' : detectSupervisor(env)
   if (foregroundReason) {
     log(`[bootstrap] Starting Talaria Web on ${scheme}://${hostAuthority(args.host, args.port)} (foreground mode: ${foregroundReason})`)
-    await serveInProcess()
-    return 0
+    // The server's exit code is the launch's: a refused configuration must stay fatal to systemd (TAL-2197).
+    return serveInProcess()
   }
   const logPath = join(stateDir, `bootstrap-${String(args.port)}.log`)
   log(`[bootstrap] Starting Talaria Web on ${scheme}://${hostAuthority(args.host, args.port)}`)

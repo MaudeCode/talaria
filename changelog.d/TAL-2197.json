@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Talaria Web no longer starts on an address other than localhost without a password or other sign-in method. If you publish the Docker port beyond 127.0.0.1, set TALARIA_WEB_PASSWORD; the shipped Compose files, which publish on 127.0.0.1 only, now set TALARIA_WEB_ALLOW_UNAUTHENTICATED=1.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

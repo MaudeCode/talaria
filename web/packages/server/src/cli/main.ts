@@ -58,7 +58,12 @@ async function serve(args: string[], webRoot: string): Promise<number> {
   await deps.profiles.warmRootAliases()
   await Promise.resolve().then(() => deps.agentConfig.read(deps.profileHome(deps.activeProfile()))).catch(() => undefined)
   const app = createApp(deps)
-  const running = await startServer(app, deps.config, { signals: false })
+  // A worker that cannot listen (a refused configuration, a taken port) must exit with its code: the running sidecar
+  // child would otherwise keep it alive, unlistening, and its supervisor would never see the exit (TAL-2197).
+  const running = await startServer(app, deps.config, { signals: false }).catch(async (error: unknown) => {
+    await sidecar?.close()
+    throw error
+  })
   retirement.attach(running.close, running.escalate)
   if (process.connected) process.send?.('ready')
   await starting
@@ -95,5 +100,5 @@ export async function main(argv: string[]): Promise<number> {
   }
   const args = parseBootstrapArgs(argv, process.env)
   const release = loadReleaseInfo({ webRoot })
-  return runBootstrap({ env: process.env, webRoot, hermesHome, home, compatibleAgentRevision: release.compatibleAgent.sourceRevision, serveCommand, log }, args, async () => { await serve(['--host', args.host, String(args.port)], webRoot) })
+  return runBootstrap({ env: process.env, webRoot, hermesHome, home, compatibleAgentRevision: release.compatibleAgent.sourceRevision, serveCommand, log }, args, () => serve(['--host', args.host, String(args.port)], webRoot))
 }

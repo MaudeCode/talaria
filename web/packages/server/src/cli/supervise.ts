@@ -21,6 +21,11 @@ import { readUpdateRollback, rollbackPaths } from '../tools/update-rollback.js'
 import { homeDotenvKeys, setHomeDotenvKeys } from './dotenv.js'
 
 export const RESTART_EXIT_CODE = 75
+/**
+ * TAL-2197: a worker refused its configuration (sysexits `EX_CONFIG`). Fatal: the supervisor returns it without a
+ * respawn or update rollback, since an older package would start with the configuration this one refused.
+ */
+export const CONFIG_EXIT_CODE = 78
 export const WORKER_ENV = 'TALARIA_WEB_WORKER'
 export const WORKER_SHUTDOWN_MS = 10_000
 export const STOP_GRACE_MS = 15_000
@@ -101,6 +106,7 @@ export async function supervise(opts: SuperviseOptions): Promise<number> {
     clearTimeout(killTimer)
     for (const [signal, handler] of handlers) process.off(signal, handler)
     if (stopping) return code
+    if (code === CONFIG_EXIT_CODE) return code
     if (code !== RESTART_EXIT_CODE) {
       const marker = readUpdateRollback(opts.stateDir)
       if (!afterRestart || ready || rolledBack || !marker || !paths || !opts.packageRoot || !existsSync(paths.previous)) return code

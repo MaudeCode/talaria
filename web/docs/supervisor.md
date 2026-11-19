@@ -158,6 +158,8 @@ WorkingDirectory=%h
 ExecStart=/usr/local/bin/talaria-web --foreground --no-browser
 Restart=on-failure
 RestartSec=5
+# Exit 78: a refused configuration, such as a non-loopback bind with no sign-in method; restarting cannot fix it.
+RestartPreventExitStatus=78
 
 # Optional: route stdout/stderr to journald instead of files
 StandardOutput=journal

@@ -56,6 +56,19 @@ For multi-tenant or hostile-container environments, rebuild with your own runtim
 and supervisor assumptions. Development images that need package-manager convenience should add
 those tools in a dev-only Dockerfile instead of reintroducing passwordless sudo to production.
 
+### Publishing the port beyond localhost
+
+Inside the container the server listens on `0.0.0.0`. With no sign-in method (password, passkey,
+OIDC or trusted auth header) it refuses to listen beyond loopback and the container exits with
+`Refusing to listen on 0.0.0.0 with no sign-in method`, because anyone who reaches the port would
+get a shell and your provider keys. Docker-published ports bypass ufw and firewalld.
+
+The shipped Compose files publish on `127.0.0.1` only, so they set
+`TALARIA_WEB_ALLOW_UNAUTHENTICATED=1`. Before you publish on any other address (`"8787:8787"`,
+`docker run -p 8787:8787`), set `TALARIA_WEB_PASSWORD` in `.env` and remove that line. A plain
+`docker run` of the image sets neither, so it needs `-e TALARIA_WEB_PASSWORD=…`, or
+`-p 127.0.0.1:8787:8787 -e TALARIA_WEB_ALLOW_UNAUTHENTICATED=1`.
+
 ## 5-minute quickstart (single container)
 
 ```bash

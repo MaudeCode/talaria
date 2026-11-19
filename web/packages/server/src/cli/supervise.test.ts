@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as atomic from '../fs/atomic.js'
 import { loadStartupEnv } from './dotenv.js'
-import { DUPLICATE_SIGNAL_MS, RESTART_EXIT_CODE, RUN_DRAIN_MS, RUN_SETTLE_MS, supervise, watchRetirement, WORKER_SHUTDOWN_MS, STOP_GRACE_MS } from './supervise.js'
+import { CONFIG_EXIT_CODE, DUPLICATE_SIGNAL_MS, RESTART_EXIT_CODE, RUN_DRAIN_MS, RUN_SETTLE_MS, supervise, watchRetirement, WORKER_SHUTDOWN_MS, STOP_GRACE_MS } from './supervise.js'
 
 const STOP_SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP'] as const
 const baseline = new Map(STOP_SIGNALS.map((signal) => [signal, process.listenerCount(signal)]))
@@ -56,7 +56,7 @@ const lines = (file: string): string[] => existsSync(file) ? readFileSync(file, 
 const DIST_SUPERVISE = join(import.meta.dirname, '../../dist/cli/supervise.js')
 const DIST_BIN = join(import.meta.dirname, '../../dist/bin/talaria-web.js')
 
-function fixture(mode: 'before-ready' | 'after-ready' | 'no-marker' | 'restored-crash' | 'retry' | 'newer-update' | 'restored-restart') {
+function fixture(mode: 'before-ready' | 'after-ready' | 'no-marker' | 'restored-crash' | 'retry' | 'newer-update' | 'restored-restart' | 'config-refused') {
   const root = mkdtempSync(join(tmpdir(), 'talaria-supervise-'))
   roots.push(root)
   const packageRoot = join(root, '@maudecode/talaria-web')
@@ -86,6 +86,7 @@ function fixture(mode: 'before-ready' | 'after-ready' | 'no-marker' | 'restored-
       process.exit(${String(RESTART_EXIT_CODE)});
     }
     const old = fs.readFileSync(paths.packageRoot + '/version', 'utf8') === '1.0.0';
+    if (mode === 'config-refused' && !old) process.exit(${String(CONFIG_EXIT_CODE)});
     if (old && mode === 'newer-update' && n === 2) {
       process.send('ready', () => {
         fs.renameSync(paths.packageRoot, paths.previous);
@@ -140,6 +141,14 @@ describe('self-update startup rollback', () => {
     const f = fixture('no-marker')
     expect(await f.run()).toBe(3)
     expect(readFileSync(f.count, 'utf8')).toBe('2')
+  })
+
+  it('returns a configuration refusal before ready without rolling back or respawning (TAL-2197)', async () => {
+    const f = fixture('config-refused')
+    expect(await f.run()).toBe(CONFIG_EXIT_CODE)
+    expect(readFileSync(f.count, 'utf8')).toBe('2')
+    expect(readFileSync(join(f.packageRoot, 'version'), 'utf8')).toBe('2.0.0')
+    expect(f.lines).not.toContain('[serve] update to 2.0.0 failed to start; restored 1.0.0')
   })
 
   it('exits after the restored worker crashes without looping', async () => {
