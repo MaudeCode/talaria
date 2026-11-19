@@ -46,8 +46,9 @@ it.each(['profile', 'principal'] as const)('bounds commands by %s before dispatc
     expect(executed).toBe(2)
     // Another principal in another profile still reaches its handler.
     expect((await run('leeRoot', root.session.session_id)).status).toBe(200)
+    // The two handlers reach the sidecar in either order, so the first one held may belong to `second`.
     held[0]!()
-    expect((await first).status).toBe(200)
+    expect((await Promise.race([first, second])).status).toBe(200)
     expect((await run('kimWork', work.session.session_id)).status).toBe(200)
   } finally {
     released = true
