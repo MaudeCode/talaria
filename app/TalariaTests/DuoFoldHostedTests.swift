@@ -502,6 +502,8 @@ final class DuoFoldHostedTests: XCTestCase {
         let scroll = try transcriptScrollView(in: window)
         let atLatest = await awaitCondition { self.isAtBottom(scroll) }
         XCTAssertTrue(atLatest, "A chat whose reading row is gone did not open on its latest message")
+        let drawn = await awaitCondition { self.drawsContent(scroll) }
+        XCTAssertTrue(drawn, "A chat whose reading row is gone never drew its rows")
         let following = await awaitCondition { self.fixtureChat(in: chats).readingRowID == nil }
         XCTAssertTrue(following, "A chat whose reading row is gone did not follow its latest message")
     }
