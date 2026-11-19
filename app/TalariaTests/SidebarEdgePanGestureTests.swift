@@ -176,15 +176,127 @@ final class AppSidebarPresentationTests: XCTestCase {
     }
 }
 
+/// A drag that catches the drawer between its endpoints continues from where it is on screen, for
+/// movement and for where a release settles (TAL-2568).
+@MainActor
+final class AppSidebarDragTakeoverTests: XCTestCase {
+    private struct Case: CustomStringConvertible {
+        var overlays: Bool
+        var isRightToLeft: Bool
+        /// Caught on the way open (closed at rest, so the edge pan grabs it), else on the way closed.
+        var opening: Bool
+        var description: String { "overlays \(overlays), RTL \(isRightToLeft), opening \(opening)" }
+    }
+
+    private let cases = [false, true].flatMap { overlays in
+        [false, true].flatMap { isRightToLeft in
+            [false, true].map { Case(overlays: overlays, isRightToLeft: isRightToLeft, opening: $0) }
+        }
+    }
+
+    func testTakingOverAPartialDrawerContinuesFromItsOnScreenPosition() throws {
+        for testCase in cases {
+            let (window, controller, presentation, drag) = try caughtAt(0.4, testCase)
+            defer { window.isHidden = true }
+
+            drag(.began, 0)
+            drag(.changed, 0)
+            XCTAssertEqual(progress(controller), 0.4, accuracy: 1e-6, "Zero movement jumped the drawer: \(testCase)")
+
+            // Opening catches finish open; closing catches reverse to closed past the midpoint.
+            let delta: CGFloat = testCase.opening ? 0.15 : -0.1
+            drag(.changed, delta)
+            XCTAssertEqual(progress(controller), 0.4 + delta, accuracy: 1e-6, "\(testCase)")
+            drag(.ended, delta)
+            XCTAssertEqual(presentation.isPresented, testCase.opening, "Release settled from an endpoint: \(testCase)")
+            XCTAssertEqual(progress(controller), testCase.opening ? 1 : 0, accuracy: 1e-6, "\(testCase)")
+        }
+    }
+
+    func testCancellingATakeoverReturnsToRestAndTheNextDragStartsThere() throws {
+        for testCase in cases {
+            let (window, controller, presentation, drag) = try caughtAt(0.4, testCase)
+            defer { window.isHidden = true }
+            let resting: CGFloat = testCase.opening ? 0 : 1
+
+            drag(.began, 0)
+            drag(.changed, testCase.opening ? 0.3 : -0.3)
+            // Settle without a slide so the next drag starts from the endpoint itself.
+            UIView.performWithoutAnimation { drag(.cancelled, 0) }
+            XCTAssertEqual(presentation.isPresented, !testCase.opening, "\(testCase)")
+            XCTAssertEqual(progress(controller), resting, accuracy: 1e-6, "\(testCase)")
+
+            CATransaction.flush()
+            drag(.began, 0)
+            drag(.changed, testCase.opening ? 0.2 : -0.2)
+            XCTAssertEqual(progress(controller), testCase.opening ? 0.2 : 0.8, accuracy: 1e-6, "\(testCase)")
+        }
+    }
+
+    /// A drawer at rest dragged to `fraction` and committed on screen, plus a second drag that
+    /// takes it over there: the edge pan when it rests closed, the surface pan when it rests open.
+    /// `drag` moves by a signed fraction of the reveal width toward open.
+    private func caughtAt(
+        _ fraction: CGFloat,
+        _ testCase: Case
+    ) throws -> (UIWindow, AppSidebarController, AppSidebarPresentation, (UIGestureRecognizer.State, CGFloat) -> Void) {
+        let presentation = AppSidebarPresentation()
+        presentation.isPresented = !testCase.opening
+        let (window, controller) = try makeSidebarController(presentation) { controller in
+            controller.isRightToLeft = testCase.isRightToLeft
+            controller.overlaysContent = testCase.overlays
+        }
+        controller.view.layoutIfNeeded()
+        let handler = NSSelectorFromString(testCase.opening ? "edgePanned:" : "surfacePanned:")
+        let direction: CGFloat = testCase.isRightToLeft ? -1 : 1
+        func drag(_ state: UIGestureRecognizer.State, _ toward: CGFloat) {
+            let pan = ScriptedPan(state: state, x: toward * controller.revealWidth * direction)
+            controller.perform(handler, with: pan)
+        }
+        drag(.began, 0)
+        drag(.changed, testCase.opening ? fraction : fraction - 1)
+        // The render server now draws the drawer here, as it would between two touches.
+        CATransaction.flush()
+        return (window, controller, presentation, drag)
+    }
+
+    /// The scrim's alpha is the drawer's progress from closed (0) to open (1).
+    private func progress(_ controller: AppSidebarController) -> CGFloat {
+        controller.children[1].view.superview?.subviews.last?.alpha ?? -1
+    }
+}
+
+/// A pan whose state and travel the test sets, handed to the container's own handlers.
+private final class ScriptedPan: UIScreenEdgePanGestureRecognizer {
+    private let scriptedState: UIGestureRecognizer.State
+    private let x: CGFloat
+
+    init(state: UIGestureRecognizer.State, x: CGFloat) {
+        scriptedState = state
+        self.x = x
+        super.init(target: nil, action: nil)
+    }
+
+    override var state: UIGestureRecognizer.State {
+        get { scriptedState }
+        set {}
+    }
+
+    override func translation(in view: UIView?) -> CGPoint { CGPoint(x: x, y: 0) }
+    override func velocity(in view: UIView?) -> CGPoint { .zero }
+}
+
 /// An `AppSidebarController` with empty roots in a window of the test host's scene.
 @MainActor
 private func makeSidebarController(
-    _ presentation: AppSidebarPresentation
+    _ presentation: AppSidebarPresentation,
+    configure: (AppSidebarController) -> Void = { _ in }
 ) throws -> (UIWindow, AppSidebarController) {
     let scene = try HostedScene.current()
     let window = UIWindow(windowScene: scene)
     let controller = AppSidebarController(presentation: presentation)
     controller.setRoots(sidebar: AnyView(Color.clear), content: AnyView(Color.clear))
+    configure(controller)
     window.rootViewController = controller
     window.makeKeyAndVisible()
     return (window, controller)

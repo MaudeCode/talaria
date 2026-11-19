@@ -202,6 +202,8 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
     private let surfacePan = UIPanGestureRecognizer()
     /// Where the visuals were last put, so a layout pass mid-drag keeps the drag's position.
     private var progress: CGFloat = 0
+    /// Where the active drag picked the sidebar up, so it moves and settles from there (TAL-2568).
+    private var dragOrigin: CGFloat?
 
     init(presentation: AppSidebarPresentation) {
         self.presentation = presentation
@@ -531,19 +533,27 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
         }
     }
 
+    /// Picks the sidebar up where it is on screen, even mid-slide.
+    private func beginDrag() {
+        stopSlide()
+        dragOrigin = progress
+    }
+
     /// Where a drag of `translation` would leave the sidebar, from 0 (closed) to 1 (open).
     private func dragProgress(_ translation: CGFloat) -> CGFloat {
         AppSidebarGesturePolicy.progress(
-            isPresented: presentation.isPresented,
+            startProgress: dragOrigin ?? progress,
             translationWidth: translation,
             revealWidth: revealWidth,
             isRightToLeft: isRightToLeft
         )
     }
 
-    /// Opens or closes from where a drag let go, and settles back if that changes nothing.
-    private func settle(projectedTranslation: CGFloat) {
-        let shouldOpen = dragProgress(projectedTranslation) >= 0.5
+    /// Opens or closes from where a drag let go, or returns to rest when it was cancelled (nil),
+    /// and settles back if that changes nothing.
+    private func settle(projectedTranslation: CGFloat?) {
+        let shouldOpen = projectedTranslation.map { dragProgress($0) >= 0.5 } ?? presentation.isPresented
+        dragOrigin = nil
         if shouldOpen == presentation.isPresented {
             animate(to: shouldOpen ? 1 : 0)
         } else {
@@ -561,13 +571,13 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
         switch recognizer.state {
         case .began:
             if !presentation.isPresented { contentHost.view.endEditing(true) }
-            stopSlide()
+            beginDrag()
         case .changed:
             apply(progress: dragProgress(recognizer.translation(in: nil).x))
         case .ended:
             settle(projectedTranslation: projected(recognizer))
         case .cancelled, .failed:
-            settle(projectedTranslation: 0)
+            settle(projectedTranslation: nil)
         default:
             break
         }
@@ -605,13 +615,13 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
         let isHorizontal = translation == .zero || abs(translation.x) > abs(translation.y)
         switch recognizer.state {
         case .began:
-            stopSlide()
+            beginDrag()
         case .changed where isHorizontal:
             apply(progress: dragProgress(translation.x))
         case .ended where isHorizontal:
             settle(projectedTranslation: projected(recognizer))
         case .ended, .cancelled, .failed:
-            settle(projectedTranslation: 0)
+            settle(projectedTranslation: nil)
         default:
             break
         }

@@ -118,15 +118,15 @@ public enum AppSidebarGesturePolicy {
             : startX <= edgeActivationWidth
     }
 
+    /// Where a drag that picked the sidebar up at `startProgress` leaves it after `translationWidth`.
     public static func progress(
-        isPresented: Bool,
+        startProgress: CGFloat,
         translationWidth: CGFloat,
         revealWidth: CGFloat,
         isRightToLeft: Bool
     ) -> CGFloat {
         guard revealWidth > 0 else { return 0 }
         let direction: CGFloat = isRightToLeft ? -1 : 1
-        let currentOffset = isPresented ? revealWidth : 0
-        return min(max((currentOffset + translationWidth * direction) / revealWidth, 0), 1)
+        return min(max(startProgress + translationWidth * direction / revealWidth, 0), 1)
     }
 }
