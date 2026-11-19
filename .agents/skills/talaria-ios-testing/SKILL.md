@@ -78,7 +78,9 @@ When T3's `device_*` tools are available:
    scenario, then use `snapshot -i` and its element references for interactions.
    Capture visual evidence with `device_screenshot`; to record a transition
    between screens, follow
-   [Record a screen transition](../../../app/DEVELOPMENT.md#record-a-screen-transition).
+   [Record a screen transition](../../../app/DEVELOPMENT.md#record-a-screen-transition)
+   and judge its frames against the cases the change touches in
+   [Transitions](../../../docs/design-system.md#17-transitions-app).
    Keep evidence outside git. Pool simulators are shared
    across threads: if `open` reports `DEVICE_IN_USE` by another session, stop
    and ask the user. Never reuse or close another session.

@@ -423,3 +423,91 @@ machine-readable list for the App.
     screenshots of each touched page: phone light and dark, accessibility5,
     Duo outer and inner. From `app/`, run
     `TALARIA_TEST_SCREENSHOTS=1 scripts/test-ios TalariaTests/ScreenGalleryHostedTests`.
+13. For an App change that moves between screens, displays, sizes or chats,
+    check the frames in between against §17.
+
+## 17. Transitions (App)
+
+A transition is judged by every frame it draws, not only the settled one. A
+settled screenshot or accessibility value can be right while a frame on the way
+shows the wrong route, drops focus, doubles a title or clips a line. Apply this
+section while designing and building an App change that moves between screens,
+displays, sizes or chats, and check it before review.
+
+Before building, write down for each touched transition which state belongs to
+the **window** (the open chat or section, sidebar presentation, display and
+posture), the **conversation** (transcript, reading position, draft and
+attachments, title) and the **transient view** (focus, text selection, an
+in-flight gesture, an open menu or sheet); which of it the transition may
+change; and which intermediate frame would be wrong.
+
+### Invariants
+
+1. **Known route, unresolved content.** Once the destination is known (a linked,
+   restored or tapped chat), every frame shows that destination's title and
+   chrome, with one loading presentation (§8) for content not yet read. No frame
+   shows the New Chat root, another chat or the empty-conversation prompt.
+2. **Genuine empty, not first load.** An empty state or the "Send a message to
+   start the conversation" prompt appears only after the server confirmed
+   empty. A first load never shows empty and then rows.
+3. **Editing survives.** A transition that keeps the conversation keeps its
+   draft, caret, selection and editor focus; a raised keyboard stays raised.
+4. **Reader anchor, or bottom-follow.** A reader scrolled up stays on the same
+   row; only a reader at the bottom follows new content.
+5. **One title and toolbar owner.** Each pane shows one title and one set of bar
+   items in every frame: never two titles, the previous chat's title over new
+   rows, or a bar item that grows and shrinks back.
+6. **Interrupted gestures continue.** A sidebar, drawer or sheet grabbed
+   mid-animation moves from where it is on screen; a cancelled gesture returns
+   to the prior state unchanged; controls the gesture reveals show during it.
+7. **A full line at the active text size.** At the active Dynamic Type size,
+   accessibility sizes included, every frame shows at least one full line of
+   draft and row text; nothing clips mid-glyph while sizes change.
+
+### Cases
+
+Check the rows the change touches. The owner tests prevent regressions; the
+recording is the visual check. A ticket in the last column is an open gap.
+
+| Case | Start | Action | Pass, in every frame |
+| --- | --- | --- | --- |
+| Cold linked launch | App not running; fixture with `--ui-test-open-session` | Launch | The linked chat's title and one loading presentation, then its rows; no New Chat root or empty prompt (1, 2) |
+| Foreground return | Chat open, transcript scrolled up, sidebar column as the user left it | Background, then return | Same chat, row, column choice and draft; no loading or empty frame (1, 3, 4) |
+| Duo outer → inner, inner → outer | Duo closed, chat open, multi-line draft focused with text selected, transcript scrolled up | `app/scripts/duo-pose <udid> open`, then `closed` | The other panel shows the same chat, draft, selection, keyboard and row; one title; no frame of the other layout's chrome (3, 4, 5) |
+| Rotation | iPhone portrait at an accessibility text size, draft focused, transcript scrolled up | Rotate to landscape and back | Keyboard stays up, caret and draft kept, a full draft line visible, same row (3, 4, 7) |
+| Chat A → B → A | Chat A scrolled to a middle row with a draft | Open B from the sidebar, then A | B's title, rows and composer arrive together; back on A, the same row and draft (1, 3, 4, 5) |
+| Sidebar interruption and cancel | Chat open, sidebar closed, on the iPhone and the Duo cover | Drag from the edge and release back; open it and grab it mid-animation | The sidebar follows the finger from its current position with its toolbar showing; one chat title; cancel leaves the chat, draft and focus unchanged (3, 5, 6) |
+| Settings push and return | Chat open with a draft | Cog, a category, Back, Close | Each page has one title and Back; Close shows the same chat, row and draft with no other root in between (1, 3, 5) |
+
+| Case | Owner tests | Open gaps |
+| --- | --- | --- |
+| Cold linked launch | `SessionListHostedTests.testDeepLinkedChatKeepsNavigationStackAndToolbarMounted`, `testRelaunchShowsTheLastChatsBeforeTheServerAnswers` | TAL-2564 |
+| Foreground return | `ChatHostedTests.testForegroundReturnRealizesZeroUnchangedTranscriptRows`, `SessionListHostedTests.testForegroundReturnPreservesTheSettledColumnChoice` | |
+| Duo outer ↔ inner | `ChatHostedTests.testBookFoldMovesComposerAndUnfoldingRetainsItsEditorAndDraft`, `DuoFoldHostedTests` | TAL-2565 |
+| Rotation | TalariaKit `ComposerCardSizingTests`, `SessionListHostedTests.testResizingAnOpenOverlayIntoTilingConsumesDrawerIntentAndRotationCollapsesTheColumn` | TAL-2569 |
+| Chat A → B → A | TalariaKit `ChatDraftStoreTests` | TAL-2384, TAL-2566 |
+| Sidebar interruption and cancel | `SidebarEdgePanGestureTests`, TalariaKit `SessionNavigationStateTests.testSidebarGestureLeavesEdgeSwipeToAStackThatCanPop` | TAL-2567, TAL-2568, TAL-2570 |
+| Settings push and return | `SessionListHostedTests.testSidebarSectionIsARootAndSettingsIsAModalOverIt`, TalariaKit `SessionNavigationStateTests.testSettingsRoutingLeavesTheUnderlyingRootAndPagesUnchanged` | |
+
+### Checking a transition
+
+The T3 Device panel is the visual check. [Record a screen transition](../app/DEVELOPMENT.md#record-a-screen-transition)
+leases the fixture build and records it.
+
+1. Capture the start and end states with `device_screenshot`, and record the
+   action between them.
+2. Compare every intermediate frame with both against the case's Pass. The
+   contact sheet samples frames and can miss one: around a cell that changes
+   unexpectedly, or anything that looks like a flash, scrub the raw movie.
+3. Read route and focus from `snapshot -i` before and after (the visible title,
+   the focused field, the selected text), not from the picture alone.
+4. On the Duo, record each panel's dimensions (`xcrun simctl io <udid>
+   enumerate`) beside the frames it drew. Report an unverified hinge angle
+   separately from the panel handoff; `app/scripts/duo-pose` fails when it cannot
+   verify both.
+5. Attach the movie, sheet and screenshots to the PR or ticket, never to git,
+   and list each case checked with its result.
+
+A frame that fails a Pass is a defect in the change. Prevention lives in the
+owner test for that state: extend it. This adds no simulator CI and no
+physical-device check; App validation routing is unchanged.

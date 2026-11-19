@@ -266,7 +266,9 @@ transition through the Device panel against the leased fixture build:
    `shutdown=false`, then press Control-C in the runner. Confirm the simulator is
    `Shutdown` and its lease file is gone ([pool guide](docs/ios-simulator-pool.md)).
 
-Attach the sheet and movie to the PR; never commit them.
+Judge the frames against the case's pass criterion in
+[Transitions](../docs/design-system.md#17-transitions-app). Attach the sheet
+and movie to the PR; never commit them.
 
 ## Display-phase signposts
 
