@@ -611,6 +611,15 @@ class RealDiffTests(unittest.TestCase):
                 self.write(workflow, original.replace(old, new, 1))
                 self.assertEqual(self.classify(base, self.commit(name)), expected)
 
+    def test_a_sidecar_workflow_job_change_selects_only_sidecar_and_tooling(self):
+        workflow = ".github/workflows/web-verify.yml"
+        original = ("on: workflow_call\njobs:\n  server:\n    runs-on: ubuntu-latest\n"
+                    "  sidecar:\n    runs-on: ubuntu-latest\n    env:\n      TALARIA_SIDECAR_WORKERS: '4'\n")
+        self.write(workflow, original)
+        base = self.commit("fixture Web workflow")
+        self.write(workflow, original.replace("'4'", "'2'"))
+        self.assertEqual(self.classify(base, self.commit("cap sidecar workers")), {"web_sidecar", "tooling"})
+
     def test_check_diff_rejects_whitespace_errors_in_the_checked_range(self):
         self.write("README.md", "base\n")
         base = self.commit("base")
