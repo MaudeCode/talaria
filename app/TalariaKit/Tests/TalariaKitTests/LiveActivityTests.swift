@@ -740,9 +740,9 @@ final class LiveActivityTests: XCTestCase {
                 body = #"{"invitation":"invite-once","expiresAt":1787845600000}"#
             case _ where request.url?.path.hasSuffix("/publisher-subscriptions") == true:
                 body = request.httpMethod == "GET"
-                    ? #"{"publishers":[{"publisherId":"https://hermes.example.com","label":"Home","subscribed":true}]}"#
+                    ? #"{"publishers":[{"publisherId":"https://hermes.example.com","label":"Home","subscribed":true,"canRevokeKeys":true}]}"#
                     : #"{"ok":true}"#
-            case "/v1/publisher-enrollment":
+            case "/v1/publisher-enrollment", "/v1/publisher-keys":
                 body = #"{"ok":true}"#
             case "/api/talaria/relay/pair":
                 body = #"{"ok":true,"publisher_id":"https://hermes.example.com"}"#
@@ -768,7 +768,7 @@ final class LiveActivityTests: XCTestCase {
             session: session
         )
         let client = TalariaRelayClient(credentials: credentials, session: session)
-        let invitation = try await client.createPublisherInvitation()
+        let invitation = try await client.createPublisherInvitation(publisherID: XCTUnwrap(URL(string: "https://HERMES.example.com:443/path")))
         XCTAssertEqual(invitation, "invite-once")
         try await APIClient(
             baseURL: try XCTUnwrap(URL(string: "https://hermes.example.com")),
@@ -786,6 +786,11 @@ final class LiveActivityTests: XCTestCase {
         ) as? [String: String])
         XCTAssertEqual(appleBody["identityToken"], "apple-jwt")
         XCTAssertEqual(appleBody["nonce"], "hashed-nonce")
+        let invitationRequest = try XCTUnwrap(requests.first { $0.url?.path == "/v1/pairings/publisher" })
+        let invitationBody = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: try XCTUnwrap(apiTestBodyData(from: invitationRequest))
+        ) as? [String: String])
+        XCTAssertEqual(invitationBody, ["publisherId": "https://hermes.example.com"])
         let pairingRequest = try XCTUnwrap(requests.first { $0.url?.path == "/api/talaria/relay/pair" })
         let pairingBody = try XCTUnwrap(JSONSerialization.jsonObject(
             with: try XCTUnwrap(apiTestBodyData(from: pairingRequest))
@@ -920,7 +925,8 @@ final class LiveActivityTests: XCTestCase {
             TalariaRelayClient.PublisherSubscription(
                 publisherId: "https://hermes.example.com",
                 label: "Home",
-                subscribed: true
+                subscribed: true,
+                canRevokeKeys: true
             )
         ])
         try await client.revokePublisher(publisherID)
@@ -942,6 +948,13 @@ final class LiveActivityTests: XCTestCase {
                 "DELETE /v1/devices/\(credentials.deviceID)"
             ]
         )
+        try await client.revokePublisherKeys(publisherID)
+        let keyRevocation = try XCTUnwrap(requests.last)
+        XCTAssertEqual(keyRevocation.httpMethod, "DELETE")
+        XCTAssertEqual(keyRevocation.url?.path, "/v1/publisher-keys")
+        XCTAssertEqual(URLComponents(url: try XCTUnwrap(keyRevocation.url), resolvingAgainstBaseURL: false)?.queryItems,
+                       [URLQueryItem(name: "publisherId", value: "https://hermes.example.com")])
+
     }
 
     func testRelayRedirectGuardCancelsEveryCrossOriginRedirect() throws {

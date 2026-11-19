@@ -9,6 +9,7 @@ const subscriptionValidator = v.object({
   publisherId: v.string(),
   label: v.string(),
   subscribed: v.boolean(),
+  canRevokeKeys: v.optional(v.boolean()),
 });
 
 export const listForDevice = internalQuery({
@@ -25,7 +26,7 @@ export const listForDevice = internalQuery({
       )
       .unique();
     if (!device || device.revokedAt !== undefined) return null;
-    const [grants, exclusions] = await Promise.all([
+    const [grants, exclusions, ownedPublishers] = await Promise.all([
       ctx.db
         .query("publisherGrants")
         .withIndex("by_user_id_and_publisher_id", (query) => query.eq("userId", args.userId))
@@ -36,6 +37,10 @@ export const listForDevice = internalQuery({
           query.eq("userId", args.userId).eq("deviceId", args.deviceId),
         )
         .take(MAX_PUBLISHERS),
+      ctx.db.query("publishers")
+        .withIndex("by_version_and_owner_user_id_and_publisher_id", (query) =>
+          query.eq("version", 2).eq("ownerUserId", args.userId),
+        ).take(MAX_PUBLISHERS),
     ]);
     const excluded = new Set(exclusions.map((item) => item.publisherId));
     const publishers = await Promise.all(grants.map((grant) =>
@@ -45,11 +50,23 @@ export const listForDevice = internalQuery({
             .eq("publisherId", grant.publisherId),
         ).unique(),
     ));
-    return publishers.flatMap((publisher) => publisher?.enabled ? [{
+    const subscriptions = new Map<string, { publisherId: string; label: string; subscribed: boolean; canRevokeKeys: boolean }>(publishers.flatMap((publisher) => publisher?.enabled ? [[publisher.publisherId, {
       publisherId: publisher.publisherId,
       label: publisher.label,
       subscribed: !excluded.has(publisher.publisherId),
-    }] : []);
+      canRevokeKeys: false,
+    }] as const] : []));
+    for (const publisher of ownedPublishers) {
+      if (!publisher.enabled) continue;
+      const subscription = subscriptions.get(publisher.publisherId);
+      subscriptions.set(publisher.publisherId, {
+        publisherId: publisher.publisherId,
+        label: subscription?.label ?? publisher.label,
+        subscribed: subscription?.subscribed ?? false,
+        canRevokeKeys: true,
+      });
+    }
+    return [...subscriptions.values()];
   },
 });
 
@@ -176,6 +193,22 @@ export const revokePublisher = internalMutation({
       }
     }
     await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId: args.userId });
+    return { ok: true };
+  },
+});
+
+export const revokePublisherKeys = internalMutation({
+  args: { userId: v.string(), publisherId: v.string(), now: v.number() },
+  returns: v.object({ ok: v.boolean() }),
+  handler: async (ctx, args) => {
+    const publisher = await ctx.db.query("publishers")
+      .withIndex("by_version_and_owner_user_id_and_publisher_id", (query) =>
+        query.eq("version", 2).eq("ownerUserId", args.userId).eq("publisherId", args.publisherId),
+      ).unique();
+    if (!publisher) return { ok: false };
+    if (publisher.enabled) {
+      await ctx.db.patch(publisher._id, { enabled: false, keysRevokedAt: args.now, updatedAt: args.now });
+    }
     return { ok: true };
   },
 });

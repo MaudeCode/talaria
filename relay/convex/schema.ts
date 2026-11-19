@@ -66,6 +66,7 @@ export default defineSchema({
 
   publisherInvitations: defineTable({
     userId: v.string(),
+    publisherId: v.optional(v.string()),
     tokenHash: v.string(),
     expiresAt: v.number(),
     consumedAt: v.optional(v.number()),
@@ -81,6 +82,7 @@ export default defineSchema({
     publisherId: v.string(),
     label: v.string(),
     enabled: v.boolean(),
+    keysRevokedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -98,6 +100,7 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_version_and_owner_user_id_and_publisher_id", ["version", "ownerUserId", "publisherId"])
+    .index("by_owner_origin_revocation_and_creation", ["version", "ownerUserId", "publisherId", "revokedAt", "createdAt"])
     .index("by_activated_at_and_created_at", ["activatedAt", "createdAt"])
     .index("by_revoked_at", ["revokedAt"])
     .index("by_version_and_key_id", ["version", "keyId"])

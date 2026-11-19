@@ -19,6 +19,10 @@ struct RelayConnectionManagementView: View {
 
     @State private var credentials: TalariaRelayCredentials?
     @State private var publisherLabels: [String: String] = [:]
+    @State private var revocablePublisherIDs: Set<String> = []
+    @State private var revocationAccount: RelayPublisherRow?
+    @State private var isConfirmingKeyRevocation = false
+    @State private var isRevokingKeys = false
     @State private var connectingServerID: String?
     @State private var unenrollingServerID: String?
     @State private var unenrollmentAccount: RelayPublisherRow?
@@ -78,6 +82,19 @@ struct RelayConnectionManagementView: View {
         } message: { account in
             Text("Choose whether \(account.displayName) stops sending relay updates to this iPhone or every device on this Talaria Relay account.")
         }
+        .alert(
+            "Revoke Publisher Keys?",
+            isPresented: $isConfirmingKeyRevocation,
+            presenting: revocationAccount
+        ) { server in
+            Button("Cancel", role: .cancel) {}
+            Button("Revoke Keys", role: .destructive) {
+                Task { await revokeKeys(server) }
+            }
+            .accessibilityIdentifier("settings-confirm-relay-key-revocation")
+        } message: { server in
+            Text("Relay updates from \(server.displayName) stop for everyone until the server is paired again with a new key.")
+        }
         .alert("Sign out of Talaria Relay?", isPresented: $isConfirmingDisconnect) {
             Button("Cancel", role: .cancel) {}
             Button("Sign Out", role: .destructive) {
@@ -97,7 +114,23 @@ struct RelayConnectionManagementView: View {
                         containsActions: true) {
             Image(systemName: "server.rack").accessibilityHidden(true)
         } accessory: {
-            serverStatus(server, state: state)
+            HStack(spacing: 0) {
+                serverStatus(server, state: state)
+                if revocablePublisherIDs.contains(server.id) {
+                    Button {
+                        revocationAccount = server
+                        isConfirmingKeyRevocation = true
+                    } label: {
+                        Image(systemName: "key.slash")
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(isBusy)
+                    .help("Revoke Publisher Keys")
+                    .accessibilityLabel("Revoke Publisher Keys for \(server.displayName)")
+                    .accessibilityIdentifier("settings-revoke-relay-keys-\(server.id)")
+                }
+            }
         }
         .accessibilityIdentifier("settings-relay-server-\(server.id)")
     }
@@ -149,7 +182,7 @@ struct RelayConnectionManagementView: View {
     }
 
     private var isBusy: Bool {
-        connectingServerID != nil || unenrollingServerID != nil || isDisconnecting
+        connectingServerID != nil || unenrollingServerID != nil || isDisconnecting || isRevokingKeys
     }
 
     private var serverRows: [RelayPublisherRow] {
@@ -164,7 +197,7 @@ struct RelayConnectionManagementView: View {
             )
         }
         let localIDs = Set(localRows.map(\.id))
-        let removedRows = (credentials?.pairedPublisherIDs ?? []).compactMap { value -> RelayPublisherRow? in
+        let removedRows = Set(credentials?.pairedPublisherIDs ?? []).union(revocablePublisherIDs).sorted().compactMap { value -> RelayPublisherRow? in
             guard let publisherID = TalariaRelayClient.originIdentifier(value),
                   !localIDs.contains(publisherID),
                   let server = URL(string: publisherID) else { return nil }
@@ -187,12 +220,15 @@ struct RelayConnectionManagementView: View {
     private func loadCredentials() async {
         credentials = TalariaRelayConfigurationStore.load()
         guard let credentials else { return }
-        guard let subscriptions = try? await TalariaRelayClient(credentials: credentials).publisherSubscriptions() else {
-            return
-        }
+        try? await refreshSubscriptions(credentials)
+    }
+
+    @MainActor
+    private func refreshSubscriptions(_ credentials: TalariaRelayCredentials) async throws {
+        let subscriptions = try await TalariaRelayClient(credentials: credentials).publisherSubscriptions()
+        revocablePublisherIDs = Set(subscriptions.filter { $0.canRevokeKeys == true }.map(\.publisherId))
         publisherLabels = subscriptions.reduce(into: [:]) { labels, subscription in
-            guard subscription.subscribed,
-                  let publisherID = TalariaRelayClient.originIdentifier(subscription.publisherId) else { return }
+            guard let publisherID = TalariaRelayClient.originIdentifier(subscription.publisherId) else { return }
             labels[publisherID] = subscription.label
         }
         try? TalariaRelayConfigurationStore.replacePairedPublishers(
@@ -216,6 +252,7 @@ struct RelayConnectionManagementView: View {
                 credentials: credentials,
                 headers: authManager.customHeaders(for: account)
             )
+            try? await refreshSubscriptions(credentials)
             self.credentials = TalariaRelayConfigurationStore.load()
         } catch {
             self.credentials = TalariaRelayConfigurationStore.load()
@@ -249,6 +286,31 @@ struct RelayConnectionManagementView: View {
     }
 
     @MainActor
+    private func revokeKeys(_ server: RelayPublisherRow) async {
+        guard !isBusy, let credentials, revocablePublisherIDs.remove(server.id) != nil else { return }
+        isRevokingKeys = true
+        defer { isRevokingKeys = false }
+        errorMessage = nil
+        do {
+            try await TalariaRelayClient(credentials: credentials).revokePublisherKeys(server.server)
+        } catch let error as TalariaRelayClient.ClientError {
+            if case let .invalidResponse(status, _) = error, (400..<500).contains(status) {
+                revocablePublisherIDs.insert(server.id)
+            } else {
+                try? await refreshSubscriptions(credentials)
+            }
+            errorMessage = SettingsErrorText(error)
+            return
+        } catch {
+            try? await refreshSubscriptions(credentials)
+            errorMessage = SettingsErrorText(error)
+            return
+        }
+        try? await refreshSubscriptions(credentials)
+        try? await TalariaAggregateLiveActivityManager.shared.refresh()
+    }
+
+    @MainActor
     private func disconnect() async {
         guard !isBusy,
               let credentials else { return }
@@ -258,6 +320,7 @@ struct RelayConnectionManagementView: View {
         do {
             try await RelayConnectionOperations.disconnect(credentials: credentials)
             self.credentials = nil
+            revocablePublisherIDs = []
         } catch {
             var pending = credentials
             pending.pendingRevocation = true
@@ -278,7 +341,7 @@ enum RelayConnectionOperations {
             throw TalariaRelayClient.ClientError.invalidURL
         }
         let client = TalariaRelayClient(credentials: credentials)
-        let invitation = try await client.createPublisherInvitation()
+        let invitation = try await client.createPublisherInvitation(publisherID: publisherID)
         try await APIClient(baseURL: server, customHeaderProvider: { headers }).pairTalariaRelay(
             invitation: invitation,
             relayURL: credentials.baseURL,

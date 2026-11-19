@@ -159,6 +159,14 @@ function exposedState(state: Doc<"sessionStates">) {
   };
 }
 
+export function publisherKeyRevokedAt(
+  publisher: Doc<"publishers">,
+  key: Doc<"publisherKeys">,
+): number | undefined {
+  const cutoff = publisher.keysRevokedAt;
+  return key.revokedAt ?? (cutoff !== undefined && key.createdAt <= cutoff ? cutoff : undefined);
+}
+
 export async function authorizePublisherMutation(
   ctx: MutationCtx,
   args: {
@@ -190,19 +198,20 @@ export async function authorizePublisherMutation(
     || !key
     || key.ownerUserId !== args.publisherOwnerUserId
     || key.publisherId !== args.publisherId
-    || key.revokedAt !== undefined
+    || publisherKeyRevokedAt(publisher, key) !== undefined
   ) {
     return null;
   }
   if (nonce) return "replay";
   if (key.activatedAt === undefined) {
     const keys = await ctx.db.query("publisherKeys")
-      .withIndex("by_version_and_owner_user_id_and_publisher_id", (query) =>
-        query.eq("version", 2).eq("ownerUserId", args.publisherOwnerUserId).eq("publisherId", args.publisherId),
+      .withIndex("by_owner_origin_revocation_and_creation", (query) =>
+        query.eq("version", 2).eq("ownerUserId", args.publisherOwnerUserId).eq("publisherId", args.publisherId)
+          .eq("revokedAt", undefined).gt("createdAt", publisher.keysRevokedAt ?? -1),
       ).take(500);
+    await ctx.db.patch(key._id, { activatedAt: args.receivedAt });
     for (const candidate of keys) {
-      if (candidate._id === key._id) await ctx.db.patch(candidate._id, { activatedAt: args.receivedAt });
-      else if (candidate.revokedAt === undefined) await ctx.db.patch(candidate._id, { revokedAt: args.receivedAt });
+      if (candidate._id !== key._id) await ctx.db.patch(candidate._id, { revokedAt: args.receivedAt });
     }
   }
   await ctx.db.insert("publisherNonces", {

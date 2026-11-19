@@ -33,7 +33,11 @@ The relay verifies the ES256 signature against Apple's JWKS plus issuer, audienc
 
 This is the v2 contract. The relay ignores v1 publishers, keys, nonces, and session states rather than migrating or authorizing them. Re-registration creates v2 records alongside any inert v1 rows.
 
-Talaria creates a ten-minute invitation with authenticated `POST /v1/pairings/publisher` and passes it through the authenticated Hermes API.
+Talaria creates a ten-minute invitation with authenticated `POST /v1/pairings/publisher` with the JSON body `{"publisherId":"https://hermes.example.com"}` and passes the invitation through the authenticated Hermes API.
+Relay canonicalizes the origin and returns `400 invalid_pairing` for a missing or invalid origin.
+Both redemption routes return `400 invalid_invitation` for a different origin or for older invitations saved without an origin. A rejected request does not consume the invitation.
+Pairing a new server requires an updated Talaria app. Existing pairings continue to work.
+See the [shared pairing fixture](../../contracts/fixtures/relay-pairing.json).
 
 The Hermes owner registers the server once. Hermes generates an Ed25519 key locally and redeems the invitation with an opaque profile scope:
 
@@ -50,7 +54,7 @@ The Hermes owner registers the server once. Hermes generates an Ed25519 key loca
 ```
 
 The private key never leaves the Hermes machine.
-Repeating server registration with an invitation from the publisher's original relay owner creates a replacement key. The relay activates it on first signed publication and then revokes the previous key without changing profile grants.
+Repeating server registration requires an invitation from the publisher's Relay owner and a request signed with an existing non-revoked publisher key. Relay returns `400 publisher_already_registered` if proof is missing or invalid. If the owner revoked the registration and all its keys, recovery can proceed without a signature. A successful re-registration creates a replacement key. The relay activates it on first signed publication and then revokes the previous key without changing profile grants.
 Successful registration and enrollment responses include `protocolVersion: 2`. Registration also returns `profileIdPreserved`: `false` requires an exact echo of the requested scope, while `true` tells Hermes that owner key recovery retained the existing owner grant. Hermes rejects any unmarked scope mismatch before treating local configuration as valid.
 
 Registrations are keyed by relay owner plus server origin. Another relay user can claim the same public origin only inside their own account; that claim cannot reserve the origin, block the legitimate owner, authenticate the legitimate publisher, or receive its profile grants.
@@ -245,7 +249,7 @@ End an activity with `DELETE /v1/devices/{deviceId}/live-activities/{activityId}
 
 ## Publisher subscriptions and revocation
 
-Existing publishers are subscribed on every device by default. List the current device's publisher state with authenticated `GET /v1/devices/{deviceId}/publisher-subscriptions`.
+Existing publishers are subscribed on every device by default. List the current device's publisher state with authenticated `GET /v1/devices/{deviceId}/publisher-subscriptions`. The response includes `canRevokeKeys` for publisher owners. Owned publishers remain listed for key management after the owner removes their grant.
 
 Subscribe or unsubscribe only that device with authenticated `PUT /v1/devices/{deviceId}/publisher-subscriptions`:
 
@@ -259,6 +263,12 @@ Subscribe or unsubscribe only that device with authenticated `PUT /v1/devices/{d
 An unsubscribed publisher is excluded from that device's aggregate snapshots, ActivityKit delivery, and notifications. Other devices remain subscribed. Register the device with `PUT /v1/devices/{deviceId}` first; otherwise the relay returns 404 `device_not_registered`.
 
 Revoke the signed-in relay account's profile grant with authenticated `DELETE /v1/publisher-enrollment?publisherId=https%3A%2F%2Fhermes.example.com`. Revocation retires only that account's states and recomputes its devices. The registered publisher, signing key, and other profile grants remain active.
+
+An authenticated publisher owner can revoke all current keys with
+`DELETE /v1/publisher-keys?publisherId=https%3A%2F%2Fhermes.example.com`.
+Relay disables publishing for that owner and origin until the server registers
+again with a freshly issued invitation. Grants remain in place. A caller
+without a publisher registration for that origin receives `404 publisher_not_owned`.
 
 ## Foreground snapshot
 

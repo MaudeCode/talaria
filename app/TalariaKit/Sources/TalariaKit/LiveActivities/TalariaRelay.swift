@@ -1,6 +1,9 @@
 public import AuthenticationServices
 import CryptoKit
 import Foundation
+#if DEBUG
+import os
+#endif
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -37,9 +40,24 @@ public enum TalariaRelayConnectionState: Equatable, Sendable {
 }
 
 public enum TalariaRelayConfigurationStore {
+    #if DEBUG
+    private static let fixtureCredentials = OSAllocatedUnfairLock<TalariaRelayCredentials?>(initialState: {
+        guard ProcessInfo.processInfo.arguments.contains(UITestFixtureLaunch.relayRecoveryArgument) else { return nil }
+        return TalariaRelayCredentials(
+            baseURL: UITestFixtureLaunch.serverURL, deviceID: "fixture-device", userID: "fixture-owner",
+            appleUserID: "fixture-apple", sessionToken: "fixture-relay-session", expiresAt: .distantFuture,
+            pairedPublisherIDs: [UITestFixtureLaunch.serverURL.absoluteString]
+        )
+    }())
+
+    private static var usesFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains(UITestFixtureLaunch.launchArgument)
+    }
+    #endif
+
     public static func load(keychain: any KeychainStoring = KeychainStore()) -> TalariaRelayCredentials? {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains(UITestFixtureLaunch.launchArgument) { return nil }
+        if usesFixture { return fixtureCredentials.withLock { $0 } }
         #endif
         guard let encoded = try? keychain.load(.talariaRelay),
               let data = encoded.data(using: .utf8)
@@ -48,12 +66,24 @@ public enum TalariaRelayConfigurationStore {
     }
 
     public static func save(_ credentials: TalariaRelayCredentials, keychain: any KeychainStoring = KeychainStore()) throws {
+        #if DEBUG
+        if usesFixture {
+            fixtureCredentials.withLock { $0 = credentials }
+            return
+        }
+        #endif
         let data = try JSONEncoder().encode(credentials)
         guard let encoded = String(data: data, encoding: .utf8) else { return }
         try keychain.save(encoded, forKey: .talariaRelay)
     }
 
     public static func clear(keychain: any KeychainStoring = KeychainStore()) throws {
+        #if DEBUG
+        if usesFixture {
+            fixtureCredentials.withLock { $0 = nil }
+            return
+        }
+        #endif
         try keychain.delete(.talariaRelay)
     }
 
@@ -159,6 +189,7 @@ public final class TalariaRelayClient: Sendable {
         public var publisherId: String
         public var label: String
         public var subscribed: Bool
+        public var canRevokeKeys: Bool?
     }
 
     private struct PublisherSubscriptionsResponse: Decodable {
@@ -285,12 +316,15 @@ public final class TalariaRelayClient: Sendable {
         )
     }
 
-    public func createPublisherInvitation() async throws -> String {
+    public func createPublisherInvitation(publisherID: URL) async throws -> String {
+        guard let canonicalPublisherID = Self.originURL(publisherID)?.absoluteString else {
+            throw ClientError.invalidURL
+        }
         var request = authenticatedRequest(
             url: Self.endpoint(credentials.baseURL, "v1/pairings/publisher"),
             method: "POST"
         )
-        request.httpBody = Data("{}".utf8)
+        request.httpBody = try JSONEncoder().encode(["publisherId": canonicalPublisherID])
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let data = try await Self.responseData(for: request, session: session)
         return try JSONDecoder().decode(PublisherInvitationResponse.self, from: data).invitation
@@ -323,9 +357,17 @@ public final class TalariaRelayClient: Sendable {
     }
 
     public func revokePublisher(_ publisherID: URL) async throws {
+        try await deletePublisherResource(publisherID, path: "v1/publisher-enrollment")
+    }
+
+    public func revokePublisherKeys(_ publisherID: URL) async throws {
+        try await deletePublisherResource(publisherID, path: "v1/publisher-keys")
+    }
+
+    private func deletePublisherResource(_ publisherID: URL, path: String) async throws {
         guard let canonicalPublisherID = Self.originURL(publisherID)?.absoluteString,
               var components = URLComponents(
-                url: Self.endpoint(credentials.baseURL, "v1/publisher-enrollment"),
+                url: Self.endpoint(credentials.baseURL, path),
                 resolvingAgainstBaseURL: false
               ) else { throw ClientError.invalidURL }
         components.queryItems = [URLQueryItem(name: "publisherId", value: canonicalPublisherID)]
@@ -546,8 +588,12 @@ public final class TalariaRelayClient: Sendable {
     }
 
     private static func makeSession(baseURL: URL) -> URLSession {
-        URLSession(
-            configuration: .default,
+        let configuration = URLSessionConfiguration.default
+        #if DEBUG
+        UITestURLSessionHook.configure(configuration)
+        #endif
+        return URLSession(
+            configuration: configuration,
             delegate: TalariaRelayRedirectGuard(baseURL: baseURL),
             delegateQueue: nil
         )

@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Relay pairing invitations now work only for the selected server. Pairing a new server requires an updated Talaria app. Publisher owners can revoke lost server keys and pair the server again.",
+      "highlight": false,
+      "components": ["relay", "app", "web"],
+      "announce": false
+    }
+  ]
+}

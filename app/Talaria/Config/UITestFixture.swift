@@ -755,11 +755,23 @@ final class UITestFixtureURLProtocol: URLProtocol {
         }
     }
 
+    private static let relayKeysRevoked = OSAllocatedUnfairLock(initialState: false)
+
     private static let compressionStartedAt = Date().timeIntervalSince1970 - 65
 
     private static func responseData(for request: URLRequest) -> Data {
         guard let url = request.url else { return json([:]) }
         switch url.path {
+        case "/v1/devices/fixture-device/publisher-subscriptions":
+            let revoked = relayKeysRevoked.withLock { $0 }
+            let publishers: [[String: Any]] = revoked ? [] : [[
+                "publisherId": UITestFixtureEnvironment.serverURL.absoluteString,
+                "label": "Fixture Server", "subscribed": true, "canRevokeKeys": true,
+            ]]
+            return json(["publishers": publishers])
+        case "/v1/publisher-keys" where request.httpMethod == "DELETE":
+            relayKeysRevoked.withLock { $0 = true }
+            return json(["ok": true])
         case "/health":
             return json(["status": "ok"])
         case "/api/auth/status" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.personIsolationArgument):

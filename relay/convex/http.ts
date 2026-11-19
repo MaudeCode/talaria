@@ -523,11 +523,15 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const auth = await authenticateUser(ctx, request);
     if (!auth) return json(401, { error: "unauthorized" });
+    const body = await readJson(request);
+    const publisherId = canonicalHttpOrigin(body ? stringField(body, "publisherId", 191) ?? "" : "");
+    if (!publisherId) return json(400, { error: "invalid_pairing" });
     const token = randomToken(32);
     const now = Date.now();
     const expiresAt = now + 10 * 60 * 1_000;
     const result = await ctx.runMutation(internal.pairing.createPublisherInvitation, {
       userId: auth.userId,
+      publisherId,
       tokenHash: await sha256(token),
       expiresAt,
       now,
@@ -540,8 +544,16 @@ http.route({
   path: "/v1/pairings/publisher/redeem",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const body = await readJson(request);
-    if (!body) return json(400, { error: "invalid_json" });
+    const rawBody = await request.text();
+    if (rawBody.length > maximumBodyCharacters) return json(413, { error: "body_too_large" });
+    let body: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(rawBody) as unknown;
+      if (!isRecord(parsed)) throw new Error("invalid");
+      body = parsed;
+    } catch {
+      return json(400, { error: "invalid_json" });
+    }
     const invitation = stringField(body, "invitation", 256);
     const publisherId = canonicalHttpOrigin(stringField(body, "publisherId", 191) ?? "");
     const profileId = stringField(body, "profileId", 128);
@@ -557,6 +569,14 @@ http.route({
     } catch {
       return json(400, { error: "invalid_public_key" });
     }
+    const auth = await authenticatePublisher(ctx, request, rawBody, publisherId);
+    const authorization = auth ? {
+      publisherOwnerUserId: auth.publisherOwnerUserId,
+      keyId: auth.keyId,
+      nonce: auth.nonce,
+      nonceExpiresAt: auth.nonceExpiresAt,
+      receivedAt: auth.receivedAt,
+    } : undefined;
     const result = await ctx.runMutation(internal.pairing.redeemPublisherInvitation, {
       tokenHash: await sha256(invitation),
       publisherId,
@@ -564,6 +584,7 @@ http.route({
       keyId: `key_${randomToken(8)}`,
       label,
       publicKey,
+      authorization,
       now: Date.now(),
     });
     return result.ok ? json(201, result) : json(400, { error: result.reason });
@@ -593,6 +614,7 @@ http.route({
     const result = await ctx.runMutation(internal.pairing.redeemProfileInvitation, {
       tokenHash: await sha256(invitation),
       publisherOwnerUserId: auth.publisherOwnerUserId,
+      publisherKeyId: auth.keyId,
       publisherId,
       profileId,
       now: Date.now(),
@@ -912,6 +934,23 @@ http.route({
       now: Date.now(),
     });
     return mutationResponse(result, 404, "publisher_not_enrolled");
+  }),
+});
+
+http.route({
+  path: "/v1/publisher-keys",
+  method: "DELETE",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await authenticateUser(ctx, request);
+    if (!auth) return json(401, { error: "unauthorized" });
+    const publisherId = canonicalHttpOrigin(new URL(request.url).searchParams.get("publisherId") ?? "");
+    if (!publisherId) return json(400, { error: "publisher_required" });
+    const result = await ctx.runMutation(internal.subscriptions.revokePublisherKeys, {
+      userId: auth.userId,
+      publisherId,
+      now: Date.now(),
+    });
+    return mutationResponse(result, 404, "publisher_not_owned");
   }),
 });
 

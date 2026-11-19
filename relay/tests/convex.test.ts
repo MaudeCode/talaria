@@ -1,5 +1,6 @@
 import workpoolTest from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
+import { readFileSync } from "node:fs";
 import { webcrypto } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -10,6 +11,13 @@ import { defaultNotificationPreferences } from "../convex/lib/model";
 import schema from "../convex/schema";
 import { readState } from "./relayFixture";
 
+const pairingFixture = JSON.parse(readFileSync(new URL("../../contracts/fixtures/relay-pairing.json", import.meta.url), "utf8")) as {
+  createInvitation: { publisherId: string };
+  publisherAlreadyRegistered: { error: string };
+  invalidInvitation: { error: string };
+  publisherNotOwned: { error: string };
+  ownerSubscription: { publisherId: string; label: string; subscribed: boolean; canRevokeKeys: boolean };
+};
 const modules = import.meta.glob("../convex/**/*.ts");
 // Approval alerts name only the App's Localizable keys, never the session.
 const localizedApprovalAlert = {
@@ -123,25 +131,26 @@ describe("Convex relay state", () => {
         expiresAt: now + 60_000,
         createdAt: now,
       });
-      await ctx.db.insert("publisherInvitations", {
-        userId: "user-1",
-        tokenHash: await sha256("publisher-invitation"),
-        expiresAt: now + 60_000,
-        createdAt: now,
-      });
-      await ctx.db.insert("publisherInvitations", {
-        userId: "user-1",
-        tokenHash: await sha256("invalid-origin-invitation"),
-        expiresAt: now + 60_000,
-        createdAt: now,
-      });
     });
+    const issueInvitation = (body: object) => backend.fetch("/v1/pairings/publisher", {
+      method: "POST",
+      headers: { authorization: "Bearer session-token", "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    for (const body of [{}, { publisherId: "https://hermes.example/path" }]) {
+      const rejected = await issueInvitation(body);
+      expect(rejected.status).toBe(400);
+      await expect(rejected.json()).resolves.toEqual({ error: "invalid_pairing" });
+    }
+    const issued = await issueInvitation({ publisherId: "https://Hermes.Example:443" });
+    expect(issued.status).toBe(201);
+    const { invitation } = await issued.json() as { invitation: string };
 
     const pairing = await backend.fetch("/v1/pairings/publisher/redeem", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        invitation: "publisher-invitation",
+        invitation,
         publisherId: "https://Hermes.Example:443",
         profileId: "profile-1",
         label: "Home",
@@ -149,32 +158,23 @@ describe("Convex relay state", () => {
       }),
     });
     expect(pairing.status).toBe(201);
-    await expect(pairing.json()).resolves.toMatchObject({ publisherId: "https://hermes.example" });
+    await expect(pairing.json()).resolves.toMatchObject(pairingFixture.createInvitation);
 
-    const invalidOrigin = await backend.fetch("/v1/pairings/publisher/redeem", {
+    const replacement = await issueInvitation(pairingFixture.createInvitation);
+    const replacementInvitation = (await replacement.json() as { invitation: string }).invitation;
+    const unsigned = await backend.fetch("/v1/pairings/publisher/redeem", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        invitation: "invalid-origin-invitation",
-        publisherId: "https://hermes.example/path",
-        profileId: "profile-1",
-        label: "Home",
-        publicKey: Buffer.alloc(32).toString("base64url"),
-      }),
-    });
-    expect(invalidOrigin.status).toBe(400);
-    const retryAfterInvalidOrigin = await backend.fetch("/v1/pairings/publisher/redeem", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        invitation: "invalid-origin-invitation",
+        invitation: replacementInvitation,
         publisherId: "https://hermes.example",
         profileId: "profile-1",
         label: "Home",
         publicKey: Buffer.alloc(32, 1).toString("base64url"),
       }),
     });
-    expect(retryAfterInvalidOrigin.status).toBe(201);
+    expect(unsigned.status).toBe(400);
+    await expect(unsigned.json()).resolves.toEqual(pairingFixture.publisherAlreadyRegistered);
 
     const deviceBody = {
       label: "iPhone",
@@ -314,9 +314,9 @@ describe("Convex relay state", () => {
       return backend;
     }
     const invite = (backend: Backend, tokenHash: string, at = now) => backend.mutation(internal.pairing.createPublisherInvitation, {
-      userId: "user-1", tokenHash, expiresAt: at + 60_000, now: at,
+      userId: "user-1", publisherId, tokenHash, expiresAt: at + 60_000, now: at,
     });
-    const redeem = (backend: Backend, overrides: Partial<typeof redemption> = {}) =>
+    const redeem = (backend: Backend, overrides: Partial<import("convex/server").FunctionArgs<typeof internal.pairing.redeemPublisherInvitation>> = {}) =>
       backend.mutation(internal.pairing.redeemPublisherInvitation, { ...redemption, ...overrides });
     const publisherKey = (backend: Backend, keyId: string) => backend.query(internal.pairing.getPublisherKey, { publisherId, keyId });
     const publishAs = (backend: Backend, keyId: string, profileId: string, receivedAt: number) =>
@@ -333,6 +333,10 @@ describe("Convex relay state", () => {
       await invite(backend, "replacement-invitation-hash", now + 1);
       const replacement = await redeem(backend, {
         tokenHash: "replacement-invitation-hash", keyId: "key-2", profileId: "different-profile", now: now + 1,
+        authorization: {
+          publisherOwnerUserId: "user-1", keyId: "key-1", nonce: "replacement",
+          nonceExpiresAt: now + 60_000, receivedAt: now + 1,
+        },
       });
       return { backend, replacement };
     }
@@ -352,6 +356,25 @@ describe("Convex relay state", () => {
         ok: true, protocolVersion: 2, userId: "user-1", publisherId, profileId: "profile-1", profileIdPreserved: false, keyId: "key-1",
       });
       await expect(redeem(backend, { keyId: "key-2" })).resolves.toEqual({ ok: false, reason: "expired_invitation" });
+    });
+
+    it("rejects unbound invitations and leaves an origin-bound invitation usable after a mismatch", async () => {
+      const backend = await signedIn();
+      await backend.run(async (ctx) => {
+        await ctx.db.insert("publisherInvitations", {
+          userId: "user-1", tokenHash: "legacy", expiresAt: now + 60_000, createdAt: now,
+        });
+      });
+      await invite(backend, "invitation-hash");
+      const mismatch = { ...redemption, publisherId: "https://other.example" };
+      await expect(redeem(backend, mismatch)).resolves.toEqual({ ok: false, reason: pairingFixture.invalidInvitation.error });
+      await expect(backend.mutation(internal.pairing.redeemProfileInvitation, {
+        tokenHash: mismatch.tokenHash, publisherId: mismatch.publisherId,
+        publisherOwnerUserId: "user-1", profileId: mismatch.profileId, now,
+      })).resolves.toEqual({ ok: false, reason: pairingFixture.invalidInvitation.error });
+      await expect(redeem(backend, { tokenHash: "legacy" })).resolves.toEqual({ ok: false, reason: pairingFixture.invalidInvitation.error });
+      expect(await backend.run((ctx) => ctx.db.query("publisherKeys").collect())).toEqual([]);
+      await expect(redeem(backend)).resolves.toMatchObject({ ok: true, publisherId });
     });
 
     it("keeps the profile and the old key when a replacement key enrols through a new invitation", async () => {
@@ -377,14 +400,54 @@ describe("Convex relay state", () => {
       expect(await publisherKey(backend, "key-2")).not.toHaveProperty("revokedAt");
     });
 
-    it("re-enrols a revoked publisher under a new profile", async () => {
+    it("lets the owner revoke publisher keys after removing their own grant and register again", async () => {
       const { backend } = await replacedKey();
-      await publishAs(backend, "key-2", "profile-1", now + 2);
-      await backend.mutation(internal.subscriptions.revokePublisher, { userId: "user-1", publisherId, now: now + 3 });
+      vi.setSystemTime(now + 3);
+      await backend.mutation(internal.subscriptions.revokePublisher, { userId: "user-1", publisherId, now: now + 2 });
+      const revoke = (token: string) => backend.fetch(`/v1/publisher-keys?publisherId=${encodeURIComponent(publisherId)}`, {
+        method: "DELETE", headers: { authorization: `Bearer ${token}` },
+      });
+      await backend.run(async (ctx) => {
+        const session = await ctx.db.query("userSessions").first();
+        if (!session) throw new Error("owner session missing");
+        await ctx.db.patch(session._id, { tokenHash: await sha256("recovery-session") });
+        await ctx.db.insert("relayUsers", {
+          userId: "viewer", appleSubjectHash: "viewer-apple", createdAt: now, updatedAt: now,
+        });
+        await ctx.db.insert("userSessions", {
+          userId: "viewer", sessionId: "viewer-session", tokenHash: await sha256("viewer-session"),
+          expiresAt: now + 60_000, createdAt: now,
+        });
+        await ctx.db.insert("devices", {
+          userId: "user-1", deviceId: "recovery-device", label: "iPhone",
+          bundleId: "dev.kil.talaria", apsEnvironment: "sandbox",
+          preferences: defaultNotificationPreferences, createdAt: now, updatedAt: now,
+        });
+      });
+      const subscriptions = () => backend.fetch("/v1/devices/recovery-device/publisher-subscriptions", {
+        headers: { authorization: "Bearer recovery-session" },
+      }).then((response) => response.json());
+      expect(await subscriptions()).toEqual({
+        publishers: [pairingFixture.ownerSubscription],
+      });
+      const denied = await revoke("viewer-session");
+      expect(denied.status).toBe(404);
+      await expect(denied.json()).resolves.toEqual(pairingFixture.publisherNotOwned);
+      await expect(publisherKey(backend, "key-1")).resolves.not.toHaveProperty("revokedAt");
+      await invite(backend, "pre-revocation-invitation", now + 2);
+      expect((await revoke("recovery-session")).status).toBe(200);
+      expect(await subscriptions()).toEqual({ publishers: [] });
+      await expect(redeem(backend, { tokenHash: "pre-revocation-invitation", now: now + 3 }))
+        .resolves.toEqual({ ok: false, reason: pairingFixture.invalidInvitation.error });
+      for (const keyId of ["key-1", "key-2"]) {
+        await expect(publisherKey(backend, keyId)).resolves.toMatchObject({ revokedAt: now + 3 });
+      }
       await invite(backend, "recovery-invitation", now + 4);
       await expect(redeem(backend, {
         tokenHash: "recovery-invitation", profileId: "recovered-profile", keyId: "key-3", now: now + 4,
       })).resolves.toMatchObject({ ok: true, profileId: "recovered-profile" });
+      await expect(publishAs(backend, "key-1", "recovered-profile", now + 5))
+        .resolves.toEqual({ status: "unauthorized" });
       await expect(publishAs(backend, "key-3", "recovered-profile", now + 5)).resolves.toEqual({ status: "accepted" });
     });
   });
@@ -403,6 +466,7 @@ describe("Convex relay state", () => {
       }
     });
     await backend.mutation(internal.pairing.createPublisherInvitation, {
+      publisherId: "https://hermes.example",
       userId: "user-a",
       tokenHash: "invite-a",
       expiresAt: now + 60_000,
@@ -419,6 +483,7 @@ describe("Convex relay state", () => {
     })).resolves.toMatchObject({ ok: true, publisherId: "https://hermes.example" });
 
     await backend.mutation(internal.pairing.createPublisherInvitation, {
+      publisherId: "https://hermes.example",
       userId: "user-b",
       tokenHash: "invite-b",
       expiresAt: now + 60_000,
@@ -512,6 +577,7 @@ describe("Convex relay state", () => {
         receivedAt: now,
       });
       await ctx.db.insert("publisherInvitations", {
+        publisherId: "https://hermes.example",
         userId: "user-1",
         tokenHash: "fresh-invitation",
         expiresAt: now + 60_000,
@@ -552,6 +618,7 @@ describe("Convex relay state", () => {
       });
       await backend.mutation(internal.pairing.createPublisherInvitation, {
         userId,
+        publisherId: "https://hermes.example",
         tokenHash: `invite-${userId}`,
         expiresAt: now + 60_000,
         now,
@@ -627,6 +694,7 @@ describe("Convex relay state", () => {
         }
       });
       await backend.mutation(internal.pairing.createPublisherInvitation, {
+        publisherId,
         userId: "viewer",
         tokenHash: "viewer-invite",
         expiresAt: now + 60_000,
@@ -710,6 +778,7 @@ describe("Convex relay state", () => {
         createdAt: now,
       });
       await ctx.db.insert("publisherInvitations", {
+        publisherId: "https://hermes.example",
         userId: "user-b",
         tokenHash: await sha256("invite-b"),
         expiresAt: now + 60_000,
@@ -790,6 +859,40 @@ describe("Convex relay state", () => {
       userId: "user-a",
       now,
     })).resolves.toEqual([]);
+
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("relayUsers", {
+        userId: "user-a", appleSubjectHash: "apple-a", createdAt: now, updatedAt: now,
+      });
+      await ctx.db.insert("publisherGrants", {
+        userId: "user-a", publisherOwnerUserId: "user-a", publisherId: "https://hermes.example",
+        profileId: "owner-profile", createdAt: now, updatedAt: now,
+      });
+    });
+    await backend.mutation(internal.pairing.createPublisherInvitation, {
+      userId: "user-a",
+      publisherId: "https://hermes.example",
+      tokenHash: await sha256("owner-replacement"),
+      expiresAt: now + 60_000,
+      now,
+    });
+    const replacementPath = "/v1/pairings/publisher/redeem";
+    const replacementBody = JSON.stringify({
+      invitation: "owner-replacement",
+      publisherId: "https://hermes.example",
+      profileId: "replacement-profile",
+      label: "Home",
+      publicKey: Buffer.alloc(32, 1).toString("base64url"),
+    });
+    const replacement = await backend.fetch(replacementPath, {
+      method: "POST",
+      headers: await signedHeaders("POST", replacementPath, replacementBody, "replacement-nonce"),
+      body: replacementBody,
+    });
+    expect(replacement.status).toBe(201);
+    await expect(replacement.json()).resolves.toMatchObject({
+      publisherId: "https://hermes.example", profileId: "owner-profile", profileIdPreserved: true,
+    });
   });
 
   it("renews a non-terminal session's expiry on an equal-revision heartbeat", async () => {
@@ -1071,6 +1174,7 @@ describe("Convex relay state", () => {
 
     await backend.mutation(internal.pairing.createPublisherInvitation, {
       userId: "user-1",
+      publisherId: "https://hermes.example",
       tokenHash: "reenroll-invitation",
       expiresAt: now + 60_000,
       now: now + 2,
