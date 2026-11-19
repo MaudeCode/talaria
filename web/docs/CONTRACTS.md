@@ -681,6 +681,12 @@ root on each request. All workspace file operations exclude Web state.
 If the boot workspace is inside Web state, configure a writable workspace
 outside it via `TALARIA_WEB_DEFAULT_WORKSPACE`.
 
+`/api/media` gives a non-owner login its profile's home, without other
+profiles or Web state, and the attachment folder of the session it names, in
+place of every Hermes home; the temp roots, active workspace and
+`MEDIA_ALLOWED_ROOTS` stay. A public share embeds images only from its own
+session's attachment folder and workspace (TAL-2205).
+
 A project in `projects.json` can carry `workspaces`, `default_workspace`, `model`
 and `model_provider` (TAL-1032). The keys are additive, so Stable reads the file;
 a row from upstream with only a single `workspace` reads as that one bound default.

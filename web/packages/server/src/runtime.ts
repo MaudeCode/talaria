@@ -69,7 +69,7 @@ import { recoveryStampingSince } from './sessions/recovery.js'
 import { ProjectStore } from './projects.js'
 import { WorkspaceRegistry } from './workspace/workspaces.js'
 import { resolvePathLikePython } from './workspace/paths.js'
-import type { MediaAccessDeps, MediaPolicyDeps } from './workspace/media.js'
+import type { MediaAccessBase, MediaCaller, MediaPolicyDeps } from './workspace/media.js'
 import { accessSync, constants as fsConstants, existsSync, statSync } from 'node:fs'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { GitRunner, GitWorkspaceError, pathsOverlap } from './workspace/git.js'
@@ -366,14 +366,21 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   }
   const legacySnapshotDir = (env.TALARIA_WEB_MEDIA_SNAPSHOT_DIR ?? '').trim().replace(/^~(?=$|\/)/, home) || undefined
   const mediaPolicy: MediaPolicyDeps = { home, hermesHome: config.hermesHome, stateDir: config.stateDir, legacySnapshotDir, activeWorkspace: mediaActiveWorkspace }
-  const mediaAccess: MediaAccessDeps = { home: config.homeDir, hermesHome: config.hermesHome, extraRoots: env.MEDIA_ALLOWED_ROOTS ?? '', activeWorkspace: mediaActiveWorkspace, policy: mediaPolicy }
+  // TAL-2205: a caller without server-owner authority reaches its profile's home and its own session's attachments.
+  const mediaCaller = (profile: string | null, sessionId: string | null): MediaCaller => ({ profileHome: profileHome(profile ?? ''), attachmentRoot: blobs.attachmentRoot(), sessionDir: sessionId ? uploads.sessionDir(sessionId) : null })
+  const mediaAccess: MediaAccessBase = { home: config.homeDir, hermesHome: config.hermesHome, extraRoots: env.MEDIA_ALLOWED_ROOTS ?? '', activeWorkspace: mediaActiveWorkspace, policy: mediaPolicy, callerScope: mediaCaller }
+  /** `requestCanManageServer` for code that holds the request scope rather than its context. */
+  const requestServerOwner = async (): Promise<boolean> => {
+    const request = requestScope.getStore()
+    return request?.personAccess?.serverOwner ?? await sessionCanManageServer({ deps }, request?.trusted?.reconciled ?? null)
+  }
   // TAL-259: record when this server started stamping deliberate shrinks; older backups go to manual review.
   try { await recoveryStampingSince(storage.documents) } catch (error) { log(`[webui] WARNING: could not record recovery_stamping_since: ${(error as Error).message}`) }
   const sessions: SessionService = new SessionService({
     recoveryStampingSince: async () => await recoveryStampingSince(storage.documents),
     showReasoning: async (profile) => { try { return showReasoning(await agentConfig.read(profileHome(profile ?? activeProfile()))) } catch { return false } },
     sidecar: () => sidecar,
-    media: { access: mediaAccess, localIo: (profile) => workspaces.profileSupportsLocalIo(profile) },
+    media: { access: mediaAccess, localIo: (profile) => workspaces.profileSupportsLocalIo(profile), serverOwner: requestServerOwner },
     profileActivity,
     profileDeleting: (profile) => profiles.isDeleting(profile),
     sessionActivity: async (sid, profile, opts) => background.activityPhase(sid, profile, opts),

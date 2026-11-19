@@ -119,7 +119,7 @@ describe('/api/media realpath cost (TAL-1696)', () => {
     expect(deny(join(redirected, 'a.png'))).toBeNull()
   })
 
-  const access = (): MediaAccessDeps => ({ home, hermesHome, extraRoots: '', activeWorkspace: () => workspace, policy })
+  const access = (): MediaAccessDeps => ({ home, hermesHome, extraRoots: '', activeWorkspace: () => workspace, policy, caller: null })
 
   const assistantSession = (refs: string[]): Session => ({
     session_id: 'session',
@@ -135,7 +135,7 @@ describe('/api/media realpath cost (TAL-1696)', () => {
     const refs = Array.from({ length: 50 }, (_, i) => join(dir(), `image-${String(i)}.png`))
     for (const ref of refs) writeFileSync(ref, 'png-bytes')
     const session = assistantSession(refs)
-    const service = new SessionService({ store: {}, media: { access: access(), localIo: () => true } } as unknown as SessionServiceDeps)
+    const service = new SessionService({ store: {}, media: { access: access(), localIo: () => true, serverOwner: () => Promise.resolve(true) } } as unknown as SessionServiceDeps)
     const before = calls.realpath
     const project = await service.mediaProjector(session)
     const projection = project(refs.map((ref) => `MEDIA:${ref}`).join('\n\n'))

@@ -575,6 +575,18 @@ export function mediaDenyReasonResolved(target: string, deps: MediaPolicyDeps<st
   return mediaPolicyDecider(deps)(target, realOrResolved(target))
 }
 
+/**
+ * TAL-2205: what a caller without server-owner authority reaches in place of every Hermes home: its profile's home,
+ * less the other profiles and the Web state in it, and its own session's attachment folder.
+ */
+export interface MediaCaller {
+  profileHome: string
+  /** Every session's attachment folders; only `sessionDir` among them is reachable. */
+  attachmentRoot: string
+  /** The visible session the request named, else null. */
+  sessionDir: string | null
+}
+
 /** What `/api/media` authorizes against, besides the session: the homes, the safe temp roots, the active workspace and `MEDIA_ALLOWED_ROOTS`. */
 export interface MediaAccessDeps<T = string | null | Promise<string | null>> {
   home: string
@@ -583,6 +595,16 @@ export interface MediaAccessDeps<T = string | null | Promise<string | null>> {
   extraRoots: string
   activeWorkspace: () => T
   policy: MediaPolicyDeps<T>
+  /** The request's reach without server-owner authority; null for a server owner, who reaches every Hermes home. */
+  caller: MediaCaller | null
+}
+
+/** The server's media access before a request supplies its authority; `callerScope` builds a restricted caller's reach. */
+export type MediaAccessBase = Omit<MediaAccessDeps, 'caller'> & { callerScope: (profile: string | null, sessionId: string | null) => MediaCaller }
+
+/** TAL-2205: the one place a request's authority becomes its media reach. */
+export function mediaAccessFor(base: MediaAccessBase, serverOwner: boolean, profile: string | null, sessionId: string | null): MediaAccessDeps {
+  return { ...base, caller: serverOwner ? null : base.callerScope(profile, sessionId) }
 }
 
 /** The file a `/api/media?path=` value names. Python `Path(raw).resolve()`: no `~` expansion and no NUL bytes; throws on an invalid path. */
@@ -606,7 +628,8 @@ export function mediaRefTarget(ref: string): string {
  */
 function mediaRootDecider(deps: MediaAccessDeps<string | null>): (target: string, real: string) => string | null | undefined {
   const baseHermes = join(deps.home, '.hermes')
-  const allowedRoots: string[] = [deps.hermesHome, baseHermes]
+  const caller = deps.caller
+  const allowedRoots: string[] = caller ? [caller.profileHome] : [deps.hermesHome, baseHermes]
   const legacyTmp = safeLegacyTmpRoot([deps.home, deps.hermesHome, baseHermes])
   if (legacyTmp) allowedRoots.push(legacyTmp)
   const platformTemp = safePlatformTempRoot([deps.home, deps.hermesHome, baseHermes])
@@ -621,14 +644,20 @@ function mediaRootDecider(deps: MediaAccessDeps<string | null>): (target: string
       if (statSync(rp).isDirectory()) allowedRoots.push(rp)
     } catch { /* skip */ }
   }
-  const resolvedRoots: string[] = []
+  // TAL-2205: a restricted caller's session folder comes first, so it anchors before the attachment fence below. A
+  // remote store caches the folder only when it downloads a file into it, so it anchors before it exists.
+  const resolvedRoots: string[] = caller?.sessionDir ? [realOrResolved(caller.sessionDir)] : []
   for (const root of allowedRoots) {
     try { resolvedRoots.push(realpathSync(root)) } catch { /* a missing root authorizes nothing */ }
   }
+  // Inside a restricted caller's profile home (the root profile's home holds the others), every other profile and the
+  // Web state, which keeps every session's attachments, stay out of reach.
+  const profileHome = caller ? realOrResolved(caller.profileHome) : null
+  const fenced = profileHome && caller ? [join(deps.hermesHome, 'profiles'), join(baseHermes, 'profiles'), deps.policy.stateDir, caller.attachmentRoot].map(realOrResolved).filter((dir) => dir !== profileHome && isWithin(dir, profileHome)) : []
   const denyReason = mediaPolicyDecider(deps.policy)
   return (target, real) => {
     if (denyReason(target, real)) return null
-    for (const root of resolvedRoots) if (isWithin(target, root)) return root
+    for (const root of resolvedRoots) if (isWithin(target, root) && !(root === profileHome && fenced.some((dir) => isWithin(target, dir)))) return root
     return SESSION_MEDIA_TOKEN_TYPES.has(mimeFor(target)) ? undefined : null
   }
 }

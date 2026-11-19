@@ -8,13 +8,14 @@ import { str } from '../util.js'
  */
 import { closeSync, fstatSync, statSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
-import { basename, extname, isAbsolute, resolve } from 'node:path'
+import { basename, extname, isAbsolute, join, resolve } from 'node:path'
 import type { DocumentBackend, SessionBackend } from './storage/backend.js'
 import { readDocument } from './storage/document.js'
 import { redactSensitive } from '../redact.js'
 import { expandHome, isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { openAnchoredFd, readFdUpTo } from '../workspace/fs.js'
 import { isSafeSessionId, type Session } from './session.js'
+import { attachmentSessionName } from './storage/blobs.js'
 import { normalizeAssistantDisplay } from './merge.js'
 import { linkRemoteImages } from '../workspace/media-refs.js'
 
@@ -228,10 +229,18 @@ export function sanitizeShareMessage(message: unknown, redactPaths: string[], al
 
 export interface ShareSnapshot { title: string; messages: Record<string, unknown>[]; message_count: number }
 
-/** Resolve the session workspace, but keep the attachment root trusted at startup unchanged. */
+/**
+ * Resolve the session workspace, but keep the attachment root trusted at startup unchanged. TAL-2205: of the
+ * attachments, only the shared session's own folder (`UploadInbox.sessionDir`'s name under that root).
+ */
 export function shareAllowedRoots(session: Session, attachmentRoot: string, home: string): string[] {
   const workspace = session.workspace.trim()
-  return [...(workspace ? [resolvePathLikePython(workspace, home)] : []), attachmentRoot]
+  return [...(workspace ? [resolvePathLikePython(workspace, home)] : []), shareAttachmentDir(session, attachmentRoot)]
+}
+
+/** The shared session's own attachment folder under the trusted attachment root. */
+export function shareAttachmentDir(session: Session, attachmentRoot: string): string {
+  return join(attachmentRoot, attachmentSessionName(session.session_id))
 }
 
 export function buildShareSnapshot(session: Session, messages: unknown[], opts: { hermesHome: string; attachmentRoot: string; home: string }): ShareSnapshot {

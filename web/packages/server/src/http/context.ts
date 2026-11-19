@@ -30,7 +30,7 @@ import type { GitRunner } from '../workspace/git.js'
 import type { RollbackStore } from '../workspace/rollback.js'
 import type { UploadInbox } from '../workspace/upload.js'
 import type { EscapeGrants } from '../workspace/escape.js'
-import type { MediaAccessDeps } from '../workspace/media.js'
+import type { MediaAccessBase } from '../workspace/media.js'
 import type { WorktreeLocks } from '../workspace/worktrees.js'
 import type { Session } from '../sessions/session.js'
 import type { SidecarLike } from '../sidecar/client.js'
@@ -162,7 +162,7 @@ export interface AppDeps {
   /** Read-only grants for workspace symlinks that point outside the workspace (TAL-263). */
   escapeGrants: EscapeGrants
   /** The `/api/media` allow-list, shared with the transcript media projection (TAL-186). */
-  mediaAccess: MediaAccessDeps
+  mediaAccess: MediaAccessBase
   worktreeLocks: WorktreeLocks
   /** Commit-message generation (sidecar `aux.complete`); rejects with `GitWorkspaceError` when no model is available. */
   commitMessage: (session: Session, systemPrompt: string, userPrompt: string) => Promise<string>

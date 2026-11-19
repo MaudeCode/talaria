@@ -11,6 +11,7 @@ import { OwnerExportFormatSchema } from '@maudecode/talaria-web-contracts'
 import { basename, join, relative } from 'node:path'
 import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
+import { activeProfileName, requestCanManageServer } from '../auth/gate.js'
 import { assertWorkspaceFileAllowed, escapeRequest, fileError, fileOpsSession } from './sessions-router.js'
 import { HttpFailure } from '../sessions/service.js'
 import { materializeAttachment } from '../sessions/storage/blobs.js'
@@ -19,7 +20,7 @@ import { FileExistsError, makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd,
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { isLoopback } from '../http/origin.js'
 import { truthy } from '../config.js'
-import { AUDIO_VIDEO_PDF_TYPES, contentDispositionValue, INLINE_IMAGE_TYPES, mediaAnchorRoot, mediaTarget, mimeFor, previewHeaders, serveFileBytes, serveInlineHtmlPreview } from '../workspace/media.js'
+import { AUDIO_VIDEO_PDF_TYPES, contentDispositionValue, INLINE_IMAGE_TYPES, mediaAccessFor, mediaAnchorRoot, mediaTarget, mimeFor, previewHeaders, serveFileBytes, serveInlineHtmlPreview } from '../workspace/media.js'
 import { PREVIEW_CSP, PREVIEW_PREFIX, previewGrantRoot, previewTarget } from '../workspace/preview.js'
 import { SHOW_FRAME_CSP, SHOW_FRAME_PREFIX } from '../sessions/show.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
@@ -253,7 +254,9 @@ async function handleMedia(ctx: RequestContext): Promise<void> {
     const session = await readSession()
     return deps.workspaces.profileSupportsLocalIo(session.profile) ? session : null
   }
-  const anchorRoot = (await mediaAnchorRoot(target, sessionId ? fullSession : null, deps.mediaAccess))
+  // TAL-2205: without server-owner authority the request reaches its own profile and session, not every Hermes home.
+  const access = mediaAccessFor(deps.mediaAccess, await requestCanManageServer(ctx), activeProfileName(ctx), sessionId || null)
+  const anchorRoot = (await mediaAnchorRoot(target, sessionId ? fullSession : null, access))
   if (!anchorRoot) throw new HttpError(403, 'Path not in allowed location')
   // An authorized attachment path whose bytes live in a remote store is downloaded before the anchored open.
   try { await materializeAttachment(deps.blobs, target) } catch (error) { deps.log(`[webui] could not load attachment ${basename(target)}: ${(error as Error).message}`) }

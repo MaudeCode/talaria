@@ -3,7 +3,7 @@
  * identities against one disposable server; each sees only their own sessions, an unowned (legacy) session reaches
  * only an owner, and nothing a client sends can name a different person.
  */
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -30,7 +30,11 @@ async function boot(isolation: boolean, sidecar?: FakeSidecar): Promise<TestServ
 
 /** A validated OIDC login for `subject`, as the callback records it; `owner` matched the owner policy. */
 function signIn(server: TestServer, subject: string, owner = false): Client {
-  const cookie = server.deps.auth.createSession({ authType: 'oidc', username: `${subject}@example.invalid`, oidcBinding: { issuer: ISSUER, subject, ...(owner ? { owner: true } : {}) } })
+  return clientFor(server, server.deps.auth.createSession({ authType: 'oidc', username: `${subject}@example.invalid`, oidcBinding: { issuer: ISSUER, subject, ...(owner ? { owner: true } : {}) } }))
+}
+
+/** The request headers of an existing login's cookie. */
+function clientFor(server: TestServer, cookie: string): Client {
   return { cookie, headers: { cookie: `${server.deps.auth.cookieName()}=${cookie}`, origin: server.base, 'X-Hermes-CSRF-Token': server.deps.auth.csrfTokenForSession(cookie)!, 'content-type': 'application/json' } }
 }
 
@@ -138,6 +142,28 @@ describe('workspace authority from the request', () => {
     }
   })
 
+})
+
+describe('media reach from the request (TAL-2205)', () => {
+  it.each([['a non-owner person', true], ['a profile-bound login', false]] as const)('serves %s its own session\'s attachments only', async (_name, isolation) => {
+    const server = await boot(isolation)
+    const caller = isolation ? signIn(server, 'alice') : clientFor(server, server.deps.auth.createSession({ authType: 'password', username: 'scoped-user', boundProfile: 'default' }))
+    const owner = signIn(server, 'olive', true)
+    const own = await chat(server, caller)
+    const other = await chat(server, owner)
+    const file = (path: string): string => {
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, 'synthetic-bytes')
+      return path
+    }
+    const mine = file(join(server.deps.uploads.sessionDir(own), 'mine.png'))
+    const theirs = file(join(server.deps.uploads.sessionDir(other), 'theirs.png'))
+    const profile = file(join(server.deps.config.hermesHome, 'profiles', 'other', 'profile.png'))
+    const media = async (client: Client, path: string, sid: string): Promise<number> => (await server.get(`/api/media?${new URLSearchParams({ path, session_id: sid }).toString()}`, { headers: client.headers })).status
+    expect(await media(caller, mine, own)).toBe(200)
+    for (const path of [theirs, profile]) expect(await media(caller, path, own), path).toBe(403)
+    for (const path of [mine, theirs, profile]) expect(await media(owner, path, other), path).toBe(200)
+  })
 })
 
 describe('person isolation on', () => {

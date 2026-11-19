@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { read } from 'node:fs'
 import type { RequestContext } from '../http/context.js'
 import type { Session } from '../sessions/session.js'
-import { grantLiveMedia, mediaAnchorRoot, serveFileBytes, type MediaAccessDeps, type ServeFileOptions } from './media.js'
+import { grantLiveMedia, mediaAnchorRoot, serveFileBytes, type MediaAccessDeps, type MediaCaller, type ServeFileOptions } from './media.js'
 
 const io = vi.hoisted(() => ({ bytes: 0, syncBytes: 0 }))
 
@@ -209,6 +209,7 @@ describe('mediaAnchorRoot session MEDIA scan (TAL-573)', () => {
       extraRoots: '',
       activeWorkspace: () => workspace,
       policy: { home, hermesHome, stateDir: join(hermesHome, 'webui_state'), activeWorkspace: () => workspace },
+      caller: null,
     }
   })
   afterEach(() => { rmSync(base, { recursive: true, force: true }) })
@@ -327,6 +328,7 @@ describe('mediaAnchorRoot Agent credential stores (TAL-1809)', () => {
       extraRoots: '',
       activeWorkspace: () => workspace,
       policy: { home, hermesHome, stateDir: join(hermesHome, 'webui_state'), activeWorkspace: () => workspace },
+      caller: null,
     }
   })
   afterEach(() => { rmSync(base, { recursive: true, force: true }) })
@@ -355,5 +357,66 @@ describe('mediaAnchorRoot Agent credential stores (TAL-1809)', () => {
     ])('serves %s', async (relative) => {
       expect(await authorize(homePath, relative)).toBe(hermesHome)
     })
+  })
+})
+
+describe('mediaAnchorRoot caller reach (TAL-2205)', () => {
+  let base: string
+  let deps: MediaAccessDeps
+  /** Each fixture file by name: the root profile's home, two named profiles, two sessions' attachments, the active workspace. */
+  const files: Record<string, string> = {}
+  beforeEach(() => {
+    base = realpathSync(mkdtempSync(join(tmpdir(), 'tal-2205-')))
+    const home = join(base, 'home')
+    const hermesHome = join(home, '.hermes')
+    const stateDir = join(hermesHome, 'webui')
+    const workspace = join(base, 'ws')
+    Object.assign(files, {
+      root: join(hermesHome, 'root.png'),
+      alice: join(hermesHome, 'profiles', 'alice', 'alice.png'),
+      bob: join(hermesHome, 'profiles', 'bob', 'bob.png'),
+      sessionA: join(stateDir, 'attachments', 'session-a', 'a.png'),
+      sessionB: join(stateDir, 'attachments', 'session-b', 'b.png'),
+      workspace: join(workspace, 'w.png'),
+    })
+    for (const file of Object.values(files)) {
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, 'png-bytes')
+    }
+    deps = {
+      home,
+      hermesHome,
+      extraRoots: '',
+      activeWorkspace: () => workspace,
+      policy: { home, hermesHome, stateDir, activeWorkspace: () => workspace },
+      caller: null,
+    }
+  })
+  afterEach(() => { rmSync(base, { recursive: true, force: true }) })
+
+  /** A restricted caller of `profileHome` (relative to the Agent home) in `session`; null for a server owner. */
+  const caller = (profileHome: string | null, session: string | null): MediaCaller | null => {
+    if (profileHome === null) return null
+    const attachmentRoot = join(deps.policy.stateDir, 'attachments')
+    return { profileHome: join(deps.hermesHome, profileHome), attachmentRoot, sessionDir: session ? join(attachmentRoot, session) : null }
+  }
+
+  it.each([
+    ['a server owner', null, null, ['root', 'alice', 'bob', 'sessionA', 'sessionB', 'workspace']],
+    ['a caller bound to the root profile in session A', '', 'session-a', ['root', 'sessionA', 'workspace']],
+    ['a caller bound to a named profile in session A', join('profiles', 'alice'), 'session-a', ['alice', 'sessionA', 'workspace']],
+    ['a caller in a named profile without a session', join('profiles', 'alice'), null, ['alice', 'workspace']],
+  ])('serves %s only its reach', async (_name, profileHome, session, reached) => {
+    deps.caller = caller(profileHome, session)
+    const served: string[] = []
+    for (const [name, file] of Object.entries(files)) if (await mediaAnchorRoot(file, null, deps)) served.push(name)
+    expect(served).toEqual(reached)
+  })
+
+  it('anchors the caller\'s own session folder before a remote store has cached it', async () => {
+    deps.caller = caller('', 'session-c')
+    const uncached = join(deps.policy.stateDir, 'attachments', 'session-c', 'c.png')
+    expect(await mediaAnchorRoot(uncached, null, deps)).toBe(dirname(uncached))
+    expect(await mediaAnchorRoot(join(deps.policy.stateDir, 'attachments', 'session-d', 'd.png'), null, deps)).toBeNull()
   })
 })
