@@ -701,6 +701,54 @@ final class TranscriptHostedTests: XCTestCase {
         XCTAssertTrue(steeredDone, "The steered turn still offers earlier steps once none remain")
     }
 
+    /// TAL-1975: the control says what its read is doing, as Web's does: a disabled "Loading…" while the page is held,
+    /// "Retry" once it failed, and gone once a retry loads the rows. Each title is the control's VoiceOver label.
+    func testEarlierStepsShowLoadingThenRetryAndLoadOnRetry() async throws {
+        let fixture = try FixtureApp(["--ui-test-hold-anchor-scene"], for: self)
+        let detail = try Self.earlierStepsDetail()
+        let page = try JSONSerialization.data(withJSONObject: ["start": 0, "rows": [
+            ["row_id": "earlier:prose", "order_index": 0, "role": "prose", "text": "Earlier progress"],
+            ["row_id": "earlier:more", "order_index": 1, "role": "prose", "text": "More earlier progress"],
+        ]])
+        UITestFixtureURLProtocol.sessionDetail.withLock { $0 = detail }
+        UITestFixtureURLProtocol.anchorScenePage.withLock { $0 = page }
+        UITestFixtureURLProtocol.anchorScenePageStatus.withLock { $0 = 500 }
+        let window = try hostWindow(fixture.chat(try await fixture.session()), size: HostedSize.phone)
+        defer { window.isHidden = true }
+        func control(_ title: String) async throws -> NSObject {
+            try await requireElement(in: window, "The earlier-steps control never reads \(title)") {
+                HostedAccessibility.identifier(of: $0) == "transcript-earlier-steps" && $0.accessibilityLabel == title
+            }
+        }
+
+        HostedAccessibility.activate(try await control("Earlier steps (2)"))
+        let loading = try await control("Loading…")
+        XCTAssertTrue(loading.accessibilityTraits.contains(.notEnabled), "The loading control still takes taps")
+        let held = await awaitCondition { UITestFixtureHold.shared.pendingCount == 1 }
+        XCTAssertTrue(held, "The page read was not held")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "earlier-steps-loading")
+        fixture.releaseHeldLoads()
+
+        let retry = try await control("Retry")
+        XCTAssertFalse(retry.accessibilityTraits.contains(.notEnabled), "Retry does not take taps")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "earlier-steps-retry")
+
+        UITestFixtureURLProtocol.anchorScenePageStatus.withLock { $0 = 200 }
+        HostedAccessibility.activate(retry)
+        _ = try await control("Loading…")
+        let heldAgain = await awaitCondition { UITestFixtureHold.shared.pendingCount == 1 }
+        XCTAssertTrue(heldAgain, "Retry did not read the page again")
+        fixture.releaseHeldLoads()
+        let loaded = await awaitCondition { !HostedAccessibility.elements(in: window, labelContaining: "Earlier progress").isEmpty }
+        XCTAssertTrue(loaded, "Retry did not load the earlier rows")
+        let remaining = HostedAccessibility.elements(in: window).filter { HostedAccessibility.identifier(of: $0) == "transcript-earlier-steps" }
+        XCTAssertEqual(remaining.map(\.accessibilityLabel), ["Earlier steps (2)"], "The other turn no longer offers its untouched steps")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "earlier-steps-loaded")
+    }
+
     /// Two settled tail previews that omit their first two rows: a plain turn with a group of calls, then a steered turn.
     private nonisolated static func earlierStepsDetail() throws -> Data {
         func tool(_ id: String, name: String, kind: String, group: String, order: Int) -> [String: Any] {
@@ -866,7 +914,7 @@ private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageC
         displayedTranscriptMessages: ChatViewModel.transcriptMessages(from: messages, messageOffset: messageOffset),
         branchedFrom: nil, reasoningGroupsForAnchor: { _ in [] },
         completedToolCallGroupsForAnchor: { _ in [] }, archivedActivityRowsForAnchor: { _ in [] },
-        earlierSceneRowsForTurn: { _ in [] }, onLoadEarlierSceneRows: { _ in },
+        earlierSceneRowsForTurn: { _ in [] }, earlierSceneRowsLoadStateForTurn: { _ in .idle }, onLoadEarlierSceneRows: { _ in },
         liveReasoningText: "", liveActivityRows: [], reasoningAnchorMessageID: nil,
         liveToolCalls: [], toolCallAnchorMessageID: nil, streamingAssistantMessageID: nil,
         liveTokensPerSecond: nil, showsRunStateCheck: false, clarificationPrompt: nil,

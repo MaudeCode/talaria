@@ -12,6 +12,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     let showsThinkingAndToolCards: Bool
     let archivedActivityRows: [AssistantActivityRow]
     let earlierSceneRows: [AssistantActivitySceneRow]
+    let earlierSceneRowsLoadState: ChatViewModel.EarlierSceneRowsLoadState
     let liveActivityRows: [AssistantActivityRow]
     let streamingAssistantMessageID: String?
     let liveTokensPerSecond: Double?
@@ -55,6 +56,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             lhs.showsThinkingAndToolCards == rhs.showsThinkingAndToolCards &&
             lhs.archivedActivityRows == rhs.archivedActivityRows &&
             lhs.earlierSceneRows == rhs.earlierSceneRows &&
+            lhs.earlierSceneRowsLoadState == rhs.earlierSceneRowsLoadState &&
             lhs.liveActivityRows == rhs.liveActivityRows &&
             lhs.streamingAssistantMessageID == rhs.streamingAssistantMessageID &&
             lhs.liveTokensPerSecond == rhs.liveTokensPerSecond &&
@@ -107,7 +109,12 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     private var earlierStepsButton: some View {
         let remaining = (transcriptMessage.message.activityScene?.activityRowsOffset ?? 0) - earlierSceneRows.count
         if remaining > 0 {
-            let title = String(localized: "Earlier steps (\(remaining))")
+            // Web's `ActivityHistory` wording: "Loading…" while the page is read, "Retry" once it failed. TAL-1975.
+            let title = switch earlierSceneRowsLoadState {
+            case .idle: String(localized: "Earlier steps (\(remaining))")
+            case .loading: String(localized: "Loading…")
+            case .failed: String(localized: "Retry")
+            }
             Button(action: onLoadEarlierSceneRows) {
                 HStack(spacing: 8) {
                     ToolActivityIcon(name: "arrow.up")
@@ -124,6 +131,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(earlierSceneRowsLoadState == .loading)
             .accessibilityLabel(title)
             .accessibilityIdentifier("transcript-earlier-steps")
         }

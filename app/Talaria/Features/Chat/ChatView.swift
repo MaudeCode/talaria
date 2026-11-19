@@ -2035,6 +2035,9 @@ struct ChatView: View {
                 earlierSceneRowsForTurn: { transcriptMessage in
                     viewModel.earlierSceneRows(for: transcriptMessage)
                 },
+                earlierSceneRowsLoadStateForTurn: { transcriptMessage in
+                    viewModel.earlierSceneRowsLoadState(for: transcriptMessage)
+                },
                 onLoadEarlierSceneRows: { transcriptMessage in
                     Task { await viewModel.loadEarlierSceneRows(for: transcriptMessage) }
                 },

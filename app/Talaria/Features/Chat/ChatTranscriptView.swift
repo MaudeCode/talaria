@@ -47,6 +47,7 @@ struct ChatTranscriptView: View {
     let completedToolCallGroupsForAnchor: (String?) -> [ToolCallGroup]
     let archivedActivityRowsForAnchor: (String?) -> [AssistantActivityRow]
     let earlierSceneRowsForTurn: (TranscriptMessage) -> [AssistantActivitySceneRow]
+    let earlierSceneRowsLoadStateForTurn: (TranscriptMessage) -> ChatViewModel.EarlierSceneRowsLoadState
     let onLoadEarlierSceneRows: (TranscriptMessage) -> Void
     let liveReasoningText: String
     let liveActivityRows: [AssistantActivityRow]
@@ -570,6 +571,7 @@ struct ChatTranscriptView: View {
                 showsThinkingAndToolCards: showsThinkingAndToolCards,
                 archivedActivityRows: activityAnchorIDs.flatMap(archivedActivityRowsForAnchor),
                 earlierSceneRows: earlierSceneRowsForTurn(transcriptMessage),
+                earlierSceneRowsLoadState: earlierSceneRowsLoadStateForTurn(transcriptMessage),
                 liveActivityRows: (isReasoningAnchor || isToolCallAnchor || isStreamingRow) ? liveActivityRows : [],
                 streamingAssistantMessageID: isStreamingRow ? streamingAssistantMessageID : nil,
                 liveTokensPerSecond: isStreamingRow ? liveTokensPerSecond : nil,

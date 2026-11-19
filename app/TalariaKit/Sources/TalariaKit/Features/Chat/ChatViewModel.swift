@@ -208,7 +208,8 @@ public final class ChatViewModel {
     private(set) var archivedAssistantActivity: [String: [AssistantActivityRow]] = [:]
     /// Earlier scene rows paged from the server for long completed turns, keyed by the turn's anchor.
     public private(set) var earlierSceneRows: [String: [AssistantActivitySceneRow]] = [:]
-    private var loadingEarlierSceneRows = Set<String>()
+    /// A turn's earlier-rows read the reader started: `.loading` while it pages, `.failed` until the next tap. TAL-1975.
+    private var earlierSceneRowsLoadStates: [String: EarlierSceneRowsLoadState] = [:]
     /// Memoized reasoning cards (TAL-855): derived when the messages, their offset or the archived groups change,
     /// and assigned only when the cards differ, so stream ticks and keystrokes leave them alone.
     public private(set) var displayedReasoningGroups: [ReasoningGroup] = []
@@ -230,6 +231,15 @@ public final class ChatViewModel {
         earlierSceneRows[Self.earlierSceneRowsKey(transcriptMessage)] ?? []
     }
 
+    /// The earlier-steps control's state. `KanbanCardDetailLoadState` carries Kanban-only cases, so this stays its own.
+    public enum EarlierSceneRowsLoadState: Equatable, Sendable {
+        case idle, loading, failed
+    }
+
+    public func earlierSceneRowsLoadState(for transcriptMessage: TranscriptMessage) -> EarlierSceneRowsLoadState {
+        earlierSceneRowsLoadStates[Self.earlierSceneRowsKey(transcriptMessage)] ?? .idle
+    }
+
     /// Paged rows belong to one server turn: a regenerated reply at the same position is a new turn id, so it never
     /// picks up the previous answer's rows. Only an unstamped (older-server) row falls back to its anchor.
     private static func earlierSceneRowsKey(_ transcriptMessage: TranscriptMessage) -> String {
@@ -243,8 +253,8 @@ public final class ChatViewModel {
               scene.activityRowsOffset > 0
         else { return }
         let key = Self.earlierSceneRowsKey(transcriptMessage)
-        guard earlierSceneRows[key] == nil, loadingEarlierSceneRows.insert(key).inserted else { return }
-        defer { loadingEarlierSceneRows.remove(key) }
+        guard earlierSceneRows[key] == nil, earlierSceneRowsLoadStates[key] != .loading else { return }
+        earlierSceneRowsLoadStates[key] = .loading
         let displayGeneration = reasoningDisplayGeneration
         let showingReasoning = showsReasoning
         var rows: [AssistantActivitySceneRow] = []
@@ -261,10 +271,12 @@ public final class ChatViewModel {
                 rows = page.rows + rows
                 before = page.start
             }
+            earlierSceneRowsLoadStates[key] = nil
             guard displayGeneration == reasoningDisplayGeneration, showingReasoning == showsReasoning else { return }
             earlierSceneRows[key] = rows
         } catch {
-            errorMessage = String(localized: "Could not load earlier steps.")
+            // The control says it failed and offers Retry; the chat-wide error would hide behind the transcript.
+            earlierSceneRowsLoadStates[key] = .failed
         }
     }
 
