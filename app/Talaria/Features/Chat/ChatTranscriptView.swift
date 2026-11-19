@@ -21,6 +21,8 @@ struct ChatTranscriptView: View {
     @State private var previousViewportWidth: CGFloat?
     @State private var preparedWidthChange = false
     @State private var didRestoreReadingRow = false
+    /// Hides the rows until the restored reader's row reaches the top, so no frame shows the latest message first.
+    @State private var isPlacingRestoredReader = false
     @State private var nativeScrollRevision = 0
     @State private var scrollDestination: (id: String, anchor: UnitPoint, animation: Animation?)?
     @State private var scrollDestinationNeedsMount = false
@@ -198,6 +200,7 @@ struct ChatTranscriptView: View {
                             contentWidth: contentWidth,
                             viewportFrame: viewport.frame(in: .global)
                         )
+                        .opacity(isPlacingRestoredReader ? 0 : 1)
                     }
                     .defaultScrollAnchor(initialScrollAnchor, for: .initialOffset)
                     .task(id: readyRevision) {
@@ -233,6 +236,8 @@ struct ChatTranscriptView: View {
                             releaseUnownedRowPins()
                         }
                         scrollPositionController.onNativeScrollLayoutComplete = { revision in
+                            // Any navigation that lands, the restore's own or one that replaced it, places the reader.
+                            if !scrollDestinationNeedsMount { isPlacingRestoredReader = false }
                             guard revision == nativeScrollRevision, scrollDestinationNeedsMount,
                                   let destination = scrollDestination,
                                   rowCache.containsRow(destination.id) else { return }
@@ -241,10 +246,11 @@ struct ChatTranscriptView: View {
                             beginNativeScroll(targetID: destination.id, anchor: destination.anchor)
                             readyScrollRevision = nativeScrollRevision
                         }
-                        if let restoredReadingRowID, !didRestoreReadingRow {
+                        if restoredReadingRowID != nil, !didRestoreReadingRow {
                             // Reopen where the reader was, not at the latest message (TAL-1477).
                             didRestoreReadingRow = true
-                            scrollCommands.scrollTo(id: restoredReadingRowID, anchor: .top)
+                            isPlacingRestoredReader = true
+                            placeRestoredReader()
                         }
                     }
                     .onDisappear {
@@ -256,6 +262,7 @@ struct ChatTranscriptView: View {
                         scrollPositionController.onNativeScrollLayoutComplete = nil
                         scrollDestination = nil
                         scrollDestinationNeedsMount = false
+                        isPlacingRestoredReader = false
                     }
                     .frame(width: viewportWidth)
                     .refreshable {
@@ -291,6 +298,10 @@ struct ChatTranscriptView: View {
 #endif
                     guard !shouldFollowLatestMessage else { return }
                     scrollPositionController.holdVisiblePosition()
+                }
+                // A server window replacing the cached one can drop the row before the reader reaches it.
+                .onChange(of: rowIDsWhilePlacingRestoredReader) {
+                    if isPlacingRestoredReader { placeRestoredReader() }
                 }
                 .onChange(of: messages.count) {
                     if latestTranscriptMessageRole == "user" {
@@ -368,6 +379,24 @@ struct ChatTranscriptView: View {
     /// Identifies the whole transcript content so a scroll to its top can be
     /// expressed through SwiftUI.
     private var transcriptContentID: String { "chat-transcript-content" }
+
+    /// The transcript's rows while they are hidden for a restored reader; empty otherwise, so nothing is compared.
+    private var rowIDsWhilePlacingRestoredReader: [String] {
+        isPlacingRestoredReader ? displayedTranscriptMessages.map(\.renderID) : []
+    }
+
+    /// Scrolls the hidden rows to the restored reader's row, or to the latest message, following it, when the transcript
+    /// no longer has that row (TAL-2566). The rows show once that scroll lands.
+    private func placeRestoredReader() {
+        guard let restoredReadingRowID else { return }
+        if rowCache.containsRow(restoredReadingRowID) {
+            if scrollDestination?.id != restoredReadingRowID {
+                scrollCommands.scrollTo(id: restoredReadingRowID, anchor: .top)
+            }
+        } else {
+            onScrollToBottom(scrollCommands)
+        }
+    }
 
     private func preserveReaderForWidthChange() {
         guard !preparedWidthChange else { return }
@@ -475,6 +504,7 @@ struct ChatTranscriptView: View {
                         nativeScrollRevision: nativeScrollRevision,
                         onFollowEvent: { event in
                             if case .userScrollBegin = event {
+                                isPlacingRestoredReader = false
                                 initialScrollAnchor = nil
                                 scrollDestination = nil
                                 scrollDestinationNeedsMount = false
