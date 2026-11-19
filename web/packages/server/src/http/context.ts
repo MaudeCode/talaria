@@ -283,7 +283,8 @@ export interface SendOptions {
 /** WHATWG-resolved pathname (dot segments collapsed) without a trailing slash; `/` stays `/`. */
 export function normalizeRequestPath(raw: string): string {
   let path: string
-  try { path = new URL(raw.startsWith('/') ? raw : `/${raw}`, 'http://placeholder').pathname } catch { path = '/' }
+  // One leading slash: a target starting `//` or `/\` would otherwise parse as a host (`//api/x` → host `api`, path `/x`).
+  try { path = new URL(raw.replace(/^[/\\]*/, '/'), 'http://placeholder').pathname } catch { path = '/' }
   path = path.replace(/\/{2,}/g, '/')
   return path.length > 1 ? path.replace(/\/+$/, '') : path
 }

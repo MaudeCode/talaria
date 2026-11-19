@@ -57,6 +57,44 @@ is edited.
   endpoints, state ownership, PKCE and server binding, callback contents,
   single-use exchange, cancellation, and compatibility behavior.
 
+### Owner-only routes
+
+The auth gate (`packages/server/src/auth/gate.ts`) decides owner authority for
+every route below, on the normalized request path, before any handler runs. A
+session without `can_manage_server` (a profile-bound login or a non-owner
+person) gets `403 {"error":"Owner session required"}`; an owner session, and a
+server with auth off, pass as before. `src/auth/gate.test.ts` owns the matrix.
+
+- Every method: the `OPERATOR_ONLY_PATHS` list, `/api/groups` and everything
+  under `/api/groups/`, `/api/terminal/` (the host terminal, its output stream
+  included; it runs a shell outside the agent's approval cards and the
+  profile's toolsets), and `/api/onboarding/oauth/` (a device-code sign-in
+  saves a provider credential).
+- Every method but GET and HEAD: `/api/mcp/servers` and `/api/mcp/servers/{name}`
+  (a server's `command` runs on the host with the next chat; non-owners propose
+  servers through `/api/proposals`) and `POST /api/providers` (writes a key).
+- Listed in `OPERATOR_ONLY_PATHS` since TAL-2201: `/api/onboarding/setup`,
+  `/api/onboarding/probe`, `/api/onboarding/complete`,
+  `/api/providers/self-hosted`, `/api/providers/delete` and
+  `/api/dashboard/config`, which re-point a profile's model endpoint, write or
+  remove provider credentials, or make the server fetch a URL.
+
+`POST /api/model/set` and `POST /api/default-model` stay open for picking a
+model and its `advanced.service_tier`, but a non-owner whose `advanced` carries
+`base_url`, `api_key` or `api_key_clear` gets the same 403: those re-point the
+route or write its credential.
+
+A cron create or update stays open to non-owners, except that a body carrying
+`script` or `no_agent`, or giving the job a monitor script it does not already
+have (a `monitor` that is not a URL, or `monitor_script`), is refused with the
+same 403. The server ships the
+matching capability fields: `GET /api/mcp/servers` answers a non-owner with
+`toggle_supported: false` and every row's `can_toggle`, `events.can_edit` and
+`cost_policy.can_edit` false, and `GET /api/commands` lists `/terminal` for no
+client. Web hides Terminal, provider setup, MCP edits and a task's script
+fields by `auth.can_manage_server` and those fields; a non-owner's task save
+leaves `script` and `no_agent` out, so the stored values stay.
+
 When a change touches streaming, recovery, replay, compression, context
 reconstruction, cancellation, approval/clarify, session metadata, or run state,
 read the relevant RFC before editing. In the PR description, name the state

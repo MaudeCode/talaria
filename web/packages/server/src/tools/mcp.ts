@@ -85,6 +85,14 @@ export function eventsView(cfg: unknown, summary: Dict, runtime: Dict | null, da
     counts, show_state: enabled, show_panel: can_edit || enabled }
 }
 
+function readOnlyRow(row: Dict): Dict {
+  const events = row.events as McpEvents | undefined
+  const policy = row.cost_policy as Dict | undefined
+  return { ...row, can_toggle: false,
+    ...(events ? { events: { ...events, can_edit: false, show_panel: events.enabled } } : {}),
+    ...(policy ? { cost_policy: { ...policy, can_edit: false } } : {}) }
+}
+
 /**
  * TAL-1845: the Agent's own word on a server, which outranks a probe: a probe races its connects, evicts a single-session
  * host's live session and carries no OAuth token. Null when it has none (never tried, or an Agent without these fields).
@@ -274,10 +282,11 @@ export class McpService {
     return { servers, runtime, summaries }
   }
 
-  async servers(profileHome: string): Promise<Dict> {
+  /** TAL-2201: `owner` false (a session without owner authority) ships every row read-only; the gate refuses its writes. */
+  async servers(profileHome: string, owner = true): Promise<Dict> {
     const { summaries } = await this.inventory(profileHome)
-    const rows = [...summaries.values()]
-    return { servers: rows, toggle_supported: true, reload_required: true, health_pending: rows.some((r) => Boolean(r.enabled) && Boolean(r.health_pending)) }
+    const rows = [...summaries.values()].map((row) => owner ? row : readOnlyRow(row))
+    return { servers: rows, toggle_supported: owner, reload_required: true, health_pending: rows.some((r) => Boolean(r.enabled) && Boolean(r.health_pending)) }
   }
 
   /** `q` keeps tools whose name, server, or description contains it (case-insensitive); `total` counts the unfiltered inventory. */

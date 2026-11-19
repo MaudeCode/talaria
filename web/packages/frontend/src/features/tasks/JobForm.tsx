@@ -16,6 +16,7 @@ import { ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
+import { useBootstrap } from '../../app/bootstrap'
 import { useModelsQuery, useProfilesQuery } from '../../app/queries'
 import { contextFromList, cronResource, jobId } from './cronJob'
 import { newResource, useResourceMutation } from '../sessions/useResourceMutation'
@@ -61,6 +62,9 @@ export function JobForm({ mode, job, jobs, schedulePolicy, onCancel, onSubmitted
   const [blueprint, setBlueprint] = useState<CronBlueprint | null>(null)
   const [slotValues, setSlotValues] = useState<Record<string, string>>({})
   const isEdit = mode === 'edit'
+  // TAL-2201: a script runs on the host and `no_agent` runs it without the agent, so only the owner sets either; the server
+  // refuses both from anyone else, and keeps a task's stored values when they are left out.
+  const canManage = useBootstrap().auth.can_manage_server
   const profiles = useProfilesQuery()
   const models = useModelsQuery()
   const delivery = useQuery({ queryKey: keys.crons.deliveryOptions, queryFn: api.fetchCronDeliveryOptions, staleTime: 60_000 })
@@ -127,7 +131,7 @@ export function JobForm({ mode, job, jobs, schedulePolicy, onCancel, onSubmitted
         // `skills` are create-only in the store.
         const body: Record<string, unknown> = {
           job_id: sourceId, name: v.name, schedule: v.schedule, deliver: v.deliver || 'local', profile: v.profile, toast_notifications: v.toast_notifications,
-          script: v.script, no_agent: v.no_agent, monitor: v.monitor, continuity: v.continuity, context_from: v.context_from,
+          ...(canManage ? { script: v.script, no_agent: v.no_agent } : {}), monitor: v.monitor, continuity: v.continuity, context_from: v.context_from,
           reasoning_effort: v.reasoning_effort, model, provider, ...policy,
         }
         if (!v.no_agent) body.prompt = v.prompt
@@ -138,8 +142,8 @@ export function JobForm({ mode, job, jobs, schedulePolicy, onCancel, onSubmitted
         const body: Record<string, unknown> = { schedule: v.schedule, prompt: v.prompt, deliver: v.deliver || 'local', profile: v.profile, toast_notifications: v.toast_notifications, ...Object.fromEntries(Object.entries(policy).filter(([, value]) => value !== null)) }
         if (v.name) body.name = v.name
         if (skillList.length) body.skills = skillList
-        if (v.script) body.script = v.script
-        if (v.no_agent) body.no_agent = true
+        if (canManage && v.script) body.script = v.script
+        if (canManage && v.no_agent) body.no_agent = true
         if (v.monitor) body.monitor = v.monitor
         if (v.continuity) body.continuity = true
         if (v.context_from.length) body.context_from = v.context_from
@@ -225,13 +229,13 @@ export function JobForm({ mode, job, jobs, schedulePolicy, onCancel, onSubmitted
                 <datalist id="cronTimezones">{TIME_ZONES.map((zone) => <option key={zone} value={zone} />)}</datalist>
               </FieldRow>
             )}</form.Field>}
-            <form.Field name="no_agent">{(f) => <FieldRow label={m.cron_no_agent_label()} hint={m.cron_no_agent_hint()} htmlFor="cronNoAgent" inline><Switch id="cronNoAgent" checked={f.state.value} onCheckedChange={(checked) => f.handleChange(checked)} /></FieldRow>}</form.Field>
+            {canManage && <form.Field name="no_agent">{(f) => <FieldRow label={m.cron_no_agent_label()} hint={m.cron_no_agent_hint()} htmlFor="cronNoAgent" inline><Switch id="cronNoAgent" checked={f.state.value} onCheckedChange={(checked) => f.handleChange(checked)} /></FieldRow>}</form.Field>}
           </div>
           <form.Subscribe selector={(s) => s.values.no_agent}>{(noAgent) => (
             <>
               <div className={group}>
                 {!noAgent && <form.Field name="prompt">{(f) => <FieldRow label={m.cron_prompt_label()} htmlFor="cronPrompt"><textarea id="cronPrompt" rows={5} value={f.state.value} onChange={(e) => f.handleChange(e.target.value)} className={textarea} /></FieldRow>}</form.Field>}
-                <form.Field name="script">{(f) => <FieldRow label={m.cron_script_path_label()} hint={noAgent ? m.cron_script_path_hint() : m.cron_script_context_hint()} htmlFor="cronScript"><TextInput id="cronScript" value={f.state.value} onChange={(e) => f.handleChange(e.target.value)} placeholder={m.cron_script_path_placeholder()} /></FieldRow>}</form.Field>
+                {canManage && <form.Field name="script">{(f) => <FieldRow label={m.cron_script_path_label()} hint={noAgent ? m.cron_script_path_hint() : m.cron_script_context_hint()} htmlFor="cronScript"><TextInput id="cronScript" value={f.state.value} onChange={(e) => f.handleChange(e.target.value)} placeholder={m.cron_script_path_placeholder()} /></FieldRow>}</form.Field>}
                 {!noAgent && (isEdit
                   ? <FieldRow label={m.cron_skills_label()} hint={m.cron_skills_edit_hint()}><div className="text-sm text-muted">{job?.skills?.length ? job.skills.join(', ') : '—'}</div></FieldRow>
                   : <form.Field name="skills">{(f) => (

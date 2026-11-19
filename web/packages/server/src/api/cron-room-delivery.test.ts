@@ -38,10 +38,10 @@ it('offers manageable rooms by name in the requesting profile, only with Agent a
   expect(await options()).toEqual([{ value: 'local', label: 'Local' }])
 })
 
-it.each(['trusted', 'oidc'] as const)('keeps room catalogs and delivery writes behind owner authority for %s sessions', async (authType) => {
+it.each(['trusted', 'oidc'] as const)('keeps room catalogs, delivery writes and the host-script fields behind owner authority for %s sessions', async (authType) => {
   const { sidecar } = await setup(true)
   const base = { profile: null, toast_notifications: true, monitor: '', continuity: false }
-  const jobs = [{ ...base, id: 'room-job', deliver: 'room:discussion' }, { ...base, id: 'local-job', deliver: 'local' }]
+  const jobs = [{ ...base, id: 'room-job', deliver: 'room:discussion' }, { ...base, id: 'local-job', deliver: 'local' }, { ...base, id: 'watched-job', deliver: 'local', monitor_script: 'watch.sh' }]
   sidecar.respond('cron.list', ({ profile_home }) => ({ jobs: profile_home === server!.deps.profileHome('default') ? jobs : [] }))
   sidecar.respond('cron.get', ({ job_id }) => ({ job: jobs.find((job) => job.id === job_id) ?? null }))
   sidecar.respond('cron.create', ({ job }) => ({ job: { ...base, ...job, id: 'created' } }))
@@ -65,6 +65,16 @@ it.each(['trusted', 'oidc'] as const)('keeps room catalogs and delivery writes b
     ['update', { job_id: 'local-job', deliver: 'origin', origin: { platform: 'room', chat_id: 'discussion' } }],
     ['update', { job_id: 'room-job', prompt: 'Replaced content' }],
     ['resume', { job_id: 'room-job' }], ['run', { job_id: 'room-job' }],
+    // TAL-2201: a script runs on the host, and `no_agent` runs it without the agent.
+    ['create', { schedule: 'every 1h', prompt: 'Digest', script: 'digest.py' }],
+    ['create', { schedule: 'every 1h', prompt: 'Digest', no_agent: false }],
+    ['update', { job_id: 'local-job', script: 'digest.py' }],
+    ['update', { job_id: 'local-job', no_agent: true }],
+    // A monitor that is not a URL is a script the scheduler runs each tick, however it is named.
+    ['create', { schedule: 'every 1h', prompt: 'Digest', monitor: 'collect.sh' }],
+    ['update', { job_id: 'local-job', monitor: 'collect.sh' }],
+    ['update', { job_id: 'local-job', monitor_script: 'collect.sh' }],
+    ['update', { job_id: 'watched-job', monitor: 'other.sh' }],
   ] as const) {
     const response = await server!.get(`/api/crons/${path}`, { method: 'POST', headers, body: JSON.stringify(body) })
     expect.soft(response.status, `${path} ${JSON.stringify(body)}`).toBe(403)
@@ -72,12 +82,18 @@ it.each(['trusted', 'oidc'] as const)('keeps room catalogs and delivery writes b
   expect.soft(sidecar.calls.filter((call) => ['gateway.groups', 'cron.create', 'cron.update', 'cron.resume', 'cron.run'].includes(call.method))).toEqual([])
   const local = await server!.get('/api/crons/create', { method: 'POST', headers, body: JSON.stringify({ schedule: 'every 1h', prompt: 'Digest', deliver: 'local' }) })
   expect(local.status).toBe(200)
+  // A URL monitor runs no script, and resending a job's own monitor script unchanged keeps it as it is.
+  const urlMonitor = await server!.get('/api/crons/create', { method: 'POST', headers, body: JSON.stringify({ schedule: 'every 1h', prompt: 'Digest', monitor: 'https://status.invalid/health' }) })
+  expect(urlMonitor.status).toBe(200)
+  const unchanged = await server!.get('/api/crons/update', { method: 'POST', headers, body: JSON.stringify({ job_id: 'watched-job', prompt: 'Edited', monitor: 'watch.sh' }) })
+  expect(unchanged.status).toBe(200)
   const owner = server!.deps.auth.createSession({ authType: 'password' })
   const ownerHeaders = { cookie: `${server!.deps.auth.cookieName()}=${owner}`, origin: server!.base,
     'X-Hermes-CSRF-Token': server!.deps.auth.csrfTokenForSession(owner)!, 'content-type': 'application/json' }
-  const allowed = await server!.get('/api/crons/create', { method: 'POST', headers: ownerHeaders, body: JSON.stringify({ schedule: 'every 1h', prompt: 'Digest', deliver: 'room:discussion' }) })
+  const allowed = await server!.get('/api/crons/create', { method: 'POST', headers: ownerHeaders, body: JSON.stringify({ schedule: 'every 1h', prompt: 'Digest', deliver: 'room:discussion', script: 'digest.py', no_agent: true }) })
   expect(allowed.status).toBe(200)
   expect(CronMutationSchema.parse(await allowed.json()).job?.deliver_label).toBe('Design review')
+  expect(sidecar.calls.filter((call) => call.method === 'cron.create').at(-1)).toMatchObject({ params: { job: { script: 'digest.py', no_agent: true } } })
 })
 
 it('projects room names on job reads and writes, preserves unknown targets, and uses the caller grant', async () => {

@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { CronJob, CronStoreHealth } from '../../contracts'
 import { ApiError } from '../../contracts/common'
+import { BootstrapContext } from '../../app/bootstrap'
+import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -46,10 +48,17 @@ function cronList(jobs: CronJob[], unwritable_stores: CronStoreHealth[] = []): A
 }
 
 let qc: QueryClient
+/** The session's owner authority; a test of a non-owner sets it false. */
+let canManageServer = true
+function Page() {
+  return <BootstrapContext.Provider value={{ ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, can_manage_server: canManageServer } }}>
+    <QueryClientProvider client={qc}><Workbench /></QueryClientProvider>
+  </BootstrapContext.Provider>
+}
 function renderPage(jobs: CronJob[], unwritable_stores: CronStoreHealth[] = []) {
   vi.mocked(api.fetchCrons).mockResolvedValue(cronList(jobs, unwritable_stores))
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={qc}><Workbench /></QueryClientProvider>)
+  return render(<Page />)
 }
 
 async function openJob(name: string, jobs: CronJob[] = [full, feed]) {
@@ -78,6 +87,7 @@ function deferred<T>() {
 
 describe('TasksPage', () => {
   beforeEach(() => {
+    canManageServer = true
     // jsdom has no matchMedia; a task's run history asks whether the shell has a right panel.
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
     vi.mocked(api.fetchCronContextSources).mockImplementation((input) => Promise.resolve({ profile: input.profile || 'work', sources: [{ job_id: feed.id!, label: 'Feed', selectable: true }] }))
@@ -210,7 +220,7 @@ describe('TasksPage', () => {
     await userEvent.click(detail.getByRole('button', { name: /^pause$/i }))
     act(() => { teardownAll(); qc.clear() })
     // Bootstrap refresh renders the new profile over the cleared query cache.
-    mounted.rerender(<QueryClientProvider client={qc}><Workbench /></QueryClientProvider>)
+    mounted.rerender(<Page />)
     await waitFor(() => expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'active'))
     await userEvent.click(detail.getByRole('button', { name: /^pause$/i }))
     vi.mocked(showToast).mockClear()
@@ -253,7 +263,7 @@ describe('TasksPage', () => {
     await userEvent.click(detail.getByRole('button', { name: /^delete$/i }))
     expect(screen.getByRole('alertdialog')).toBeVisible()
     act(() => { teardownAll(); qc.clear() })
-    mounted.rerender(<QueryClientProvider client={qc}><Workbench /></QueryClientProvider>)
+    mounted.rerender(<Page />)
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(api.cronAction).not.toHaveBeenCalled()
   })
@@ -327,6 +337,24 @@ describe('TasksPage', () => {
       deliver: 'telegram', profile: 'work', toast_notifications: false, monitor: 'https://example.com/status', continuity: true,
       context_from: ['feed0000feed'], reasoning_effort: 'high', model: 'gpt-5.6-sol', provider: 'openai-codex', timezone: null, catch_up: null, grace_minutes: null,
     })
+  })
+
+  it('leaves the owner-only script fields out of the editor and the save for a session without owner authority (TAL-2201)', async () => {
+    canManageServer = false
+    const detail = await openJob('Digest')
+    await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
+    const dialog = await screen.findByRole('form', { name: /edit job/i })
+    expect(within(dialog).queryByRole('textbox', { name: /^script path/i })).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('switch', { name: /script-only job/i })).not.toBeInTheDocument()
+    const name = within(dialog).getByLabelText(/^name$/i)
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Digest v2')
+    await userEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
+    await waitFor(() => expect(api.cronAction).toHaveBeenCalledTimes(1))
+    const body = vi.mocked(api.cronAction).mock.calls[0]![1]
+    expect(body).toMatchObject({ job_id: 'ab12cd34ef56', name: 'Digest v2', prompt: 'Summarise the inbox' })
+    expect(body).not.toHaveProperty('script')
+    expect(body).not.toHaveProperty('no_agent')
   })
 
   it('closes the editor on save and shows the edited job at once; a refusal restores it with the error', async () => {

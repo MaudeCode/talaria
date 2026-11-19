@@ -110,6 +110,13 @@ async function canManageServer(ctx: RequestContext): Promise<boolean> {
   return sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))
 }
 
+/** TAL-2201: the `advanced` fields that re-point a model route or write its credential; only the owner sets them. */
+const CONNECTION_FIELDS = ['base_url', 'api_key', 'api_key_clear']
+
+async function requireOwnerForConnection(ctx: RequestContext, advanced: unknown): Promise<void> {
+  if (isDict(advanced) && CONNECTION_FIELDS.some((key) => key in advanced) && !(await canManageServer(ctx))) throw new HttpError(403, 'Owner session required')
+}
+
 async function authFields(ctx: RequestContext, into: Dict): Promise<void> {
   const auth = ctx.deps.auth
   into.auth_enabled = await auth.isAuthEnabled()
@@ -524,6 +531,7 @@ export const settingsRouter = os.router({
       const scope = str(input.scope).trim()
       const provider = str(input.provider).trim() || 'auto'
       const model = str(input.model).trim()
+      await requireOwnerForConnection(ctx, input.advanced)
       try {
         if (scope === 'auxiliary') {
           if (str(input.task).trim() === '__reset__' && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to reset delegation settings')
@@ -543,6 +551,7 @@ export const settingsRouter = os.router({
     })),
     setDefault: os.models.setDefault.handler(({ input, context: { ctx } }) => run(async () => {
       const provider = str(input.provider).trim().toLowerCase() === 'auto' ? null : input.provider ?? null
+      await requireOwnerForConnection(ctx, input.advanced)
       try {
         return await setDefaultModel(ctx.deps.agentConfig, home(ctx), input.model, provider, input.advanced)
       } catch (error) {

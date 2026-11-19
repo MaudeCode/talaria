@@ -5,6 +5,7 @@ import type { DecisionReviewRef, OutboundDraft, OutboundDraftAction, OutboundDra
 import * as api from '../../../api/endpoints'
 import { keys } from '../../../api/queryKeys'
 import { reviewStatusLabel } from '../../decisions/reviewStatus'
+import { useBootstrap } from '../../../app/bootstrap'
 import { requestOpenTerminal } from '../../terminal/openTerminalRequest'
 import { Button } from '../../../ui/Button'
 import { FieldRow, TextInput } from '../../../ui/Field'
@@ -90,12 +91,14 @@ export function DecisionReviewResult({ reference }: { reference: DecisionReviewR
  * session's terminal pane and focuses it; the pane replays the output from the start and follows it live.
  */
 export function TerminalResult({ sessionId, reference }: { sessionId: string; reference: TerminalRef }) {
+  // TAL-2201: the terminal pane is owner-only, so a session without owner authority sees the card without Open.
+  const canOpen = useBootstrap().auth.can_manage_server
   const open: RowAction = { label: m.terminal_open(), run: () => { requestOpenTerminal({ sessionId, terminalId: reference.terminal_id }) } }
   return <ResultSection label={m.terminal_title()}>
-    <RowContextMenu label={reference.title} actions={[open]} trigger={<div data-terminal-card={reference.terminal_id}>
+    <RowContextMenu label={reference.title} actions={canOpen ? [open] : []} trigger={<div data-terminal-card={reference.terminal_id}>
       <strong>{reference.title}</strong>
       {reference.command && <p className="mt-1 break-all font-mono text-xs text-muted">{reference.command}</p>}
-      <Button className="mt-2" onClick={open.run}>{open.label}</Button>
+      {canOpen && <Button className="mt-2" onClick={open.run}>{open.label}</Button>}
     </div>} />
   </ResultSection>
 }
