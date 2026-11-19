@@ -27,7 +27,7 @@ export class TerminalRefused extends HttpFailure {
 export async function startSessionTerminal(deps: Pick<AppDeps, 'workspaces' | 'git' | 'terminals'>, session: { session_id: string; workspace: string; profile: string | null }, opts: { rows?: unknown; cols?: unknown; restart?: boolean; refuseLive?: boolean } = {}): Promise<TerminalSession> {
   let cwd: string
   // Python answered `resolve_trusted_workspace`'s ValueError text unsanitised.
-  try { cwd = await deps.workspaces.resolveTrusted(session.workspace, session.profile) } catch (error) { throw new TerminalRefused(400, 'workspace_untrusted', (error as Error).message) }
+  try { cwd = await deps.workspaces.resolveTrusted(session.workspace, session.profile, true) } catch (error) { throw new TerminalRefused(400, 'workspace_untrusted', (error as Error).message) }
   if (deps.git.workspaceBusy(cwd)) throw new TerminalRefused(409, 'workspace_busy', WORKSPACE_BUSY_MESSAGE)
   if (opts.refuseLive && deps.terminals.get(session.session_id)?.isAlive) throw new TerminalRefused(409, 'limit_reached', 'This session already has a live terminal; the user closes it from the terminal pane.')
   return deps.terminals.start(session.session_id, cwd, opts)

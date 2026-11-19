@@ -42,8 +42,8 @@ describe('project bindings', () => {
     sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
     sidecar.respond('plugins.providers', () => ({ providers: [] }))
     sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [], fallback: true }))
-    a = join(s.state, 'workspace', 'alpha')
-    b = join(s.state, 'workspace', 'beta')
+    a = join(s.workspace, 'alpha')
+    b = join(s.workspace, 'beta')
     mkdirSync(a, { recursive: true })
     mkdirSync(b, { recursive: true })
     await s.get('/api/models')
@@ -53,7 +53,7 @@ describe('project bindings', () => {
   afterEach(() => { vi.restoreAllMocks() })
 
   it('saves, reads, updates and clears bindings with canonical paths and the catalog entry', async () => {
-    const link = join(s.state, 'workspace', 'beta-link')
+    const link = join(s.workspace, 'beta-link')
     if (!existsSync(link)) symlinkSync(b, link)
     const res = await bind({ workspaces: [a, link, b], default_workspace: link, model: 'gemini-2.5-flash', model_provider: 'google' })
     expect(res.status, JSON.stringify(res.body)).toBe(200)
@@ -82,7 +82,7 @@ describe('project bindings', () => {
     const refusals: Json[] = [
       { workspaces: [b], model: 'not-a-model', model_provider: 'google' },
       { workspaces: [b], model: 'gemini-2.5-flash' },
-      { workspaces: [b, join(s.state, 'workspace', 'deleted')] },
+      { workspaces: [b, join(s.workspace, 'deleted')] },
       { workspaces: [b, outside] },
       { workspaces: [b, '/etc'] },
       { workspaces: [b], default_workspace: a },
@@ -150,7 +150,7 @@ describe('project bindings', () => {
   })
 
   it('refuses a quick-create whose bound default was deleted instead of starting elsewhere', async () => {
-    const gone = join(s.state, 'workspace', 'gone')
+    const gone = join(s.workspace, 'gone')
     mkdirSync(gone, { recursive: true })
     expect((await bind({ workspaces: [gone], default_workspace: gone })).status).toBe(200)
     rmSync(gone, { recursive: true })

@@ -257,7 +257,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     const server = await bootTestServer({ sidecar: new FakeSidecar() })
     onTestFinished(async () => { await server.close() })
     db.close(); path = join(server.state, 'state.db'); db = openStateDb(path); load('multiple')
-    const workspace = join(server.state, 'workspace', 'updated-workspace'); mkdirSync(workspace)
+    const workspace = join(server.workspace, 'updated-workspace'); mkdirSync(workspace)
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
     const held = server.deps.sessionStore.withLock('reset-empty', () => gate)

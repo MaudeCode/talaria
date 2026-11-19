@@ -23,7 +23,7 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 async function repoSession(s: TestServer): Promise<{ sid: string; ws: string }> {
-  const ws = realpathSync(join(s.state, 'workspace'))
+  const ws = realpathSync(s.workspace)
   const res = await post(s, '/api/session/new', { workspace: ws })
   expect(res.status).toBe(200)
   const sid = String(((await json(res)).session as Json).session_id)
@@ -34,7 +34,7 @@ describe('workspace git over HTTP', () => {
   let s: TestServer
   beforeAll(async () => {
     s = await bootTestServer({ env: { TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' } })
-    const ws = join(s.state, 'workspace')
+    const ws = s.workspace
     git(ws, 'init', '-q', '-b', 'main')
     writeFileSync(join(ws, 'README.md'), 'hello\n')
     git(ws, 'add', '.')
@@ -155,7 +155,7 @@ describe('workspace git over HTTP', () => {
   })
 
   it('answers is_git=false outside a repository and 404 for unknown sessions', async () => {
-    const outside = join(s.state, 'plain')
+    const outside = join(s.workspace, '..', 'plain')
     mkdirSync(outside)
     expect((await post(s, '/api/workspaces/add', { path: outside })).status).toBe(200)
     const res = await post(s, '/api/session/new', { workspace: outside })
@@ -222,7 +222,7 @@ describe('workspace git over HTTP', () => {
   })
 
   it('parity: a workspace directory that no longer exists is missing_git on every route, as Python\'s `cwd=` failure was', async () => {
-    const gone = join(s.state, 'gone-ws')
+    const gone = join(s.workspace, '..', 'gone-ws')
     mkdirSync(gone)
     expect((await post(s, '/api/workspaces/add', { path: gone })).status).toBe(200)
     const goneSid = String(((await json(await post(s, '/api/session/new', { workspace: gone }))).session as Json).session_id)
@@ -254,7 +254,7 @@ describe('slow git off the event loop', () => {
     const env = { TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE: '1', ...identity, PATH: `${shimDir}:${process.env.PATH ?? ''}` }
     // A short lock wait so contention answers `operation_in_progress` well before the slow push finishes.
     s = await bootTestServer({ env, deps: (d) => { d.git = new GitRunner({ ...d.git.deps, env: { ...env, HOME: process.env.HOME }, mutationLockTimeoutMs: 200 }) } })
-    const ws = join(s.state, 'workspace')
+    const ws = s.workspace
     const origin = join(s.state, 'origin.git')
     git(s.state, 'init', '-q', '--bare', origin)
     git(ws, 'init', '-q', '-b', 'main')
@@ -322,11 +322,11 @@ describe('slow git off the event loop', () => {
     release()
     expect((await pull).status).toBe(200)
     // Released with the mutation.
-    expect(s.deps.git.workspaceBusy(join(s.state, 'workspace'))).toBe(false)
+    expect(s.deps.git.workspaceBusy(s.workspace)).toBe(false)
   })
 
   it('a repo-wide mutation from a subdirectory workspace also keeps runs out of sibling workspaces', async () => {
-    const ws = realpathSync(join(s.state, 'workspace'))
+    const ws = realpathSync(s.workspace)
     for (const sub of ['sub-a', 'sub-b']) mkdirSync(join(ws, sub), { recursive: true })
     const sessionIn = async (dir: string): Promise<string> => {
       expect((await post(s, '/api/workspaces/add', { path: dir })).status).toBe(200)
@@ -342,7 +342,7 @@ describe('slow git off the event loop', () => {
   })
 
   it('a mutation from a subdirectory holds the whole repository before its first Git command', async () => {
-    const ws = realpathSync(join(s.state, 'workspace'))
+    const ws = realpathSync(s.workspace)
     const sessionIn = async (dir: string): Promise<string> => {
       mkdirSync(dir, { recursive: true })
       expect((await post(s, '/api/workspaces/add', { path: dir })).status).toBe(200)
@@ -368,7 +368,7 @@ describe('slow git off the event loop', () => {
   })
 
   it('a working-tree mutation refuses while a run is already active anywhere in the repository', async () => {
-    const ws = realpathSync(join(s.state, 'workspace'))
+    const ws = realpathSync(s.workspace)
     mkdirSync(join(ws, 'sub-c'), { recursive: true })
     expect((await post(s, '/api/workspaces/add', { path: join(ws, 'sub-c') })).status).toBe(200)
     const sid = String(((await json(await post(s, '/api/session/new', { workspace: join(ws, 'sub-c') }))).session as Json).session_id)
@@ -452,7 +452,7 @@ describe.skipIf(process.platform === 'win32')('literal backslashes in POSIX path
   let ws: string
   beforeAll(async () => {
     s = await bootTestServer({ env: { TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' } })
-    ws = realpathSync(join(s.state, 'workspace'))
+    ws = realpathSync(s.workspace)
     git(ws, 'init', '-q', '-b', 'main')
     mkdirSync(join(ws, 'a'))
     mkdirSync(join(ws, 'sub'))
@@ -520,7 +520,7 @@ describe('destructive gate', () => {
   it('rejects mutations with 403 until TALARIA_WEB_WORKSPACE_GIT_DESTRUCTIVE=1', async () => {
     const s = await bootTestServer()
     try {
-      git(join(s.state, 'workspace'), 'init', '-q')
+      git(s.workspace, 'init', '-q')
       const { sid } = await repoSession(s)
       const res = await post(s, '/api/git/stage', { session_id: sid, paths: ['x'] })
       expect(res.status).toBe(403)

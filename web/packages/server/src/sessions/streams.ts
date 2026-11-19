@@ -133,6 +133,7 @@ export interface ActiveRun {
   started_at: number
   phase: string
   workspace: string
+  workspaceServerOwner?: boolean | undefined
   model: string | null
   provider: string | null
   ephemeral: boolean

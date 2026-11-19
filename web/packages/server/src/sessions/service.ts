@@ -311,13 +311,13 @@ export class SessionService {
    * User-turn admission shared by `chat.start` and automatic turns through `TurnRunner.startServerTurn`.
    * A requested workspace must be trusted; the session's own one, when its directory is gone, falls back to the last one.
    */
-  async turnWorkspace(s: Session, requested?: unknown): Promise<string> {
+  async turnWorkspace(s: Session, requested?: unknown, serverOwner = true): Promise<string> {
     const ws = this.deps.workspaces
     if (requested !== undefined && requested !== null && requested !== '') {
-      try { return (await ws.resolveTrusted(str(requested), s.profile)) } catch (error) { throw new HttpFailure(400, (error as Error).message) }
+      try { return (await ws.resolveTrusted(str(requested), s.profile, serverOwner)) } catch (error) { throw new HttpFailure(400, (error as Error).message) }
     }
     try {
-      const [workspace, recovered] = (await ws.resolveImplicitWithRecovery(s.workspace, async (p) => (await ws.lastWorkspace(p)), s.profile))
+      const [workspace, recovered] = (await ws.resolveImplicitWithRecovery(s.workspace, async (p) => (await ws.lastWorkspace(p)), s.profile, serverOwner))
       if (recovered) s.workspace = workspace
       return workspace
     } catch (error) {
@@ -2032,15 +2032,22 @@ export class SessionService {
     return out
   }
 
-  async resolveNewSessionWorkspace(body: Record<string, unknown>, visiblePrevSessionId: string | null, profile: string | null): Promise<string | null> {
+  async resolveNewSessionWorkspace(body: Record<string, unknown>, visiblePrevSessionId: string | null, profile: string | null, serverOwner = true): Promise<string | null> {
     const candidate = body.workspace
-    if (!candidate) return null
+    if (!candidate) {
+      const ws = this.deps.workspaces
+      const implicit = await ws.lastWorkspace(profile)
+      if (!serverOwner || (ws.profileSupportsLocalIo(profile) && ws.isInWebState(implicit))) {
+        return await ws.resolveTrusted(implicit, profile, serverOwner)
+      }
+      return implicit
+    }
     const value = str(candidate)
-    if (body.workspace_inherited_from_prev_session !== true || !visiblePrevSessionId) return (await this.deps.workspaces.resolveTrusted(value, profile))
+    if (body.workspace_inherited_from_prev_session !== true || !visiblePrevSessionId) return (await this.deps.workspaces.resolveTrusted(value, profile, serverOwner))
     let previous: Session
-    try { previous = (await this.store.get(visiblePrevSessionId, { metadataOnly: true })) } catch { return (await this.deps.workspaces.resolveTrusted(value, profile)) }
-    if (previous.workspace !== value) return (await this.deps.workspaces.resolveTrusted(value, profile))
-    const [workspace] = (await this.deps.workspaces.resolveImplicitWithRecovery(value, async (p) => (await this.deps.workspaces.profileDefaultWorkspaceForBoot(p)), profile))
+    try { previous = (await this.store.get(visiblePrevSessionId, { metadataOnly: true })) } catch { return (await this.deps.workspaces.resolveTrusted(value, profile, serverOwner)) }
+    if (previous.workspace !== value) return (await this.deps.workspaces.resolveTrusted(value, profile, serverOwner))
+    const [workspace] = (await this.deps.workspaces.resolveImplicitWithRecovery(value, async (p) => (await this.deps.workspaces.profileDefaultWorkspaceForBoot(p)), profile, serverOwner))
     return workspace
   }
 
@@ -2053,7 +2060,7 @@ export class SessionService {
     return names.length ? names : null
   }
 
-  async create(body: Record<string, unknown>, opts: { sessionId?: string; validateSources?: () => Promise<void>; worktree?: { path: string; branch: string; repo_root: string; created_at: number } | null } = {}): Promise<Session> {
+  async create(body: Record<string, unknown>, opts: { sessionId?: string; serverOwner?: boolean; validateSources?: () => Promise<void>; worktree?: { path: string; branch: string; repo_root: string; created_at: number } | null } = {}): Promise<Session> {
     // Python `new_session`: a body without a profile takes the request's active profile (cookie first).
     const profile = (typeof body.profile === 'string' && body.profile) || this.deps.activeProfile()
     let prevSessionId = typeof body.prev_session_id === 'string' && body.prev_session_id ? body.prev_session_id : null
@@ -2062,7 +2069,7 @@ export class SessionService {
     if (prevSessionId) await this.deps.commitSessionMemory?.(prevSessionId)
     let workspace: string | null
     try {
-      workspace = (await this.resolveNewSessionWorkspace(body, prevSessionId, profile))
+      workspace = (await this.resolveNewSessionWorkspace(body, prevSessionId, profile, opts.serverOwner))
     } catch (error) {
       throw new HttpFailure(400, (error as Error).message)
     }
@@ -2079,14 +2086,14 @@ export class SessionService {
    * any Agent import. That owner reads no profile default, so the launch route is explicit: the requested model, else this
    * profile's default as a normal chat starts, with that provider's configured endpoint.
    */
-  async createDiagnostic(body: Record<string, unknown>, mode: 'ignore_config' | 'safe'): Promise<Record<string, unknown>> {
+  async createDiagnostic(body: Record<string, unknown>, mode: 'ignore_config' | 'safe', serverOwner: boolean): Promise<Record<string, unknown>> {
     const profile = (typeof body.profile === 'string' && body.profile) || this.deps.activeProfile()
     if (profile !== this.deps.activeProfile()) throw new HttpFailure(400, 'A diagnostic chat starts in the active profile')
     if (!this.owner) throw new HttpFailure(409, 'The Agent cannot start a chat in this mode', { code: 'execution_mode_unavailable', reason: 'gateway_unavailable' })
     const defaults = await this.store.deps.defaults(profile)
     let workspace: string | null
     try {
-      workspace = await this.resolveNewSessionWorkspace(body, null, profile)
+      workspace = await this.resolveNewSessionWorkspace(body, null, profile, serverOwner)
     } catch (error) {
       throw new HttpFailure(400, (error as Error).message)
     }
@@ -2340,7 +2347,7 @@ export class SessionService {
    * TAL-2155: with `newChatOnWorkspaceSwitch`, choosing another workspace for a chat that has messages leaves that chat where
    * it is and starts a new one there (same profile, project and model), answering `switched_to` with the new chat's id.
    */
-  async update(sid: string, body: Record<string, unknown>, opts: { newChatOnWorkspaceSwitch?: boolean } = {}): Promise<Record<string, unknown>> {
+  async update(sid: string, body: Record<string, unknown>, opts: { newChatOnWorkspaceSwitch?: boolean; serverOwner?: boolean } = {}): Promise<Record<string, unknown>> {
     let s = (await this.mutationTarget(sid, 'updated'))
     let oldWs = s.workspace
     let newWs = oldWs
@@ -2349,7 +2356,7 @@ export class SessionService {
       s = await this.mutationTarget(sid, 'updated')
       oldWs = s.workspace
       try {
-        newWs = await this.deps.workspaces.resolveTrusted(typeof body.workspace === 'string' ? body.workspace : s.workspace, s.profile)
+        newWs = await this.deps.workspaces.resolveTrusted(typeof body.workspace === 'string' ? body.workspace : s.workspace, s.profile, opts.serverOwner ?? true)
       } catch (error) {
         throw new HttpFailure(400, (error as Error).message)
       }
@@ -3362,14 +3369,14 @@ export class SessionService {
     return { ok: true, cleaned }
   }
 
-  async import(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async import(body: Record<string, unknown>, serverOwner = true): Promise<Record<string, unknown>> {
     const messages = stripPublicInternalFields(body.messages, { messageRecords: true })
     if (!Array.isArray(messages)) throw new HttpFailure(400, 'JSON must contain a "messages" array')
     const rawToolCalls = body.tool_calls ?? []
     if (!Array.isArray(rawToolCalls)) throw new HttpFailure(400, 'JSON "tool_calls" must be an array')
     let workspace: string
     try {
-      workspace = (await this.deps.workspaces.resolveTrusted(typeof body.workspace === 'string' ? body.workspace : null))
+      workspace = (await this.deps.workspaces.resolveTrusted(typeof body.workspace === 'string' ? body.workspace : null, this.deps.activeProfile(), serverOwner))
     } catch (error) {
       throw new HttpFailure(400, (error as Error).message)
     }

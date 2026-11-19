@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, realpathSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SIDECAR_SERVER_METHODS, type SidecarResultInput } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -46,7 +46,7 @@ describe('terminal_open and terminal_read (TAL-1974)', () => {
   beforeEach(async () => {
     sidecar = new FakeSidecar()
     s = await bootTestServer({ sidecar })
-    workspace = join(s.state, 'workspace')
+    workspace = s.workspace
     mkdirSync(workspace, { recursive: true })
     spawned = []
     ;(s.deps as { terminals: TerminalRegistry }).terminals = new TerminalRegistry({ env: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh' }, now: () => Date.now(), log: () => undefined, pty: { spawn: (_file, _args, opts) => { const proc = new Pty(); spawned.push({ proc, cwd: opts.cwd }); return proc } } })

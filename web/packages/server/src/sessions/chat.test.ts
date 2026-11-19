@@ -1215,7 +1215,7 @@ describe('chat turns through the sidecar', () => {
 
   it('ships served media references rewritten for display on the done frame and every detail window, keeping content (TAL-186)', async () => {
     const sid = await newSession(s)
-    const ws = realpathSync(join(s.state, 'workspace'))
+    const ws = realpathSync(s.workspace)
     writeFileSync(join(ws, 'shot.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
     const denied = join(s.state, 'sessions', 'leak.png')
     const reply = `**Here MEDIA:${join(ws, 'shot.png')} done**\n\n- ![song](${join(ws, 'song.mp3')})\n\n> ![outside](/etc/outside.png) MEDIA:${denied}\n\n\`open MEDIA:${join(ws, 'shot.png')}\``
@@ -4507,7 +4507,7 @@ describe('turn context from config.yaml (Python streaming worker)', () => {
       sidecar.respond('chat.start', (params, emit) => { seen = params; emit({ event: 'token', data: { text: 'arr' } }); return completed([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'arr' }]) })
       const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hi' }))
       await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
-      const ws = realpathSync(join(s.state, 'workspace'))
+      const ws = realpathSync(s.workspace)
       expect(seen.system_message).toContain(`Active workspace at session start: ${ws}`)
       expect(seen.system_message).not.toContain('prefixed')
       expect(seen.user_message).toBe('hi')
@@ -5399,7 +5399,7 @@ describe('chat streams, cancel, and error settlement', () => {
     const earlier = await earlierTurn(sid)
     sidecar.respond('text.image_mode', () => ({ mode: 'native', reason: 'test', supports_vision: true }))
     sidecar.respond('chat.interrupt', () => ({ ok: true }))
-    const path = join(s.state, 'workspace', 'stop-shot.png')
+    const path = join(s.workspace, 'stop-shot.png')
     writeFileSync(path, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16, 1)]))
     const started = new Promise<unknown>((received) => {
       sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
@@ -6026,7 +6026,7 @@ describe('image attachments in user messages (review round 14)', () => {
     await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
     return sent
   }
-  const ws = (): string => join(s.state, 'workspace')
+  const ws = (): string => s.workspace
 
   it('embeds a real image from the workspace as a native part when the Agent resolves native mode', async () => {
     mode = 'native'

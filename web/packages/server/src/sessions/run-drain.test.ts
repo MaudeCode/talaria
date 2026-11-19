@@ -461,7 +461,7 @@ describe('chats a shutdown interrupted continue on the next start when the owner
     expect(record(server.state)?.runs).toEqual([{ session_id: 'other', profile: null, stream_id: 'other-stream' }, { session_id: sid, profile: null, stream_id: streamId, restart: true }])
 
     const next = heldSidecar()
-    const restarted = await bootTestServer({ sidecar: next.sidecar, env: { HERMES_HOME: server.state, TALARIA_WEB_STATE_DIR: server.state, TALARIA_WEB_DEFAULT_WORKSPACE: join(server.state, 'workspace'), TALARIA_WEB_CLAUDE_PROJECTS_DIR: join(server.state, 'claude-projects') } })
+    const restarted = await bootTestServer({ sidecar: next.sidecar, env: { HERMES_HOME: server.state, TALARIA_WEB_STATE_DIR: server.state, TALARIA_WEB_DEFAULT_WORKSPACE: server.workspace, TALARIA_WEB_CLAUDE_PROJECTS_DIR: join(server.state, 'claude-projects') } })
     try {
       await restarted.deps.updates.resumeContinuations()
       await expect.poll(() => next.sidecar.calls.filter((c) => c.method === 'chat.start').map((c) => (c.params as { session_id?: string }).session_id)).toEqual([sid])

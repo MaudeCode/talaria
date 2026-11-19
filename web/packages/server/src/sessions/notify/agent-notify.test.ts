@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SIDECAR_SERVER_METHODS } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../../sidecar/fake.js'
@@ -59,7 +59,7 @@ describe('the notify agent tool (TAL-1970)', () => {
     s.deps.fetch = relay.fetch
     expect((await post('/api/talaria/relay/pair', { relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-notify' })).status).toBe(200)
     expect((await post(PUSH_PATH, { endpoint: 'https://push.example/send/notify', keys: { p256dh: keys.p256dh, auth: keys.auth } })).status).toBe(200)
-    const workspace = join(s.state, 'workspace')
+    const workspace = s.workspace
     mkdirSync(workspace, { recursive: true })
     await s.deps.sessionStore.save(new Session({ session_id: CALLER, title: 'Report', profile: 'default', workspace, messages: [] }, { workspace, model: null }))
     s.deps.registry.activeRuns.set('stream-notify', { stream_id: 'stream-notify', session_id: CALLER, started_at: clock, phase: 'running', workspace, model: null, provider: null, ephemeral: false })
@@ -167,7 +167,7 @@ describe('the notify agent tool (TAL-1970)', () => {
   })
 
   it("puts a child run's notice on the parent's row, and reports a session no row shows as unavailable", async () => {
-    const workspace = join(s.state, 'workspace')
+    const workspace = s.workspace
     await s.deps.sessionStore.save(new Session({ session_id: 'child', title: 'Child', profile: 'default', workspace, messages: [] }, { workspace, model: null }))
     s.deps.registry.activeRuns.set('stream-child', { stream_id: 'stream-child', session_id: 'child', started_at: clock, phase: 'running', workspace, model: null, provider: null, ephemeral: false, activity_parent_session_id: CALLER })
     const child = await notify({ caller_session_id: 'child' })

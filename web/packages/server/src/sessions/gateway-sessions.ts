@@ -979,12 +979,14 @@ export class GatewaySessions {
     return await this.target(sid) !== null
   }
 
-  async action(sid: string, params: Omit<GatewaySessionParams, 'session_id' | 'profile_home'>): Promise<GatewaySessionResult> {
+  async action(sid: string, params: Omit<GatewaySessionParams, 'session_id' | 'profile_home'>, serverOwner: boolean): Promise<GatewaySessionResult> {
     const target = await this.target(sid)
     if (!target) throw new HttpFailure(403, 'This session has no canonical owner')
     if (params.action === 'mutate' && params.operation === 'workspace') {
-      try { await this.deps.service.deps.workspaces.resolveTrusted(str(params.payload?.cwd), target.profile) }
-      catch { throw new HttpFailure(400, 'The workspace must be trusted before selecting it') }
+      try {
+        const cwd = await this.deps.service.deps.workspaces.resolveTrusted(str(params.payload?.cwd), target.profile, serverOwner)
+        params = { ...params, payload: { ...params.payload, cwd } }
+      } catch { throw new HttpFailure(400, 'The workspace must be trusted before selecting it') }
     }
     const reasoningPick = params.action === 'mutate' && params.operation === 'reasoning'
     const effort = params.payload?.effort
@@ -1112,7 +1114,7 @@ export class GatewaySessions {
     if (!admission) throw new HttpFailure(409, 'The unknown admission is stale')
     const text = retryText(admission)
     if (text === null) throw new HttpFailure(409, 'The original input text is unavailable; inspect the owner before discarding this work')
-    await this.action(sid, { action: 'discard', admission_id: admissionId, execution_generation: generation })
+    await this.action(sid, { action: 'discard', admission_id: admissionId, execution_generation: generation }, true)
     return redactString(text, this.deps.redactEnabled())
   }
 
@@ -1179,7 +1181,7 @@ export class GatewaySessions {
       if (answer === null) throw new HttpFailure(400, 'Answer every question in the pending clarification')
       text = answer
     }
-    await this.action(sid, { action: kind, prompt_id: id, execution_generation: Number(prompt.execution_generation), ...(kind === 'approval' ? { choice: str(value) as 'once' | 'session' | 'always' | 'deny' } : { text }) })
+    await this.action(sid, { action: kind, prompt_id: id, execution_generation: Number(prompt.execution_generation), ...(kind === 'approval' ? { choice: str(value) as 'once' | 'session' | 'always' | 'deny' } : { text }) }, true)
     if (kind === 'approval') pending.resolveApproval(sid, id)
     else pending.resolveClarify(sid, id)
     return true
@@ -1220,7 +1222,7 @@ export class GatewaySessions {
     // A request bound to another profile must never control this watch.
     if (this.deps.profileHome(this.deps.activeProfile()) !== home) throw new HttpFailure(404, 'Session not found')
     if (!watch.snapshot.running) return false
-    await this.action(sid, { action: 'interrupt', execution_generation: watch.snapshot.execution_generation })
+    await this.action(sid, { action: 'interrupt', execution_generation: watch.snapshot.execution_generation }, true)
     return true
   }
 

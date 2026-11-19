@@ -34,6 +34,8 @@ export interface WorkspaceDeps {
   /** `terminal:` block and workspace keys from the profile's config.yaml (checkpoint 7 wires the reader). */
   profileConfig: (profile: string | null) => { terminal?: TerminalConfig | null; workspace?: string; default_workspace?: string } | null
   home?: string
+  stateDir?: string
+  hermesHome?: string
 }
 
 export function isRemoteTerminalBackend(terminal: TerminalConfig | null | undefined): boolean {
@@ -137,6 +139,8 @@ export function folderBrowse(prefix: string, suggestions: readonly string[], hom
     default_name: raw ? basename(expandHome(stripped, home)) || '/' : null,
   }
 }
+
+class WorkspaceAuthorityError extends Error {}
 
 export class WorkspaceRegistry {
   readonly home: string
@@ -461,15 +465,48 @@ export class WorkspaceRegistry {
     return suggestions.slice(0, limit)
   }
 
+  private outside(candidate: string): Error {
+    return new WorkspaceAuthorityError(`Path is outside the allowed workspace roots: ${candidate}`)
+  }
+
+  isInWebState(path: string): boolean {
+    return !!this.deps.stateDir && isWithin(resolvePathLikePython(path, this.home), resolvePathLikePython(this.deps.stateDir, this.home))
+  }
+
+  containsWebState(path: string): boolean {
+    return !!this.deps.stateDir && isWithin(resolvePathLikePython(this.deps.stateDir, this.home), resolvePathLikePython(path, this.home))
+  }
+
+  private async assertWorkspaceAuthority(candidate: string, profile: string | null, serverOwner: boolean): Promise<void> {
+    if (this.isInWebState(candidate)) throw this.outside(candidate)
+    if (serverOwner) return
+
+    const home = this.homePath()
+    const protectedRoots = [this.deps.hermesHome, this.deps.stateDir]
+      .filter((path): path is string => !!path)
+      .map((path) => resolvePathLikePython(path, this.home))
+    protectedRoots.push(resolvePathLikePython(resolve(home, '.ssh'), this.home))
+    const protectedWorkspace = (path: string): boolean =>
+      isWithin(home, path) || protectedRoots.some((root) => isWithin(path, root) || isWithin(root, path))
+    if (protectedWorkspace(candidate)) throw this.outside(candidate)
+
+    const saved = await this.entries(profile)
+    const roots = [this.deps.defaultWorkspace(), this.profileConfigDefaultWorkspace(profile), ...saved.map((entry) => entry.path)]
+    if (!roots.some((path) => {
+      const root = this.resolvePath(path, profile)
+      return !protectedWorkspace(root) && isWithin(candidate, root)
+    })) throw this.outside(candidate)
+  }
+
   /** Python `resolve_trusted_workspace`: home, saved list, or under the boot default. */
-  async resolveTrusted(path: string | null | undefined, profile: string | null = null): Promise<string> {
+  async resolveTrusted(path: string | null | undefined, profile: string | null, serverOwner: boolean): Promise<string> {
     if (!path) {
       if (!this.profileSupportsLocalIo(profile)) {
         const remote = this.remoteTerminalWorkspaceCandidate(this.profileConfigDefaultWorkspace(profile), profile)
         if (remote === null) throw new Error('Remote terminal workspace is not configured')
         return remote
       }
-      return resolvePathLikePython(this.deps.defaultWorkspace(), this.home)
+      path = serverOwner ? this.deps.defaultWorkspace() : this.profileConfigDefaultWorkspace(profile)
     }
     const remote = this.remoteTerminalWorkspaceCandidate(path, profile)
     if (remote !== null) return remote
@@ -478,8 +515,10 @@ export class WorkspaceRegistry {
       throw new Error('Path is outside the configured remote terminal workspace')
     }
     const candidate = this.resolvePath(path, profile)
+    await this.assertWorkspaceAuthority(candidate, profile, serverOwner)
     const accessError = this.accessError(candidate)
     if (accessError) throw new Error(accessError)
+    if (!serverOwner) return candidate
     const home = this.homePath()
     if (home !== '/' && isWithin(candidate, home)) return candidate
     if (isBlockedWorkspacePath(candidate, path)) throw new Error(`Path points to a system directory: ${candidate}`)
@@ -500,11 +539,11 @@ export class WorkspaceRegistry {
   }
 
   /** Recover only a genuinely missing implicit workspace (Python `resolve_implicit_workspace_with_recovery`). */
-  async resolveImplicitWithRecovery(candidate: string | null | undefined, fallback: (profile: string | null) => string | Promise<string>, profile: string | null = null): Promise<[string, boolean]> {
+  async resolveImplicitWithRecovery(candidate: string | null | undefined, fallback: (profile: string | null) => string | Promise<string>, profile: string | null, serverOwner: boolean): Promise<[string, boolean]> {
     try {
-      return [(await this.resolveTrusted(candidate, profile)), false]
+      return [(await this.resolveTrusted(candidate, profile, serverOwner)), false]
     } catch (original) {
-      if (!candidate) throw original
+      if (!candidate || original instanceof WorkspaceAuthorityError) throw original
       let terminal: TerminalConfig | null | undefined
       try {
         terminal = this.deps.profileConfig(profile)?.terminal
@@ -516,7 +555,7 @@ export class WorkspaceRegistry {
       try {
         statSync(local)
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [(await this.resolveTrusted((await fallback(profile)), profile)), true]
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [(await this.resolveTrusted((await fallback(profile)), profile, serverOwner)), true]
         throw original
       }
       throw original
@@ -524,7 +563,7 @@ export class WorkspaceRegistry {
   }
 
   /** Less strict than `resolveTrusted`: explicit user intent to register (Python `validate_workspace_to_add`). */
-  validateToAdd(path: string, profile: string | null = null): string {
+  async validateToAdd(path: string, profile: string | null, serverOwner: boolean, allowMissing = false): Promise<string> {
     const cleaned = stripSurroundingQuotes(path)
     const remote = this.remoteTerminalWorkspaceCandidate(cleaned, profile)
     if (remote !== null) return remote
@@ -533,8 +572,11 @@ export class WorkspaceRegistry {
       throw new Error('Path is outside the configured remote terminal workspace')
     }
     const candidate = this.resolvePath(cleaned, profile)
-    const accessError = this.accessError(candidate)
-    if (accessError) throw new Error(accessError)
+    await this.assertWorkspaceAuthority(candidate, profile, serverOwner)
+    if (!allowMissing) {
+      const accessError = this.accessError(candidate)
+      if (accessError) throw new Error(accessError)
+    }
     const home = this.homePath()
     if (home !== '/' && isWithin(candidate, home)) return candidate
     if (isBlockedWorkspacePath(candidate, cleaned)) throw new Error(`Path points to a system directory: ${candidate}`)

@@ -274,6 +274,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const runningCronJobs = new Map<string, number>()
   const workspaces = new WorkspaceRegistry({
     documents: storage.documents,
+    stateDir: config.stateDir,
+    hermesHome: config.hermesHome,
     defaultWorkspace: () => config.defaultWorkspace,
     profileHome,
     activeProfile,
@@ -788,6 +790,11 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       throw error
     }
   }
+  const callerWorkspaceOwner = async (caller: Session): Promise<boolean> => {
+    if (!(await auth.isAuthEnabled())) return true
+    const stream = registry.activeRunStreamForSession(caller.session_id)
+    return stream !== null && registry.activeRuns.get(stream)?.workspaceServerOwner === true
+  }
   /**
    * TAL-1165, TAL-1167: the session a tool acts on: in the caller's profile (another profile's reads as unknown), never
    * the caller (`self`, why it cannot be), and writable: not read-only or a view-only subagent child (else the reason).
@@ -881,15 +888,16 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     // TAL-1165: the route services behind `/api/session/new`, `/api/chat/start`, `/api/chat/steer` and `/api/chat/cancel`.
     'server.session_new': ({ caller_session_id, message, title }) => asCaller(caller_session_id, async (caller) => {
       // The new chat runs with the caller's toolsets, not the profile's defaults, and starts without YOLO.
-      const created = await sessions.create({ enabled_toolsets: caller.enabled_toolsets })
+      const serverOwner = await callerWorkspaceOwner(caller)
+      const created = await sessions.create({ enabled_toolsets: caller.enabled_toolsets }, { serverOwner })
       if (title?.trim()) await sessions.rename(created.session_id, title.trim())
-      const started = await startSessionChat(deps, { session_id: created.session_id, message }, { talariaActivity: peerAgentActivity(caller, message) })
+      const started = await startSessionChat(deps, { session_id: created.session_id, message }, { talariaActivity: peerAgentActivity(caller, message) }, undefined, undefined, serverOwner)
       return { session_id: created.session_id, title: str(started.title) || (await store.get(created.session_id, { metadataOnly: true })).title, stream_id: started.stream_id ? str(started.stream_id) : null }
     }),
     'server.session_send': ({ caller_session_id, session_id, message }) => asCaller(caller_session_id, async (caller) => {
       const target = await runTarget(caller, session_id)
       await assertNoWiderThanCaller(caller, target)
-      return sendSessionMessage(deps, target.session_id, message, peerAgentActivity(caller, message))
+      return sendSessionMessage(deps, target.session_id, message, peerAgentActivity(caller, message), await callerWorkspaceOwner(caller))
     }),
     'server.session_wait': ({ caller_session_id, session_id, timeout_s }) => asCaller(caller_session_id, async (caller) => {
       const target = await runTarget(caller, session_id)
@@ -968,7 +976,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     'server.project_rename': ({ caller_session_id, project_id, name }) => asCaller(caller_session_id, () => projectRename(deps, { project_id, name })),
     // The workspace entries' type is erased as the routers do.
     'server.workspace_list': ({ caller_session_id }) => asCaller(caller_session_id, async () => (await workspaceList(deps)) as never),
-    'server.workspace_add': ({ caller_session_id, path, name }) => asCaller(caller_session_id, async () => (await workspaceAdd(deps, { path, name })) as never),
+    'server.workspace_add': ({ caller_session_id, path, name }) => asCaller(caller_session_id, async (caller) => (await workspaceAdd(deps, { path, name }, await callerWorkspaceOwner(caller))) as never),
     'server.workspace_rename': ({ caller_session_id, path, name }) => asCaller(caller_session_id, async () => (await workspaceRename(deps, { path, name })) as never),
     'server.profile_list': ({ caller_session_id }) => asCaller(caller_session_id, () => profileList(deps)),
     // TAL-1170: `/api/goal` on a session in the caller's profile. A new goal starts the target's turn, so, as
@@ -977,7 +985,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     'server.goal_set': ({ caller_session_id, session_id, text }) => asCaller(caller_session_id, async (caller) => {
       const target = await visibleTarget(caller, session_id)
       await assertNoWiderThanCaller(caller, target)
-      return goalCommand(deps, { session_id: target.session_id, args: text })
+      return goalCommand(deps, { session_id: target.session_id, args: text }, false, await callerWorkspaceOwner(caller))
     }),
     // TAL-1963: the `harness` toolset's decision reviews, each of the calling session.
     'server.decision_review_put': ({ caller_session_id, ...params }) => asCaller(caller_session_id, (caller) => decisions.put(caller, params)),

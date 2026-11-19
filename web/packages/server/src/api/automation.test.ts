@@ -782,7 +782,7 @@ describe('crons, kanban, extensions, terminal', () => {
 
   it('a shell that exits before the viewer attaches still replays its output and exit code, and the entry is retired later', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    mkdirSync(s.workspace, { recursive: true })
     expect((await post(s, '/api/terminal/start', { session_id: sid })).status).toBe(200)
     const proc = pty.spawned.at(-1)!
     proc.emit('login shell says bye\n')
@@ -802,7 +802,7 @@ describe('crons, kanban, extensions, terminal', () => {
 
   it('the output stream does not accumulate abort listeners across wakes', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    mkdirSync(s.workspace, { recursive: true })
     expect((await post(s, '/api/terminal/start', { session_id: sid })).status).toBe(200)
     const proc = pty.spawned.at(-1)!
     const warnings: string[] = []
@@ -825,7 +825,7 @@ describe('crons, kanban, extensions, terminal', () => {
 
   it('an output viewer that falls behind holds at most the byte-capped tail and receives the newest output in order', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    mkdirSync(s.workspace, { recursive: true })
     expect((await post(s, '/api/terminal/start', { session_id: sid })).status).toBe(200)
     const proc = pty.spawned.at(-1)!
     const stream = s.sse(`/api/terminal/output?session_id=${sid}`, (f: SseFrame) => f.event === 'terminal_closed', { timeoutMs: 20_000 })
@@ -844,7 +844,7 @@ describe('crons, kanban, extensions, terminal', () => {
 
   it('closeAll({ immediate: true }) hangs up and kills every shell synchronously for process exit', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    mkdirSync(s.workspace, { recursive: true })
     expect((await post(s, '/api/terminal/start', { session_id: sid })).status).toBe(200)
     const proc = pty.spawned.at(-1)!
     const killed: [number, string][] = []
@@ -863,7 +863,7 @@ describe('crons, kanban, extensions, terminal', () => {
 
   it('terminal start/input/resize/output/close with the pty stub, gated to local origins', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    mkdirSync(s.workspace, { recursive: true })
     const spawnedBefore = pty.spawned.length
     let res = await post(s, '/api/terminal/start', { session_id: sid, rows: 500, cols: 10 })
     expect(res.status).toBe(200)
@@ -909,7 +909,7 @@ describe('crons, kanban, extensions, terminal', () => {
     const newSession = async (): Promise<string> => String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const sid = await newSession()
     const other = await newSession()
-    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    mkdirSync(s.workspace, { recursive: true })
     let id = String((await json(await post(s, '/api/terminal/start', { session_id: sid }))).terminal_id)
     const read = async (query: string, session = sid, headers: Record<string, string> = {}): Promise<Response> => s.get(`/api/terminal/read?session_id=${session}&terminal_id=${id}${query}`, { headers })
     const recorded = async (n: number): Promise<void> => {
@@ -954,7 +954,7 @@ describe('crons, kanban, extensions, terminal', () => {
 
   it('a remote terminal backend answers the code and the message, and a signal death reports a negative exit code', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    mkdirSync(s.workspace, { recursive: true })
     expect((await post(s, '/api/terminal/start', { session_id: sid })).status).toBe(200)
     const proc = pty.spawned.at(-1)!
     setTimeout(() => { proc.exit(0, 1) }, 20)
@@ -980,7 +980,7 @@ describe('crons, kanban, extensions, terminal', () => {
 
   it('a live terminal locks its worktree, and deleting the session closes the terminal', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const worktree = join(s.state, 'workspace', 'wt-locked')
+    const worktree = join(s.workspace, 'wt-locked')
     mkdirSync(worktree, { recursive: true })
     const session = (await s.deps.sessionStore.get(sid))
     session.worktree_path = worktree

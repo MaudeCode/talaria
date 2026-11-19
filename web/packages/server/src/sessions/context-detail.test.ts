@@ -17,7 +17,7 @@ describe('context detail read boundary', () => {
       sidecar.respond('chat.context_detail', () => cached ? detail : unavailableContextDetail('not_built'))
       sidecar.respond('chat.evict_agent', () => { cached = false; return { evicted: true } })
       const session = await s.deps.sessions.create({ model: 'fixture-model' })
-      const workspace = join(s.state, 'workspace', 'replacement')
+      const workspace = join(s.workspace, 'replacement')
       mkdirSync(workspace, { recursive: true })
       await s.deps.sessions.update(session.session_id, { workspace })
       const row = await s.deps.sessions.wireRow(session)

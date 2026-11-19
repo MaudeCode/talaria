@@ -140,7 +140,7 @@ describe('session lifecycle over HTTP', () => {
   it('creates a session with the default workspace and lists it with the ETag contract', async () => {
     const session = await newSession(s)
     expect(String(session.session_id)).toMatch(/^[0-9a-f]{12}$/)
-    expect(session.workspace).toBe(realpathSync(join(s.state, 'workspace')))
+    expect(session.workspace).toBe(realpathSync(s.workspace))
     // Python keeps a brand-new session in memory until its first message.
     expect(existsSync(join(s.state, 'sessions', `${String(session.session_id)}.json`))).toBe(false)
     await writeMessages(s, String(session.session_id), [{ role: 'user', content: 'hi' }])
@@ -901,7 +901,7 @@ describe('projects, workspaces, and files over HTTP', () => {
   })
 
   it('workspaces strip pasted quotes, reject duplicates and system paths, reorder, and rename', async () => {
-    const dir = join(realpathSync(s.state), 'proj')
+    const dir = join(realpathSync(s.workspace), 'proj')
     mkdirSync(dir)
     let res = await post(s, '/api/workspaces/add', { path: `"${dir}"` })
     expect(res.status).toBe(200)
@@ -913,16 +913,16 @@ describe('projects, workspaces, and files over HTTP', () => {
     expect((await json(res)).error).toBe('Workspace already in list')
     res = await post(s, '/api/workspaces/add', { path: '/etc' })
     expect(res.status).toBe(400)
-    res = await post(s, '/api/workspaces/add', { path: join(s.state, 'missing') })
+    res = await post(s, '/api/workspaces/add', { path: join(s.workspace, 'missing') })
     expect(res.status).toBe(400)
-    res = await post(s, '/api/workspaces/add', { path: join(realpathSync(s.state), 'made'), create: true })
+    res = await post(s, '/api/workspaces/add', { path: join(realpathSync(s.workspace), 'made'), create: true })
     expect(res.status).toBe(200)
-    expect(existsSync(join(realpathSync(s.state), 'made'))).toBe(true)
+    expect(existsSync(join(realpathSync(s.workspace), 'made'))).toBe(true)
 
-    res = await post(s, '/api/workspaces/reorder', { paths: [join(realpathSync(s.state), 'made'), dir] })
+    res = await post(s, '/api/workspaces/reorder', { paths: [join(realpathSync(s.workspace), 'made'), dir] })
     expect(res.status).toBe(200)
     list = (await json(res)).workspaces as Json[]
-    expect(list.slice(0, 2).map((w) => w.path)).toEqual([join(realpathSync(s.state), 'made'), dir])
+    expect(list.slice(0, 2).map((w) => w.path)).toEqual([join(realpathSync(s.workspace), 'made'), dir])
     res = await post(s, '/api/workspaces/rename', { path: dir, name: 'Renamed' })
     expect(res.status).toBe(200)
     res = await s.get('/api/workspaces')
@@ -932,12 +932,12 @@ describe('projects, workspaces, and files over HTTP', () => {
     expect(body.terminal_remote_backend).toBe(false)
     res = await post(s, '/api/workspaces/remove', { path: dir })
     expect(((await json(res)).workspaces as Json[]).some((w) => w.path === dir)).toBe(false)
-    const suggest = await json(await s.get(`/api/workspaces/suggest?prefix=${encodeURIComponent(join(realpathSync(s.state), 'ma'))}`))
-    expect(suggest.suggestions).toContain(join(realpathSync(s.state), 'made'))
+    const suggest = await json(await s.get(`/api/workspaces/suggest?prefix=${encodeURIComponent(join(realpathSync(s.workspace), 'ma'))}`))
+    expect(suggest.suggestions).toContain(join(realpathSync(s.workspace), 'made'))
   })
 
   it('file operations stay inside the workspace and reject symlink escapes', async () => {
-    const ws = realpathSync(join(s.state, 'workspace'))
+    const ws = realpathSync(s.workspace)
     const session = await newSession(s, { workspace: ws })
     const sid = String(session.session_id)
     let res = await post(s, '/api/file/create', { session_id: sid, path: 'notes/a.txt', content: 'hello' })
@@ -981,7 +981,7 @@ describe('projects, workspaces, and files over HTTP', () => {
   })
 
   it('file reads name the preview kind; media skips the text read and CSV ships parsed rows', async () => {
-    const ws = realpathSync(join(s.state, 'workspace'))
+    const ws = realpathSync(s.workspace)
     const sid = String((await newSession(s, { workspace: ws })).session_id)
     const big = Buffer.alloc(500_000, 1)
     writeFileSync(join(ws, 'p.PNG'), big)
@@ -1018,7 +1018,7 @@ describe('projects, workspaces, and files over HTTP', () => {
   })
 
   it('file operations keep the Python validation contract: require(), Office guard, listing timestamps, launcher errors', async () => {
-    const ws = realpathSync(join(s.state, 'workspace'))
+    const ws = realpathSync(s.workspace)
     const sid = String((await newSession(s, { workspace: ws })).session_id)
     // `require()` rejects empty strings and names every missing field.
     let res = await post(s, '/api/file/create', { session_id: sid, path: '' })
@@ -2945,7 +2945,7 @@ describe('workspace routes preserve unresolved config state (TAL-730)', () => {
   it('leaves registry bytes intact across GET and refused writes, then supports local mutations after recovery', async () => {
     const s = await bootTestServer()
     try {
-      const root = realpathSync(s.state)
+      const root = realpathSync(s.workspace)
       const entries = ['first', 'second'].map((name) => ({ path: join(root, name), name }))
       for (const entry of entries) mkdirSync(entry.path)
       const added = join(root, 'added')
@@ -3459,7 +3459,7 @@ describe('session detail ships browser and computer-use views (TAL-2328)', () =>
 
   it('serves the screenshot a browser or computer-use call saved through the session\'s media URL', async () => {
     const sid = String((await newSession(s)).session_id)
-    const ws = realpathSync(join(s.state, 'workspace'))
+    const ws = realpathSync(s.workspace)
     const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
     writeFileSync(join(ws, 'page.png'), bytes)
     writeFileSync(join(ws, 'desk.png'), bytes)
@@ -3534,7 +3534,7 @@ describe('session detail ships media and analysis sections (TAL-2325)', () => {
 
   it('serves a media tool\'s local file through the session\'s media URL and refuses one in a denied location', async () => {
     const sid = String((await newSession(s)).session_id)
-    const ws = realpathSync(join(s.state, 'workspace'))
+    const ws = realpathSync(s.workspace)
     writeFileSync(join(ws, 'made.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
     mkdirSync(join(s.state, 'sessions'), { recursive: true })
     const denied = join(s.state, 'sessions', 'leak.png')

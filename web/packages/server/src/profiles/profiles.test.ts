@@ -159,7 +159,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
   it('profile/active carries the resolved default workspace', async () => {
     const body = await json(await s.get('/api/profile/active'))
     expect(body).toMatchObject({ name: 'default', is_default: true })
-    expect(realpathSync(String(body.default_workspace))).toBe(realpathSync(join(s.state, 'workspace')))
+    expect(realpathSync(String(body.default_workspace))).toBe(realpathSync(s.workspace))
   })
 
   it('a named profile answers its own last workspace', async () => {
@@ -184,7 +184,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
   })
 
   it('the global last workspace never leaks into a named profile', async () => {
-    const global = join(s.state, 'workspace', 'global-ws')
+    const global = join(s.workspace, 'global-ws')
     mkdirSync(global, { recursive: true })
     writeFileSync(join(s.state, 'last_workspace.txt'), global)
     const body = await json(await s.get('/api/profile/active', { headers: asWork() }))

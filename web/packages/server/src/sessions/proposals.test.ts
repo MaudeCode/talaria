@@ -46,7 +46,7 @@ describe('proposals (TAL-1967)', () => {
     return session.messages.flatMap((row) => row._talaria_activity ? [row._talaria_activity.kind] : [])
   }
   const save = async (session_id: string, profile = 'default') => {
-    const workspace = join(s.state, 'workspace')
+    const workspace = s.workspace
     mkdirSync(workspace, { recursive: true })
     await s.deps.sessionStore.save(new Session({ session_id, title: session_id, profile, workspace, updated_at: clock, messages: [{ role: 'user', content: session_id, timestamp: clock }] }, { workspace, model: null }))
   }

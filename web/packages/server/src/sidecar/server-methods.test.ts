@@ -858,8 +858,8 @@ describe('server.project_*, workspace_*, profile_list, goal_get, goal_set (TAL-1
   const route = async (path: string, body?: unknown): Promise<unknown> => (await (body === undefined ? s.get(path) : postRaw(s, path, body))).json()
   const createProject = async (name: string, callerId = 'agentcaller') => (await ask('server.project_create', { name }, callerId) as { result: { project: { project_id: string; profile: string } } }).result.project
   const syntheticRepo = () => {
-    mkdirSync(join(s.state, 'synthetic-repo'), { recursive: true })
-    return realpathSync(join(s.state, 'synthetic-repo'))
+    mkdirSync(join(s.workspace, 'synthetic-repo'), { recursive: true })
+    return realpathSync(join(s.workspace, 'synthetic-repo'))
   }
   const goalState = { goal: 'Ship the release notes', status: 'active', turns_used: 0, max_turns: 20, last_verdict: null, last_reason: null, paused_reason: null }
   const goalCommands = () => sidecar.calls.filter((c) => c.method === 'goals.command').map((c) => c.params as { session_id: string; args: string })
@@ -911,6 +911,18 @@ describe('server.project_*, workspace_*, profile_list, goal_get, goal_set (TAL-1
     const workspaces = await ask('server.workspace_list')
     expect((workspaces as { result: { workspaces: unknown[] } }).result.workspaces).toContainEqual(expect.objectContaining({ path: folder, name: 'Synthetic repo' }))
     expect(workspaces).toEqual({ result: await route('/api/workspaces') })
+  })
+
+  it.each([false, true])('passes an authenticated agent turn’s server-owner authority (%s) to workspace registration', async (workspaceServerOwner) => {
+    vi.spyOn(s.deps.auth, 'isAuthEnabled').mockResolvedValue(true)
+    const path = syntheticRepo()
+    s.deps.registry.activeRuns.set('workspace-tool-run', {
+      stream_id: 'workspace-tool-run', session_id: 'agentcaller', started_at: 1, phase: 'running',
+      workspace: s.workspace, model: null, provider: null, ephemeral: false, workspaceServerOwner,
+    })
+    const validate = vi.spyOn(s.deps.workspaces, 'validateToAdd')
+    await ask('server.workspace_add', { path, name: 'Synthetic' })
+    expect(validate).toHaveBeenCalledWith(path, 'default', workspaceServerOwner)
   })
 
   it('refuses an invalid workspace path with the route\'s own validation error', async () => {

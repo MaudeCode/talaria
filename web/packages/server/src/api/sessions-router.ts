@@ -24,7 +24,7 @@ import { previewUrl, readFilePreview } from '../workspace/preview.js'
 import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, replaceAnchoredFile, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
 import { randomUUID } from 'node:crypto'
 import { pyOsError, pyRepr, str } from '../util.js'
-import { activeProfileName, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
+import { activeProfileName, ensureTrustedAuthSession, requestCanManageServer, sessionCanManageServer } from '../auth/gate.js'
 import { RelayPairingError } from '../sessions/relay.js'
 import { loginHash, WebPushRequestError, type WebPushRequester } from '../sessions/notify/web-push.js'
 import { activitySummary } from '../sessions/notify/activity.js'
@@ -71,6 +71,19 @@ function queryPositiveInt(value: string | undefined, fallback: number | null, ma
 
 const sanitizeError = sanitizePaths
 
+export function assertWorkspaceFileAllowed(ctx: RequestContext, target: string, recursive = false): void {
+  const ws = ctx.deps.workspaces
+  if (ws.isInWebState(target) || (recursive && ws.containsWebState(target))) {
+    throw new HttpError(403, 'Path is outside the allowed workspace files')
+  }
+}
+
+function workspaceFileTarget(ctx: RequestContext, root: string, path: string): string {
+  const target = safeResolve(root, path)
+  assertWorkspaceFileAllowed(ctx, target)
+  return target
+}
+
 /** TAL-1032: project rows with their bindings normalized and the catalog entry each bound model pair selects. */
 async function projectViews(deps: AppDeps, projects: Project[]): Promise<Project[]> {
   const resolvers = new Map<string, Promise<(model: string | null, provider: string | null) => string | null>>()
@@ -92,7 +105,7 @@ async function projectViews(deps: AppDeps, projects: Project[]): Promise<Project
 async function trustedProjectWorkspace(ctx: RequestContext, raw: string, profile: string): Promise<string> {
   const path = stripSurroundingQuotes(raw.trim())
   if (!path) throw new HttpError(400, 'Workspace path is required')
-  try { return await ctx.deps.workspaces.resolveTrusted(path, profile) } catch (error) { throw new HttpError(400, (error as Error).message) }
+  try { return await ctx.deps.workspaces.resolveTrusted(path, profile, await requestCanManageServer(ctx)) } catch (error) { throw new HttpError(400, (error as Error).message) }
 }
 
 /** Python `_guard_request_session_visibility` for a body/query session id. */
@@ -224,7 +237,7 @@ async function workspaceRows(deps: AppDeps, entries: WorkspaceEntry[], profile: 
   }))
 }
 
-export async function workspaceAdd(deps: AppDeps, input: { path: string; name?: string | undefined; create?: unknown }) {
+export async function workspaceAdd(deps: AppDeps, input: { path: string; name?: string | undefined; create?: unknown }, serverOwner: boolean) {
   const ws = deps.workspaces
   const pathStr = stripSurroundingQuotes(input.path.trim())
   const name = (input.name ?? '').trim()
@@ -244,12 +257,13 @@ export async function workspaceAdd(deps: AppDeps, input: { path: string; name?: 
       if (!(home !== '/' && (candidate === home || isWithin(candidate, home)))) throw new HttpError(400, `Path points to a system directory: ${candidate}`)
     }
     if (input.create) {
+      try { await ws.validateToAdd(pathStr, profile, serverOwner, true) } catch (error) { throw new HttpError(400, (error as Error).message) }
       assertWorkspaceFree(deps, candidate)
       try { mkdirSync(candidate, { recursive: true }) } catch (error) { throw new HttpError(400, `Could not create directory: ${sanitizeError(error)}`) }
     }
   }
   let p: string
-  try { p = ws.validateToAdd(pathStr, profile) } catch (error) { throw new HttpError(400, (error as Error).message) }
+  try { p = await ws.validateToAdd(pathStr, profile, serverOwner) } catch (error) { throw new HttpError(400, (error as Error).message) }
   const list = (await ws.load(profile, { forWrite: true }))
   if (list.some((w) => w.path === p)) throw new HttpError(400, 'Workspace already in list')
   list.push({ path: p, name: name || basename(p) })
@@ -360,13 +374,14 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
     executionModes: os.session.executionModes.handler(({ context: { ctx } }) => run(async () => ctx.deps.sessions.owner!.modes(ctx.deps.activeProfile()))),
     new: os.session.new.handler(({ input, context: { ctx } }) => run(async () => {
       if (input.source_references?.length && input.execution_mode && input.execution_mode !== 'normal') throw new HttpError(400, 'Conversation references require an ordinary chat')
+      const serverOwner = await requestCanManageServer(ctx)
       if (input.execution_mode === 'ignore_config' || input.execution_mode === 'safe') {
         // The owner has no worktree flow; refuse it rather than silently start an ordinary chat.
         if (input.worktree !== undefined && input.worktree !== false) throw new HttpError(400, 'A diagnostic chat cannot start in a new worktree')
         // TAL-1032: an owner chat is display-only in Talaria, so Web could not file it in the project or keep it there.
         if (input.project_id) throw new HttpError(400, 'A diagnostic chat cannot start in a project')
         await ctx.deps.agentConfig.read(ctx.deps.profileHome(ctx.deps.activeProfile())).catch(() => undefined)
-        return { session: (await ctx.deps.sessions.createDiagnostic(input, input.execution_mode)) as { session_id: string; title: string } }
+        return { session: (await ctx.deps.sessions.createDiagnostic(input, input.execution_mode, serverOwner)) as { session_id: string; title: string } }
       }
       // Python: an invisible prev_session_id is ignored (the service drops it), never an error (#5420).
       const profile = input.profile || null
@@ -387,8 +402,8 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
         }
         if (requested) {
           try {
-            let base = body.workspace ? (await ctx.deps.sessions.resolveNewSessionWorkspace(body, null, profile)) : null
-            base ??= (await ctx.deps.workspaces.resolveTrusted((await ctx.deps.workspaces.lastWorkspace(profile)), profile))
+            let base = body.workspace ? (await ctx.deps.sessions.resolveNewSessionWorkspace(body, null, profile, serverOwner)) : null
+            base ??= (await ctx.deps.workspaces.resolveTrusted((await ctx.deps.workspaces.lastWorkspace(profile)), profile, serverOwner))
             const repo = base
             worktree = await ctx.deps.git.holdWrite(repo, async () => {
               await validateSources?.()
@@ -407,7 +422,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
           }
         }
         // A worktree has already passed source validation before allocation.
-        return ctx.deps.sessions.create(body, { worktree, ...(sessionId ? { sessionId } : {}), ...(!worktree && validateSources ? { validateSources } : {}) })
+        return ctx.deps.sessions.create(body, { worktree, serverOwner, ...(sessionId ? { sessionId } : {}), ...(!worktree && validateSources ? { validateSources } : {}) })
       })
       const payload: Record<string, unknown> = { session: (await ctx.deps.sessions.publicSession(s)) }
       if (worktreeSkipped) payload.worktree_skipped = worktreeSkipped
@@ -468,7 +483,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
     update: os.session.update.handler(({ input, context: { ctx } }) => run(async () => {
       await guardVisibility(ctx, input.session_id)
       const newChatOnWorkspaceSwitch = input.accept_switched_to === true && input.workspace !== undefined && (await ctx.deps.settings.load()).new_chat_on_workspace_switch === true
-      return (await ctx.deps.sessions.update(input.session_id, input, { newChatOnWorkspaceSwitch })) as { session: { session_id: string; title: string }; switched_to?: string }
+      return (await ctx.deps.sessions.update(input.session_id, input, { newChatOnWorkspaceSwitch, serverOwner: await requestCanManageServer(ctx) })) as { session: { session_id: string; title: string }; switched_to?: string }
     })),
     toolsets: os.session.toolsets.handler(({ input, context: { ctx } }) => run(async () => {
       await guardVisibility(ctx, input.session_id)
@@ -489,7 +504,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       if (typeof released._status === 'number' && released._status >= 400) { const { _status, error, ...rest } = released; throw new HttpError(_status, str(error), rest) }
       return { ok: true as const, yolo_enabled: Boolean(released.yolo_enabled ?? ctx.deps.sessions.yolo(sid).yolo_enabled), ...(released.stale_cleared ? { stale_cleared: true } : {}) }
     })),
-    import: os.session.import.handler(({ input, context: { ctx } }) => run(async () => (await ctx.deps.sessions.import(input)) as { ok: true; session: { session_id: string; title: string } })),
+    import: os.session.import.handler(({ input, context: { ctx } }) => run(async () => (await ctx.deps.sessions.import(input, await requestCanManageServer(ctx))) as { ok: true; session: { session_id: string; title: string } })),
     regenerateTitle: os.session.regenerateTitle.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = input.session_id
       let session: Session
@@ -701,7 +716,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       const suggestions = await ctx.deps.workspaces.suggest(prefix, 12, ctx.deps.activeProfile())
       return { suggestions, prefix, ...folderBrowse(prefix, suggestions, ctx.deps.workspaces.home) }
     })),
-    add: os.workspaces.add.handler(({ input, context: { ctx } }) => run(() => workspaceAdd(ctx.deps, input))),
+    add: os.workspaces.add.handler(({ input, context: { ctx } }) => run(async () => workspaceAdd(ctx.deps, input, await requestCanManageServer(ctx)))),
     remove: os.workspaces.remove.handler(({ input, context: { ctx } }) => run(async () => {
       const pathStr = input.path.trim()
       if (!pathStr) throw new HttpError(400, 'path is required')
@@ -739,6 +754,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       const s = (await fileOpsSession(ctx, input.session_id, { strictWorkspace: true }))
       const rel = input.path ?? '.'
       try {
+        workspaceFileTarget(ctx, s.workspace, rel)
         const entries = listDir(s.workspace, rel)
         return { entries: serializeEntriesForBrowser(entries) as { name: string; path: string; type: 'dir' | 'file' | 'symlink'; workspace_sort_rank: number }[], signature: dirSignature(s.workspace, rel, entries), path: rel, workspace: s.workspace, workspace_recovered: s.recovered }
       } catch (error) {
@@ -752,6 +768,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       const s = (await fileOpsSession(ctx, input.session_id))
       if (!input.path) throw new HttpError(400, 'path is required')
       try {
+        workspaceFileTarget(ctx, s.workspace, input.path)
         const file = readFilePreview(s.workspace, input.path)
         return file.preview === 'html' ? { ...file, preview_url: previewUrl(ctx.deps.auth.signingKey(), s.workspace, input.path) } : file
       } catch (error) {
@@ -766,7 +783,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
         if (['.docx', '.xlsx', '.pptx'].includes(extname(input.path).toLowerCase())) throw new HttpError(400, 'Office documents cannot be saved from the Web UI')
         const root = s.workspace
         assertWorkspaceFree(ctx.deps, root)
-        const target = safeResolve(root, input.path)
+        const target = workspaceFileTarget(ctx, root, input.path)
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot save to a symlinked entry')
         if (!existsSync(target)) throw new HttpError(404, 'File not found')
         if (statSync(target).isDirectory()) throw new HttpError(400, 'Cannot save: path is a directory')
@@ -783,7 +800,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       try {
         const root = s.workspace
         assertWorkspaceFree(ctx.deps, root)
-        const target = safeResolve(root, input.path)
+        const target = workspaceFileTarget(ctx, root, input.path)
         if (existsSync(target)) throw new HttpError(400, 'File already exists')
         const data = Buffer.from(input.content ?? '', 'utf8')
         const fd = openAnchoredCreateFd(root, target)
@@ -800,7 +817,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       try {
         const root = s.workspace
         assertWorkspaceFree(ctx.deps, root)
-        const target = safeResolve(root, input.path)
+        const target = workspaceFileTarget(ctx, root, input.path)
         if (existsSync(target)) throw new HttpError(400, 'Path already exists')
         makeAnchoredDir(root, target)
         return { ok: true as const, path: relative(resolvePathLikePython(root), target).split('\\').join('/') }
@@ -814,11 +831,12 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       try {
         const root = s.workspace
         assertWorkspaceFree(ctx.deps, root)
-        const target = safeResolve(root, input.path)
+        const target = workspaceFileTarget(ctx, root, input.path)
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot delete a symlinked entry')
         if (!existsSync(target)) throw new HttpError(404, 'File not found')
         if (statSync(target).isDirectory()) {
           if (!input.recursive) throw new HttpError(400, 'Set recursive=true to delete directories')
+          assertWorkspaceFileAllowed(ctx, target, true)
           rmtreeAnchored(root, target)
         } else unlinkAnchored(root, target)
         return { ok: true as const, path: input.path }
@@ -833,13 +851,15 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
         const root = s.workspace
         assertWorkspaceFree(ctx.deps, root)
         const rootResolved = resolvePathLikePython(root)
-        const source = safeResolve(root, input.path)
+        const source = workspaceFileTarget(ctx, root, input.path)
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot rename a symlinked entry')
         if (!existsSync(source)) throw new HttpError(404, 'File not found')
         const newName = input.new_name.trim()
         if (!newName || newName.includes('/') || newName.includes('\\') || newName.includes('..')) throw new HttpError(400, 'Invalid file name')
         const dest = join(dirname(source), newName)
         if (existsSync(dest)) throw new HttpError(400, `A file named "${newName}" already exists`)
+        assertWorkspaceFileAllowed(ctx, source, true)
+        assertWorkspaceFileAllowed(ctx, dest, true)
         renameAnchored(root, source, dest)
         return { ok: true as const, old_path: input.path, new_path: relative(rootResolved, dest).split('\\').join('/') }
       } catch (error) {
@@ -855,16 +875,18 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
         const root = s.workspace
         assertWorkspaceFree(ctx.deps, root)
         const rootResolved = resolvePathLikePython(root)
-        const source = safeResolve(root, input.path)
+        const source = workspaceFileTarget(ctx, root, input.path)
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot move a symlinked entry')
         if (!existsSync(source)) throw new HttpError(404, 'File not found')
         if (destDirRaw.split('/').includes('..')) throw new HttpError(400, 'Invalid destination')
-        const destParent = safeResolve(root, destDirRaw)
+        const destParent = workspaceFileTarget(ctx, root, destDirRaw)
         if (!existsSync(destParent) || !statSync(destParent).isDirectory()) throw new HttpError(404, 'Destination folder not found')
         if (statSync(source).isDirectory() && isWithin(resolvePathLikePython(destParent), resolvePathLikePython(source))) throw new HttpError(400, 'Cannot move a folder into itself or its subfolder')
         const dest = join(destParent, basename(source))
         if (resolvePathLikePython(dest) === resolvePathLikePython(source)) return { ok: true as const, old_path: input.path, new_path: relative(rootResolved, source).split('\\').join('/') }
         if (existsSync(dest)) throw new HttpError(400, `A file named "${basename(source)}" already exists in that folder`)
+        assertWorkspaceFileAllowed(ctx, source, true)
+        assertWorkspaceFileAllowed(ctx, dest, true)
         renameAnchored(root, source, dest)
         return { ok: true as const, old_path: input.path, new_path: relative(rootResolved, dest).split('\\').join('/') }
       } catch (error) {
@@ -876,7 +898,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       requireFields(input, 'session_id', 'path')
       const s = (await fileOpsSession(ctx, input.session_id))
       try {
-        const target = safeResolve(s.workspace, input.path)
+        const target = workspaceFileTarget(ctx, s.workspace, input.path)
         if (!existsSync(target)) throw new HttpError(404, `File not found: ${target}`)
         const targetStr = ctx.deps.vscode().translate(target)
         const system = platform()
@@ -892,7 +914,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       requireFields(input, 'session_id', 'path')
       const s = (await fileOpsSession(ctx, input.session_id))
       try {
-        return { ok: true as const, path: safeResolve(s.workspace, input.path) }
+        return { ok: true as const, path: workspaceFileTarget(ctx, s.workspace, input.path) }
       } catch (error) {
         throw fileError(error)
       }
@@ -901,7 +923,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       requireFields(input, 'session_id', 'path')
       const s = (await fileOpsSession(ctx, input.session_id))
       try {
-        const target = safeResolve(s.workspace, input.path)
+        const target = workspaceFileTarget(ctx, s.workspace, input.path)
         if (!existsSync(target)) throw new HttpError(404, `File not found: ${target}`)
         const vscode = ctx.deps.vscode()
         const cmd = vscode.command()
@@ -955,7 +977,9 @@ export async function escapeRequest(ctx: RequestContext, sid: string | undefined
   if (!token) throw new HttpError(400, 'token is required')
   const s = (await fileOpsSession(ctx, sid))
   try {
-    return ctx.deps.escapeGrants.resolve(s.workspace, sid, s.profile, token, rel)
+    const grant = ctx.deps.escapeGrants.resolve(s.workspace, sid, s.profile, token, rel)
+    assertWorkspaceFileAllowed(ctx, join(grant.externalRoot, grant.externalRel))
+    return grant
   } catch (error) {
     if (error instanceof EscapeGrantExpired) throw new HttpError(403, error.message)
     throw fileError(error, 404)
@@ -988,16 +1012,22 @@ export interface FileOpsSession { workspace: string; profile: string | null; rec
  */
 export async function fileOpsSession(ctx: RequestContext, sid: string, opts: { strictWorkspace?: boolean } = {}): Promise<FileOpsSession> {
   const { session, profile } = await fileSourceSession(ctx, sid)
+  const serverOwner = await requestCanManageServer(ctx)
   if (!session) {
     if (!ctx.deps.workspaces.profileSupportsLocalIo(profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
-    return { workspace: (await ctx.deps.workspaces.lastWorkspace(profile)), profile, recovered: false, session: null }
+    const workspace = await ctx.deps.workspaces.lastWorkspace(profile)
+    if (!serverOwner || ctx.deps.workspaces.isInWebState(workspace)) {
+      try { await ctx.deps.workspaces.resolveTrusted(workspace, profile, serverOwner) } catch { throw new HttpError(403, 'Workspace is not trusted') }
+    }
+    return { workspace, profile, recovered: false, session: null }
   }
   if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
   let workspace = session.workspace
   let recovered = false
   try {
-    ;[workspace, recovered] = (await ctx.deps.workspaces.resolveImplicitWithRecovery(session.workspace, async (p) => (await ctx.deps.workspaces.lastWorkspace(p)), session.profile))
+    ;[workspace, recovered] = (await ctx.deps.workspaces.resolveImplicitWithRecovery(session.workspace, async (p) => (await ctx.deps.workspaces.lastWorkspace(p)), session.profile, serverOwner))
   } catch (error) {
+    if (!serverOwner || ctx.deps.workspaces.isInWebState(workspace)) throw new HttpError(403, 'Workspace is not trusted')
     if (opts.strictWorkspace) throw new HttpError(404, error instanceof Error ? error.message : 'Workspace is not trusted')
     workspace = session.workspace
   }

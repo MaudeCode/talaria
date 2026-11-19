@@ -28,7 +28,7 @@ describe('workspace checkpoints through the Agent (TAL-913)', () => {
   const sidecar = new FakeSidecar()
   beforeAll(async () => {
     s = await bootTestServer({ sidecar })
-    ws = realpathSync(join(s.state, 'workspace'))
+    ws = realpathSync(s.workspace)
   })
   afterAll(async () => { await s.close() })
   beforeEach(() => {
@@ -108,7 +108,7 @@ describe('workspace checkpoints through the Agent (TAL-913)', () => {
 
   it('keeps the profile checkpoint store to one user at a time: a run elsewhere in the profile blocks a diff, and a restore blocks new turns', async () => {
     // The Agent's store is one per profile and its lock does not wait, so a capture in another workspace would be skipped.
-    const elsewhere = join(s.state, 'elsewhere')
+    const elsewhere = join(s.workspace, '..', 'elsewhere')
     mkdirSync(elsewhere, { recursive: true })
     expect((await post(s, '/api/workspaces/add', { path: elsewhere })).status).toBe(200)
     const other = String(((await json(await post(s, '/api/session/new', { workspace: elsewhere }))).session as Json).session_id)
@@ -133,7 +133,7 @@ describe('workspace checkpoints through the Agent (TAL-913)', () => {
   })
 
   it('runs checkpoint operations on one profile store one at a time, across workspaces', async () => {
-    const second = join(s.state, 'second-ws')
+    const second = join(s.workspace, '..', 'second-ws')
     mkdirSync(second, { recursive: true })
     expect((await post(s, '/api/workspaces/add', { path: second })).status).toBe(200)
     sidecar.calls.length = 0
@@ -173,7 +173,7 @@ describe('workspace checkpoints through the Agent (TAL-913)', () => {
 
   it('serves checkpoints for a session whose workspace is not a configured one (TAL-571)', async () => {
     // A worktree-backed chat works in a generated directory that is not in the configured workspace list.
-    const wt = join(s.state, 'tal571-worktree')
+    const wt = join(s.workspace, '..', 'tal571-worktree')
     mkdirSync(wt, { recursive: true })
     writeFileSync(join(wt, 'notes.txt'), 'edited\n')
     const created = await json(await post(s, '/api/session/new', { workspace: ws }))

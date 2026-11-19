@@ -673,6 +673,14 @@ and delegation execution are separate. This extends sidecar RPC version 63.
 
 ## Project chat defaults
 
+A non-owner login may select or register a local workspace only at or below
+its profile's saved workspaces, configured default or the boot default.
+The user's home is reserved for owners. Restricted workspaces cannot overlap
+Hermes home or Web state, and workspace file operations recheck the stored
+root on each request. All workspace file operations exclude Web state.
+If the boot workspace is inside Web state, configure a writable workspace
+outside it via `TALARIA_WEB_DEFAULT_WORKSPACE`.
+
 A project in `projects.json` can carry `workspaces`, `default_workspace`, `model`
 and `model_provider` (TAL-1032). The keys are additive, so Stable reads the file;
 a row from upstream with only a single `workspace` reads as that one bound default.

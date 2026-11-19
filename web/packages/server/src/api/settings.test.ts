@@ -1091,7 +1091,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
   })
 
   it('the VS Code launcher honours vscode.command and the Docker path prefixes from config.yaml', async () => {
-    const ws = realpathSync(join(s.state, 'workspace'))
+    const ws = realpathSync(s.workspace)
     const sid = String(((await json(await post(s, '/api/session/new', { workspace: ws }))).session as Json).session_id)
     writeFileSync(join(ws, 'note.txt'), 'x')
     configs.set(s.state, { ...(configs.get(s.state) ?? {}), vscode: { command: '/nonexistent/code-cli', container_path_prefix: '/app/workspace', host_path_prefix: '/Users/me/proj' } })

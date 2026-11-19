@@ -3,7 +3,10 @@
  * identities against one disposable server; each sees only their own sessions, an unowned (legacy) session reaches
  * only an owner, and nothing a client sends can name a different person.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
 
 const ISSUER = 'https://identity.invalid'
@@ -15,8 +18,9 @@ interface AuthStatusBody { person_isolation?: { version: number; enabled: boolea
 let s: TestServer | null = null
 afterEach(async () => { await s?.close(); s = null })
 
-async function boot(isolation: boolean): Promise<TestServer> {
+async function boot(isolation: boolean, sidecar?: FakeSidecar): Promise<TestServer> {
   s = await bootTestServer({
+    ...(sidecar ? { sidecar } : {}),
     env: { ...OIDC_ENV, ...(isolation ? { TALARIA_WEB_PERSON_ISOLATION: '1' } : {}) },
     // The identity provider's proof is the boundary; the gate, owner policy and session access stay real.
     deps: (deps) => { deps.oidc.sessionBindingIsCurrent = () => Promise.resolve(true) },
@@ -56,6 +60,85 @@ async function listed(server: TestServer, client: Client): Promise<string[]> {
 async function status(server: TestServer, client: Client): Promise<AuthStatusBody> {
   return (await (await server.get('/api/auth/status', { headers: client.headers })).json()) as AuthStatusBody
 }
+
+describe('workspace authority from the request', () => {
+  it.each([false, true])('passes restricted authority with person isolation %s', async (isolation) => {
+    const server = await boot(isolation)
+    const client = signIn(server, 'alice')
+    const sid = await chat(server, client)
+    const lookup = vi.spyOn(server.deps.workspaces, 'resolveTrusted')
+    const add = vi.spyOn(server.deps.workspaces, 'validateToAdd')
+    const workspace = server.deps.config.defaultWorkspace
+    const created = await post(server, client, '/api/projects/create', { name: 'Project' })
+    expect(created.status).toBe(200)
+    const { project } = await created.json() as { project: { project_id: string } }
+
+    for (const [route, body] of [
+      ['/api/session/new', { workspace }],
+      ['/api/session/update', { session_id: sid, workspace }],
+      ['/api/projects/bind', { project_id: project.project_id, workspaces: [workspace] }],
+    ] as const) {
+      lookup.mockClear()
+      expect((await post(server, client, route, body)).status, route).toBe(200)
+      expect(lookup.mock.calls.some(([path, , serverOwner]) => path === workspace && !serverOwner), route).toBe(true)
+    }
+    await post(server, client, '/api/workspaces/add', { path: workspace })
+    expect(add.mock.calls.some(([path, , serverOwner]) => path === workspace && !serverOwner)).toBe(true)
+  })
+
+  it.each(['safe', 'ignore_config'])('passes restricted authority for %s diagnostic creation', async (mode) => {
+    const server = await boot(true)
+    const client = signIn(server, 'alice')
+    const workspace = server.deps.config.defaultWorkspace
+    const resolve = vi.spyOn(server.deps.workspaces, 'resolveTrusted')
+    await post(server, client, '/api/session/new', { execution_mode: mode, workspace })
+    expect(resolve).toHaveBeenCalledWith(workspace, 'default', false)
+  })
+
+  it('passes restricted authority to native workspace mutations', async () => {
+    const server = await boot(true)
+    const client = signIn(server, 'alice')
+    const sid = await chat(server, client)
+    const owner = server.deps.sessions.owner!
+    const action = vi.spyOn(owner, 'action').mockRejectedValue(new Error('Synthetic native owner refusal'))
+    const body = { session_id: sid, action: 'mutate', request_id: 'workspace-change', expected_revision: 0, execution_generation: 0, operation: 'workspace', payload: { cwd: server.workspace } }
+    await post(server, client, '/api/chat/owner-action', body)
+    expect(action).toHaveBeenCalledWith(sid, expect.objectContaining(body), false)
+  })
+
+  it.each([false, true])('records server-owner authority (%s) at ordinary chat admission', async (serverOwner) => {
+    const server = await boot(true, new FakeSidecar())
+    const client = signIn(server, 'alice', serverOwner)
+    const sid = await chat(server, client)
+    const start = vi.spyOn(server.deps.turns, 'start').mockRejectedValue(new Error('Synthetic turn refusal'))
+    await post(server, client, '/api/chat/start', { session_id: sid, message: 'Synthetic prompt' })
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({ session_id: sid }), expect.objectContaining({ workspaceServerOwner: serverOwner }))
+  })
+
+  it('uses the last authorized workspace for an implicit new session', async () => {
+    const server = await boot(true)
+    const client = signIn(server, 'alice')
+    const last = join(server.deps.config.defaultWorkspace, 'last-selected')
+    mkdirSync(last)
+    await server.deps.workspaces.setLastWorkspace(last, 'default')
+    const response = await post(server, client, '/api/session/new', {})
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ session: { workspace: last } })
+  })
+
+  it('refuses protected file targets even when the workspace is trusted', async () => {
+    const server = await boot(false)
+    const owner = signIn(server, 'olive', true)
+    const workspace = dirname(server.state)
+    server.deps.workspaces.deps.defaultWorkspace = () => workspace
+    const sid = await chat(server, owner, { workspace })
+    const query = new URLSearchParams({ session_id: sid, path: 'state' })
+    for (const route of ['/api/file', '/api/file/raw', '/api/folder/download', '/api/list']) {
+      expect((await server.get(`${route}?${query.toString()}`, { headers: owner.headers })).status, route).toBe(403)
+    }
+  })
+
+})
 
 describe('person isolation on', () => {
   it('lists, opens, streams and changes only the requesting person\'s sessions', async () => {

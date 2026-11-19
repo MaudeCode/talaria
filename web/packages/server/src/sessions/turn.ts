@@ -171,6 +171,7 @@ export interface StartTurnOptions {
   prompt?: string
   attachments?: Record<string, unknown>[]
   workspace: string
+  workspaceServerOwner?: boolean | undefined
   model: string | null
   modelProvider: string | null
   normalizedModel?: boolean
@@ -734,7 +735,7 @@ export class TurnRunner {
     const previousActivities = s.extra.talaria_activities
     if (opts.backgroundUpdate) recordBackgroundUpdate(s, streamId, opts.backgroundUpdate)
     if (opts.talariaActivity) recordTalariaActivity(s, `turn:${streamId}`, opts.talariaActivity)
-    const admission = { stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral), ...(opts.activityParentSessionId ? { activity_parent_session_id: opts.activityParentSessionId } : {}), origin: turnOrigin(source), admitting: true }
+    const admission = { stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, workspaceServerOwner: opts.workspaceServerOwner, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral), ...(opts.activityParentSessionId ? { activity_parent_session_id: opts.activityParentSessionId } : {}), origin: turnOrigin(source), admitting: true }
     this.registry.registerActiveRun(admission)
     // A run is visible from here, before its worker exists: `finished()` waits for its admission first (TAL-1165).
     let admitted: () => void = () => undefined

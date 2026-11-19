@@ -2,7 +2,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, openSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 /** `web/` (the npm workspaces root). */
@@ -30,7 +30,7 @@ const STATE_FILE = join(tmpdir(), `hermes-e2e-${process.env.HERMES_E2E_PORT ?? '
  */
 const STATE_ROOT = existsSync('/dev/shm') ? '/dev/shm' : tmpdir()
 
-interface ServerHandle { pid: number; state: string; log: string }
+interface ServerHandle { pid: number; state: string; workspace: string; log: string }
 
 /** A listener on the port would answer the `/health` wait below for a server that could not bind. Only a refused connection proves the port free. */
 function assertPortFree(url: URL): Promise<void> {
@@ -49,8 +49,11 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
   const url = new URL(baseUrl)
   await assertPortFree(url)
   const port = url.port
-  const state = mkdtempSync(join(STATE_ROOT, 'hermes-e2e-'))
-  mkdirSync(join(state, 'workspace'))
+  const home = mkdtempSync(join(STATE_ROOT, 'hermes-e2e-'))
+  const state = join(home, 'state')
+  const workspace = join(home, 'workspace')
+  mkdirSync(state)
+  mkdirSync(workspace)
   mkdirSync(join(state, 'claude-projects'))
   mkdirSync(join(state, 'sessions'))
   const env: Record<string, string> = {}
@@ -59,11 +62,11 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
   for (const key of ['TALARIA_WEB_AGENT_DIR', 'TALARIA_WEB_PYTHON', 'TALARIA_WEB_SIDECAR_COMMAND']) if (process.env[key]) env[key] = process.env[key]
   Object.assign(env, {
     // The tmpfs workspace must be inside the same disposable user home as the server.
-    HOME: state,
+    HOME: home,
     TALARIA_WEB_PORT: port,
     TALARIA_WEB_HOST: '127.0.0.1',
     TALARIA_WEB_STATE_DIR: state,
-    TALARIA_WEB_DEFAULT_WORKSPACE: join(state, 'workspace'),
+    TALARIA_WEB_DEFAULT_WORKSPACE: workspace,
     HERMES_HOME: state,
     HERMES_BASE_HOME: state,
     HERMES_CONFIG_PATH: join(state, 'config.yaml'),
@@ -87,7 +90,7 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
   if (await listening(child, log)) {
     try {
       const res = await fetch(`${baseUrl}/health`)
-      if (res.ok) return { pid: child.pid!, state, log }
+      if (res.ok) return { pid: child.pid!, state, workspace, log }
     } catch { /* reported with the log below */ }
   }
   const output = readFileSync(log, 'utf8')
@@ -121,7 +124,9 @@ function listening(child: ChildProcess, log: string): Promise<boolean> {
 export function saveHandles(handles: ServerHandle[]): void { writeFileSync(STATE_FILE, JSON.stringify(handles)) }
 
 /** Disposable server state for specs that seed server-read files. */
-export function serverState(kind: 'open' | 'authenticated'): string { return (JSON.parse(readFileSync(STATE_FILE, 'utf8')) as ServerHandle[])[kind === 'open' ? 0 : 1]!.state }
+function serverHandle(kind: 'open' | 'authenticated'): ServerHandle { return (JSON.parse(readFileSync(STATE_FILE, 'utf8')) as ServerHandle[])[kind === 'open' ? 0 : 1]! }
+export function serverState(kind: 'open' | 'authenticated'): string { return serverHandle(kind).state }
+export function openServerWorkspace(): string { return serverHandle('open').workspace }
 export function openServerState(): string { return serverState('open') }
 
 /** A spec's own handle on a server's Agent state.db. The server reads the same file while it runs, so writes wait out its lock instead of failing with "database is locked". */
@@ -130,7 +135,7 @@ export function openStateDb(state: string): DatabaseSync { return new DatabaseSy
 export function stopHandles(handles: ServerHandle[]): void {
   for (const h of handles) {
     try { process.kill(h.pid, 'SIGTERM') } catch { /* already gone */ }
-    if (!process.env.HERMES_E2E_KEEP_STATE) rmSync(h.state, { recursive: true, force: true })
+    if (!process.env.HERMES_E2E_KEEP_STATE) rmSync(dirname(h.workspace), { recursive: true, force: true })
   }
 }
 

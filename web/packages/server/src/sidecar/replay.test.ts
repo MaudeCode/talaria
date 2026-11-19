@@ -23,7 +23,7 @@ describe.skipIf(!python)('replay sidecar', () => {
   it('serves recorded fixtures and stages the contract approval on chat start', async () => {
     const profiles = await (await s.get('/api/profiles')).json() as { profiles: { name: string }[]; active: string }
     expect(profiles.profiles.map((p) => p.name)).toContain('default')
-    const created = await (await fetch(`${s.base}/api/session/new`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: join(s.state, 'workspace') }) })).json() as { session: { session_id: string } }
+    const created = await (await fetch(`${s.base}/api/session/new`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: s.workspace }) })).json() as { session: { session_id: string } }
     const sid = created.session.session_id
     // The staged approval may already be pending when the stream attaches, in which case it rides in the `initial` snapshot.
     const staged = (frame: SseFrame): boolean => (frame.event === 'approval' || frame.event === 'initial') && Boolean((frame.data as { pending: unknown }).pending)

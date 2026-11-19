@@ -116,7 +116,7 @@ describe('archive extraction, workspace upload, and copy path', () => {
     })
     // A 1 MB extraction cap keeps every bomb small enough to build in-test.
     s = await bootTestServer({ sidecar, env: { TALARIA_WEB_MAX_EXTRACTED_MB: '1' } })
-    ws = realpathSync(join(s.state, 'workspace'))
+    ws = realpathSync(s.workspace)
     sid = await newSession()
     outside = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-upload-outside-')))
   })

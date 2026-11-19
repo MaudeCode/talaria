@@ -62,7 +62,7 @@ describe('every feed with no natural end stops at its lease', () => {
     ;(s.deps as { terminals: TerminalRegistry }).terminals = new TerminalRegistry({ env: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: s.state }, now: () => Date.now(), log: () => undefined, pty })
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
     sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: {} }))
-    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    mkdirSync(s.workspace, { recursive: true })
     sid = (await s.deps.sessionStore.newSession()).session_id
     await s.deps.settings.save({ show_cli_sessions: true })
     const started = await s.get('/api/terminal/start', { method: 'POST', body: JSON.stringify({ session_id: sid }), headers: { 'content-type': 'application/json' } })

@@ -27,7 +27,7 @@ test('renders every show block kind, and the HTML frame reaches neither the sess
   const now = Math.floor(Date.now() / 1000)
   const shot = async (name: string) => { if (process.env.TAL1968_SHOTS) await page.screenshot({ path: `${process.env.TAL1968_SHOTS}/${name}-${testInfo.project.name}.png`, fullPage: true }) }
   try {
-    const workspace = join(server.state, 'workspace')
+    const workspace = server.workspace
     mkdirSync(join(workspace, 'reports'), { recursive: true })
     writeFileSync(join(workspace, 'reports', 'funnel.png'), PNG)
     writeFileSync(join(workspace, 'notes.md'), '# Release notes\n\n- Faster startup\n')
@@ -121,7 +121,7 @@ test('renders delivered files with Download, and notes one that changed after de
   const now = Math.floor(Date.now() / 1000)
   const shot = async (name: string) => { if (process.env.TAL1968_SHOTS) await page.screenshot({ path: `${process.env.TAL1968_SHOTS}/deliver-${name}-${testInfo.project.name}.png`, fullPage: true }) }
   try {
-    const workspace = join(server.state, 'workspace')
+    const workspace = server.workspace
     mkdirSync(join(workspace, 'reports'), { recursive: true })
     mkdirSync(join(workspace, 'dist'), { recursive: true })
     writeFileSync(join(workspace, 'reports', 'week-45.md'), '# Week 45\n\nSignups up 12%.\n')

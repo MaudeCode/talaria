@@ -4,7 +4,7 @@ import { automationContract, type SidecarMethodName, type SidecarParams } from '
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
-import { activeProfileName, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
+import { activeProfileName, ensureTrustedAuthSession, requestCanManageServer, sessionCanManageServer } from '../auth/gate.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { ConfigUnavailable, type Dict } from '../config/agent-config.js'
@@ -62,7 +62,7 @@ export async function kanbanCall<M extends Extract<SidecarMethodName, `kanban.${
     if (task.workspace_kind === 'dir' || task.workspace_kind === 'worktree' || task.workspace_path) {
       const raw = str(task.workspace_path).trim()
       if (!raw) throw new HttpFailure(400, 'workspace_path is required')
-      task.workspace_path = await ctx.deps.workspaces.resolveTrusted(raw, activeProfileName(ctx))
+      task.workspace_path = await ctx.deps.workspaces.resolveTrusted(raw, activeProfileName(ctx), await requestCanManageServer(ctx))
     }
   }
   return ctx.deps.kanban.call(method, params, allowed)
@@ -94,7 +94,7 @@ export async function terminalGate(ctx: RequestContext): Promise<void> {
 export const automationRouter = os.router({
   promptQueues: {
     list: os.promptQueues.list.handler(({ context: { ctx } }) => run(() => ctx.deps.promptQueues.list())),
-    create: os.promptQueues.create.handler(({ input, context: { ctx } }) => run(() => ctx.deps.promptQueues.create(input.request_id, input.cards))),
+    create: os.promptQueues.create.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.promptQueues.create(input.request_id, input.cards, await requestCanManageServer(ctx)))),
     edit: os.promptQueues.edit.handler(({ input, context: { ctx } }) => run(() => ctx.deps.promptQueues.replace(input.id, input.revision, input.cards))),
     action: os.promptQueues.action.handler(({ input, context: { ctx } }) => run(() => ctx.deps.promptQueues.action(input.id, input.revision, input.action))),
   },
@@ -130,13 +130,13 @@ export const automationRouter = os.router({
       const spec: Dict = { ...input }
       // A board named without a slug gets one from its name.
       if (!str(spec.slug).trim()) spec.slug = boardSlug(str(spec.name))
-      if ('default_workdir' in spec) { const raw = str(spec.default_workdir).trim(); spec.default_workdir = raw ? (await ctx.deps.workspaces.resolveTrusted(raw, activeProfileName(ctx))) : '' }
+      if ('default_workdir' in spec) { const raw = str(spec.default_workdir).trim(); spec.default_workdir = raw ? (await ctx.deps.workspaces.resolveTrusted(raw, activeProfileName(ctx), await requestCanManageServer(ctx))) : '' }
       return kanbanCall(ctx, 'kanban.create_board', { profile_home: home(ctx), board_spec: spec })
     }))),
     switchBoard: os.kanban.switchBoard.handler(({ input, context: { ctx } }) => run(() => kb(() => kanbanCall(ctx, 'kanban.switch_board', { profile_home: home(ctx), slug: pathParam(ctx, 'slug', input.slug) })))),
     updateBoard: os.kanban.updateBoard.handler(({ input, context: { ctx } }) => run(() => kb(async () => {
       const { slug, ...spec } = input
-      if ('default_workdir' in spec) { const raw = str(spec.default_workdir).trim(); spec.default_workdir = raw ? (await ctx.deps.workspaces.resolveTrusted(raw, activeProfileName(ctx))) : '' }
+      if ('default_workdir' in spec) { const raw = str(spec.default_workdir).trim(); spec.default_workdir = raw ? (await ctx.deps.workspaces.resolveTrusted(raw, activeProfileName(ctx), await requestCanManageServer(ctx))) : '' }
       if (typeof spec.archived === 'string') spec.archived = truthyQuery(spec.archived)
       return kanbanCall(ctx, 'kanban.update_board', { profile_home: home(ctx), slug: pathParam(ctx, 'slug', slug), board_spec: spec })
     }))),

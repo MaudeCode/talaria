@@ -180,6 +180,24 @@ it('reconciles restart and lost-ACK claims without replaying uncertain admission
   await documents.close()
 })
 
+it('keeps restricted workspace authority when a detached queue dispatches', async () => {
+  const sidecar = new FakeSidecar()
+  sidecar.respond('chat.start', completed)
+  server = await bootTestServer({ sidecar, env: { TALARIA_WEB_PASSWORD: 'synthetic-password' } })
+  const deps = server.deps
+  const session = await deps.sessionStore.newSession({ profile: 'default' })
+  const token = deps.auth.createSession({ authType: 'password', username: 'scoped-user', boundProfile: 'default' })
+  const headers = { cookie: `${deps.auth.cookieName()}=${token}`, origin: server.base, 'X-Hermes-CSRF-Token': deps.auth.csrfTokenForSession(token)!, 'content-type': 'application/json' }
+  const send = (path: string, body: unknown) => server!.get(path, { method: 'POST', headers, body: JSON.stringify(body) })
+  const created = await send('/api/prompt-queues', { request_id: 'workspace-authority', cards: [{ session_id: session.session_id, project_id: null, text: 'Synthetic prompt' }] })
+  expect(created.status).toBe(200)
+  const run = await created.json() as PromptQueueRun
+  const authorize = vi.spyOn(deps.workspaces, 'resolveImplicitWithRecovery')
+  expect((await send(`/api/prompt-queues/${run.id}/action`, { revision: run.revision, action: 'start' })).status).toBe(200)
+  await deps.promptQueues.settled()
+  expect(authorize).toHaveBeenCalledWith(session.workspace, expect.any(Function), 'default', false)
+})
+
 it('hides queues across authenticated owners and profiles', async () => {
   const { run } = await setup()
   const deps = server!.deps

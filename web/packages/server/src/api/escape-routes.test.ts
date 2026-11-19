@@ -50,7 +50,7 @@ describe('escape grants', () => {
 
   beforeAll(async () => {
     s = await bootTestServer({ now: () => clock })
-    ws = realpathSync(join(s.state, 'workspace'))
+    ws = realpathSync(s.workspace)
     mkdirSync(ws, { recursive: true })
     sid = await newSession()
     outside = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-escape-outside-')))

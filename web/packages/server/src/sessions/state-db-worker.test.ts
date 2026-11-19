@@ -191,7 +191,7 @@ describe('admission authority queue isolation (TAL-1437)', () => {
     s = await bootTestServer({ sidecar: new FakeSidecar() })
     dbPath = join(s.state, 'state.db')
     seedStateDb(dbPath, [{ id: 'authority-web', source: 'webui', at: 1000 }])
-    await s.deps.sessionStore.save(new Session({ session_id: 'authority-web', source_tag: 'webui' }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
+    await s.deps.sessionStore.save(new Session({ session_id: 'authority-web', source_tag: 'webui' }, { workspace: s.workspace, model: 'fixture' }))
   })
   afterEach(async () => { await stopStateDbWorker() })
   afterAll(async () => { await s.close() })
@@ -685,7 +685,7 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
   const seeded = async (sid: string, at: number): Promise<void> => {
     seedStateDb(dbPath, [{ id: sid, source: 'webui', at }])
     commit(sid, [['user', 'CLI later', at + 3]])
-    await s.deps.sessionStore.save(new Session({ session_id: sid, title: sid, source_tag: 'webui', messages: [{ role: 'user', content: 'hi', timestamp: at + 1 }, { role: 'assistant', content: 'hi', timestamp: at + 2 }] }, { workspace: join(s.state, 'workspace'), model: null }))
+    await s.deps.sessionStore.save(new Session({ session_id: sid, title: sid, source_tag: 'webui', messages: [{ role: 'user', content: 'hi', timestamp: at + 1 }, { role: 'assistant', content: 'hi', timestamp: at + 2 }] }, { workspace: s.workspace, model: null }))
   }
   const contents = async (path: string): Promise<unknown[]> => (((await (await s.get(path)).json()) as { session: Json }).session.messages as Json[]).map((m) => m.content)
   /** A turn whose Agent commits its prompt and answer to state.db, run through to the end of its stream. */
@@ -704,7 +704,7 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
     sidecar.respond('chat.interrupt', () => ({ ok: true }))
     s = await bootTestServer({ sidecar })
     dbPath = join(s.state, 'state.db')
-    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    mkdirSync(s.workspace, { recursive: true })
   })
   afterAll(async () => { await s.close() })
 

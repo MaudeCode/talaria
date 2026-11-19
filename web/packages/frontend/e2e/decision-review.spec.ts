@@ -1,5 +1,4 @@
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { bootTestServer } from '../../server/dist/test/harness.js'
 import { FakeSidecar } from '../../server/dist/sidecar/fake.js'
 import { Session } from '../../server/dist/sessions/session.js'
@@ -30,7 +29,7 @@ test('answers, defers, reviews and submits a decision review the agent opened', 
   const now = Math.floor(Date.now() / 1000)
   const shot = shooter(page, testInfo)
   try {
-    const workspace = join(server.state, 'workspace')
+    const workspace = server.workspace
     mkdirSync(workspace, { recursive: true })
     await server.deps.sessionStore.save(new Session({ session_id: sid, title: 'Audit the settings', profile: 'default', workspace, messages: [{ role: 'user', content: 'Audit the settings', timestamp: now - 60 }, { role: 'assistant', content: 'I have three decisions for you.', timestamp: now - 50 }] }, { workspace, model: null }))
     const put = await sidecar.serverRequest('server.decision_review_put', { caller_session_id: sid, title: 'Settings audit', items: [item('retention', 'Retention'), item('telemetry', 'Telemetry'), item('autosave', 'Autosave')] })
@@ -132,7 +131,7 @@ test('lists the profile\'s reviews on Decisions and opens a review and its chat'
   const shot = shooter(page, testInfo)
   const now = Math.floor(Date.now() / 1000)
   try {
-    const workspace = join(server.state, 'workspace')
+    const workspace = server.workspace
     mkdirSync(workspace, { recursive: true })
     const ids: string[] = []
     for (const [sid, chat, title] of [['20261108_120000_older', 'Audit the settings', 'Settings audit'], ['20261108_130000_newer', 'Plan the release', 'Release choices']] as const) {

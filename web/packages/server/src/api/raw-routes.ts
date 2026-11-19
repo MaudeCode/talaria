@@ -11,7 +11,7 @@ import { OwnerExportFormatSchema } from '@maudecode/talaria-web-contracts'
 import { basename, join, relative } from 'node:path'
 import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
-import { escapeRequest, fileError, fileOpsSession } from './sessions-router.js'
+import { assertWorkspaceFileAllowed, escapeRequest, fileError, fileOpsSession } from './sessions-router.js'
 import { HttpFailure } from '../sessions/service.js'
 import { materializeAttachment } from '../sessions/storage/blobs.js'
 import { SessionNotFound } from '../sessions/store.js'
@@ -134,8 +134,9 @@ async function handleClarifyInject(ctx: RequestContext): Promise<void> {
 async function fileRawTarget(ctx: RequestContext, workspace: string, sid: string, rel: string): Promise<[string, string] | null> {
   try {
     const target = safeResolve(workspace, rel)
+    assertWorkspaceFileAllowed(ctx, target)
     if (existsSync(target) && statSync(target).isFile()) return [workspace, target]
-  } catch { /* fall through to the attachment inbox */ }
+  } catch (error) { if (error instanceof HttpError) throw error }
   try {
     const attachmentRoot = ctx.deps.uploads.sessionDir(sid)
     const target = safeResolve(attachmentRoot, ctx.deps.uploads.rebase(sid, rel))
@@ -208,6 +209,7 @@ export async function handleWorkspacePreview(ctx: RequestContext): Promise<void>
     await ctx.json({ error: 'not found' }, { status: 404 })
     return
   }
+  assertWorkspaceFileAllowed(ctx, target)
   const mime = mimeFor(target)
   if (mime === 'text/html') (await serveInlineHtmlPreview(ctx, target, 'no-store', PREVIEW_CSP, root))
   else (await serveFileBytes(ctx, target, { mime, disposition: 'inline', cacheControl: 'no-store', csp: PREVIEW_CSP, anchorRoot: root }))
@@ -327,7 +329,7 @@ export function folderZipMaxFiles(env: Record<string, string | undefined>): numb
  * The folder-download preflight, walked with async `readdir`/`stat` so a 50,000-file folder never blocks the loop
  * (TAL-1699). `readdir` keeps the sorted scandir order the archive has always used; `opendir` would not.
  */
-export async function collectFolder(target: string, workspaceRoot: string, maxBytes: number, maxFiles: number): Promise<{ files: [string, string, number][]; total: number; limit: 'max_files' | 'max_bytes' | null }> {
+export async function collectFolder(target: string, workspaceRoot: string, maxBytes: number, maxFiles: number, excluded?: (path: string) => boolean): Promise<{ files: [string, string, number][]; total: number; limit: 'max_files' | 'max_bytes' | null }> {
   const files: [string, string, number][] = []
   let total = 0
   const stack = [target]
@@ -335,12 +337,14 @@ export async function collectFolder(target: string, workspaceRoot: string, maxBy
     const dir = stack.pop()!
     let realDir: string
     try { realDir = await realpath(dir) } catch { continue }
+    if (excluded?.(realDir)) continue
     if (realDir !== workspaceRoot && !isWithin(realDir, workspaceRoot)) continue
     let entries
     try { entries = await readdir(dir, { withFileTypes: true }) } catch { continue }
     const subdirs: string[] = []
     for (const entry of entries) {
       const fp = join(dir, entry.name)
+      if (excluded?.(fp)) continue
       if (entry.isDirectory()) { subdirs.push(fp); continue }
       if (entry.isSymbolicLink()) {
         try {
@@ -374,6 +378,7 @@ async function handleFolderDownload(ctx: RequestContext): Promise<void> {
   } catch {
     throw new HttpError(400, 'invalid path')
   }
+  assertWorkspaceFileAllowed(ctx, target)
   if (!existsSync(target)) {
     await ctx.json({ error: 'not found' }, { status: 404 })
     return
@@ -382,7 +387,7 @@ async function handleFolderDownload(ctx: RequestContext): Promise<void> {
   const workspaceRoot = realpathSync(s.workspace)
   const maxBytes = folderZipMaxBytes(ctx.deps.config.env)
   const maxFiles = folderZipMaxFiles(ctx.deps.config.env)
-  const { files, limit } = await collectFolder(target, workspaceRoot, maxBytes, maxFiles)
+  const { files, limit } = await collectFolder(target, workspaceRoot, maxBytes, maxFiles, (path) => ctx.deps.workspaces.isInWebState(path))
   if (limit === 'max_files') {
     await ctx.json({ error: 'too many files', limit: maxFiles, configure: 'TALARIA_WEB_FOLDER_ZIP_MAX_FILES' }, { status: 413 })
     return
@@ -400,7 +405,9 @@ async function handleFolderDownload(ctx: RequestContext): Promise<void> {
     for (const [fp, arcname, size] of files) {
       let fd: number
       try {
-        fd = openAnchoredFd(workspaceRoot, realpathSync(fp), { wantDir: false })
+        const target = realpathSync(fp)
+        assertWorkspaceFileAllowed(ctx, target)
+        fd = openAnchoredFd(workspaceRoot, target, { wantDir: false })
       } catch (error) {
         ctx.deps.log(`[webui] WARNING: folder-download: skipping ${fp}: ${(error as Error).message}`)
         continue
@@ -594,6 +601,7 @@ async function handleWorkspaceUpload(ctx: RequestContext): Promise<void> {
   } catch (error) {
     throw new HttpError(400, (error as Error).message)
   }
+  assertWorkspaceFileAllowed(ctx, targetDir)
   try {
     makeAnchoredDir(workspace, targetDir)
   } catch {
@@ -613,6 +621,7 @@ async function handleWorkspaceUpload(ctx: RequestContext): Promise<void> {
           if (error instanceof UploadRejected) throw new HttpError(400, error.message)
           throw error
         }
+        assertWorkspaceFileAllowed(ctx, dest)
         let fd: number
         try {
           fd = openAnchoredCreateFd(workspace, dest)
