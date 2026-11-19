@@ -25,7 +25,7 @@ if tool == 'sleep':
     time.sleep(0.05)
 if tool == os.environ.get('FAIL_TOOL'):
     sys.exit(42)
-if tool == 'xcrun' and sys.argv[1:3] == ['simctl', 'launch'] and os.environ.get('FAIL_LAUNCH'):
+if tool == 'xcrun' and sys.argv[1:3] == ['simctl', os.environ.get('FAIL_SIMCTL')]:
     sys.exit(43)
 '''
 FAKE_POOL = '''lease_dir="$repo_root/leases"
@@ -42,7 +42,7 @@ ios_pool_release() {
 '''
 
 
-def run(options=(), *, failure=None, fail_launch=False):
+def run(options=(), *, failure=None, fail_simctl=None):
     with tempfile.TemporaryDirectory(prefix='talaria-run-ios-') as directory:
         work = Path(directory)
         repo, tools = work / 'repo', work / 'bin'
@@ -65,11 +65,11 @@ def run(options=(), *, failure=None, fail_launch=False):
         env = dict(os.environ, PATH=f'{tools}:{os.environ["PATH"]}',
                    CALL_LOG=str(log), READY=str(ready), FAKE_DEVELOPER_DIR=str(developer))
         env.pop('FAIL_TOOL', None)
-        env.pop('FAIL_LAUNCH', None)
+        env.pop('FAIL_SIMCTL', None)
         if failure:
             env['FAIL_TOOL'] = failure
-        if fail_launch:
-            env['FAIL_LAUNCH'] = '1'
+        if fail_simctl:
+            env['FAIL_SIMCTL'] = fail_simctl
         with subprocess.Popen(['bash', str(scripts / 'run-ios'), *options], env=env,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
             try:
@@ -89,7 +89,7 @@ def run(options=(), *, failure=None, fail_launch=False):
         return process.returncode, stdout + stderr, calls, (repo / '.codex-tmp').exists()
 
 
-for options in (('--unknown',), ('--no-open', '--unknown')):
+for options in (('--unknown',), ('--no-open', '--unknown'), ('--prepare-only', '--no-open')):
     status, output, calls, created_state = run(options)
     assert status == 64 and 'Usage:' in output, (status, output)
     assert calls == [] and not created_state, calls
@@ -112,6 +112,20 @@ for failure in ('xcodebuild', 'codesign'):
     assert status == 42 and calls[-1] == 'release', (status, output, calls)
     assert not any(call.startswith('xcrun simctl launch ') for call in calls), calls
 
-status, output, calls, _ = run(('--no-open',), fail_launch=True)
+status, output, calls, _ = run(('--no-open',), fail_simctl='launch')
 assert status == 43 and calls[-1] == 'release', (status, output, calls)
-print('PASS: simulator runner opening, fixture, argument rejection, and lease cleanup')
+
+# Prepare-only installs the verified fixture build and holds the lease; T3's Device command launches it.
+status, output, calls, _ = run(('--prepare-only',))
+assert status == 130 and f'Simulator ID: {UDID}' in output, (status, output)
+assert 'Fixture bundle ID: dev.kil.talaria.xctest' in output, output
+assert [call for call in calls if call in ('acquire', 'release')] == ['acquire', 'release'], calls
+assert any(call.startswith('codesign --verify --deep --strict ') for call in calls), calls
+assert any(call.startswith(f'xcrun simctl install {UDID} ') for call in calls), calls
+assert not any(call.startswith(('open ', 'xcrun simctl launch ')) for call in calls), calls
+
+for failure, simctl, code in (('xcodebuild', None, 42), (None, 'install', 43)):
+    status, output, calls, _ = run(('--prepare-only',), failure=failure, fail_simctl=simctl)
+    assert status == code and calls[-1] == 'release', (status, output, calls)
+    assert 'Simulator ID:' not in output, output
+print('PASS: simulator runner opening, prepare-only, fixture, argument rejection, and lease cleanup')
