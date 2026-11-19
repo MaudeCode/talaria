@@ -84,8 +84,9 @@ A cron create or update stays open to non-owners, except that a body carrying
 matching capability fields: `GET /api/mcp/servers` answers a non-owner with
 `toggle_supported: false` and every row's `can_toggle`, `events.can_edit` and
 `cost_policy.can_edit` false, and `GET /api/commands` lists `/terminal` for no
-client. Web hides Terminal, provider setup and MCP edits by
-`auth.can_manage_server` and those fields.
+client. Web hides Terminal, provider setup, MCP edits and a task's script
+fields by `auth.can_manage_server` and those fields; a non-owner's task save
+leaves `script` and `no_agent` out, so the stored values stay.
 
 When a change touches streaming, recovery, replay, compression, context
 reconstruction, cancellation, approval/clarify, session metadata, or run state,
