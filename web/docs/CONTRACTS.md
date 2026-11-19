@@ -79,6 +79,11 @@ server with auth off, pass as before. `src/auth/gate.test.ts` owns the matrix.
   `/api/dashboard/config`, which re-point a profile's model endpoint, write or
   remove provider credentials, or make the server fetch a URL.
 
+`POST /api/model/set` and `POST /api/default-model` stay open for picking a
+model and its `advanced.service_tier`, but a non-owner whose `advanced` carries
+`base_url`, `api_key` or `api_key_clear` gets the same 403: those re-point the
+route or write its credential.
+
 A cron create or update stays open to non-owners, except that a body carrying
 `script` or `no_agent`, or giving the job a monitor script it does not already
 have (a `monitor` that is not a URL, or `monitor_script`), is refused with the

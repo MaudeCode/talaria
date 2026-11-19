@@ -75,6 +75,25 @@ describe('owner-only routes (TAL-2201)', () => {
     for (const who of ['bound', 'person'] as const) expect(await terminal(sessions[who]), who).toMatchObject({ clients: [], unsupported_message: 'Only the server owner can open the terminal.' })
   })
 
+  it('refuses a model route\'s connection fields to a session without owner authority, and keeps its model picks', async () => {
+    const writes: { method: string; path: string; body: { advanced?: Record<string, unknown> } & Record<string, unknown>; owner: boolean }[] = [
+      ...['base_url', 'api_key', 'api_key_clear'].flatMap((field) => [
+        { method: 'POST', path: '/api/default-model', body: { model: 'synthetic', advanced: { [field]: field === 'api_key_clear' ? true : 'https://route.invalid' } }, owner: true },
+        { method: 'POST', path: '/api/model/set', body: { scope: 'main', model: 'synthetic', advanced: { [field]: field === 'api_key_clear' ? true : 'https://route.invalid' } }, owner: true },
+        { method: 'POST', path: '/api/model/set', body: { scope: 'auxiliary', task: 'vision', model: 'synthetic', advanced: { [field]: field === 'api_key_clear' ? true : 'https://route.invalid' } }, owner: true },
+      ]),
+      { method: 'POST', path: '/api/default-model', body: { model: 'synthetic', advanced: { service_tier: 'priority' } }, owner: false },
+      { method: 'POST', path: '/api/model/set', body: { scope: 'main', model: 'synthetic' }, owner: false },
+    ]
+    const decide = (target: TestServer, headers: Record<string, string>) => Promise.all(writes.map(async ({ method, path, body }) => {
+      const res = await target.get(path, { method, headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      return `${path} ${JSON.stringify(body.advanced ?? {})} ${res.status === 403 && (await res.text()) === JSON.stringify(OWNER_REQUIRED) ? 'owner_required' : 'passed'}`
+    }))
+    const expected = (owner: boolean) => writes.map(({ path, body, owner: ownerOnly }) => `${path} ${JSON.stringify(body.advanced ?? {})} ${owner || !ownerOnly ? 'passed' : 'owner_required'}`)
+    for (const who of ['bound', 'person'] as const) expect(await decide(server, sessions[who]), who).toEqual(expected(false))
+    expect(await decide(server, sessions.owner)).toEqual(expected(true))
+  })
+
   it('passes every route for an owner session and with auth off', async () => {
     for (const [target, headers] of [[server, sessions.owner], [open, {}]] as const) {
       const got = await Promise.all(ROUTES.map(async (route) => `${route.method} ${route.path} ${await decision(target, route, headers)}`))
