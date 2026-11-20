@@ -9,9 +9,14 @@ public struct ApprovalPromptState: Equatable, Identifiable, Sendable {
     public let pendingCount: Int
 
     /// TAL-974: what Allow session and Always allow cover, in the sentence Web shows for the same approval; nil when the
-    /// server sends no scope.
+    /// server sends a null scope. An older server without the field gets its raw keys named, so Always never saves unseen
+    /// keys; delete that fallback once every supported server sends `scope`.
     public var scopeSentence: String? {
-        guard let scope = pending.scope else { return nil }
+        guard let scope = pending.scope else {
+            let keys = pending.displayPatternKeys
+            guard !pending.sendsScope, !keys.isEmpty, pending.allows(.session) || pending.allows(.always) else { return nil }
+            return String(localized: "Allow session and Always allow cover these pattern keys: \(keys.joined(separator: ", ")).")
+        }
         let subject = scope.subject ?? ""
         let session = switch scope.kind {
         case .commandPattern: String(localized: "Allow session covers every command flagged “\(subject)” for this session.")

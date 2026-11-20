@@ -106,6 +106,8 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
     let patternKeys: [String]?
     /// TAL-974: what Allow session and Always allow cover; nil when Allow session is not offered or the server is older.
     public let scope: ApprovalScope?
+    /// TAL-974: false only for an older server without the `scope` field, whose help names the raw keys instead.
+    let sendsScope: Bool
     /// TAL-1043: the choices the approval's owner accepts; nil (an older server without the field) allows all four.
     let allowedChoices: [ApprovalChoice]?
     /// TAL-1043: false when the owner cannot turn on approval bypass for the session.
@@ -161,9 +163,11 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         tool: ToolCall? = nil,
         allowText: String? = nil,
         sendsAllowText: Bool = false,
-        scope: ApprovalScope? = nil
+        scope: ApprovalScope? = nil,
+        sendsScope: Bool = false
     ) {
         self.scope = scope
+        self.sendsScope = sendsScope
         self.tool = tool
         self.allowText = allowText
         self.sendsAllowText = sendsAllowText
@@ -219,6 +223,7 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
             ?? container.decodeLossyStringIfPresent(forKey: .patternKeySnake)
         patternKeys = Self.decodeStringArray(from: container, keys: [.patternKeys, .patternKeysSnake])
         allowedChoices = Self.decodeAllowedChoices(from: container)
+        sendsScope = container.contains(.scope)
         scope = try? container.decodeIfPresent(ApprovalScope.self, forKey: .scope)
         canEnableYolo = container.decodeLossyBoolIfPresent(forKey: .canEnableYolo)
             ?? container.decodeLossyBoolIfPresent(forKey: .canEnableYoloSnake)

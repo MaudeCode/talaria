@@ -37,6 +37,21 @@ final class ToolApprovalAndAgentsFixtureTests: XCTestCase {
         XCTAssertNil(try JSONDecoder().decode(PendingApproval.self, from: Data(#"{"approval_id":"old","command":"ls"}"#.utf8)).tool)
     }
 
+    /// TAL-974: an older server sends the Agent's keys without `scope`, so the help names the keys Always would save; a
+    /// server with the field never shows them, and a one-time prompt (`scope: null`) offers no help.
+    func testScopeHelpNamesAnOlderServersKeysAndNeverTheCurrentServersOwn() throws {
+        func sentence(_ json: String) throws -> String? {
+            let pending = try JSONDecoder().decode(PendingApproval.self, from: Data(json.utf8))
+            return ApprovalPromptState(sessionID: "synthetic-scope", pending: pending, pendingCount: 1).scopeSentence
+        }
+        XCTAssertEqual(try sentence(#"{"approval_id":"old","pattern_keys":["pipe to shell","network_download"]}"#),
+                       "Allow session and Always allow cover these pattern keys: pipe to shell, network_download.")
+        XCTAssertNil(try sentence(#"{"approval_id":"old-none","command":"ls"}"#))
+        XCTAssertNil(try sentence(#"{"approval_id":"once","pattern_key":"protected_instruction_file","scope":null}"#))
+        XCTAssertEqual(try sentence(#"{"approval_id":"new","pattern_key":"execute_code","allowed_choices":["once","session"],"scope":{"kind":"python","subject":null,"always_is_session_only":false}}"#),
+                       "Allow session covers every Python script for this session.")
+    }
+
     /// A voice or Shortcuts Allow confirms the server's `allow_text`, never the question or reason shown as `description`;
     /// an older server without the field keeps its command or own description.
     func testAllowOutsideTheCardConfirmsOnlyTheServersAllowText() throws {
