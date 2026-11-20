@@ -248,6 +248,18 @@ extension PendingAttachment {
         "\(filename) is too large. Attachments must be \(maximumUploadSizeDescription) or smaller."
     }
 
+    /// A file the server already holds, ready to send again; nil without a path.
+    init?(serverAttachment attachment: MessageAttachment) {
+        guard let path = attachment.path, !path.isEmpty else { return nil }
+        self.init(
+            name: attachment.name ?? URL(fileURLWithPath: path).lastPathComponent,
+            path: path,
+            mime: attachment.mime ?? "application/octet-stream",
+            size: attachment.size,
+            isImage: attachment.isImage ?? false
+        )
+    }
+
     public func toJSONValue() -> JSONValue {
         var object: [String: JSONValue] = [
             "name": .string(name),

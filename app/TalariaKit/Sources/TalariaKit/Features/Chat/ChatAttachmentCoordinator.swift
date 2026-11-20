@@ -537,6 +537,21 @@ final class ChatAttachmentCoordinator {
             + pendingAttachments.filter { !restoredIDs.contains($0.id) })
     }
 
+    /// Files already on the server (an edit's cut, TAL-2066) as ready chips; each image's preview is read back from it.
+    func restoreServerAttachments(_ attachments: [PendingAttachment]) {
+        restorePendingAttachments(attachments)
+        let expectedGeneration = generation
+        Task { [weak self] in
+            for attachment in attachments where attachment.isImage {
+                guard let data = await self?.attachmentImageData(path: attachment.path),
+                      let self, expectedGeneration == generation,
+                      var restored = pendingAttachments.first(where: { $0.id == attachment.id }) else { continue }
+                restored.thumbnailData = data
+                setPendingAttachment(restored)
+            }
+        }
+    }
+
     func consumePendingAttachments() -> [PendingAttachment] {
         let attachments = pendingAttachments
         for attachment in attachments { stagedContexts[attachment.id] = nil }

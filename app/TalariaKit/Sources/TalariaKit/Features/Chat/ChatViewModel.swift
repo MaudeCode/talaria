@@ -5571,7 +5571,7 @@ extension ChatViewModel {
 
         do {
             // Truncate to remove the selected user message and everything after it
-            guard try await truncateForResend(
+            guard let cut = try await truncateForResend(
                 context,
                 action: .edit(newText: editedText),
                 sessionID: sessionID,
@@ -5580,6 +5580,16 @@ extension ChatViewModel {
             ) else { return false }
 
             guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return false }
+            if let dropped = cut.droppedAttachmentCount, dropped > 0 {
+                showNotice(String(localized: "Attachments no longer available: \(dropped)"), level: .warn)
+            }
+            // TAL-2066: the message's files go back in the composer beside the edited text; Send sends both.
+            let files = (cut.lastUserAttachments ?? []).compactMap(PendingAttachment.init(serverAttachment:))
+            if !files.isEmpty {
+                attachmentCoordinator.restoreServerAttachments(files)
+                returnedComposerTexts.append(editedText)
+                return true
+            }
             let outcome = await performChatSend(
                 sessionID: sessionID,
                 localMessageID: "local-\(UUID().uuidString)",
@@ -5652,7 +5662,7 @@ extension ChatViewModel {
                 sessionID: sessionID,
                 confirmToken: confirmToken,
                 modelContext: modelContext
-            ) else { return false }
+            ) != nil else { return false }
 
             guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return false }
             let outcome = await performChatSend(
@@ -5703,7 +5713,7 @@ extension ChatViewModel {
         deepTruncateConfirmation = nil
     }
 
-    /// Cuts the transcript at the action's message and adopts the kept session. Returns false with the transcript
+    /// Cuts the transcript at the action's message and adopts the kept session. Returns nil with the transcript
     /// unchanged when the server holds a cut of more than one user turn for confirmation (TAL-929).
     private func truncateForResend(
         _ context: MessageActionContext,
@@ -5711,7 +5721,7 @@ extension ChatViewModel {
         sessionID: String,
         confirmToken: String?,
         modelContext: ModelContext?
-    ) async throws -> Bool {
+    ) async throws -> SessionTruncateResponse? {
         // Old-server fallback (TAL-929): a server without `confirms_deep_truncate` cuts at once, so this device asks
         // first with its own count of the later messages, as it did before. Delete once servers ship the field.
         if !serverConfirmsDeepTruncate, confirmToken == nil {
@@ -5723,7 +5733,7 @@ extension ChatViewModel {
                     discardMessages: later.count,
                     confirmToken: ""
                 )
-                return false
+                return nil
             }
         }
 
@@ -5733,7 +5743,7 @@ extension ChatViewModel {
             keepCount: context.fullHistoryIndex,
             confirmToken: confirmToken
         )
-        guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return false }
+        guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return nil }
         if truncateResponse.confirmRequired == true {
             deepTruncateConfirmation = DeepTruncateConfirmation(
                 context: context,
@@ -5741,7 +5751,7 @@ extension ChatViewModel {
                 discardMessages: truncateResponse.discardMessages ?? 0,
                 confirmToken: truncateResponse.confirmToken ?? ""
             )
-            return false
+            return nil
         }
 
         streamCoordinator.invalidateSessionLoads()
@@ -5765,7 +5775,7 @@ extension ChatViewModel {
                 }
             }
         }
-        return true
+        return truncateResponse
     }
 
     @discardableResult

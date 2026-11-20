@@ -873,6 +873,15 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 "ok": false, "confirm_required": true, "discard_user_turns": 3, "discard_messages": 5,
                 "confirm_token": "fixture-rows"
             ])
+        case "/api/session/truncate":
+            // TAL-2066: the confirmed cut returns the edited message's image and counts one file it could not keep.
+            return json([
+                "ok": true,
+                "last_user_attachments": [["filename": "edit.png", "path": "/fixture/attachments/edit.png", "mime": "image/png", "is_image": true, "size": 273]],
+                "dropped_attachment_count": 1
+            ])
+        case "/api/file/raw" where url.query?.contains("edit.png") == true:
+            return transcriptMediaImage
         case "/api/session/new":
             // The title echoes the requested profile so a UI test can see that a
             // "new chat in <profile>" entry point pinned the session (TAL-77).
