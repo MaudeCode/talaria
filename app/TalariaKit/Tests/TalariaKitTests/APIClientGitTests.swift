@@ -42,6 +42,7 @@ final class APIClientGitTests: APIClientTestCase {
                 "untracked": 1,
                 "ahead": 2,
                 "behind": 0,
+                "indicator": "changes",
                 "is_git": true
               }
             }
@@ -58,6 +59,7 @@ final class APIClientGitTests: APIClientTestCase {
         XCTAssertEqual(info.ahead, 2)
         XCTAssertEqual(info.behind, 0)
         XCTAssertEqual(info.isGit, true)
+        XCTAssertEqual(info.indicator, "changes")
     }
 
     func testGitInfoDecodesNullGitForNonRepository() async throws {
@@ -87,16 +89,16 @@ final class APIClientGitTests: APIClientTestCase {
                 "upstream": "origin/feature/foo",
                 "ahead": 1,
                 "behind": 2,
-                "totals": {"changed": 2, "staged": 1, "unstaged": 1, "untracked": 1, "conflicts": 0},
+                "totals": {"changed": 2, "staged": 1, "unstaged": 1, "untracked": 1, "conflicts": 0, "additions": 10, "deletions": 4},
                 "files": [
                   {
                     "path": "Sources/App.swift", "old_path": null, "workspace_path": "Sources/App.swift",
-                    "status": "M", "staged": false, "unstaged": true, "untracked": false,
+                    "status": "M", "change_kind": "modified", "staged": false, "unstaged": true, "untracked": false,
                     "ignored": false, "conflict": false, "additions": 10, "deletions": 4, "binary": false
                   },
                   {
                     "path": "New.swift", "old_path": null, "workspace_path": "New.swift",
-                    "status": "??", "staged": false, "unstaged": false, "untracked": true,
+                    "status": "??", "change_kind": "untracked", "staged": false, "unstaged": false, "untracked": true,
                     "ignored": false, "conflict": false, "additions": 0, "deletions": 0, "binary": false
                   }
                 ],
@@ -121,7 +123,6 @@ final class APIClientGitTests: APIClientTestCase {
         XCTAssertEqual(status.totalAdditions, 10)
         XCTAssertEqual(status.totalDeletions, 4)
 
-        // Change kind is derived from the booleans.
         XCTAssertEqual(status.trackedFiles[0].changeKind, .modified)
         XCTAssertEqual(status.trackedFiles[1].changeKind, .untracked)
         XCTAssertEqual(status.trackedFiles[0].fileName, "App.swift")
@@ -148,7 +149,7 @@ final class APIClientGitTests: APIClientTestCase {
                 "is_git": true,
                 "branch": "main",
                 "files": [
-                  {"path": "a.txt", "status": "A", "staged": true, "future_field": 99}
+                  {"path": "a.txt", "status": "A", "change_kind": "copied", "staged": true, "future_field": 99}
                 ],
                 "totally_new_key": {"nested": true}
               }
@@ -164,7 +165,7 @@ final class APIClientGitTests: APIClientTestCase {
         let file = try XCTUnwrap(status.files?.first)
         XCTAssertEqual(file.path, "a.txt")
         XCTAssertNil(file.additions)
-        XCTAssertEqual(file.changeKind, .added)
+        XCTAssertEqual(file.changeKind, .unknown)
     }
 
     func testGitStatusTruncatedFlagDecodes() async throws {

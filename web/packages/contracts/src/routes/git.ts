@@ -9,9 +9,14 @@ const Json = z.unknown()
 const Loose = z.record(z.string(), z.unknown())
 const tags = ['git']
 
-export const GitTotalsSchema = z.object({ changed: z.number().int(), staged: z.number().int(), unstaged: z.number().int(), untracked: z.number().int(), conflicts: z.number().int() })
+/** `additions` and `deletions` sum the listed files' line counts (TAL-2499). */
+export const GitTotalsSchema = z.object({
+  changed: z.number().int(), staged: z.number().int(), unstaged: z.number().int(), untracked: z.number().int(), conflicts: z.number().int(), additions: z.number().int(), deletions: z.number().int(),
+})
+/** `change_kind` is the file's display kind, from its conflict and untracked flags and then its `status` code (TAL-2499). */
 export const GitFileSchema = z.object({
-  path: z.string(), old_path: z.string().nullable(), workspace_path: z.string(), status: z.string(), staged: z.boolean(), unstaged: z.boolean(), untracked: z.boolean(),
+  path: z.string(), old_path: z.string().nullable(), workspace_path: z.string(), status: z.string(),
+  change_kind: z.enum(['conflict', 'untracked', 'added', 'deleted', 'renamed', 'modified']), staged: z.boolean(), unstaged: z.boolean(), untracked: z.boolean(),
   ignored: z.boolean(), conflict: z.boolean(), additions: z.number().int(), deletions: z.number().int(), binary: z.boolean(),
 })
 export const GitStatusSchema = z.object({

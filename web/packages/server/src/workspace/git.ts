@@ -69,20 +69,44 @@ function gitDeadline(timeoutMs: number): () => number {
 }
 
 export interface GitContext { workspace: string; repoRoot: string; workspacePrefix: string }
+export type GitChangeKind = 'conflict' | 'untracked' | 'added' | 'deleted' | 'renamed' | 'modified'
 export interface GitFile {
-  path: string; old_path: string | null; workspace_path: string; status: string; staged: boolean; unstaged: boolean; untracked: boolean
+  path: string; old_path: string | null; workspace_path: string; status: string; change_kind: GitChangeKind; staged: boolean; unstaged: boolean; untracked: boolean
   ignored: boolean; conflict: boolean; additions: number; deletions: number; binary: boolean
 }
-export interface GitTotals { changed: number; staged: number; unstaged: number; untracked: number; conflicts: number }
+export interface GitTotals { changed: number; staged: number; unstaged: number; untracked: number; conflicts: number; additions: number; deletions: number }
 export interface GitStatus {
   is_git: boolean; branch?: string; upstream?: string; ahead?: number; behind?: number; totals?: GitTotals; files?: GitFile[]; truncated?: boolean
   noise_filtering?: { filemode_only: number; crlf_only: number; active: boolean }
 }
-/** Python `git_info_for_workspace`: the branch badge for a status, null outside a repo. */
-export function gitBadge(status: GitStatus): { branch: string; dirty: number; modified: number; untracked: number; ahead: number; behind: number; is_git: true } | null {
+/**
+ * Python `git_info_for_workspace`: the branch badge for a status, null outside a repo. `indicator` is `changes` while there is
+ * uncommitted work or upstream commits to pull (TAL-2499).
+ */
+export function gitBadge(status: GitStatus): { branch: string; dirty: number; modified: number; untracked: number; ahead: number; behind: number; indicator: 'none' | 'changes'; is_git: true } | null {
   if (!status.is_git) return null
   const totals = status.totals ?? { changed: 0, staged: 0, unstaged: 0, untracked: 0, conflicts: 0 }
-  return { branch: status.branch ?? 'HEAD', dirty: totals.changed, modified: totals.staged + totals.unstaged, untracked: totals.untracked, ahead: status.ahead ?? 0, behind: status.behind ?? 0, is_git: true }
+  const behind = status.behind ?? 0
+  return {
+    branch: status.branch ?? 'HEAD', dirty: totals.changed, modified: totals.staged + totals.unstaged, untracked: totals.untracked, ahead: status.ahead ?? 0, behind,
+    indicator: totals.changed > 0 || behind > 0 ? 'changes' : 'none', is_git: true,
+  }
+}
+
+/** The status column's code for one porcelain v2 entry: `??`, a two-letter conflict, or one `MADRCUT` letter. */
+export function gitStatusCode(xy: string, untracked: boolean, renamed: boolean): string {
+  if (untracked) return '??'
+  if (CONFLICT_CODES.has(xy)) return xy
+  if (renamed) return 'R'
+  for (const ch of xy) if ('MADRCUT'.includes(ch)) return ch
+  return xy.replace(/^\.+|\.+$/g, '') || 'M'
+}
+
+/** The file's change kind (TAL-2499): a conflict or untracked entry first, then its status code; any other tracked change is a modification. */
+export function gitChangeKind(status: string, conflict: boolean): GitChangeKind {
+  if (conflict) return 'conflict'
+  if (status === '??') return 'untracked'
+  return status === 'A' ? 'added' : status === 'D' ? 'deleted' : status === 'R' ? 'renamed' : 'modified'
 }
 export interface GitRef { name: string; sha: string; updated: number; updated_relative: string; author: string; subject: string; upstream: string; ahead: number; behind: number }
 export interface GitBranches { is_git: true; current: string; detached: boolean; head: string; local: GitRef[]; remote: GitRef[]; upstream: string; ahead: number; behind: number }
@@ -795,14 +819,6 @@ export class GitRunner {
 
   // ── status ───────────────────────────────────────────────────────────────
 
-  private static statusCode(xy: string, untracked: boolean, renamed: boolean): string {
-    if (untracked) return '??'
-    if (CONFLICT_CODES.has(xy)) return xy
-    if (renamed) return 'R'
-    for (const ch of xy) if ('MADRCUT'.includes(ch)) return ch
-    return xy.replace(/^\.+|\.+$/g, '') || 'M'
-  }
-
   private parseNumstat(text: string, ctx: GitContext): Stats {
     const stats: Stats = new Map()
     const tokens = text.split('\0')
@@ -997,8 +1013,9 @@ export class GitRunner {
         noise[modeOnly ? 'filemode_only' : 'crlf_only'] += 1
         continue
       }
+      const status = gitStatusCode(xy, untracked, renamed)
       const file: GitFile = {
-        path: workspacePath, old_path: oldWorkspacePath, workspace_path: workspacePath, status: GitRunner.statusCode(xy, untracked, renamed),
+        path: workspacePath, old_path: oldWorkspacePath, workspace_path: workspacePath, status, change_kind: gitChangeKind(status, conflict),
         staged, unstaged, untracked, ignored: false, conflict, additions, deletions, binary,
       }
       files.set(workspacePath, file)
@@ -1014,8 +1031,10 @@ export class GitRunner {
       for (let file = queue.shift(); file; file = queue.shift()) Object.assign(file, await GitRunner.countUntrackedFile(ctx.workspace, file.path))
     }))
     const fileList = [...files.values()].sort((a, b) => (a.path.toLowerCase() < b.path.toLowerCase() ? -1 : a.path.toLowerCase() > b.path.toLowerCase() ? 1 : 0))
-    const totals: GitTotals = { changed: fileList.length, staged: 0, unstaged: 0, untracked: 0, conflicts: 0 }
+    const totals: GitTotals = { changed: fileList.length, staged: 0, unstaged: 0, untracked: 0, conflicts: 0, additions: 0, deletions: 0 }
     for (const item of fileList) {
+      totals.additions += item.additions
+      totals.deletions += item.deletions
       if (item.staged) totals.staged += 1
       if (item.unstaged) totals.unstaged += 1
       if (item.untracked) totals.untracked += 1

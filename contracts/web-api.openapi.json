@@ -83422,8 +83422,18 @@
                             },
                             "behind": {
                               "type": "number"
+                            },
+                            "indicator": {
+                              "enum": [
+                                "none",
+                                "changes"
+                              ],
+                              "type": "string"
                             }
                           },
+                          "required": [
+                            "indicator"
+                          ],
                           "additionalProperties": {}
                         },
                         {
@@ -83515,6 +83525,16 @@
                               "type": "integer",
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
+                            },
+                            "additions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "deletions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
@@ -83522,7 +83542,9 @@
                             "staged",
                             "unstaged",
                             "untracked",
-                            "conflicts"
+                            "conflicts",
+                            "additions",
+                            "deletions"
                           ]
                         },
                         "files": {
@@ -83547,6 +83569,17 @@
                                 "type": "string"
                               },
                               "status": {
+                                "type": "string"
+                              },
+                              "change_kind": {
+                                "enum": [
+                                  "conflict",
+                                  "untracked",
+                                  "added",
+                                  "deleted",
+                                  "renamed",
+                                  "modified"
+                                ],
                                 "type": "string"
                               },
                               "staged": {
@@ -83583,6 +83616,7 @@
                               "old_path",
                               "workspace_path",
                               "status",
+                              "change_kind",
                               "staged",
                               "unstaged",
                               "untracked",
@@ -84138,6 +84172,16 @@
                               "type": "integer",
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
+                            },
+                            "additions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "deletions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
@@ -84145,7 +84189,9 @@
                             "staged",
                             "unstaged",
                             "untracked",
-                            "conflicts"
+                            "conflicts",
+                            "additions",
+                            "deletions"
                           ]
                         },
                         "files": {
@@ -84170,6 +84216,17 @@
                                 "type": "string"
                               },
                               "status": {
+                                "type": "string"
+                              },
+                              "change_kind": {
+                                "enum": [
+                                  "conflict",
+                                  "untracked",
+                                  "added",
+                                  "deleted",
+                                  "renamed",
+                                  "modified"
+                                ],
                                 "type": "string"
                               },
                               "staged": {
@@ -84206,6 +84263,7 @@
                               "old_path",
                               "workspace_path",
                               "status",
+                              "change_kind",
                               "staged",
                               "unstaged",
                               "untracked",
@@ -84358,6 +84416,16 @@
                               "type": "integer",
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
+                            },
+                            "additions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "deletions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
@@ -84365,7 +84433,9 @@
                             "staged",
                             "unstaged",
                             "untracked",
-                            "conflicts"
+                            "conflicts",
+                            "additions",
+                            "deletions"
                           ]
                         },
                         "files": {
@@ -84390,6 +84460,17 @@
                                 "type": "string"
                               },
                               "status": {
+                                "type": "string"
+                              },
+                              "change_kind": {
+                                "enum": [
+                                  "conflict",
+                                  "untracked",
+                                  "added",
+                                  "deleted",
+                                  "renamed",
+                                  "modified"
+                                ],
                                 "type": "string"
                               },
                               "staged": {
@@ -84426,6 +84507,7 @@
                               "old_path",
                               "workspace_path",
                               "status",
+                              "change_kind",
                               "staged",
                               "unstaged",
                               "untracked",
@@ -84579,6 +84661,16 @@
                               "type": "integer",
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
+                            },
+                            "additions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "deletions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
@@ -84586,7 +84678,9 @@
                             "staged",
                             "unstaged",
                             "untracked",
-                            "conflicts"
+                            "conflicts",
+                            "additions",
+                            "deletions"
                           ]
                         },
                         "files": {
@@ -84611,6 +84705,17 @@
                                 "type": "string"
                               },
                               "status": {
+                                "type": "string"
+                              },
+                              "change_kind": {
+                                "enum": [
+                                  "conflict",
+                                  "untracked",
+                                  "added",
+                                  "deleted",
+                                  "renamed",
+                                  "modified"
+                                ],
                                 "type": "string"
                               },
                               "staged": {
@@ -84647,6 +84752,7 @@
                               "old_path",
                               "workspace_path",
                               "status",
+                              "change_kind",
                               "staged",
                               "unstaged",
                               "untracked",
@@ -84792,6 +84898,16 @@
                               "type": "integer",
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
+                            },
+                            "additions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "deletions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
@@ -84799,7 +84915,9 @@
                             "staged",
                             "unstaged",
                             "untracked",
-                            "conflicts"
+                            "conflicts",
+                            "additions",
+                            "deletions"
                           ]
                         },
                         "files": {
@@ -84824,6 +84942,17 @@
                                 "type": "string"
                               },
                               "status": {
+                                "type": "string"
+                              },
+                              "change_kind": {
+                                "enum": [
+                                  "conflict",
+                                  "untracked",
+                                  "added",
+                                  "deleted",
+                                  "renamed",
+                                  "modified"
+                                ],
                                 "type": "string"
                               },
                               "staged": {
@@ -84860,6 +84989,7 @@
                               "old_path",
                               "workspace_path",
                               "status",
+                              "change_kind",
                               "staged",
                               "unstaged",
                               "untracked",
@@ -85026,6 +85156,16 @@
                               "type": "integer",
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
+                            },
+                            "additions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "deletions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
@@ -85033,7 +85173,9 @@
                             "staged",
                             "unstaged",
                             "untracked",
-                            "conflicts"
+                            "conflicts",
+                            "additions",
+                            "deletions"
                           ]
                         },
                         "files": {
@@ -85058,6 +85200,17 @@
                                 "type": "string"
                               },
                               "status": {
+                                "type": "string"
+                              },
+                              "change_kind": {
+                                "enum": [
+                                  "conflict",
+                                  "untracked",
+                                  "added",
+                                  "deleted",
+                                  "renamed",
+                                  "modified"
+                                ],
                                 "type": "string"
                               },
                               "staged": {
@@ -85094,6 +85247,7 @@
                               "old_path",
                               "workspace_path",
                               "status",
+                              "change_kind",
                               "staged",
                               "unstaged",
                               "untracked",
@@ -85360,6 +85514,16 @@
                               "type": "integer",
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
+                            },
+                            "additions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "deletions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
@@ -85367,7 +85531,9 @@
                             "staged",
                             "unstaged",
                             "untracked",
-                            "conflicts"
+                            "conflicts",
+                            "additions",
+                            "deletions"
                           ]
                         },
                         "files": {
@@ -85392,6 +85558,17 @@
                                 "type": "string"
                               },
                               "status": {
+                                "type": "string"
+                              },
+                              "change_kind": {
+                                "enum": [
+                                  "conflict",
+                                  "untracked",
+                                  "added",
+                                  "deleted",
+                                  "renamed",
+                                  "modified"
+                                ],
                                 "type": "string"
                               },
                               "staged": {
@@ -85428,6 +85605,7 @@
                               "old_path",
                               "workspace_path",
                               "status",
+                              "change_kind",
                               "staged",
                               "unstaged",
                               "untracked",
@@ -85570,6 +85748,16 @@
                               "type": "integer",
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
+                            },
+                            "additions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "deletions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
@@ -85577,7 +85765,9 @@
                             "staged",
                             "unstaged",
                             "untracked",
-                            "conflicts"
+                            "conflicts",
+                            "additions",
+                            "deletions"
                           ]
                         },
                         "files": {
@@ -85602,6 +85792,17 @@
                                 "type": "string"
                               },
                               "status": {
+                                "type": "string"
+                              },
+                              "change_kind": {
+                                "enum": [
+                                  "conflict",
+                                  "untracked",
+                                  "added",
+                                  "deleted",
+                                  "renamed",
+                                  "modified"
+                                ],
                                 "type": "string"
                               },
                               "staged": {
@@ -85638,6 +85839,7 @@
                               "old_path",
                               "workspace_path",
                               "status",
+                              "change_kind",
                               "staged",
                               "unstaged",
                               "untracked",
@@ -85780,6 +85982,16 @@
                               "type": "integer",
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
+                            },
+                            "additions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "deletions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
@@ -85787,7 +85999,9 @@
                             "staged",
                             "unstaged",
                             "untracked",
-                            "conflicts"
+                            "conflicts",
+                            "additions",
+                            "deletions"
                           ]
                         },
                         "files": {
@@ -85812,6 +86026,17 @@
                                 "type": "string"
                               },
                               "status": {
+                                "type": "string"
+                              },
+                              "change_kind": {
+                                "enum": [
+                                  "conflict",
+                                  "untracked",
+                                  "added",
+                                  "deleted",
+                                  "renamed",
+                                  "modified"
+                                ],
                                 "type": "string"
                               },
                               "staged": {
@@ -85848,6 +86073,7 @@
                               "old_path",
                               "workspace_path",
                               "status",
+                              "change_kind",
                               "staged",
                               "unstaged",
                               "untracked",
@@ -86009,6 +86235,16 @@
                               "type": "integer",
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
+                            },
+                            "additions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "deletions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
@@ -86016,7 +86252,9 @@
                             "staged",
                             "unstaged",
                             "untracked",
-                            "conflicts"
+                            "conflicts",
+                            "additions",
+                            "deletions"
                           ]
                         },
                         "files": {
@@ -86041,6 +86279,17 @@
                                 "type": "string"
                               },
                               "status": {
+                                "type": "string"
+                              },
+                              "change_kind": {
+                                "enum": [
+                                  "conflict",
+                                  "untracked",
+                                  "added",
+                                  "deleted",
+                                  "renamed",
+                                  "modified"
+                                ],
                                 "type": "string"
                               },
                               "staged": {
@@ -86077,6 +86326,7 @@
                               "old_path",
                               "workspace_path",
                               "status",
+                              "change_kind",
                               "staged",
                               "unstaged",
                               "untracked",
@@ -86388,6 +86638,16 @@
                               "type": "integer",
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
+                            },
+                            "additions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "deletions": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
@@ -86395,7 +86655,9 @@
                             "staged",
                             "unstaged",
                             "untracked",
-                            "conflicts"
+                            "conflicts",
+                            "additions",
+                            "deletions"
                           ]
                         },
                         "files": {
@@ -86420,6 +86682,17 @@
                                 "type": "string"
                               },
                               "status": {
+                                "type": "string"
+                              },
+                              "change_kind": {
+                                "enum": [
+                                  "conflict",
+                                  "untracked",
+                                  "added",
+                                  "deleted",
+                                  "renamed",
+                                  "modified"
+                                ],
                                 "type": "string"
                               },
                               "staged": {
@@ -86456,6 +86729,7 @@
                               "old_path",
                               "workspace_path",
                               "status",
+                              "change_kind",
                               "staged",
                               "unstaged",
                               "untracked",
@@ -137224,8 +137498,18 @@
                             },
                             "behind": {
                               "type": "number"
+                            },
+                            "indicator": {
+                              "enum": [
+                                "none",
+                                "changes"
+                              ],
+                              "type": "string"
                             }
                           },
+                          "required": [
+                            "indicator"
+                          ],
                           "additionalProperties": {}
                         },
                         {

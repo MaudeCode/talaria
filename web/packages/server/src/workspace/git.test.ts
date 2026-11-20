@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { cleanGeneratedCommitMessage, classifyGitError, GitRunner } from './git.js'
+import { cleanGeneratedCommitMessage, classifyGitError, gitBadge, gitChangeKind, GitRunner, gitStatusCode } from './git.js'
 
 // Pass-through spies: the status pipeline must count untracked lines without a synchronous file read (TAL-1701).
 vi.mock('node:fs', async (importOriginal) => {
@@ -46,7 +46,7 @@ describe('workspace git over HTTP', () => {
     const { sid, ws } = await repoSession(s)
     let res = await s.get(`/api/git-info?session_id=${sid}`)
     expect(res.status).toBe(200)
-    expect(await json(res)).toEqual({ git: { branch: 'main', dirty: 0, modified: 0, untracked: 0, ahead: 0, behind: 0, is_git: true } })
+    expect(await json(res)).toEqual({ git: { branch: 'main', dirty: 0, modified: 0, untracked: 0, ahead: 0, behind: 0, indicator: 'none', is_git: true } })
 
     writeFileSync(join(ws, 'README.md'), 'hello\nworld\n')
     writeFileSync(join(ws, 'new.txt'), 'fresh\n')
@@ -57,7 +57,7 @@ describe('workspace git over HTTP', () => {
     const status = (await json(res)).git as Json
     expect(status.is_git).toBe(true)
     expect(status.branch).toBe('main')
-    expect(status.totals).toEqual({ changed: 2, staged: 0, unstaged: 1, untracked: 1, conflicts: 0 })
+    expect(status.totals).toEqual({ changed: 2, staged: 0, unstaged: 1, untracked: 1, conflicts: 0, additions: 2, deletions: 0 })
     const files = status.files as Json[]
     expect(files.map((f) => f.path)).toEqual(['new.txt', 'README.md'])
     expect(files[0]).toMatchObject({ status: '??', untracked: true, additions: 1, deletions: 0 })
@@ -575,6 +575,26 @@ describe('git helpers', () => {
     expect(cleanGeneratedCommitMessage('"quoted subject"')).toBe('quoted subject')
     expect(cleanGeneratedCommitMessage(null)).toBe('')
   })
+
+  it('maps each porcelain v2 code to the file change kind the App shows (TAL-2499)', () => {
+    const rows: [xy: string, untracked: boolean, renamed: boolean, conflict: boolean, kind: string][] = [
+      ['A.', false, false, false, 'added'], ['AM', false, false, false, 'added'], ['.A', false, false, false, 'added'],
+      ['D.', false, false, false, 'deleted'], ['.D', false, false, false, 'deleted'],
+      ['R.', false, true, false, 'renamed'], ['RM', false, true, false, 'renamed'],
+      ['M.', false, false, false, 'modified'], ['.M', false, false, false, 'modified'], ['MD', false, false, false, 'modified'],
+      ['T.', false, false, false, 'modified'], ['.T', false, false, false, 'modified'],
+      ['?', true, false, false, 'untracked'],
+      ...['UU', 'AA', 'DD', 'AU', 'UA', 'DU', 'UD'].map((xy): [string, boolean, boolean, boolean, string] => [xy, false, false, true, 'conflict']),
+    ]
+    expect(rows.map(([xy, untracked, renamed, conflict]) => [xy, gitChangeKind(gitStatusCode(xy, untracked, renamed), conflict)]))
+      .toEqual(rows.map(([xy, , , , kind]) => [xy, kind]))
+  })
+
+  it('marks the badge indicator for uncommitted work or upstream commits to pull, not for unpushed commits (TAL-2499)', () => {
+    const badge = (changed: number, ahead: number, behind: number): unknown => gitBadge({ is_git: true, branch: 'main', ahead, behind, totals: { changed, staged: 0, unstaged: changed, untracked: 0, conflicts: 0, additions: 0, deletions: 0 } })?.indicator
+    expect([badge(0, 0, 0), badge(2, 0, 0), badge(0, 0, 1), badge(0, 3, 0)]).toEqual(['none', 'changes', 'changes', 'none'])
+    expect(gitBadge({ is_git: false })).toBeNull()
+  })
 })
 
 describe('status subprocesses leave the index alone (TAL-1559)', () => {
@@ -639,7 +659,7 @@ describe.skipIf(process.platform === 'win32')('status, branches and diff spawn b
   it('status runs at most five Git processes and reports staged, unstaged, renamed, binary and untracked files as before', async () => {
     const { repo, runner, spawned } = fixture()
     writeFileSync(join(repo, 'staged.txt'), 'a\n')
-    writeFileSync(join(repo, 'unstaged.txt'), 'a\n')
+    writeFileSync(join(repo, 'unstaged.txt'), 'a\nx\n')
     writeFileSync(join(repo, 'renamed-from.txt'), 'r1\nr2\n')
     writeFileSync(join(repo, 'image.bin'), Buffer.from([0, 1, 2]))
     git(repo, 'add', '.')
@@ -658,22 +678,22 @@ describe.skipIf(process.platform === 'win32')('status, branches and diff spawn b
     vi.mocked(readSync).mockClear()
     const status = await runner.status(repo)
     const file = (path: string, fields: Partial<Record<string, unknown>>): Record<string, unknown> => ({
-      path, old_path: null, workspace_path: path, status: '??', staged: false, unstaged: false, untracked: true, ignored: false, conflict: false, additions: 0, deletions: 0, binary: false, ...fields,
+      path, old_path: null, workspace_path: path, status: '??', change_kind: 'untracked', staged: false, unstaged: false, untracked: true, ignored: false, conflict: false, additions: 0, deletions: 0, binary: false, ...fields,
     })
     expect(status).toEqual({
       is_git: true, branch: 'main', upstream: '', ahead: 0, behind: 0, truncated: false,
-      totals: { changed: 9, staged: 3, unstaged: 1, untracked: 5, conflicts: 0 },
+      totals: { changed: 9, staged: 3, unstaged: 1, untracked: 5, conflicts: 0, additions: 9, deletions: 1 },
       noise_filtering: { filemode_only: 0, crlf_only: 0, active: false },
       files: [
         file('crlf.txt', { additions: 3 }),
         file('empty.txt', {}),
-        file('image.bin', { status: 'M', staged: true, untracked: false, binary: true }),
+        file('image.bin', { status: 'M', change_kind: 'modified', staged: true, untracked: false, binary: true }),
         file('latin.txt', { binary: true }),
         file('nul.bin', { binary: true }),
-        file('renamed.txt', { old_path: 'renamed-from.txt', status: 'R', staged: true, untracked: false }),
-        file('staged.txt', { status: 'M', staged: true, untracked: false, additions: 1 }),
+        file('renamed.txt', { old_path: 'renamed-from.txt', status: 'R', change_kind: 'renamed', staged: true, untracked: false }),
+        file('staged.txt', { status: 'M', change_kind: 'modified', staged: true, untracked: false, additions: 1 }),
         file('text.txt', { additions: 3 }),
-        file('unstaged.txt', { status: 'M', unstaged: true, untracked: false, additions: 2 }),
+        file('unstaged.txt', { status: 'M', change_kind: 'modified', unstaged: true, untracked: false, additions: 2, deletions: 1 }),
       ],
     })
     expect(spawned().length, spawned().join(', ')).toBeLessThanOrEqual(5)

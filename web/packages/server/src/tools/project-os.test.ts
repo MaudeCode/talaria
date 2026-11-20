@@ -50,7 +50,7 @@ describe('project-os dashboard (TAL-266)', () => {
     write('.ax/status/heartbeat.json', { at: 1 })
     write('docs/project-os/PROJECT.md', '# Project\n\n- Ship the gateway controls\n')
     write('docs/project-os/STATUS.md', 'green\n')
-    const badge = { branch: 'main', dirty: 0, modified: 0, untracked: 0, ahead: 0, behind: 0, is_git: true as const }
+    const badge = { branch: 'main', dirty: 0, modified: 0, untracked: 0, ahead: 0, behind: 0, indicator: 'none' as const, is_git: true as const }
     const seen: string[] = []
     const body = await projectOsDashboard('', deps({ git: (repo) => { seen.push(repo); return Promise.resolve(badge) } }))
     expect(body).toMatchObject({ workspace: root, repo_root: root, selected_board_slug: null, git: badge, handoff: { board: { slug: 'ops' } }, active: null, heartbeat: { at: 1 }, onboarding: { active: false, doc_source: 'project-os' }, goal_summary: 'Ship the gateway controls' })
@@ -162,7 +162,7 @@ describe('project-os dashboard (TAL-266)', () => {
       write('apps/.ax/status/active.json', { board: 'ops' })
       Object.assign(afterFs, { fn: 'access', path: join(root, 'apps', '.git') })
       afterFs.run = () => { rmSync(join(root, 'apps'), { recursive: true }); symlinkSync(outside, join(root, 'apps')) }
-      const badge = { branch: 'outside-branch', dirty: 3, modified: 3, untracked: 0, ahead: 0, behind: 0, is_git: true as const }
+      const badge = { branch: 'outside-branch', dirty: 3, modified: 3, untracked: 0, ahead: 0, behind: 0, indicator: 'changes' as const, is_git: true as const }
       const body = await projectOsDashboard('ops', deps({ git: () => Promise.resolve(badge) }))
       expect(afterFs.run).toBeNull()
       expect([body.repo_root, body.git]).toEqual([join(root, 'apps'), null])

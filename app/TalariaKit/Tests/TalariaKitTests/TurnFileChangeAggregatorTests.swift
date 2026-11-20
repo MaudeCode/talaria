@@ -81,8 +81,8 @@ final class TurnFileChangeAggregatorTests: XCTestCase {
     func testJoinUsesStatusCountsAndChangeKind() throws {
         let gitStatus = try status("""
         {"git": {"is_git": true, "files": [
-          {"path": "new.swift", "status": "A", "staged": true, "additions": 9, "deletions": 0},
-          {"path": "gone.swift", "status": "D", "staged": true, "additions": 0, "deletions": 7}
+          {"path": "new.swift", "status": "A", "change_kind": "added", "staged": true, "additions": 9, "deletions": 0},
+          {"path": "gone.swift", "status": "D", "change_kind": "deleted", "staged": true, "additions": 0, "deletions": 7}
         ]}}
         """)
         let summary = TurnFileChangeAggregator.summarize(
