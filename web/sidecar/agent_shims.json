@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "shims": [
+    {
+      "id": "aux-effective-provider",
+      "lastRequired": "0.23.0",
+      "summary": "The auxiliary client's _hermes_aux_effective_provider is new in 0.23.1; older clients route by the selected provider.",
+      "tests": ["web/sidecar/tests/test_aux_fallback.py"]
+    },
+    {
+      "id": "content-refused-retention",
+      "lastRequired": "0.23.0",
+      "summary": "hermes_state_rewind.retain_refused_turn_for_display is new in 0.23.1; older Agents keep a refused turn in context.",
+      "tests": ["web/sidecar/tests/test_chat_state_db.py"]
+    },
+    {
+      "id": "session-open-on-resume",
+      "lastRequired": "0.23.0",
+      "summary": "gateway.session_open is new in 0.23.1; older owners never fire on_session_open on resume.",
+      "tests": ["web/sidecar/tests/test_gateway_sessions.py"]
+    },
+    {
+      "id": "undo-changed-files",
+      "lastRequired": "0.23.0",
+      "summary": "tools.checkpoint_undo_hint is new in 0.23.1; older Agents name no files an undo changed.",
+      "tests": ["web/sidecar/tests/test_checkpoints.py"]
+    },
+    {
+      "id": "compaction-progress-kind",
+      "lastRequired": "0.23.1",
+      "summary": "agent.conversation_compression.compaction_status_kind is new in 0.23.2; older Agents rely on the wording markers.",
+      "tests": ["web/sidecar/tests/test_status_events.py"]
+    },
+    {
+      "id": "config-drop-other-access",
+      "lastRequired": "0.23.1",
+      "summary": "The Agent writers' drop_other_access policy is new in 0.23.2; the sidecar applies it to config.yaml itself.",
+      "tests": ["web/sidecar/tests/test_config_write.py"]
+    },
+    {
+      "id": "dashboard-credential-binding",
+      "lastRequired": "0.23.1",
+      "summary": "BasicAuthProvider(credential_id=) is new in 0.23.2; older Agents sign dashboard sessions with the secret alone.",
+      "tests": ["web/sidecar/tests/test_agent_services.py"]
+    },
+    {
+      "id": "plugin-registration-ownership",
+      "lastRequired": "0.23.1",
+      "summary": "Per-home plugin registration ownership is new in 0.23.2; older Agents attribute a provider by its module path.",
+      "tests": ["web/sidecar/tests/test_plugin_providers.py"]
+    }
+  ]
+}

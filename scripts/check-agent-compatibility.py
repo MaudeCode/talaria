@@ -5,7 +5,9 @@ Talaria supports exactly three stable Agent releases, recorded in ``web/sidecar/
 active deployment pin in ``web/sidecar/agent_dependency.json`` must be one of them. Without a selector this
 checks the active pin. ``--release TAG`` checks a supported release, ``--identity JSON`` an unpromoted
 candidate, and ``--main SHA`` a canary that never enters the support record. ``--list`` validates the
-record offline and prints its tags.
+record offline and prints its tags. Every mode but ``--main`` also validates the version-shim ledger
+``web/sidecar/agent_shims.json`` against the record and its ``agent-shim: <id>`` source markers, and fails once a
+shim's last required release has left the window; ``--identity`` names the shims promoting the candidate would retire.
 
 Provisions the Agent checkout and its venv on the newest Python its lockfile allows (``--python`` overrides), and
 the Agent's PM ``uv`` and ``python`` in ``<checkout>.pm`` beside it (``TALARIA_WEB_PM_TOOLS``), so tests never download them.
@@ -57,6 +59,10 @@ SYNC = ["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp"]
 CACHE_SUFFIXES = (".lock", ".ready", ".python", ".pm", ".tmp")
 # ponytail: newest of these that the lockfile allows; extend the range when an Agent requires a newer Python.
 PYTHON_MINORS = range(11, 15)
+# Version shims: each ledger row names the newest supported Agent that still needs it (TAL-351).
+SHIM_LEDGER = "web/sidecar/agent_shims.json"
+SHIM_SCAN = ("web/sidecar/talaria_sidecar", "web/sidecar/tests", "web/packages/server/src")
+SHIM_MARKER = re.compile(r"(?:#|//)\s*agent-shim:\s*([a-z0-9-]+)")
 
 
 STARTED = time.monotonic()
@@ -125,6 +131,68 @@ def supported_releases(root):
     return releases
 
 
+def version_key(version):
+    return tuple(int(part) for part in version.split("."))
+
+
+def shim_markers(root):
+    """Each ``agent-shim: <id>`` marker's id, mapped to the repository paths that carry it."""
+    found = {}
+    for top in SHIM_SCAN:
+        for path in sorted((root / top).rglob("*")):
+            if path.suffix in (".py", ".ts") and path.is_file():
+                for shim in SHIM_MARKER.findall(path.read_text(errors="replace")):
+                    found.setdefault(shim, set()).add(path.relative_to(root).as_posix())
+    return found
+
+
+def shims_due(rows, window):
+    """The ledger ids whose last required Agent is older than every release in ``window``."""
+    oldest = min(version_key(version) for version in window)
+    return [row["id"] for row in rows if version_key(row["lastRequired"]) < oldest]
+
+
+def check_shims(root, versions):
+    """Validate the shim ledger against the supported Agent ``versions`` and the source markers; return its rows.
+
+    A shim lasts while a supported release needs it: its ``lastRequired`` is a supported version older than the newest.
+    Once that release leaves the window the shim is due, and its code, tests, markers and ledger row go together.
+    """
+    versions = sorted(versions, key=version_key)
+    ledger = json.loads((root / SHIM_LEDGER).read_text())
+    if not isinstance(ledger, dict) or set(ledger) != {"schemaVersion", "shims"} or ledger["schemaVersion"] != 1 \
+            or not isinstance(ledger["shims"], list):
+        raise ValueError("invalid agent shim ledger")
+    markers, seen = shim_markers(root), set()
+    for row in ledger["shims"]:
+        if not isinstance(row, dict) or set(row) != {"id", "lastRequired", "summary", "tests"} \
+                or not isinstance(row["id"], str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", row["id"]) \
+                or not isinstance(row["lastRequired"], str) or not re.fullmatch(FORMATS["version"], row["lastRequired"]) \
+                or not isinstance(row["summary"], str) or not row["summary"].strip() \
+                or not isinstance(row["tests"], list) or not all(isinstance(test, str) for test in row["tests"]):
+            raise ValueError(f"invalid agent shim row: {json.dumps(row)}")
+        shim, last = row["id"], row["lastRequired"]
+        if shim in seen:
+            raise ValueError(f"agent shim {shim} is listed twice")
+        seen.add(shim)
+        if version_key(last) < version_key(versions[0]):
+            raise ValueError(f"agent shim {shim} is due: Agent {last} left the supported window; "
+                             "remove its code, tests, markers and ledger row")
+        if last not in versions[:-1]:
+            raise ValueError(f"agent shim {shim} names lastRequired {last}, which is not a supported Agent release "
+                             "older than the newest")
+        if not row["tests"]:
+            raise ValueError(f"agent shim {shim} lists no tests")
+        if shim not in markers:
+            raise ValueError(f"agent shim {shim} has no agent-shim marker in the source")
+        for test in row["tests"]:
+            if test not in markers[shim]:
+                raise ValueError(f"agent shim {shim} lists {test}, which is missing or lacks its marker")
+    if orphans := sorted(set(markers) - seen):
+        raise ValueError(f"agent-shim markers name shims missing from {SHIM_LEDGER}: {', '.join(orphans)}")
+    return ledger["shims"]
+
+
 def lockfile_python(agent):
     """Newest Python minor the checkout's uv.lock ``requires-python`` allows, by PEP 440 specifier rules."""
     try:
@@ -166,9 +234,15 @@ def select(args):
         if not re.fullmatch(FORMATS["sourceRevision"], args.main):
             raise ValueError("an Agent main canary needs an exact commit")
         return "canary", {"sourceRevision": args.main}
-    if args.identity:
-        return "candidate", stable_identity(json.loads(args.identity))
     releases = supported_releases(ROOT)
+    rows = check_shims(ROOT, [release["version"] for release in releases])
+    if args.identity:
+        candidate = stable_identity(json.loads(args.identity))
+        newest = sorted((release["version"] for release in releases), key=version_key)[1:]
+        if due := shims_due(rows, [candidate["version"], *newest]):
+            print(f"Promoting Agent {candidate['version']} makes these agent shims due in {SHIM_LEDGER}: {', '.join(due)}",
+                  file=sys.stderr)
+        return "candidate", candidate
     if args.release:
         match = [release for release in releases if release["releaseTag"] == args.release]
         if not match:
@@ -447,7 +521,9 @@ def main():
                        or int(args.shard.split("/")[0]) > int(args.shard.split("/")[1])):
         parser.error("--shard N/M (1 <= N <= M) runs the whole sidecar suite's shard, without selectors or --command")
     if args.list:
-        print(json.dumps([release["releaseTag"] for release in supported_releases(ROOT)]))
+        releases = supported_releases(ROOT)
+        check_shims(ROOT, [release["version"] for release in releases])
+        print(json.dumps([release["releaseTag"] for release in releases]))
         return
     kind, identity = select(args)
     if args.receipt:

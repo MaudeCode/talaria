@@ -473,6 +473,7 @@ GENERATION_PROFILE = textwrap.dedent(
 
 @requires_agent
 @pytest.mark.skipif(AGENT_DIR is None or not (AGENT_DIR / "providers/plugin_reload.py").is_file(), reason="Agent has no native plugin reload")
+# agent-shim: plugin-registration-ownership
 def test_an_updated_plugin_is_attributed_through_its_current_native_generation(tmp_path: pathlib.Path) -> None:
     """TAL-2289: a plugin the Agent runs from a frozen copy stays its manifest's provider across updates."""
     home = tmp_path / "home" / ".hermes"

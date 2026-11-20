@@ -724,8 +724,7 @@ export const CHAT_METHODS = {
      */
     result: z.object({ ok: z.boolean(), reason: z.string().optional(), pending_steer: z.string().optional(), checkpoint: z.array(Loose).optional(), max_iterations_summary_request: z.string().optional() }),
   },
-  /** `can_redirect`: the Agent can deliver a pending steer now (TAL-424 Send now). */
-  'chat.steer': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), text: z.string().min(1) }), result: z.object({ accepted: z.boolean(), fallback: z.string().nullable().optional(), can_redirect: z.boolean().optional() }) },
+  'chat.steer': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), text: z.string().min(1) }), result: z.object({ accepted: z.boolean(), fallback: z.string().nullable().optional() }) },
   /**
    * TAL-424: take `pending[index]` back out of the Agent's pending steer slot (Edit, Cancel). `pending` is the server's
    * not-yet-consumed steer texts, oldest first. `withdrawn: false` when the Agent already took it; the slot is untouched.

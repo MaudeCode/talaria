@@ -754,9 +754,8 @@ def steer_now(agent, pending: list[str], index: int) -> dict:
         if rest is None:
             return {"redirected": False, "withdrawn": False}
         agent._pending_steer = rest or None
-    redirect = getattr(agent, "redirect", None)
     try:
-        redirected = bool(redirect(text)) if callable(redirect) else False
+        redirected = bool(agent.redirect(text))
     except Exception as exc:  # noqa: BLE001
         log.debug("redirect failed: %s", exc)
         redirected = False
@@ -1865,7 +1864,7 @@ def _is_marked_compaction(kind: str, message) -> bool:
     this gets the original object. Releases without the classifier rely on the wording markers alone."""
     try:
         from agent.conversation_compression import compaction_status_kind
-    except ImportError:
+    except ImportError:  # agent-shim: compaction-progress-kind
         return False
     return compaction_status_kind(kind, message) == "compacting"
 
@@ -2343,12 +2342,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
 
         # A cached agent may still carry the interrupt a previous cancel left behind; the Agent keeps a pending
         # interrupt across turn start, so it would abort this turn immediately.
-        clear_interrupt = getattr(agent, "clear_interrupt", None)
-        if callable(clear_interrupt):
-            try:
-                clear_interrupt()
-            except Exception:  # noqa: BLE001
-                log.debug("agent.clear_interrupt failed", exc_info=True)
+        try:
+            agent.clear_interrupt()
+        except Exception:  # noqa: BLE001
+            log.debug("agent.clear_interrupt failed", exc_info=True)
 
         def _watch_cancel():
             nonlocal pending_mcp
@@ -2508,7 +2505,7 @@ def _retain_refused_turn(agent, session_id: str, result: dict) -> str | None:
     try:
         from agent.turn_failure_copy import CONTENT_REFUSED_NOTICE
         from hermes_state_rewind import retain_refused_turn_for_display
-    except ImportError:
+    except ImportError:  # agent-shim: content-refused-retention
         return None
     # Best-effort, like every owner's call: it logs and returns False when nothing was retained.
     retain_refused_turn_for_display(getattr(agent, "_session_db", None), getattr(agent, "session_id", None) or session_id,
@@ -2828,15 +2825,12 @@ def register(registry) -> None:
         run = _run_for(params)
         if run is None or run.agent is None:
             return {"accepted": False, "fallback": "not_running"}
-        if not hasattr(run.agent, "steer"):
-            return {"accepted": False, "fallback": "agent_lacks_steer"}
         try:
             accepted = bool(run.agent.steer(text))
         except Exception as exc:  # noqa: BLE001
             log.debug("steer failed: %s", exc)
             return {"accepted": False, "fallback": "steer_error"}
-        # `can_redirect`: whether this Agent can deliver a pending steer now (TAL-424 "Send now").
-        return {"accepted": accepted, "fallback": None if accepted else "not_running", "can_redirect": callable(getattr(run.agent, "redirect", None))}
+        return {"accepted": accepted, "fallback": None if accepted else "not_running"}
 
     @registry.method("chat.steer_withdraw", requires_agent=False)
     def steer_withdraw_(ctx: CallContext, params: dict) -> dict:

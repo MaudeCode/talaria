@@ -107,7 +107,7 @@ def register(registry) -> None:
             raise InvalidParams("since is required")
         try:
             from tools.checkpoint_undo_hint import undo_changed_files as changed
-        except ImportError:  # Agent v0.23.0 has no undo hint
+        except ImportError:  # Agent v0.23.0 has no undo hint  # agent-shim: undo-changed-files
             return {"files": []}
         with scoped_home(profile_home_param(params)):
             return {"files": [str(f) for f in changed(_manager(), workspace, since)][:UNDO_NAMED_FILES]}

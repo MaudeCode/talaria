@@ -144,9 +144,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
+          # web/packages/server/src: --list also checks the agent-shim markers there (TAL-351).
           sparse-checkout: |
             scripts
             web/sidecar
+            web/packages/server/src
 
       # The release gate's shard count (check-release-agent.py SHARDS), so PR and release CI shard alike (TAL-1776).
       - name: Validate the support record and list its releases

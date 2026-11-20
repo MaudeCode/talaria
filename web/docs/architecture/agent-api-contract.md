@@ -150,6 +150,16 @@ not a requirement that independently installed Agent or peer component versions
 be equal. Unreleased Agent `main` canaries never change this pin or the
 support record.
 
+Code that exists only because a supported release lacks an Agent API is a
+version shim. Each one has a row in `web/sidecar/agent_shims.json` naming the
+newest supported release that still needs it (`lastRequired`), and every site
+and listed test carries an `agent-shim: <id>` comment. Every checker mode but
+`--main` validates the ledger and its markers against the support record, and
+fails once a shim's `lastRequired` release leaves the window: remove its code,
+tests, markers and row in the change that drops that release. `--identity`
+names the shims promoting the candidate would retire. Guards that keep an
+unsupported Agent loading or failing closed are support policy, not shims.
+
 The Agent main canary (`.github/workflows/agent-main-canary.yml`) runs once a day
 when GitHub Scheduler dispatches it on `main`. It resolves the exact commit Agent
 `main` names, skips it when an earlier canary already checked that commit, and

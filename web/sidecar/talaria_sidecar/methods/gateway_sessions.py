@@ -54,7 +54,7 @@ _SUPPORT_RECORD = Path(__file__).resolve().parents[2] / "agent_support.json"
 _CREATE_FIELDS = {"request_id", "source", "cwd", "model", "provider", "base_url", "toolsets", "safe_mode", "ignore_user_config"}
 
 
-def _opens_on_resume() -> bool:
+def _opens_on_resume() -> bool:  # agent-shim: session-open-on-resume
     """v0.23.1 owners fire ``on_session_open`` on a connection's first resume of a session, unless that connection read
     the session's replay first (a reconnect). Only the watch is a viewer opening the chat (TAL-2054)."""
     return find_spec("gateway.session_open") is not None

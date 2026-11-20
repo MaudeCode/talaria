@@ -152,9 +152,9 @@ export interface TurnRunnerDeps {
 
 /**
  * A steer the Agent has not taken yet (TAL-424: owned by the server, shown to every client). `sending_now`: a Send now
- * put it back on the Agent's queue while tools yield; `can_redirect`: the Agent can deliver it now at all.
+ * put it back on the Agent's queue while tools yield.
  */
-interface SteerRecord { steer_id: string; session_id: string; stream_id: string; text: string; display_text: string; created_at: number; state: 'pending' | 'sending_now'; can_redirect: boolean; talariaActivity?: import('@maudecode/talaria-web-contracts').TalariaActivity }
+interface SteerRecord { steer_id: string; session_id: string; stream_id: string; text: string; display_text: string; created_at: number; state: 'pending' | 'sending_now'; talariaActivity?: import('@maudecode/talaria-web-contracts').TalariaActivity }
 interface FollowUpMessage { text: string; activity?: import('@maudecode/talaria-web-contracts').TalariaActivity | undefined }
 /**
  * A steer the Agent took, with where it landed: after the last tool that had completed when it was consumed.
@@ -2340,7 +2340,7 @@ export class TurnRunner {
       recordTalariaActivity(session, `steer:${steerId}`, activity)
       await this.deps.store.save(session)
     }
-    const record: SteerRecord = { steer_id: steerId, session_id: sessionId, stream_id: activeStreamId, text, display_text: activity?.summary || displayText || text, created_at: this.deps.now(), state: 'pending', can_redirect: false, ...(activity ? { talariaActivity: activity } : {}) }
+    const record: SteerRecord = { steer_id: steerId, session_id: sessionId, stream_id: activeStreamId, text, display_text: activity?.summary || displayText || text, created_at: this.deps.now(), state: 'pending', ...(activity ? { talariaActivity: activity } : {}) }
     const records = this.steers.get(activeStreamId) ?? []
     records.push(record)
     this.steers.set(activeStreamId, records)
@@ -2351,7 +2351,7 @@ export class TurnRunner {
       if (index >= 0) current.splice(index, 1)
       if (!current.length) this.steers.delete(activeStreamId)
     }
-    let result: { accepted: boolean; fallback?: string | null | undefined; can_redirect?: boolean | undefined }
+    let result: { accepted: boolean; fallback?: string | null | undefined }
     try {
       result = await sidecar.call('chat.steer', { stream_id: activeStreamId, text })
     } catch {
@@ -2361,7 +2361,6 @@ export class TurnRunner {
     // An accepted steer whose turn finalised while the reply was in flight was already reported by that finalisation.
     if (!result.accepted) withdraw()
     else {
-      record.can_redirect = result.can_redirect === true
       // TAL-424: every client shows it until the Agent takes it (unless it already did while the reply was in flight).
       if (this.steers.get(activeStreamId)?.includes(record)) (await this.emitToSession(sessionId, 'steer_pending', this.pendingSteerView(record)))
     }
@@ -2570,7 +2569,7 @@ export class TurnRunner {
   /** What every client shows for a pending steer; the server decides which actions it offers. */
   private pendingSteerView(r: SteerRecord): PendingSteer {
     const open = r.state === 'pending'
-    return { steer_id: r.steer_id, text: r.display_text, submitted_at: r.created_at, state: r.state, ...(r.talariaActivity ? { talaria_activity: r.talariaActivity } : {}), actions: { edit: open && !r.talariaActivity, cancel: open, send_now: open && r.can_redirect } }
+    return { steer_id: r.steer_id, text: r.display_text, submitted_at: r.created_at, state: r.state, ...(r.talariaActivity ? { talaria_activity: r.talariaActivity } : {}), actions: { edit: open && !r.talariaActivity, cancel: open, send_now: open } }
   }
 
   /** TAL-397: the todo list the running turn last wrote, before its tool row settles; a cancelled turn keeps it too. */
@@ -2679,7 +2678,6 @@ export class TurnRunner {
   async sendSteerNow(sessionId: string, steerId: string): Promise<SteerSendNowResponse> {
     return (await this.rewriteSteer<SteerSendNowResponse>(sessionId, steerId, (outcome) => ({ redirected: false, outcome }), async (sidecar, streamId, records, index) => {
       const record = records[index]!
-      if (!record.can_redirect) return { result: { redirected: false, outcome: 'failed' }, changed: false }
       const reply = await sidecar.call('chat.steer_now', { stream_id: streamId, pending: records.map((r) => r.text), index })
       if (!reply.withdrawn) return { result: { redirected: false, outcome: reply.reason === 'not_running' ? 'not_running' : 'taken' }, changed: false }
       if (!reply.redirected) {

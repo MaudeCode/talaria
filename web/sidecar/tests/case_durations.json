@@ -752,7 +752,6 @@
  "tests/test_plugin_host_isolation.py::test_plugin_command_runs_under_the_invoking_chats_session_binding": 1.046,
  "tests/test_plugin_host_isolation.py::test_web_commands_pass_session_context_to_plugins_and_fire_pre_command": 1.101,
  "tests/test_plugin_oauth.py::test_plugin_oauth_sign_in_status_and_sign_out": 2.022,
- "tests/test_plugin_provider_load.py::test_an_agent_method_runs_only_after_the_auth_snapshot": 0.015,
  "tests/test_plugin_providers.py::test_a_hosted_plugin_profile_that_overrides_create_client_reports_its_own_name": 1.786,
  "tests/test_plugin_providers.py::test_a_named_profiles_plugin_reads_the_same_whichever_profile_lists_first": 2.24,
  "tests/test_plugin_providers.py::test_a_plugin_usage_hook_is_declared_and_read_only_in_its_own_profile": 1.835,

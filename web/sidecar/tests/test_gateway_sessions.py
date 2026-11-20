@@ -215,7 +215,7 @@ def test_only_the_watch_resumes_as_an_open(native_owner_stub, monkeypatch, actio
     the plain resume."""
     from types import SimpleNamespace
     from talaria_sidecar.methods import gateway_sessions as adapter
-    monkeypatch.setattr(adapter, "_opens_on_resume", lambda: opens)
+    monkeypatch.setattr(adapter, "_opens_on_resume", lambda: opens)  # agent-shim: session-open-on-resume
     ctx = SimpleNamespace(cancelled=False)
     ctx.emit = lambda kind, data: setattr(ctx, "cancelled", True)
     assert native_owner_stub.run(ctx, {"session_id": "native", "action": action, **extra})["state"] == "attached"

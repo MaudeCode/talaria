@@ -1393,7 +1393,7 @@ if source=='dotenv':
   assert recovery._ready(owed,ledger), 'recovery must authenticate with the same owner credentials'
   original=(home/'.env').read_text()
   invalids=[original.replace(secret,'wrong synthetic signing key!'),'']
-  # Credential-bound Agents end every session when the owner password rotates.
+  # Credential-bound Agents end every session when the owner password rotates.  # agent-shim: dashboard-credential-binding
   if 'credential_id' in inspect.signature(basic.BasicAuthProvider).parameters:
    invalids+=[original.replace('disposable-password','rotated-password'),original.replace('disposable-password','')]
   for invalid in invalids:

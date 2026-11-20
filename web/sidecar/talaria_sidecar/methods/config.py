@@ -163,7 +163,7 @@ def assert_config_writable(profile_home: Path | None = None) -> None:
                        condition="config_write_refused")
 
 
-def _drop_other_access(path: str) -> None:
+def _drop_other_access(path: str) -> None:  # agent-shim: config-drop-other-access
     """Apply the Agent writers' ``drop_other_access`` policy after the target's mode is carried onto the staged file;
     Agents before v0.23.2 and the parser fallback lack it. Other-access bits go, group bits stay for shared-group
     homes, and containers keep their deliberate modes. Managed homes never get here (``assert_config_writable``)."""

@@ -314,7 +314,7 @@ for env, marker, expected in [("nixos", None, "nixos"), ("1", None, "nixos"), ("
 
 @requires_agent
 @pytest.mark.parametrize("fallback", [False, True])
-def test_config_set_drops_other_access(hermes_home: pathlib.Path, fallback: bool) -> None:
+def test_config_set_drops_other_access(hermes_home: pathlib.Path, fallback: bool) -> None:  # agent-shim: config-drop-other-access
     agent_script(hermes_home, '''
 import os
 from pathlib import Path
