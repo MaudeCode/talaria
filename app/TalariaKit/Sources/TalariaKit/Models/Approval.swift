@@ -45,6 +45,40 @@ public struct ApprovalPendingResponse: Decodable, Equatable, Sendable {
     }
 }
 
+/// TAL-974: what Allow session and Always allow cover, as the server classifies the Agent's pattern keys.
+public struct ApprovalScope: Decodable, Equatable, Sendable {
+    public enum Kind: String, Sendable {
+        case commandPattern = "command_pattern", toolRule = "tool_rule", python, sshConfig = "ssh_config"
+        case computerUse = "computer_use", securityFinding = "security_finding", unknown
+    }
+
+    public let kind: Kind
+    /// The danger description, tool, or computer-use action the sentence names; nil for the other kinds.
+    public let subject: String?
+    /// An Always answer keeps the security finding for this session only.
+    public let alwaysIsSessionOnly: Bool
+
+    init(kind: Kind, subject: String? = nil, alwaysIsSessionOnly: Bool = false) {
+        self.kind = kind
+        self.subject = subject
+        self.alwaysIsSessionOnly = alwaysIsSessionOnly
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case kind, subject, alwaysIsSessionOnly
+        case alwaysIsSessionOnlySnake = "always_is_session_only"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // A kind a newer server adds reads as the generic sentence.
+        kind = container.decodeLossyStringIfPresent(forKey: .kind).flatMap(Kind.init(rawValue:)) ?? .unknown
+        subject = container.decodeLossyStringIfPresent(forKey: .subject)
+        alwaysIsSessionOnly = container.decodeLossyBoolIfPresent(forKey: .alwaysIsSessionOnly)
+            ?? container.decodeLossyBoolIfPresent(forKey: .alwaysIsSessionOnlySnake) ?? false
+    }
+}
+
 public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
     public var id: String {
         if let approvalId, !approvalId.isEmpty {
@@ -70,6 +104,10 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
     let sendsAllowText: Bool
     let patternKey: String?
     let patternKeys: [String]?
+    /// TAL-974: what Allow session and Always allow cover; nil when Allow session is not offered or the server is older.
+    public let scope: ApprovalScope?
+    /// TAL-974: false only for an older server without the `scope` field, whose help names the raw keys instead.
+    let sendsScope: Bool
     /// TAL-1043: the choices the approval's owner accepts; nil (an older server without the field) allows all four.
     let allowedChoices: [ApprovalChoice]?
     /// TAL-1043: false when the owner cannot turn on approval bypass for the session.
@@ -89,7 +127,7 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
 
     public var allowsApprovalBypass: Bool { canEnableYolo != false }
 
-    public var displayPatternKeys: [String] {
+    var displayPatternKeys: [String] {
         let keys = patternKeys?.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? []
         if !keys.isEmpty {
             return keys
@@ -124,8 +162,12 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         actionText: String? = nil,
         tool: ToolCall? = nil,
         allowText: String? = nil,
-        sendsAllowText: Bool = false
+        sendsAllowText: Bool = false,
+        scope: ApprovalScope? = nil,
+        sendsScope: Bool = false
     ) {
+        self.scope = scope
+        self.sendsScope = sendsScope
         self.tool = tool
         self.allowText = allowText
         self.sendsAllowText = sendsAllowText
@@ -161,6 +203,7 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         case tool
         case allowText
         case allowTextSnake = "allow_text"
+        case scope
     }
 
     public init(from decoder: Decoder) throws {
@@ -180,6 +223,8 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
             ?? container.decodeLossyStringIfPresent(forKey: .patternKeySnake)
         patternKeys = Self.decodeStringArray(from: container, keys: [.patternKeys, .patternKeysSnake])
         allowedChoices = Self.decodeAllowedChoices(from: container)
+        sendsScope = container.contains(.scope)
+        scope = try? container.decodeIfPresent(ApprovalScope.self, forKey: .scope)
         canEnableYolo = container.decodeLossyBoolIfPresent(forKey: .canEnableYolo)
             ?? container.decodeLossyBoolIfPresent(forKey: .canEnableYoloSnake)
     }

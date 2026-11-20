@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { SessionEventBus } from './events.js'
 import { PendingPrompts, type PendingSubscriber } from './pending.js'
+
+const scopeFixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/tool-approval-and-agents.json'), 'utf8')) as { approval_scopes: { pending: Record<string, unknown> }[] }).approval_scopes
 
 function drain(sub: PendingSubscriber): Record<string, unknown>[] {
   return sub.queue.splice(0)
@@ -66,6 +70,23 @@ describe('pending prompt streams', () => {
     expect(allow('s2', { description: 'Write /etc/hosts', question: 'Allow?' })).toBe('Write /etc/hosts')
     expect(allow('s3', { question: 'Allow?', reason: 'Dangerous' })).toBeNull()
   })
+  it('names what Allow session and Always allow cover from the Agent\'s keys, and nothing for a one-time prompt (TAL-974)', () => {
+    const pending = new PendingPrompts(new SessionEventBus())
+    const scope = (sid: string, approval: Record<string, unknown>) => { pending.submitApproval(sid, { approval_id: 'a', ...approval }); return pending.approvalPending(sid).pending?.scope }
+    // The shared fixture both clients render: its scope is this server's output for its keys.
+    for (const { pending: head } of scopeFixture) {
+      const { scope: expected, ...raw } = head
+      expect(scope(String(raw.approval_id), raw), String(raw.approval_id)).toEqual(expected)
+    }
+    expect(scope('shell-2', { description: 'recursive delete; pipe to shell', pattern_keys: ['recursive delete', 'pipe to shell'] })).toMatchObject({ kind: 'command_pattern', subject: 'recursive delete; pipe to shell' })
+    expect(scope('named-rule', { command: '<x>', tool_name: 'web_fetch', pattern_keys: ['plugin_rule:custom'] })).toMatchObject({ kind: 'tool_rule', subject: 'web_fetch' })
+    expect(scope('cmd-rule', { command: '<deploy> (plugin approval rule)', pattern_keys: ['plugin_rule:custom'] })).toMatchObject({ kind: 'tool_rule', subject: 'deploy' })
+    expect(scope('no-keys', { command: 'pwd' })).toBeNull()
+    // Always saves the shell key permanently, so a finding beside it never makes the scope read as session-only.
+    expect(scope('mixed', { description: 'pipe to shell; homograph URL', pattern_keys: ['pipe to shell', 'tirith:homograph_url'] }))
+      .toEqual({ kind: 'command_pattern', subject: 'pipe to shell', always_is_session_only: false })
+  })
+
   it('keeps an approval subscriber attached after answering empties the queue (TAL-556)', () => {
     const pending = new PendingPrompts(new SessionEventBus())
     const [sub] = pending.subscribeApprovals('s1')

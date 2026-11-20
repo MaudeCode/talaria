@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Approval cards say what Allow session and Always allow will cover, in place of raw pattern keys.",
+      "highlight": false,
+      "components": [
+        "web",
+        "app"
+      ],
+      "announce": false
+    }
+  ]
+}

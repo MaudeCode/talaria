@@ -15,6 +15,7 @@ import { Keys } from '../../ui/Keys'
 import { ToolKindIcon } from './toolKind'
 import { FieldRows, toolCardLabel } from './blocks/ToolCard'
 import { useLocale } from '../../i18n/useLocale'
+import { HelpTip } from '../../ui/Field'
 
 // Focusable, editable and ARIA widget ancestors own their keyboard activation, including nested icons.
 const interactiveTarget = [
@@ -26,6 +27,20 @@ const interactiveTarget = [
     'searchbox', 'slider', 'spinbutton', 'switch', 'tab', 'tablist', 'textbox', 'tree', 'treegrid', 'treeitem']
     .map((role) => `[role~="${role}"]`),
 ].join(',')
+
+/** TAL-974: the server's scope as one sentence, with what Always allow keeps when the approval offers it. */
+function scopeSentence(pending: ApprovalPending): string | null {
+  const scope = pending.scope
+  if (!scope) return null
+  const subject = scope.subject ?? ''
+  const session = {
+    command_pattern: () => m.approval_scope_command_pattern({ subject }), tool_rule: () => m.approval_scope_tool_rule({ subject }),
+    python: m.approval_scope_python, ssh_config: m.approval_scope_ssh_config, computer_use: () => m.approval_scope_computer_use({ subject }),
+    security_finding: m.approval_scope_security_finding, unknown: m.approval_scope_unknown,
+  }[scope.kind]()
+  if (!pending.allowed_choices.includes('always')) return session
+  return `${session} ${scope.always_is_session_only ? m.approval_scope_always_session_only() : m.approval_scope_always()}`
+}
 
 /** How long the exit waits for its transition to report its end: past the 320 ms slide in approvals.css. */
 const EXIT_FALLBACK_MS = 500
@@ -98,6 +113,7 @@ export function ApprovalCard({ sessionId, pending, onResolved, onLeaving, onDism
   // TAL-2333: the held call as its tool row shows it; a shell call keeps its command, any other call shows its argument rows.
   const tool = pending.tool
   const fields = tool?.args_fields?.length ? tool.args_fields : null
+  const scope = scopeSentence(pending)
   return (
     <div className={cn(answered ? 'leaving' : 'visible', collapsed && 'collapsed', "approval-card mx-auto mb-2 w-full max-w-[var(--msg-max)] rounded-xl border border-warning bg-surface shadow-md")} role="alertdialog" aria-labelledby={headingId} aria-describedby={descriptionId} aria-hidden={answered || undefined} inert={answered} id="approvalCard">
       <div className="approval-inner p-3" onTransitionEnd={(e) => { if (answered && e.target === e.currentTarget && e.propertyName === 'transform') setExited(true) }}>
@@ -110,6 +126,8 @@ export function ApprovalCard({ sessionId, pending, onResolved, onLeaving, onDism
             <span id={headingId}>{pending.title ?? m.approval_heading()}</span>
           </>}
           {pending.pending_count && pending.pending_count > 1 && <span className="approval-counter text-xs text-muted">{m.approval_pending_count({ n: pending.pending_count })}</span>}
+          {/* TAL-974: what Allow session and Always allow cover, behind help beside the heading. */}
+          {scope && <HelpTip label={m.approval_scope_help()} className="approval-scope-help -ml-1 font-normal">{scope}</HelpTip>}
           <span className="flex-1" />
           <IconButton label={collapsed ? m.approval_expand() : m.approval_collapse()} className="h-7 w-7" aria-expanded={!collapsed} onClick={() => setCollapsed((c) => !c)}>{collapsed ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}</IconButton>
           <IconButton label={m.approval_dismiss()} className="h-7 w-7" onClick={() => { setDismissed(true); onDismissed?.() }}><X size={14} aria-hidden="true" /></IconButton>

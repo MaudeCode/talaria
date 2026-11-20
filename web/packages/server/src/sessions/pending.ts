@@ -7,7 +7,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { SessionEventBus } from './events.js'
 import { str } from '../util.js'
-import { ApprovalChoiceSchema, type ClarifyAnswers, type ClarifyStep, type VaultPrompt, type VaultPromptField } from '@maudecode/talaria-web-contracts'
+import { ApprovalChoiceSchema, type ApprovalScope, type ClarifyAnswers, type ClarifyStep, type VaultPrompt, type VaultPromptField } from '@maudecode/talaria-web-contracts'
 
 export interface PendingSubscriber { queue: Record<string, unknown>[]; wake: (() => void) | null; closed: boolean }
 
@@ -473,7 +473,38 @@ function approvalHead(sid: string, head: Record<string, unknown>): Record<string
   const actionText = approvalActionText(head)
   const shown = (keys: string[]) => keys.map((key) => head[key]).find((text): text is string => typeof text === 'string' && Boolean(text.trim()))
   const description = shown(['description', 'question', 'reason'])
-  return { ...head, ...(approvalId ? { head_id: promptHeadId(sid, approvalId) } : {}), ...(actionText ? { action_text: actionText } : {}), ...(description ? { description } : {}), allow_text: shown(['command', 'description'])?.trim() ?? null }
+  return { ...head, ...(approvalId ? { head_id: promptHeadId(sid, approvalId) } : {}), ...(actionText ? { action_text: actionText } : {}), ...(description ? { description } : {}), allow_text: shown(['command', 'description'])?.trim() ?? null, scope: approvalScope(head) }
+}
+
+/**
+ * TAL-974: what Allow session and Always allow cover, from the keys the Agent persists on those answers (`pattern_keys`,
+ * else `pattern_key`). Null when Allow session is not offered (a one-time prompt) or no key is named. A shell key is one
+ * `; `-joined part of the Agent's danger description; a `tirith:` security finding stays session-only under Always, which the
+ * scope says only when every key is one: beside another key, Always saves that key permanently.
+ */
+function approvalScope(entry: Record<string, unknown>): ApprovalScope | null {
+  if (!approvalAllows(entry, 'session')) return null
+  const named = (Array.isArray(entry.pattern_keys) ? entry.pattern_keys : []).map((key) => typeof key === 'string' ? key.trim() : '').filter(Boolean)
+  const keys = named.length ? named : [str(entry.pattern_key).trim()].filter(Boolean)
+  if (!keys.length) return null
+  const others = keys.filter((key) => !key.startsWith('tirith:'))
+  // Always saves every other key permanently, so only an approval of findings alone keeps Always to the session.
+  const scope = (kind: ApprovalScope['kind'], subject: string | null = null): ApprovalScope => ({ kind, subject, always_is_session_only: kind === 'security_finding' })
+  const [key] = others
+  if (key === undefined) return scope('security_finding')
+  if (others.length === 1) {
+    if (key === 'execute_code') return scope('python')
+    if (key === 'ssh_config_write') return scope('ssh_config')
+    const cua = /^cua:([^:]+):([^:]+)$/.exec(key)
+    if (cua) return scope('computer_use', `${cua[1]} (${cua[2]})`)
+    if (key.startsWith('plugin_rule:')) {
+      // The default rule key is `<tool>:<sha12>`; a custom one names no tool, so the Agent's tool name or the `<tool>` its command shows.
+      const tool = /^(.+):[0-9a-f]{12}$/.exec(key.slice('plugin_rule:'.length))?.[1] ?? (str(entry.tool_name).trim() || /^<([^<>\s]+)>/.exec(str(entry.command))?.[1])
+      return tool ? scope('tool_rule', tool) : scope('unknown')
+    }
+  }
+  const parts = str(entry.description).split(';').map((part) => part.trim())
+  return others.every((other) => parts.includes(other)) ? scope('command_pattern', others.join('; ')) : scope('unknown')
 }
 
 /** A question head with `head_id`, the identity Relay publishes as `inputHeadId`, so a notification's Reply answers only it. */

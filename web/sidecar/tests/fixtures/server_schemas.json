@@ -2290,6 +2290,46 @@
                           "null"
                         ]
                       },
+                      "scope": {
+                        "description": "TAL-974: what Allow session and Always allow cover. Null when Allow session is not offered or the Agent named no pattern key; absent on an older server.",
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "command_pattern",
+                                  "tool_rule",
+                                  "python",
+                                  "ssh_config",
+                                  "computer_use",
+                                  "security_finding",
+                                  "unknown"
+                                ]
+                              },
+                              "subject": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "always_is_session_only": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "subject",
+                              "always_is_session_only"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
                       "approval_id": {
                         "type": "string"
                       },

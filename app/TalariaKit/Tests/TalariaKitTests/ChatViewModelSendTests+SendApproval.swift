@@ -667,7 +667,6 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.approvalPrompt?.sessionID, "session-abc")
         XCTAssertEqual(viewModel.approvalPrompt?.pending.approvalId, "approval-1")
         XCTAssertEqual(viewModel.approvalPrompt?.pendingCount, 2)
-        XCTAssertEqual(viewModel.approvalPrompt?.patternKeys, ["network_download", "pipe_to_shell"])
 
         await viewModel.respondToApproval(.once)
 
