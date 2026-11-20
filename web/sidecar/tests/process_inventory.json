@@ -261,6 +261,14 @@
         ""
       ]
     },
+    "tests/test_agent_mutation.py::test_resume_after_a_source_move_runs_preloaded_modules_after_the_target_refreshes_launch_files": {
+      "layer": "process",
+      "reason": "A real runtime.agent_mutation lease runs its worker child over stdio while a real Git merge replaces the updater's source under it; only that live interpreter shows whether its resume imports the modules loaded before the move, and whether the target tree's launch-file refresh child runs, or its failure is recorded, before the writer resumes.",
+      "cases": [
+        "[rewrites]",
+        "[raises]"
+      ]
+    },
     "tests/test_agent_mutation.py::test_owner_death_stops_and_reaps_a_mutator_before_preserving_torn_tree_debt": {
       "layer": "process",
       "reason": "A real runtime.agent_mutation lease runs its worker child over stdio against a disposable Git checkout and a separate writer process; SIGKILL, cancellation or shutdown of the lease owner must reap the in-flight Git child (an fsmonitor hook) before the pause record becomes unowned torn-tree debt.",

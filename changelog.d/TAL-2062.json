@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "After Talaria Web updates the Hermes Agent, gateways restart with the new release's service settings, and the restart no longer loads half-updated update code.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

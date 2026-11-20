@@ -823,6 +823,24 @@ class ServiceRecovery:
             self.records.write(token)
             self.save(token)
 
+    def refresh_launch_files(self, refresh):
+        """Let the target Agent regenerate its own launch files before any service starts.
+
+        Only a file unchanged since the pause, then rewritten by ``refresh``, takes a new identity:
+        an edit anyone else made while the services were paused still refuses ``_start``."""
+        def stamp(entry):
+            try:
+                return _config_stamp(entry)
+            except (OSError, RuntimeError):
+                return None
+        before = [stamp(entry) for entry in self.state['entries']]
+        detail = refresh()
+        for entry, stamped in zip(self.state['entries'], before):
+            if stamped == entry['config_stamp'] and (after := stamp(entry)) is not None:
+                entry['config_stamp'] = after
+        self.save()
+        return detail
+
     def verify_processes(self, entry, **permissions):
         owed = next(e for e in self.state['entries'] if _service_key(e) == _service_key(entry))
         result = verify_processes(owed, self.records, **permissions)
