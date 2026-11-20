@@ -2603,7 +2603,7 @@ def test_systemd_start_past_its_client_timeout_is_left_to_readiness(gateway_succ
 
 
 @pytest.mark.parametrize('case', ['agent', 'edited-before', 'edited-during', 'crash', 'unit-retires-replace-dropin', 'unit-gains-foreign-dropin',
-                                  'unit-spoofs-dropin-boundary'])
+                                  'unit-spoofs-dropin-boundary', 'unit-fragment-differs-from-file'])
 def test_start_accepts_only_the_launch_file_the_agent_regenerated(gateway_successor, monkeypatch, case):
     import hashlib
     import types
@@ -2618,11 +2618,12 @@ def test_start_accepts_only_the_launch_file_the_agent_regenerated(gateway_succes
         target.write_bytes(b'[Service]\nExecStart=old\n')
         (dropins / '10-keep.conf').write_text('[Service]\nEnvironment=KEEP=1\n')
         (dropins / '20-replace.conf').write_text('ExecStart=hermes gateway run --replace\n')
+        served = {}  # What systemd reports for a file whose bytes on disk changed again since.
         def systemctl(argv, **kwargs):
             files = [target, *sorted(dropins.iterdir())]
             if 'show' in argv:
                 return types.SimpleNamespace(returncode=0, stdout=f'FragmentPath={target}\nDropInPaths={" ".join(map(str, files[1:]))}\n')
-            return types.SimpleNamespace(returncode=0, stdout='\n'.join(f'# {path}\n{path.read_text()}' for path in files))
+            return types.SimpleNamespace(returncode=0, stdout='\n'.join(f'# {path}\n{served.get(path, path.read_text())}' for path in files))
         fleet = types.ModuleType('hermes_cli.update_cmd_fleet')
         fleet._systemctl = systemctl
         budget = types.ModuleType('hermes_cli.update_cmd_fleet_unit_budget')
@@ -2643,6 +2644,8 @@ def test_start_accepts_only_the_launch_file_the_agent_regenerated(gateway_succes
             (dropins / '20-replace.conf').unlink()
         if case == 'unit-gains-foreign-dropin':
             (dropins / '50-foreign.conf').write_text('Environment=FOREIGN=1\n')
+        if case == 'unit-fragment-differs-from-file':
+            served[target] = '[Service]\nExecStart=foreign\n'
         if case == 'unit-spoofs-dropin-boundary':
             # An imitated header after a new directive would re-split this file back to its original bytes.
             keep = dropins / '10-keep.conf'

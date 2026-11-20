@@ -780,14 +780,12 @@ def _agent_rewrite(entry, text, dropins, generated):
     paths = _unit_files(entry)
     if not paths or Path(paths[0]).resolve() != Path(generated['path']).resolve() or Path(generated['path']).name != entry['unit']:
         return False
-    after = _dropins(entry, text)
-    if after is None:
+    # Authenticate the captured bytes themselves: they are what the new digest will vouch for.
+    sections = _unit_sections(text, paths)
+    if not sections or hashlib.sha256(sections[0][1]).hexdigest() != generated['sha256']:
         return False
-    try:
-        unit = hashlib.sha256(Path(generated['path']).read_bytes()).hexdigest()
-    except OSError:
-        return False
-    return (unit == generated['sha256'] and all(dropins.get(path) == body for path, body in after.items())
+    after = {path: hashlib.sha256(body).hexdigest() for path, body in sections[1:]}
+    return (all(dropins.get(path) == body for path, body in after.items())
             and all(path.endswith('.d/20-replace.conf') for path in set(dropins) - set(after)))
 
 
