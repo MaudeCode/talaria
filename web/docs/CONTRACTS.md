@@ -337,6 +337,11 @@ Downloads are explicit, use the native writer (which never overwrites another
 file), and a partial image set reports what arrived. Follow-up actions only put
 the server's `draft` in a composer; nothing is sent or spent by Talaria.
 
+The native `/active` route reports only the tasks it is asked about, so the
+gallery's in-progress list holds the running tasks the adapter's own task reads
+saw in that profile: at most eight, each until Meshy reports it finished or for
+an hour.
+
 ## Files HTML preview
 
 `files.read` answers an HTML file with `preview_url`,

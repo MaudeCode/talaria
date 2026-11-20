@@ -11,6 +11,8 @@ import json
 import os
 import re
 import stat
+import threading
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -19,10 +21,11 @@ from ..errors import InvalidParams
 from . import dashboard_plugins as host
 
 _NAME = 'meshy'
-_PIN = 'c16e967d798d8dd3b1827a62673c18627f31e0ed'
-_SOURCES = {'dashboard/plugin_api.py': 'fcfaefb64464ba9e1bbaccaf0e5f109713a7bb2efb971ac6494ce2b197192f9c',
+# The revision the Agent's catalog installs from v0.23.1 (TAL-2068).
+_PIN = '2937702cb55bf4c56cbaf71f6467479e3eb4f2ba'
+_SOURCES = {'dashboard/plugin_api.py': '11029ff6084b241af4f2f718acb98ac40c454b7d860a8a6e961fb56804d19707',
             'dashboard/manifest.json': '55f3154bfcbd01da1620f3f174d96dc279595fbac4bee7d31d13450e781d0869',
-            'plugin.json': '6a14fcfb4086fc6bc07405f9929926bbe9a06e3cba069fc31b2142ef6aee1b67'}
+            'plugin.json': '0c4e0c76bc987320c3be9251ae0caac026d8c96dfc5bc2ac4b5347823328c026'}
 _TASK_ID = re.compile(r'^[0-9a-f][0-9a-f-]{15,63}$')
 _FORMAT = re.compile(r'^(glb|fbx|obj|stl|usdz|3mf|blend)(?::([a-z0-9_]{1,40}))?$')
 _ASSET_HOST = 'assets.meshy.ai'
@@ -32,6 +35,13 @@ _MIME = {'.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg',
 _STATUSES = {'PENDING': 'pending', 'IN_PROGRESS': 'in_progress', 'SUCCEEDED': 'succeeded', 'FAILED': 'failed',
              'CANCELED': 'canceled', 'EXPIRED': 'expired'}
 _TERMINAL = {'succeeded', 'failed', 'canceled', 'expired'}
+# Native /active reports only the kind:id tasks it is asked about, at most 8, as its own chip asks about the tasks its
+# window saw start. Talaria watches the running tasks its own task reads saw, per profile, for an hour at most.
+_WATCH_MAX = 8
+_WATCH_TTL = 3600.0
+_WATCH: dict[str, dict[str, tuple[str, float]]] = {}
+_WATCH_LOCK = threading.Lock()
+_KIND = re.compile(r'[a-z0-9-]{1,48}')
 # A native save downloads from Meshy's asset host; give it the native timeout rather than the 10 s read budget.
 _SAVE_TIMEOUT = 110.0
 _SAVE_ERRORS = {400: 'Meshy needs an API key for downloads.', 404: 'Meshy has no such file for this task.',
@@ -152,9 +162,34 @@ def _task_state(task_id, row):
             'error': _text(row.get('error'), 200) if status in ('failed', 'canceled', 'expired') else None}
 
 
+def _watch(home, task_id, kind=None):
+    """Start watching a running task (kind given), or stop (kind None)."""
+    with _WATCH_LOCK:
+        watched = _WATCH.setdefault(str(home), {})
+        if kind is None:
+            watched.pop(task_id, None)
+        elif task_id not in watched:
+            watched[task_id] = (kind, time.monotonic())
+            while len(watched) > _WATCH_MAX:
+                watched.pop(next(iter(watched)))
+
+
 def _active(native):
-    status, body = native.call('GET', '/active')
-    rows = body.get('tasks') if status == 200 and isinstance(body.get('tasks'), list) else []
+    now = time.monotonic()
+    with _WATCH_LOCK:
+        watched = _WATCH.get(str(native.home), {})
+        for task in [t for t, (_, seen) in watched.items() if now - seen > _WATCH_TTL]:
+            del watched[task]
+        wanted = ','.join(f'{kind}:{task}' for task, (kind, _) in watched.items())
+    if not wanted:
+        return []
+    status, body = native.call('GET', '/active', {'tasks': wanted})
+    if status != 200:
+        return []
+    for task in body.get('done') if isinstance(body.get('done'), list) else []:
+        if isinstance(task, str):
+            _watch(native.home, task)
+    rows = body.get('tasks') if isinstance(body.get('tasks'), list) else []
     return [_task_state(task, row) for row in rows[:20] if isinstance(row, dict) and (task := _task(row.get('task_id')))]
 
 
@@ -162,7 +197,10 @@ def _one_task(native, task_id):
     status, row = native.call('GET', '/task', {'task': task_id})
     if status != 200 or row.get('task') != task_id:
         return None
-    return {**_task_state(task_id, {**row, 'stage': row.get('stage')}), 'prompt': _text(row.get('prompt')),
+    state = _task_state(task_id, {**row, 'stage': row.get('stage')})
+    kind = row.get('type') if isinstance(row.get('type'), str) and _KIND.fullmatch(row['type']) else 'any'
+    _watch(native.home, task_id, None if state['terminal'] else kind)
+    return {**state, 'prompt': _text(row.get('prompt')),
             'thumbnail_url': _asset_url(row.get('thumbnail')), 'credits': _num(row.get('credits')),
             'has_model': row.get('has_model') is True, 'task_type': _text(row.get('type'), 40)}
 

@@ -9,7 +9,7 @@ test.use({ serviceWorkers: 'block' })
 const TASK = '0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b'
 const IMAGE_TASK = '0192a3b4-c5d6-7e8f-9a0b-aaaaaaaaaaaa'
 const RUNNING = '0192a3b4-c5d6-7e8f-9a0b-bbbbbbbbbbbb'
-const REVISION = 'c16e967d798d8dd3b1827a62673c18627f31e0ed'
+const REVISION = '2937702cb55bf4c56cbaf71f6467479e3eb4f2ba'
 
 /**
  * TAL-1514: the native Meshy plugin is faked at the sidecar boundary with synthetic responses and real disposable files;
