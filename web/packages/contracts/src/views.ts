@@ -1170,7 +1170,7 @@ export const SettingsSchema = z.looseObject({
   bot_name: z.string().optional(), default_model: z.string().optional(), default_workspace: z.string().optional(), language: z.string().optional(), send_key: z.string().optional(), font_size: z.string().optional(),
   full_width_chat: z.boolean().optional(), chat_width: z.enum(['comfortable', 'wide', 'full']).optional(), auto_scroll_follow: z.boolean().optional(), render_user_markdown: z.boolean().optional(), chat_activity_display_mode: z.string().optional(), default_message_mode: z.string().optional(),
   fade_text_effect: z.boolean().optional().describe('TAL-2148: fade the streaming reply\'s new words in (default true); clients skip code and honour reduced motion.'),
-  explain_approvals: z.boolean().optional().describe('TAL-2022: approval cards show an AI summary of what the command does (default false); off, the server generates none and sends no `explanation`.'),
+  explain_approvals: z.boolean().optional().describe('TAL-2022: approval cards show an AI summary of what the command does (default false); off, the server generates none and sends no `explanation`. Changing it needs an owner session.'),
   show_tool_lookups: z.boolean().optional().describe('TAL-2331: show the Agent\'s `tool_search` and `tool_describe` calls in the transcript (default false); off, the server marks them `hidden`.'),
   formatted_tool_results: z.boolean().optional().describe('TAL-2341: open tool rows show the server\'s formatted result (default true); off, the server marks each call `opens_raw`.'),
   inline_tool_media: z.boolean().optional().describe('TAL-2341: the media a call made shows on its collapsed row (default true); off, the server marks each call `media_in_details`.'),

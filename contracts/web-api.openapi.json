@@ -551,7 +551,7 @@
                             },
                             "explain_approvals": {
                               "type": "boolean",
-                              "description": "TAL-2022: approval cards show an AI summary of what the command does (default false); off, the server generates none and sends no `explanation`."
+                              "description": "TAL-2022: approval cards show an AI summary of what the command does (default false); off, the server generates none and sends no `explanation`. Changing it needs an owner session."
                             },
                             "show_tool_lookups": {
                               "type": "boolean",
@@ -117061,7 +117061,7 @@
                     },
                     "explain_approvals": {
                       "type": "boolean",
-                      "description": "TAL-2022: approval cards show an AI summary of what the command does (default false); off, the server generates none and sends no `explanation`."
+                      "description": "TAL-2022: approval cards show an AI summary of what the command does (default false); off, the server generates none and sends no `explanation`. Changing it needs an owner session."
                     },
                     "show_tool_lookups": {
                       "type": "boolean",
@@ -117596,7 +117596,7 @@
                     },
                     "explain_approvals": {
                       "type": "boolean",
-                      "description": "TAL-2022: approval cards show an AI summary of what the command does (default false); off, the server generates none and sends no `explanation`."
+                      "description": "TAL-2022: approval cards show an AI summary of what the command does (default false); off, the server generates none and sends no `explanation`. Changing it needs an owner session."
                     },
                     "show_tool_lookups": {
                       "type": "boolean",
