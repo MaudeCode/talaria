@@ -10,7 +10,7 @@ test('a sidebar row is a link named by its conversation, not its action buttons'
     session_id: sid, title: 'Linked row', updated_at: now, sort_ts: now, last_message_at: now,
     pinned: false, archived: false, project_id: null, is_streaming: false, attention: null,
     is_cli_session: false, source_kind: 'webui', is_messaging_session: false, read_only: false,
-    can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, sidebar_group: 'recent',
+    can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true, sidebar_group: 'recent',
   }
   await page.route(/\/api\/sessions(\?|$)/, async (route) => {
     const response = await route.fetch()

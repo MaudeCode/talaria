@@ -143,7 +143,7 @@ async function seedSidebarSessions(page: Page) {
   const now = Math.floor(Date.now() / 1000)
   const sessions = Array.from({ length: 40 }, (_, i) => ({
     session_id: `rail-${String(i)}`, title: `Row ${String(i)}`, is_streaming: false, attention: null, last_message_at: now - i * 60, updated_at: now - i * 60, sort_ts: now - (i < 30 ? i : 86_400 + i) * 60, pinned: false, archived: false, project_id: null,
-    is_cli_session: false, source_kind: 'webui', is_messaging_session: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true,
+    is_cli_session: false, source_kind: 'webui', is_messaging_session: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true,
   }))
   await page.route(/\/api\/sessions(\?|$)/, async (route) => {
     const response = await route.fetch()

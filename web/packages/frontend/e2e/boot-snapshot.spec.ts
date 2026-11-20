@@ -11,7 +11,7 @@ test('a reload paints the sidebar and open session from the boot snapshot', asyn
     session_id: sid, title: 'Snapshot session', updated_at: now, sort_ts: now, last_message_at: now,
     pinned: false, archived: false, project_id: null, is_streaming: false, attention: null,
     is_cli_session: false, source_kind: 'webui', is_messaging_session: false, read_only: false,
-    can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, sidebar_group: 'recent',
+    can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true, sidebar_group: 'recent',
   }
   // After the reload both reads hang, so whatever paints came from the boot snapshot.
   const release = deferred<undefined>()

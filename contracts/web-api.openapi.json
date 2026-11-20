@@ -3237,6 +3237,14 @@
                             "type": "boolean",
                             "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
                           },
+                          "can_rename": {
+                            "type": "boolean",
+                            "description": "TAL-2478: Web may rename this session; the same gate as `can_delete`."
+                          },
+                          "can_move": {
+                            "type": "boolean",
+                            "description": "TAL-2478: Web may move this session to another project or out of one; the same gate as `can_delete`."
+                          },
                           "can_duplicate": {
                             "type": "boolean",
                             "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
@@ -3400,6 +3408,13 @@
                             ],
                             "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                           },
+                          "sidebar_children": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                          },
                           "sidebar_parent_session_id": {
                             "anyOf": [
                               {
@@ -3555,6 +3570,8 @@
                           "can_pin",
                           "can_archive",
                           "can_delete",
+                          "can_rename",
+                          "can_move",
                           "can_duplicate",
                           "can_share",
                           "source_reference"
@@ -3611,6 +3628,15 @@
           },
           {
             "name": "sidebar_source",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "project_id",
             "in": "query",
             "schema": {
               "type": "string"
@@ -4405,6 +4431,14 @@
                             "type": "boolean",
                             "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
                           },
+                          "can_rename": {
+                            "type": "boolean",
+                            "description": "TAL-2478: Web may rename this session; the same gate as `can_delete`."
+                          },
+                          "can_move": {
+                            "type": "boolean",
+                            "description": "TAL-2478: Web may move this session to another project or out of one; the same gate as `can_delete`."
+                          },
                           "can_duplicate": {
                             "type": "boolean",
                             "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
@@ -4568,6 +4602,13 @@
                             ],
                             "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                           },
+                          "sidebar_children": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                          },
                           "sidebar_parent_session_id": {
                             "anyOf": [
                               {
@@ -4699,6 +4740,8 @@
                           "can_pin",
                           "can_archive",
                           "can_delete",
+                          "can_rename",
+                          "can_move",
                           "can_duplicate",
                           "can_share"
                         ],
@@ -5411,6 +5454,14 @@
                             "type": "boolean",
                             "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
                           },
+                          "can_rename": {
+                            "type": "boolean",
+                            "description": "TAL-2478: Web may rename this session; the same gate as `can_delete`."
+                          },
+                          "can_move": {
+                            "type": "boolean",
+                            "description": "TAL-2478: Web may move this session to another project or out of one; the same gate as `can_delete`."
+                          },
                           "can_duplicate": {
                             "type": "boolean",
                             "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
@@ -5574,6 +5625,13 @@
                             ],
                             "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                           },
+                          "sidebar_children": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                          },
                           "sidebar_parent_session_id": {
                             "anyOf": [
                               {
@@ -5705,6 +5763,8 @@
                           "can_pin",
                           "can_archive",
                           "can_delete",
+                          "can_rename",
+                          "can_move",
                           "can_duplicate",
                           "can_share"
                         ],
@@ -5847,6 +5907,10 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "has_unprojected": {
+                      "type": "boolean",
+                      "description": "TAL-2478: a row of the requested source and archive state has no project, before the `project_id` filter; clients offer the Unassigned filter only then."
                     }
                   },
                   "required": [
@@ -5869,7 +5933,8 @@
                     "webhook_session_count",
                     "webhook_sessions_truncated",
                     "sidebar_groups",
-                    "agent_storage"
+                    "agent_storage",
+                    "has_unprojected"
                   ],
                   "additionalProperties": {}
                 }
@@ -5907,6 +5972,15 @@
           },
           {
             "name": "sidebar_source",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "project_id",
             "in": "query",
             "schema": {
               "type": "string"
@@ -5989,15 +6063,6 @@
           },
           {
             "name": "depth",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "allowEmptyValue": true,
-            "allowReserved": true
-          },
-          {
-            "name": "project_id",
             "in": "query",
             "schema": {
               "type": "string"
@@ -6719,6 +6784,14 @@
                             "type": "boolean",
                             "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
                           },
+                          "can_rename": {
+                            "type": "boolean",
+                            "description": "TAL-2478: Web may rename this session; the same gate as `can_delete`."
+                          },
+                          "can_move": {
+                            "type": "boolean",
+                            "description": "TAL-2478: Web may move this session to another project or out of one; the same gate as `can_delete`."
+                          },
                           "can_duplicate": {
                             "type": "boolean",
                             "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
@@ -6882,6 +6955,13 @@
                             ],
                             "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                           },
+                          "sidebar_children": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                          },
                           "sidebar_parent_session_id": {
                             "anyOf": [
                               {
@@ -7013,6 +7093,8 @@
                           "can_pin",
                           "can_archive",
                           "can_delete",
+                          "can_rename",
+                          "can_move",
                           "can_duplicate",
                           "can_share"
                         ],
@@ -28461,6 +28543,14 @@
                           "type": "boolean",
                           "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
                         },
+                        "can_rename": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may rename this session; the same gate as `can_delete`."
+                        },
+                        "can_move": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may move this session to another project or out of one; the same gate as `can_delete`."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
@@ -28624,6 +28714,13 @@
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                         },
+                        "sidebar_children": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
                         "sidebar_parent_session_id": {
                           "anyOf": [
                             {
@@ -28755,6 +28852,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
+                        "can_rename",
+                        "can_move",
                         "can_duplicate",
                         "can_share"
                       ],
@@ -29515,6 +29614,14 @@
                           "type": "boolean",
                           "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
                         },
+                        "can_rename": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may rename this session; the same gate as `can_delete`."
+                        },
+                        "can_move": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may move this session to another project or out of one; the same gate as `can_delete`."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
@@ -29678,6 +29785,13 @@
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                         },
+                        "sidebar_children": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
                         "sidebar_parent_session_id": {
                           "anyOf": [
                             {
@@ -29809,6 +29923,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
+                        "can_rename",
+                        "can_move",
                         "can_duplicate",
                         "can_share"
                       ],
@@ -30576,6 +30692,14 @@
                           "type": "boolean",
                           "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
                         },
+                        "can_rename": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may rename this session; the same gate as `can_delete`."
+                        },
+                        "can_move": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may move this session to another project or out of one; the same gate as `can_delete`."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
@@ -30739,6 +30863,13 @@
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                         },
+                        "sidebar_children": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
                         "sidebar_parent_session_id": {
                           "anyOf": [
                             {
@@ -30870,6 +31001,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
+                        "can_rename",
+                        "can_move",
                         "can_duplicate",
                         "can_share"
                       ],
@@ -38008,6 +38141,14 @@
                               "type": "boolean",
                               "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
                             },
+                            "can_rename": {
+                              "type": "boolean",
+                              "description": "TAL-2478: Web may rename this session; the same gate as `can_delete`."
+                            },
+                            "can_move": {
+                              "type": "boolean",
+                              "description": "TAL-2478: Web may move this session to another project or out of one; the same gate as `can_delete`."
+                            },
                             "can_duplicate": {
                               "type": "boolean",
                               "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
@@ -38171,6 +38312,13 @@
                               ],
                               "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                             },
+                            "sidebar_children": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                            },
                             "sidebar_parent_session_id": {
                               "anyOf": [
                                 {
@@ -38302,6 +38450,8 @@
                             "can_pin",
                             "can_archive",
                             "can_delete",
+                            "can_rename",
+                            "can_move",
                             "can_duplicate",
                             "can_share"
                           ],
@@ -39131,6 +39281,14 @@
                           "type": "boolean",
                           "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
                         },
+                        "can_rename": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may rename this session; the same gate as `can_delete`."
+                        },
+                        "can_move": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may move this session to another project or out of one; the same gate as `can_delete`."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
@@ -39294,6 +39452,13 @@
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                         },
+                        "sidebar_children": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
                         "sidebar_parent_session_id": {
                           "anyOf": [
                             {
@@ -39425,6 +39590,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
+                        "can_rename",
+                        "can_move",
                         "can_duplicate",
                         "can_share"
                       ],
@@ -47063,6 +47230,14 @@
                           "type": "boolean",
                           "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
                         },
+                        "can_rename": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may rename this session; the same gate as `can_delete`."
+                        },
+                        "can_move": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may move this session to another project or out of one; the same gate as `can_delete`."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
@@ -47226,6 +47401,13 @@
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                         },
+                        "sidebar_children": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
                         "sidebar_parent_session_id": {
                           "anyOf": [
                             {
@@ -47357,6 +47539,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
+                        "can_rename",
+                        "can_move",
                         "can_duplicate",
                         "can_share"
                       ],
@@ -48115,6 +48299,14 @@
                           "type": "boolean",
                           "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
                         },
+                        "can_rename": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may rename this session; the same gate as `can_delete`."
+                        },
+                        "can_move": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may move this session to another project or out of one; the same gate as `can_delete`."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
@@ -48278,6 +48470,13 @@
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                         },
+                        "sidebar_children": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
                         "sidebar_parent_session_id": {
                           "anyOf": [
                             {
@@ -48409,6 +48608,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
+                        "can_rename",
+                        "can_move",
                         "can_duplicate",
                         "can_share"
                       ],
@@ -79137,6 +79338,14 @@
                           "type": "boolean",
                           "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
                         },
+                        "can_rename": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may rename this session; the same gate as `can_delete`."
+                        },
+                        "can_move": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may move this session to another project or out of one; the same gate as `can_delete`."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
@@ -79300,6 +79509,13 @@
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                         },
+                        "sidebar_children": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
                         "sidebar_parent_session_id": {
                           "anyOf": [
                             {
@@ -79431,6 +79647,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
+                        "can_rename",
+                        "can_move",
                         "can_duplicate",
                         "can_share"
                       ],
@@ -80188,6 +80406,14 @@
                           "type": "boolean",
                           "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
                         },
+                        "can_rename": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may rename this session; the same gate as `can_delete`."
+                        },
+                        "can_move": {
+                          "type": "boolean",
+                          "description": "TAL-2478: Web may move this session to another project or out of one; the same gate as `can_delete`."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
@@ -80351,6 +80577,13 @@
                           ],
                           "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it."
                         },
+                        "sidebar_children": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it."
+                        },
                         "sidebar_parent_session_id": {
                           "anyOf": [
                             {
@@ -80482,6 +80715,8 @@
                         "can_pin",
                         "can_archive",
                         "can_delete",
+                        "can_rename",
+                        "can_move",
                         "can_duplicate",
                         "can_share"
                       ],
@@ -169728,6 +169963,15 @@
             "in": "query",
             "required": false,
             "description": "`1` merges the gateway feed with a `stream` discriminator and an initial `gateway_status` frame.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "push_endpoint",
+            "in": "query",
+            "required": false,
+            "description": "TAL-2478: this browser's Web Push endpoint; each completion says whether Web Push delivers it there (`push_delivers`).",
             "schema": {
               "type": "string"
             }

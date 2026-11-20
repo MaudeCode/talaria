@@ -4,10 +4,10 @@ import { keys } from '../../api/queryKeys'
 import { invalidateSessionQueries } from '../../api/sessionQueries'
 import { getStreamState, hasRecentTerminalSession } from '../../stream/store'
 import { getStreamContext, useStreamContext, hasLiveConnection } from '../../stream/connection'
-import { openSessionListStream, SSE_OPEN } from '../../api/sse'
+import { openSessionListStream, SSE_CLOSED, SSE_OPEN, type SseHandle } from '../../api/sse'
 import { useSetting } from '../../app/settings'
 import { deliverCompletion } from '../voice/completionAudio'
-import { notifyCompletion } from '../notifications/completionNotification'
+import { notifyCompletion, pushEndpoint } from '../notifications/completionNotification'
 
 /**
  * TAL-1209: refetch the sidebar rows (list and search) and every query of the named session; other sessions' transcripts,
@@ -29,7 +29,9 @@ export function useSessionListStream() {
   useEffect(() => {
     let closed = false
     const scope = getStreamContext()
-    let handle = openSessionListStream({
+    let handle: SseHandle = { close: () => undefined, readyState: () => SSE_CLOSED }
+    // TAL-2478: the stream names this browser's Web Push endpoint, so each completion says whether Web Push shows it here.
+    const open = (endpoint: string | undefined) => { if (!closed) handle = openSessionListStream({
       onEvent: (ev) => {
         if (closed || scope !== getStreamContext()) return
         if (ev.event === 'sessions_changed') {
@@ -46,12 +48,13 @@ export function useSessionListStream() {
         else if (ev.event === 'initial') invalidateSidebar(qc)
       },
       onError: () => { /* EventSource retries on its own; the poll below covers long outages */ },
-    })
+    }, endpoint) }
+    void pushEndpoint().then(open)
     const poll = window.setInterval(() => { if (!closed && handle.readyState() !== SSE_OPEN && document.visibilityState === 'visible') invalidateSidebar(qc) }, 60_000)
     return () => {
       closed = true
       handle.close()
-      handle = { close: () => undefined, readyState: () => 2 }
+      handle = { close: () => undefined, readyState: () => SSE_CLOSED }
       window.clearInterval(poll)
     }
   }, [qc, sound, notify, context])

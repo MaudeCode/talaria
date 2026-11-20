@@ -13,7 +13,7 @@ test('background results keep one leading review icon and only their goal at des
   const long = { ...failed, message_id: 'review-long', _background_update: { ...update, lines: [{ ...update.lines[0], label: longLabel }] } }
   const marker = { role: 'user', content: 'Earlier turns were summarised.', message_id: 'marker', _display: 'row', _marker_kind: 'context_compaction' }
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    ...fixture, title: 'Background review', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, transcript_seq: null,
+    ...fixture, title: 'Background review', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true, transcript_seq: null,
     messages: [{ role: 'user', content: 'Check these results.' }, marker, ...fixture.messages, long, { role: 'assistant', content: 'The test run needs attention.' }],
   } } }))
   await page.goto(`/session/${fixture.session_id}`)

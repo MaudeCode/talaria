@@ -170,6 +170,7 @@ export function sidebarListSelection(settings: Settings, input: SessionsListQuer
     showWebhookSessions: queryBool(input.show_webhook_sessions, Boolean(settings.show_webhook_sessions)),
     showKanbanSessions: queryBool(input.show_kanban_sessions, Boolean(settings.show_kanban_sessions)),
     sidebarSource: sidebarSourceRaw === 'webui' || sidebarSourceRaw === 'cli' ? sidebarSourceRaw : null,
+    projectId: input.project_id?.trim() || null,
     archivedLimit: queryPositiveInt(input.archived_limit, null, 2000),
     archivedOffset: queryPositiveInt(input.archived_offset, 0, 200000) ?? 0,
     detailedRows: settings.sidebar_density === 'detailed',
@@ -314,7 +315,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       const opts = { content: (input.content ?? '1') === '1', depth, allProfiles: (await requestProfileReach(ctx, input.all_profiles)) === 'all' }
       // TAL-308: any sidebar filter answers from the sidebar's own rows; without one the store-only search stays.
       if (SIDEBAR_SEARCH_KEYS.some((k) => input[k] !== undefined)) {
-        return await ctx.deps.sessions.sidebarSearch(input.q ?? '', (await sidebarListParams(ctx, input)), { ...opts, projectId: input.project_id?.trim() || null }) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
+        return await ctx.deps.sessions.sidebarSearch(input.q ?? '', (await sidebarListParams(ctx, input)), opts) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
       }
       return await ctx.deps.sessions.search(input.q ?? '', opts) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
     })),
@@ -1078,7 +1079,7 @@ function spawnDetached(cmd: string[]): Promise<void> {
 }
 
 /** Alerts are scoped like presence leases: the login's bound profile, else the active one, with root as `default`. */
-async function notificationRequester(ctx: RequestContext): Promise<WebPushRequester> {
+export async function notificationRequester(ctx: RequestContext): Promise<WebPushRequester> {
   const session = await ensureTrustedAuthSession(ctx)
   const bound = str(session?.bound_profile).trim() || null
   const name = bound ?? ctx.deps.activeProfile()

@@ -134,8 +134,17 @@ export class WebPushChannel implements NotificationChannel {
   }
 
   async status(endpoint: string | undefined, requester: WebPushRequester): Promise<{ public_key: string; subscription: { preferences: AlertPreferences } | null }> {
-    const sub = endpoint ? (await this.subscriptions()).find((s) => s.endpoint === endpoint && s.profile === requester.profile) : undefined
+    const sub = await this.find(endpoint, requester.profile)
     return { public_key: await this.publicKey(), subscription: sub ? { preferences: sub.preferences } : null }
+  }
+
+  /** TAL-2478: this browser's subscription is held for `profile` with completions on, so Web Push sends it each completion. */
+  async deliversCompletions(endpoint: string | undefined, profile: string): Promise<boolean> {
+    return (await this.find(endpoint, profile))?.preferences.notify_on_completion === true
+  }
+
+  private async find(endpoint: string | undefined, profile: string): Promise<Subscription | undefined> {
+    return endpoint ? (await this.subscriptions()).find((s) => s.endpoint === endpoint && s.profile === profile) : undefined
   }
 
   /** Save or update this browser's subscription; the endpoint must be HTTPS on a public address. */

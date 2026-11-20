@@ -6,7 +6,7 @@ test.use({ serviceWorkers: 'block' })
 /** TAL-699: a conversation row opens its actions on right-click and long-press; text fields and selections keep the browser's menu. */
 
 const now = Math.floor(Date.now() / 1000)
-const base = { sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false }
+const base = { sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false }
 const CURRENT = { ...base, session_id: 'row-menu-current', title: 'Current conversation', sidebar_group: 'recent' }
 
 async function boot(page: Page): Promise<{ item: Locator; writes: Record<string, unknown>[] }> {

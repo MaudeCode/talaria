@@ -27,8 +27,14 @@ const SessionQuery = z.object({ session_id: z.string() })
 export const TruncateConfirmRequiredSchema = z.object({ ok: z.literal(false), confirm_required: z.literal(true), discard_user_turns: z.number().int(), discard_messages: z.number().int(), confirm_token: z.string() })
 
 
+/**
+ * The sidebar selection (TAL-2478): `project_id` (a project id, or `none` for rows without one) and `sidebar_source` narrow
+ * the rows; a nested row files in its parent's project and tab. `sidebar_source: cli` while no row files in the CLI tab
+ * lists the `webui` rows, so a client never shows an empty tab it cannot pick. `webui_session_count` and
+ * `cli_session_count` still count every project.
+ */
 export const SessionsListQuerySchema = z.object({
-  include_archived: z.string().optional(), all_profiles: z.string().optional(), sidebar_source: z.string().optional(),
+  include_archived: z.string().optional(), all_profiles: z.string().optional(), sidebar_source: z.string().optional(), project_id: z.string().optional(),
   archived_limit: z.string().optional(), archived_offset: z.string().optional(),
   show_cli_sessions: z.string().optional(), show_claude_code_sessions: z.string().optional(), show_cron_sessions: z.string().optional(),
   show_messaging_sessions: z.string().optional().describe('TAL-2159: overrides the `show_messaging_sessions` setting for this request.'),
@@ -37,12 +43,12 @@ export const SessionsListQuerySchema = z.object({
 export type SessionsListQuery = z.infer<typeof SessionsListQuerySchema>
 
 /**
- * TAL-308: the sidebar search. Any filter here (`project_id`: a project id or `none`; `sidebar_source`; `include_archived`;
- * a `show_*` override) selects the `/api/sessions` rows and order, so the response is the complete result and says
- * `sidebar_filtered: true`. Without one the search keeps its older store-only behavior.
+ * TAL-308: the sidebar search. Any filter here (`project_id`, `sidebar_source`, `include_archived`, a `show_*` override)
+ * selects the `/api/sessions` rows and order, so the response is the complete result and says `sidebar_filtered: true`.
+ * Without one the search keeps its older store-only behavior.
  */
 export const SessionsSearchQuerySchema = SessionsListQuerySchema.omit({ archived_limit: true, archived_offset: true }).extend({
-  q: z.string().optional(), content: z.string().optional(), depth: z.string().optional(), project_id: z.string().optional(),
+  q: z.string().optional(), content: z.string().optional(), depth: z.string().optional(),
 })
 
 export const SessionDetailQuerySchema = z.object({ session_id: z.string(), messages: z.string().optional(), msg_limit: z.string().optional(), msg_before: z.string().optional(), resolve_model: z.string().optional(), expand_renderable: z.string().optional() })

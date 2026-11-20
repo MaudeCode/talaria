@@ -15,7 +15,7 @@ test('an owner chat shows its owner\'s work, reads a tail and steers a resident 
   ]
   let steered: unknown = null
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    session_id: sid, title: 'Gateway chat', workspace: '/repo', is_streaming: false, read_only: true, can_branch: false, can_pin: true, can_archive: true, can_delete: false, can_duplicate: false, can_share: false, transcript_seq: null,
+    session_id: sid, title: 'Gateway chat', workspace: '/repo', is_streaming: false, read_only: true, can_branch: false, can_pin: true, can_archive: true, can_delete: false, can_rename: false, can_move: false, can_duplicate: false, can_share: false, transcript_seq: null,
     owner_attachment: owner, messages: [{ role: 'user', id: 1, content: 'Start the dev server and check the logs.' }],
   } } }))
   await page.route('**/api/background/tasks?**', (route) => {

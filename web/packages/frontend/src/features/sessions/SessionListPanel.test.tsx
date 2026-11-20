@@ -34,12 +34,16 @@ import { stubAnimate } from '../../test/animate'
 // Keep relative fixture timestamps on one local date, even just after midnight.
 const now = new Date().setHours(12, 0, 0, 0) / 1000
 const row = (session_id: string, title: string, extra: Partial<SessionRow> = {}): SessionRow => ({
-  session_id, title, last_message_at: now, sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, ...extra,
+  session_id, title, last_message_at: now, sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, ...extra,
 })
 const alpha = row('alpha', 'Alpha zebra', { project_id: 'p1' })
 const delta = row('delta', 'Delta', { project_id: 'p1' })
 const other = row('other', 'Other zebra')
 const cli = row('cli', 'Cli zebra', { project_id: 'p1', is_cli_session: true, source_kind: 'cli', sidebar_source: 'cli' })
+/** The server's selection (TAL-2478): each list request gets the rows of its source tab, project and archive state. */
+const answer = (scope: (params: api.SessionListParams) => SessionRow[], extra: object = {}) =>
+  vi.mocked(api.fetchSessions).mockImplementation((params = {}) => Promise.resolve({ sessions: scope(params), ...extra }) as never)
+const byProject = (all: SessionRow[], p1: SessionRow[], none: SessionRow[]) => (params: api.SessionListParams) => params.project_id === 'p1' ? p1 : params.project_id === 'none' ? none : all
 const shown = () => [...document.querySelectorAll('[data-sid]')].map((el) => el.getAttribute('data-sid'))
 const openFilters = async () => {
   await userEvent.click(await screen.findByRole('button', { name: /^Chat filters/ }))
@@ -54,7 +58,8 @@ const pick = async (name: string | RegExp) => {
 beforeEach(() => {
   route.sessionId = undefined
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('min-width'), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
-  vi.mocked(api.fetchSessions).mockReset().mockResolvedValue({ sessions: [alpha, delta, other, cli], webui_session_count: 3, cli_session_count: 1 } as never)
+  vi.mocked(api.fetchSessions).mockReset()
+  answer((params) => params.sidebar_source === 'cli' ? byProject([cli], [cli], [])(params) : byProject([alpha, delta, other], [alpha, delta], [other])(params), { webui_session_count: 3, cli_session_count: 1, has_unprojected: true })
   vi.mocked(api.fetchProjects).mockReset().mockResolvedValue({ projects: [{ project_id: 'p1', name: 'Proj' }] } as never)
   vi.mocked(api.searchSessions).mockReset()
   settings.value = {}
@@ -81,7 +86,7 @@ describe('sidebar list motion (TAL-1756)', () => {
     return client
   }
   const update = async (client: QueryClient, sessions: SessionRow[]) => {
-    await act(async () => { client.setQueryData(keys.sessions.list({}), { sessions, webui_session_count: sessions.length, cli_session_count: 0 }); await Promise.resolve() })
+    await act(async () => { client.setQueryData(keys.sessions.list({ sidebar_source: 'webui' }), { sessions, webui_session_count: sessions.length, cli_session_count: 0 }); await Promise.resolve() })
   }
   const sid = (el: Element) => (el.matches('[data-sid]') ? el : el.querySelector('[data-sid]'))?.getAttribute('data-sid')
 
@@ -181,7 +186,7 @@ describe('sidebar list motion (TAL-1756)', () => {
 
   it('changes filters and collapses groups without motion', async () => {
     const scheduled = Array.from({ length: 6 }, (_, i) => row(`cron-${i}`, `Cron run ${i}`, { sidebar_group: 'scheduled' }))
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha, other, ...scheduled] } as never)
+    answer(byProject([alpha, other, ...scheduled], [alpha], []))
     await mount()
     fireEvent.click(screen.getByText('Today'))
     fireEvent.click(screen.getByText('Today'))
@@ -210,7 +215,7 @@ describe('sidebar list motion (TAL-1756)', () => {
     expect(screen.getByText('Delta')).toBeInTheDocument()
     motion.calls.length = 0
     await act(async () => {
-      client.setQueryData(keys.sessions.list({}), { sessions: [other], active_profile: 'another' })
+      client.setQueryData(keys.sessions.list({ sidebar_source: 'webui' }), { sessions: [other], active_profile: 'another' })
       await Promise.resolve()
     })
     expect(screen.queryByText('Delta')).toBeNull()
@@ -337,8 +342,10 @@ describe('SessionListPanel search (TAL-308, TAL-2184)', () => {
     await pick('Proj')
     await userEvent.type(screen.getByRole('searchbox'), 'zebra')
     await waitFor(() => { expect(api.searchSessions).toHaveBeenLastCalledWith('zebra', { project_id: 'p1', sidebar_source: 'webui', include_archived: false }, 5, expect.any(AbortSignal)) })
-    // While the request is in flight, the local title filter answers.
-    expect(shown()).toEqual(['alpha'])
+    expect(api.fetchSessions).toHaveBeenLastCalledWith({ sidebar_source: 'webui', project_id: 'p1' }, expect.any(AbortSignal))
+    // While the request is in flight, the list waits for the server's matches (TAL-2478).
+    expect(shown()).toEqual([])
+    expect(screen.getByText('Loading...')).toHaveAttribute('role', 'status')
     answer({ sessions: [{ ...delta, match_type: 'content', match_preview: 'a zebra here' }, { ...alpha, match_type: 'title' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
     await waitFor(() => { expect(shown()).toEqual(['delta', 'alpha']) })
     expect(screen.getByText('a zebra here')).toBeInTheDocument()
@@ -347,15 +354,18 @@ describe('SessionListPanel search (TAL-308, TAL-2184)', () => {
 })
 
 describe('nested subagent rows (TAL-1151)', () => {
-  const parent = row('web-parent', 'Plan the release', { project_id: 'p1', sort_ts: now - 100 })
+  const parent = row('web-parent', 'Plan the release', { project_id: 'p1', sort_ts: now - 100, sidebar_children: ['sub-web'] })
   const child = row('sub-web', 'Subagent Session', { project_id: 'p1', sort_ts: now - 50, source_kind: 'subagent', read_only: true, can_pin: false, can_archive: false, sidebar_parent_session_id: 'web-parent' })
-  const host = row('cli-host', 'CLI host', { is_cli_session: true, source_kind: 'cli', sidebar_source: 'cli', sort_ts: now - 200 })
+  const host = row('cli-host', 'CLI host', { is_cli_session: true, source_kind: 'cli', sidebar_source: 'cli', sort_ts: now - 200, sidebar_children: ['sub-cli'] })
   const cliChild = row('sub-cli', 'Subagent Session', { sort_ts: now - 20, source_kind: 'subagent', read_only: true, can_pin: false, can_archive: false, sidebar_parent_session_id: 'cli-host', sidebar_source: 'cli' })
   const orphan = row('sub-orphan', 'Subagent Session', { sort_ts: now - 10, source_kind: 'subagent', read_only: true, can_pin: false, can_archive: false, sidebar_parent_session_id: null })
   const nested = () => [...document.querySelectorAll('.session-item-nested')].map((el) => el.getAttribute('data-sid'))
 
-  it('renders each linked row under its parent and hides it with the parent\'s filtered-out row', async () => {
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphan, cliChild, child, parent, host], webui_session_count: 3, cli_session_count: 2 } as never)
+  /** The server lists each tab and project with its nested rows (TAL-2478). */
+  const listTabs = () => answer((params) => params.sidebar_source === 'cli' ? [cliChild, host] : byProject([orphan, child, parent], [child, parent], [orphan])(params), { webui_session_count: 3, cli_session_count: 2, has_unprojected: true })
+
+  it('renders the rows a parent lists in sidebar_children under it, for each tab and project the server lists', async () => {
+    listTabs()
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
     await screen.findByText('Plan the release')
     expect(shown()).toEqual(['sub-orphan', 'web-parent', 'sub-web'])
@@ -371,7 +381,7 @@ describe('nested subagent rows (TAL-1151)', () => {
   })
 
   it('shows the server\'s source counts and takes an archived parent\'s nested rows off at once', async () => {
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphan, cliChild, child, parent, host], webui_session_count: 3, cli_session_count: 2 } as never)
+    listTabs()
     vi.mocked(api.archiveSession).mockReturnValue(new Promise(() => undefined) as never)
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
     await screen.findByText('Plan the release')
@@ -384,7 +394,7 @@ describe('nested subagent rows (TAL-1151)', () => {
   })
 
   it('nests a search match only under a parent the server matched too', async () => {
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphan, cliChild, child, parent, host], webui_session_count: 3, cli_session_count: 2 } as never)
+    listTabs()
     vi.mocked(api.searchSessions).mockResolvedValue({ sessions: [{ ...child, match_type: 'title' }, { ...parent, match_type: 'title' }, { ...orphan, match_type: 'title' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' } as never)
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
     await screen.findByText('Plan the release')
@@ -396,13 +406,13 @@ describe('nested subagent rows (TAL-1151)', () => {
 
 describe('source tabs read the server verdict (TAL-1863)', () => {
   const subagent = { source_kind: 'subagent', read_only: true, can_pin: false, can_archive: false, is_cli_session: false } as const
-  const host = row('cli-host', 'CLI host', { is_cli_session: true, source_kind: 'cli', sidebar_source: 'cli', sort_ts: now - 200 })
+  const host = row('cli-host', 'CLI host', { is_cli_session: true, source_kind: 'cli', sidebar_source: 'cli', sort_ts: now - 200, sidebar_children: ['sub-nested'] })
   const nestedChild = row('sub-nested', 'Subagent Session', { ...subagent, sort_ts: now - 20, sidebar_parent_session_id: 'cli-host', sidebar_source: 'cli' })
   const orphanedChild = row('sub-orphaned', 'Subagent Session', { ...subagent, sort_ts: now - 10, sidebar_parent_session_id: null, sidebar_source: 'cli' })
   const renderPanel = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
 
   it('files a child of an unlisted CLI parent as a root in the CLI tab, with the count matching the rows', async () => {
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphanedChild, other], webui_session_count: 1, cli_session_count: 1 } as never)
+    answer((params) => (params.sidebar_source === 'cli' ? [orphanedChild] : [other]), { webui_session_count: 1, cli_session_count: 1 })
     renderPanel()
     await screen.findByText('Other zebra')
     expect(shown()).toEqual(['other'])
@@ -414,7 +424,7 @@ describe('source tabs read the server verdict (TAL-1863)', () => {
   })
 
   it('takes an archived CLI root and its nested row off the CLI count at once, and leaves the child of an unlisted parent', async () => {
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [orphanedChild, nestedChild, host, other], webui_session_count: 1, cli_session_count: 3 } as never)
+    answer((params) => (params.sidebar_source === 'cli' ? [orphanedChild, nestedChild, host] : [other]), { webui_session_count: 1, cli_session_count: 3 })
     vi.mocked(api.archiveSession).mockReturnValue(new Promise(() => undefined) as never)
     renderPanel()
     await screen.findByText('Other zebra')
@@ -481,11 +491,12 @@ describe('sidebar search work (TAL-1390)', () => {
     await screen.findByText('Alpha zebra')
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zebra' } })
     await waitFor(() => expect(shown()).toEqual(['delta']))
+    // Under two characters the server searches nothing, so the whole list shows.
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: shortTerm } })
-    await waitFor(() => expect(shown()).toEqual(shortTerm ? [] : ['alpha', 'delta', 'other']))
+    await waitFor(() => expect(shown()).toEqual(['alpha', 'delta', 'other']))
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alpha' } })
     await waitFor(() => expect(api.searchSessions).toHaveBeenLastCalledWith('alpha', expect.any(Object), 5, expect.any(AbortSignal)))
-    expect(shown()).toEqual(['alpha'])
+    expect(shown()).toEqual([])
     answer({ sessions: [other], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
     await waitFor(() => expect(shown()).toEqual(['other']))
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alphas' } })
@@ -501,9 +512,11 @@ describe('sidebar search work (TAL-1390)', () => {
     await waitFor(() => expect(shown()).toEqual(['other']))
     vi.mocked(api.searchSessions).mockReturnValue(new Promise(() => undefined))
     await pick('Proj')
-    expect(shown()).toEqual(['alpha'])
+    await waitFor(() => expect(api.searchSessions).toHaveBeenLastCalledWith('zebra', expect.objectContaining({ project_id: 'p1' }), 5, expect.any(AbortSignal)))
+    expect(shown()).toEqual([])
     await pick(/CLI/)
-    expect(shown()).toEqual(['cli'])
+    await waitFor(() => expect(api.searchSessions).toHaveBeenLastCalledWith('zebra', expect.objectContaining({ sidebar_source: 'cli' }), 5, expect.any(AbortSignal)))
+    expect(shown()).toEqual([])
   })
 
   it('does not render unchanged visible rows while typing', async () => {
@@ -636,7 +649,7 @@ describe('Scheduled and Webhook disclosures (TAL-1639)', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Scheduled sessions' })
     await userEvent.type(within(dialog).getByRole('searchbox'), 'zebra')
     await waitFor(() => { expect([...dialog.querySelectorAll('[data-sid]')].map((el) => el.getAttribute('data-sid'))).toEqual(['cron-4']) })
-    expect(api.searchSessions).toHaveBeenLastCalledWith('zebra', { project_id: undefined, sidebar_source: undefined, include_archived: false }, 5, expect.any(AbortSignal))
+    expect(api.searchSessions).toHaveBeenLastCalledWith('zebra', { project_id: undefined, sidebar_source: 'webui', include_archived: false }, 5, expect.any(AbortSignal))
     expect(within(dialog).getByText('nightly zebra')).toBeInTheDocument()
   })
 
@@ -789,8 +802,8 @@ describe('Chats filter menu (TAL-1869)', () => {
     expect(detail()).toBeNull()
   })
 
-  it('offers a source only with CLI sessions and Unassigned only with unprojected rows', async () => {
-    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha, delta], webui_session_count: 2, cli_session_count: 0 } as never)
+  it('offers a source only with CLI sessions and Unassigned only when the server says rows lack a project', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha, delta], webui_session_count: 2, cli_session_count: 0, has_unprojected: false } as never)
     panel()
     await screen.findAllByTitle('Proj')
     const menu = await openFilters()

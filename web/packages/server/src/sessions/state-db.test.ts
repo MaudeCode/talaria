@@ -1873,6 +1873,24 @@ describe('subagent sessions nest under their parent (TAL-1151)', () => {
     expect(webTab).toEqual(expect.arrayContaining(['web-parent', 'sub-web', 'sub-orphan']))
   })
 
+  it('lists one project with the rows nested under it, and says rows outside every project exist (TAL-2478)', async () => {
+    const project = await json(await s.get('/api/sessions?project_id=proj-p'))
+    const ids = (project.sessions as Json[]).map((r) => r.session_id)
+    expect(ids).toEqual(expect.arrayContaining(['web-parent', 'sub-web', 'sub-nested']))
+    expect(ids).not.toContain('sub-orphan')
+    expect(project.has_unprojected).toBe(true)
+    const none = (await rows('/api/sessions?project_id=none')).map((r) => r.session_id)
+    expect(none).toContain('sub-orphan')
+    expect(none).not.toContain('sub-web')
+  })
+
+  it('lists the rows nested under each row as its sidebar_children, in display order (TAL-2478)', async () => {
+    const children = (list: Json[]): Record<string, unknown> => Object.fromEntries(list.filter((r) => (r.sidebar_children as unknown[] | undefined)?.length).map((r): [string, unknown] => [str(r.session_id), r.sidebar_children]))
+    expect(children(await rows('/api/sessions'))).toEqual({ 'web-parent': ['sub-nested', 'sub-web'], 'cli-host': ['sub-cli'], 'cmp-seg3': ['sub-cmp'] })
+    // A search lists only the nested rows that matched under a parent that matched too.
+    expect(children(await rows('/api/sessions/search?q=zebra&include_archived=0'))).toEqual({ 'web-parent': ['sub-web'] })
+  })
+
   it('links a search match only when its parent row matched too', async () => {
     const both = await rows('/api/sessions/search?q=zebra&include_archived=0')
     expect(both.map((r) => r.session_id)).toEqual(expect.arrayContaining(['web-parent', 'sub-web']))
@@ -1917,6 +1935,16 @@ describe('a subagent files with its parent when the parent is not listed (TAL-18
     const withArchived = await list(s, '?include_archived=1')
     expect(withArchived.rows['sub-child']).toMatchObject({ sidebar_source: 'cli', sidebar_parent_session_id: 'cli-parent' })
     expect([withArchived.cli, withArchived.webui]).toEqual([2, 0])
+  })
+
+  it('lists the WebUI rows for a CLI tab request while no row files in the CLI tab (TAL-2478)', async () => {
+    const { s, db } = await boot()
+    chat(db, 'sub-rootless', 'subagent', 1000)
+    s.deps.cliSessions.invalidate()
+    expect((await list(s, '?sidebar_source=cli')).ids).toEqual(['sub-rootless'])
+    chat(db, 'cli-chat', 'cli', 2000)
+    s.deps.cliSessions.invalidate()
+    expect((await list(s, '?sidebar_source=cli')).ids).toEqual(['cli-chat'])
   })
 
   it('keeps a child in the CLI tab when its parent is past the CLI window', async () => {

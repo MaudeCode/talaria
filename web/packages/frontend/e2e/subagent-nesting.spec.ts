@@ -41,8 +41,10 @@ test('nests subagent sessions under the chat that started them', async ({ page }
     await pick('CLI sessions (2)')
     await expect.poll(shown).toEqual(['cli-host', 'sub-cli (nested)'])
     await page.screenshot({ path: testInfo.outputPath('cli-tab.png') })
-    await pick('WebUI sessions (3)')
+    // TAL-2478: the server lists each tab and project; only the CLI tab has rows without a project.
     await pick('Unassigned')
+    await expect.poll(shown).toEqual(['cli-host', 'sub-cli (nested)'])
+    await pick('WebUI sessions (3)')
     await expect.poll(shown).toEqual([])
   } finally {
     await page.goto('about:blank')

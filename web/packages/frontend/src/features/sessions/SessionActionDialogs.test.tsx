@@ -19,7 +19,7 @@ import { SessionListPanel } from './SessionListPanel'
 const now = Date.now() / 1000
 const older = now - 30 * 86_400
 const row = (session_id: string, title: string, extra: Partial<SessionRow> = {}): SessionRow => ({
-  session_id, title, last_message_at: now, sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, ...extra,
+  session_id, title, last_message_at: now, sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, ...extra,
 })
 const fresh = row('fresh', 'Fresh')
 const old = row('old', 'Old chat', { sort_ts: older, last_message_at: older })
@@ -48,7 +48,7 @@ async function setup(sessions: SessionRow[] = [fresh, old]) {
   await screen.findByText(sessions.at(-1)!.title)
   /** A background refresh: the server's next list snapshot. */
   const refresh = (rows: SessionRow[]) => act(async () => {
-    client.setQueryData<SessionsList>(keys.sessions.list({}), (data) => ({ ...data!, sessions: rows }))
+    client.setQueryData<SessionsList>(keys.sessions.list({ sidebar_source: 'webui' }), (data) => ({ ...data!, sessions: rows }))
     // Query notifies its observers on the next macrotask.
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
@@ -172,7 +172,7 @@ describe('the shared session action owner (TAL-1119)', () => {
 
   it.each([
     { why: 'the session is deleted elsewhere', rows: [fresh] },
-    { why: 'the server makes the session read-only', rows: [fresh, { ...old, read_only: true }] },
+    { why: 'the server withdraws renaming', rows: [fresh, { ...old, read_only: true, can_rename: false, can_move: false, can_delete: false }] },
   ])('closes Rename when $why instead of leaving an orphaned dialog', async ({ rows }) => {
     const { refresh } = await setup()
     await openAction('old', 'Rename conversation')

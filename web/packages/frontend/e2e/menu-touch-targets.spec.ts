@@ -13,7 +13,7 @@ const now = Math.floor(Date.now() / 1000)
 // A shared, worktree-backed conversation shows every action the session menu has.
 const ROW = {
   session_id: 'touch-menu', title: 'Touch menu', is_streaming: false, attention: null, last_message_at: now - 600, updated_at: now - 600, pinned: false, archived: false, project_id: null,
-  is_cli_session: false, source_kind: 'webui', is_messaging_session: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true,
+  is_cli_session: false, source_kind: 'webui', is_messaging_session: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true,
   share_url: '/share/touch-menu-token', worktree_branch: 'touch-menu-branch',
 }
 

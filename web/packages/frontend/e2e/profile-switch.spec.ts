@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test'
 import { expect, showTitlebarProfile, test } from './fixtures'
 
 /** A sidebar row as `/api/sessions` lists it. */
-const row = (sessionId: string, title: string) => ({ session_id: sessionId, title, is_streaming: false, read_only: false, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, can_branch: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 1, sidebar_group: 'recent' })
+const row = (sessionId: string, title: string) => ({ session_id: sessionId, title, is_streaming: false, read_only: false, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true, can_branch: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 1, sidebar_group: 'recent' })
 
 /**
  * TAL-2099: two profiles whose chat list, settings and model catalog differ. `/api/profile/switch` moves the active one,

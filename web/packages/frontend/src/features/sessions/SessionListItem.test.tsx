@@ -13,7 +13,7 @@ import { SessionListPanel } from './SessionListPanel'
 
 const now = Date.now() / 1000
 const row = (session_id: string, title: string): SessionRow => ({
-  session_id, title, last_message_at: now, sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false,
+  session_id, title, last_message_at: now, sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false,
 })
 
 beforeEach(() => {

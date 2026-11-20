@@ -32,7 +32,7 @@ import { useSaveSettings } from '../../app/settings'
 
 const now = Date.now() / 1000
 const row = (session_id: string, title: string, extra: Partial<SessionRow> = {}): SessionRow => ({
-  session_id, title, last_message_at: now, sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, ...extra,
+  session_id, title, last_message_at: now, sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, ...extra,
 })
 const alpha = row('alpha', 'Alpha', { project_id: 'p1', share_url: '/share/abc', worktree_branch: 'wt/alpha' })
 const beta = row('beta', 'Beta')
@@ -139,7 +139,7 @@ describe('sidebar pin drag/drop (TAL-1498)', () => {
     const qc = await panel()
     const dataTransfer = drag('beta')
     act(() => {
-      qc.setQueryData(keys.sessions.list({}), { sessions: [alpha, { ...beta, read_only: true }] })
+      qc.setQueryData(keys.sessions.list({ sidebar_source: 'webui' }), { sessions: [alpha, { ...beta, read_only: true }] })
       fireEvent.drop(screen.getByText('Pinned'), { dataTransfer })
     })
     expect(api.pinSession).not.toHaveBeenCalled()
@@ -149,10 +149,13 @@ describe('sidebar pin drag/drop (TAL-1498)', () => {
     const qc = await panel()
     const dataTransfer = drag('beta')
     if (replacement === 'context') act(() => teardownAll())
-    else if (replacement === 'snapshot') await act(async () => { qc.setQueryData(keys.sessions.list({}), { sessions: [{ ...alpha, title: 'Replaced Alpha' }, beta] }); await Promise.resolve() })
-    else fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Beta' } })
+    else if (replacement === 'snapshot') await act(async () => { qc.setQueryData(keys.sessions.list({ sidebar_source: 'webui' }), { sessions: [{ ...alpha, title: 'Replaced Alpha' }, beta] }); await Promise.resolve() })
+    else {
+      vi.mocked(api.searchSessions).mockResolvedValue({ sessions: [beta], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
+      fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Beta' } })
+    }
     await waitFor(() => expect(screen.queryByText('Pinned')).toBeNull())
-    fireEvent.drop(screen.getByText('Today'), { dataTransfer })
+    fireEvent.drop(await screen.findByText('Today'), { dataTransfer })
     expect(api.pinSession).not.toHaveBeenCalled()
   })
 

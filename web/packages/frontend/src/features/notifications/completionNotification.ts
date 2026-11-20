@@ -1,23 +1,20 @@
 /** TAL-2157: a finished reply as a system notification while this tab is hidden. The server composes what it says. */
 import type { WebAudioCompletion } from '@maudecode/talaria-web-contracts'
-import * as api from '../../api/endpoints'
 import { appUrl } from '../../lib/appRoot'
 
-/** The server holds this browser's subscription for the current profile and login with completions on, so Web Push sends it. */
-async function pushDelivers(registration: ServiceWorkerRegistration | undefined): Promise<boolean> {
-  const endpoint = (await registration?.pushManager?.getSubscription())?.endpoint
-  if (!endpoint) return false
-  // An unreachable server cannot confirm the push; show this one, and the chat's tag folds any duplicate.
-  return (await api.fetchWebPushStatus(endpoint).catch(() => null))?.subscription?.preferences.notify_on_completion === true
+/** TAL-2478: this browser's Web Push endpoint, which the session list stream sends so the server can say `push_delivers`. */
+export async function pushEndpoint(): Promise<string | undefined> {
+  try { return (await (await navigator.serviceWorker?.getRegistration())?.pushManager?.getSubscription())?.endpoint } catch { return undefined }
 }
 
 export async function notifyCompletion(completion: WebAudioCompletion, enabled: () => boolean): Promise<void> {
   const shown = completion.notification
   const ready = () => enabled() && completion.expires_at > Date.now() && document.visibilityState !== 'visible' && Notification.permission === 'granted'
-  if (!shown || !completion.eligible || !('Notification' in window) || !ready()) return
+  // TAL-2478: the server says when Web Push already shows this completion in this browser.
+  if (!shown || !completion.eligible || completion.push_delivers || !('Notification' in window) || !ready()) return
   try {
     const registration = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : undefined
-    if (await pushDelivers(registration) || !ready()) return
+    if (!ready()) return
     // The chat's tag makes the next completion of that chat replace this one, here and from Web Push alike.
     const options = { body: shown.body, tag: shown.tag, data: { url: shown.url } }
     // The worker's click handler focuses this tab and opens the chat, as it does for a push.

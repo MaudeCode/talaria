@@ -6,7 +6,7 @@ test.use({ serviceWorkers: 'block' })
 /** TAL-1784: floating surfaces transition in a real browser, never delay a click, and stop moving under reduced motion. */
 
 const now = Math.floor(Date.now() / 1000)
-const base = { sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, pinned: false, sidebar_group: 'recent' }
+const base = { sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, pinned: false, sidebar_group: 'recent' }
 const ROW = { ...base, session_id: 'motion-row', title: 'Motion row' }
 const OTHER = { ...base, session_id: 'motion-other', title: 'Other row' }
 const CURRENT = { ...base, session_id: 'motion-current', title: 'Current conversation' }
