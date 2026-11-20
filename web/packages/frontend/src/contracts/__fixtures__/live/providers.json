@@ -99,7 +99,8 @@
             "label": "Llama4 Scout 17B Instruct V1"
           }
         ],
-        "models_total": 21
+        "models_total": 21,
+        "setup": "cli"
       },
       {
         "auth_error": null,
@@ -206,7 +207,8 @@
             "label": "Gemini 3 Flash Preview"
           }
         ],
-        "models_total": 23
+        "models_total": 23,
+        "setup": "cli"
       },
       {
         "auth_error": null,
@@ -220,7 +222,8 @@
         "is_self_hosted": false,
         "key_source": "keyless",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "cli"
       },
       {
         "auth_error": null,
@@ -234,7 +237,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -248,7 +252,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -262,7 +267,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "cli"
       },
       {
         "auth_error": null,
@@ -276,7 +282,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -290,7 +297,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -304,7 +312,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -318,7 +327,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -332,7 +342,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -407,7 +418,8 @@
             "label": "Claude Haiku 4 5 20251001"
           }
         ],
-        "models_total": 15
+        "models_total": 15,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -421,7 +433,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -435,7 +448,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -494,7 +508,8 @@
             "label": "GPT-5.5"
           }
         ],
-        "models_total": 11
+        "models_total": 11,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -521,7 +536,8 @@
             "label": "claude-haiku-4-5-20251001"
           }
         ],
-        "models_total": 3
+        "models_total": 3,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -535,7 +551,8 @@
         "is_self_hosted": false,
         "key_source": "oauth",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "cli"
       },
       {
         "auth_error": null,
@@ -566,7 +583,8 @@
             "label": "Cursor ACP"
           }
         ],
-        "models_total": 4
+        "models_total": 4,
+        "setup": "cli"
       },
       {
         "auth_error": null,
@@ -580,7 +598,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -615,7 +634,8 @@
             "label": "Deepseek Flash"
           }
         ],
-        "models_total": 5
+        "models_total": 5,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -642,7 +662,8 @@
             "label": "accounts/fireworks/models/kimi-k2p7-code"
           }
         ],
-        "models_total": 3
+        "models_total": 3,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -693,7 +714,8 @@
             "label": "Gemini 3.6 Flash"
           }
         ],
-        "models_total": 9
+        "models_total": 9,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -736,7 +758,8 @@
             "label": "openai/gpt-5.4"
           }
         ],
-        "models_total": 7
+        "models_total": 7,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -771,7 +794,8 @@
             "label": "Gemini 2.5 Flash"
           }
         ],
-        "models_total": 5
+        "models_total": 5,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -785,7 +809,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "cli"
       },
       {
         "auth_error": null,
@@ -799,7 +824,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -870,7 +896,8 @@
             "label": "Kimi K2 0905 Preview"
           }
         ],
-        "models_total": 14
+        "models_total": 14,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -884,7 +911,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -898,7 +926,8 @@
         "is_self_hosted": true,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "self_hosted"
       },
       {
         "auth_error": null,
@@ -921,7 +950,8 @@
             "label": "Muse Spark 1.2 Contributor"
           }
         ],
-        "models_total": 2
+        "models_total": 2,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -935,7 +965,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "cli"
       },
       {
         "auth_error": null,
@@ -974,7 +1005,8 @@
             "label": "Minimax M2"
           }
         ],
-        "models_total": 6
+        "models_total": 6,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -1009,7 +1041,8 @@
             "label": "Minimax M2"
           }
         ],
-        "models_total": 5
+        "models_total": 5,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -1023,7 +1056,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "cli"
       },
       {
         "auth_error": null,
@@ -1046,7 +1080,8 @@
             "label": "Mistral Small"
           }
         ],
-        "models_total": 2
+        "models_total": 2,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -1060,7 +1095,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "cli"
       },
       {
         "auth_error": null,
@@ -1111,7 +1147,8 @@
             "label": "Llama 3.3 70B Instruct"
           }
         ],
-        "models_total": 9
+        "models_total": 9,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -1294,7 +1331,8 @@
             "label": "Fugu Ultra (via Nous)"
           }
         ],
-        "models_total": 42
+        "models_total": 42,
+        "setup": "oauth"
       },
       {
         "auth_error": null,
@@ -1333,7 +1371,8 @@
             "label": "qwen/qwen3-235b-a22b-fp8"
           }
         ],
-        "models_total": 6
+        "models_total": 6,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -1392,7 +1431,8 @@
             "label": "Minimax M3"
           }
         ],
-        "models_total": 11
+        "models_total": 11,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -1406,7 +1446,8 @@
         "is_self_hosted": true,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "self_hosted"
       },
       {
         "auth_error": null,
@@ -1420,7 +1461,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -1475,7 +1517,8 @@
             "label": "GPT 4O Mini"
           }
         ],
-        "models_total": 10
+        "models_total": 10,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -1558,7 +1601,8 @@
             "label": "GPT 4O Mini"
           }
         ],
-        "models_total": 17
+        "models_total": 17,
+        "setup": "cli"
       },
       {
         "auth_error": "No Codex credentials stored. Run `hermes auth` to authenticate.",
@@ -1625,7 +1669,8 @@
             "label": "GPT 6 Astra"
           }
         ],
-        "models_total": 13
+        "models_total": 13,
+        "setup": "cli"
       },
       {
         "auth_error": null,
@@ -1756,7 +1801,8 @@
             "label": "Muse Spark 1.3 Contributor"
           }
         ],
-        "models_total": 29
+        "models_total": 29,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -2079,7 +2125,8 @@
             "label": "Muse Spark 1.3 Contributor Free"
           }
         ],
-        "models_total": 77
+        "models_total": 77,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -2093,7 +2140,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -2172,7 +2220,8 @@
             "label": "Minimax M2.5"
           }
         ],
-        "models_total": 16
+        "models_total": 16,
+        "setup": "cli"
       },
       {
         "auth_error": "Qwen CLI credentials not found. Run 'qwen auth qwen-oauth' first.",
@@ -2186,7 +2235,8 @@
         "is_self_hosted": false,
         "key_source": "oauth",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "cli"
       },
       {
         "auth_error": null,
@@ -2200,7 +2250,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -2214,7 +2265,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -2241,7 +2293,8 @@
             "label": "Hy3 Preview"
           }
         ],
-        "models_total": 3
+        "models_total": 3,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -2268,7 +2321,8 @@
             "label": "Hy3 Preview"
           }
         ],
-        "models_total": 3
+        "models_total": 3,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -2287,7 +2341,8 @@
             "label": "solar-pro3"
           }
         ],
-        "models_total": 1
+        "models_total": 1,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -2301,7 +2356,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "cli"
       },
       {
         "auth_error": null,
@@ -2352,7 +2408,8 @@
             "label": "Grok 4.20 Multi Agent 0309"
           }
         ],
-        "models_total": 9
+        "models_total": 9,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -2366,7 +2423,8 @@
         "is_self_hosted": false,
         "key_source": "none",
         "models": [],
-        "models_total": 0
+        "models_total": 0,
+        "setup": "key"
       },
       {
         "auth_error": "No xAI OAuth credentials stored. Select xAI Grok OAuth (SuperGrok / Premium+) in `hermes model`.",
@@ -2413,7 +2471,8 @@
             "label": "Grok 4.20 Multi Agent 0309"
           }
         ],
-        "models_total": 8
+        "models_total": 8,
+        "setup": "cli"
       },
       {
         "auth_error": null,
@@ -2448,7 +2507,8 @@
             "label": "MiMo V2 Flash"
           }
         ],
-        "models_total": 5
+        "models_total": 5,
+        "setup": "key"
       },
       {
         "auth_error": null,
@@ -2503,7 +2563,8 @@
             "label": "GLM 5V Turbo"
           }
         ],
-        "models_total": 10
+        "models_total": 10,
+        "setup": "key"
       }
     ]
   },

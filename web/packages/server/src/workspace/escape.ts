@@ -128,7 +128,7 @@ export class EscapeGrants {
   }
 
   /** Python `list_authorized_escape_dir`: entries re-pathed under the link; a target outside the grant root is dropped. */
-  list(req: EscapeRequest): { path: string; entries: (DirEntry & { escape_read_only: true })[]; signature: string; virtual_root: string; read_only: true } {
+  list(req: EscapeRequest): { source: 'workspace'; path: string; entries: (DirEntry & { escape_read_only: true })[]; signature: string; virtual_root: string; read_only: true } {
     const entries = anchoredAt(req, () => listDir(req.externalRoot, req.externalRel)).map((entry) => {
       const out: DirEntry & { escape_read_only: true } = { ...entry, path: virtualPath(req.surfacePath, entry.path), escape_read_only: true }
       if (entry.target === undefined) return out
@@ -136,12 +136,12 @@ export class EscapeGrants {
       if (isWithin(entry.target, req.externalRoot)) out.target = virtualPath(req.surfacePath, relative(req.externalRoot, entry.target) || '.')
       return out
     })
-    return { path: req.requestPath, entries, signature: dirSignature(req.externalRoot, req.externalRel, entries), virtual_root: req.surfacePath, read_only: true }
+    return { source: 'workspace', path: req.requestPath, entries, signature: dirSignature(req.externalRoot, req.externalRel, entries), virtual_root: req.surfacePath, read_only: true }
   }
 
   /** Python `read_authorized_escape_file_content`, with the `/api/file` preview kind. */
-  read(req: EscapeRequest): FilePreview & { escape_read_only: true } {
-    return { ...anchoredAt(req, () => readFilePreview(req.externalRoot, req.externalRel)), path: req.requestPath, escape_read_only: true }
+  read(req: EscapeRequest): FilePreview & { source: 'workspace'; escape_read_only: true } {
+    return { ...anchoredAt(req, () => readFilePreview(req.externalRoot, req.externalRel)), source: 'workspace', path: req.requestPath, escape_read_only: true }
   }
 
   /** Python `raw_authorized_escape_target`: the file to serve, anchored at the grant root. */

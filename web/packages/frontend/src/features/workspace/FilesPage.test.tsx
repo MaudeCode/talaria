@@ -13,7 +13,7 @@ vi.mock('../toast/toast', () => ({ showToast: toast }))
 import * as api from '../../api/endpoints'
 import { FilesPage } from './FilesPage'
 
-const tree = { entries: [{ name: 'docs', path: 'docs', is_dir: true, workspace_sort_rank: 1 }, { name: 'a.txt', path: 'a.txt', is_dir: false, size: 3, workspace_sort_rank: 2 }, { name: 'b.txt', path: 'b.txt', is_dir: false, size: 3, workspace_sort_rank: 2 }] }
+const tree = { source: 'workspace' as const, entries: [{ name: 'docs', path: 'docs', is_dir: true, workspace_sort_rank: 1 }, { name: 'a.txt', path: 'a.txt', is_dir: false, size: 3, workspace_sort_rank: 2 }, { name: 'b.txt', path: 'b.txt', is_dir: false, size: 3, workspace_sort_rank: 2 }] }
 const held = () => new Promise<never>(() => undefined)
 /** A row's accessible name starts with its file name; kind and size follow (TAL-1606). */
 const row = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(,|$)`)
@@ -87,7 +87,7 @@ describe('file tree writes show their result at once (TAL-1384)', () => {
     await userEvent.click(screen.getByRole('treeitem', { name: row('aa.txt') }))
     expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument()
     expect(api.readFile).not.toHaveBeenCalled()
-    vi.mocked(api.listDir).mockResolvedValue({ entries: [tree.entries[0]!, tree.entries[1]!, { name: 'aa.txt', path: 'aa.txt', is_dir: false, size: 3, workspace_sort_rank: 2 }] })
+    vi.mocked(api.listDir).mockResolvedValue({ source: 'workspace' as const, entries: [tree.entries[0]!, tree.entries[1]!, { name: 'aa.txt', path: 'aa.txt', is_dir: false, size: 3, workspace_sort_rank: 2 }] })
     finish({ ok: true } as never)
     await waitFor(() => expect(api.readFile).toHaveBeenCalledWith('s1', 'aa.txt'))
     expect(await screen.findByRole('textbox', { name: 'Preview' })).toBeInTheDocument()
@@ -254,8 +254,8 @@ describe('managed source in the existing Files editor (TAL-1367)', () => {
     await userEvent.click(await screen.findByRole('option', { name: 'Session buffers' }))
   }
   function managedMocks() {
-    vi.mocked(api.listDir).mockImplementation((_sid, _path, _hidden, source) => Promise.resolve(source === 'managed' ? { entries: [{ name: 'draft.txt', path: 'buffer-one', size: 8 }], write_semantics: 'unconditional' } : tree))
-    vi.mocked(api.readFile).mockResolvedValue({ content: 'original', name: 'draft.txt', size: 8, preview: 'text', read_only: false, write_semantics: 'unconditional' })
+    vi.mocked(api.listDir).mockImplementation((_sid, _path, _hidden, source) => Promise.resolve(source === 'managed' ? { source: 'managed' as const, entries: [{ name: 'draft.txt', path: 'buffer-one', size: 8 }], write_semantics: 'unconditional' } : tree))
+    vi.mocked(api.readFile).mockResolvedValue({ source: 'managed' as const, content: 'original', name: 'draft.txt', size: 8, preview: 'text', read_only: false, write_semantics: 'unconditional' })
   }
   it.each([409, 503])('retains the draft after a refused or unknown save (%s) and reconciles without replay', async (status) => {
     managedMocks()
@@ -274,8 +274,8 @@ describe('managed source in the existing Files editor (TAL-1367)', () => {
   it('keeps a new selection and its draft when an older read or save completes', async () => {
     managedMocks()
     let finish!: (value: Awaited<ReturnType<typeof api.readFile>>) => void
-    vi.mocked(api.listDir).mockResolvedValue({ entries: [{ name: 'a.txt', path: 'one' }, { name: 'b.txt', path: 'two' }] })
-    vi.mocked(api.readFile).mockImplementation((_sid, path) => path === 'one' ? new Promise((resolve) => { finish = resolve }) : Promise.resolve({ content: 'second', size: 6, preview: 'text', read_only: false }))
+    vi.mocked(api.listDir).mockResolvedValue({ source: 'workspace' as const, entries: [{ name: 'a.txt', path: 'one' }, { name: 'b.txt', path: 'two' }] })
+    vi.mocked(api.readFile).mockImplementation((_sid, path) => path === 'one' ? new Promise((resolve) => { finish = resolve }) : Promise.resolve({ source: 'workspace' as const, content: 'second', size: 6, preview: 'text', read_only: false }))
     renderFiles()
     await selectManaged()
     await userEvent.click(await screen.findByRole('treeitem', { name: row('a.txt') }))
@@ -284,7 +284,7 @@ describe('managed source in the existing Files editor (TAL-1367)', () => {
     await userEvent.click(await screen.findByRole('treeitem', { name: row('b.txt') }))
     const editor = await screen.findByRole('textbox', { name: 'Preview' })
     await userEvent.type(editor, ' draft')
-    await act(async () => { finish({ content: 'late first', size: 10, preview: 'text', read_only: false }); await Promise.resolve() })
+    await act(async () => { finish({ source: 'workspace' as const, content: 'late first', size: 10, preview: 'text', read_only: false }); await Promise.resolve() })
     expect(editor).toHaveValue('second draft')
   })
 })
@@ -296,7 +296,7 @@ describe('file tree keeps the server order (TAL-1303)', () => {
   it('keeps symlinks, directories, files and mixed-case names exactly as sent', async () => {
     const link = { name: 'Zlink', path: 'Zlink', type: 'symlink', target: 'docs', is_dir: true, workspace_sort_rank: 0, target_outside_workspace: false }
     const order = [link, dir('beta'), dir('Alpha'), file('b.TXT'), file('A.txt'), file('.hidden')]
-    vi.mocked(api.listDir).mockResolvedValue({ entries: order })
+    vi.mocked(api.listDir).mockResolvedValue({ source: 'workspace' as const, entries: order })
     renderFiles()
     await screen.findByRole('treeitem', { name: row('beta') })
     expect(names()).toEqual(['Zlink', 'beta', 'Alpha', 'b.TXT', 'A.txt', '.hidden'])
@@ -364,7 +364,7 @@ describe('unsaved edits survive workspace and file navigation (TAL-1576)', () =>
   })
 
   it('never shows or saves the draft for the same name in another workspace, session or source', async () => {
-    vi.mocked(api.listDir).mockImplementation((_sid, _path, _hidden, source) => Promise.resolve(source === 'managed' ? { entries: [{ name: 'a.txt', path: 'a.txt', size: 3 }] } : tree))
+    vi.mocked(api.listDir).mockImplementation((_sid, _path, _hidden, source) => Promise.resolve(source === 'managed' ? { source: 'managed' as const, entries: [{ name: 'a.txt', path: 'a.txt', size: 3 }] } : tree))
     vi.mocked(api.saveFile).mockResolvedValue({ ok: true } as never)
     const rerender = renderAt()
     const editor = await openFile('a.txt')
@@ -473,8 +473,8 @@ describe('unsaved edits survive workspace and file navigation (TAL-1576)', () =>
     vi.mocked(api.deleteEntry).mockResolvedValue({ ok: true } as never)
     vi.mocked(api.moveEntry).mockResolvedValue({ ok: true } as never)
     vi.mocked(api.listDir).mockImplementation((_sid, path) => Promise.resolve(path === 'docs'
-      ? { entries: [{ name: 'a.txt', path: 'docs/a.txt', size: 3 }] }
-      : { entries: [...tree.entries, { name: 'c.txt', path: 'c.txt', size: 3 }] }))
+      ? { source: 'workspace' as const, entries: [{ name: 'a.txt', path: 'docs/a.txt', size: 3 }] }
+      : { source: 'workspace' as const, entries: [...tree.entries, { name: 'c.txt', path: 'c.txt', size: 3 }] }))
     renderAt()
     for (const name of ['a.txt', 'b.txt']) {
       const editor = await openFile(name)
@@ -551,7 +551,7 @@ describe('file tree keyboard navigation and row names (TAL-1606)', () => {
   })
 
   it('opens a folder with Enter, focuses its first row, and returns focus to that folder on Up', async () => {
-    vi.mocked(api.listDir).mockImplementation((_sid, path) => Promise.resolve(path === 'docs' ? { entries: [{ name: 'inner.txt', path: 'docs/inner.txt', size: 2048 }] } : tree))
+    vi.mocked(api.listDir).mockImplementation((_sid, path) => Promise.resolve(path === 'docs' ? { source: 'workspace' as const, entries: [{ name: 'inner.txt', path: 'docs/inner.txt', size: 2048 }] } : tree))
     renderFiles()
     await focusRow('docs')
     await userEvent.keyboard('{Enter}')
@@ -564,12 +564,12 @@ describe('file tree keyboard navigation and row names (TAL-1606)', () => {
   it('keeps focus on a surviving row through a refresh and moves it to the neighbor when the row goes', async () => {
     const qc = renderFiles()
     await focusRow('b.txt')
-    vi.mocked(api.listDir).mockResolvedValue({ entries: [{ name: 'new.txt', path: 'new.txt', size: 1 }, ...tree.entries] })
+    vi.mocked(api.listDir).mockResolvedValue({ source: 'workspace' as const, entries: [{ name: 'new.txt', path: 'new.txt', size: 1 }, ...tree.entries] })
     await act(() => qc.invalidateQueries())
     await waitFor(() => expect(names()).toEqual(['new.txt', 'docs', 'a.txt', 'b.txt']))
     expect(focused()).toBe('b.txt, file, 3 B')
     await userEvent.keyboard('{ArrowUp}')
-    vi.mocked(api.listDir).mockResolvedValue({ entries: tree.entries.filter((e) => e.name !== 'a.txt') })
+    vi.mocked(api.listDir).mockResolvedValue({ source: 'workspace' as const, entries: tree.entries.filter((e) => e.name !== 'a.txt') })
     await act(() => qc.invalidateQueries())
     await waitFor(() => expect(names()).toEqual(['docs', 'b.txt']))
     expect(focused()).toBe('b.txt, file, 3 B')
@@ -580,10 +580,10 @@ describe('file tree keyboard navigation and row names (TAL-1606)', () => {
     const qc = renderFiles()
     await focusRow('a.txt')
     const added = { name: 'new.txt', path: 'new.txt', size: 1 }
-    vi.mocked(api.listDir).mockResolvedValue({ entries: [added, ...tree.entries] })
+    vi.mocked(api.listDir).mockResolvedValue({ source: 'workspace' as const, entries: [added, ...tree.entries] })
     await act(() => qc.invalidateQueries())
     await waitFor(() => expect(names()).toEqual(['new.txt', 'docs', 'a.txt', 'b.txt']))
-    vi.mocked(api.listDir).mockResolvedValue({ entries: [added, ...tree.entries.filter((e) => e.name !== 'a.txt')] })
+    vi.mocked(api.listDir).mockResolvedValue({ source: 'workspace' as const, entries: [added, ...tree.entries.filter((e) => e.name !== 'a.txt')] })
     await act(() => qc.invalidateQueries())
     await waitFor(() => expect(names()).toEqual(['new.txt', 'docs', 'b.txt']))
     expect(focused()).toBe('b.txt, file, 3 B')
@@ -592,7 +592,7 @@ describe('file tree keyboard navigation and row names (TAL-1606)', () => {
   it('never takes focus back from a control the user moved to', async () => {
     renderFiles()
     await focusRow('a.txt')
-    vi.mocked(api.listDir).mockResolvedValue({ entries: tree.entries.filter((e) => e.name !== 'a.txt') })
+    vi.mocked(api.listDir).mockResolvedValue({ source: 'workspace' as const, entries: tree.entries.filter((e) => e.name !== 'a.txt') })
     const refresh = screen.getByRole('button', { name: 'Refresh' })
     await userEvent.click(refresh)
     await waitFor(() => expect(names()).toEqual(['docs', 'b.txt']))
@@ -601,7 +601,7 @@ describe('file tree keyboard navigation and row names (TAL-1606)', () => {
   })
 
   it('navigates managed session buffers the same way', async () => {
-    vi.mocked(api.listDir).mockImplementation((_sid, _path, _hidden, source) => Promise.resolve(source === 'managed' ? { entries: [{ name: 'one.txt', path: 'buffer-one', size: 8 }, { name: 'two.txt', path: 'buffer-two', size: 9 }] } : tree))
+    vi.mocked(api.listDir).mockImplementation((_sid, _path, _hidden, source) => Promise.resolve(source === 'managed' ? { source: 'managed' as const, entries: [{ name: 'one.txt', path: 'buffer-one', size: 8 }, { name: 'two.txt', path: 'buffer-two', size: 9 }] } : tree))
     renderFiles()
     await userEvent.click(screen.getByRole('combobox', { name: 'File source' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Session buffers' }))

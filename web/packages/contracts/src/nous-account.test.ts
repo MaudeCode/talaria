@@ -7,10 +7,10 @@ it('preserves safe shared Nous account results and tolerates older responses', (
   for (const account of Object.values(fixtures)) {
     expect(NousAccountSchema.parse(account)).toEqual(account)
     expect(OnboardingOAuthSchema.parse({ status: 'approved', nous_account: account }).nous_account).toEqual(account)
-    expect(ProviderSchema.parse({ id: 'nous', nous_account: account }).nous_account).toEqual(account)
+    expect(ProviderSchema.parse({ id: 'nous', setup: 'oauth', nous_account: account }).nous_account).toEqual(account)
   }
   expect(OnboardingOAuthSchema.parse({ status: 'approved' }).nous_account).toBeUndefined()
-  expect(ProviderSchema.parse({ id: 'nous' }).nous_account).toBeUndefined()
-  expect(ProviderSchema.safeParse({ id: 'nous', nous_account_error: 123 }).success).toBe(false)
+  expect(ProviderSchema.parse({ id: 'nous', setup: 'oauth' }).nous_account).toBeUndefined()
+  expect(ProviderSchema.safeParse({ id: 'nous', setup: 'oauth', nous_account_error: 123 }).success).toBe(false)
   expect(NousAccountSchema.parse({ ...fixtures.moved as object, anon_token: 'discarded' })).not.toHaveProperty('anon_token')
 })

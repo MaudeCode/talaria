@@ -1128,7 +1128,7 @@ export const QuotaThresholdsSchema = z.object({
 })
 export type QuotaThresholds = z.infer<typeof QuotaThresholdsSchema>
 /** TAL-1075: where a browser goes after sign-in, resolved by the server against the page's mount exactly once. */
-export const LoginRedirectSchema = z.object({ redirect_path: z.string().optional().describe('Same-origin path-absolute destination for a browser sign-in, mounted exactly once; absent from older servers.') })
+export const LoginRedirectSchema = z.object({ redirect_path: z.string().describe('Same-origin path-absolute destination for a browser sign-in, mounted exactly once.') })
 export const LoginResponseSchema = z.looseObject({ ok: z.literal(true), message: z.string().optional(), ...LoginRedirectSchema.shape })
 /** TAL-1569: Talaria Web update channels, in display order. Nightly is a daily snapshot of the Experimental artifact. */
 export const WebUpdateChannelSchema = z.enum(['stable', 'nightly', 'experimental'])
@@ -1309,7 +1309,7 @@ export const ProviderSchema = z.looseObject({
   is_custom: z.boolean().optional(), key_source: z.string().optional(), base_url: NullableString.optional(), auth_error: NullableString.optional(), env_var: NullableString.optional(), models: z.array(ModelEntrySchema).optional(), models_total: z.number().optional(),
   nous_account: NousAccountSchema.nullable().optional(), nous_account_error: NullableString.optional(),
   is_active: z.boolean().optional(), key_source_kind: KeySourceKindSchema.nullable().optional(), removable: z.boolean().optional(), install_hint: z.string().optional(), device_login: z.boolean().optional().describe('Offer the existing device-code sign-in for this provider.'),
-  setup: z.enum(['key', 'oauth', 'self_hosted', 'plugin', 'cli']).optional().describe('TAL-2136, `/api/providers`: the one way to set this provider up; `cli` when only the Agent CLI can.'),
+  setup: z.enum(['key', 'oauth', 'self_hosted', 'plugin', 'cli']).describe('TAL-2136, `/api/providers`: the one way to set this provider up; `cli` when only the Agent CLI can.'),
 })
 /** TAL-2127: one Settings › Providers group; `provider_ids` keeps the server's row order and its length is the header count. */
 export const ProviderGroupSchema = z.looseObject({ id: z.enum(['configured', 'available']), provider_ids: z.array(z.string()) })
@@ -1460,7 +1460,7 @@ export const FileEntrySchema = z.looseObject({
   birthtime_ns: z.union([z.number(), z.string()]).nullable().optional(), hidden: z.boolean().optional(), workspace_sort_rank: z.number().int().optional(), target: z.string().optional(), target_outside_workspace: z.boolean().optional(),
 })
 export const FileSourceSchema = z.enum(['workspace', 'managed'])
-const ManagedFileFields = { source: FileSourceSchema.optional(), read_only: z.boolean().optional(), write_semantics: z.literal('unconditional').optional() }
+const ManagedFileFields = { source: FileSourceSchema.describe('Which store the reply reads: workspace files or the session\'s managed buffers.'), read_only: z.boolean().optional(), write_semantics: z.literal('unconditional').optional() }
 export const DirListingSchema = z.looseObject({ ...ManagedFileFields, unavailable: z.boolean().optional(), path: z.string().optional(), entries: z.array(FileEntrySchema), signature: z.string().optional(), workspace: z.string().optional(), workspace_recovered: z.boolean().optional(), is_git: z.boolean().optional() })
 /** How a workspace file renders (TAL-566): media streams from `/api/file/raw`; text kinds carry `content`. */
 export const FilePreviewKindSchema = z.enum(['text', 'markdown', 'csv', 'html', 'image', 'pdf', 'audio', 'video', 'binary'])
@@ -1469,7 +1469,7 @@ export type FilePreviewKind = z.infer<typeof FilePreviewKindSchema>
  * `html` preview's app-relative frame URL, under which the page's relative assets also resolve. */
 export const FileContentSchema = z.looseObject({ ...ManagedFileFields, name: z.string().optional(),
   path: z.string().optional(), content: z.string().optional(), lines: z.number().optional(), size: z.number().optional(), truncated: z.boolean().optional(), binary: z.boolean().optional(), mime: z.string().optional(),
-  preview: FilePreviewKindSchema.optional(), table: z.array(z.array(z.string())).optional(), table_truncated: z.boolean().optional(),
+  preview: FilePreviewKindSchema, table: z.array(z.array(z.string())).optional(), table_truncated: z.boolean().optional(),
   preview_url: z.string().optional(),
 })
 const GitBadgeSchema = z.looseObject({ is_git: z.boolean().optional(), branch: NullableString.optional(), dirty: z.number().optional(), modified: z.number().optional(), untracked: z.number().optional(), ahead: z.number().optional(), behind: z.number().optional() })
@@ -1538,7 +1538,7 @@ export const CommandClientSchema = z.enum(['web', 'ios'])
 export const CommandRowSchema = z.looseObject({
   name: z.string(), description: z.string().optional(), aliases: z.array(z.string()), args_hint: z.string().optional(), category: z.string().optional(),
   handler: z.enum(['client', 'agent', 'prompt']), clients: z.array(CommandClientSchema), unsupported_message: z.string().optional(),
-  cli_only: z.boolean().optional(), gateway_only: z.boolean().optional(), subcommands: z.array(Json).optional(), exec: z.boolean().optional(),
+  cli_only: z.boolean().optional(), gateway_only: z.boolean().optional(), subcommands: z.array(Json).optional(), exec: z.boolean(),
 })
 export const CommandsSchema = z.looseObject({ commands: z.array(CommandRowSchema) })
 export type Command = z.infer<typeof CommandRowSchema>
@@ -1622,6 +1622,8 @@ export const GatewayStatusSchema = z.object({
 export type GatewayStatus = z.infer<typeof GatewayStatusSchema>
 export const GatewayActionSchema = z.object({ ok: z.literal(true), action: z.enum(['start', 'stop', 'restart']), message: z.string(), status: GatewayStatusSchema })
 export const DashboardConfigSchema = z.object({ enabled: z.enum(['auto', 'always', 'never']), url: z.string() })
+/** A Project OS Markdown doc as the workspace reader returns it; it is not a file-browser read, so it has no `source` or `preview`. */
+const ProjectOsDocSchema = FileContentSchema.omit({ source: true, preview: true })
 /**
  * Project OS dashboard for a repo found from the last workspace or the `board`'s default workdir (TAL-266). Every field is
  * null or empty when the profile has no local workspace I/O or no repo is found. `onboarding.active` means the docs came
@@ -1629,7 +1631,7 @@ export const DashboardConfigSchema = z.object({ enabled: z.enum(['auto', 'always
  */
 export const ProjectOsDashboardSchema = z.object({
   workspace: NullableString, repo_root: NullableString, selected_board_slug: NullableString.optional(), git: GitBadgeSchema.nullable(),
-  docs: z.object({ project: FileContentSchema.nullable(), plan: FileContentSchema.nullable(), status: FileContentSchema.nullable(), blocker_resolver: FileContentSchema.nullable() }).partial(),
+  docs: z.object({ project: ProjectOsDocSchema.nullable(), plan: ProjectOsDocSchema.nullable(), status: ProjectOsDocSchema.nullable(), blocker_resolver: ProjectOsDocSchema.nullable() }).partial(),
   handoff: z.record(z.string(), Json).nullable(), active: z.record(z.string(), Json).nullable(), heartbeat: z.record(z.string(), Json).nullable(),
   onboarding: z.looseObject({ active: z.boolean(), doc_source: z.enum(['project-os', 'root']) }).optional(), goal_summary: z.string(),
 })
@@ -1651,15 +1653,15 @@ export type ChatReadiness = z.infer<typeof ChatReadinessSchema>
 /** TAL-2162: a health row's dot; clients word `ok` and an `error` without `display_reason`. */
 export const HealthDisplayStateSchema = z.enum(['ok', 'warning', 'error', 'idle'])
 const healthDisplay = (what: string) => ({
-  display_state: HealthDisplayStateSchema.optional().describe(`TAL-2162: ${what}. Absent from older servers.`),
+  display_state: HealthDisplayStateSchema.describe(`TAL-2162: ${what}.`),
   display_reason: z.string().nullable().optional().describe('TAL-2162: the text beside the dot when not `ok`; null when there is none.'),
 })
 /** Messaging-gateway liveness (`alive`, `details`, `gateway_chat`) for Settings → System, plus Web chat readiness in `chat`. */
-export const AgentHealthSchema = z.looseObject({ ...healthDisplay('`alive` true is `ok`, false `error` with `details.reason`, null `idle` with `details.state`'), chat: ChatReadinessSchema.optional().describe('Always sent since TAL-951; absent from older servers.'), gateway_lifecycle: GatewayLifecycleSchema.optional().describe('TAL-1627: whether the gateway restart may run; clients offer it only when `managed`. Absent from older servers.'), alive: z.boolean().nullable().optional(), checked_at: z.string().optional(), details: z.looseObject({ state: z.string().optional(), reason: z.string().optional() }).optional(), gateway_chat: z.looseObject({ enabled: z.boolean().optional(), backend: z.string().optional(), base_url_configured: z.boolean().optional(), api_key_configured: z.boolean().optional() }).optional(), error: z.string().optional() })
+export const AgentHealthSchema = z.looseObject({ ...healthDisplay('`alive` true is `ok`, false `error` with `details.reason`, null `idle` with `details.state`'), chat: ChatReadinessSchema.optional().describe('Always sent since TAL-951; absent from older servers.'), gateway_lifecycle: GatewayLifecycleSchema.describe('TAL-1627: whether the gateway restart may run; clients offer it only when `managed`.'), alive: z.boolean().nullable().optional(), checked_at: z.string().optional(), details: z.looseObject({ state: z.string().optional(), reason: z.string().optional() }).optional(), gateway_chat: z.looseObject({ enabled: z.boolean().optional(), backend: z.string().optional(), base_url_configured: z.boolean().optional(), api_key_configured: z.boolean().optional() }).optional(), error: z.string().optional() })
 export const SystemHealthSchema = z.looseObject({
   ...healthDisplay('`status` ok is `ok`, partial `warning`, unavailable `error`'),
   available: z.boolean().optional(), status: z.string().optional(), checked_at: z.string().optional(), cpu: Json.nullable().optional(), memory: Json.nullable().optional(),
-  disk: z.looseObject({ percent: z.number().optional(), total_bytes: z.number().optional(), used_bytes: z.number().optional(), display_level: QuotaLevelSchema.optional().describe('TAL-2162: `critical` from 95% used, `warning` from 85%, else `healthy`. Absent from older servers.') }).nullable().optional(),
+  disk: z.looseObject({ percent: z.number().optional(), total_bytes: z.number().optional(), used_bytes: z.number().optional(), display_level: QuotaLevelSchema.describe('TAL-2162: `critical` from 95% used, `warning` from 85%, else `healthy`.') }).nullable().optional(),
   errors: z.array(z.looseObject({ code: z.string().optional(), metric: z.string().optional() })).optional(), webui_runtime: Json.optional(),
 })
 export const UpdateStateSchema = z.enum(['up_to_date', 'release_ready', 'commits_behind', 'local_changes', 'finish', 'manual', 'check_failed', 'off', 'unknown'])

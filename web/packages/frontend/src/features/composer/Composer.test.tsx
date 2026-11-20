@@ -922,7 +922,7 @@ describe('Composer', () => {
   })
 
   it.each(IME_ENTERS)('leaves the command palette alone on an Enter committing a composition (%s), and a plain Enter then picks', async (_, ime) => {
-    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [{ name: 'branch', aliases: [], handler: 'client', clients: ['web', 'ios'] }] })
+    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [{ name: 'branch', aliases: [], handler: 'client', clients: ['web', 'ios'], exec: false }] })
     renderComposer({ ...writable, is_streaming: false })
     const box = screen.getByRole('textbox')
     await userEvent.type(box, '/bra')
@@ -964,9 +964,9 @@ describe('Composer', () => {
   // TAL-314: the server catalog resolves a typed alias and says which client runs each command.
   it('runs a typed alias as its server catalog command and refuses a command Web cannot run', async () => {
     vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [
-      { name: 'branch', aliases: ['fork'], handler: 'client', clients: ['web', 'ios'] },
-      { name: 'background', aliases: ['bg'], handler: 'client', clients: ['web', 'ios'] },
-      { name: 'history', aliases: [], handler: 'agent', clients: [], unsupported_message: '/history runs only in the Hermes CLI.' },
+      { name: 'branch', aliases: ['fork'], handler: 'client', clients: ['web', 'ios'], exec: false },
+      { name: 'background', aliases: ['bg'], handler: 'client', clients: ['web', 'ios'], exec: false },
+      { name: 'history', aliases: [], handler: 'agent', clients: [], unsupported_message: '/history runs only in the Hermes CLI.', exec: false },
     ] })
     vi.mocked(api.startBackground).mockResolvedValue({ ok: true, task_id: 'bg1', stream_id: 'bgs', session_id: 'hidden' })
     vi.mocked(api.startChat).mockClear()
@@ -990,7 +990,7 @@ describe('Composer', () => {
 
   // TAL-882: a refused local command (`/goal gate add` without a goal) shows the server's reason and keeps the text.
   it('shows why a local command was refused and keeps the typed command', async () => {
-    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [{ name: 'goal', aliases: [], handler: 'client', clients: ['web', 'ios'] }] })
+    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [{ name: 'goal', aliases: [], handler: 'client', clients: ['web', 'ios'], exec: false }] })
     vi.mocked(showToast).mockClear()
     const onLocalCommand = vi.fn(() => Promise.reject(new Error('/goal gate add: no active goal')))
     renderComposer({ ...writable, is_streaming: false }, null, noop, undefined, undefined, onLocalCommand)

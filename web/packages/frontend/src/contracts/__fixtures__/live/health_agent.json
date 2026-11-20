@@ -10,11 +10,18 @@
       "reason": "gateway_not_configured",
       "state": "unknown"
     },
+    "display_reason": "unknown",
+    "display_state": "idle",
     "gateway_chat": {
       "api_key_configured": false,
       "backend": "legacy",
       "base_url_configured": true,
       "enabled": false
+    },
+    "gateway_lifecycle": {
+      "managed": true,
+      "reason": "local_gateway",
+      "start_command": null
     }
   },
   "method": "GET",

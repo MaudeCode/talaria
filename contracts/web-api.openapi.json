@@ -1792,11 +1792,12 @@
                     },
                     "redirect_path": {
                       "type": "string",
-                      "description": "Same-origin path-absolute destination for a browser sign-in, mounted exactly once; absent from older servers."
+                      "description": "Same-origin path-absolute destination for a browser sign-in, mounted exactly once."
                     }
                   },
                   "required": [
-                    "ok"
+                    "ok",
+                    "redirect_path"
                   ],
                   "additionalProperties": {}
                 }
@@ -2117,11 +2118,12 @@
                     },
                     "redirect_path": {
                       "type": "string",
-                      "description": "Same-origin path-absolute destination for a browser sign-in, mounted exactly once; absent from older servers."
+                      "description": "Same-origin path-absolute destination for a browser sign-in, mounted exactly once."
                     }
                   },
                   "required": [
-                    "ok"
+                    "ok",
+                    "redirect_path"
                   ]
                 }
               }
@@ -21444,11 +21446,12 @@
                     },
                     "selectable": {
                       "type": "boolean",
-                      "description": "TAL-2097: more than one mode is available, so a fresh chat has a mode to choose. Absent (an older server) means true."
+                      "description": "TAL-2097: more than one mode is available, so a fresh chat has a mode to choose."
                     }
                   },
                   "required": [
-                    "modes"
+                    "modes",
+                    "selectable"
                   ]
                 }
               }
@@ -82170,7 +82173,8 @@
                         "workspace",
                         "managed"
                       ],
-                      "type": "string"
+                      "type": "string",
+                      "description": "Which store the reply reads: workspace files or the session's managed buffers."
                     },
                     "read_only": {
                       "type": "boolean"
@@ -82293,6 +82297,7 @@
                     }
                   },
                   "required": [
+                    "source",
                     "entries"
                   ],
                   "additionalProperties": {}
@@ -82358,7 +82363,8 @@
                         "workspace",
                         "managed"
                       ],
-                      "type": "string"
+                      "type": "string",
+                      "description": "Which store the reply reads: workspace files or the session's managed buffers."
                     },
                     "read_only": {
                       "type": "boolean"
@@ -82420,6 +82426,10 @@
                       "type": "string"
                     }
                   },
+                  "required": [
+                    "source",
+                    "preview"
+                  ],
                   "additionalProperties": {}
                 }
               }
@@ -83079,7 +83089,8 @@
                         "workspace",
                         "managed"
                       ],
-                      "type": "string"
+                      "type": "string",
+                      "description": "Which store the reply reads: workspace files or the session's managed buffers."
                     },
                     "read_only": {
                       "const": true
@@ -83210,6 +83221,7 @@
                     }
                   },
                   "required": [
+                    "source",
                     "read_only",
                     "path",
                     "entries",
@@ -83271,7 +83283,8 @@
                         "workspace",
                         "managed"
                       ],
-                      "type": "string"
+                      "type": "string",
+                      "description": "Which store the reply reads: workspace files or the session's managed buffers."
                     },
                     "read_only": {
                       "type": "boolean"
@@ -83338,6 +83351,8 @@
                     }
                   },
                   "required": [
+                    "source",
+                    "preview",
                     "escape_read_only"
                   ],
                   "additionalProperties": {}
@@ -125138,7 +125153,8 @@
                           }
                         },
                         "required": [
-                          "id"
+                          "id",
+                          "setup"
                         ],
                         "additionalProperties": {}
                       }
@@ -135358,7 +135374,8 @@
                           "name",
                           "aliases",
                           "handler",
-                          "clients"
+                          "clients",
+                          "exec"
                         ],
                         "additionalProperties": {}
                       }
@@ -136633,7 +136650,7 @@
                         "idle"
                       ],
                       "type": "string",
-                      "description": "TAL-2162: `alive` true is `ok`, false `error` with `details.reason`, null `idle` with `details.state`. Absent from older servers."
+                      "description": "TAL-2162: `alive` true is `ok`, false `error` with `details.reason`, null `idle` with `details.state`."
                     },
                     "display_reason": {
                       "anyOf": [
@@ -136735,7 +136752,7 @@
                         "reason",
                         "start_command"
                       ],
-                      "description": "TAL-1627: whether the gateway restart may run; clients offer it only when `managed`. Absent from older servers."
+                      "description": "TAL-1627: whether the gateway restart may run; clients offer it only when `managed`."
                     },
                     "alive": {
                       "anyOf": [
@@ -136784,6 +136801,10 @@
                       "type": "string"
                     }
                   },
+                  "required": [
+                    "display_state",
+                    "gateway_lifecycle"
+                  ],
                   "additionalProperties": {}
                 }
               }
@@ -136814,7 +136835,7 @@
                         "idle"
                       ],
                       "type": "string",
-                      "description": "TAL-2162: `status` ok is `ok`, partial `warning`, unavailable `error`. Absent from older servers."
+                      "description": "TAL-2162: `status` ok is `ok`, partial `warning`, unavailable `error`."
                     },
                     "display_reason": {
                       "anyOf": [
@@ -136875,9 +136896,12 @@
                                 "unavailable"
                               ],
                               "type": "string",
-                              "description": "TAL-2162: `critical` from 95% used, `warning` from 85%, else `healthy`. Absent from older servers."
+                              "description": "TAL-2162: `critical` from 95% used, `warning` from 85%, else `healthy`."
                             }
                           },
+                          "required": [
+                            "display_level"
+                          ],
                           "additionalProperties": {}
                         },
                         {
@@ -136902,6 +136926,9 @@
                     },
                     "webui_runtime": {}
                   },
+                  "required": [
+                    "display_state"
+                  ],
                   "additionalProperties": {}
                 }
               }
@@ -137202,13 +137229,6 @@
                             {
                               "type": "object",
                               "properties": {
-                                "source": {
-                                  "enum": [
-                                    "workspace",
-                                    "managed"
-                                  ],
-                                  "type": "string"
-                                },
                                 "read_only": {
                                   "type": "boolean"
                                 },
@@ -137237,20 +137257,6 @@
                                   "type": "boolean"
                                 },
                                 "mime": {
-                                  "type": "string"
-                                },
-                                "preview": {
-                                  "enum": [
-                                    "text",
-                                    "markdown",
-                                    "csv",
-                                    "html",
-                                    "image",
-                                    "pdf",
-                                    "audio",
-                                    "video",
-                                    "binary"
-                                  ],
                                   "type": "string"
                                 },
                                 "table": {
@@ -137281,13 +137287,6 @@
                             {
                               "type": "object",
                               "properties": {
-                                "source": {
-                                  "enum": [
-                                    "workspace",
-                                    "managed"
-                                  ],
-                                  "type": "string"
-                                },
                                 "read_only": {
                                   "type": "boolean"
                                 },
@@ -137316,20 +137315,6 @@
                                   "type": "boolean"
                                 },
                                 "mime": {
-                                  "type": "string"
-                                },
-                                "preview": {
-                                  "enum": [
-                                    "text",
-                                    "markdown",
-                                    "csv",
-                                    "html",
-                                    "image",
-                                    "pdf",
-                                    "audio",
-                                    "video",
-                                    "binary"
-                                  ],
                                   "type": "string"
                                 },
                                 "table": {
@@ -137360,13 +137345,6 @@
                             {
                               "type": "object",
                               "properties": {
-                                "source": {
-                                  "enum": [
-                                    "workspace",
-                                    "managed"
-                                  ],
-                                  "type": "string"
-                                },
                                 "read_only": {
                                   "type": "boolean"
                                 },
@@ -137395,20 +137373,6 @@
                                   "type": "boolean"
                                 },
                                 "mime": {
-                                  "type": "string"
-                                },
-                                "preview": {
-                                  "enum": [
-                                    "text",
-                                    "markdown",
-                                    "csv",
-                                    "html",
-                                    "image",
-                                    "pdf",
-                                    "audio",
-                                    "video",
-                                    "binary"
-                                  ],
                                   "type": "string"
                                 },
                                 "table": {
@@ -137439,13 +137403,6 @@
                             {
                               "type": "object",
                               "properties": {
-                                "source": {
-                                  "enum": [
-                                    "workspace",
-                                    "managed"
-                                  ],
-                                  "type": "string"
-                                },
                                 "read_only": {
                                   "type": "boolean"
                                 },
@@ -137474,20 +137431,6 @@
                                   "type": "boolean"
                                 },
                                 "mime": {
-                                  "type": "string"
-                                },
-                                "preview": {
-                                  "enum": [
-                                    "text",
-                                    "markdown",
-                                    "csv",
-                                    "html",
-                                    "image",
-                                    "pdf",
-                                    "audio",
-                                    "video",
-                                    "binary"
-                                  ],
                                   "type": "string"
                                 },
                                 "table": {

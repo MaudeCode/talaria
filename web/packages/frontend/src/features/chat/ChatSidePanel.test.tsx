@@ -49,7 +49,7 @@ beforeEach(() => {
   localStorage.clear()
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   vi.mocked(api.fetchBackgroundTasks).mockReset().mockResolvedValue(tasks([]))
-  vi.mocked(api.listDir).mockReset().mockResolvedValue({ entries: [{ name: 'src', is_dir: true }, { name: 'README.md', size: 10 }] })
+  vi.mocked(api.listDir).mockReset().mockResolvedValue({ source: 'workspace' as const, entries: [{ name: 'src', is_dir: true }, { name: 'README.md', size: 10 }] })
   vi.mocked(api.fetchGitInfo).mockReset().mockResolvedValue({ git: null })
   vi.mocked(api.fetchSettings).mockReset().mockResolvedValue({})
   vi.mocked(useTranscript).mockReset().mockReturnValue({ session: null, query: { isError: false, isPending: true } } as unknown as ReturnType<typeof useTranscript>)
@@ -160,7 +160,7 @@ describe('chat side panel (TAL-373)', () => {
     expect(vi.mocked(api.listDir).mock.calls.slice(calls).every(([, dir]) => dir === 'src')).toBe(true)
   })
   it('keeps an unsaved Files draft when the panel closes and reopens or another page is shown, without saving (TAL-1576)', async () => {
-    vi.mocked(api.readFile).mockReset().mockResolvedValue({ content: 'original', binary: false, size: 8, preview: 'markdown' })
+    vi.mocked(api.readFile).mockReset().mockResolvedValue({ source: 'workspace' as const, content: 'original', binary: false, size: 8, preview: 'markdown' })
     const view = render(<Panel />)
     await userEvent.click(await screen.findByRole('treeitem', { name: /^README\.md,/ }))
     await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
@@ -173,7 +173,7 @@ describe('chat side panel (TAL-373)', () => {
     expect(api.saveFile).not.toHaveBeenCalled()
   })
   it('shows the file a transcript block opens on Files, in its folder, from another page (TAL-1968)', async () => {
-    vi.mocked(api.readFile).mockReset().mockResolvedValue({ content: '# Notes', binary: false, size: 7, preview: 'markdown' })
+    vi.mocked(api.readFile).mockReset().mockResolvedValue({ source: 'workspace' as const, content: '# Notes', binary: false, size: 7, preview: 'markdown' })
     vi.mocked(api.fetchBackgroundTasks).mockResolvedValue(tasks([agent({ task_id: 'd1' })]))
     render(<Panel />)
     await waitFor(() => { expect(screen.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true') })
@@ -184,14 +184,14 @@ describe('chat side panel (TAL-373)', () => {
     expect(vi.mocked(api.readFile).mock.calls.map(([sid]) => sid)).toEqual(['s1'])
   })
   it('selects the line a read or search result opens the file at (TAL-2323)', async () => {
-    vi.mocked(api.readFile).mockReset().mockResolvedValue({ content: 'one\ntwo\nthree', binary: false, size: 13, preview: 'text' })
+    vi.mocked(api.readFile).mockReset().mockResolvedValue({ source: 'workspace' as const, content: 'one\ntwo\nthree', binary: false, size: 13, preview: 'text' })
     render(<Panel />)
     act(() => { requestOpenFile({ sessionId: 's1', path: 'src/app.ts', line: 2 }) })
     const preview = await screen.findByRole('textbox', { name: 'Preview' })
     await waitFor(() => { expect([(preview as HTMLTextAreaElement).selectionStart, (preview as HTMLTextAreaElement).selectionEnd]).toEqual([4, 7]) })
   })
   it('shows a rendered file\'s text to select the line a result opens it at (TAL-2323)', async () => {
-    vi.mocked(api.readFile).mockReset().mockResolvedValue({ content: '# One\n\nTwo', binary: false, size: 11, preview: 'markdown' })
+    vi.mocked(api.readFile).mockReset().mockResolvedValue({ source: 'workspace' as const, content: '# One\n\nTwo', binary: false, size: 11, preview: 'markdown' })
     render(<Panel />)
     act(() => { requestOpenFile({ sessionId: 's1', path: 'docs/notes.md', line: 3 }) })
     const preview = await screen.findByRole('textbox', { name: 'Preview' })
@@ -209,7 +209,7 @@ describe('chat side panel Checkpoints (TAL-571)', () => {
     vi.mocked(showToast).mockReset()
     vi.mocked(showRichToast).mockReset()
     vi.mocked(api.fetchCheckpoints).mockReset().mockResolvedValue(checkpoints)
-    vi.mocked(api.listDir).mockResolvedValue({ entries: [{ name: 'notes.txt', size: 10 }] })
+    vi.mocked(api.listDir).mockResolvedValue({ source: 'workspace' as const, entries: [{ name: 'notes.txt', size: 10 }] })
   })
   const restore = async (action = 'Restore') => {
     await userEvent.click(screen.getByRole('tab', { name: 'Checkpoints' }))
@@ -266,13 +266,13 @@ describe('chat side panel Checkpoints (TAL-571)', () => {
   })
 
   it('drops an unsaved Files draft of a file the restore rewrote', async () => {
-    vi.mocked(api.readFile).mockReset().mockResolvedValue({ content: 'agent text', binary: false, size: 10, preview: 'text' })
+    vi.mocked(api.readFile).mockReset().mockResolvedValue({ source: 'workspace' as const, content: 'agent text', binary: false, size: 10, preview: 'text' })
     vi.mocked(api.restoreCheckpoint).mockReset().mockResolvedValue(restored())
     render(<Panel />)
     await userEvent.click(await screen.findByRole('treeitem', { name: /^notes\.txt,/ }))
     await userEvent.type(await screen.findByRole('textbox', { name: 'Preview' }), ' plus my edit')
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
-    vi.mocked(api.readFile).mockResolvedValue({ content: 'saved text', binary: false, size: 10, preview: 'text' })
+    vi.mocked(api.readFile).mockResolvedValue({ source: 'workspace' as const, content: 'saved text', binary: false, size: 10, preview: 'text' })
     await restore()
     await userEvent.click(screen.getByRole('tab', { name: 'Files' }))
     await waitFor(() => { expect(screen.getByRole('textbox', { name: 'Preview' })).toHaveValue('saved text') })

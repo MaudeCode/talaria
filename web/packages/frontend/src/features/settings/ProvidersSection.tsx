@@ -280,7 +280,7 @@ interface ProviderRowProps {
 const ProviderRow = memo(function ProviderRow({ p, editing, onEdit, onInvalidate, onSaveKey, keySaving, onSaveHosted, hostedSaving, onInstall, installing, installBlocked }: ProviderRowProps) {
   const hint = p.install_hint
   const name = p.display_name ?? p.id
-  const setup = p.setup ?? 'cli'
+  const setup = p.setup
   const action = setup === 'cli' ? null : SETUP_ACTION[setup]
   const run = () => { if (setup === 'plugin') { if (hint) onInstall(hint) } else onEdit(editing ? null : p.id) }
   // One list for the visible control and the right-click and long-press menu.

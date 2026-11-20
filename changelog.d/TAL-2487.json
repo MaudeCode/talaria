@@ -1,0 +1,3 @@
+{
+  "skip": "Marks contract fields the Web server always sends as required; no user-visible change."
+}

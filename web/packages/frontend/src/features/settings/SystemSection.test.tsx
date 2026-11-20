@@ -631,7 +631,7 @@ describe('Gateway restart capability (TAL-1627)', () => {
 
   it('offers restart only when the server says Talaria controls the Gateway, and rereads it after a refusal', async () => {
     vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, display_state: 'ok', display_reason: null, gateway_lifecycle: { managed: false, reason: 'external_gateway', start_command: null } })
-    vi.mocked(api.fetchAgentHealth).mockResolvedValueOnce({ alive: true, gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } })
+    vi.mocked(api.fetchAgentHealth).mockResolvedValueOnce({ alive: true, display_state: 'ok', gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } })
     vi.mocked(api.restartAgent).mockRejectedValueOnce(new ApiError({ kind: 'http', status: 409, path: '/api/health/restart', message: 'This Gateway is managed outside Talaria. Start, stop, or restart it where it runs.' }))
     renderSystem()
     await userEvent.click(await screen.findByRole('button', { name: 'Restart agent' }))
@@ -642,7 +642,7 @@ describe('Gateway restart capability (TAL-1627)', () => {
   })
 
   it('shows the server\'s start command for a stopped unproven loopback Gateway', async () => {
-    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: false, details: { reason: 'remote_gateway_unreachable' }, gateway_lifecycle: { managed: false, reason: 'local_gateway_unproven', start_command: 'hermes --profile work gateway start' } })
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: false, display_state: 'error', details: { reason: 'remote_gateway_unreachable' }, gateway_lifecycle: { managed: false, reason: 'local_gateway_unproven', start_command: 'hermes --profile work gateway start' } })
     renderSystem()
     await userEvent.click(await why())
     expect(await screen.findByText('hermes --profile work gateway start')).toBeInTheDocument()
@@ -653,7 +653,7 @@ describe('Gateway restart capability (TAL-1627)', () => {
     ['unverified', { managed: false, reason: 'unverified', start_command: null }],
     ['a running unproven Gateway', { managed: false, reason: 'local_gateway_unproven', start_command: null }],
   ] as const)('%s reads as unconfirmed', async (_name, lifecycle) => {
-    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, gateway_lifecycle: lifecycle })
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, display_state: 'ok', gateway_lifecycle: lifecycle })
     renderSystem()
     await userEvent.click(await why())
     expect(await screen.findByText('Talaria could not confirm that it runs this gateway.')).toBeInTheDocument()
@@ -685,7 +685,7 @@ describe('Health, disk and Agent figure from server fields (TAL-2162)', () => {
     [{ alive: false, display_state: 'error', display_reason: null }, 'error', 'Not responding'],
     [{ alive: null, display_state: 'idle', display_reason: 'starting' }, 'idle', 'starting'],
   ] as const)('the Agent row renders %o', async (fields, state, text) => {
-    vi.mocked(api.fetchAgentHealth).mockResolvedValue(fields)
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ ...fields, gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } as const })
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: current, agent: current })
     renderSystem()
     await waitFor(async () => { const el = await dot('Hermes Agent'); expect(el.dataset.status).toBe(state); expect(el).toHaveTextContent(text) })
@@ -704,7 +704,7 @@ describe('Health, disk and Agent figure from server fields (TAL-2162)', () => {
   })
 
   it('tones the Agent figure only from the server figure_tone', async () => {
-    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: false, display_state: 'error', display_reason: null })
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: false, display_state: 'error', display_reason: null, gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } as const })
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: current, agent: { ...behind(2), figure_tone: null } })
     renderSystem()
     await screen.findByText('Not responding')
