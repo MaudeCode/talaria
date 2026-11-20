@@ -80,6 +80,20 @@
         "\\bretr(?:y|ies)\\s*:\\s*(?:process\\.env\\b|[1-9])"
       ],
       "message": "test-audit defect loop: fix the cause; a retry hides a flaky test (docs/testing.md)"
+    },
+    "hosted-layout-loop": {
+      "paths": [
+        "app/TalariaTests/"
+      ],
+      "excludeFilePattern": "PerformanceTests\\.swift$",
+      "patterns": [
+        "^\\s*for\\s+(?:\\([^)]*\\b(?:size|fold)\\b[^)]*\\)|size)\\s+in\\s+"
+      ],
+      "nearby": {
+        "lines": 6,
+        "pattern": "\\blet fixture = try FixtureApp\\("
+      },
+      "message": "test-audit oversized: put each hosted layout that boots a new app fixture in its own test case (docs/testing.md)"
     }
   }
 }
