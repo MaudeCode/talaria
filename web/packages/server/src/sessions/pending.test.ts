@@ -82,6 +82,9 @@ describe('pending prompt streams', () => {
     expect(scope('named-rule', { command: '<x>', tool_name: 'web_fetch', pattern_keys: ['plugin_rule:custom'] })).toMatchObject({ kind: 'tool_rule', subject: 'web_fetch' })
     expect(scope('cmd-rule', { command: '<deploy> (plugin approval rule)', pattern_keys: ['plugin_rule:custom'] })).toMatchObject({ kind: 'tool_rule', subject: 'deploy' })
     expect(scope('no-keys', { command: 'pwd' })).toBeNull()
+    // Always saves the shell key permanently, so a finding beside it never makes the scope read as session-only.
+    expect(scope('mixed', { description: 'pipe to shell; homograph URL', pattern_keys: ['pipe to shell', 'tirith:homograph_url'] }))
+      .toEqual({ kind: 'command_pattern', subject: 'pipe to shell', always_is_session_only: false })
   })
 
   it('keeps an approval subscriber attached after answering empties the queue (TAL-556)', () => {

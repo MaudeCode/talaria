@@ -928,8 +928,8 @@ export type ApprovalTool = z.infer<typeof ApprovalToolSchema>
 /**
  * TAL-974: what Allow session and Always allow cover, from the Agent's pattern keys. `kind` picks the clients' sentence;
  * `subject` is what it names: the Agent's danger description for `command_pattern`, the tool for `tool_rule`, the action and
- * mode for `computer_use`, null otherwise. `always_is_session_only`: an Always answer keeps a security finding for this
- * session only.
+ * mode for `computer_use`, null otherwise. `always_is_session_only`: every key is a security finding, which an Always answer
+ * keeps for this session only; false whenever Always saves any key permanently.
  */
 export const ApprovalScopeSchema = z.object({
   kind: z.enum(['command_pattern', 'tool_rule', 'python', 'ssh_config', 'computer_use', 'security_finding', 'unknown']),

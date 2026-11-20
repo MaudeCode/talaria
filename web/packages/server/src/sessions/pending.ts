@@ -479,7 +479,8 @@ function approvalHead(sid: string, head: Record<string, unknown>): Record<string
 /**
  * TAL-974: what Allow session and Always allow cover, from the keys the Agent persists on those answers (`pattern_keys`,
  * else `pattern_key`). Null when Allow session is not offered (a one-time prompt) or no key is named. A shell key is one
- * `; `-joined part of the Agent's danger description; a `tirith:` security finding stays session-only under Always.
+ * `; `-joined part of the Agent's danger description; a `tirith:` security finding stays session-only under Always, which the
+ * scope says only when every key is one: beside another key, Always saves that key permanently.
  */
 function approvalScope(entry: Record<string, unknown>): ApprovalScope | null {
   if (!approvalAllows(entry, 'session')) return null
@@ -487,7 +488,8 @@ function approvalScope(entry: Record<string, unknown>): ApprovalScope | null {
   const keys = named.length ? named : [str(entry.pattern_key).trim()].filter(Boolean)
   if (!keys.length) return null
   const others = keys.filter((key) => !key.startsWith('tirith:'))
-  const scope = (kind: ApprovalScope['kind'], subject: string | null = null): ApprovalScope => ({ kind, subject, always_is_session_only: others.length < keys.length })
+  // Always saves every other key permanently, so only an approval of findings alone keeps Always to the session.
+  const scope = (kind: ApprovalScope['kind'], subject: string | null = null): ApprovalScope => ({ kind, subject, always_is_session_only: kind === 'security_finding' })
   const [key] = others
   if (key === undefined) return scope('security_finding')
   if (others.length === 1) {
