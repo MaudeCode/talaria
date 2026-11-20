@@ -30,6 +30,10 @@ const framesOfToggle = (page: Page) => page.evaluate(async () => {
     for (let node: Element | null = el; node && node !== aside; node = node.parentElement) shown *= Number(getComputedStyle(node).opacity)
     return shown
   }
+  // The column's own record that its width animates: a transition only starts with a nonzero duration (TAL-2531).
+  const transitions: string[] = []
+  const record = (event: TransitionEvent) => { if (event.target === aside) transitions.push(event.propertyName) }
+  aside.addEventListener('transitionrun', record)
   document.getElementById('btnSidebarEdgeToggle')!.click()
   // Sample every frame until no transition runs in the column; the frame cap only stops a runaway loop.
   const moving = () => aside.getAnimations({ subtree: true }).some((animation) => animation.playState === 'running')
@@ -46,7 +50,8 @@ const framesOfToggle = (page: Page) => page.evaluate(async () => {
       handle: handle ? getComputedStyle(handle).visibility : null,
     })
   }
-  return frames
+  aside.removeEventListener('transitionrun', record)
+  return { frames, transitions }
 })
 /** Records every layout or fade transition the column starts, from the very first paint. */
 const recordTransitions = (page: Page) => page.addInitScript(() => {
@@ -897,9 +902,9 @@ test('collapsing and expanding morph one set of rows: icons stay put, nothing bl
   await page.reload()
   await settle(page)
 
-  const assertMorph = (frames: Awaited<ReturnType<typeof framesOfToggle>>) => {
+  const assertMorph = ({ frames, transitions }: Awaited<ReturnType<typeof framesOfToggle>>) => {
     const widths = frames.map((frame) => frame.aside)
-    expect(widths.filter((w) => w > 64 && w < 360).length, 'the width animates').toBeGreaterThan(2)
+    expect(transitions, 'the width animates').toContain('width')
     const direction = Math.sign(widths.at(-1)! - widths[0]!)
     expect(widths.filter((w, i) => i > 0 && (w - widths[i - 1]!) * direction < 0), 'the width never reverses').toEqual([])
     expect(frames.filter((frame) => frame.rowOpacity !== 1), 'the destination rows never fade').toEqual([])
@@ -910,14 +915,14 @@ test('collapsing and expanding morph one set of rows: icons stay put, nothing bl
 
   const expanding = await framesOfToggle(page)
   assertMorph(expanding)
-  expect(expanding.at(-1)?.aside).toBe(360)
-  expect(expanding.at(-1)?.opacity).toBe(1)
-  expect(expanding.filter((frame) => frame.aside < 360 && frame.handle === 'visible'), 'the resize handle takes no hover as it sweeps past a pointer on the edge tab').toEqual([])
+  expect(expanding.frames.at(-1)?.aside).toBe(360)
+  expect(expanding.frames.at(-1)?.opacity).toBe(1)
+  expect(expanding.frames.filter((frame) => frame.aside < 360 && frame.handle === 'visible'), 'the resize handle takes no hover as it sweeps past a pointer on the edge tab').toEqual([])
 
   const collapsing = await framesOfToggle(page)
   assertMorph(collapsing)
-  expect(collapsing.at(-1)?.aside).toBe(64)
-  expect(collapsing.at(-1)?.opacity).toBe(0)
+  expect(collapsing.frames.at(-1)?.aside).toBe(64)
+  expect(collapsing.frames.at(-1)?.opacity).toBe(0)
 })
 
 test('once the motion settles, rows the state hides take no focus', async ({ page }, info) => {
@@ -945,13 +950,13 @@ test('reduced motion toggles at once with no fade', async ({ page }, info) => {
   desktopOnly(info.project.name)
   await page.goto('/')
   await settle(page)
-  const instant = (frames: Awaited<ReturnType<typeof framesOfToggle>>) => frames.filter((frame) => (frame.aside !== 300 && frame.aside !== 64) || frame.opacity !== (frame.aside === 64 ? 0 : 1))
+  const instant = ({ frames }: Awaited<ReturnType<typeof framesOfToggle>>) => frames.filter((frame) => (frame.aside !== 300 && frame.aside !== 64) || frame.opacity !== (frame.aside === 64 ? 0 : 1))
   const collapsing = await framesOfToggle(page)
   expect(instant(collapsing)).toEqual([])
-  expect(collapsing.at(-1)?.aside).toBe(64)
+  expect(collapsing.frames.at(-1)?.aside).toBe(64)
   const expanding = await framesOfToggle(page)
   expect(instant(expanding)).toEqual([])
-  expect(expanding.at(-1)?.aside).toBe(300)
+  expect(expanding.frames.at(-1)?.aside).toBe(300)
 })
 
 test('a stored collapse paints on load with no transition', async ({ page }, info) => {
