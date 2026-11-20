@@ -1,0 +1,1 @@
+{"skip": "Test fixture and recorder only: re-records the server's gateway-owner event fixture from Agent v0.23.2; no app, Web, or Relay behavior changes."}

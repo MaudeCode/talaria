@@ -73,6 +73,9 @@ class RoutingTests(unittest.TestCase):
             (["web/packages/server/src/tools/updates.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             (["web/packages/server/src/test/fixtures/local-reset.json"],
              {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            # Only the server's unit tests read most server fixtures; the Playwright suite reads the ones it names.
+            (["web/packages/server/src/test/fixtures/gateway-owner-events.json"], {"web_server"}),
+            (["web/packages/server/src/test/fixtures/compaction-carrier.json"], {"web_server", "web_frontend"}),
             (["web/packages/server/package.json"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
             (["web/packages/server/tsconfig.build.json"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
             (["web/sidecar/talaria_sidecar/x.py"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
@@ -213,6 +216,12 @@ class RoutingTests(unittest.TestCase):
                 read |= {f"{name}.json" for name in re.findall(r"\b(?:sharedContractF|f)ixture\(\"([\w.-]+)\"\)", text)}
             with self.subTest(suite=suite):
                 self.assertEqual(read, routing.FIXTURE_READERS[suite])
+
+    def test_server_fixture_readers_are_routed(self):
+        root = SCRIPT.resolve().parent.parent
+        e2e = subprocess.check_output(["git", "ls-files", "-z", "web/packages/frontend/e2e"], cwd=root).decode().split("\0")
+        read = {name for path in e2e if path for name in re.findall(r"server/src/test/fixtures/([\w.-]+\.json)", (root / path).read_text())}
+        self.assertEqual(read, routing.E2E_SERVER_FIXTURES)
 
     def test_tracked_paths_have_explicit_routes(self):
         root = SCRIPT.resolve().parent.parent

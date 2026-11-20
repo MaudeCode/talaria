@@ -16,7 +16,7 @@ Every added or changed test passes the `test-audit` skill's authoring gate and i
 | vacuous | `expect_eq` from `app/ci/test_assertions.sh` in shell tests, because macOS bash 3.2 ignores a failed `[[ ]]` under `set -e`. Scope XCUI and Testing Library queries to the row under test. |
 | heavy | `TEST_DRAIN` in the server harness, injected timeouts instead of production waits, and a real process only for a property listed in `web/sidecar/tests/process_inventory.json`. |
 | oversized | One test per behaviour over a shared fixture. A hosted test that walks several settings pages or scenarios splits by page or scenario. |
-| matrix | A test run once per supported release or configuration takes each expected value from the fixture it loaded. `expectedAppSnapshot` in `relay/tests/sharedContracts.test.ts` builds the App snapshot from the publisher fixture it read and drops each optional run field that fixture omits (TAL-2401, #1795). |
+| matrix | A test run once per supported release or configuration takes each expected value from the fixture it loaded. `expectedAppSnapshot` in `relay/tests/sharedContracts.test.ts` builds the App snapshot from the publisher fixture it read and drops each optional run field that fixture omits (TAL-2401, #1795). A fixture of real Agent output has a committed recorder and names its release: `web/sidecar/tests/fixtures/record_gateway_owner_events.py` records `gateway-owner-events.json`, and its server test fails once that release leaves `agent_support.json` (TAL-2523). |
 
 ## Checks in CI
 

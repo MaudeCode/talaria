@@ -4,13 +4,19 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SessionEnvelopeSchema, ClarifyPendingEnvelopeSchema, ChatEventSchema, type GatewaySnapshot, type GatewaySessionResult } from '@maudecode/talaria-web-contracts'
 import type { StreamFrame } from '../sidecar/client.js'
-import { type TestServer, openStateDb } from '../test/harness.js'
+import { type TestServer, WEB_ROOT, openStateDb } from '../test/harness.js'
+import { supportedAgents } from '../release.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { CANONICAL_READ_ONLY_REASON } from './state-db.js'
 import { GatewaySessions } from './gateway-sessions.js'
 import { admission, attached, bootOwnerAttachment, fixture, ownerHelpers, sid, snapshot } from '../test/gateway-owner.js'
 
-const ownerEvents = JSON.parse(readFileSync(new URL('../test/fixtures/gateway-owner-events.json', import.meta.url), 'utf8')) as { events: Record<string, unknown>[] }
+const ownerEvents = JSON.parse(readFileSync(new URL('../test/fixtures/gateway-owner-events.json', import.meta.url), 'utf8')) as { release: string; revision: string; events: Record<string, unknown>[] }
+
+// TAL-2523: a support-window change that drops the recorded release re-records the stream (web/AGENTS.md).
+it('replays an owner stream recorded from a supported Agent release', () => {
+  expect(supportedAgents(WEB_ROOT)).toContainEqual(expect.objectContaining({ releaseTag: ownerEvents.release, sourceRevision: ownerEvents.revision }))
+})
 
 describe('canonical owner attachment', () => {
   let s: TestServer
@@ -478,7 +484,7 @@ describe('canonical owner attachment', () => {
     expect(frames.some((frame) => frame.event === 'reasoning' && (frame.data as { text?: string }).text === 'Restored owner reasoning')).toBe(true)
   })
 
-  it.each([true, false])('projects recorded v0.22.3 reasoning, subagent activity and usage through existing chat frames (reasoning=%s)', async (show) => {
+  it.each([true, false])('projects a supported owner\'s recorded reasoning, subagent activity and usage through existing chat frames (reasoning=%s)', async (show) => {
     writeFileSync(join(s.state, 'config.yaml'), '# synthetic display preference')
     sidecar.respond('config.get', () => ({ path: join(s.state, 'config.yaml'), exists: true, config: { display: { show_reasoning: !show, platforms: { webui: { show_reasoning: show } } } } }))
     const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
