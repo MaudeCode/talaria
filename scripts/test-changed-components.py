@@ -762,15 +762,19 @@ class AppPlanTests(unittest.TestCase):
                     self.edit(path, old, new)
                 self.assertEqual(self.lanes(self.committed()), expected)
 
-    def test_a_private_helper_reaches_only_its_own_files_tests(self):
-        # Swift lets only its own file reach a private declaration, so a member named like a shared helper's selects
-        # nothing beyond that file (TAL-2610).
-        gamma = "app/TalariaTests/GammaHostedTests.swift"
+    def test_a_private_declaration_reaches_tests_only_through_its_own_file(self):
+        # Swift lets only its own file name a private declaration: a member named like a shared helper's selects only
+        # the tests that reach it in that file, or through a declaration the file exposes (TAL-2610).
+        gamma, delta = "app/TalariaTests/GammaHostedTests.swift", "app/TalariaTests/DeltaHostedTests.swift"
         self.write(gamma, """import XCTest
 
 final class GammaHostedTests: XCTestCase {
     func testProbe() {
         XCTAssertEqual(Probe().titleMenu(), 3)
+    }
+
+    func testPlain() {
+        XCTAssertEqual(Shared.value(), 4)
     }
 }
 
@@ -779,12 +783,40 @@ private struct Probe {
         3
     }
 }
+
+enum Shared {
+    static func value() -> Int {
+        inner()
+    }
+
+    private static func inner() -> Int {
+        4
+    }
+}
 """)
-        self.write("app/Talaria.xcodeproj/project.pbxproj", self.project([*HOSTED_SOURCES, "GammaHostedTests.swift"]))
-        self.base = self.commit("private helper")
-        self.edit(gamma, "        3\n    }\n}", "        1 + 2\n    }\n}")
-        self.assertEqual(self.lanes(self.committed()),
-                         {"TalariaKitTests": ("empty", []), "TalariaTests": ("explicit", ["TalariaTests/GammaHostedTests"])})
+        self.write(delta, """import XCTest
+
+final class DeltaHostedTests: XCTestCase {
+    func testValue() {
+        XCTAssertEqual(Shared.value(), 4)
+    }
+}
+""")
+        self.write("app/Talaria.xcodeproj/project.pbxproj",
+                   self.project([*HOSTED_SOURCES, "GammaHostedTests.swift", "DeltaHostedTests.swift"]))
+        self.base = self.commit("private helpers")
+        cases = [
+            ("a private type's member reaches its file's callers only", "        3\n", "        1 + 2\n",
+             ["TalariaTests/GammaHostedTests/testProbe"]),
+            ("a private member reaches other files through what its file exposes", "        4\n", "        2 + 2\n",
+             ["TalariaTests/DeltaHostedTests/testValue", "TalariaTests/GammaHostedTests/testPlain"]),
+        ]
+        for name, old, new, expected in cases:
+            with self.subTest(name):
+                self.git("reset", "-q", "--hard", self.base)
+                self.edit(gamma, old, new)
+                self.assertEqual(self.lanes(self.committed()),
+                                 {"TalariaKitTests": ("empty", []), "TalariaTests": ("explicit", expected)})
 
     def test_a_many_line_change_scans_each_name_set_once(self):
         # Every changed line inside one helper seeds the same names, so the reach fixpoint runs once for them (TAL-2473).
