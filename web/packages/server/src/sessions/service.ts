@@ -43,12 +43,12 @@ import { messagesForLimitedPayload, messageCountsAsRenderable, messageWindowForD
 import { redactString, redactText } from '../redact.js'
 import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } from '../workspace/workspaces.js'
 import { buildShareSnapshot, SHARE_MATERIALIZE_MAX_BYTES, shareAllowedRoots, shareAttachmentDir, shareEmbeddable, shareMediaPaths, type ShareStore } from './shares.js'
-import { attachmentPrefix, blobKeyForPath, type BlobStore } from './storage/blobs.js'
+import { attachmentKey, attachmentPrefix, blobKeyForPath, type BlobStore } from './storage/blobs.js'
 import { mediaAccessFor, mediaAccessResolver, resolveMediaAccess, mediaRefTarget, type MediaAccessBase } from '../workspace/media.js'
 import { meshyDirectives, projectMediaRefs, type MediaProjection, type MeshyDirective } from '../workspace/media-refs.js'
 import { projectBindings, type ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import type { GatewaySessions } from './gateway-sessions.js'
 import { personMaySee as ownerVisibleTo } from '../auth/person.js'
 
@@ -2522,7 +2522,7 @@ export class SessionService {
     else keep = /^[+-]?\d+$/.test(str(keepRaw).trim()) ? Number.parseInt(str(keepRaw).trim(), 10) : Number.NaN
     if (!Number.isInteger(keep)) throw new HttpFailure(400, 'keep_count must be an integer')
     if (keep < 0) throw new HttpFailure(400, 'keep_count must be non-negative')
-    const refused = await this.withMutationLock(sid, async () => {
+    const result = await this.withMutationLock(sid, async () => {
       // One state.db read decides and marks the boundary, so a row committed meanwhile is neither counted nor hidden.
       const read = await this.stateDbRead(s)
       if (hold) {
@@ -2534,18 +2534,24 @@ export class SessionService {
       }
       // A cut inside the state.db continuation keeps the continuation's rows before it: the boundary below hides every
       // row this read saw, so those rows join the stored transcript and model history first.
+      const transcript = keep >= s.messages.length ? this.mergedTranscript(s, s.messages, read.rows) : s.messages
+      const row = transcript[keep]
+      const attachments = row?.role === 'user' ? this.resendAttachments(normalizeUserDisplay(row)) : []
+      const restored = await Promise.all(attachments.map((attachment) => this.restoreEditAttachment(sid, attachment)))
+      const last_user_attachments = restored.filter((attachment) => attachment !== null)
+      const dropped_attachment_count = attachments.length - last_user_attachments.length
       if (keep > s.messages.length) {
         if (s.context_messages.length) s.context_messages = this.modelContext(s, read.rows)
-        s.messages = this.mergedTranscript(s, s.messages, read.rows)
+        s.messages = transcript
       }
       truncateSessionAtKeep(s, keep, this.deps.now())
       this.markStateDbSeen(s, read, { boundary: true })
       await this.store.save(s)
-      return null
+      return { ok: true as const, ...(attachments.length ? { last_user_attachments, dropped_attachment_count } : {}) }
     })
-    if (refused) return refused
+    if (!result.ok) return result
     await this.deps.runtime.evictAgent(sid)
-    return { ok: true, session: (await this.publicSession(s)) }
+    return { ...result, session: (await this.publicSession(s)) }
   }
 
   /**
@@ -3068,6 +3074,34 @@ export class SessionService {
     return { ok: true, session: (await this.wireRow(s)) }
   }
 
+  private async restoreEditAttachment(sid: string, attachment: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+    const blobs = this.deps.blobs
+    const path = str(attachment.path)
+    const key = blobKeyForPath(blobs.attachmentRoot(), path)
+    if (!key) return null
+    if (key.startsWith(attachmentPrefix(sid))) return await blobs.stat(key) ? attachment : null
+
+    // Duplicates and forks retain source paths. Check the source's current visibility before copying its bytes
+    // into the destination inbox, where the normal preview, resend and deletion paths can reach them.
+    const sourceId = key.split('/')[1]!
+    const owners = await this.store.inspectOwnership(sourceId, { metadataOnly: true })
+    if (!owners.length || !owners.every((owner) => this.visibleToRequest(owner))) return null
+    const source = await blobs.get(key)
+    if (!source) return null
+    const destination = attachmentKey(sid, `${randomUUID()}-${basename(path)}`)
+    try {
+      await blobs.put(destination, source.body, { exclusive: true, contentType: source.stat.contentType })
+    } finally {
+      source.body.destroy()
+    }
+    const { rollback_token: _receipt, ...rest } = attachment
+    return { ...rest, path: join(blobs.attachmentRoot(), ...destination.split('/').slice(1)) }
+  }
+
+  private resendAttachments(prompt: Message) {
+    return attachmentObjects(Array.isArray(prompt.attachments) ? prompt.attachments : []).filter((a): a is Record<string, unknown> => isDict(a) && Boolean(str(a.path).trim()))
+  }
+
   async retry(sid: string): Promise<Record<string, unknown>> {
     await this.rejectViewOnly(sid, 'modified')
     return this.withMutationLock(sid, async () => {
@@ -3083,7 +3117,7 @@ export class SessionService {
       const shownText = extractText(prompt.content)
       // A withheld prompt leaves masked, as the transcript shows it. An ordinary prompt's raw text is what Retry resends (TAL-1881).
       const lastUserText = withheldPromptText(history[lastUser]) === null ? shownText : str(redactText(shownText, this.deps.redactEnabled()))
-      const lastUserAttachments = attachmentObjects(Array.isArray(prompt.attachments) ? prompt.attachments : []).filter((a): a is Record<string, unknown> => isDict(a) && Boolean(str(a.path).trim()))
+      const lastUserAttachments = this.resendAttachments(prompt)
       const lastUserPrompt = stripWorkspacePrefix(lastUserAttachments.length ? stripAttachedFilesMarker(lastUserText) : lastUserText, true)
       if (!lastUserPrompt && !lastUserAttachments.length) return { error: 'The last message has nothing to resend.' }
       const removed = history.length - lastUser

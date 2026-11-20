@@ -476,7 +476,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       await guardVisibility(ctx, input.session_id)
       // A body without `confirm_deep_truncate` is a released App's, which asked on the device before sending it.
       const hold = input.confirm_deep_truncate === undefined ? null : { confirmToken: input.confirm_deep_truncate ? input.confirm_token ?? null : null }
-      return (await ctx.deps.sessions.truncate(input.session_id, input.keep_count, hold)) as { ok: true; session: { session_id: string; title: string } } | { ok: false; confirm_required: true; discard_user_turns: number; discard_messages: number; confirm_token: string }
+      return (await ctx.deps.sessions.truncate(input.session_id, input.keep_count, hold)) as { ok: true; session: { session_id: string; title: string }; last_user_attachments?: Attachment[]; dropped_attachment_count?: number } | { ok: false; confirm_required: true; discard_user_turns: number; discard_messages: number; confirm_token: string }
     })),
     clear: os.session.clear.handler(({ input, context: { ctx } }) => run(async () => {
       await guardVisibility(ctx, input.session_id)

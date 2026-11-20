@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "session": {
+    "session_id": "contract-session",
+    "title": "Edit attachments"
+  },
+  "last_user_attachments": [
+    {
+      "filename": "edit.png",
+      "path": "/talaria-contract/attachments/contract-session/edit.png",
+      "mime": "image/png",
+      "is_image": true,
+      "size": 273
+    }
+  ],
+  "dropped_attachment_count": 1
+}

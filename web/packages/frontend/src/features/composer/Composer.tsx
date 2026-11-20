@@ -11,6 +11,7 @@ import { useBootstrap } from '../../app/bootstrap'
 import { cn } from '../../ui/cn'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
+import { appUrl } from '../../lib/appRoot'
 import { AttachmentTray, pastedText, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { parseCommand, resolveCommand, type CommandSuggestion } from './commands'
@@ -563,7 +564,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   useLayoutEffect(() => {
     if (!sessionId) return
     const scope = getStreamContext()
-    return onReturnToComposer(sessionId, (returned, kind) => {
+    return onReturnToComposer(sessionId, (returned, kind, attachments) => {
       if (kind === 'quote') {
         const el = textarea.current
         if (!el || readOnly || clarify || draftIdentity !== localStateId || scope !== getStreamContext()) return
@@ -573,10 +574,25 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
         setText((prev) => `${prev}${prev ? '\n\n' : ''}${returned}`)
       } else {
         setText((prev) => (prev.trim() ? `${prev.replace(/\s+$/, '')}\n\n${returned}` : returned))
+        if (attachments?.length) {
+          const restored: PendingFile[] = attachments.flatMap(({ path, rollback_token: _receipt, ...attachment }) => {
+            if (!path) return []
+            const filename = attachment.filename ?? attachment.name ?? path
+            const mime = attachment.mime ?? 'application/octet-stream'
+            return [{
+              key: randomHex(),
+              status: 'done',
+              file: new File([], filename, { type: mime }),
+              upload: { ...attachment, path, filename, mime, size: attachment.size ?? 0 },
+              previewUrl: appUrl(api.rawFileUrl(sessionId, path)).href,
+            }]
+          })
+          setFiles((previous) => [...previous, ...restored])
+        }
         textarea.current?.focus()
       }
     })
-  }, [sessionId, readOnly, clarify, draftIdentity, localStateId, dropDictation])
+  }, [sessionId, readOnly, clarify, draftIdentity, localStateId, dropDictation, setFiles])
 
   // TAL-1915: a long paste's chip gives its text back at the cursor; the remove path rolls its upload back.
   const editPaste = (key: string) => {

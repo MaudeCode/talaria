@@ -1,3 +1,5 @@
+import type { Attachment } from '@maudecode/talaria-web-contracts'
+
 /**
  * TAL-425: text that comes back to a session's composer: a steer taken back for editing, one a Stop withdrew, or a sent
  * message taken back by Edit (TAL-516). Only the tab that sent a steer gets a stopped one back (its ids live in this
@@ -7,11 +9,11 @@
 export const MAX_QUOTE_LENGTH = 16_000
 
 type ReturnKind = 'return' | 'quote'
-type Listener = (text: string, kind?: ReturnKind) => void
+type Listener = (text: string, kind?: ReturnKind, attachments?: Attachment[]) => void
 
 const OWN_STEERS_KEY = 'talaria-own-steers'
 const listeners = new Map<string, Set<Listener>>()
-const waiting = new Map<string, string[]>()
+const waiting = new Map<string, Parameters<Listener>[]>()
 
 // This tab's steer ids live in memory; sessionStorage only carries them across a reload, so a storage failure (private
 // mode, quota) never loses one (TAL-743).
@@ -29,19 +31,19 @@ export function onReturnToComposer(sessionId: string, listener: Listener): () =>
   listeners.set(sessionId, set)
   const held = waiting.get(sessionId)
   waiting.delete(sessionId)
-  for (const text of held ?? []) listener(text)
+  for (const args of held ?? []) listener(...args)
   return () => { set.delete(listener) }
 }
 
 /** Selection quotes are bounded local actions for a mounted composer, never deferred across navigation. */
-export function returnToComposer(sessionId: string, text: string, kind: ReturnKind = 'return'): void {
+export function returnToComposer(sessionId: string, text: string, kind: ReturnKind = 'return', attachments?: Attachment[]): void {
   if (kind === 'quote') {
     if (!text.trim() || text.length > MAX_QUOTE_LENGTH) return
     text = `${text.replace(/\r\n?/g, '\n').split('\n').map((line) => `> ${line}`).join('\n')}\n\n`
   }
   const set = listeners.get(sessionId)
-  if (set?.size) for (const listener of set) listener(text, kind)
-  else if (kind !== 'quote') waiting.set(sessionId, [...(waiting.get(sessionId) ?? []), text])
+  if (set?.size) for (const listener of set) listener(text, kind, attachments)
+  else if (kind !== 'quote') waiting.set(sessionId, [...(waiting.get(sessionId) ?? []), [text, kind, attachments]])
 }
 
 /** This tab sent the steer, so a Stop that withdraws it gives the text back here. */
