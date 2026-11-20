@@ -13,6 +13,8 @@ import time
 
 from ..errors import InvalidParams, RpcError
 
+_DEFAULT_CATALOG_CACHE_LIMIT = 16 * 1024 * 1024
+
 _receipts: dict[str, dict] = {}
 _lock = threading.Lock()
 
@@ -267,7 +269,8 @@ def reviewed_importer(home):
         key, record = matches[0]
         root = pc._sanitize_plugin_name(key, Path(home) / 'plugins')
         # Admission must not fetch or populate the profile's live catalog cache on a preview.
-        cached = dashboard_plugins._read(Path(home), 'cache/plugin-catalog.json', 4 * 1024 * 1024, anchor=Path(home))
+        cache_limit = getattr(source, '_MAX_LIVE_BYTES', _DEFAULT_CATALOG_CACHE_LIMIT)
+        cached = dashboard_plugins._read(Path(home), 'cache/plugin-catalog.json', cache_limit, anchor=Path(home))
         if cached is None and ((Path(home) / 'cache/plugin-catalog.json').exists() or (Path(home) / 'cache/plugin-catalog.json').is_symlink()):
             return None
         cached = json.loads(cached) if cached is not None else {}

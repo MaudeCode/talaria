@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent Importers previews stay available when the plugin catalog cache grows within the Agent’s size limit.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
