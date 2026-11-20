@@ -134,15 +134,20 @@ struct ChatMarkdownParagraph: View {
     @Environment(\.transcriptMediaParagraphImages) private var media
 
     var body: some View {
-        if let media, case let nested = media.nestedImages(in: configuration.content.renderMarkdown()), !nested.isEmpty {
+        let markdown = configuration.content.renderMarkdown()
+        let nested = media?.nestedImages(in: markdown) ?? []
+        let remote = RemoteMarkdownImage.all(in: markdown, display: media?.display)
+        if nested.isEmpty, remote.isEmpty {
+            text.markdownMargin(.paragraph)
+        } else {
             // TAL-186: server images inside emphasis, which MarkdownUI does not load inline, follow the text.
+            // TAL-2582: so does a link to each remote image, which never loads.
             VStack(alignment: .leading, spacing: 8) {
                 text
-                ForEach(nested) { media.thumbnail($0) }
+                if let media { ForEach(nested) { media.thumbnail($0) } }
+                ForEach(remote) { RemoteMarkdownImageLink(image: $0) }
             }
             .markdownMargin(.paragraph)
-        } else {
-            text.markdownMargin(.paragraph)
         }
     }
 
