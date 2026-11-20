@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState, type RefObject } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Plus, SlidersHorizontal, Square } from 'lucide-react'
-import { GROUP_ROOM_NAME_LIMIT, type GroupCatalog, type GroupOperation, type GroupPaused, type GroupRoom } from '@maudecode/talaria-web-contracts'
+import { GROUP_ROOM_NAME_LIMIT, type GroupOperation, type GroupPaused, type GroupRoom, type GroupWriteResult } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
 import { openGroupStream } from '../../api/sse'
 import { useSettingsQuery } from '../../app/queries'
@@ -55,6 +55,9 @@ export function GroupsPage({ roomId }: { roomId: string | undefined }) {
   const [name, setName] = useState('')
   const [members, setMembers] = useState<string[]>([])
   const [provisional, setProvisional] = useState<{ id: string; name: string } | null>(null)
+  // Optimistic Disband: the room stays out of the list while the Agent answers, even when leaving it re-reads the list.
+  const [disbanding, setDisbanding] = useState<ReadonlySet<string>>(new Set())
+  const rooms = catalog.data?.rooms.filter((room) => !disbanding.has(room.id))
   const navigation = useRef(0)
   useEffect(() => () => { navigation.current += 1 }, [])
   const leaveFor = (id?: string) => {
@@ -79,18 +82,21 @@ export function GroupsPage({ roomId }: { roomId: string | undefined }) {
   }
   return <>
     {roomId ? <Discussion key={`${bootstrap.profile?.name}:${roomId}`} roomId={roomId} provisionalName={provisional?.id === roomId ? provisional.name : undefined} onBack={() => select()} onDisband={() => {
-      qc.setQueryData<GroupCatalog>(catalogKey, (current) => current ? { ...current, rooms: current.rooms.filter((room) => room.id !== roomId) } : current)
+      setDisbanding((current) => new Set(current).add(roomId))
       select()
       const revision = navigation.current
-      return () => { if (navigation.current === revision) { select(roomId); void catalog.refetch() } }
+      return () => {
+        setDisbanding((current) => { const next = new Set(current); next.delete(roomId); return next })
+        if (navigation.current === revision) { select(roomId); void catalog.refetch() }
+      }
     }} />
       : <HubPage title={m.group_discussions()} actions={<Button variant="primary" disabled={!catalog.data?.actions.includes('create')} onClick={() => setCreating(true)}><Plus size={12} aria-hidden="true" /> {m.group_create()}</Button>}>
         {catalog.data && !catalog.data.available && <p role="status" className="mb-4 text-xs text-muted">{m.group_unavailable()}</p>}
         {catalog.isPending && <LoadingState />}
         {catalog.isError && <ErrorState error={catalog.error} onRetry={() => { void catalog.refetch() }} />}
-        {catalog.data?.available && catalog.data.rooms.length === 0 && <EmptyState>{m.group_no_discussions()}</EmptyState>}
+        {catalog.data?.available && rooms?.length === 0 && <EmptyState>{m.group_no_discussions()}</EmptyState>}
         <section data-section="groups">
-          <RowList>{catalog.data?.rooms.map((room) => <Row key={room.id} data-group-room={room.id} className="relative hover:bg-hover"><div className="flex min-w-0 flex-col gap-1.5">
+          <RowList>{rooms?.map((room) => <Row key={room.id} data-group-room={room.id} className="relative hover:bg-hover"><div className="flex min-w-0 flex-col gap-1.5">
             <Link to="/groups" search={{ room: room.id }} onClick={() => leaveFor(room.id)} className="min-w-0 truncate text-sm font-semibold text-text no-underline after:absolute after:inset-0">{room.name}</Link>
             {room.members.length > 0 && <span className="min-w-0 truncate text-xs text-muted" data-group-members>{room.members.map((member, i) => <Fragment key={member.member_id}>{i > 0 && ', '}<span className={member.stalled ? 'text-warning' : undefined}>{member.display_name || member.profile}{(member.stalled || member.phase !== 'idle') && ` · ${memberPhase(member)}`}</span></Fragment>)}</span>}
           </div></Row>)}</RowList>
@@ -106,6 +112,8 @@ export function GroupsPage({ roomId }: { roomId: string | undefined }) {
     </Dialog>
   </>
 }
+
+const refusalWording = { stop_pending: m.group_refused_stop_pending, member_home_unknown: m.group_refused_member_home_unknown, disbanding_retry: m.group_refused_disbanding_retry } satisfies Record<NonNullable<GroupWriteResult['refusal']>, () => string>
 
 function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: string; provisionalName: string | undefined; onBack: () => void; onDisband: () => () => void }) {
   const focus = useRef<HTMLDivElement>(null)
@@ -154,7 +162,7 @@ function Discussion({ roomId, provisionalName, onBack, onDisband }: { roomId: st
     await refresh()
     // Unknown may have landed, so it is never a definite refusal: optimistic owners read the server before restoring.
     if (result.outcome === 'unknown') throw new ApiError({ kind: 'network', path: '/api/groups/action', message: m.group_unknown(), cause: result.outcome })
-    if (result.outcome !== 'confirmed') throw new Error(m.group_write_refused(), { cause: result.outcome })
+    if (result.outcome !== 'confirmed') throw new Error(result.refusal ? refusalWording[result.refusal]() : m.group_write_refused(), { cause: result.outcome })
     return result
   }
   const send = async (text: string, files: PendingFile[]) => {

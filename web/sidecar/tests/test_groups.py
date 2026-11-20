@@ -71,6 +71,8 @@ def _group_rpc(monkeypatch, method, value):
         websocket = SimpleNamespace(protocol=SimpleNamespace(max_size=0))
         async def rpc(self, called_method, **params):
             calls.append((called_method, params))
+            if isinstance(value, Exception) and called_method == method:
+                raise value
             return {"driver": True, "methods": [method]} if called_method == "groups.capabilities" else value
     @asynccontextmanager
     async def connect(*_args, **_kwargs):
@@ -90,3 +92,14 @@ def test_send_preserves_reply_thread_or_opens_its_own(monkeypatch, tmp_path, thr
     assert result["state"] == "available"
     assert calls[-1] == ("groups.send", {"room_id": "room", "event_id": "new-event", "payload": {
         "text": "Follow-up", "thread_id": thread_id or "new-event"}, "_timeout": 25})
+
+
+@pytest.mark.parametrize("native,refusal", [("room_stop_pending", "stop_pending"),
+                                            ("member_home_unknown", "member_home_unknown"),
+                                            ("room_disbanding_retry", "disbanding_retry")])
+def test_a_typed_disband_refusal_returns_refused_with_its_reason(monkeypatch, tmp_path, native, refusal):
+    # The stub's GatewayRPCError is RuntimeError; str() is the bounded reason code, as the native client gives it.
+    module, _ = _group_rpc(monkeypatch, "groups.disband", RuntimeError(native))
+    operation = {"action": "disband", "room_id": "room", "cancel_id": "cancel"}
+    result = asyncio.run(module._run(tmp_path, "owner", operation, SimpleNamespace(state="ready", endpoint="ws://owner")))
+    assert result == {"state": "refused", "reason": refusal, "value": None}
