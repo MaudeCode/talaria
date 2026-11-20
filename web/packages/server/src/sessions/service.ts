@@ -79,6 +79,7 @@ export async function ensureAgentRuntimeCurrent(sidecar: SidecarLike | null): Pr
 
 /** The health probe is also the browser's server-reachability probe (30 s), so the readiness check answers well inside it. */
 const CHAT_READINESS_CHECK_TIMEOUT_MS = 5_000
+const SESSION_OPEN_TIMEOUT_MS = 5_000
 /** TAL-1760: how often a client rereads a running delegated child's transcript. */
 const RUNNING_CHILD_REFRESH_SECONDS = 5
 /** The state.db row of a delegated child: a source the Agent gives one, and a link to the session that started it. */
@@ -293,8 +294,9 @@ export class SessionService {
   private readonly compactionWaiters = new Set<string>()
   /** TAL-1284: the one idle compaction this server runs at a time. */
   private idleCompactionJob: CompressionJob | null = null
-  /** TAL-1284: each listed session's index row generation the idle sweep last tried. */
+  private readonly pendingSessionOpens = new Map<string, Set<Promise<void>>>()
   private readonly contextDetailReads = new Map<string, Promise<ContextDetail>>()
+  /** TAL-1284: each listed session's index row generation the idle sweep last tried. */
   private readonly idleCompactionTried = new Map<string, string>()
   private worktreeRetainRetry: ReturnType<typeof setTimeout> | null = null
   private worktreesUnconfirmed = 0
@@ -2089,6 +2091,7 @@ export class SessionService {
     const toolsets = this.validateToolsetsShape(body.enabled_toolsets)
     await opts.validateSources?.()
     const s = (await this.store.newSession({ ...(opts.sessionId ? { sessionId: opts.sessionId } : {}), workspace, model, modelProvider: provider, profile, projectId: typeof body.project_id === 'string' && body.project_id ? body.project_id : null, worktree: opts.worktree ?? null, enabledToolsets: toolsets }))
+    this.openLocalSession(s.session_id, 'create', s, opts.serverOwner)
     if (opts.worktree) this.publish('session_new', s.profile, s.session_id)
     return s
   }
@@ -2953,6 +2956,45 @@ export class SessionService {
         if (readOnly) throw new HttpFailure(403, readOnly)
       }
     }
+  }
+
+  /** Register before returning the new session or acknowledging its detail stream. */
+  openLocalSession(sid: string, reason: 'create' | 'resume', created?: Session, serverOwner = false): void {
+    const sidecar = this.deps.sidecar?.()
+    if (!sidecar) return
+    let pending = this.pendingSessionOpens.get(sid)
+    if (!pending) this.pendingSessionOpens.set(sid, pending = new Set())
+    const opens = pending
+    const delivery = (async () => {
+      let session = created
+      if (!session) {
+        try { session = await this.store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false }) }
+        catch (error) { if (error instanceof SessionNotFound) return; throw error }
+      }
+      if (!this.personMaySee(session.owner_person_id) || (!serverOwner && !this.visibleToActiveProfile(session.profile))) return
+      if (!created && await this.isReadOnly(session)) return
+      const profile = session.profile ?? this.deps.activeProfile()
+      if (this.deps.profileDeleting?.(profile)) return
+      const release = this.deps.profileActivity?.(profile)
+      try {
+        await sidecar.call('chat.session_open', {
+          session_id: sid, profile_home: this.deps.profileHome(profile), reason,
+        }, { timeoutMs: SESSION_OPEN_TIMEOUT_MS })
+      } finally { release?.() }
+    })().catch(() => { this.deps.log(`[webui] session open (${reason}) failed`) }).finally(() => {
+      opens.delete(delivery)
+      if (!opens.size) this.pendingSessionOpens.delete(sid)
+    })
+    pending.add(delivery)
+  }
+
+  async waitForSessionOpen(sid: string): Promise<void> {
+    const pending = this.pendingSessionOpens.get(sid)
+    if (!pending?.size) return
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<void>((resolve) => { timeout = setTimeout(resolve, SESSION_OPEN_TIMEOUT_MS) })
+    try { await Promise.race([Promise.all(pending), deadline]) }
+    finally { clearTimeout(timeout) }
   }
 
   /** Profile-scoped, best-effort lifecycle delivery; archive only notifies plugins. */

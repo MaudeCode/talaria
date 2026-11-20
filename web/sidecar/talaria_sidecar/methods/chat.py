@@ -49,6 +49,8 @@ _AGENT_RELEASE_TIMEOUT = 4.0
 # Profile deletion waits this long for the profile's memory flushes, under the server's 120 s call timeout.
 _PROFILE_RELEASE_TIMEOUT = 60.0
 _SESSION_FINALIZE_TIMEOUT = 10.0
+_SESSION_OPEN_TIMEOUT = 5.0
+_SESSION_OPEN_SLOTS = threading.BoundedSemaphore(4)
 _TOOL_RESULT_SNIPPET_MAX = 4000
 _STREAM_BATCH_SECONDS = 0.016
 # Predecessor ``_TOOL_ARG_CONTENT_KEYS`` (#4928): card content / diff-reconstruction inputs keep the long cap.
@@ -1059,6 +1061,39 @@ def agent_scope(home: Path):
         yield
 
 
+def _wait_for_lifecycle_callback(
+    home: Path, callback: Callable[[], None], name: str, timeout: float,
+    *, slots: threading.BoundedSemaphore | None = None,
+) -> bool:
+    if slots is not None and not slots.acquire(blocking=False):
+        log.warning("Skipping %s callback because all workers are busy", name)
+        return True
+
+    def run() -> None:
+        try:
+            callback()
+        finally:
+            with _RELEASES_LOCK:
+                _RELEASES.pop(worker, None)
+            if slots is not None:
+                slots.release()
+
+    worker = threading.Thread(target=run, name=name, daemon=True)
+    worker.failed = False  # type: ignore[attr-defined] - hook failures do not prevent profile deletion
+    with _RELEASES_LOCK:
+        _RELEASES[worker] = home
+        try:
+            worker.start()
+        except RuntimeError:
+            _RELEASES.pop(worker, None)
+            if slots is not None:
+                slots.release()
+            log.warning("Could not start %s callback", name)
+            return True
+    worker.join(timeout)
+    return not worker.is_alive()
+
+
 class _ArchiveCallback:
     """Queued work shares the release threads' join/liveness contract without owning an OS thread."""
     name = "session-archive"
@@ -1072,6 +1107,8 @@ class _ArchiveCallback:
         try:
             self.callback()
         finally:
+            with _RELEASES_LOCK:
+                _RELEASES.pop(self, None)
             self.done.set()
 
     def join(self, timeout=None) -> None:
@@ -2817,6 +2854,31 @@ def register(registry) -> None:
             return {"redirected": False, "withdrawn": False, "reason": "not_running"}
         return steer_now(run.agent, pending, index)
 
+    @registry.method("chat.session_open", requires_agent=False)
+    def session_open_(ctx: CallContext, params: dict) -> dict:
+        session_id = str(params.get("session_id") or "").strip()
+        reason = params.get("reason")
+        if not session_id or reason not in ("create", "resume"):
+            raise InvalidParams("session_id and reason (create/resume) are required")
+        home = profile_home_param(params)
+
+        def opened() -> None:
+            try:
+                with agent_scope(home):
+                    from hermes_cli import lifecycle
+
+                    has_hook = getattr(lifecycle, "has_hook", None)
+                    if has_hook is not None and has_hook("on_session_open"):
+                        lifecycle.invoke_hook("on_session_open", session_id=session_id, platform="webui", reason=reason)
+            except ImportError:
+                pass  # An Agent is not required for this RPC.
+            except Exception:
+                log.warning("Session open callback failed (%s)", reason)
+
+        if not _wait_for_lifecycle_callback(home, opened, "session-open", _SESSION_OPEN_TIMEOUT, slots=_SESSION_OPEN_SLOTS):
+            log.warning("Session open callback exceeded deadline (%s)", reason)
+        return {"ok": True}
+
     @registry.method("chat.finalize_session", requires_agent=False)
     def finalize_(ctx: CallContext, params: dict) -> dict:
         session_id = str(params.get("session_id") or "").strip()
@@ -2843,21 +2905,12 @@ def register(registry) -> None:
                     messages.extend(lifecycle.session_end_messages(results))
             except Exception:  # noqa: BLE001 - hooks must never block the boundary
                 log.warning("Session lifecycle callback failed (%s)", reason)
-            finally:
-                with _RELEASES_LOCK:
-                    _RELEASES.pop(worker, None)
 
         if reason == "archive":
             worker = _ArchiveCallback(finalize)
             _schedule_archive(worker, home)
             return {"messages": []}
-        worker = threading.Thread(target=finalize, name="session-finalize", daemon=True)
-        worker.failed = False  # type: ignore[attr-defined] - hook failures do not prevent profile deletion
-        with _RELEASES_LOCK:
-            _RELEASES[worker] = home
-        worker.start()
-        worker.join(_SESSION_FINALIZE_TIMEOUT)
-        if worker.is_alive():
+        if not _wait_for_lifecycle_callback(home, finalize, "session-finalize", _SESSION_FINALIZE_TIMEOUT):
             log.warning("Session lifecycle callback exceeded deadline (%s)", reason)
             return {"messages": []}
         return {"messages": messages}

@@ -398,6 +398,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       }
       // Python: an invisible prev_session_id is ignored (the service drops it), never an error (#5420).
       const profile = input.profile || null
+      if (profile && !serverOwner && !ctx.deps.sessions.visibleToActiveProfile(profile)) throw new HttpError(403, 'Profile access forbidden')
       // The middleware warms only the cookie profile's config; new-session defaults read the target's synchronously.
       // `profileHome` refuses a profile whose home escapes the profiles root (400) before any warm-up failure is swallowed.
       if (profile) { const home = ctx.deps.profileHome(profile); await ctx.deps.agentConfig.read(home).catch(() => undefined) }

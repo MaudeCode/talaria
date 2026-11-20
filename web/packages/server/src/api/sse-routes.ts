@@ -1,3 +1,4 @@
+import { checkSameOriginBrowserRequest } from '../http/origin.js'
 import { showReasoning, type Config } from '../config/agent-config.js'
 import { reasoningProjection } from '../sessions/reasoning-display.js'
 /**
@@ -463,6 +464,11 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
   const observationEnded = () => { nativeEnded = true; sub.wake?.() }
   try {
     sse.start()
+    const openProvenance = checkSameOriginBrowserRequest({
+      origin: ctx.header('origin'), referer: ctx.header('referer'), host: ctx.header('host'),
+      secFetchSite: ctx.header('sec-fetch-site'), forwardedHost: ctx.header('x-forwarded-host'), realHost: ctx.header('x-real-host'),
+    }, ctx.deps.config.env)
+    if (!openProvenance) ctx.deps.sessions.openLocalSession(sid, 'resume')
     sse.event('initial', { session_id: sid }, sub.initialCursor)
     // Attachment can wait on a native RPC; the HTTP owner must keep draining and heartbeating meanwhile.
     void ctx.deps.sessions.owner?.observe(sid, profile, controller.signal).then((acquired) => {

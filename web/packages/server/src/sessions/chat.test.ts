@@ -3020,6 +3020,73 @@ describe('chat turns through the sidecar', () => {
     ] })
   })
 
+  it('keeps a turn behind its pending session-open hook and proceeds when the hook fails', async () => {
+    const entered = deferred()
+    const release = deferred()
+    let hookTimeout: number | undefined
+    sidecar.respond('chat.session_open', async (_params, _emit, options) => {
+      hookTimeout = options.timeoutMs
+      entered.resolve()
+      await release.promise
+      throw new Error('synthetic plugin failure')
+    })
+    const atBarrier = deferred()
+    const dispatched = deferred()
+    const wait = s.deps.sessions.waitForSessionOpen.bind(s.deps.sessions)
+    const barrier = vi.spyOn(s.deps.sessions, 'waitForSessionOpen').mockImplementation((sid) => {
+      const pending = wait(sid)
+      atBarrier.resolve()
+      return pending
+    })
+    const previous = sidecar.responderFor('chat.start')
+    sidecar.respond('chat.start', () => {
+      dispatched.resolve()
+      return completed([{ role: 'assistant', content: 'done' }])
+    })
+    let turn: Promise<SseFrame[]> | undefined
+    try {
+      const sid = await newSession(s)
+      await entered.promise
+      expect(hookTimeout).toBe(5_000)
+      const admission = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hello' }))
+      expect(admission.stream_id).toBeTypeOf('string')
+      turn = s.sse(`/api/chat/stream?stream_id=${String(admission.stream_id)}`, (f) => f.event === 'stream_end')
+      expect(await Promise.race([
+        atBarrier.promise.then(() => 'waiting'),
+        dispatched.promise.then(() => 'dispatched'),
+      ])).toBe('waiting')
+      release.resolve()
+      await turn
+      expect(sidecar.calls.some(({ method, params }) => method === 'chat.start' && (params as Json).session_id === sid)).toBe(true)
+    } finally {
+      release.resolve()
+      await turn
+      barrier.mockRestore()
+      sidecar.respond('chat.start', previous)
+      sidecar.respond('chat.session_open', undefined)
+    }
+  })
+
+  it('opens local sessions on creation and once per detail stream', async () => {
+    const sid = await newSession(s)
+    const opens = () => sidecar.calls.filter(({ method, params }) =>
+      method === 'chat.session_open' && (params as Json).session_id === sid)
+    expect(opens().map(({ params }) => (params as Json).reason)).toEqual(['create'])
+
+    const stream = await subscribe(s, `/api/session/stream?session_id=${sid}`, (f) =>
+      f.event === 'session-updated')
+    try {
+      await vi.waitFor(() => { expect(opens()).toHaveLength(2) })
+      for (const query of ['', '&known_count=0']) {
+        expect((await s.get(`/api/session?session_id=${sid}${query}`)).status).toBe(200)
+      }
+      expect(opens().map(({ params }) => (params as Json).reason)).toEqual(['create', 'resume'])
+    } finally {
+      s.deps.channels.emit(sid, 'session-updated', {})
+      await stream.frames
+    }
+  })
+
   it('serves the session-list, per-session, and prompt streams with initial frames', async () => {
     const sid = await newSession(s)
     const events = await subscribe(s, '/api/sessions/events', (f) => f.event === 'sessions_changed' && (f.data as Json).reason === 'session_rename')

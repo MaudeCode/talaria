@@ -341,3 +341,87 @@ def test_archive_queue_refuses_admission_after_its_owner_closes(monkeypatch, tmp
     assert chat._ARCHIVE_QUEUE.empty()
     assert not any(home == tmp_path for home in chat._RELEASES.values())
     assert 'notification unavailable' in caplog.text
+
+
+@pytest.mark.parametrize('consumer', [True, False, None])
+def test_session_open_delivers_only_to_profile_consumer(monkeypatch, tmp_path, consumer):
+    from contextlib import contextmanager
+    import sys
+    from types import SimpleNamespace
+    from talaria_sidecar.methods import Registry, chat
+
+    calls = []
+
+    @contextmanager
+    def scope(home):
+        assert home == tmp_path
+        calls.append('scope enter')
+        try:
+            yield
+        finally:
+            calls.append('scope exit')
+
+    def has_hook(name):
+        assert calls == ['scope enter']
+        assert name == 'on_session_open'
+        return consumer
+
+    def invoke_hook(name, **kwargs):
+        calls.append((name, kwargs))
+
+    lifecycle = SimpleNamespace(invoke_hook=invoke_hook)
+    if consumer is not None:
+        lifecycle.has_hook = has_hook
+    monkeypatch.setitem(sys.modules, 'hermes_cli', SimpleNamespace(lifecycle=lifecycle))
+    monkeypatch.setattr(chat, 'agent_scope', scope)
+    registry = Registry(runtime=None)
+    chat.register(registry)
+    opened = registry.methods.get('chat.session_open')
+    if opened:
+        opened(None, {'session_id': 'opening-chat', 'profile_home': str(tmp_path), 'reason': 'resume'})
+    delivery = [('on_session_open', {'session_id': 'opening-chat', 'platform': 'webui', 'reason': 'resume'})] if consumer else []
+    assert calls == ['scope enter', *delivery, 'scope exit']
+
+
+def test_session_open_refuses_excess_callbacks_that_outlive_the_wait(monkeypatch, tmp_path):
+    from contextlib import nullcontext
+    import sys
+    import threading
+    from types import SimpleNamespace
+    from talaria_sidecar.methods import Registry, chat
+
+    entered = threading.Event()
+    release = threading.Event()
+    capacity = threading.BoundedSemaphore(1)
+
+    def invoke_hook(_name, **_kwargs):
+        entered.set()
+        assert release.wait(10)
+
+    lifecycle = SimpleNamespace(has_hook=lambda _name: True, invoke_hook=invoke_hook)
+    monkeypatch.setitem(sys.modules, 'hermes_cli', SimpleNamespace(lifecycle=lifecycle))
+    monkeypatch.setattr(chat, 'agent_scope', lambda _home: nullcontext())
+    monkeypatch.setattr(chat, '_SESSION_OPEN_TIMEOUT', 0)
+    monkeypatch.setattr(chat, '_SESSION_OPEN_SLOTS', capacity, raising=False)
+    registry = Registry(runtime=None)
+    chat.register(registry)
+    opened = registry.methods['chat.session_open']
+
+    def workers():
+        with chat._RELEASES_LOCK:
+            return [worker for worker, home in chat._RELEASES.items() if home == tmp_path]
+
+    params = {'session_id': 'opening-chat', 'profile_home': str(tmp_path), 'reason': 'resume'}
+    try:
+        assert opened(None, params) == {'ok': True}
+        assert entered.wait(10)
+        assert opened(None, params) == {'ok': True}
+        assert len(workers()) == 1
+    finally:
+        outstanding = workers()
+        release.set()
+        for worker in outstanding:
+            worker.join(10)
+    assert not workers()
+    assert capacity.acquire(blocking=False)
+    capacity.release()

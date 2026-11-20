@@ -1056,6 +1056,7 @@ export class TurnRunner {
       const persistentHome = deps.profileHome(s.profile)
       const persistentBefore = await persistentStateSnapshot(persistentHome)
       await put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
+      await deps.service().waitForSessionOpen(sessionId)
       // Setup awaits can outlive a gateway adoption, so the owner is rechecked right before dispatch.
       await deps.service().assertWritable(s)
       closePreparation?.()
