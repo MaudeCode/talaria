@@ -292,7 +292,7 @@ const rowsInView = (call: ToolCardData): boolean => call.showsCard === true && B
 const hasSection = (view: ToolResultView | null): boolean => Boolean(view?.file_excerpt ?? view?.matches ?? view?.links ?? view?.pages ?? view?.analysis ?? view?.rows)
 
 /** A result's typed section, else its rows when the server sent them (a JSON object), else its sections as text. */
-function ResultBody({ view, text, sessionId }: { view: ToolResultView | null; text: string; sessionId?: string | undefined }) {
+function ResultBody({ view, text, sessionId, wrap = false }: { view: ToolResultView | null; text: string; sessionId?: string | undefined; wrap?: boolean }) {
   // TAL-2328: code a call ran (an excerpt without a path) shows above its output.
   if (view?.file_excerpt && !view.file_excerpt.path) return <><FileExcerptResult excerpt={view.file_excerpt} sessionId={sessionId} />{text && <pre className={cn(RESULT_PRE, 'mt-2')}>{text}</pre>}</>
   if (view?.file_excerpt) return <FileExcerptResult excerpt={view.file_excerpt} sessionId={sessionId} />
@@ -301,16 +301,16 @@ function ResultBody({ view, text, sessionId }: { view: ToolResultView | null; te
   if (view?.pages) return <PagesResult pages={view.pages} />
   // TAL-2325: what an image or video analysis said, formatted.
   if (view?.analysis) return <Markdown text={view.analysis} className="tool-analysis hermes-prose max-h-72 overflow-auto text-[13px]" />
-  if (view?.rows) return <ToolRowsResult rows={view.rows} />
+  if (view?.rows) return <ToolRowsResult rows={view.rows} wrap={wrap} />
   return view?.fields?.length ? <FieldRows fields={view.fields} /> : <pre className={RESULT_PRE}>{text}</pre>
 }
 
 /** A result the server clipped or capped: its sections until the reader asks for the whole view, which the server sends redacted. */
-function ClippedResult({ sessionId, callId, view, clipped }: { sessionId: string; callId: string; view: ToolResultView | null; clipped: string }) {
+function ClippedResult({ sessionId, callId, view, clipped, wrap = false }: { sessionId: string; callId: string; view: ToolResultView | null; clipped: string; wrap?: boolean }) {
   const query = useQuery({ queryKey: ['tool-result', sessionId, callId], queryFn: ({ signal }) => fetchToolResult(sessionId, callId, signal), enabled: false, staleTime: Infinity })
   return (
     <>
-      {query.data ? <ResultBody view={query.data.result_view} text={resultText(query.data.result_view)} sessionId={sessionId} /> : <ResultBody view={view} text={clipped} sessionId={sessionId} />}
+      {query.data ? <ResultBody view={query.data.result_view} text={resultText(query.data.result_view)} sessionId={sessionId} wrap={wrap} /> : <ResultBody view={view} text={clipped} sessionId={sessionId} wrap={wrap} />}
       {!query.data && <Button variant="ghost" className="mt-1" disabled={query.isFetching} onClick={() => { void query.refetch() }}>{query.isFetching ? m.loading() : query.isError ? m.retry() : m.tool_show_full_output()}</Button>}
     </>
   )
@@ -487,7 +487,8 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
       {call.resultView?.decision_review && <DecisionReviewResult key={call.resultView.decision_review.review_id} reference={call.resultView.decision_review} />}
       {call.resultView?.proposal && <ProposalResult key={call.resultView.proposal.proposal_id} reference={call.resultView.proposal} />}
       {call.resultView?.block && <ShowBlockResult key={call.resultView.block.block_id} reference={call.resultView.block} />}
-      {rowsInView(call) && call.resultView?.rows && <div className="tool-card-rows px-2.5 pb-2"><ToolRowsResult rows={call.resultView.rows} wrap /></div>}
+      {/* A clipped exchange keeps its Show full output here, sharing the open row's fetch. */}
+      {rowsInView(call) && call.resultView?.rows && <div className="tool-card-rows px-2.5 pb-2">{call.resultTruncated && sessionId ? <ClippedResult sessionId={sessionId} callId={call.id} view={call.resultView} clipped={result} wrap /> : <ToolRowsResult rows={call.resultView.rows} wrap />}</div>}
       {call.background?.agents_detail?.length ? <DelegateAgents agents={call.background.agents_detail} sessionId={sessionId} /> : null}
       {sessionId && call.processId && <ProcessOutputTail sessionId={sessionId} processId={call.processId} />}
       {/* TAL-2325: the images, speech or video a media tool made, in view without opening the call (TAL-2341: only open, while the server says so). */}

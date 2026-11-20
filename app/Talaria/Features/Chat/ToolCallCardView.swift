@@ -111,8 +111,9 @@ struct ToolCallCardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// TAL-2027: a card call's rows, shown under its row and not repeated when it opens.
-    private var rowsInView: ToolRows? { toolCall.displayFlags.showsCard ? toolCall.resultView?.rows : nil }
+    /// TAL-2027: a card call's rows, shown under its row and not repeated when it opens; a clipped exchange's whole rows once
+    /// the open row's Show full output fetched them.
+    private var rowsInView: ToolRows? { toolCall.displayFlags.showsCard ? fullResult?.view.rows ?? toolCall.resultView?.rows : nil }
 
     private enum ToolsHost { case arguments, result, alone }
 

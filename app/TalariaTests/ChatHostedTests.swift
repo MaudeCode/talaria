@@ -2695,6 +2695,31 @@ final class ChatHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "tool-rows-expanded")
     }
 
+    /// TAL-2027: an answered question's rows show under its folded row; a clipped exchange shows its whole rows there once
+    /// the open row's Show full output fetched them.
+    func testAClippedAnsweredQuestionShowsItsWholeRowsInViewOnceFetched() async throws {
+        func view(questions: Int) throws -> ToolResultView {
+            let rows = (1...questions).map { #"{"label": "Question \#($0)?", "detail": "Answer \#($0)"}"# }.joined(separator: ", ")
+            return try JSONDecoder().decode(ToolResultView.self, from: Data(#"{"rows": {"rows": [\#(rows)]}}"#.utf8))
+        }
+        var question = ToolCall(id: "clipped-clarify", name: "clarify", preview: nil, args: nil, kind: .question, target: "",
+                                resultView: try view(questions: 2), isCompleted: true)
+        question.resultTruncated = true
+        question.displayFlags.showsCard = true
+        let whole = ToolResultResponse(result: "{}", resultView: try view(questions: 5), rawResult: "{}")
+        let window = try hostWindow(ScrollView { ToolCallCardView(toolCall: question).padding() }
+            .chatEnvironmentAction(\.chatFullToolResultLoader) { _ in { whole } }
+            .environment(\.chatTranscriptRowState, ChatTranscriptRowState()), size: CGSize(width: 390, height: 900))
+        defer { window.isHidden = true; window.rootViewController = nil }
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.contains("Question 2?") == true }
+        XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "Question 5?").isEmpty)
+        HostedAccessibility.activate(try await requireElement(in: window) { $0.accessibilityHint == "Double tap to expand details." })
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Show full output"))
+        let fetched = await awaitCondition { !HostedAccessibility.elements(in: window, labelContaining: "Question 5?").isEmpty }
+        XCTAssertTrue(fetched, "The fetched rows do not show in view")
+        XCTAssertEqual(HostedAccessibility.elements(in: window, labelContaining: "Question 5?").count, 1, "The open row repeats the rows")
+    }
+
     /// TAL-2327: an expanded Kanban call reads as its verb and task under the Kanban icon, draws the tasks it touched as rows
     /// (never its JSON), and a task row opens that card on its board through the app's router.
     func testExpandedKanbanCardDrawsItsTasksAndOpensTheCard() async throws {

@@ -49,6 +49,19 @@ describe('clipped tool output (TAL-331)', () => {
     expect(document.querySelector('[data-tool-id="small"]')?.textContent).not.toContain('Show full output')
   })
 
+  it('fetches the whole exchange of a clipped answered question shown without opening its row (TAL-2027)', async () => {
+    const rows = (n: number) => ({ rows: Array.from({ length: n }, (_, i) => ({ label: `Question ${String(i + 1)}?`, detail: `Answer ${String(i + 1)}` })) })
+    vi.mocked(api.fetchToolResult).mockResolvedValue({ tool_call_id: 'ask', result: '{}', result_view: { rows: rows(5) } })
+    const ask = { row_id: 'tool:ask', role: 'tool', order_index: 0, tool: { id: 'ask', name: 'clarify', kind: 'question', target: '', preview: null, result_view: { rows: rows(2) }, result_truncated: true, done: true, is_error: false, duration: null, cost_usd: null, shows_card: true } }
+    const message = { role: 'assistant', id: 'settled', content: '', _turn_id: 'turn', _anchor_activity_scene: { version: 'activity_scene_v1', terminal_state: 'completed', final_answer: 'Done.', expanded_by_default: true, activity_rows: [ask] } } as Message
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={qc}><WorklogDisclosureProvider scope="profile/sess-1"><TurnActivityView activity={persistedActivity(groupAssistantTurns(projectMessages([message]))[0]!)} mode="compact_worklog" sessionId="sess-1" /></WorklogDisclosureProvider></QueryClientProvider>)
+    expect(screen.queryByText('Question 5?')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Show full output' }))
+    expect(await screen.findByText('Question 5?')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Show full output' })).toBeNull()
+  })
+
   it('keeps the clipped text and offers a retry when the fetch fails', async () => {
     vi.mocked(api.fetchToolResult).mockRejectedValue(new Error('offline'))
     renderTurn()
