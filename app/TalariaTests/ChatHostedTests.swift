@@ -2224,6 +2224,40 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Step one done."), "Cancel changed the transcript")
     }
 
+    /// TAL-2058: the ask the safety filter refused, from the shared contract's `content_refused_session`, shows once,
+    /// greyed under the server's notice, with no message actions and no reply; the prompt before it keeps its own.
+    func testARefusedAskShowsOnceUnderTheServersNoticeWithoutActions() async throws {
+        let fixture = try FixtureApp(for: self)
+        let sessions = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("web-session")) as? [String: Any])
+        let rows = try XCTUnwrap((sessions["content_refused_session"] as? [String: Any])?["messages"] as? [[String: Any]])
+        let refused = try XCTUnwrap(rows.first { $0["_marker_kind"] as? String == "content_refused" })
+        let (askText, noticeText) = (try XCTUnwrap(refused["content"] as? String), try XCTUnwrap(refused["_refused_notice"] as? String))
+        let promptText = try XCTUnwrap(rows.first { $0["role"] as? String == "user" && $0["_marker_kind"] == nil }?["content"] as? String)
+        let replyText = try XCTUnwrap(rows.first { $0["role"] as? String == "assistant" }?["content"] as? String)
+        var detail = UITestFixtureURLProtocol.session(id: UITestFixtureURLProtocol.sessionID, title: "Refused")
+        detail["messages"] = rows
+        let body = try JSONSerialization.data(withJSONObject: ["session": detail])
+        UITestFixtureURLProtocol.sessionDetail.withLock { $0 = body }
+        let window = try hostWindow(fixture.chat(try await fixture.session()), size: HostedSize.phone)
+        defer { window.isHidden = true }
+
+        let ask = try await requireElement(in: window, label: askText)
+        let hit = try messageMenuHit(at: ask, in: window)
+        XCTAssertNil(hit, "The refused ask offers message actions: \(hit?.content.actions.map(\.title) ?? [])")
+        let notice = await awaitElement(in: window, label: noticeText)
+        XCTAssertNotNil(notice, "The server's notice is not shown")
+        if let notice { XCTAssertLessThan(notice.accessibilityFrame.maxY, ask.accessibilityFrame.minY + 1, "The notice is not above the ask") }
+        XCTAssertEqual(HostedAccessibility.elements(in: window).filter { $0.accessibilityLabel == askText }.count, 1, "The ask is not shown once")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Retry"), "The refused ask offers Retry")
+        let reply = try await requireElement(in: window, label: replyText)
+        XCTAssertLessThan(reply.accessibilityFrame.maxY, ask.accessibilityFrame.minY, "A reply sits under the refused ask")
+        let prompt = try await requireElement(in: window, label: promptText)
+        let promptActions = try XCTUnwrap(try messageMenuHit(at: prompt, in: window), "The earlier prompt lost its menu").content.actions
+        XCTAssertTrue(promptActions.contains { $0.title == "Edit Message" }, "The earlier prompt lost Edit")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "content-refused-phone")
+    }
+
     /// What the transcript's long press resolves to at `element`'s centre (TAL-485): the press handler's own registry
     /// and policy, read from the hosted transcript. The touch arbitration itself is the phone check's.
     private func messageMenuTarget(at element: NSObject, in window: UIWindow) throws -> ChatMessageMenuTarget? {

@@ -582,7 +582,7 @@ private extension ChatMessage {
             displayBody: cachedMessage.displayBodyData.flatMap { try? JSONDecoder().decode(TranscriptDisplayBody.self, from: $0) },
             backgroundUpdate: cachedMessage.backgroundUpdateData.flatMap { try? JSONDecoder().decode(BackgroundUpdate.self, from: $0) },
             backgroundSilent: cachedMessage.backgroundSilent == true,
-            markerKind: ChatMarkerMessageKind(wireValue: cachedMessage.markerKind),
+            markerKind: ChatMarkerMessageKind(wireValue: cachedMessage.markerKind, refusedNotice: cachedMessage.refusedNotice),
             markerBody: cachedMessage.markerBody,
             display: cachedMessage.display.flatMap(ChatMessage.Display.init(rawValue:)),
             talariaActivity: cachedMessage.talariaActivityData.flatMap { try? JSONDecoder().decode(TalariaActivity.self, from: $0) }

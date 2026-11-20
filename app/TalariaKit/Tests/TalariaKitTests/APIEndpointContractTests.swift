@@ -852,6 +852,23 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(rows.last?.assistantSegments.count, 1)
     }
 
+    /// TAL-2058: each `content_refused` row decodes as that marker with the server's notice, and opens no turn.
+    func testSharedWebSessionDecodesTheRefusedAskWithItsNotice() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-2057 has no such example.
+        guard let example = object["content_refused_session"] as? [String: Any] else { return }
+        let raw = try XCTUnwrap(example["messages"] as? [[String: Any]])
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try decoder.decode([ChatMessage].self, from: JSONSerialization.data(withJSONObject: raw))
+        let notices = raw.map { $0["_marker_kind"] as? String == "content_refused" ? $0["_refused_notice"] as? String : nil }
+        XCTAssertTrue(notices.contains { $0 != nil }, "The example has no refused ask")
+        XCTAssertEqual(messages.map { $0.markerKind?.title }, notices)
+        for (message, notice) in zip(messages, notices) where notice != nil {
+            XCTAssertFalse(TranscriptTurnClassifier.isUserTurnBoundary(message), "A refused ask opens a turn")
+        }
+    }
+
     func testSharedWebSessionShowsTheCompactionAsItsOwnRowInPlace() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-1566 has no such example.
