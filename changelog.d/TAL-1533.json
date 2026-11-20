@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Quota rows and widgets now take from the server when usage data is out of date and when a pace needs a refresh.",
+      "highlight": false,
+      "components": ["app", "web"],
+      "announce": false
+    }
+  ]
+}

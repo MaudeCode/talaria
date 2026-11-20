@@ -126232,6 +126232,10 @@
                                     ],
                                     "type": "string",
                                     "description": "TAL-1870, `/api/provider/quotas` only: the level this window's meter shows; the source status outranks the window's pace urgency."
+                                  },
+                                  "pace_needs_refresh": {
+                                    "type": "boolean",
+                                    "description": "TAL-1533, `/api/provider/quotas` only: `pace` describes a window that reset by this read; hide it until a refresh brings the new window's pace."
                                   }
                                 },
                                 "required": [
@@ -126838,6 +126842,10 @@
                                   ],
                                   "type": "string",
                                   "description": "TAL-1870, `/api/provider/quotas` only: the level this window's meter shows; the source status outranks the window's pace urgency."
+                                },
+                                "pace_needs_refresh": {
+                                  "type": "boolean",
+                                  "description": "TAL-1533, `/api/provider/quotas` only: `pace` describes a window that reset by this read; hide it until a refresh brings the new window's pace."
                                 }
                               },
                               "required": [
@@ -126972,6 +126980,21 @@
                             ],
                             "additionalProperties": {},
                             "description": "TAL-411: `remaining` of the first window, `pace` of the pace window; alerts and the source colour follow it."
+                          },
+                          "is_stale": {
+                            "type": "boolean",
+                            "description": "TAL-1533: the server shows last-confirmed data for this source (status `stale`)."
+                          },
+                          "stale_since": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "TAL-1533: ISO-8601 UTC; 15 minutes after `fetched_at`, else after `computed_at`. A copy shown after it is stale."
                           }
                         },
                         "required": [

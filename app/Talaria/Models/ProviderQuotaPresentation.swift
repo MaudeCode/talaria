@@ -40,13 +40,14 @@ enum ProviderQuotaPresentation {
             else { return nil }
             return min(max(usage / limit * 100, 0), 100)
         }()
-        let displayedPercent = window.flatMap { percent($0, mode: settings.percentageMode) }
+        // The server ships both window percents normalized (TAL-1782); the mode only picks one.
+        let displayedPercent = window.flatMap { settings.percentageMode == .used ? $0.usedPercent : $0.remainingPercent }
             ?? usedFromQuota.map { settings.percentageMode == .used ? $0 : 100 - $0 }
-        let remaining = window.flatMap { percent($0, mode: .remaining) }
-            ?? usedFromQuota.map { 100 - $0 }
-        // A cached pace past its window's reset describes the previous window.
-        let pace = window?.pace.flatMap { $0.isValid(at: referenceDate) ? $0 : nil }
-        let isStale = source.status == "stale" || referenceDate.timeIntervalSince(source.freshnessDate) > ProviderQuotaWidgetSnapshot.staleAfter
+        let remaining = window?.remainingPercent ?? usedFromQuota.map { 100 - $0 }
+        // The server flags a pace its read saw expire; a cached copy's pace also expires at its own `validUntil`.
+        let paceExpired = window?.paceNeedsRefresh == true || window?.pace?.isValid(at: referenceDate) == false
+        let pace = paceExpired ? nil : window?.pace
+        let isStale = source.isStale(at: referenceDate)
         // The server classifies (TAL-411); an old cache shows stale, and a server without `urgency` stays neutral.
         let serverUrgency = source.status == "available" ? (window?.urgency ?? source.urgency) : (source.urgency ?? window?.urgency)
         let urgency: ProviderQuotaUrgency = isStale ? .stale : serverUrgency?.level(for: settings.colorBasis) ?? .healthy
@@ -111,17 +112,6 @@ enum ProviderQuotaPresentation {
             return "5h"
         }
         return String(window.label.prefix(8))
-    }
-
-    static func usedPercent(_ window: ProviderQuotaWindow) -> Double? {
-        if let used = window.usedPercent, used.isFinite { return min(max(used, 0), 100) }
-        if let remaining = window.remainingPercent, remaining.isFinite { return min(max(100 - remaining, 0), 100) }
-        return nil
-    }
-
-    static func percent(_ window: ProviderQuotaWindow, mode: ProviderQuotaPercentageMode) -> Double? {
-        guard let used = usedPercent(window) else { return nil }
-        return mode == .used ? used : 100 - used
     }
 
     static func statusLabel(_ status: String) -> String {

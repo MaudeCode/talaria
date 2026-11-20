@@ -1370,6 +1370,7 @@ export const QuotaWindowSchema = z.looseObject({
   projection_eligible: z.boolean().optional().describe('TAL-411, `/api/provider/quotas` only: the burn-rate breakpoints apply (enough elapsed time and use, and the projection empties the window before reset).'),
   urgency: QuotaUrgencySchema.optional(),
   display_level: QuotaLevelSchema.optional().describe('TAL-1870, `/api/provider/quotas` only: the level this window\'s meter shows; the source status outranks the window\'s pace urgency.'),
+  pace_needs_refresh: z.boolean().optional().describe('TAL-1533, `/api/provider/quotas` only: `pace` describes a window that reset by this read; hide it until a refresh brings the new window\'s pace.'),
 })
 const QuotaWindowIndex = z.number().int().nullable().optional()
 export const QuotaSourceSchema = z.looseObject({
@@ -1385,6 +1386,8 @@ export const QuotaSourceSchema = z.looseObject({
   display_level: QuotaLevelSchema.optional().describe('TAL-1870: the effective level of a source with no window to show; the source status outranks its urgency.'),
   session_window_index: QuotaWindowIndex.describe('The session (else 5h) window.'), weekly_window_index: QuotaWindowIndex.describe('The weekly window.'),
   urgency: QuotaUrgencySchema.optional().describe('TAL-411: `remaining` of the first window, `pace` of the pace window; alerts and the source colour follow it.'),
+  is_stale: z.boolean().optional().describe('TAL-1533: the server shows last-confirmed data for this source (status `stale`).'),
+  stale_since: NullableString.optional().describe('TAL-1533: ISO-8601 UTC; 15 minutes after `fetched_at`, else after `computed_at`. A copy shown after it is stale.'),
 })
 /** An account-usage provider's normalised snapshot on `/api/provider/quota` (the same windows and indexes as a quotas source). */
 export const QuotaAccountLimitsSchema = z.looseObject({

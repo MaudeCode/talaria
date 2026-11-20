@@ -1,6 +1,12 @@
 /** TAL-409: the App's pace and forecast cases (`ProviderQuotaWidgetTests`), ported to the server normaliser. */
 import { describe, expect, it } from 'vitest'
-import { classifyQuotaSource, isoUtc, normalizeQuotaWindows, quotaForecast } from './catalog.js'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { AgentConfig } from '../config/agent-config.js'
+import { SidecarError } from '../sidecar/client.js'
+import { FakeSidecar } from '../sidecar/fake.js'
+import { classifyQuotaSource, isoUtc, normalizeQuotaWindows, ProviderCatalog, quotaForecast } from './catalog.js'
 import { QUOTA_THRESHOLD_DEFAULTS } from '../settings.js'
 
 const NOW = 1_900_000_000
@@ -28,7 +34,8 @@ describe('quota window pace', () => {
   it('pace is null without a future reset, a usage value, or a known window length', () => {
     expect(one({ label: 'Weekly', used_percent: 10, reset_at: resetIn(-60) }).pace).toBeNull()
     expect(one({ label: 'Weekly', used_percent: 10 }).pace).toBeNull()
-    expect(one({ label: 'Weekly', reset_at: resetIn(3600) }).pace).toBeNull()
+    // A window without a usage figure has no limit to show: neither percent, and no pace.
+    expect(one({ label: 'Weekly', reset_at: resetIn(3600) })).toMatchObject({ used_percent: null, remaining_percent: null, pace: null })
     expect(one({ label: 'Monthly', used_percent: 10, reset_at: resetIn(3600) })).toMatchObject({ window_seconds: null, pace: null, forecast: null })
     // A provider-reported length wins over the label, and only 5h and weekly windows have a pace.
     expect(one({ label: 'Weekly', window_seconds: 3600, used_percent: 10, reset_at: resetIn(1800) })).toMatchObject({ label: '1-hour', window_seconds: 3600, pace: null })
@@ -153,5 +160,39 @@ describe('quota urgency (TAL-411)', () => {
     const source = classify([{ label: 'Session', used_percent: 95, reset_at: resetIn(3600) }, weekly(10)])
     expect(source.urgency).toEqual({ remaining: 'critical', pace: 'healthy' })
     expect(source.windows.map((w) => w.urgency.remaining)).toEqual(['critical', 'healthy'])
+  })
+})
+
+describe('quota freshness and pace expiry (TAL-1533)', () => {
+  it('stale_since is 15 minutes after the provider read, is_stale is the server\'s stale copy, and its pace past reset needs a refresh', async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-quota-fresh-')))
+    let clock = NOW
+    let poolDown = false
+    const sidecar = new FakeSidecar()
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: { model: { provider: 'openai-codex' } } }))
+    sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: p.provider === 'openai-codex' } }))
+    sidecar.respond('plugins.providers', () => ({ providers: [] }))
+    sidecar.respond('providers.local_models', () => ({ provider_id: 'llamacpp', models: [], current_endpoint: null }))
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    sidecar.respond('usage.pool_providers', () => { if (poolDown) throw new SidecarError('synthetic pool outage', { condition: 'pool_unavailable' }); return { providers: ['openai-codex'] } })
+    sidecar.respond('usage.pool', () => ({ entries: [{ credential_id: 'synthetic', label: 'Synthetic', status: 'available', unavailable_reason: null, retry_after: null, matches_api_key: false }] }))
+    sidecar.respond('usage.account', () => ({ snapshot: { provider: 'openai-codex', available: true, fetched_at: isoUtc(resetIn(0)), windows: [{ label: '5h', used_percent: 25, reset_at: resetIn(3600) }], details: [] } }))
+    const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => clock, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+    const read = async () => ((await catalog.quotas(home, 'synthetic', { refresh: true })).sources as Record<string, unknown>[])[0] as { status: string; is_stale: boolean; stale_since: string; windows: { pace: unknown; pace_needs_refresh: boolean }[] }
+    try {
+      writeFileSync(join(home, 'config.yaml'), '# synthetic configuration\n')
+      expect(await read()).toMatchObject({ status: 'available', is_stale: false, stale_since: isoUtc(resetIn(900)), windows: [{ pace_needs_refresh: false }] })
+      // The deadline follows the provider's read time, not this read's.
+      clock = NOW + 901
+      expect(await read()).toMatchObject({ status: 'available', is_stale: false, stale_since: isoUtc(resetIn(900)) })
+      // An outage keeps the last read as a stale copy; once its window resets, its pace describes the previous window.
+      poolDown = true
+      clock = NOW + 3599
+      expect(await read()).toMatchObject({ status: 'stale', is_stale: true, windows: [{ pace: { valid_until: isoUtc(resetIn(3600)) }, pace_needs_refresh: false }] })
+      clock = NOW + 3600
+      expect(await read()).toMatchObject({ status: 'stale', windows: [{ pace_needs_refresh: true }] })
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 })
