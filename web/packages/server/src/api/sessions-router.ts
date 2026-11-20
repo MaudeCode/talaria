@@ -487,7 +487,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
     })),
     undo: os.session.undo.handler(({ input, context: { ctx } }) => run(async () => {
       await guardVisibility(ctx, input.session_id)
-      return (await ctx.deps.sessions.undo(input.session_id)) as { ok: true; removed_count: number; removed_preview: string } | { error: string }
+      return (await ctx.deps.sessions.undo(input.session_id)) as { ok: true; removed_count: number; removed_preview: string; changed_files: string[] } | { error: string }
     })),
     modelCommand: os.session.modelCommand.handler(({ input, context: { ctx } }) => run(async () => {
       if (input.session_id !== undefined) await guardVisibility(ctx, input.session_id)
