@@ -252,6 +252,22 @@ describe('compaction markers (TAL-305)', () => {
   })
 })
 
+describe('refused asks (TAL-2057)', () => {
+  it('shows the ask the safety filter refused greyed under the server\'s notice, with no action and no reply', () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
+    const example = (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { content_refused_session: { messages: Message[] } }).content_refused_session.messages
+    const view = render(<Transcript rows={projectMessages(example)} live={null} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{ onEdit: vi.fn(), onRegenerate: vi.fn(), onBranch: vi.fn() }} tts={false} truncated={false} loadedFrom={0} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />)
+    const keyOf = (id: string) => projectMessages(example).find((r) => r.message.message_id === id)?.key ?? `missing:${id}`
+    const order = [...view.container.querySelectorAll('[data-message-key]')].map((el) => `${el.getAttribute('data-role') ?? ''}:${el.getAttribute('data-message-key') ?? ''}`)
+    expect(order).toEqual([`user:${keyOf('refused-prompt')}`, `assistant:${keyOf('refused-reply')}`, `marker:${keyOf('refused-ask')}`])
+    const refused = view.container.querySelector<HTMLElement>(`[data-message-key="${keyOf('refused-ask')}"]`)!
+    const ask = example.find((m) => m.message_id === 'refused-ask')!
+    expect(within(refused).getByRole('note')).toHaveAccessibleName(ask._refused_notice!)
+    expect(refused.querySelector('.msg-body')).toHaveTextContent(ask.content as string)
+    expect(within(refused).queryByRole('button')).toBeNull()
+  })
+})
+
 describe('Agent notices (TAL-815)', () => {
   it('renders a session closing notice without reply controls or a warning icon (TAL-937)', () => {
     const row = { index: 0, key: 'closing', message: { role: 'local_notice', content: 'bye', _notice_kind: 'session_finalize' as const } }

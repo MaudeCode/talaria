@@ -41,7 +41,7 @@ import { SessionGoals } from './goals.js'
 import { turnTerminalState } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { agentBuildParams, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, finalAnswerOf, hasNativeImages, isConversationalAssistant, withFinalAssistantAnswer, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withoutBinaryText, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withNestedJson, withoutNativeImages, withoutToolImages, type IdentityCache } from './merge.js'
+import { agentSteerText, asRefusedAsk, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, finalAnswerOf, hasNativeImages, isConversationalAssistant, withFinalAssistantAnswer, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withoutBinaryText, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withNestedJson, withoutNativeImages, withoutToolImages, type IdentityCache } from './merge.js'
 import { isAutomaticSource, mayBecomeSilentReply, turnOrigin, recordBackgroundReview, recordBackgroundUpdate, type BackgroundUpdate } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -1372,7 +1372,9 @@ export class TurnRunner {
         await this.steerRewrites.get(streamId)
         const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, str(result.pending_steer), 'followup')
         followUp = leftovers
-        await this.persistError(s, settlement, streamId, classification.label, payload, activeTurnToken, resultMessages, result.provider)
+        // TAL-2057: the provider's safety filter refused the turn; the sidecar took it out of the Agent's context.
+        const refusedNotice = result.failure_reason === 'content_policy_blocked' ? result.content_refused_notice ?? '' : null
+        await this.persistError(s, settlement, streamId, classification.label, payload, activeTurnToken, resultMessages, result.provider, refusedNotice)
         // TAL-512: a btw error carries no session: its journaled frame must not keep a copy of the parent conversation.
         if (!opts.ephemeral) payload.session = (await this.publicTerminalSession(s, streamId))
         payload.session_id = s.session_id
@@ -1726,7 +1728,12 @@ export class TurnRunner {
   /** Python `_materialize_pending_user_turn_before_error` + error message append + save. */
   /** `runtimeProvider`: the provider the Agent resolved for the turn, when it reported one. */
   /** `read`: the settlement's one state.db read, taken before the caller's gates decided (TAL-1162). */
-  private async persistError(s: Session, read: StateDbSettlementRead, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null, agentRows: Message[] = [], runtimeProvider = ''): Promise<void> {
+  /**
+   * `refusedNotice` (TAL-2057): the provider's safety filter refused the turn, which would refuse every later one while it
+   * stays in the model context. Like the Agent's own retention, the prompt stays on screen as a `content_refused` ask
+   * with this notice and leaves the context, and no error reply or partial follows it.
+   */
+  private async persistError(s: Session, read: StateDbSettlementRead, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null, agentRows: Message[] = [], runtimeProvider = '', refusedNotice: string | null = null): Promise<void> {
     const startedAt = s.pending_started_at
     // TAL-576: an automatic wakeup with no usable credentials pauses the next ones instead of failing each.
     if (s.pending_user_source === 'process_wakeup' && payload.type === 'credential_pool_empty') {
@@ -1738,6 +1745,33 @@ export class TurnRunner {
     this.materializePendingUserTurn(s, activeTurnToken, streamId)
     const duration = typeof startedAt === 'number' && startedAt > 0 ? Math.max(0, this.deps.now() - startedAt) : null
     this.clearPendingTurn(s)
+    if (refusedNotice !== null) {
+      const ask = s.messages.findLast((m) => m.role === 'user' && m._turn_id === streamId && !isDict(m._steer))
+      if (ask) asRefusedAsk(ask, refusedNotice)
+    } else this.appendErrorReply(s, streamId, label, payload, duration)
+    this.keepLiveState(s, streamId)
+    this.persistConsumedSteers(s, streamId, startedAt, this.deps.now())
+    if (refusedNotice !== null) {
+      s.context_messages = s.context_messages.filter((m) => m._turn_id !== streamId)
+      // The Agent's state.db rows past the turn's start are its own refused work: covered, never shown or sent.
+      this.settleStateDb(s, streamId, null, { read })
+    } else {
+      // TAL-921: the next prompt remembers the turn's work; an exhausted compression's work would only overflow again. One
+      // read builds the context and settles, so a row committed in between is never covered without reaching either.
+      const context = payload.type === 'compression_exhausted' ? null : this.unsettledContext(streamId, agentRows, read)
+      if (context) s.context_messages = context
+      this.settleStateDb(s, streamId, agentRows, { read })
+    }
+    try { (await this.deps.store.save(s)) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
+    // The kept live counters are the session's usage now, so the insights row follows them (the runtime logs failures).
+    void this.deps.syncUsage?.(s, str(s.model) || null)
+    this.deps.pending.clearApprovals(s.session_id)
+    this.deps.pending.clearClarifies(s.session_id)
+    this.deps.events.publish('session_error', { profile: s.profile, sessionId: s.session_id })
+  }
+
+  /** The turn's partial output and Web's error reply naming the failure, which `payload` (the live frame) also carries. */
+  private appendErrorReply(s: Session, streamId: string, label: string, payload: Record<string, unknown>, duration: number | null): void {
     this.appendPartialSnapshot(s, streamId)
     const hint = str(payload.hint)
     const errorMessage: Message = { role: 'assistant', content: `**${label}:** ${str(payload.message) || label}${hint ? `\n\n*${hint}*` : ''}`, timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: streamId }
@@ -1755,19 +1789,6 @@ export class TurnRunner {
     if (payload.type === 'cancelled') errorMessage.provider_details_label = 'Cancellation details'
     else if (payload.type === 'interrupted') errorMessage.provider_details_label = 'Interruption details'
     s.messages.push(errorMessage)
-    this.keepLiveState(s, streamId)
-    this.persistConsumedSteers(s, streamId, startedAt, this.deps.now())
-    // TAL-921: the next prompt remembers the turn's work; an exhausted compression's work would only overflow again. One
-    // read builds the context and settles, so a row committed in between is never covered without reaching either.
-    const context = payload.type === 'compression_exhausted' ? null : this.unsettledContext(streamId, agentRows, read)
-    if (context) s.context_messages = context
-    this.settleStateDb(s, streamId, agentRows, { read })
-    try { (await this.deps.store.save(s)) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
-    // The kept live counters are the session's usage now, so the insights row follows them (the runtime logs failures).
-    void this.deps.syncUsage?.(s, str(s.model) || null)
-    this.deps.pending.clearApprovals(s.session_id)
-    this.deps.pending.clearClarifies(s.session_id)
-    this.deps.events.publish('session_error', { profile: s.profile, sessionId: s.session_id })
   }
 
   /** The model history a turn starts from: the session's context merged with `stateRows`, without the turn's own rows. */

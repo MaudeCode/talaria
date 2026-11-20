@@ -2401,6 +2401,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         # the turn's messages; a failed turn is an error whatever it carries.
         failed = bool(result.get("failed"))
         partial = bool(result.get("partial"))
+        refused_notice = None if cancelled else _retain_refused_turn(agent, session_id, result)
         if not error and failed and result.get("final_response"):
             error = str(result["final_response"])
         status = "cancelled" if cancelled else ("error" if failed or (error and not result.get("messages")) else "completed")
@@ -2435,6 +2436,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             "token_sent": token_sent[0],
             "pending_steer": pending_steer,
             "live_tool_calls": live_tool_calls,
+            **({"failure_reason": "content_policy_blocked", "content_refused_notice": refused_notice} if refused_notice is not None else {}),
         }
     finally:
         with emit_lock:
@@ -2456,6 +2458,25 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             _release_if_dropped_locked(run.agent, home)
             # Its transcript grew during the turn, and the agents it protected from eviction are idle now.
             _evict_idle_agents_locked()
+
+
+def _retain_refused_turn(agent, session_id: str, result: dict) -> str | None:
+    """TAL-2057: the provider's safety filter judges the whole thread, so a refused turn left in the model context refuses
+    every later message. As the Agent's own owners do (CLI, TUI, gateway, ACP), take the refused turn out of the session's
+    model context in state.db while keeping the user's ask on screen with the Agent's notice, which this returns. Runs
+    after ``run_conversation`` released the turn lease, under the call's profile scope. None for any other result, and on
+    an Agent without the retention (before v0.23.1), which keeps today's behaviour."""
+    if result.get("failure_reason") != "content_policy_blocked":
+        return None
+    try:
+        from agent.turn_failure_copy import CONTENT_REFUSED_NOTICE
+        from hermes_state_rewind import retain_refused_turn_for_display
+    except ImportError:
+        return None
+    # Best-effort, like every owner's call: it logs and returns False when nothing was retained.
+    retain_refused_turn_for_display(getattr(agent, "_session_db", None), getattr(agent, "session_id", None) or session_id,
+                                    notice=CONTENT_REFUSED_NOTICE, boundary_row_id=result.get("refused_turn_boundary_row_id"))
+    return CONTENT_REFUSED_NOTICE
 
 
 def _row_bytes(row: object) -> str:

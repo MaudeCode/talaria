@@ -148,6 +148,8 @@ textarea#msg::placeholder{color:var(--muted)}
 .msg-row[data-role="user"] .msg-body code{color:var(--user-bubble-text);background:var(--user-msg-code-bg)}
 .msg-row[data-role="user"] .msg-body a{color:var(--user-bubble-text);text-decoration:underline}
 .msg-row + .msg-row[data-role="user"]{margin-top:6px;padding-top:8px}
+/* TAL-2057: an ask the safety filter refused reads greyed, under its notice. */
+.msg-row[data-marker-kind="content_refused"] .msg-body{color:var(--muted);padding-left:22px;padding-top:4px}
 /* A steer inside the assistant turn: the user's bubble under a "Steering hint" label with its delivery state. */
 .steer-message{padding:8px 0}
 /* Outranks the assistant turn's own .msg-body background, which would otherwise hide the bubble. */

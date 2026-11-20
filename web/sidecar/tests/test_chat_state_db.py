@@ -19,6 +19,10 @@ from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, requ
 pytestmark = requires_agent
 
 
+# TAL-2057: like a provider safety filter, the stub judges the whole thread: any request that still holds this ask is refused.
+_REFUSED_ASK = "The refused ask"
+
+
 class _Stub(BaseHTTPRequestHandler):
     def log_message(self, *args):  # noqa: D102 - quiet
         pass
@@ -29,17 +33,18 @@ class _Stub(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
-        reply = "pong"
+        refused = _REFUSED_ASK in json.dumps(body.get("messages"))
+        reply, finish_reason = ("", "content_filter") if refused else ("pong", "stop")
         if body.get("stream"):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
-            for delta, finish in (({"role": "assistant", "content": reply}, None), ({}, "stop")):
+            for delta, finish in (({"role": "assistant", "content": reply}, None), ({}, finish_reason)):
                 chunk = {"id": "c1", "object": "chat.completion.chunk", "created": 0, "model": "stub", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
                 self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
             self.wfile.write(b"data: [DONE]\n\n")
             return
-        payload = {"id": "c1", "object": "chat.completion", "created": 0, "model": "stub", "choices": [{"index": 0, "message": {"role": "assistant", "content": reply}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}
+        payload = {"id": "c1", "object": "chat.completion", "created": 0, "model": "stub", "choices": [{"index": 0, "message": {"role": "assistant", "content": reply}, "finish_reason": finish_reason}], "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}
         data = json.dumps(payload).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -153,5 +158,38 @@ def test_an_agent_rebuilt_after_restart_runs_on_the_compression_tip(home) -> Non
         # Only the turn's own rows land, on the tip; the closed Web id is untouched.
         assert _rows(home, "web-2-tip") == [("user", "[summary] ping/pong"), ("user", "after restart"), ("assistant", "pong")]
         assert _rows(home, "web-2") == [("user", "ping"), ("assistant", "pong")]
+    finally:
+        proc.close()
+
+
+def _model_rows(home, session_id: str) -> list[dict]:
+    """The session's model context as the Agent stores it (``active`` rows): what a reload, ``/resume`` or Web's merge sends."""
+    with closing(sqlite3.connect(home / "state.db")) as db:
+        rows = db.execute("SELECT role, content FROM messages WHERE session_id = ? AND active = 1 ORDER BY id", (session_id,)).fetchall()
+    return [{"role": role, "content": content} for role, content in rows]
+
+
+def test_a_refused_turn_leaves_the_model_context_and_stays_on_screen(home) -> None:
+    # Agent v0.23.1 added the owner retention; an older Agent keeps the refused turn as it always has.
+    retains = "def retain_refused_turn_for_display" in (AGENT_DIR / "hermes_state_rewind.py").read_text()
+    proc = SidecarProcess(home)
+    try:
+        _turn(proc, home, "web-refused", "ping")
+        params = {"profile_home": str(home), "session_id": "web-refused", "stream_id": "st-refused", "user_message": _REFUSED_ASK,
+                  "conversation_history": _model_rows(home, "web-refused"), "model": "stub-model", "model_provider": "custom",
+                  "workspace": str(home.parent), "enabled_toolsets": []}
+        refused = proc.result("chat.start", params, timeout=120)
+        assert refused["status"] == "error", (refused, proc.stderr_lines[-20:])
+        if not retains:
+            assert "content_refused_notice" not in refused and "failure_reason" not in refused
+            assert {"role": "user", "content": _REFUSED_ASK} in _model_rows(home, "web-refused")
+            return
+        assert _model_rows(home, "web-refused") == [{"role": "user", "content": "ping"}, {"role": "assistant", "content": "pong"}]
+        assert refused.get("failure_reason") == "content_policy_blocked" and refused.get("content_refused_notice")
+        with closing(sqlite3.connect(home / "state.db")) as db:
+            kept = db.execute("SELECT active, compacted, display_kind, display_metadata FROM messages WHERE session_id = ? AND content = ?", ("web-refused", _REFUSED_ASK)).fetchall()
+        assert [(active, compacted, kind, json.loads(meta)["content_refused"]["notice"]) for active, compacted, kind, meta in kept] == [(0, 1, "content_refused", refused["content_refused_notice"])]
+        # The chat is not locked: the next message, sent on the model context, is answered.
+        _turn(proc, home, "web-refused", "again", _model_rows(home, "web-refused"))
     finally:
         proc.close()

@@ -202,6 +202,23 @@ const hasPrefix = (text: string, prefix: string): boolean => text.slice(0, prefi
 export type MarkerKind = 'context_compaction' | 'preserved_task_list'
 
 /**
+ * TAL-2057: the notice on a user's ask the provider's safety filter refused, which the Agent (v0.23.1+, its owners and its
+ * legacy repair) and Web's own settlement keep for display only (`display_kind: 'content_refused'`, `active = 0` in
+ * state.db): `display_metadata.content_refused.notice`, or '' when absent. Null for any other row.
+ */
+export function refusedNotice(msg: unknown): string | null {
+  if (!isDict(msg) || msg.role !== 'user' || msg.display_kind !== 'content_refused') return null
+  const refused = isDict(msg.display_metadata) ? msg.display_metadata.content_refused : undefined
+  return isDict(refused) && typeof refused.notice === 'string' ? refused.notice : ''
+}
+
+/** `row` marked as an ask the safety filter refused, with `notice`, as the Agent's retention marks its own copy. */
+export function asRefusedAsk(row: Message, notice: string): void {
+  row.display_kind = 'content_refused'
+  row.display_metadata = { ...(isDict(row.display_metadata) ? row.display_metadata : {}), content_refused: { notice } }
+}
+
+/**
  * TAL-305: the one rule for the marker rows the Agent writes around context compaction. A flagged row, or a user or
  * assistant row starting `[context compaction`, is a compaction summary; a user row starting with the preserved-task-list
  * line is that list. Both ignore case and leading whitespace; prose that merely mentions compaction is no marker.
@@ -306,6 +323,8 @@ export function withMarkerKinds<T>(messages: T[], session: object): T[] {
     if (!isDict(m)) return m
     const delivery = deliveryNotice(m)
     if (delivery && (messaging || m.mirror_source === delivery.kind)) return { ...m, _delivery: delivery }
+    const notice = refusedNotice(m)
+    if (notice !== null) return { ...m, _marker_kind: 'content_refused', _refused_notice: notice }
     const kind = markerKind(m)
     if (!kind) {
       const agentKind = agentRowKind(m)
@@ -1844,7 +1863,8 @@ export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent
     const replay = preserveApiContent ? apiContent(msg) : undefined
     if (isReasoningOnlyAssistant(msg) && !replay) continue
     // The Agent already received a steer mid-turn; its persisted row is display-only.
-    if (msg._error || isDict(msg._steer) || msg._notice_kind === 'session_finalize' || isCompactionRow(msg)) continue
+    // TAL-2057: an ask the safety filter refused would refuse every later turn.
+    if (msg._error || isDict(msg._steer) || msg._notice_kind === 'session_finalize' || isCompactionRow(msg) || refusedNotice(msg) !== null) continue
     if (msg._partial && !messageText(msg.content).trim()) continue
     const recovered = Boolean(msg._recovered) && msg.role === 'user'
     if (msg.role === 'tool') { const tid = str(msg.tool_call_id) || str(msg.tool_use_id); if (!tid || !validToolCallIds.has(tid)) continue }

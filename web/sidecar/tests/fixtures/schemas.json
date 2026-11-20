@@ -14132,6 +14132,12 @@
           },
           "additionalProperties": {}
         }
+      },
+      "failure_reason": {
+        "type": "string"
+      },
+      "content_refused_notice": {
+        "type": "string"
       }
     },
     "required": [

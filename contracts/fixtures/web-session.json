@@ -6066,6 +6066,92 @@
       }
     ]
   },
+  "content_refused_session": {
+    "session_id": "contract-refused",
+    "stored": [
+      {
+        "role": "user",
+        "content": "Plan the trip.",
+        "message_id": "refused-prompt",
+        "timestamp": 1770000700
+      },
+      {
+        "role": "assistant",
+        "content": "Here is the plan.",
+        "message_id": "refused-reply",
+        "timestamp": 1770000701
+      },
+      {
+        "role": "user",
+        "content": "The refused ask.",
+        "message_id": "refused-ask",
+        "timestamp": 1770000702,
+        "display_kind": "content_refused",
+        "display_metadata": {
+          "content_refused": {
+            "notice": "This message was refused by the model's safety filter — try a different query."
+          }
+        }
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Plan the trip.",
+        "message_id": "refused-prompt",
+        "timestamp": 1770000700,
+        "_turn_id": "legacy:0",
+        "_display": "row"
+      },
+      {
+        "role": "assistant",
+        "content": "Here is the plan.",
+        "message_id": "refused-reply",
+        "timestamp": 1770000701,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Here is the plan.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "turn_summary": [],
+          "activity_groups": [],
+          "final_phase_activity": {
+            "group_id": "phase:0",
+            "parts": [],
+            "failed": 0,
+            "running": false
+          },
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "905cc5afb6a03e587013d3f59789da550c77e3b07b5c0e033270cc05a24dbb40"
+        },
+        "_turn_id": "legacy:0",
+        "_display": "row"
+      },
+      {
+        "role": "user",
+        "content": "The refused ask.",
+        "message_id": "refused-ask",
+        "timestamp": 1770000702,
+        "_turn_id": "legacy:2",
+        "_marker_kind": "content_refused",
+        "_refused_notice": "This message was refused by the model's safety filter — try a different query.",
+        "_display": "row",
+        "display_kind": "content_refused",
+        "display_metadata": {
+          "content_refused": {
+            "notice": "This message was refused by the model's safety filter — try a different query."
+          }
+        }
+      }
+    ]
+  },
   "goal_session": {
     "session_id": "contract-goal",
     "title": "Standing goal",

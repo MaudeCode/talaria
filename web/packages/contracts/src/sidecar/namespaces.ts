@@ -635,6 +635,12 @@ export const ChatStartResultSchema = z.object({
   requested_model: z.string().optional().describe('TAL-978: the primary-route model the Agent requested for the turn, in the Agent\'s own normalized form; `model` and `provider` name the route that served it, a fallback when `model` differs. Absent when the Agent reports none.'),
   compressed: z.boolean(), agent_session_id: z.string(),
   token_sent: z.boolean(), pending_steer: z.string(), live_tool_calls: z.array(Loose),
+  /**
+   * TAL-2057: set together when the provider's safety filter refused the turn: the Agent's `failure_reason`
+   * (`content_policy_blocked`) and its `content_refused_notice` copy. The sidecar has then taken the turn out of the model
+   * context in state.db and kept the ask for display. Absent otherwise, and on an Agent without that retention (before v0.23.1).
+   */
+  failure_reason: z.string().optional(), content_refused_notice: z.string().optional(),
 })
 const Text = z.object({ text: z.string() }).catchall(Json)
 /**

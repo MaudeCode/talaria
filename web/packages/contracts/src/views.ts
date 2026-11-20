@@ -562,9 +562,13 @@ export const MessageSchema = z.looseObject({
    * TAL-305: a marker around context compaction, not a message anyone typed. Clients render a collapsed line with a
    * localized title per kind and the body on expansion: `_marker_body` when sent, else `content`. TAL-1566: each compaction
    * Web runs is one row in its place, with role `marker` and a stable `message_id`, display-only and excluded from model
-   * history; it is never a turn's prompt or reply.
+   * history; it is never a turn's prompt or reply. TAL-2057: `content_refused` is a user's ask the provider's safety filter
+   * refused, kept on screen and out of model history. Clients show `content` greyed with `_refused_notice`, and offer no
+   * Edit, Retry or reply for it.
    */
-  _marker_kind: z.enum(['context_compaction', 'preserved_task_list']).optional(),
+  _marker_kind: z.enum(['context_compaction', 'preserved_task_list', 'content_refused']).optional(),
+  /** TAL-2057: why a `content_refused` ask got no answer, the Agent's own copy; always set on that kind, possibly empty. */
+  _refused_notice: z.string().optional(),
   /** TAL-305: a preserved task list's card body, without its marker line. */
   _marker_body: z.string().optional(),
   /**

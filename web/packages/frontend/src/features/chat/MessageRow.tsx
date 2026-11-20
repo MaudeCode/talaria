@@ -2,7 +2,7 @@ import type { MessageReactionView, TurnSummaryPart, TurnUsage } from '@maudecode
 import { Popover } from '@base-ui/react/popover'
 import { ContextMenu, Menu, MenuItem } from '../../ui/Menu'
 import { memo, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
-import { AlertTriangle, ArrowUp, CalendarClock, Copy, GitBranch, Info, ListChecks, Pencil, Reply, RotateCcw, SmilePlus, Shrink, Volume2, Webhook, type LucideIcon } from 'lucide-react'
+import { AlertTriangle, ArrowUp, CalendarClock, Copy, GitBranch, Info, ListChecks, Pencil, Reply, RotateCcw, ShieldX, SmilePlus, Shrink, Volume2, Webhook, type LucideIcon } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { BackgroundLine, Message } from '../../contracts'
 import { StatusIcon } from '../background/BackgroundWork'
@@ -191,7 +191,7 @@ export const BackgroundUpdateRow = memo(function BackgroundUpdateRow({ row }: { 
 })
 
 /**
- * TAL-305: a marker the server stamped `_marker_kind` (a compaction summary or a preserved task list), one quiet line in its
+ * TAL-305: a marker the server stamped `_marker_kind` (a compaction summary, a preserved task list or a refused ask), one quiet line in its
  * place like a notice, titled by its kind, never anyone's message. TAL-1566: no card. The body opens from the title:
  * `_marker_body` when sent, else `content`.
  */
@@ -208,6 +208,15 @@ export const MarkerRow = memo(function MarkerRow({ row }: { row: VisibleMessage 
     </div>
   }
   if (!message._marker_kind) return null
+  // TAL-2057: an ask the safety filter refused, under the server's notice, greyed and without any action.
+  if (message._marker_kind === 'content_refused') return (
+    <div className="msg-row" data-role="marker" data-marker-kind="content_refused" data-msg-idx={row.index} data-message-key={row.key}>
+      {message._refused_notice ? <TranscriptActivityLine title={message._refused_notice} icon={<ShieldX size={14} aria-hidden="true" className="shrink-0" />} /> : null}
+      <CollapsedBody excerpt={message._display_truncated ? message._display_excerpt : undefined}>
+        {(excerpt) => <div className="msg-body whitespace-pre-wrap">{excerpt ?? messageText(message.content)}</div>}
+      </CollapsedBody>
+    </div>
+  )
   const tasks = message._marker_kind === 'preserved_task_list'
   const Icon = tasks ? ListChecks : Shrink
   const text = message._marker_body ?? messageText(message.content)
