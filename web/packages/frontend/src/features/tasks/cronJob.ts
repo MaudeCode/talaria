@@ -1,8 +1,6 @@
-/** Pure display helpers over the cron job view. The server derives each job's status (`derived_state`, TAL-296) and schedule text (`schedule_display` / `schedule_input`, TAL-298). */
+/** Pure display helpers over the cron job view. The server derives each job's shown status (`shown_state`, TAL-2479), schedule text (`schedule_display` / `schedule_input`, TAL-298) and diagnostics. */
 import type { CronJob, CronRunUsageSchema, CronStatusSchema } from '../../contracts'
 import type { z } from 'zod'
-
-export type CronState = 'running' | 'stopping' | NonNullable<CronJob['derived_state']> | 'unknown'
 
 export function jobId(job: CronJob): string {
   return job.id ?? job.job_id ?? ''
@@ -17,32 +15,6 @@ export function nextRunAt(job: CronJob): string | number | null {
 }
 export function lastRunAt(job: CronJob): string | number | null {
   return job.last_run_at ?? (typeof job.last_run === 'number' || typeof job.last_run === 'string' ? job.last_run : null)
-}
-
-/** A live run overlays the server's state; a server that omits it shows a neutral status. */
-export function cronState(job: CronJob, running = false): CronState {
-  if (job.stopping) return 'stopping'
-  if (running || job.running) return 'running'
-  return job.derived_state ?? 'unknown'
-}
-
-/** Schedule/status/error fields only: never the prompt, origin, or delivery targets. */
-export function cronDiagnostics(job: CronJob): string {
-  return JSON.stringify({
-    id: job.id ?? null,
-    name: job.name || null,
-    schedule: job.schedule ?? null,
-    schedule_display: job.schedule_display || null,
-    enabled: job.enabled ?? null,
-    state: job.state ?? null,
-    next_run_at: job.next_run_at || null,
-    last_run_at: job.last_run_at || null,
-    last_status: job.last_status || null,
-    last_error: job.last_error || null,
-    last_delivery_error: job.last_delivery_error || null,
-    repeat: job.repeat ?? null,
-    deliver: job.deliver || null,
-  }, null, 2)
 }
 
 export function contextFromList(job: CronJob): string[] {

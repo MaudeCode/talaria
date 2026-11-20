@@ -96,7 +96,24 @@ export function jobForApi(job: Dict, running = false): Dict {
   payload.catch_up = typeof job.catch_up === 'boolean' ? job.catch_up : null
   payload.grace_minutes = typeof job.grace_minutes === 'number' ? job.grace_minutes : null
   Object.assign(payload, scheduleText(job))
+  // TAL-2479: the status a row shows, with a live run or a stop on its way over the stored state.
+  payload.shown_state = payload.stopping ? 'stopping' : payload.running ? 'running' : state
+  payload.diagnostics = diagnostics(payload)
   return payload
+}
+
+/** TAL-2479: Copy diagnostics' text: schedule, status and error fields only, never the prompt, origin or delivery chat ids. */
+function diagnostics(job: Dict): string {
+  return JSON.stringify({
+    id: job.id ?? null, name: job.name || null, schedule: job.schedule ?? null, schedule_display: job.schedule_display || null, enabled: job.enabled ?? null, state: job.state ?? null,
+    next_run_at: job.next_run_at || null, last_run_at: job.last_run_at || null, last_status: job.last_status || null, last_error: job.last_error || null,
+    last_delivery_error: job.last_delivery_error || null, repeat: job.repeat ?? null, deliver: job.deliver || null,
+  }, null, 2)
+}
+
+/** docs/scheduled-jobs.md: a script-only job has no agent for a monitor to wake, so the save is refused rather than one of the two dropped. */
+function refuseScriptOnlyMonitor(job: Dict): void {
+  if (job.no_agent === true && (str(job.monitor_script).trim() || str(job.monitor_url).trim())) throw new HttpFailure(400, 'A monitor cannot be combined with a script-only job.', { code: 'cron_monitor_no_agent' })
 }
 
 /** TAL-1850: the distinct platforms of the Agent's `platform:chat_id[:thread_id]` targets; the chat and thread ids stay on the server. */
@@ -578,6 +595,7 @@ export class CronService {
     if (profile !== null) job.profile = profile
     if (body.toast_notifications === false) job.toast_notifications = false
     job.owner_profile = active
+    refuseScriptOnlyMonitor(job)
     await this.requireOwnerFields(body, job)
     await this.requireRoomDeliveryAuthority(job)
     await this.validateContext(executionHome, job)
@@ -618,6 +636,7 @@ export class CronService {
       try { currentContextFrom = (await this.sidecar().call('cron.get', { profile_home: home, job_id: storedId })).job?.context_from ?? null } catch { currentContextFrom = null }
     }
     Object.assign(updates, jobFieldUpdates(body, currentContextFrom))
+    refuseScriptOnlyMonitor({ ...store.job, ...updates })
     await this.requireOwnerFields(body, updates, store.job)
     await this.requireRoomDeliveryAuthority(store.job, { ...store.job, ...updates })
     await this.validateContext(home, updates)

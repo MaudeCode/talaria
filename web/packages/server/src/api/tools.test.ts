@@ -2175,6 +2175,31 @@ describe('tools helpers', () => {
     expect((insights.models as Json[])[0]).toMatchObject({ model: 'm', sessions: 1, session_share: 100, cost_share: 100 })
   })
 
+  it('insights name each chart\'s peak point (the first of equal ones) and scale maximum (TAL-2479)', async () => {
+    const previousTz = process.env.TZ
+    process.env.TZ = 'UTC'
+    try {
+      // 2025-10-09 is a Thursday; both of its sessions run in the 08:00 hour.
+      const now = Date.parse('2025-10-09T08:50:00Z') / 1000
+      const at = (iso: string) => Date.parse(iso) / 1000
+      const insights = await buildInsights([
+        { session_id: 'a', created_at: at('2025-10-08T20:00:00Z'), input_tokens: 90, output_tokens: 10, model: 'm' },
+        { session_id: 'b', created_at: at('2025-10-09T08:10:00Z'), input_tokens: 10, output_tokens: 10, estimated_cost: '$0.25', model: 'm' },
+        { session_id: 'c', created_at: at('2025-10-09T08:20:00Z'), input_tokens: 5, output_tokens: 5, model: 'm' },
+      ], '3', now)
+      expect(insights.chart_peaks).toEqual({
+        daily: { tokens: { peak_index: 1, max: 100 }, cost: { peak_index: 2, max: 0.25 }, sessions: { peak_index: 2, max: 2 } },
+        by_day: { peak_index: 3, max: 2 },
+        by_hour: { peak_index: 8, max: 2 },
+      })
+      const empty = await buildInsights([], '3', now)
+      expect(empty.chart_peaks).toMatchObject({ daily: { cost: { peak_index: 0, max: 0 } }, by_day: { peak_index: 0, max: 0 } })
+    } finally {
+      if (previousTz === undefined) delete process.env.TZ
+      else process.env.TZ = previousTz
+    }
+  })
+
   it('insights place a session on the day of the activity that admitted it to the window (TAL-1115)', async () => {
     const now = 1_760_000_000
     // An index entry whose stored update predates its creation is admitted by its creation time and counted on that day.

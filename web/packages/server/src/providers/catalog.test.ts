@@ -1108,7 +1108,8 @@ describe('Settings › Providers figures (TAL-2135)', () => {
       const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => Date.UTC(2027, 0, 15, 12) / 1000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
       expect((await catalog.quotas(home, 'synthetic')).summary).toMatchObject({ spend_month: 4.4, spend_currency: 'USD', default_provider_name: 'OpenRouter' })
       // The newest day with a known spend is the one a provider row captions.
-      expect((await catalog.costHistory(home, 'openrouter', 30)).latest_day).toEqual({ date: '2027-01-15', spend: 0.9 })
+      // TAL-2479: the largest known spend is the peak a spend chart names.
+      expect(await catalog.costHistory(home, 'openrouter', 30)).toMatchObject({ latest_day: { date: '2027-01-15', spend: 0.9 }, peak_day: { date: '2026-12-31', spend: 3 } })
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

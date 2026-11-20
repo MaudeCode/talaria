@@ -27,7 +27,7 @@ import { resetTime } from '../../i18n/units'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { cn } from '../../ui/cn'
-import { contextFromList, cronDiagnostics, cronResource, cronState, jobId, lastRunAt, nextRunAt, runningIds, usageStrip, type CronState } from './cronJob'
+import { contextFromList, cronResource, jobId, lastRunAt, nextRunAt, runningIds, usageStrip } from './cronJob'
 import { Markdown } from '../chat/render/Markdown'
 import { statusLabel } from './automationStatus'
 import { usePromptQueues, queueSelection } from './PromptQueue'
@@ -43,8 +43,8 @@ const runKey = ['cron-run'] as const
 /** The job as stop, pause, resume or delete leaves it, shown until the server's next read. */
 function cronEffect(action: CronWrite): ResourceEffect {
   if (action === 'delete') return { remove: true }
-  if (action === 'stop') return { fields: { stopping: true, can_stop: false } }
-  return { fields: action === 'pause' ? { derived_state: 'paused', resumable: true } : { derived_state: 'active', resumable: false, needs_attention: false, paused_reason: null } }
+  if (action === 'stop') return { fields: { stopping: true, shown_state: 'stopping', can_stop: false } }
+  return { fields: action === 'pause' ? { derived_state: 'paused', shown_state: 'paused', resumable: true } : { derived_state: 'active', shown_state: 'active', resumable: false, needs_attention: false, paused_reason: null } }
 }
 interface Editor { mode: EditorMode; job: CronJob | null }
 /** One entry of a job's action list, which its detail toolbar and its row's right-click and long-press menu both render. */
@@ -172,7 +172,6 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
         error={crons.isError ? crons.error : null}
         otherProfileCount={crons.data?.other_profile_count ?? 0}
         allProfiles={allProfiles}
-        running={running}
         jobActions={jobActions}
         unavailable={!!crons.data?.cron_unavailable}
         unwritable={unwritable}
@@ -193,7 +192,6 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
       <TaskDetail
         job={selected}
         jobs={jobs}
-        state={cronState(selected, running.has(jobId(selected)))}
         starting={starting.has(cronResource(selected))}
         unwritable={unwritable}
         back={back}
@@ -222,11 +220,11 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
 
 // ── List ─────────────────────────────────────────────────────────────────────
 
-function TaskList({ queues, onNewQueue, jobs, pending, error, otherProfileCount, allProfiles, running, jobActions, unavailable, unwritable, onSelect, onNew, onRefresh, onToggleAllProfiles }: {
-  queues: PromptQueueRun[]; onNewQueue: () => void; jobs: CronJob[]; pending: boolean; error: unknown; otherProfileCount: number; allProfiles: boolean; running: Set<string>; jobActions: (job: CronJob) => JobAction[]; unavailable: boolean; unwritable: CronStoreHealth[]
+function TaskList({ queues, onNewQueue, jobs, pending, error, otherProfileCount, allProfiles, jobActions, unavailable, unwritable, onSelect, onNew, onRefresh, onToggleAllProfiles }: {
+  queues: PromptQueueRun[]; onNewQueue: () => void; jobs: CronJob[]; pending: boolean; error: unknown; otherProfileCount: number; allProfiles: boolean; jobActions: (job: CronJob) => JobAction[]; unavailable: boolean; unwritable: CronStoreHealth[]
   onSelect: (id: string) => void; onNew: () => void; onRefresh: () => void; onToggleAllProfiles: () => void
 }) {
-  const rows = jobs.map((job) => ({ job, id: jobId(job), state: cronState(job, running.has(jobId(job))) }))
+  const rows = jobs.map((job) => ({ job, id: jobId(job), state: job.shown_state }))
   // Paused jobs are folded away so they do not drown the live ones (legacy #4026).
   const live = rows.filter((r) => r.state !== 'paused' && r.state !== 'off')
   const parked = rows.filter((r) => r.state === 'paused' || r.state === 'off')
@@ -319,11 +317,12 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 const DL = 'grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-[13px]'
 
-function TaskDetail({ job, jobs, state, starting, unwritable, back, jobActions, onAction }: {
-  job: CronJob; jobs: CronJob[]; state: CronState; unwritable: CronStoreHealth[]; back: ReactNode; jobActions: (job: CronJob) => JobAction[]; onAction: (action: CronAction) => void
+function TaskDetail({ job, jobs, starting, unwritable, back, jobActions, onAction }: {
+  job: CronJob; jobs: CronJob[]; unwritable: CronStoreHealth[]; back: ReactNode; jobActions: (job: CronJob) => JobAction[]; onAction: (action: CronAction) => void
   starting: boolean
 }) {
   const id = jobId(job)
+  const state = job.shown_state
   const readOnly = !!job.read_only
   const attention = job.needs_attention === true
   const isScript = !!job.no_agent
@@ -336,7 +335,7 @@ function TaskDetail({ job, jobs, state, starting, unwritable, back, jobActions, 
   const contextFrom = contextFromList(job).map((ref) => jobs.find((j) => jobId(j) === ref)?.name || ref)
   // A row the user just created has no server fields until the reread.
   const unconfirmed = job.delivery_unconfirmed_platforms?.join(', ')
-  const copyDiagnostics = () => { copyWithToast(cronDiagnostics(job), m.cron_diagnostics_copied()) }
+  const copyDiagnostics = () => { copyWithToast(job.diagnostics, m.cron_diagnostics_copied()) }
   const lastErrors = (job.last_error || job.last_delivery_error) && (
     <div className="flex flex-col gap-1 text-[13px]">
       {job.last_error && <div><span className="text-muted">{m.cron_last_error_label()}: </span><span className="font-mono text-[12px] text-error">{job.last_error}</span></div>}

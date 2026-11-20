@@ -13,7 +13,8 @@ import { HubPage } from '../../shell/AppShell'
 import { StatLabel } from '../../ui/List'
 import { Select } from '../../ui/Select'
 import { EmptyState, ErrorState, LoadingState, formatUsd } from '../../ui/States'
-import { BarChart } from './BarChart'
+import { BarChart, type BarChartRow } from './BarChart'
+import type { ChartPeak } from '@maudecode/talaria-web-contracts'
 import { ProviderQuotaRows } from './ProviderQuotaRows'
 import { QUOTA_PERCENT_MODES, toQuotaPercentMode, type QuotaPercentMode } from './QuotaMeter'
 import { readPersisted, writePersisted } from '../../lib/persisted'
@@ -24,6 +25,12 @@ const METRICS = ['tokens', 'cost', 'sessions'] as const
 /** The viewer's Used / Remaining choice for the quota rows: a per-browser convenience, like the App's device setting. */
 const PERCENT_MODE_KEY = 'insights.quotaPercentMode'
 type Metric = (typeof METRICS)[number]
+
+/** TAL-2479: the scale label and peak point the server chose for `rows`, in the chart's own wording. */
+function scale(rows: BarChartRow[], chart: ChartPeak, format: (n: number) => string): { maxDisplay: string; peak: { label: string; display: string } | null } {
+  const point = chart.peak_index === null ? undefined : rows[chart.peak_index]
+  return { maxDisplay: format(chart.max), peak: point ? { label: point.title ?? point.label, display: format(point.value) } : null }
+}
 
 /** The server's `YYYY-MM-DD` bucket as a local day; a UTC parse would shift it a day west of Greenwich. */
 function localDay(date: string): Date | null {
@@ -58,6 +65,11 @@ export function InsightsPage() {
     tokens: (r) => r.total_tokens ?? (r.input_tokens ?? 0) + (r.output_tokens ?? 0), cost: (r) => r.cost ?? 0, sessions: (r) => r.sessions ?? 0,
   }
   const metricFormat: Record<Metric, (n: number) => string> = { tokens: compact, cost: usd, sessions: (n) => integer.format(n) }
+
+  const count = (n: number) => integer.format(n)
+  const dailyRows = (d?.daily_tokens ?? []).map((r) => ({ label: dayLabel(r.date), title: r.date, value: metricValue[metric](r) }))
+  const byDay = (d?.activity_by_day ?? []).map((r) => ({ label: r.day, value: r.sessions }))
+  const byHour = (d?.activity_by_hour ?? []).map((r) => ({ label: String(r.hour), title: `${String(r.hour).padStart(2, '0')}:00`, value: r.sessions }))
 
   const stats = d ? [
     { label: m.insights_sessions(), value: integer.format(d.total_sessions ?? 0) },
@@ -102,15 +114,16 @@ export function InsightsPage() {
                 <BarChart
                   id="daily"
                   title={m.insights_daily()}
-                  rows={d.daily_tokens.map((r) => ({ label: dayLabel(r.date), title: r.date, value: metricValue[metric](r) }))}
+                  rows={dailyRows}
                   format={metricFormat[metric]}
+                  {...scale(dailyRows, d.chart_peaks.daily[metric], metricFormat[metric])}
                   exact={metric === 'cost' ? exactUsd : undefined}
                   controls={<Select value={metric} onValueChange={(v) => setMetric(v as Metric)} aria-label={m.insights_metric()} className="h-7 text-xs">{METRICS.map((k) => <option key={k} value={k}>{metricLabel[k]}</option>)}</Select>}
                 />
               )}
               <div className="grid gap-6 md:grid-cols-2">
-                {d.activity_by_day && d.activity_by_day.length > 0 && <BarChart id="weekday" title={m.insights_by_day()} rows={d.activity_by_day.map((r) => ({ label: r.day, value: r.sessions }))} format={(n) => integer.format(n)} />}
-                {d.activity_by_hour && d.activity_by_hour.length > 0 && <BarChart id="hour" title={m.insights_by_hour()} rows={d.activity_by_hour.map((r) => ({ label: String(r.hour), title: `${String(r.hour).padStart(2, '0')}:00`, value: r.sessions }))} format={(n) => integer.format(n)} />}
+                {byDay.length > 0 && <BarChart id="weekday" title={m.insights_by_day()} rows={byDay} format={count} {...scale(byDay, d.chart_peaks.by_day, count)} />}
+                {byHour.length > 0 && <BarChart id="hour" title={m.insights_by_hour()} rows={byHour} format={count} {...scale(byHour, d.chart_peaks.by_hour, count)} />}
               </div>
               {d.models && d.models.length > 0 && (
                 <div className="overflow-x-auto">

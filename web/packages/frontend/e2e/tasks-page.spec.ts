@@ -5,8 +5,8 @@ test.use({ serviceWorkers: 'block' })
 
 const task = { prompt: 'Synthetic task', schedule: '0 9 * * *', schedule_display: '0 9 * * *', schedule_input: '0 9 * * *', state: 'scheduled', next_run_at: '2026-10-18T09:00:00Z', needs_attention: false, profile: 'default', toast_notifications: true, read_only: false, delivery_unconfirmed_platforms: [] as string[] }
 const jobs = [
-  { ...task, id: 'digest', name: 'Morning digest', enabled: true, derived_state: 'active', resumable: false },
-  { ...task, id: 'parked', name: 'Parked report', enabled: false, derived_state: 'paused', resumable: true },
+  { ...task, id: 'digest', name: 'Morning digest', enabled: true, derived_state: 'active', shown_state: 'active', resumable: false },
+  { ...task, id: 'parked', name: 'Parked report', enabled: false, derived_state: 'paused', shown_state: 'paused', resumable: true },
 ]
 const run = { filename: '2026-10-17_09-00-00.md', size: 1200, modified: 1_792_000_000 }
 
@@ -72,12 +72,12 @@ test('the task list is the page and a task opens as a detail with a way back', a
 })
 
 test('Stop shows only on a stoppable live run, shows stopping at once and settles on the server (TAL-1819)', async ({ page }, info) => {
-  const base = { ...jobs[0]!, id: 'live', name: 'Live digest', running: true, last_outcome: 'succeeded' }
+  const base = { ...jobs[0]!, id: 'live', name: 'Live digest', running: true, shown_state: 'running', last_outcome: 'succeeded' }
   let row: Record<string, unknown> = { ...base, can_stop: true, stopping: false }
   let answer: () => void = () => undefined
   const answered = new Promise<void>((resolve) => { answer = resolve })
   await routeTasks(page, jobs)
-  await page.route('**/api/crons', (route) => route.fulfill({ json: { jobs: [row, jobs[0]!, { ...jobs[0]!, id: 'other', name: 'Not stoppable', running: true, can_stop: false, stopping: false }], active_profile: 'default', all_profiles: false, other_profile_count: 0, unwritable_stores: [] } }))
+  await page.route('**/api/crons', (route) => route.fulfill({ json: { jobs: [row, jobs[0]!, { ...jobs[0]!, id: 'other', name: 'Not stoppable', running: true, shown_state: 'running', can_stop: false, stopping: false }], active_profile: 'default', all_profiles: false, other_profile_count: 0, unwritable_stores: [] } }))
   await page.route('**/api/crons/cancel', async (route) => { await answered; await route.fulfill({ json: { ok: true, job_id: 'live', status: 'stopping' } }) })
   await page.goto('/tasks?job=other')
   const detail = page.getByTestId('cron-detail')
@@ -93,11 +93,11 @@ test('Stop shows only on a stoppable live run, shows stopping at once and settle
   await expect(detail).toHaveAttribute('data-state', 'stopping')
   await expect(stop).toHaveCount(0)
   await page.screenshot({ path: info.outputPath('stop-stopping.png') })
-  row = { ...base, can_stop: false, stopping: true }
+  row = { ...base, can_stop: false, stopping: true, shown_state: 'stopping' }
   answer()
   await expect(page.getByText('Stopping job', { exact: true })).toBeVisible()
   await expect(detail).toHaveAttribute('data-state', 'stopping')
-  row = { ...base, running: false, can_stop: false, stopping: false, last_status: 'cancelled', last_run_at: '2026-10-18T09:00:00Z', last_outcome: 'cancelled' }
+  row = { ...base, running: false, shown_state: 'active', can_stop: false, stopping: false, last_status: 'cancelled', last_run_at: '2026-10-18T09:00:00Z', last_outcome: 'cancelled' }
   await expect(detail).toHaveAttribute('data-state', 'active', { timeout: 15_000 })
   await expect(detail.getByText('· stopped')).toBeVisible()
   await page.screenshot({ path: info.outputPath('stop-settled.png') })
@@ -126,7 +126,7 @@ async function routeRowWrites(page: Page, rows: Record<string, unknown>[], held:
     await held[action ?? '']
     const index = rows.findIndex((row) => row.id === id)
     if (action === 'delete') rows.splice(index, 1)
-    if (action === 'pause') Object.assign(rows[index]!, { enabled: false, derived_state: 'paused', resumable: true })
+    if (action === 'pause') Object.assign(rows[index]!, { enabled: false, derived_state: 'paused', shown_state: 'paused', resumable: true })
     await route.fulfill({ json: { ok: true } })
   })
   return writes
@@ -136,7 +136,7 @@ test('right-click on a job row offers its toolbar actions and acts on that job w
   test.skip(info.project.name !== 'desktop', 'right-click is the desktop route')
   const rows: Record<string, unknown>[] = [
     ...jobs.map((job) => ({ ...job })),
-    { ...jobs[0]!, id: 'live', name: 'Live digest', running: true, can_stop: true, stopping: false },
+    { ...jobs[0]!, id: 'live', name: 'Live digest', running: true, shown_state: 'running', can_stop: true, stopping: false },
     { ...jobs[0]!, id: 'plain', name: 'Plain digest', resumable: undefined },
     { ...jobs[0]!, id: 'other', name: 'Other profile digest', read_only: true, owner_profile: 'work' },
     { ...jobs[0]!, id: 'digest:new:1', name: 'Pending create' },

@@ -1406,6 +1406,7 @@ export const ProviderCostHistorySchema = z.looseObject({
   budget_percent: NullableNumber.optional().describe('round(pace / budget × 100); null without a positive pace and a budget.'),
   budget_level: z.enum(['ok', 'warn', 'over']).nullable().optional().describe('`warn` from 80%, `over` from 100%; null without `budget_percent`.'),
   latest_day: z.object({ date: z.string(), spend: z.number() }).nullable().optional().describe('TAL-2135: the newest UTC day with a known spend (`delta`), the one a provider row captions; null without one.'),
+  peak_day: z.object({ date: z.string(), spend: z.number() }).nullable().optional().describe('TAL-2479: the day with the largest known spend (the first of equal ones), the peak a spend chart names; null without one.'),
 })
 export type ProviderCostHistory = z.infer<typeof ProviderCostHistorySchema>
 export const PersonalitiesSchema = z.looseObject({ personalities: z.array(z.looseObject({ name: z.string(), description: z.string().optional() })) })
@@ -1569,6 +1570,9 @@ export type LogEntry = z.infer<typeof LogEntrySchema>
 export type LogLevel = z.infer<typeof LogLevelSchema>
 export type LogLevelFilter = z.infer<typeof LogLevelFilterSchema>
 export type LogFile = z.infer<typeof LogFileSchema>
+/** TAL-2479: a chart's peak point (the first of equal largest values; null for an empty series) and its scale maximum (the largest value, 0 when none is positive). Clients format both. */
+export const ChartPeakSchema = z.object({ peak_index: z.number().int().nullable(), max: z.number() })
+export type ChartPeak = z.infer<typeof ChartPeakSchema>
 export const InsightsSchema = z.looseObject({
   period_days: z.number().optional(), total_sessions: z.number().optional(), total_messages: z.number().optional(), total_tokens: z.number().optional(), total_input_tokens: z.number().optional(), total_output_tokens: z.number().optional(),
   total_cache_read_tokens: z.number().optional(), total_cache_hit_percent: NullableNumber.optional(), total_cost: z.number().optional(), activity_by_day: z.array(z.looseObject({ day: z.string(), sessions: z.number() })).optional(),
@@ -1582,6 +1586,8 @@ export const InsightsSchema = z.looseObject({
     cache_read_tokens: z.number().optional(), cache_hit_percent: NullableNumber.optional(), cost: z.number().optional(),
     session_share: z.number().optional(), token_share: z.number().optional(), cost_share: z.number().optional(), display_share: z.number().optional(),
   })).optional(),
+  /** TAL-2479: each Usage chart's peak and maximum: `daily` per metric over `daily_tokens`, `by_day` over `activity_by_day`, `by_hour` over `activity_by_hour`. */
+  chart_peaks: z.object({ daily: z.object({ tokens: ChartPeakSchema, cost: ChartPeakSchema, sessions: ChartPeakSchema }), by_day: ChartPeakSchema, by_hour: ChartPeakSchema }),
 })
 export type Insights = z.infer<typeof InsightsSchema>
 export const DashboardStatusSchema = z.looseObject({ running: z.boolean(), enabled: z.string().optional(), url: z.string().optional(), browser_url: z.string().optional(), host: z.string().optional(), port: z.number().int().optional(), version: z.string().optional(), error: z.string().optional() })
@@ -1939,6 +1945,9 @@ export const CronScheduleSchema = z.looseObject({ kind: z.string().optional(), e
 export const CronRepeatSchema = z.looseObject({ times: NullableNumber.optional(), completed: z.number().optional() })
 export const CronDerivedStateSchema = z.enum(['needs_attention', 'schedule_error', 'paused', 'off', 'error', 'active'])
 export type CronDerivedState = z.infer<typeof CronDerivedStateSchema>
+/** TAL-2479: the status a job's row shows: `stopping` while a stop is on its way, else `running` during a live run, else `derived_state`. */
+export const CronShownStateSchema = z.enum([...CronDerivedStateSchema.options, 'running', 'stopping'])
+export type CronShownState = z.infer<typeof CronShownStateSchema>
 /** How a run ended, classified by the server: `cancelled` is an operator's stop, never a failure. */
 export const CronRunOutcomeSchema = z.enum(['succeeded', 'failed', 'cancelled', 'unknown'])
 export const CronJobViewSchema = z.looseObject({
@@ -1952,8 +1961,11 @@ export const CronJobViewSchema = z.looseObject({
   deliver_label: z.string().optional(),
   skills: z.array(z.string()).optional(), no_agent: z.boolean().optional(), script: NullableString.optional(), monitor: NullableString.optional(), continuity: z.boolean().optional(),
   context_from: z.union([z.array(z.string()), z.string(), z.null()]).optional(), reasoning_effort: NullableString.optional(), toast_notifications: z.boolean().optional(), running: z.boolean().optional(),
-  /** Server-derived (TAL-296): the job's status, whether it needs attention, and whether its primary action is Resume. Live runs overlay it. */
+  /** Server-derived (TAL-296): the job's status, whether it needs attention, and whether its primary action is Resume. `shown_state` overlays live runs on it. */
   derived_state: CronDerivedStateSchema.optional(), needs_attention: z.boolean().optional(), resumable: z.boolean().optional(),
+  shown_state: CronShownStateSchema,
+  /** Server-redacted (TAL-2479): the job's schedule, status and error fields as JSON text for Copy diagnostics; never its prompt, origin or chat ids. */
+  diagnostics: z.string(),
   /** Server-derived (TAL-599): a known cause clients explain in the needs-attention banner. */
   attention_hint: z.enum(['croniter_missing']).nullable(),
   /** Server-derived (TAL-1819): a live run this client may stop, whoever started it; a stop on its way until that run ends; and how the latest run ended. */

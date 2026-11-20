@@ -16,6 +16,11 @@ const USAGE_FIELDS = ['message_count', 'input_tokens', 'output_tokens', 'cache_r
 const dayKey = (d: Date): string => `${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 /** A session's activity time: the one timestamp that both admits it to the window and picks its day. */
 const activityAt = (e: Dict): number => Math.max(num(e.created_at), num(e.updated_at))
+/** TAL-2479: a chart's peak point (the first of equal largest values, null when empty) and scale maximum (0 when none is positive). */
+const chartPeak = (values: number[]): { peak_index: number | null; max: number } => ({
+  peak_index: values.length ? values.indexOf(Math.max(...values)) : null,
+  max: Math.max(0, ...values),
+})
 
 /**
  * `input_tokens` is the whole prompt (uncached, cache reads, and cache writes) for both sources, so a cache hit rate
@@ -110,9 +115,14 @@ export async function buildInsights(entries: Dict[], daysRaw: unknown, nowSecond
     return { date: key, input_tokens: b.input_tokens, output_tokens: b.output_tokens, total_tokens: b.input_tokens + b.output_tokens, cache_read_tokens: b.cache_read_tokens, sessions: b.sessions, cost: Math.round(b.cost * 1e6) / 1e6 }
   })
   const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  const byDay = labels.map((_, i) => dow[i] ?? 0)
+  const chartPeaks = {
+    daily: { tokens: chartPeak(series.map((d) => Number(d.total_tokens))), cost: chartPeak(series.map((d) => Number(d.cost))), sessions: chartPeak(series.map((d) => Number(d.sessions))) },
+    by_day: chartPeak(byDay), by_hour: chartPeak(hod),
+  }
   return {
     period_days: days, total_sessions: totalSessions, total_messages: totalMessages, total_input_tokens: totalInput, total_output_tokens: totalOutput, total_cache_read_tokens: totalCache,
     total_cache_hit_percent: promptCacheHitPercent(totalCache, totalInput), total_tokens: totalTokens, total_cost: Math.round(totalCost * 1e6) / 1e6, models: breakdown, daily_tokens: series,
-    activity_by_day: labels.map((day, i) => ({ day, sessions: dow[i] ?? 0 })), activity_by_hour: hod.map((sessions, hour) => ({ hour, sessions })),
+    activity_by_day: labels.map((day, i) => ({ day, sessions: byDay[i] ?? 0 })), activity_by_hour: hod.map((sessions, hour) => ({ hour, sessions })), chart_peaks: chartPeaks,
   }
 }

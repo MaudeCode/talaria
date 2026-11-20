@@ -90,8 +90,8 @@ describe('ProviderQuotaRows', () => {
 })
 
 describe('BarChart', () => {
-  it('draws a bar per row, names the peak, labels every bar when few and the ends when many, and keeps the table twin', () => {
-    const { unmount } = render(<BarChart id="weekday" title="Activity by day" rows={['Mon', 'Tue', 'Wed'].map((label, i) => ({ label, value: [4, 9, 1][i]! }))} format={(n) => String(n)} />)
+  it('draws a bar per row, names the server\'s peak and max, labels every bar when few and the ends when many, and keeps the table twin', () => {
+    const { unmount } = render(<BarChart id="weekday" title="Activity by day" rows={['Mon', 'Tue', 'Wed'].map((label, i) => ({ label, value: [4, 9, 1][i]! }))} format={(n) => String(n)} maxDisplay="9" peak={{ label: 'Tue', display: '9' }} />)
     expect(screen.getByRole('img', { name: 'Activity by day: peak 9 at Tue' })).toBeInTheDocument()
     expect(screen.getByText('Max 9')).toBeInTheDocument()
     expect(screen.getByTitle('Tue: 9')).toBeInTheDocument()
@@ -100,7 +100,7 @@ describe('BarChart', () => {
     expect(within(figure as HTMLElement).getAllByRole('row')).toHaveLength(3)
     unmount()
 
-    render(<BarChart id="daily" title="Daily" rows={Array.from({ length: 30 }, (_, i) => ({ label: `Oct ${String(i + 1)}`, title: `2030-10-${String(i + 1).padStart(2, '0')}`, value: i }))} format={(n) => String(n)} />)
+    render(<BarChart id="daily" title="Daily" rows={Array.from({ length: 30 }, (_, i) => ({ label: `Oct ${String(i + 1)}`, title: `2030-10-${String(i + 1).padStart(2, '0')}`, value: i }))} format={(n) => String(n)} peak={null} />)
     const daily = document.querySelector('[data-chart="daily"]')!
     expect(daily.textContent).toContain('Oct 1')
     expect(daily.textContent).toContain('Oct 30')
@@ -110,8 +110,9 @@ describe('BarChart', () => {
 })
 
 describe('InsightsPage usage amounts', () => {
+  const none = { peak_index: null, max: 0 }
   it('shows one cent or more at exactly two decimals, less at up to four, each with its exact value in title', async () => {
-    vi.mocked(api.fetchInsights).mockResolvedValue({ total_sessions: 3, total_cost: 0.455, daily_tokens: [{ date: '2030-01-01', cost: 0.3705 }, { date: '2030-01-02', cost: 0.0004 }], models: [{ model: 'synthetic-a', cost: 0.3705 }, { model: 'synthetic-b', cost: 0.0004 }] })
+    vi.mocked(api.fetchInsights).mockResolvedValue({ total_sessions: 3, total_cost: 0.455, daily_tokens: [{ date: '2030-01-01', cost: 0.3705 }, { date: '2030-01-02', cost: 0.0004 }], models: [{ model: 'synthetic-a', cost: 0.3705 }, { model: 'synthetic-b', cost: 0.0004 }], chart_peaks: { daily: { tokens: none, cost: { peak_index: 0, max: 0.3705 }, sessions: none }, by_day: none, by_hour: none } })
     render(<QueryClientProvider client={new QueryClient()}><InsightsPage /></QueryClientProvider>)
     expect(await screen.findByTitle('$0.455')).toHaveTextContent(/^\$0\.46$/)
     const table = screen.getByTestId('insights-models')
@@ -121,6 +122,7 @@ describe('InsightsPage usage amounts', () => {
     await userEvent.click(await screen.findByRole('option', { name: 'Estimated cost' }))
     const daily = document.querySelector('[data-chart="daily"]')!
     expect(within(daily as HTMLElement).getByText('Max $0.37')).toBeInTheDocument()
+    expect(within(daily as HTMLElement).getByRole('img', { name: 'Daily: peak $0.37 at 2030-01-01' })).toBeInTheDocument()
     expect(within(daily as HTMLElement).getByTitle('2030-01-01: $0.3705')).toBeInTheDocument()
   })
 })

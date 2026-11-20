@@ -3,7 +3,7 @@ import { expect, test } from './fixtures'
 test.use({ serviceWorkers: 'block' })
 
 test('held task actions show their result at once and roll a refusal back', async ({ page }, testInfo) => {
-  const job = { id: 'digest', name: 'Morning digest', prompt: 'Summarise the synthetic inbox', schedule: '0 9 * * *', schedule_display: '0 9 * * *', schedule_input: '0 9 * * *', enabled: true, state: 'scheduled', next_run_at: '2026-10-18T09:00:00Z', derived_state: 'active', needs_attention: false, resumable: false, profile: 'default', toast_notifications: true, read_only: false }
+  const job = { id: 'digest', name: 'Morning digest', prompt: 'Summarise the synthetic inbox', schedule: '0 9 * * *', schedule_display: '0 9 * * *', schedule_input: '0 9 * * *', enabled: true, state: 'scheduled', next_run_at: '2026-10-18T09:00:00Z', derived_state: 'active', shown_state: 'active', needs_attention: false, resumable: false, profile: 'default', toast_notifications: true, read_only: false }
   let jobs = [job]
   let finish!: (result: object) => void
   let writes = 0

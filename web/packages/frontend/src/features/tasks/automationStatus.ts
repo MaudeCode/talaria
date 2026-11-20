@@ -1,8 +1,7 @@
 import { m } from '../../paraglide/messages.js'
-import type { PromptQueueRun, PromptQueueCard } from '@maudecode/talaria-web-contracts'
-import type { CronState } from './cronJob'
+import type { CronShownState, PromptQueueRun, PromptQueueCard } from '@maudecode/talaria-web-contracts'
 
-export function statusLabel(state: CronState | PromptQueueRun['phase'] | PromptQueueCard['status']): { label: string; tone: string } {
+export function statusLabel(state: CronShownState | PromptQueueRun['phase'] | PromptQueueCard['status']): { label: string; tone: string } {
   switch (state) {
     case 'draft': return { label: m.prompt_queue_draft(), tone: 'text-muted' }
     case 'dispatching': return { label: m.prompt_queue_dispatching(), tone: 'text-muted' }

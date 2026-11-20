@@ -61,6 +61,10 @@
     "latest_day": {
       "date": "2026-09-28",
       "spend": 2
+    },
+    "peak_day": {
+      "date": "2026-09-25",
+      "spend": 2
     }
   },
   "method": "GET",

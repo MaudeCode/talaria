@@ -15,6 +15,7 @@ import { Select } from '../../ui/Select'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
+import { isApiError } from '../../contracts'
 import { cn } from '../../ui/cn'
 import { useBootstrap } from '../../app/bootstrap'
 import { useModelsQuery, useProfilesQuery } from '../../app/queries'
@@ -39,7 +40,8 @@ interface FormValues {
 
 interface JobWrite { resource: string; body: Record<string, unknown>; shown: Record<string, unknown> }
 const cronReads = () => [keys.crons.list(false), keys.crons.list(true), keys.crons.status]
-const showError = (e: unknown) => showErrorToast(e)
+// docs/scheduled-jobs.md: the server refuses a script-only job with a monitor; the toast names it in the user's language.
+const showError = (e: unknown) => { if (isApiError(e) && e.code === 'cron_monitor_no_agent') showToast(m.cron_monitor_no_agent_conflict(), 4000, 'error'); else showErrorToast(e) }
 
 /** `onSubmitted` closes the editor on submit; `onCreated` names the job the server created; `schedulePolicy` says the Agent takes a zone, missed-run policy and grace window. */
 export function JobForm({ mode, job, jobs, schedulePolicy, onCancel, onSubmitted, onCreated }: { mode: EditorMode; job: CronJob | null; jobs: CronJob[]; schedulePolicy: boolean; onCancel: () => void; onSubmitted: (id?: string) => void; onCreated: (id?: string) => void }) {
@@ -52,7 +54,7 @@ export function JobForm({ mode, job, jobs, schedulePolicy, onCancel, onSubmitted
   })
   const create = useResourceMutation({
     resource: ({ resource }: JobWrite) => resource, queryKey: keys.crons.all, readKeys: cronReads, exclusive: true,
-    effect: ({ resource, shown }) => ({ fields: { ...shown, id: resource, derived_state: 'active', resumable: false } }),
+    effect: ({ resource, shown }) => ({ fields: { ...shown, id: resource, derived_state: 'active', shown_state: 'active', resumable: false } }),
     mutationFn: ({ body }) => api.cronAction('create', body),
     onSuccess: (res) => { showToast(m.cron_job_created()); onCreated(res.job ? jobId(res.job) : res.job_id) },
     onError: showError,
@@ -110,8 +112,6 @@ export function JobForm({ mode, job, jobs, schedulePolicy, onCancel, onSubmitted
       const skillList = v.skills.split(',').map((s) => s.trim()).filter(Boolean)
       if (!v.no_agent && !v.prompt && !v.script && skillList.length === 0) { setError(m.cron_prompt_required()); return }
       if (v.no_agent && !v.script) { setError(m.cron_no_agent_script_required()); return }
-      // docs/scheduled-jobs.md: the save is blocked, never one of the two silently dropped; the monitor stays editable so it can be cleared.
-      if (v.no_agent && v.monitor) { setError(m.cron_monitor_no_agent_conflict()); return }
       if (v.repeat && !(/^\d+$/.test(v.repeat) && Number(v.repeat) >= 1)) { setError(m.cron_repeat_invalid()); return }
       // An untouched picker re-sends the stored pair; a pick sends its id and provider for the server to split.
       const untouched = v.model === initialModel

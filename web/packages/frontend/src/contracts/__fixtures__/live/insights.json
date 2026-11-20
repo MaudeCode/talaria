@@ -128,6 +128,30 @@
         "sessions": 0
       }
     ],
+    "chart_peaks": {
+      "by_day": {
+        "max": 0,
+        "peak_index": 0
+      },
+      "by_hour": {
+        "max": 0,
+        "peak_index": 0
+      },
+      "daily": {
+        "cost": {
+          "max": 0,
+          "peak_index": 0
+        },
+        "sessions": {
+          "max": 0,
+          "peak_index": 0
+        },
+        "tokens": {
+          "max": 0,
+          "peak_index": 0
+        }
+      }
+    },
     "daily_tokens": [
       {
         "cache_read_tokens": 0,
