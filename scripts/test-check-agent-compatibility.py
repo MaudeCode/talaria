@@ -106,6 +106,10 @@ class FakeTools:
             venv = Path(kwargs["cwd"]) / ".venv/bin"
             venv.mkdir(parents=True)
             (venv / "python").touch()
+        if command[1:4] == ["-m", "pm.cli", "install"]:  # the Agent's PM installs its pinned tools into HERMES_HOME
+            tools = Path(kwargs["env"]["HERMES_HOME"]) / "tools"
+            tools.mkdir(parents=True)
+            (tools / "facts.json").write_text("{}")
         if command[0] == "hold-check":  # an extra --command: can another run take the release away meanwhile?
             with open(command[1]) as lock:
                 try:
@@ -115,6 +119,7 @@ class FakeTools:
                     self.release_free = False
             return subprocess.CompletedProcess(command, int(command[2]))
         if command[0].endswith("test.sh"):
+            self.suite_env = kwargs["env"]
             failures = self.sidecar_failures
             shard = next((part.split("=", 1)[1] for part in command if part.startswith("--shard=")), None)
             for part in command:
@@ -502,19 +507,25 @@ class CheckerTests(unittest.TestCase):
         self.tools.urlopen_mock.assert_not_called()
         self.assertEqual(len(self.tools.ran("test.sh")), 1)
         self.assertTrue(any(command[-2:] == [str(self.root / "releases/agent_probe.py"), "0.21.3"] for command in self.tools.commands))
+        # The suite seeds its plugin cases' PM store from the tools provisioned beside the release, never a download.
+        self.assertEqual(self.tools.suite_env["TALARIA_WEB_PM_TOOLS"], str(self.cache / "v2026.9.14.pm/tools"))
+        self.assertTrue((self.cache / "v2026.9.14.pm/tools/facts.json").is_file())
 
     def test_stale_or_broken_cache_entry_is_reprovisioned(self):
         self.receipt("--release", "v2026.9.14", "--skip-docker")
         marker = self.cache / "v2026.9.14.ready"
         for damage in (lambda: marker.write_text(json.dumps({**json.loads(marker.read_text()), "sourceRevision": "f" * 40})),
                        lambda: marker.write_text(json.dumps({**json.loads(marker.read_text()), "sync": ["uv", "sync"]})),
+                       lambda: marker.write_text(json.dumps({key: value for key, value in json.loads(marker.read_text()).items() if key != "pm"})),
                        lambda: marker.write_text("{"),
-                       lambda: (self.cache / "v2026.9.14/.venv/bin/python").unlink()):
+                       lambda: (self.cache / "v2026.9.14/.venv/bin/python").unlink(),
+                       lambda: (self.cache / "v2026.9.14.pm/tools/facts.json").unlink()):
             with self.subTest(damage):
                 damage()
                 self.tools.commands.clear()
                 self.receipt("--release", "v2026.9.14", "--skip-docker")
                 self.assertEqual(self.provisioned(), [str(self.cache / "v2026.9.14")])
+                self.assertTrue((self.cache / "v2026.9.14.pm/tools/facts.json").is_file())
         self.tools.commands.clear()
         for _ in range(2):  # an explicit interpreter request may resolve differently each run, so it always provisions
             self.tools.commands.clear()
@@ -541,7 +552,7 @@ class CheckerTests(unittest.TestCase):
         self.receipt("--release", "v2026.9.21", "--skip-docker")
         # Lock files stay, so every run locks the same file for a tag.
         self.assertEqual(sorted(path.name for path in self.cache.iterdir()),
-                         ["v2026.9.14.lock", "v2026.9.21", "v2026.9.21.lock", "v2026.9.21.ready", "v2026.9.24.lock"])
+                         ["v2026.9.14.lock", "v2026.9.21", "v2026.9.21.lock", "v2026.9.21.pm", "v2026.9.21.ready", "v2026.9.24.lock"])
 
     def test_candidate_and_canary_checkouts_are_removed(self):
         self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker")

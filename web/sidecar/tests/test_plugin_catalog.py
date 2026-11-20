@@ -11,9 +11,9 @@ from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, load_schema, require
 @requires_agent
 @pytest.mark.pm_store
 def test_native_catalog_install(tmp_path: Path):
-    share_pm_store(tmp_path)
+    offline = share_pm_store(tmp_path)
     result = subprocess.run([AGENT_PYTHON, str(Path(__file__).with_name('probe_plugin_catalog.py')), str(AGENT_DIR)],
-                            env=isolated_env(tmp_path), capture_output=True, text=True, timeout=120)
+                            env=isolated_env(tmp_path, **offline), capture_output=True, text=True, timeout=120)
     assert result.returncode == 0, result.stdout + result.stderr
     payload = next((line.removeprefix('TYPED_CATALOG=') for line in result.stdout.splitlines() if line.startswith('TYPED_CATALOG=')), None)
     assert payload is not None, 'Native probe did not publish typed evidence'
