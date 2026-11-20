@@ -244,7 +244,9 @@ function DelegationEditor({ task, state, models, onDone }: { task: AuxTask; stat
     save.mutate({ write: { action: 'backend', backend }, shown: { ...shown, route_count: routeCount(shown) }, task: { changed: changedAfter(task, { mode: backend !== 'default' }) } })
   }
   if (section === 'fixed') return <AuxiliaryModelPicker task={task} models={models} onDone={() => setSection(null)} />
-  if (editing && section) return <DelegationRouteEditor key={original ?? 'new'} task={task} models={models} route={editing} profiles={section === 'profile_routes' ? state.profiles : null} onCancel={() => setEditing(null)} onSave={(route) => {
+  // TAL-2059: one switch per boolean route key the model_map backend declares (Daybreak today).
+  const flagKeys = section === 'model_map' ? state.backends.find((b) => b.name === 'model_map')?.route_keys?.filter((key) => key.type === 'boolean').map((key) => key.name) ?? [] : []
+  if (editing && section) return <DelegationRouteEditor key={original ?? 'new'} task={task} models={models} route={editing} profiles={section === 'profile_routes' ? state.profiles : null} flagKeys={flagKeys} onCancel={() => setEditing(null)} onSave={(route) => {
     const next = original === null ? [...rows, route] : rows.map((row) => row.name === original ? { ...route, original_name: original } : row)
     writeRows(next, original !== null && block.default === original ? route.name : block.default)
     setEditing(null)
@@ -293,7 +295,7 @@ function DelegationEditor({ task, state, models, onDone }: { task: AuxTask; stat
 }
 
 /** Uses the auxiliary picker and standard field/select controls; route edits are local drafts until Save. */
-function DelegationRouteEditor({ task, models, route, profiles, onCancel, onSave }: { task: AuxTask; models: ModelsQuery; route: DelegationRoute; profiles: string[] | null; onCancel: () => void; onSave: (route: DelegationRoute) => void }) {
+function DelegationRouteEditor({ task, models, route, profiles, flagKeys, onCancel, onSave }: { task: AuxTask; models: ModelsQuery; route: DelegationRoute; profiles: string[] | null; flagKeys: string[]; onCancel: () => void; onSave: (route: DelegationRoute) => void }) {
   const [draft, setDraft] = useState(route)
   const [picking, setPicking] = useState(false)
   const [consent, setConsent] = useState(false)
@@ -319,6 +321,9 @@ function DelegationRouteEditor({ task, models, route, profiles, onCancel, onSave
       <SettingRow label={m.delegation_route_tier()} htmlFor="route-tier"><Select id="route-tier" value={draft.service_tier ?? ''} onValueChange={(service_tier) => setDraft({ ...draft, service_tier })}>
         <option value="">{m.delegation_inherit()}</option><option value="normal">{m.delegation_normal()}</option><option value="fast">{m.delegation_fast()}</option><option value="ultrafast">{m.delegation_ultrafast()}</option>
       </Select></SettingRow>
+      {flagKeys.map((key) => <SettingRow key={key} label={key === 'daybreak' ? m.delegation_route_daybreak() : key} htmlFor={`route-flag-${key}`}>
+        <Switch id={`route-flag-${key}`} checked={draft.flags?.[key] ?? false} onCheckedChange={(value) => setDraft({ ...draft, flags: { ...draft.flags, [key]: value } })} />
+      </SettingRow>)}
     </>}
     <div className="flex justify-end gap-1 py-2"><IconButton variant="ghost" label={m.cancel()} onClick={onCancel}><X aria-hidden="true" /></IconButton><IconButton type="submit" variant="default" label={m.save()} disabled={!draft.name.trim() || !!profiles && !consent}><Check aria-hidden="true" /></IconButton></div>
 

@@ -26,12 +26,32 @@ def registry(config: dict) -> dict:
     configured = configured_backend(section)
     provider, reason = backend_status(configured)
     available = provider is not None and not reason
-    backends = [asdict(info) for info in list_backends()]
+    backends = [{**asdict(info), "route_keys": route_key_types(getattr(info, "route_keys", ()))} for info in list_backends()]
     if not any(info["name"] == configured for info in backends):
         backends.append({"name": configured, "label": configured, "description": "", "available": False, "reason": reason})
     return {"supported": True, "configured": configured, "effective": configured if available else None,
             "available": available, "blocked_reason": reason or None, "fixed_model_active": available and configured == "default",
             "backends": backends, "profiles": list_profile_names()}
+
+
+# The Agent declares route key names only (``BackendInfo.route_keys``, v0.23.1+). These are the declared keys known to
+# hold a boolean opt-in, such as the advanced-delegation plugin's ``daybreak``; every other declared key is kept on
+# save but not edited.
+BOOLEAN_ROUTE_KEYS = frozenset({"daybreak"})
+
+
+def route_key_types(names) -> list[dict]:
+    return [{"name": name, "type": "boolean" if name in BOOLEAN_ROUTE_KEYS else "value"} for name in names]
+
+
+def declared_route_keys(backend: str) -> frozenset[str]:
+    """The boolean route keys ``backend`` declares beyond core's; none on an Agent without ``route_keys``."""
+    from agent.delegation_backends import list_backends
+    from hermes_cli.plugins import discover_plugins
+
+    discover_plugins()
+    names = next((getattr(info, "route_keys", ()) for info in list_backends() if info.name == backend), ())
+    return frozenset(names) & BOOLEAN_ROUTE_KEYS
 
 
 def clean_routes(backend: str, block: dict, current: dict) -> dict:
@@ -47,6 +67,7 @@ def clean_routes(backend: str, block: dict, current: dict) -> dict:
         raise InvalidParams(f"{field} must be a list")
     stored = {row.get("name"): row for row in current.get(field, []) if isinstance(row, dict)}
     known = set(list_profile_names()) if backend == "profile_routes" else set()
+    declared = declared_route_keys(backend) - ROUTE_KEYS if backend == "model_map" else frozenset()
     rows, names = [], []
     for entry in entries:
         if not isinstance(entry, dict):
@@ -61,9 +82,16 @@ def clean_routes(backend: str, block: dict, current: dict) -> dict:
             rows.append({"name": name, **({"description": entry["description"].strip()} if entry.get("description", "").strip() else {})})
             continue
         source = stored.get(entry.get("original_name") or name, {})
-        # Hidden canonical values survive both edits and renames.
-        row = {key: value for key, value in source.items() if key in ROUTE_KEYS}
+        # Every stored key the edit does not change survives both edits and renames, hand-written ones included
+        # (TAL-2059); the edit writes core keys and the backend's declared boolean keys, and nothing else.
+        row = dict(source)
         row.update({key: value for key, value in entry.items() if key in ROUTE_KEYS or key in {"name", "description"}})
+        flags = entry.get("flags") if isinstance(entry.get("flags"), dict) else {}
+        for key, value in flags.items():
+            if key in declared and value is True:
+                row[key] = True
+            elif key in declared and value is False and isinstance(row.get(key), bool):
+                row.pop(key)
         row["name"] = name
         for key in ("description", "model", "provider", "base_url", "api_mode"):
             if key in row:

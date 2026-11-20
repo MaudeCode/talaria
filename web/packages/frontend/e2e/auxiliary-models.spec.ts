@@ -153,7 +153,9 @@ for (const width of [1280, 390]) {
 
 /** The Delegation editor at `width`, over a stand-in server that starts on `fixture` and follows each write. */
 async function openDelegation(page: Page, width: number, fixture: 'missing' | 'default' | 'readonly') {
-  const { default: fixtures } = await import('../../../../contracts/fixtures/delegation-settings.json', { with: { type: 'json' } })
+  const { default: raw } = await import('../../../../contracts/fixtures/delegation-settings.json', { with: { type: 'json' } })
+  // JSON imports widen the contract's enums; the fixture file is the contract's own (`delegation.test.ts` parses it).
+  const fixtures = raw as unknown as Record<keyof typeof raw, DelegationSettings>
   let delegation: DelegationSettings = structuredClone(fixtures[fixture])
   const tasks = () => [...auxiliary.tasks, { task: 'delegation', label: 'Delegation', description: 'subagent model (delegate_task)', provider: 'auto', model: '', is_auto: true, changed: delegation.configured !== 'default', value_label: '', provider_label: '', selected_option_id: null, in_catalog: true, inherit_from: null, reasoning_effort: '', reasoning: reasoning('delegation') }]
   await page.setViewportSize({ width, height: width > 600 ? 900 : 844 })
@@ -196,6 +198,8 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('combobox', { name: 'Service tier' })).toContainText('Normal')
     await page.screenshot({ path: testInfo.outputPath(`delegation-edit-${String(width)}.png`) })
     await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Deep research')
+    await page.getByRole('switch', { name: 'Daybreak' }).click()
+    await expect(page.getByRole('switch', { name: 'Daybreak' })).toBeChecked()
     await page.getByRole('button', { name: 'Save', exact: true }).scrollIntoViewIfNeeded()
     await page.screenshot({ path: testInfo.outputPath(`delegation-edit-actions-${String(width)}.png`) })
     await page.getByRole('button', { name: 'Save', exact: true }).click()

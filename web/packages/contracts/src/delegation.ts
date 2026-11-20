@@ -9,6 +9,7 @@ export const DelegationRouteSchema = z.object({
   reasoning_effort: z.string().optional(), service_tier: z.string().optional(),
   fallback_providers: z.array(z.unknown()).optional(), request_overrides: z.unknown().optional(),
   profile: z.string().optional(), label: z.string().optional(),
+  flags: z.record(z.string(), z.boolean()).optional().describe('TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false.'),
 })
 export const DelegationBlockSchema = z.object({
   options: z.array(DelegationRouteSchema).optional(), profiles: z.array(DelegationRouteSchema).optional(),
@@ -21,7 +22,9 @@ export const DelegationWriteSchema = z.discriminatedUnion('action', [
 export const DelegationRegistrySchema = z.object({
   supported: z.boolean(), configured: z.string(), effective: z.string().nullable(),
   available: z.boolean(), blocked_reason: z.string().nullable(), fixed_model_active: z.boolean(),
-  backends: z.array(z.object({ name: z.string(), label: z.string(), description: z.string(), available: z.boolean(), reason: z.string() })),
+  backends: z.array(z.object({ name: z.string(), label: z.string(), description: z.string(), available: z.boolean(), reason: z.string(),
+    route_keys: z.array(z.object({ name: z.string(), type: z.enum(['boolean', 'value']) })).optional()
+      .describe('TAL-2059: the route keys the backend declares beyond the core route fields (Agent v0.23.1+). A `boolean` key is edited through route `flags`; a `value` key is kept on save but not edited.') })),
   profiles: z.array(z.string()),
 })
 const PublicRoute = DelegationRouteSchema.omit({ api_key: true, api_key_clear: true, original_name: true, request_overrides: true })

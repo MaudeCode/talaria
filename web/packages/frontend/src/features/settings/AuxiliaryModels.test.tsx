@@ -1,10 +1,14 @@
-import delegationFixtures from '../../../../../../contracts/fixtures/delegation-settings.json'
+import rawDelegationFixtures from '../../../../../../contracts/fixtures/delegation-settings.json'
 import { teardownAll } from '../../stream/connection'
 import { deferred } from '../../test/fixtures'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { DelegationSettings } from '@maudecode/talaria-web-contracts'
+
+/** JSON imports widen the contract's enums; the fixture file is the contract's own (`delegation.test.ts` parses it). */
+const delegationFixtures = rawDelegationFixtures as unknown as Record<keyof typeof rawDelegationFixtures, DelegationSettings>
 
 const TASKS = ['vision', 'compression', 'approval', 'mcp', 'title_generation', 'curator', 'kanban_decomposer', 'profile_describer', 'triage_specifier', 'delegation']
 const label = (task: string): string => (task === 'title_generation' ? 'Title generation' : task === 'mcp' ? 'MCP' : task.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase()))
@@ -372,6 +376,20 @@ it.each(['model_map', 'profile_routes'] as const)('preserves No default when cre
   }
   await userEvent.click(screen.getByRole('button', { name: 'Save' }))
   expect(api.setDelegation).toHaveBeenCalledWith(expect.objectContaining({ action: 'routes', backend, block: expect.objectContaining({ default: null, [backend === 'model_map' ? 'options' : 'profiles']: [expect.objectContaining({ name: backend === 'model_map' ? 'New route' : 'research' })] }) }))
+})
+
+it.each([true, false])('offers Daybreak on a route only when model_map declares it (declared: %s), and saves the toggle (TAL-2059)', async (declared) => {
+  const backends = delegationFixtures.default.backends.map((b) => declared ? b : { ...b, route_keys: undefined })
+  vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue({ ...auxState(), delegation: { ...delegationFixtures.default, backends } })
+  vi.mocked(api.setDelegation).mockReturnValue(new Promise(() => undefined))
+  renderSetting()
+  await userEvent.click((await openList()).getByRole('button', { name: /Delegation/ }))
+  await userEvent.click(screen.getByRole('button', { name: 'Model routes' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Edit Research' }))
+  if (!declared) return expect(screen.queryByRole('switch', { name: 'Daybreak' })).toBeNull()
+  await userEvent.click(screen.getByRole('switch', { name: 'Daybreak' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(api.setDelegation).toHaveBeenCalledWith(expect.objectContaining({ block: expect.objectContaining({ options: [expect.objectContaining({ name: 'Research', original_name: 'Research', flags: { daybreak: true } })] }) }))
 })
 
 describe('Auxiliary models page loading and reasoning (TAL-1285)', () => {

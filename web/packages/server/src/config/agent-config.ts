@@ -227,6 +227,8 @@ export class AgentConfig {
     const sidecar = this.deps.sidecar()
     const registry = sidecar ? await sidecar.call('aux.delegation', { profile_home: profileHome, config }).catch(() => null) : null
     const blocks = dict(section.backends)
+    // TAL-2059: the boolean route keys the model_map backend declares, shown and edited as route flags.
+    const flagKeys = registry?.backends.find((b) => b.name === 'model_map')?.route_keys?.filter((key) => key.type === 'boolean').map((key) => key.name) ?? []
     const block = (key: string, field: 'options' | 'profiles') => {
       const saved = dict(blocks[key])
       const rows = Array.isArray(saved[field]) ? saved[field] as unknown[] : []
@@ -234,7 +236,8 @@ export class AgentConfig {
         // Request overrides and credentials stay private and round-trip by original route identity.
         const visible = ['name', 'description', 'provider', 'model', 'base_url', 'api_mode', 'reasoning_effort', 'service_tier', 'profile', 'label']
         return { ...Object.fromEntries(visible.filter((key) => typeof row[key] === 'string').map((key) => [key, row[key]])), name: str(row.name), api_key_set: Boolean(row.api_key),
-          ...(Array.isArray(row.fallback_providers) && row.fallback_providers.every((value) => typeof value === 'string') ? { fallback_providers: row.fallback_providers } : {}) }
+          ...(Array.isArray(row.fallback_providers) && row.fallback_providers.every((value) => typeof value === 'string') ? { fallback_providers: row.fallback_providers } : {}),
+          ...(field === 'options' && flagKeys.length ? { flags: Object.fromEntries(flagKeys.map((name) => [name, row[name] === true])) } : {}) }
       }) }
     }
     return { ...(registry ?? { supported: false, configured, effective: null, available: false, fixed_model_active: false,

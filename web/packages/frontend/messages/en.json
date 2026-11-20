@@ -654,6 +654,7 @@
 	"delegation_profiles": "Profile routes",
 	"delegation_reset_confirm": "Reset auxiliary tasks to Auto and restore the Default delegation mode.",
 	"delegation_restore": "Restore Default",
+	"delegation_route_daybreak": "Daybreak",
 	"delegation_route_description": "Description",
 	"delegation_route_effort": "Reasoning effort",
 	"delegation_route_endpoint": "Endpoint",

@@ -79,14 +79,17 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
   afterAll(() => s.close())
 
   it('projects the saved delegation backend and redacted named routes instead of a fixed model alone (TAL-1499)', async () => {
+    const routeKeys = [{ name: 'daybreak', type: 'boolean' as const }, { name: 'note', type: 'value' as const }]
     const before = structuredClone(configs.get(s.state))
-    sidecar.respond('aux.delegation', () => ({ supported: true, configured: 'missing_plugin', effective: null, available: false, blocked_reason: 'Install or enable the saved plugin, or restore Default.', fixed_model_active: false, backends: [], profiles: ['default'] }))
-    configs.set(s.state, { delegation: { backend: 'missing_plugin', backends: { model_map: { options: [{ name: 'Research', description: 'Deep research', provider: 'openai', model: 'synthetic-model', api_key: 'synthetic-private-key', service_tier: 'normal', fallback_providers: [] }], default: 'Research' } } } })
+    sidecar.respond('aux.delegation', () => ({ supported: true, configured: 'missing_plugin', effective: null, available: false, blocked_reason: 'Install or enable the saved plugin, or restore Default.', fixed_model_active: false, backends: [{ name: 'model_map', label: 'Named model routes', description: '', available: true, reason: '', route_keys: routeKeys }], profiles: ['default'] }))
+    configs.set(s.state, { delegation: { backend: 'missing_plugin', backends: { model_map: { options: [{ name: 'Research', description: 'Deep research', provider: 'openai', model: 'synthetic-model', api_key: 'synthetic-private-key', service_tier: 'normal', fallback_providers: [], daybreak: true, note: 'hand-written' }], default: 'Research' } } } })
     s.deps.agentConfig.invalidate(s.state)
     try {
       const body = await json(await s.get('/api/model/auxiliary'))
-      expect(body.delegation).toMatchObject({ configured: 'missing_plugin', effective: null, fixed_model_active: false, model_map: { default: 'Research', options: [{ name: 'Research', api_key_set: true, service_tier: 'normal', fallback_providers: [] }] } })
+      // TAL-2059: the backend's declared route keys reach the client, and each declared boolean key is a route flag.
+      expect(body.delegation).toMatchObject({ configured: 'missing_plugin', effective: null, fixed_model_active: false, backends: [{ name: 'model_map', route_keys: routeKeys }], model_map: { default: 'Research', options: [{ name: 'Research', api_key_set: true, service_tier: 'normal', fallback_providers: [], flags: { daybreak: true } }] } })
       expect(JSON.stringify(body)).not.toContain('synthetic-private-key')
+      expect(JSON.stringify(body)).not.toContain('hand-written')
       const confirmed = structuredClone(configs.get(s.state))
       expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: 'delegation', provider: 'openai', model: 'synthetic-model' })).status).toBe(503)
       expect(configs.get(s.state)).toEqual(confirmed)
