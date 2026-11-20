@@ -5009,7 +5009,12 @@ extension ChatViewModel {
                 return .unsupported(friendlyMessage: lastError.localizedDescription)
             }
 
-            return .executed(message: nil)
+            // TAL-2071: undo rewinds only the chat, so name the files the undone turns left changed.
+            let changedFiles = response.changedFiles ?? []
+            guard !changedFiles.isEmpty else { return .executed(message: nil) }
+            // A name holding a backtick takes a double-backtick code span (CommonMark).
+            let list = changedFiles.map { $0.contains("`") ? "- `` \($0) ``" : "- `\($0)`" }.joined(separator: "\n")
+            return .executed(message: String(localized: "The undone turns changed these files:") + "\n\n" + list)
         } catch {
             lastError = error
             return .unsupported(friendlyMessage: error.localizedDescription)

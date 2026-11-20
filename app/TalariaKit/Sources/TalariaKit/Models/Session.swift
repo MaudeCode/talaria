@@ -259,6 +259,8 @@ public struct SessionUndoResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     let removedCount: Int?
     let removedPreview: String?
+    /// TAL-2069: the files the undone turns changed that are still on disk; absent before that server.
+    let changedFiles: [String]?
     public let error: String?
 }
 

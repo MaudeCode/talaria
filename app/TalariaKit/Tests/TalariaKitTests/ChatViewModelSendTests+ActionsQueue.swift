@@ -869,7 +869,8 @@ extension ChatViewModelSendTests {
                 return apiTestJSONResponse("""
                 {
                   "ok": true,
-                  "removed_count": 2
+                  "removed_count": 2,
+                  "changed_files": []
                 }
                 """, for: request)
             case "/api/session":
@@ -894,6 +895,26 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(result, .executed(message: nil))
         XCTAssertEqual(requestPaths, ["/api/session/undo", "/api/session"])
         XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Remaining message"])
+    }
+
+    /// TAL-2071: the files the undone turns changed are on disk still, so the undo result names them.
+    @MainActor
+    func testUndoSlashCommandNamesTheFilesTheUndoneTurnsChanged() async throws {
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/session/undo":
+                return apiTestJSONResponse(#"{"ok": true, "removed_count": 2, "removed_preview": "Edit", "changed_files": ["notes.txt", "src/a`b.ts"]}"#, for: request)
+            case "/api/session":
+                return apiTestJSONResponse(#"{"session": {"session_id": "session-abc", "messages": []}}"#, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let result = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "undo")))
+
+        XCTAssertEqual(result, .executed(message: "The undone turns changed these files:\n\n- `notes.txt`\n- `` src/a`b.ts ``"))
     }
 
     @MainActor

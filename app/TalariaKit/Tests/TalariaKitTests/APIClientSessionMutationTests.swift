@@ -174,7 +174,8 @@ final class APIClientSessionMutationTests: APIClientTestCase {
             {
               "ok": true,
               "removed_count": 2,
-              "removed_preview": "Summarize the logs"
+              "removed_preview": "Summarize the logs",
+              "changed_files": ["notes.txt", "src/app.ts"]
             }
             """, for: request)
         }
@@ -184,6 +185,19 @@ final class APIClientSessionMutationTests: APIClientTestCase {
         XCTAssertEqual(response.ok, true)
         XCTAssertEqual(response.removedCount, 2)
         XCTAssertEqual(response.removedPreview, "Summarize the logs")
+        XCTAssertEqual(response.changedFiles, ["notes.txt", "src/app.ts"])
+    }
+
+    /// TAL-2071: a server before TAL-2069 answers without `changed_files`.
+    func testUndoSessionDecodesAnAnswerWithoutChangedFiles() async throws {
+        let client = makeClient { request in
+            apiTestJSONResponse(#"{"ok": true, "removed_count": 2, "removed_preview": "Summarize the logs"}"#, for: request)
+        }
+
+        let response = try await client.undoSession(id: "abc123")
+
+        XCTAssertEqual(response.removedCount, 2)
+        XCTAssertNil(response.changedFiles)
     }
 
     func testRetrySessionBuildsExpectedBodyAndDecodesResponse() async throws {
