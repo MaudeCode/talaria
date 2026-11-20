@@ -326,6 +326,12 @@
       "file": "app/TalariaTests/FixtureApp.swift",
       "count": 1,
       "reason": "activateSend(in:) is the one helper that activates Send, after waiting until it reports enabled."
+    },
+    {
+      "rule": "heavy-pixel-draw",
+      "file": "app/TalariaTests/HostedView.swift",
+      "count": 1,
+      "reason": "attachWindowImage draws a window only for an attachment someone keeps: a failed test's screenshot, or a TALARIA_TEST_SCREENSHOTS run."
     }
   ]
 }

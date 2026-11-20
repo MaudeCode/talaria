@@ -669,16 +669,10 @@ final class TranscriptHostedTests: XCTestCase {
         return found.sorted { $0.minX == $1.minX ? $0.minY < $1.minY : $0.minX < $1.minX }
     }
 
-    /// Every pixel of `rect` in a 3x drawing of `window`, as its colour channels: at 3x a glyph's stems are solid, so
+    /// Every pixel of `rect` in `window`'s committed frame at 3x, as its colour channels: at 3x a glyph's stems are solid, so
     /// its strongest pixel is its colour.
     private func pixels(in window: UIWindow, _ rect: CGRect) -> [[Int]] {
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 3
-        format.preferredRange = .standard
-        let image = UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        }
-        guard let cgImage = image.cgImage, let data = cgImage.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return [] }
+        guard let cgImage = committedWindowImage(window, scale: 3), let data = cgImage.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return [] }
         let pixelBytes = cgImage.bitsPerPixel / 8
         let (xs, ys) = (Int(rect.minX * 3)..<Int(rect.maxX * 3), Int(rect.minY * 3)..<Int(rect.maxY * 3))
         return ys.flatMap { y in xs.map { x in (0..<3).map { Int(bytes[y * cgImage.bytesPerRow + x * pixelBytes + $0]) } } }

@@ -1,0 +1,1 @@
+{"skip": "Test-only change: hosted tests read pixels from the committed frame, so the simulator render server stops growing during Settings chrome tests; no app behavior changes."}

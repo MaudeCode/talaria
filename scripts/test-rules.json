@@ -139,6 +139,15 @@
         "UIGraphicsImageRenderer\\(size: CGSize\\(width: 1, height: 1\\)\\)"
       ],
       "message": "test-audit heavy: force a commit with commitDisplay(of:) (two display updates), never with a drawing no one keeps; the simulator's render server snapshots the whole window for every drawing (docs/testing.md)"
+    },
+    "heavy-pixel-draw": {
+      "paths": [
+        "app/TalariaTests/"
+      ],
+      "patterns": [
+        "afterScreenUpdates: true"
+      ],
+      "message": "test-audit heavy: read a hosted window's pixels with committedWindowImage(_:scale:) or windowPixels(_:at:), which draw the committed frame; a drawing after screen updates makes the simulator's render server snapshot the window again and keep it (docs/testing.md)"
     }
   }
 }

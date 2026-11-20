@@ -423,15 +423,27 @@ extension XCTestCase {
         add(attachment)
     }
 
-    /// The bytes of each of `points` in one 1x drawing of `window`.
+    /// `window`'s committed frame, drawn at `scale` with 8-bit channels, for tests that read its pixels. It waits for the
+    /// display to commit and then draws the frame already on screen. A drawing after screen updates makes the
+    /// simulator's render server snapshot the window again: on a hosted runner it kept about 36 MB per drawing, and
+    /// SettingsPlacementHostedTests' 128 pixel reads took it past 1 GB, where reading the committed frame stays at
+    /// 234 MB (TAL-2606).
+    @MainActor
+    func committedWindowImage(_ window: UIWindow, scale: CGFloat = 1) -> CGImage? {
+        commitDisplay(of: window)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        format.preferredRange = .standard
+        return UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+        }.cgImage
+    }
+
+    /// The bytes of each of `points` in `window`'s committed frame at 1x.
     @MainActor
     func windowPixels(_ window: UIWindow, at points: [CGPoint]) -> [[UInt8]] {
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let image = UIGraphicsImageRenderer(size: window.bounds.size, format: format).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        }
-        guard let cgImage = image.cgImage, let data = cgImage.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else {
+        guard let cgImage = committedWindowImage(window), let data = cgImage.dataProvider?.data,
+              let bytes = CFDataGetBytePtr(data) else {
             return points.map { _ in [] }
         }
         let pixelBytes = cgImage.bitsPerPixel / 8
