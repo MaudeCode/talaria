@@ -2037,6 +2037,7 @@
 		}
 	],
 	"type_slash": "Tippe / für Befehle",
+	"undo_changed_files": "Die rückgängig gemachten Züge haben diese Dateien geändert",
 	"unsaved_confirm": "Sie haben ungespeicherte Änderungen in der Vorschau. Verwerfen und fortfahren?",
 	"untitled": "Unbenannt",
 	"update_clear_lock_retry": "Clear lock and retry update",

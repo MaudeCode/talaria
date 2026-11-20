@@ -876,6 +876,13 @@
         ""
       ]
     },
+    "tests/test_checkpoints.py::test_undo_names_the_files_the_undone_span_changed": {
+      "layer": "compatibility",
+      "reason": "The supported Agent's /undo hint (tools/checkpoint_undo_hint.py) must name, at most 8, the files changed since the undone span's first snapshot in the shared profile store, and nothing for a span with no snapshot; an Agent without the hint answers an empty list (TAL-2069). Real sidecar and git store on a disposable home and workspace.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_checkpoints.py::test_a_web_turn_takes_a_checkpoint_only_when_the_profile_enables_them": {
       "layer": "compatibility",
       "reason": "A Web turn's real write_file call must take a checkpoint only when the profile enables them: checkpoints.enabled true, the legacy bare checkpoints: true that the supported Agent's load_config keeps, and its DEFAULT_CONFIG default off. Real sidecar with a stub OpenAI-compatible model on loopback; no provider calls.",

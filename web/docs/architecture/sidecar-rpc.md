@@ -1,5 +1,8 @@
 # Sidecar RPC (TAL-245)
 
+RPC v102 adds `checkpoints.undo_changed_files` (TAL-2069): the files the turns an undo removed changed, by the
+Agent's own `/undo` hint over the profile's checkpoint store; an Agent without the hint answers an empty list.
+
 RPC v101 adds the `gateway.session` actions `transcript` and `work_transcript` and the `transcripts` flag on a
 snapshot and on `work_list` (TAL-2072), for owners advertising `session-transcript-v1`. Both call the owner's
 `session.transcript`, a stored read that neither resumes, reads replay nor subscribes, so it is never an

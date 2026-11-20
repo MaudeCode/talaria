@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "After Undo, Talaria Web names the files the undone turns changed and opens Checkpoints to restore them.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Undo shows changed files",
+        "description": "After Undo, see which files the undone turns changed and restore them from Checkpoints.",
+        "icon": "sparkles"
+      }
+    }
+  ]
+}

@@ -2108,6 +2108,7 @@
 	"type_slash": "Tapez / pour voir les commandes",
 	"undid_messages_suffix": " message(s).",
 	"undid_n_messages": "Supprimé",
+	"undo_changed_files": "Les tours annulés ont modifié ces fichiers",
 	"undo_exchange": "Annuler le dernier échange",
 	"undo_failed": "Échec de l'annulation : ",
 	"unsaved_confirm": "Vous avez des modifications non enregistrées dans l'aperçu. Les ignorer et naviguer ?",

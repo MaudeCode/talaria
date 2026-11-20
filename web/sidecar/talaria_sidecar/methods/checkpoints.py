@@ -11,6 +11,9 @@ from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
 
+# The Agent's own ``/undo`` line names at most this many files (``checkpoint_undo_hint._MAX_NAMED_FILES``).
+UNDO_NAMED_FILES = 8
+
 
 def checkpoint_kwargs(cfg: dict | None = None) -> dict:
     """The profile's ``checkpoints`` config as ``AIAgent`` kwargs, resolved as the Agent's gateway does
@@ -92,6 +95,22 @@ def register(registry) -> None:
             manager = _manager()
             result = _agent_result(manager.diff(workspace, _owned(manager, workspace, checkpoint)))
         return {"stat": str(result.get("stat") or ""), "diff": str(result.get("diff") or "")}
+
+    @registry.method("checkpoints.undo_changed_files")
+    def undo_changed_files(ctx: CallContext, params: dict) -> dict:
+        """TAL-2069: the files the turns an undo removed changed under ``workspace``, by the Agent's own ``/undo`` hint
+        (``tools/checkpoint_undo_hint.py``) over this profile's store; ``since`` is when the undone span began, in epoch
+        seconds. Best effort and read-only: an empty list when checkpoints are off, no snapshot was taken in the span, or
+        the Agent predates the hint."""
+        workspace, since = _param(params, "workspace"), params.get("since")
+        if isinstance(since, bool) or not isinstance(since, (int, float)):
+            raise InvalidParams("since is required")
+        try:
+            from tools.checkpoint_undo_hint import undo_changed_files as changed
+        except ImportError:  # Agent v0.23.0 has no undo hint
+            return {"files": []}
+        with scoped_home(profile_home_param(params)):
+            return {"files": [str(f) for f in changed(_manager(), workspace, since)][:UNDO_NAMED_FILES]}
 
     @registry.method("checkpoints.restore")
     def restore(ctx: CallContext, params: dict) -> dict:

@@ -1891,6 +1891,7 @@
 	"type_slash": "/ を入力するとコマンド一覧",
 	"undid_messages_suffix": "件のメッセージ。",
 	"undid_n_messages": "削除",
+	"undo_changed_files": "取り消したターンが変更したファイル",
 	"undo_exchange": "最後のやり取りを取り消す",
 	"undo_failed": "取り消し失敗: ",
 	"unsaved_confirm": "プレビューに未保存の変更があります。破棄して移動しますか?",

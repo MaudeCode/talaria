@@ -2061,6 +2061,7 @@
 		}
 	],
 	"type_slash": "Escribe / para ver los comandos",
+	"undo_changed_files": "Los turnos deshechos cambiaron estos archivos",
 	"unsaved_confirm": "Tienes cambios sin guardar en la vista previa. ¿Descartar y navegar?",
 	"untitled": "Sin título",
 	"update_clear_lock_retry": "Clear lock and retry update",

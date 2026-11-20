@@ -1956,6 +1956,7 @@
 	"type_slash": "Komutları görmek için / yazın",
 	"undid_messages_suffix": "mesaj(lar).",
 	"undid_n_messages": "Kaldırıldı",
+	"undo_changed_files": "Geri alınan turlar bu dosyaları değiştirdi",
 	"undo_exchange": "Son değişimi geri al",
 	"undo_failed": "Geri alma başarısız oldu:",
 	"unsaved_confirm": "Önizlemede kaydedilmemiş değişiklikleriniz var. Atılıp gezinilsin mi?",

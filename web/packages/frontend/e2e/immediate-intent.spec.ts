@@ -175,7 +175,7 @@ for (const action of ['undo', 'clear'] as const) {
       await mutation.promise
       messages = []
       holdRefresh = true
-      await route.fulfill({ json: action === 'undo' ? { ok: true, removed_count: 2, removed_preview: 'Earlier question' } : { ok: true, session: { ...snapshot(), messages: undefined } } })
+      await route.fulfill({ json: action === 'undo' ? { ok: true, removed_count: 2, removed_preview: 'Earlier question', changed_files: [] } : { ok: true, session: { ...snapshot(), messages: undefined } } })
     })
     await page.goto(`/session/${sid}`)
     await expect(page.getByText('Earlier answer', { exact: true })).toBeVisible()

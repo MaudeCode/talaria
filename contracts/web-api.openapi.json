@@ -39544,12 +39544,21 @@
                         },
                         "removed_preview": {
                           "type": "string"
+                        },
+                        "changed_files": {
+                          "type": "array",
+                          "maxItems": 8,
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "TAL-2069: up to 8 files, relative to the session's workspace, that the undone turns changed and are still on disk, by the Agent's checkpoints; empty when none or unknown. Checkpoints can restore them."
                         }
                       },
                       "required": [
                         "ok",
                         "removed_count",
-                        "removed_preview"
+                        "removed_preview",
+                        "changed_files"
                       ]
                     },
                     {

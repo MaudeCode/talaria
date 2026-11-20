@@ -115,7 +115,7 @@ def run_scenarios(proc: SidecarProcess, home: pathlib.Path):
     yield "checkpoints.list", target, message, frames
     checkpoint = {**target, "checkpoint": message["result"]["checkpoints"][0]["hash"]}
     # The seeded store has no agent-write ledger, so only an `all` restore runs (TAL-1260).
-    for method, params in (("checkpoints.diff", checkpoint), ("checkpoints.restore", {**checkpoint, "all": True})):
+    for method, params in (("checkpoints.diff", checkpoint), ("checkpoints.restore", {**checkpoint, "all": True}), ("checkpoints.undo_changed_files", {**target, "since": 0.5})):
         message, frames = proc.call(method, params, timeout=60)
         yield method, params, message, frames
     # TAL-819: a profile with both write gates on, whose skill writes the Agent's own tool stages.

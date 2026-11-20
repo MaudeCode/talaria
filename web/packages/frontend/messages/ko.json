@@ -1956,6 +1956,7 @@
 	"type_slash": "/ 를 입력해 명령 보기",
 	"undid_messages_suffix": "개 메시지.",
 	"undid_n_messages": "제거됨",
+	"undo_changed_files": "취소한 턴이 변경한 파일",
 	"undo_exchange": "마지막 교환 실행 취소",
 	"undo_failed": "실행 취소 실패: ",
 	"unsaved_confirm": "You have unsaved changes in the preview. Discard and navigate?",

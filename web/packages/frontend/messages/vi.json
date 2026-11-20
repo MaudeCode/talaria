@@ -1889,6 +1889,7 @@
 	"type_slash": "Gõ / để xem lệnh",
 	"undid_messages_suffix": "tin nhắn.",
 	"undid_n_messages": "Đã xóa",
+	"undo_changed_files": "Các lượt đã hoàn tác đã thay đổi các tệp này",
 	"undo_exchange": "Hoàn tác lượt trao đổi cuối",
 	"undo_failed": "Hoàn tác thất bại: ",
 	"unsaved_confirm": "Bạn có thay đổi chưa lưu trong phần xem trước. Bỏ thay đổi và chuyển trang?",
