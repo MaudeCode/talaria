@@ -23,9 +23,9 @@ public struct MemoryResponse: Decodable, Equatable, Sendable {
     let userRevision: String?
     let soulRevision: String?
     public let projectContext: String?
-    public let projectContextName: String?
     let projectContextPath: String?
-    public let projectContextWorkspace: String?
+    /// The footer line the server joins from the project-context name and workspace (TAL-2498); nil when both are blank.
+    public let projectContextDetail: String?
     public let projectContextMtime: Double?
     public let projectContextShadowed: Bool?
     public let externalNotesEnabled: Bool?
@@ -44,9 +44,8 @@ public struct MemoryResponse: Decodable, Equatable, Sendable {
         case userRevision
         case soulRevision
         case projectContext
-        case projectContextName
         case projectContextPath
-        case projectContextWorkspace
+        case projectContextDetail
         case projectContextMtime
         case projectContextShadowed
         case externalNotesEnabled
@@ -67,12 +66,8 @@ public struct MemoryResponse: Decodable, Equatable, Sendable {
         userRevision = try? container.decodeIfPresent(String.self, forKey: .userRevision)
         soulRevision = try? container.decodeIfPresent(String.self, forKey: .soulRevision)
         projectContext = try container.decodeIfPresent(String.self, forKey: .projectContext)
-        projectContextName = try container.decodeIfPresent(String.self, forKey: .projectContextName)
         projectContextPath = try container.decodeIfPresent(String.self, forKey: .projectContextPath)
-        projectContextWorkspace = try container.decodeIfPresent(
-            String.self,
-            forKey: .projectContextWorkspace
-        )
+        projectContextDetail = try container.decodeIfPresent(String.self, forKey: .projectContextDetail)
         projectContextMtime = try container.decodeFlexibleDoubleIfPresent(forKey: .projectContextMtime)
         // Upstream (routes.py @ 312d3fab, verified live 2026-07-03) returns a *list* of
         // shadowed-file objects here; the API docs describe a boolean flag. Accept both:

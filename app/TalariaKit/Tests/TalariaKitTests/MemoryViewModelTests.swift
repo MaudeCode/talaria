@@ -141,8 +141,6 @@ final class MemoryViewModelTests: APIClientTestCase {
               "user": "# Profile",
               "soul": "# Soul",
               "project_context": "# Project rules",
-              "project_context_name": "AGENTS.md",
-              "project_context_workspace": "/Users/test/workspace",
               "project_context_mtime": 1770000300,
               "project_context_shadowed": [
                 {
@@ -163,12 +161,9 @@ final class MemoryViewModelTests: APIClientTestCase {
 
         XCTAssertTrue(viewModel.showsProjectContext)
         XCTAssertEqual(viewModel.projectContextText, "# Project rules")
-        XCTAssertEqual(viewModel.projectContextName, "AGENTS.md")
-        XCTAssertEqual(viewModel.projectContextWorkspace, "/Users/test/workspace")
         XCTAssertEqual(viewModel.projectContextMtime, Date(timeIntervalSince1970: 1_770_000_300))
         XCTAssertTrue(viewModel.isProjectContextShadowed)
         XCTAssertEqual(viewModel.isExternalNotesEnabled, true)
-        XCTAssertEqual(viewModel.projectContextDetail, "AGENTS.md — /Users/test/workspace")
     }
 
     @MainActor
@@ -194,12 +189,11 @@ final class MemoryViewModelTests: APIClientTestCase {
         XCTAssertTrue(viewModel.hasLoaded)
         XCTAssertFalse(viewModel.showsProjectContext)
         XCTAssertFalse(viewModel.isProjectContextShadowed)
-        XCTAssertNil(viewModel.projectContextDetail)
         XCTAssertNil(viewModel.isExternalNotesEnabled)
     }
 
     @MainActor
-    func testProjectContextSectionHiddenForBlankDocumentAndDetailOmitsEmptyParts() async throws {
+    func testProjectContextSectionHiddenForBlankDocument() async throws {
         // Upstream returns "" (not null) when no readable project-context file exists.
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/memory")
@@ -208,8 +202,6 @@ final class MemoryViewModelTests: APIClientTestCase {
             {
               "memory": "# Notes",
               "project_context": "  \\n ",
-              "project_context_name": "",
-              "project_context_workspace": "/Users/test/workspace",
               "project_context_shadowed": []
             }
             """, for: request)
@@ -223,6 +215,5 @@ final class MemoryViewModelTests: APIClientTestCase {
 
         XCTAssertFalse(viewModel.showsProjectContext)
         XCTAssertFalse(viewModel.isProjectContextShadowed)
-        XCTAssertEqual(viewModel.projectContextDetail, "/Users/test/workspace")
     }
 }

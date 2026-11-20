@@ -13,8 +13,7 @@ public final class MemoryViewModel {
     private(set) var soulMtime: Date?
     private var loaded: MemoryResponse?
     public private(set) var projectContextText: String?
-    private(set) var projectContextName: String?
-    private(set) var projectContextWorkspace: String?
+    public private(set) var projectContextDetail: String?
     public private(set) var projectContextMtime: Date?
     public private(set) var isProjectContextShadowed = false
     private(set) var isExternalNotesEnabled: Bool?
@@ -84,14 +83,6 @@ public final class MemoryViewModel {
         return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Non-localized "name — workspace" detail line for the project-context section.
-    public var projectContextDetail: String? {
-        let parts = [projectContextName, projectContextWorkspace]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: " — ")
-    }
-
     public func content(for section: MemorySection) -> String {
         switch section {
         case .memory:
@@ -154,8 +145,7 @@ public final class MemoryViewModel {
         userMtime = response.userMtime.map { Date(timeIntervalSince1970: $0) }
         soulMtime = response.soulMtime.map { Date(timeIntervalSince1970: $0) }
         projectContextText = response.projectContext
-        projectContextName = response.projectContextName
-        projectContextWorkspace = response.projectContextWorkspace
+        projectContextDetail = response.projectContextDetail
         projectContextMtime = response.projectContextMtime.map { Date(timeIntervalSince1970: $0) }
         isProjectContextShadowed = response.projectContextShadowed ?? false
         isExternalNotesEnabled = response.externalNotesEnabled

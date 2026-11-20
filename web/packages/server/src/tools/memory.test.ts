@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { syncFsCalls } from '../test/sync-fs.js'
 import { GitRunner } from '../workspace/git.js'
-import { MAX_SHOWN_ENTRIES, memoryRevision, readMemory, readProjectContext } from './memory.js'
+import { MAX_SHOWN_ENTRIES, memoryRevision, projectContextDetail, readMemory, readProjectContext } from './memory.js'
 
 vi.mock('node:fs', { spy: true })
 vi.mock('node:child_process', { spy: true })
@@ -45,6 +45,7 @@ describe('memory.get', () => {
       memory_entries: ['remember'], user_entries: ['user'], memory_name: 'MEMORY.md', user_name: 'USER.md', soul_name: 'SOUL.md',
       memory_revision: memoryRevision(key, Buffer.from('remember\n')), user_revision: memoryRevision(key, Buffer.from('user\n')), soul_revision: memoryRevision(key, Buffer.from('soul\n')),
       memory_path: memory, user_path: user, soul_path: soul, project_context_path: hermes, project_context_name: 'HERMES.md', project_context_workspace: workspace,
+      project_context_detail: `HERMES.md — ${workspace}`,
       memory_mtime: memoryMtime, user_mtime: userMtime, soul_mtime: soulMtime, project_context_mtime: hermesMtime,
       project_context_shadowed: [{ name: 'AGENTS.md', path: agents, mtime: agentsMtime, shadowed_by: 'HERMES.md', shadowed_by_path: hermes }],
       external_notes_enabled: false,
@@ -54,6 +55,13 @@ describe('memory.get', () => {
 
     expect(await readMemory(join(root, 'profile'), {}, workspace, {}, false, key, git)).toEqual(first)
     expect(toplevel).toHaveBeenCalledTimes(1)
+  })
+
+  it('joins the project-context name and workspace that are not blank into one detail line (TAL-2498)', () => {
+    expect(projectContextDetail(' AGENTS.md ', '/w')).toBe('AGENTS.md — /w')
+    expect(projectContextDetail('', '/w')).toBe('/w')
+    expect(projectContextDetail('AGENTS.md', ' \n ')).toBe('AGENTS.md')
+    expect(projectContextDetail(' ', '')).toBeNull()
   })
 
   it('names each file and splits MEMORY.md and USER.md into their masked § entries (TAL-2126)', async () => {

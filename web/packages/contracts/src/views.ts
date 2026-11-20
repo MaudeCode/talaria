@@ -1511,6 +1511,7 @@ export const MemorySchema = z.looseObject({
   memory: z.string(), user: z.string(), soul: z.string(), project_context: z.string().optional(), memory_path: z.string().optional(), user_path: z.string().optional(), soul_path: z.string().optional(), project_context_path: z.string().optional(),
   project_context_name: z.string().optional(), project_context_workspace: z.string().optional(), memory_mtime: NullableNumber.optional(), user_mtime: NullableNumber.optional(), soul_mtime: NullableNumber.optional(), project_context_mtime: NullableNumber.optional(),
   project_context_shadowed: z.array(Json).optional(), external_notes_enabled: z.boolean().optional(),
+  project_context_detail: z.string().nullable().describe('TAL-2498: the project-context footer line: `project_context_name` and `project_context_workspace` that are not blank, joined by ` — `; null when both are blank.'),
   /** TAL-784: the revision of each file as this read found it. A save sends the revision its edit started from. */
   memory_revision: z.string(), user_revision: z.string(), soul_revision: z.string(),
   /**

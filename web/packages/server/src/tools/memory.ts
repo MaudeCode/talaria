@@ -138,6 +138,8 @@ function shownEntries(raw: string, mask: (text: string) => string): string[] | u
   const unique = [...new Set(entriesOf(raw).map((entry) => entry.trim()))]
   return unique.length > MAX_SHOWN_ENTRIES ? undefined : unique.map(mask)
 }
+/** TAL-2498: the project-context footer line: the name and workspace that are not blank, joined by ` — `; null when both are. */
+export const projectContextDetail = (name: string, workspace: string): string | null => [name, workspace].map((part) => part.trim()).filter(Boolean).join(' — ') || null
 export async function readMemory(profileHome: string, config: Config, workspace: string | null, env: Record<string, string | undefined>, redact: boolean, key: Buffer, git: GitRunner): Promise<Dict> {
   const mem = dict(config.memory)
   const memoryEnabled = mem.memory_enabled === undefined ? true : truthy(mem.memory_enabled)
@@ -154,6 +156,7 @@ export async function readMemory(profileHome: string, config: Config, workspace:
     memory_name: memFile ? basename(memFile) : '', user_name: userFile ? basename(userFile) : '', soul_name: basename(soulFile),
     memory_revision: memoryRevision(key, memory), user_revision: memoryRevision(key, user), soul_revision: memoryRevision(key, soul),
     memory_path: memFile ?? '', user_path: userFile ?? '', soul_path: soulFile, project_context_path: str(context.path), project_context_name: str(context.name), project_context_workspace: str(context.workspace),
+    project_context_detail: projectContextDetail(str(context.name), str(context.workspace)),
     memory_mtime: memoryMtime, user_mtime: userMtime, soul_mtime: soulMtime, project_context_mtime: context.mtime ?? null, project_context_shadowed: context.shadowed, external_notes_enabled: externalNotesEnabled(env, config),
   }
 }

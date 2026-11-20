@@ -134619,6 +134619,17 @@
                     "external_notes_enabled": {
                       "type": "boolean"
                     },
+                    "project_context_detail": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-2498: the project-context footer line: `project_context_name` and `project_context_workspace` that are not blank, joined by ` — `; null when both are blank."
+                    },
                     "memory_revision": {
                       "type": "string"
                     },
@@ -134654,6 +134665,7 @@
                     "memory",
                     "user",
                     "soul",
+                    "project_context_detail",
                     "memory_revision",
                     "user_revision",
                     "soul_revision"
