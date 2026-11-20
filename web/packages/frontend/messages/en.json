@@ -715,6 +715,7 @@
 	"downloading": "Downloading {name}…",
 	"drop_files_to_attach": "Drop files to attach",
 	"edit": "Edit",
+	"edit_attachments_unavailable": "Attachments no longer available: {n}",
 	"edit_discard_desc": [
 		{
 			"declarations": [

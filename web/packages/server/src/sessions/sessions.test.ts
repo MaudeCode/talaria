@@ -1068,6 +1068,22 @@ describe('a truncate that discards more than one user turn waits for confirmatio
     db.close()
   })
   afterAll(() => s.close())
+  it.each([true, false])('returns the cut image when available (%s)', async (available) => {
+    const sid = String((await newSession(s)).session_id)
+    const dir = join(s.deps.blobs.attachmentRoot(), sid)
+    mkdirSync(dir, { recursive: true })
+    const path = join(dir, 'edit.png')
+    if (available) writeFileSync(path, 'image bytes')
+    const image = { path, filename: 'edit.png', mime: 'image/png', is_image: true }
+    await writeMessages(s, sid, [{ role: 'user', content: 'Edit this', attachments: [image] }])
+
+    const response = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 0, confirm_deep_truncate: false })
+    expect(response.status).toBe(200)
+    expect(await json(response)).toMatchObject(available
+      ? { ok: true, last_user_attachments: [image] }
+      : { ok: true, last_user_attachments: [], dropped_attachment_count: 1 })
+  })
+
   // Eight stored rows, seven shown: the tool result folds into its turn's scene. Six are later than the first.
   const threeTurns = (): Json[] => [
     { role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 },

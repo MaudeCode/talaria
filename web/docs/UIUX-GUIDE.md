@@ -309,9 +309,9 @@ confirms worker release, including after a terminal event; a failed Stop keeps t
 retried. Accepted queue mutations persist before their view renders, so an admission that finishes after
 navigation cannot be resent on return. Refused history commands return after any newer composer text.
 Edit, Retry, Undo and Clear show their intent in a composer status chip. An Undo whose turns changed files
-names them, from the server's `changed_files`, in a toast whose Checkpoints action opens that page (TAL-2069). Edit returns
-text only after the server accepts the cut, retaining deep-discard confirmation, and uses a returned full
-snapshot without waiting for another detail request. Every send, steer,
+names them, from the server's `changed_files`, in a toast whose Checkpoints action opens that page (TAL-2069). After the server accepts an Edit cut,
+the composer restores the text and available attachments and reports any unavailable files in a toast.
+Edit retains deep-discard confirmation and uses the returned snapshot immediately. Every send, steer,
 or queue returns the transcript to its end.
 
 The status chips are a list of `ComposerNotice` entries (`ComposerNotices.tsx`,

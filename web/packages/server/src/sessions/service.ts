@@ -2522,7 +2522,7 @@ export class SessionService {
     else keep = /^[+-]?\d+$/.test(str(keepRaw).trim()) ? Number.parseInt(str(keepRaw).trim(), 10) : Number.NaN
     if (!Number.isInteger(keep)) throw new HttpFailure(400, 'keep_count must be an integer')
     if (keep < 0) throw new HttpFailure(400, 'keep_count must be non-negative')
-    const refused = await this.withMutationLock(sid, async () => {
+    const result = await this.withMutationLock(sid, async () => {
       // One state.db read decides and marks the boundary, so a row committed meanwhile is neither counted nor hidden.
       const read = await this.stateDbRead(s)
       if (hold) {
@@ -2534,18 +2534,28 @@ export class SessionService {
       }
       // A cut inside the state.db continuation keeps the continuation's rows before it: the boundary below hides every
       // row this read saw, so those rows join the stored transcript and model history first.
+      const transcript = keep >= s.messages.length ? this.mergedTranscript(s, s.messages, read.rows) : s.messages
+      const row = transcript[keep]
+      const attachments = row?.role === 'user' ? this.resendAttachments(normalizeUserDisplay(row)) : []
+      const blobs = this.deps.blobs
+      const available = await Promise.all(attachments.map(async (attachment) => {
+        const key = blobKeyForPath(blobs.attachmentRoot(), str(attachment.path))
+        return key?.startsWith(attachmentPrefix(sid)) ? Boolean(await blobs.stat(key)) : false
+      }))
+      const last_user_attachments = attachments.filter((_, index) => available[index])
+      const dropped_attachment_count = attachments.length - last_user_attachments.length
       if (keep > s.messages.length) {
         if (s.context_messages.length) s.context_messages = this.modelContext(s, read.rows)
-        s.messages = this.mergedTranscript(s, s.messages, read.rows)
+        s.messages = transcript
       }
       truncateSessionAtKeep(s, keep, this.deps.now())
       this.markStateDbSeen(s, read, { boundary: true })
       await this.store.save(s)
-      return null
+      return { ok: true as const, ...(attachments.length ? { last_user_attachments, dropped_attachment_count } : {}) }
     })
-    if (refused) return refused
+    if (!result.ok) return result
     await this.deps.runtime.evictAgent(sid)
-    return { ok: true, session: (await this.publicSession(s)) }
+    return { ...result, session: (await this.publicSession(s)) }
   }
 
   /**
@@ -3068,6 +3078,10 @@ export class SessionService {
     return { ok: true, session: (await this.wireRow(s)) }
   }
 
+  private resendAttachments(prompt: Message) {
+    return attachmentObjects(Array.isArray(prompt.attachments) ? prompt.attachments : []).filter((a): a is Record<string, unknown> => isDict(a) && Boolean(str(a.path).trim()))
+  }
+
   async retry(sid: string): Promise<Record<string, unknown>> {
     await this.rejectViewOnly(sid, 'modified')
     return this.withMutationLock(sid, async () => {
@@ -3083,7 +3097,7 @@ export class SessionService {
       const shownText = extractText(prompt.content)
       // A withheld prompt leaves masked, as the transcript shows it. An ordinary prompt's raw text is what Retry resends (TAL-1881).
       const lastUserText = withheldPromptText(history[lastUser]) === null ? shownText : str(redactText(shownText, this.deps.redactEnabled()))
-      const lastUserAttachments = attachmentObjects(Array.isArray(prompt.attachments) ? prompt.attachments : []).filter((a): a is Record<string, unknown> => isDict(a) && Boolean(str(a.path).trim()))
+      const lastUserAttachments = this.resendAttachments(prompt)
       const lastUserPrompt = stripWorkspacePrefix(lastUserAttachments.length ? stripAttachedFilesMarker(lastUserText) : lastUserText, true)
       if (!lastUserPrompt && !lastUserAttachments.length) return { error: 'The last message has nothing to resend.' }
       const removed = history.length - lastUser

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Editing a sent message in Talaria Web restores its attachments to the composer and reports any that are unavailable.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

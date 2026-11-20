@@ -9,7 +9,7 @@ import { ContextMenu, MenuItem } from '../../ui/Menu'
 import { ImageLightbox } from '../chat/ImageLightbox'
 
 /** `compressing` precedes the upload where the client re-encodes first (Send feedback). Each owner fills its own receipt slot. */
-export interface PendingFile { key: string; file: File; status: 'compressing' | 'uploading' | 'done' | 'error'; upload?: UploadResponse | undefined; groupAttachment?: z.infer<typeof GroupAttachmentSchema> | undefined; feedback?: z.infer<typeof FeedbackAttachmentStagedSchema> | undefined; error?: string | undefined }
+export interface PendingFile { key: string; file: File; status: 'compressing' | 'uploading' | 'done' | 'error'; upload?: UploadResponse | undefined; groupAttachment?: z.infer<typeof GroupAttachmentSchema> | undefined; feedback?: z.infer<typeof FeedbackAttachmentStagedSchema> | undefined; error?: string | undefined; previewUrl?: string | undefined }
 
 /**
  * The text of each file the composer made from a long paste (TAL-1915). Keyed by the File, which follows hand-offs,
@@ -17,7 +17,7 @@ export interface PendingFile { key: string; file: File; status: 'compressing' | 
  */
 export const pastedText = new WeakMap<File, string>()
 
-const isImage = (f: PendingFile) => f.file.type.startsWith('image/')
+const isImage = (f: PendingFile) => f.upload?.is_image || f.file.type.startsWith('image/')
 const busy = (f: PendingFile) => f.status === 'compressing' || f.status === 'uploading'
 const busyLabel = (f: PendingFile) => f.status === 'compressing' ? m.attachment_compressing() : m.uploading()
 
@@ -100,16 +100,16 @@ function FileChips({ files, className, onRemove, onRetry, onEditPaste }: { files
 }
 
 function ImageStrip({ images, className, onRemove, onRetry }: { images: PendingFile[]; className: string; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
-  const urls = useObjectUrls(images.map((f) => f.file))
+  const urls = useObjectUrls(images.filter((f) => !f.previewUrl).map((f) => f.file))
   // The enlarged image by key: an earlier upload finishing reorders `ready` but never switches the open image.
   const [enlarged, setEnlarged] = useState<string | null>(null)
-  const ready = images.flatMap((f) => { const src = urls.get(f.file); return f.status === 'done' && src ? [{ key: f.key, src, name: f.file.name }] : [] })
+  const ready = images.flatMap((f) => { const src = f.previewUrl ?? urls.get(f.file); return f.status === 'done' && src ? [{ key: f.key, src, name: f.file.name }] : [] })
   const index = ready.findIndex((r) => r.key === enlarged)
   return (
     <>
       <ul className={className} aria-label={m.attachments_label()}>
         {images.map((f) => {
-          const src = urls.get(f.file)
+          const src = f.previewUrl ?? urls.get(f.file)
           const label = f.status === 'error' ? `${m.retry()} ${f.file.name}` : busy(f) ? `${busyLabel(f)} ${f.file.name}` : m.image_enlarge({ name: f.file.name })
           const remove = removeAction(f, onRemove)
           return (

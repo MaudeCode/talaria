@@ -3,6 +3,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { returnToComposer } from '../composer/composerReturn'
+import { showToast } from '../toast/toast'
 import { showErrorToast } from '../toast/errorToast'
 import { getStreamContext, useStreamContext } from '../../stream/connection'
 import { getTurnIntent } from '../../stream/store'
@@ -65,7 +66,9 @@ export function useEditMessage(sessionId: string | null, refresh: (accepted?: un
       if (!current()) return
       // A cut the server asks to confirm is not made: the transcript comes back while the question shows.
       if (!r.ok) { setPending({ sessionId: sid, row, text, discard: r.discard_messages, token: r.confirm_token, scope: getStreamContext() }); throw new ConfirmationAsked() }
-      returnToComposer(sid, text)
+      if (r.last_user_attachments?.length) returnToComposer(sid, text, 'return', r.last_user_attachments)
+      else returnToComposer(sid, text)
+      if (r.dropped_attachment_count) showToast(m.edit_attachments_unavailable({ n: r.dropped_attachment_count }))
       await refresh(r.session)
     }, row.index)
   }

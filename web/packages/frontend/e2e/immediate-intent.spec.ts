@@ -1,8 +1,9 @@
 import { createServer, type ServerResponse } from 'node:http'
+import { readFileSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { expect, test } from './fixtures'
 import { deferred, sessionFixture } from '../src/test/fixtures'
-import type { Message } from '../src/contracts'
+import type { Attachment, Message } from '../src/contracts'
 
 test.use({ serviceWorkers: 'block' })
 const sid = 'immediate-intent'
@@ -129,6 +130,38 @@ test('Edit cuts the transcript at once, before the server accepts the cut', asyn
   edit.resolve()
   await expect(page.locator('#msg')).toHaveValue('Earlier question')
   await expect(page.getByText('Earlier answer', { exact: true })).toHaveCount(0)
+})
+
+test('Edit restores a sent image and resends it with the draft', async ({ page }, info) => {
+  const truncateFixture = JSON.parse(readFileSync(new URL('../../../../contracts/fixtures/session-truncate.json', import.meta.url), 'utf8')) as {
+    ok: true; last_user_attachments: Attachment[]; dropped_attachment_count: number
+  }
+  const image = truncateFixture.last_user_attachments[0]!
+  let messages: Message[] = [{ ...initial[0]!, attachments: [image] }, initial[1]!]
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: snapshot(messages) } }))
+  await page.route('**/api/file/raw?**', (route) => route.fulfill({
+    contentType: 'image/png',
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAACAAAAAYCAIAAAAUMWhjAAAA2ElEQVR4nGMsW/WUgZaAiaamMwwlCzqtWjutWmllQSfMaEw7qGBBJ6qhaFzCFly+2kaJ9UzEmH4Zrx3lx6rxcIkNosvE2YFmOgMDAwvZhqIBTKMJ+ADT9Mu47du0owiXFGmp6DI2OyCm47IDuwV4HHsZVQqP23FaQHa63ITNMnIy2mWYCwg6n4GBgRGtuCbe+fcfv8Eq7ufRR4Wi4j4O0zG9xUTFUgErYKJi4GD1BMlBdJ+Q6Wh2MJHk/PvEmY4MmGgU9AwwT5AQRGQ4H5QPPOuzaWc6AwMDAP6YYUG3UvUIAAAAAElFTkSuQmCC', 'base64'),
+  }))
+  await page.route('**/api/session/truncate', (route) => {
+    messages = []
+    return route.fulfill({ json: { ...truncateFixture, session: snapshot(messages) } })
+  })
+  await page.route('**/api/chat/start', (route) => route.fulfill({ json: { status: 'suppressed' } }))
+  await page.goto(`/session/${sid}`)
+  const edit = page.getByRole('button', { name: 'Edit message', exact: true })
+  await expect(edit).toBeVisible()
+  await evidence(page, 'edit-image-before', info.project.name)
+  await edit.click()
+  await expect(page.locator('#msg')).toHaveValue('Earlier question')
+  const preview = page.getByRole('button', { name: 'Enlarge edit.png' })
+  await expect(preview).toBeVisible()
+  await expect(preview.locator('img')).toHaveJSProperty('naturalWidth', 32)
+  await expect(page.getByText('Attachments no longer available: 1')).toBeVisible()
+  await evidence(page, 'edit-image-after', info.project.name)
+  const sent = page.waitForRequest('**/api/chat/start')
+  await page.locator('#btnSend').click()
+  expect((await sent).postDataJSON()).toMatchObject({ message: 'Earlier question', attachments: [image] })
 })
 
 test('Retry exposes intent through mutation, detail refresh and admission', async ({ page }) => {
