@@ -23,8 +23,9 @@ const pageConnect = (state: Snapshot['targets'][number]['state'], settled = fals
   op_id: 'op-page', settled, owner: 'account', tool_call_id: null,
   targets: [{ name: 'gmail', kind: 'connector', state, detail: '', connect_url: 'https://vendor.example.test/authorize/conn-1', required_env: [] }],
 })
-/** The card fixture's consent line: the redactor would mask its key-shaped argument, which the user approves as written. */
-const launchLine = (shared.connect_card.targets as { launch: NonNullable<Snapshot['targets'][number]['launch']> | null }[])[1]!.launch!
+/** The card fixture's consent line, with a key-shaped argument the server's redactor would mask: the user approves the line as sent. */
+const fixtureLine = (shared.connect_card.targets as { launch: NonNullable<Snapshot['targets'][number]['launch']> | null }[])[1]!.launch!
+const launchLine = { ...fixtureLine, target: `${fixtureLine.target} sk-proj-abcdefghijklmnopqrstuvwxyz0123456789` }
 
 describe('TAL-1907: an MCP target\'s launch line', () => {
   const row = (state: Snapshot['targets'][number]['state'], settled = false, launch: typeof launchLine | null = launchLine) =>
@@ -207,7 +208,7 @@ describe('TAL-818: the Connectors page and connect card', () => {
     const sid = str(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const card: Snapshot = { op_id: 'op-chat', settled: false, owner: 'session', tool_call_id: 'call-1', targets: [
       { name: 'gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/conn-2', required_env: [] },
-      { name: 'linear', kind: 'mcp', state: 'pending', detail: '', connect_url: null, required_env: [{ name: 'LINEAR_API_KEY', prompt: 'API key', required: true, secret: true }], launch: launchLine },
+      { name: 'linear', kind: 'mcp', state: 'pending', detail: '', connect_url: null, required_env: [{ name: 'LINEAR_API_KEY', prompt: 'API key', required: true, secret: true }], launch: fixtureLine },
     ] }
     let release: () => void = () => undefined
     sidecar.respond('connectors.operation', () => card)

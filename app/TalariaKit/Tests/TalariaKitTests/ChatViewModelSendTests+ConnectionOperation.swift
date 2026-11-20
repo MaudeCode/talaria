@@ -123,7 +123,9 @@ extension ChatViewModelSendTests {
         let view = try APIClient.responseDecoder().decode(ConnectorOperationView.self, from: Data(Self.viewJSON().utf8))
         XCTAssertNil(view.targets[0].launch)
         XCTAssertEqual(view.targets[1].launch?.kind, "stdio")
-        XCTAssertEqual(view.targets[1].launch?.target, "npx -y mcp-linear --api-key=*** 'two  spaces' sk-proj-abcdefghijklmnopqrstuvwxyz0123456789", "The consent line is the server's, unchanged")
+        let recorded = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(Self.viewJSON().utf8)) as? [String: Any])
+        let line = ((recorded["targets"] as? [[String: Any]])?[1]["launch"] as? [String: Any])?["target"] as? String
+        XCTAssertEqual(view.targets[1].launch?.target, try XCTUnwrap(line), "The consent line is the server's, unchanged")
         XCTAssertEqual(view.targets[1].launch?.env, ["LINEAR_API_KEY"])
         XCTAssertEqual(view.targets[1].launch?.cwd, "/workspace/linear")
 
