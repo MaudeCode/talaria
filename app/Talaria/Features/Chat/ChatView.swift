@@ -2144,7 +2144,7 @@ struct ChatView: View {
                     Task { await chat.forkFromMessage(context) }
                 },
                 onCopy: { context in
-                    UIPasteboard.general.string = context.copyText
+                    PlatformHooks.copyText(context.copyText)
                 },
                 inlineCommitContext: chat.inlineCommitContext,
                 onInlineCommit: {

@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import UIKit
 import TalariaKit
 
 struct SessionRowContextMenu: View {
@@ -50,7 +49,7 @@ struct SessionRowContextMenu: View {
                 Text(fullTitle)
 
                 Button {
-                    UIPasteboard.general.string = fullTitle
+                    PlatformHooks.copyText(fullTitle)
                 } label: {
                     Label("Copy Full Title", systemImage: "doc.on.doc")
                 }
@@ -116,7 +115,7 @@ struct SessionRowContextMenu: View {
                     isMutating: isMutating
                 ) {
                     Button {
-                        UIPasteboard.general.string = deepLinkURL.absoluteString
+                        PlatformHooks.copyText(deepLinkURL.absoluteString)
                     } label: {
                         Label("Copy Deeplink", systemImage: "doc.on.doc")
                     }

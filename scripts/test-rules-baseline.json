@@ -314,6 +314,18 @@
       "file": "web/packages/server/src/sessions/compress.test.ts",
       "count": 1,
       "reason": "The chat.evict_agent fake answers after 20 ms to stand in for a slow sidecar; service.ts awaits the eviction before it finalizes the compression, so the test passes at any delay (checked at 1 ms and 500 ms) and fails once that await is removed."
+    },
+    {
+      "rule": "leak-pasteboard",
+      "file": "app/TalariaTests/FeedbackHostedTests.swift",
+      "count": 3,
+      "reason": "testPlainTextStillPastesIntoTitleAndDetails proves UIKit's own paste(_:), which reads only the general pasteboard, so it saves, writes and restores that pasteboard."
+    },
+    {
+      "rule": "ready-send",
+      "file": "app/TalariaTests/FixtureApp.swift",
+      "count": 1,
+      "reason": "activateSend(in:) is the one helper that activates Send, after waiting until it reports enabled."
     }
   ]
 }

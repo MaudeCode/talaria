@@ -2203,9 +2203,7 @@ final class ChatHostedTests: XCTestCase {
         try await choose("Edit Message", on: "Plan the migration.")
         let presented = await presentedController(in: window)
         let sheet = try XCTUnwrap(presented, "Edit opened no sheet")
-        let send = await awaitCondition { HostedAccessibility.element(in: sheet.view, label: "Send") != nil }
-        XCTAssertTrue(send, "The edit sheet has no Send")
-        HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.element(in: sheet.view, label: "Send")))
+        try await activateSend(in: sheet.view)
         let editAsked = await awaitCondition { alert() != nil }
         XCTAssertTrue(editAsked, "The held edit never asked")
         XCTAssertEqual(alert()?.title, "Discard Later Messages?")
@@ -2352,6 +2350,7 @@ final class ChatHostedTests: XCTestCase {
                             kind: .talaria, target: "session_list",
                             resultView: ToolResultView(text: "{}", fields: [ToolField(key: "sessions", value: "- Release chat", multiline: false)]),
                             isCompleted: true)
+        let copied = recordCopies()
         for (name, style) in [("light", UIUserInterfaceStyle.light), ("dark", .dark)] {
             let window = try hostWindow(VStack { ToolCallCardView(toolCall: call); Spacer() }.padding()
                 .environment(\.chatTranscriptRowState, ChatTranscriptRowState()), size: CGSize(width: 390, height: 520)) { $0.userInterfaceStyle = style }
@@ -2359,7 +2358,7 @@ final class ChatHostedTests: XCTestCase {
                 HostedAccessibility.activate(header)
             }
             HostedAccessibility.activate(try await requireElement(in: window, label: "Copy"))
-            XCTAssertEqual(UIPasteboard.general.string, "limit: 2\n\nsessions: - Release chat", name)
+            XCTAssertEqual(copied.last, "limit: 2\n\nsessions: - Release chat", name)
             _ = try await requireElement(in: window, label: "Copied")
             attachHostedScreenshot(window, name: "tool-row-formatted-\(name)")
 
@@ -2371,7 +2370,7 @@ final class ChatHostedTests: XCTestCase {
             _ = try await requireElement(in: window, label: rawArgs)
             _ = try await requireElement(in: window, label: rawResult)
             HostedAccessibility.activate(try await requireElement(in: window, label: "Copy raw"))
-            XCTAssertEqual(UIPasteboard.general.string, "\(rawArgs)\n\n\(rawResult)", name)
+            XCTAssertEqual(copied.last, "\(rawArgs)\n\n\(rawResult)", name)
             attachHostedScreenshot(window, name: "tool-row-raw-\(name)")
 
             HostedAccessibility.activate(pressed)

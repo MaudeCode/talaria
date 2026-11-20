@@ -134,7 +134,7 @@ struct TaskRunOutputSheet: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        UIPasteboard.general.string = content
+                        if let content { PlatformHooks.copyText(content) }
                         didCopy = true
                     } label: {
                         Label(didCopy ? "Copied" : "Copy Output", systemImage: didCopy ? "checkmark" : "doc.on.doc")

@@ -224,6 +224,12 @@ final class HostedTestBundle: NSObject, XCTestObservation {
     }
 }
 
+/// The last text a Copy action copied while `recordCopies()` held the copy hook.
+@MainActor
+final class CopiedText {
+    var last: String?
+}
+
 extension XCTestCase {
     /// The fixture's chat in its own window: the hosted counterpart of a UI test that launched with `scenario` and
     /// tapped the fixture session.
@@ -443,15 +449,29 @@ extension XCTestCase {
         try await activateSend(in: window)
     }
 
-    /// Activates Send once the composer has enabled it. Typed text enables the button only on SwiftUI's next render,
-    /// and a disabled button drops the activation, which a slow host showed as a send that never started (TAL-2549).
+    /// Activates the Send under `root` (the window, or a presented sheet's view) once it reports enabled. Typed text
+    /// enables the button only on SwiftUI's next render, and a disabled button drops the activation, which a slow host
+    /// showed as a send that never started (TAL-2549). `scripts/test-rules.json` (`ready-send`) rejects any other
+    /// Send activation.
     @MainActor
-    func activateSend(in window: UIWindow, file: StaticString = #filePath, line: UInt = #line) async throws {
+    func activateSend(in root: UIView, file: StaticString = #filePath, line: UInt = #line) async throws {
         let enabled = await awaitCondition {
-            HostedAccessibility.element(in: window, label: "Send")?.accessibilityTraits.contains(.notEnabled) == false
+            HostedAccessibility.element(in: root, label: "Send")?.accessibilityTraits.contains(.notEnabled) == false
         }
-        XCTAssertTrue(enabled, "Send never enabled for the typed draft", file: file, line: line)
-        HostedAccessibility.activate(try await requireElement(in: window, label: "Send", file: file, line: line))
+        XCTAssertTrue(enabled, "Send never enabled", file: file, line: line)
+        HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.element(in: root, label: "Send"), "Missing Send",
+                                                   file: file, line: line))
+    }
+
+    /// Records the text Copy actions copy until the test ends, instead of the simulator-wide general pasteboard, which
+    /// a test does not own (TAL-2555).
+    @MainActor
+    func recordCopies() -> CopiedText {
+        let copied = CopiedText()
+        nonisolated(unsafe) let installed = PlatformHooks.copyText
+        PlatformHooks.copyText = { copied.last = $0 }
+        addTeardownBlock { MainActor.assumeIsolated { PlatformHooks.copyText = installed } }
+        return copied
     }
 
     /// Elements whose label or identifier is `name`, as XCUITest's `matching(identifier:)` counted them.

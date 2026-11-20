@@ -1,0 +1,1 @@
+{"skip": "Test-only change: hosted tests record copies and activate Send only once it is enabled, and CI rejects new tests that touch the shared pasteboard or tap Send early; no app behavior changes."}

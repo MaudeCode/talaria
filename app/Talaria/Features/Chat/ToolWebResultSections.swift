@@ -32,7 +32,7 @@ private struct ToolResultLinkTitle: View {
                 .accessibilityLabel(String(localized: "Open \(title)"))
                 .contextMenu {
                     Button(String(localized: "Open \(title)")) { openURL(destination) }
-                    Button(String(localized: "Copy link")) { UIPasteboard.general.string = url }
+                    Button(String(localized: "Copy link")) { PlatformHooks.copyText(url) }
                 }
         } else {
             label

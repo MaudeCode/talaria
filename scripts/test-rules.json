@@ -108,6 +108,29 @@
       },
       "message": "test-audit oversized: put each hosted layout that boots a new app fixture in its own test case (docs/testing.md)"
     },
+    "leak-pasteboard": {
+      "paths": [
+        "app/"
+      ],
+      "patterns": [
+        "\\bUIPasteboard\\.general\\b"
+      ],
+      "message": "test-audit leak: never read or write the simulator-wide general pasteboard; record copies with recordCopies() and paste through the control's own seam, such as UIPasteControl.target.paste(itemProviders:) (docs/testing.md)"
+    },
+    "ready-send": {
+      "paths": [
+        "app/TalariaTests/"
+      ],
+      "patterns": [
+        "\\bHostedAccessibility\\.activate\\(.*\\blabel: \"Send\"\\)",
+        "\\bHostedAccessibility\\.activate\\([Ss]end\\w*\\)"
+      ],
+      "nearby": {
+        "lines": 3,
+        "pattern": "\\blabel: \"Send\"\\)"
+      },
+      "message": "test-audit ready: activate Send through activateSend(in:) or sendFromComposer, which wait until it reports enabled (docs/testing.md)"
+    },
     "heavy-commit-draw": {
       "paths": [
         "app/TalariaTests/"

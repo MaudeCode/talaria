@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 import TalariaKit
 
 struct OnboardingAgentPromptCard: View {
@@ -20,7 +19,7 @@ struct OnboardingAgentPromptCard: View {
             .frame(maxHeight: 220)
 
             Button {
-                UIPasteboard.general.string = prompt
+                PlatformHooks.copyText(prompt)
                 hasCopied = true
                 HapticButtonHaptics.tap(style: .light, isEnabled: isHapticsEnabled)
                 withAnimation(.easeInOut(duration: 0.2)) {

@@ -1,5 +1,5 @@
 import SwiftUI
-import UIKit
+import TalariaKit
 
 struct OnboardingCommandPill: View {
     let text: String
@@ -24,7 +24,7 @@ struct OnboardingCommandPill: View {
 
             if let copyValue {
                 Button {
-                    UIPasteboard.general.string = copyValue
+                    PlatformHooks.copyText(copyValue)
                     didCopy = true
                 } label: {
                     Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
