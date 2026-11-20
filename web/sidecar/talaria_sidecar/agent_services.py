@@ -940,16 +940,21 @@ class ServiceRecovery:
         return detail
 
     def settle_launch_refresh(self):
-        marked = [entry for entry in self.state['entries'] if 'launch_refresh' in entry]
-        if not marked:
-            return
-        for entry, generated in zip(marked, _generated_launch_files(self.root, marked)):
+        changed = []
+        for entry in [entry for entry in self.state['entries'] if 'launch_refresh' in entry]:
             try:
                 text = _config_text(entry)
-                changed = hashlib.sha256(text).hexdigest() != entry['config_stamp']
-                if changed and generated is None:
-                    continue  # Unattested: the mark stays for the next resume, which refuses meanwhile.
-                accepted = changed and _agent_rewrite(entry, text, entry['launch_refresh']['dropins'], generated)
+            except (OSError, RuntimeError):
+                continue  # The mark stays for the next resume, which refuses meanwhile.
+            if hashlib.sha256(text).hexdigest() == entry['config_stamp']:
+                del entry['launch_refresh']
+            else:
+                changed.append((entry, text))
+        for (entry, text), generated in zip(changed, _generated_launch_files(self.root, [e for e, _ in changed]) if changed else []):
+            if generated is None:
+                continue  # Unattested: the mark stays for the next resume.
+            try:
+                accepted = _agent_rewrite(entry, text, entry['launch_refresh']['dropins'], generated)
             except (OSError, RuntimeError):
                 continue
             if accepted:

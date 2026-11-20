@@ -621,8 +621,6 @@ def _refresh_launch_files(root, custody):
     """The target Agent regenerates its own units, plists and launcher scripts before any service
     starts. Its code writes them, so it runs in a fresh process on the moved tree. Returns the
     failure to record; a failure never blocks resume, which starts the paused definition."""
-    if not (root / 'hermes_cli/update_launch_files.py').is_file():
-        return ''
     result = _command([sys.executable, '-c', _LAUNCH_FILES], root, 60, threading.Event(), custody)
     if not result['ok']:
         return 'Agent launch files were not refreshed: ' + (result['detail'].splitlines() or ['failed'])[-1]
@@ -941,7 +939,7 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                 pending = _command(modules['update_custody'].git_argv(['git'], ['for-each-ref', '--format=%(objectname)', 'refs/talaria/autostash/pending/']), root, 10, threading.Event(), modules['update_custody'])
                 if not pending['ok'] or pending['detail']:
                     raise RuntimeError('Gateway resume remains owed until retained local Agent edits are restored.')
-                if changed:
+                if changed and (root / 'hermes_cli/update_launch_files.py').is_file():
                     launch_files = recovery.refresh_launch_files(lambda: _refresh_launch_files(root, modules['update_custody']))
                 if recovery.state.get('update_operation'):
                     recovery.state['update_operation']['stage'] = 'gateway_restart'
