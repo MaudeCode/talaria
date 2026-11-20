@@ -920,6 +920,11 @@
         ""
       ]
     },
+    "tests/test_config_write.py::test_config_get_distinguishes_unavailable_managed_policy": {
+      "layer": "compatibility",
+      "reason": "The Agent's managed scope discovery and YAML parser must surface unreadable policy without making the user's YAML unreadable on any supported release.",
+      "cases": [""]
+    },
     "tests/test_config_write.py::test_config_set_refuses_managed_leaf": {
       "layer": "compatibility",
       "reason": "A real supported Agent must load administrator policy from the bootstrap environment and refuse a changing config.set without rewriting the user's YAML.",

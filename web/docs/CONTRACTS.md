@@ -883,7 +883,9 @@ capability unknown and never substitute model-level efforts or a local ladder.
 ## Administrator-managed Settings
 
 `config.get` returns the user document in `config` and the Agent's effective
-administrator overlay in `managed`. `config.set` rejects changes to pinned
+administrator overlay in `managed`. A null overlay means policy could not be
+verified. The raw YAML remains readable, but authorization and configuration
+writes refuse to proceed when policy is unavailable. `config.set` rejects changes to pinned
 leaves with `config_key_managed` and preserves the user file's underlying values
 when the caller resubmits an unchanged effective value.
 

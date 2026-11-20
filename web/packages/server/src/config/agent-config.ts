@@ -130,10 +130,12 @@ export class AgentConfig {
 
   /** Settings refreshes administrator policy independently of the user file fingerprint. */
   async readWithManaged(profileHome: string, opts: ConfigFileOptions = {}): Promise<{ config: Config; managed: Config }> {
-    return this.load(profileHome, opts)
+    const snapshot = await this.load(profileHome, opts)
+    if (snapshot.managed === null) throw new ConfigUnavailable('Administrator config policy is unavailable')
+    return { config: snapshot.config, managed: snapshot.managed }
   }
 
-  private async load(profileHome: string, opts: ConfigFileOptions = {}): Promise<{ config: Config; resolved: Config; managed: Config }> {
+  private async load(profileHome: string, opts: ConfigFileOptions = {}): Promise<{ config: Config; resolved: Config; managed: Config | null }> {
     const file = this.path(profileHome, opts)
     const sidecar = this.deps.sidecar()
     if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; config.yaml is unavailable')
@@ -150,7 +152,7 @@ export class AgentConfig {
         const resolved = resolvedView(isDict(result.resolved) ? result.resolved : config)
         homes.set(profileHome, { env, config: resolved })
         this.cache.set(file, { key: before, config, resolved: homes })
-        return { config, resolved, managed: dict(result.managed) }
+        return { config, resolved, managed: result.managed === null ? null : dict(result.managed) }
       }
     }
     throw new ConfigUnavailable('config.yaml changed while it was being read; retry')

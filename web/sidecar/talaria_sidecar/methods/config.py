@@ -182,7 +182,28 @@ def managed_config() -> dict:
         if exc.name in ("hermes_cli", "hermes_cli.managed_scope"):
             return {}
         raise
-    return scope.apply_managed_overlay({})
+    backend = importlib.import_module("hermes_cli.config_backend").get_config_backend()
+    if not backend.honors_managed_config():
+        return {}
+    directory = scope.get_managed_dir()
+    if directory is None:
+        return {}
+    try:
+        source = (directory / "config.yaml").read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        return {}
+    # The Agent's overlay helper deliberately hides policy errors. Approval authorization
+    # needs the same normalization, with errors still visible on all supported releases.
+    parsed = yaml_parser().safe_load(source)
+    if parsed is None:
+        return {}
+    if not isinstance(parsed, dict):
+        raise ValueError("Administrator config must contain a mapping")
+    agent = importlib.import_module("hermes_cli.config")
+    effective = agent._normalize_root_model_keys(agent._expand_env_vars(parsed))
+    if isinstance(effective.get("model"), str):
+        effective["model"] = {"default": effective["model"]}
+    return effective
 
 
 _MISSING = object()
@@ -213,7 +234,10 @@ def write_config(path: Path, config: dict, *, profile_home: Path | None = None) 
         raise InvalidParams("config must be an object")
     assert_config_writable(profile_home)
     target = _write_target(path)
-    managed = managed_config()
+    try:
+        managed = managed_config()
+    except Exception as exc:  # noqa: BLE001
+        raise RpcError("Cannot verify administrator config policy", condition="config_policy_unavailable") from exc
     if managed:
         config = copy.deepcopy(config)
         _preserve_managed_leaves(config, read_config(target)["config"], managed)
@@ -398,7 +422,7 @@ def register(registry) -> None:
             managed = managed_config()
         except Exception:  # noqa: BLE001 - raw config remains readable even on a broken Agent
             log.debug("Managed config unavailable", exc_info=True)
-            managed = {}
+            managed = None
         return {**result, "resolved": resolved_config(profile_home_param(params), result["config"]), "managed": managed}
 
     @registry.method("config.set", requires_agent=False)
