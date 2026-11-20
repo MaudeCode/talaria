@@ -639,6 +639,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     profileConfig: async (profile) => { try { return await agentConfig.read(profileHome(profile ?? activeProfile())) } catch { return null } },
     personalities: (profile) => agentConfig.agentPersonalities(profileHome(profile ?? activeProfile())),
     providerLabel: (profile, provider) => catalog.providerLabel(profileHome(profile ?? activeProfile()), provider),
+    language: () => { try { return str(settings.peekValue('language')) || 'en' } catch { return 'en' } },
     titleRefreshEvery: () => { try { const every = Number(settings.peek().auto_title_refresh_every); return Number.isInteger(every) && every > 0 ? every : 0 } catch { return 0 } },
     env,
     hermesHome: config.hermesHome,

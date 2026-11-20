@@ -19,7 +19,8 @@ import type { ApprovalPending } from '../../contracts'
 const ALL: ApprovalPending['allowed_choices'] = ['once', 'session', 'always', 'deny']
 const render = (ui: ReactElement) => renderView(ui, { wrapper: queryWrapper() })
 /** TAL-974: approvals with each server scope and the sentence both clients show, shared with the App's tests. */
-const scopeFixture = (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/tool-approval-and-agents.json'), 'utf8')) as { approval_scopes: { pending: ApprovalPending; sentence: string | null }[] }).approval_scopes
+const sharedFixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/tool-approval-and-agents.json'), 'utf8')) as { approval_scopes: { pending: ApprovalPending; sentence: string | null }[]; approval_explanations: ApprovalPending[] }
+const scopeFixture = sharedFixture.approval_scopes
 
 describe('ApprovalCard', () => {
   it('heads the card with the held call\'s icon and label as its tool row shows them, its arguments as rows (TAL-2333)', () => {
@@ -53,6 +54,21 @@ describe('ApprovalCard', () => {
       } else expect(help).toBeNull()
       unmount()
     }
+  })
+  it('shows the server\'s plain-words line under the command, busy only while it is written (TAL-2022)', () => {
+    const line = (pending: ApprovalPending) => {
+      const { container, unmount } = render(<ApprovalCard sessionId="s1" pending={pending} onResolved={() => undefined} />)
+      const shown = container.querySelector('.approval-explanation')
+      const result = { text: shown?.textContent, busy: shown?.querySelector('.animate-spin') !== null && shown !== null, afterCommand: container.querySelector('.approval-cmd + .approval-explanation') !== null }
+      unmount()
+      return result
+    }
+    const [pending, ready, unavailable] = sharedFixture.approval_explanations
+    expect(line(pending!)).toEqual({ text: 'In plain words (AI summary): Summarizing…', busy: true, afterCommand: true })
+    expect(line(ready!)).toEqual({ text: 'In plain words (AI summary): Deletes every .log file older than seven days in this folder and its subfolders.', busy: false, afterCommand: true })
+    expect(line(unavailable!)).toEqual({ text: 'In plain words (AI summary): No summary available.', busy: false, afterCommand: true })
+    // An older server, or the setting off, sends no explanation and the card shows no line.
+    expect(line({ ...ready!, explanation: undefined })).toEqual({ text: undefined, busy: false, afterCommand: false })
   })
   it('offers only owner-approved choices and never offers native YOLO', () => {
     render(<ApprovalCard sessionId="native" pending={{ approval_id: 'native-control', command: 'echo fixture', allowed_choices: ['once', 'deny'], can_enable_yolo: false }} onResolved={() => undefined} />)

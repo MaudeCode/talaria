@@ -1,6 +1,6 @@
 public import Foundation
 
-/// TAL-2331, TAL-2341: the Settings › Chats › Tool Calls switches, keyed by their server setting. The server applies each to
+/// TAL-2331, TAL-2341, TAL-2022: the Settings › Chats › Tool Calls switches, keyed by their server setting. The server applies each to
 /// the transcripts it sends, so a client only offers them.
 public enum ToolCallSetting: String, CaseIterable, Sendable {
     case formattedToolResults = "formatted_tool_results"
@@ -11,6 +11,8 @@ public enum ToolCallSetting: String, CaseIterable, Sendable {
     case showToolLookups = "show_tool_lookups"
     case statusChipCurrentAction = "status_chip_current_action"
     case turnSummary = "turn_summary"
+    /// TAL-2022: the server writes an AI summary under each approval's command.
+    case explainApprovals = "explain_approvals"
 
     /// The key as `convertFromSnakeCase` decodes it: the case's own name.
     fileprivate var decodedKey: String { String(describing: self) }

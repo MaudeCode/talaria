@@ -1056,11 +1056,11 @@ final class SettingsPlacementHostedTests: XCTestCase {
             HostedAccessibility.identifier(of: $0) == SettingsIndex.chatToolCalls.id
         }
         let read = [link.accessibilityLabel, link.accessibilityValue].compactMap { $0 }.joined(separator: " ")
-        XCTAssertTrue(read.contains("Tool Calls") && read.contains("8"), read)
+        XCTAssertTrue(read.contains("Tool Calls") && read.contains("9"), read)
         attachHostedScreenshot(window, name: "settings-chats-tool-calls-link")
     }
 
-    /// TAL-2341: Tool Calls shows its switches in two groups, the tool rows' six then the two around the chat.
+    /// TAL-2341, TAL-2022: Tool Calls shows its switches in two groups, the tool rows' six then the three around the chat.
     func testToolCallsPageGroupsItsSwitches() async throws {
         let fixture = try FixtureApp(for: self)
         let store = ServerSettingsStore(client: fixture.client)

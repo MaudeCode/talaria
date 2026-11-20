@@ -120,6 +120,10 @@ struct ApprovalRequestContent: View {
                 .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
             }
 
+            if let explanation = prompt.pending.explanation {
+                explanationLine(explanation)
+            }
+
             if prompt.pendingCount > 1 {
                 Text("1 of \(prompt.pendingCount) pending")
                     .font(.caption)
@@ -204,6 +208,28 @@ struct ApprovalRequestContent: View {
             .buttonStyle(.chatDecision(role == .destructive ? .destructive : .secondary))
             .disabled(isResponding)
         }
+    }
+
+    /// TAL-2022: the server's AI summary under the command; only this line shows a busy state while it is written.
+    private func explanationLine(_ explanation: ApprovalExplanation) -> some View {
+        let summary = switch explanation.state {
+        case .pending: String(localized: "Summarizing…")
+        case .ready: explanation.text ?? ""
+        case .unavailable: String(localized: "No summary available.")
+        }
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            if explanation.state == .pending {
+                ProgressView()
+                    .controlSize(.mini)
+                    .accessibilityHidden(true)
+            }
+            Text("\(Text("In plain words (AI summary):").fontWeight(.medium).foregroundStyle(.primary)) \(summary)")
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("approval-explanation")
     }
 
     private func nonEmpty(_ value: String?) -> String? {

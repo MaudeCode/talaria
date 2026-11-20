@@ -2330,6 +2330,27 @@
                           }
                         ]
                       },
+                      "explanation": {
+                        "description": "TAL-2022: the \"in plain words\" line under the command. Absent while the `explain_approvals` setting is off, when the approval names no command or description, and on an older server.",
+                        "type": "object",
+                        "properties": {
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "ready",
+                              "unavailable"
+                            ]
+                          },
+                          "text": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "state"
+                        ],
+                        "additionalProperties": false
+                      },
                       "approval_id": {
                         "type": "string"
                       },

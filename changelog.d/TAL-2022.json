@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Approval cards can explain the command in plain words: turn on Explain approvals in plain words under Chat › Tool calls, and the server adds a short AI summary of what the command does under it.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announcement": {
+        "title": "Approvals in plain words",
+        "description": "An optional AI summary under each approval says what its command will do.",
+        "icon": "security"
+      }
+    }
+  ]
+}

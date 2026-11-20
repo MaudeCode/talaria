@@ -22,6 +22,11 @@
     {"pending": {"approval_id": "scope-unknown", "allowed_choices": ["once", "session", "always", "deny"], "session_id": "fixture-session", "command": "Share your email", "description": "Server wants your email", "pattern_key": "mcp_elicitation", "scope": {"kind": "unknown", "subject": null, "always_is_session_only": false}}, "sentence": "Allow session covers every action like this one for this session. Always allow covers it on this server from now on."},
     {"pending": {"approval_id": "scope-one-time", "allowed_choices": ["once", "deny"], "session_id": "fixture-session", "command": "write AGENTS.md", "description": "Protected instruction file", "pattern_key": "protected_instruction_file", "scope": null}, "sentence": null}
   ],
+  "approval_explanations": [
+    {"approval_id": "explain-pending", "allowed_choices": ["once", "session", "always", "deny"], "session_id": "fixture-session", "command": "find . -name '*.log' -mtime +7 -delete", "description": "delete in find", "explanation": {"state": "pending"}},
+    {"approval_id": "explain-ready", "allowed_choices": ["once", "session", "always", "deny"], "session_id": "fixture-session", "command": "find . -name '*.log' -mtime +7 -delete", "description": "delete in find", "explanation": {"state": "ready", "text": "Deletes every .log file older than seven days in this folder and its subfolders."}},
+    {"approval_id": "explain-unavailable", "allowed_choices": ["once", "session", "always", "deny"], "session_id": "fixture-session", "command": "find . -name '*.log' -mtime +7 -delete", "description": "delete in find", "explanation": {"state": "unavailable"}}
+  ],
   "delegate_background": {
     "task_ids": ["call-1-1", "call-1-2", "call-1-3"], "status": "running", "agents": { "total": 3, "completed": 1, "failed": 1, "running": 1 },
     "agents_detail": [

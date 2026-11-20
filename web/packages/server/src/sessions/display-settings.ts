@@ -1,5 +1,5 @@
 /**
- * TAL-2331, TAL-2341: the switches of Settings › Chat › Tool calls and the Live Activity's, with their defaults. The server
+ * TAL-2331, TAL-2341, TAL-2022: the switches of Settings › Chat › Tool calls and the Live Activity's, with their defaults. The server
  * applies each to what it sends (clients never filter); the runtime wires the settings store in, and until it does every
  * switch reads its default.
  */
@@ -13,6 +13,8 @@ export const DISPLAY_SETTING_DEFAULTS = {
   status_chip_current_action: true,
   turn_summary: true,
   live_activity_current_tool: true,
+  /** TAL-2022: approval heads carry an AI summary of what the command does; off, the server generates none. */
+  explain_approvals: false,
 } as const satisfies Record<string, boolean>
 export type DisplaySetting = keyof typeof DISPLAY_SETTING_DEFAULTS
 

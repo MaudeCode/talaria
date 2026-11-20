@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { stubDisplaySettings } from './display-settings.js'
 import { SessionEventBus } from './events.js'
 import { PendingPrompts, type PendingSubscriber } from './pending.js'
 
@@ -144,5 +145,22 @@ describe('pending prompt streams', () => {
     drain(sub)
     pending.submitClarify('s1', { question: 'Third?' })
     expect(drain(sub)).toHaveLength(1)
+  })
+
+  describe('approval explanations (TAL-2022)', () => {
+    afterEach(() => { stubDisplaySettings({}) })
+
+    it('drops a resolved approval\'s summary, so the same id asked again is explained again', async () => {
+      stubDisplaySettings({ explain_approvals: true })
+      const pending = new PendingPrompts(new SessionEventBus())
+      const explain = vi.fn(() => Promise.resolve('Prints the working folder.'))
+      pending.setApprovalExplainer({ explain, explained: vi.fn() })
+      pending.submitApproval('s', { approval_id: 'a', command: 'pwd' })
+      await vi.waitFor(() => { expect(pending.approvalPending('s').pending?.explanation).toEqual({ state: 'ready', text: 'Prints the working folder.' }) })
+      pending.resolveApproval('s', 'a')
+      pending.submitApproval('s', { approval_id: 'a', command: 'pwd' })
+      expect(pending.approvalPending('s').pending?.explanation).toEqual({ state: 'pending' })
+      expect(explain).toHaveBeenCalledTimes(2)
+    })
   })
 })

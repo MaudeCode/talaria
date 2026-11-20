@@ -3057,6 +3057,32 @@ final class ApprovalRequestContentTests: XCTestCase {
         }
     }
 
+    /// TAL-2022: the card shows the server's "in plain words" line under the command in each state, from the shared
+    /// `contracts/fixtures/tool-approval-and-agents.json` Web's card test reads; only a summary still being written is busy.
+    func testAnApprovalShowsTheServersPlainWordsLineInEachState() throws {
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("tool-approval-and-agents")) as? [String: Any])
+        let shown = [
+            "explain-pending": "In plain words (AI summary): Summarizing…",
+            "explain-ready": "In plain words (AI summary): Deletes every .log file older than seven days in this folder and its subfolders.",
+            "explain-unavailable": "In plain words (AI summary): No summary available.",
+        ]
+        let entries = try XCTUnwrap(root["approval_explanations"] as? [[String: Any]])
+        XCTAssertEqual(Set(entries.compactMap { $0["approval_id"] as? String }), Set(shown.keys))
+        for entry in entries {
+            let pending = try JSONDecoder().decode(PendingApproval.self, from: JSONSerialization.data(withJSONObject: entry))
+            let window = try hostWindow(ApprovalRequestContent(
+                prompt: ApprovalPromptState(sessionID: "synthetic-explain-session", pending: pending, pendingCount: 1),
+                isResponding: false, errorMessage: nil, onChoice: { _ in }, onSkipAll: {}, onCollapse: {}
+            ), size: HostedSize.phone)
+            let id = pending.id
+            let line = try XCTUnwrap(HostedAccessibility.element(in: window, identifier: "approval-explanation"), id)
+            XCTAssertEqual(line.accessibilityLabel, shown[id], id)
+            XCTAssertEqual(window.containsView(ofType: UIActivityIndicatorView.self), id == "explain-pending", id)
+            if id == "explain-ready" { attachHostedScreenshot(window, name: "approval-explanation-ready") }
+            window.isHidden = true
+        }
+    }
+
     func testAnApprovalOfferingNoChoiceSaysSoAndOffersNoAnswer() throws {
         let pending = PendingApproval(approvalId: "synthetic-no-choice-approval", command: "echo fixture",
                                       description: "Run the fixture command?", allowedChoices: [], canEnableYolo: false)

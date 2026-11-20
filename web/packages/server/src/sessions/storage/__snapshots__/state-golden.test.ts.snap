@@ -68,6 +68,7 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
   "status_chip_current_action": true,
   "turn_summary": true,
   "live_activity_current_tool": true,
+  "explain_approvals": false,
   "show_cli_sessions": true,
   "show_claude_code_sessions": true,
   "show_messaging_sessions": true,

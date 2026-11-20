@@ -937,6 +937,12 @@ export const ApprovalScopeSchema = z.object({
   always_is_session_only: z.boolean(),
 })
 export type ApprovalScope = z.infer<typeof ApprovalScopeSchema>
+/**
+ * TAL-2022: an AI summary of what the approval's command does, in the server's language. `pending` while the server
+ * generates it (only this line shows a busy state), `ready` with its `text`, `unavailable` when no model answered.
+ */
+export const ApprovalExplanationSchema = z.object({ state: z.enum(['pending', 'ready', 'unavailable']), text: z.string().optional() })
+export type ApprovalExplanation = z.infer<typeof ApprovalExplanationSchema>
 export const ApprovalPendingSchema = z.looseObject({
   allowed_choices: z.array(z.enum(['once', 'session', 'always', 'deny']))
     .describe('The answers this approval accepts: all four when its owner named none (TAL-2481), empty when it offered none Talaria can send.'),
@@ -957,6 +963,8 @@ export const ApprovalPendingSchema = z.looseObject({
     .describe('TAL-2333: the whole text an Allow outside the card (Siri, Shortcuts) confirms: the command, else the Agent\'s own description, never its question or reason. Null when it names neither, so the user reviews it in the chat. Absent on an older server, whose `description` is the Agent\'s own.'),
   scope: ApprovalScopeSchema.nullable().optional()
     .describe('TAL-974: what Allow session and Always allow cover. Null when Allow session is not offered or the Agent named no pattern key; absent on an older server.'),
+  explanation: ApprovalExplanationSchema.optional()
+    .describe('TAL-2022: the "in plain words" line under the command. Absent while the `explain_approvals` setting is off, when the approval names no command or description, and on an older server.'),
   approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(),
   reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional(),
 })
@@ -1162,6 +1170,7 @@ export const SettingsSchema = z.looseObject({
   bot_name: z.string().optional(), default_model: z.string().optional(), default_workspace: z.string().optional(), language: z.string().optional(), send_key: z.string().optional(), font_size: z.string().optional(),
   full_width_chat: z.boolean().optional(), chat_width: z.enum(['comfortable', 'wide', 'full']).optional(), auto_scroll_follow: z.boolean().optional(), render_user_markdown: z.boolean().optional(), chat_activity_display_mode: z.string().optional(), default_message_mode: z.string().optional(),
   fade_text_effect: z.boolean().optional().describe('TAL-2148: fade the streaming reply\'s new words in (default true); clients skip code and honour reduced motion.'),
+  explain_approvals: z.boolean().optional().describe('TAL-2022: approval cards show an AI summary of what the command does (default false); off, the server generates none and sends no `explanation`. Changing it needs an owner session.'),
   show_tool_lookups: z.boolean().optional().describe('TAL-2331: show the Agent\'s `tool_search` and `tool_describe` calls in the transcript (default false); off, the server marks them `hidden`.'),
   formatted_tool_results: z.boolean().optional().describe('TAL-2341: open tool rows show the server\'s formatted result (default true); off, the server marks each call `opens_raw`.'),
   inline_tool_media: z.boolean().optional().describe('TAL-2341: the media a call made shows on its collapsed row (default true); off, the server marks each call `media_in_details`.'),

@@ -151,9 +151,9 @@ describe('contracts package', () => {
     expect(OwnerAttachmentSchema.parse((shared('fixtures/gateway-owner.json') as { normal: unknown }).normal)).not.toHaveProperty('reasoning_control')
     expect(ModelChangeSchema.parse({ state: 'confirmation_required', confirm: 'token', model: 'picked', reasoning: 'high' }).reasoning).toBe('high')
   })
-  it('carries an approval\'s held call and a delegation row\'s subagents (TAL-2333)', () => {
-    const fixture = shared('fixtures/tool-approval-and-agents.json') as Record<'approval_write' | 'approval_shell' | 'approval_mcp' | 'delegate_background', unknown> & { approval_scopes: { pending: unknown }[] }
-    for (const pending of [fixture.approval_write, fixture.approval_shell, fixture.approval_mcp, ...fixture.approval_scopes.map((entry) => entry.pending)]) expect(ApprovalPendingSchema.parse(pending)).toEqual(pending)
+  it('carries an approval\'s held call, its explanation and a delegation row\'s subagents (TAL-2333, TAL-2022)', () => {
+    const fixture = shared('fixtures/tool-approval-and-agents.json') as Record<'approval_write' | 'approval_shell' | 'approval_mcp' | 'delegate_background', unknown> & { approval_scopes: { pending: unknown }[]; approval_explanations: unknown[] }
+    for (const pending of [fixture.approval_write, fixture.approval_shell, fixture.approval_mcp, ...fixture.approval_scopes.map((entry) => entry.pending), ...fixture.approval_explanations]) expect(ApprovalPendingSchema.parse(pending)).toEqual(pending)
     expect(BackgroundLinkSchema.parse(fixture.delegate_background)).toEqual(fixture.delegate_background)
     // An older server sends neither.
     expect(BackgroundLinkSchema.parse({ task_ids: [], status: 'running', agents: { total: 1, completed: 0, failed: 0, running: 1 } }).agents_detail).toBeUndefined()

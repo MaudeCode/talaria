@@ -90,6 +90,8 @@ export function ChatSubPage({ page }: { page: ChatPage }) {
         <SettingsGroup id="around-chat" title={m.settings_group_around_chat()}>
           <Toggle label={m.settings_label_status_chip_current_action()} settingKey="status_chip_current_action" fallback />
           <Toggle label={m.settings_label_turn_summary()} settingKey="turn_summary" fallback />
+          {/* TAL-2022: the server writes an AI summary under each approval's command; off by default. */}
+          <Toggle label={m.settings_label_explain_approvals()} settingKey="explain_approvals" />
         </SettingsGroup>
       </> : <>
         <SettingsGroup id="transcript-advanced" title={m.settings_group_transcript()}>
