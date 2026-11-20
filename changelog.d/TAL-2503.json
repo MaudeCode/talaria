@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chat headers no longer show a generic profile placeholder when there is no place name.",
+      "highlight": false,
+      "announce": false,
+      "components": ["app"]
+    }
+  ]
+}

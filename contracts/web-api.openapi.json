@@ -3393,6 +3393,17 @@
                               }
                             ]
                           },
+                          "place_label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The chat header place: its workspace label, else its profile display name, else null."
+                          },
                           "sidebar_group": {
                             "anyOf": [
                               {
@@ -4587,6 +4598,17 @@
                               }
                             ]
                           },
+                          "place_label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The chat header place: its workspace label, else its profile display name, else null."
+                          },
                           "sidebar_group": {
                             "anyOf": [
                               {
@@ -5609,6 +5631,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "place_label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The chat header place: its workspace label, else its profile display name, else null."
                           },
                           "sidebar_group": {
                             "anyOf": [
@@ -6939,6 +6972,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "place_label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The chat header place: its workspace label, else its profile display name, else null."
                           },
                           "sidebar_group": {
                             "anyOf": [
@@ -13596,6 +13640,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
                         },
                         "focus_path": {
                           "anyOf": [
@@ -21311,6 +21366,17 @@
                             }
                           ]
                         },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
+                        },
                         "focus_path": {
                           "anyOf": [
                             {
@@ -27697,6 +27763,17 @@
                             }
                           ]
                         },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
+                        },
                         "focus_path": {
                           "anyOf": [
                             {
@@ -28708,6 +28785,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -29779,6 +29867,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -30857,6 +30956,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -37265,6 +37375,17 @@
                             }
                           ]
                         },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
+                        },
                         "focus_path": {
                           "anyOf": [
                             {
@@ -38309,6 +38430,17 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "place_label": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The chat header place: its workspace label, else its profile display name, else null."
                             },
                             "sidebar_group": {
                               "anyOf": [
@@ -39449,6 +39581,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -46178,6 +46321,17 @@
                             }
                           ]
                         },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
+                        },
                         "focus_path": {
                           "anyOf": [
                             {
@@ -47405,6 +47559,17 @@
                             }
                           ]
                         },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
+                        },
                         "sidebar_group": {
                           "anyOf": [
                             {
@@ -48473,6 +48638,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -55672,6 +55848,17 @@
                             }
                           ]
                         },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
+                        },
                         "focus_path": {
                           "anyOf": [
                             {
@@ -62001,6 +62188,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
                         },
                         "focus_path": {
                           "anyOf": [
@@ -68394,6 +68592,17 @@
                             }
                           ]
                         },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
+                        },
                         "focus_path": {
                           "anyOf": [
                             {
@@ -74784,6 +74993,17 @@
                             }
                           ]
                         },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
+                        },
                         "focus_path": {
                           "anyOf": [
                             {
@@ -79525,6 +79745,17 @@
                             }
                           ]
                         },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
+                        },
                         "sidebar_group": {
                           "anyOf": [
                             {
@@ -80592,6 +80823,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
                         },
                         "sidebar_group": {
                           "anyOf": [
@@ -94127,6 +94369,17 @@
                             }
                           ]
                         },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
+                        },
                         "focus_path": {
                           "anyOf": [
                             {
@@ -100508,6 +100761,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
                         },
                         "focus_path": {
                           "anyOf": [
@@ -107577,6 +107841,17 @@
                             }
                           ]
                         },
+                        "place_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The chat header place: its workspace label, else its profile display name, else null."
+                        },
                         "focus_path": {
                           "anyOf": [
                             {
@@ -114102,6 +114377,17 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "place_label": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The chat header place: its workspace label, else its profile display name, else null."
                             },
                             "focus_path": {
                               "anyOf": [

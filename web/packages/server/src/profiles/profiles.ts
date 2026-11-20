@@ -149,6 +149,16 @@ export class ProfileService {
     return rows.map((r) => ({ ...withAvatarUrl(r), is_active: str(r.name) === active, pending_writes: pendingWrites(str(r.path)) }))
   }
 
+  async displayName(profile: string): Promise<string | null> {
+    try {
+      const rows = await this.list(profile)
+      const row = rows.find((row) => row.name === profile || (row.is_default === true && this.isRootProfile(profile)))
+      return str(row?.display_name).trim() || null
+    } catch {
+      return null
+    }
+  }
+
   async activePayload(active: string): Promise<Dict> {
     let workspace: string | null = null
     try { workspace = (await this.deps.defaultWorkspace(active)) } catch { workspace = null }

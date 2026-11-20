@@ -1217,6 +1217,7 @@
     "assistant_name": "Hermes",
     "workspace": "/src/talaria-main",
     "workspace_name": "Talaria",
+    "place_label": "Talaria",
     "transcript_seq": null,
     "source_kind": "webui",
     "is_messaging_session": false,

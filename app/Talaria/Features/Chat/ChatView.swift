@@ -2419,8 +2419,7 @@ struct ChatView: View {
     private var headerSubtitle: String? {
         if let pending = viewModel.pendingResourceChange { return pending.status }
         return ChatToolbarSubtitleResolver.subtitle(
-            workspaceName: viewModel.selectedWorkspaceName,
-            profileTitle: viewModel.selectedProfileTitle,
+            placeLabel: viewModel.headerPlaceLabel,
             executionMode: viewModel.executionMode
         )
     }

@@ -90,6 +90,6 @@ extension ChatViewModelSendTests {
         await viewModel.loadMessages()
 
         XCTAssertNil(viewModel.executionMode)
-        XCTAssertNil(ChatToolbarSubtitleResolver.subtitle(workspaceName: nil, profileTitle: nil, executionMode: viewModel.executionMode))
+        XCTAssertNil(ChatToolbarSubtitleResolver.subtitle(placeLabel: viewModel.headerPlaceLabel, executionMode: viewModel.executionMode))
     }
 }

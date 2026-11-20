@@ -431,6 +431,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     log,
     activeProfile,
     profilesMatch,
+    profileDisplayName: (profile) => profiles.displayName(profile),
     assistantName,
     redactEnabled: () => { try { return settings.peekValue('api_redact_enabled') !== false } catch { return true } },
     worklogExpandedDefault: () => { try { return pyBool(settings.peekValue('worklog_details_expanded_default')) } catch { return false } },

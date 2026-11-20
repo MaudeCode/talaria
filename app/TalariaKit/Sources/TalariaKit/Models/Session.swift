@@ -366,6 +366,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
     public let workspace: String?
     /// The server's label for `workspace` (TAL-303); nil from an older server, which shows none.
     public let workspaceName: String?
+    public let placeLabel: String?
     public let model: String?
     public let modelProvider: String?
     /// TAL-301: the catalog entry the server says `model`/`modelProvider` selects.
@@ -421,6 +422,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         title: String? = nil,
         workspace: String? = nil,
         workspaceName: String? = nil,
+        placeLabel: String? = nil,
         model: String? = nil,
         modelProvider: String? = nil,
         modelOptionID: String? = nil,
@@ -465,6 +467,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         self.title = title
         self.workspace = workspace
         self.workspaceName = workspaceName
+        self.placeLabel = placeLabel
         self.model = model
         self.modelProvider = modelProvider
         self.modelOptionID = modelOptionID
@@ -507,7 +510,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
     }
 
     enum CodingKeys: String, CodingKey {
-        case sessionId, title, workspace, workspaceName, model, modelProvider
+        case sessionId, title, workspace, workspaceName, placeLabel, model, modelProvider
         case modelOptionID = "modelOptionId"
         case messageCount, createdAt, updatedAt, lastMessageAt, sortTs
         case pinned, archived, sidebarGroup, projectId, profile
@@ -534,6 +537,10 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         title = container.decodeLossyStringIfPresent(forKey: .title)
         workspace = container.decodeLossyStringIfPresent(forKey: .workspace)
         workspaceName = container.decodeLossyStringIfPresent(forKey: .workspaceName)
+        // Older servers send only the workspace label. An explicit null hides the subtitle.
+        placeLabel = container.contains(.placeLabel)
+            ? container.decodeLossyStringIfPresent(forKey: .placeLabel)
+            : workspaceName
         model = container.decodeLossyStringIfPresent(forKey: .model)
         modelProvider = container.decodeLossyStringIfPresent(forKey: .modelProvider)
         modelOptionID = container.decodeLossyStringIfPresent(forKey: .modelOptionID)
@@ -603,6 +610,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
         title = detail.title
         workspace = detail.workspace
         workspaceName = detail.workspaceName
+        placeLabel = detail.placeLabel
         model = detail.model
         modelProvider = detail.modelProvider
         modelOptionID = detail.modelOptionID
@@ -657,6 +665,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable, Send
             title: title,
             workspace: workspace,
             workspaceName: workspaceName,
+            placeLabel: placeLabel,
             model: model,
             modelProvider: modelProvider,
             modelOptionID: modelOptionID,
@@ -729,6 +738,7 @@ extension SessionSummary {
             workspace: workspace ?? row.workspace,
             // The name labels its own path, so it moves with the workspace it came with.
             workspaceName: workspace != nil ? workspaceName : row.workspaceName,
+            placeLabel: placeLabel,
             model: model ?? row.model,
             modelProvider: modelProvider ?? row.modelProvider,
             modelOptionID: model != nil ? modelOptionID : row.modelOptionID,
@@ -897,6 +907,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
     public let workspace: String?
     /// The server's label for `workspace` (TAL-303); nil from an older server, which shows none.
     public let workspaceName: String?
+    public let placeLabel: String?
     public let model: String?
     public let modelProvider: String?
     /// TAL-301: the catalog entry the server says `model`/`modelProvider` selects.
@@ -992,7 +1003,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
         case sessionId
         case title
         case workspace
-        case workspaceName
+        case workspaceName, placeLabel
         case model
         case modelProvider
         case modelOptionID = "modelOptionId"
@@ -1066,6 +1077,10 @@ public struct SessionDetail: Decodable, Equatable, Identifiable, Sendable {
         title = container.decodeLossyStringIfPresent(forKey: .title)
         workspace = container.decodeLossyStringIfPresent(forKey: .workspace)
         workspaceName = container.decodeLossyStringIfPresent(forKey: .workspaceName)
+        // Older servers send only the workspace label. An explicit null hides the subtitle.
+        placeLabel = container.contains(.placeLabel)
+            ? container.decodeLossyStringIfPresent(forKey: .placeLabel)
+            : workspaceName
         model = container.decodeLossyStringIfPresent(forKey: .model)
         modelProvider = container.decodeLossyStringIfPresent(forKey: .modelProvider)
         modelOptionID = container.decodeLossyStringIfPresent(forKey: .modelOptionID)

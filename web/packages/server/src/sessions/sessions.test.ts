@@ -3044,6 +3044,32 @@ describe('workspace routes preserve unresolved config state (TAL-730)', () => {
   })
 })
 
+describe('chat header place label', () => {
+  it('ships the workspace label, then the profile display name, then null on session detail', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      const root = realpathSync(s.state)
+      sidecar.respond('profiles.list', () => ({
+        profiles: [{ name: 'default', path: root, is_default: true, display_name: 'Personal', gateway_running: false,
+          model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }],
+      }))
+      const session = await s.deps.sessionStore.newSession({ workspace: root, profile: 'default' })
+      const detail = async () => (await json(await s.get(`/api/session?session_id=${session.session_id}`))).session as Json
+
+      expect((await detail()).place_label).toBe(root.split('/').at(-1))
+      // The store fills missing workspaces with the execution default. Exercise a workspace-less projection directly
+      // with the same resident session to cover the fallback without changing the persisted workspace contract.
+      session.workspace = ''
+      expect((await detail()).place_label).toBe('Personal')
+      session.profile = null
+      expect((await detail()).place_label).toBeNull()
+    } finally {
+      await s.close()
+    }
+  })
+})
+
 describe('server-resolved workspace display names (TAL-303)', () => {
   it('ships the registered name, else the basename, on detail, list and search rows, from each session profile\'s registry', async () => {
     const s = await bootTestServer()
