@@ -48,6 +48,10 @@ const FAVORITES_CATALOG = {
   favorite_option_ids: ['@openrouter:qwen/qwen3', 'claude-haiku-4.5'],
 }
 let catalog: unknown = PLUGIN_CATALOG
+// TAL-2481: what the server answers a picker search for each query; any other query matches nothing and offers its id.
+let searches: Record<string, unknown> = {}
+const searched = (q: string) => searches[q] ?? { groups: [], offer_custom_id: true }
+afterEach(() => { searches = {} })
 
 // The server's registry: every entry named, the default one `Home` (TAL-303).
 const WORKSPACES = { workspaces: [{ path: '/src/talaria-main', name: 'Talaria' }, { path: '/src/scratch', name: 'scratch' }], last: '/src/talaria-main' }
@@ -68,7 +72,7 @@ function toolsetsCatalog(choice: string[] | null, q = '') {
 }
 
 let modes: unknown = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: true, reason: null }, { mode: 'safe', available: true, reason: null }], selectable: true }
-vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn((choice: string[] | null, _session?: string, q?: string) => Promise.resolve(toolsetsCatalog(choice, q))), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)), setModelFavorite: vi.fn(), fetchProviderQuotas: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn((choice: string[] | null, _session?: string, q?: string) => Promise.resolve(toolsetsCatalog(choice, q))), fetchModels: vi.fn((_freshness?: string, q?: string) => Promise.resolve(q ? searched(q) : catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)), setModelFavorite: vi.fn(), fetchProviderQuotas: vi.fn() }))
 vi.mock('../toast/errorToast', () => ({ showErrorToast: vi.fn() }))
 import { ExecutionModeChip, ModelChip, QuotaChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { Dialog } from '../../ui/Dialog'
@@ -155,10 +159,11 @@ describe('ModelChip', () => {
     expect(optionNames()).toEqual(['Claude Opus 4.7', 'Claude Haiku 4.5'])
     expect(screen.getByRole('option', { name: 'Claude Opus 4.7' })).toHaveAttribute('aria-selected', 'true')
 
+    searches = { qwen: { groups: [FAVORITES_CATALOG.groups[1]], offer_custom_id: true } }
     await userEvent.type(screen.getByRole('combobox', { name: 'Search models…' }), 'qwen')
     expect(screen.queryByRole('toolbar', { name: 'Providers' })).toBeNull()
-    // No catalog id is exactly the query, so a custom id is offered last.
-    expect(optionNames()).toEqual(['Qwen3 · OpenRouter', 'Custom model ID: qwen'])
+    // The server's rows for the query, then the custom id it offers.
+    await waitFor(() => expect(optionNames()).toEqual(['Qwen3 · OpenRouter', 'Custom model ID: qwen']))
     await userEvent.clear(screen.getByRole('combobox'))
     expect(rail()).toBeVisible()
     expect(optionNames()).toEqual(['Claude Opus 4.7', 'Claude Haiku 4.5'])
@@ -360,7 +365,7 @@ describe('ModelChip', () => {
     renderChip({ model: null, optionId: null }, onChange)
     await userEvent.click(screen.getByRole('button'))
     await userEvent.type(await screen.findByRole('combobox'), 'vendor/new-model')
-    expect(optionNames()).toEqual(['Custom model ID: vendor/new-model'])
+    await waitFor(() => expect(optionNames()).toEqual(['Custom model ID: vendor/new-model']))
     await userEvent.click(screen.getByRole('option', { name: 'Custom model ID: vendor/new-model' }))
     expect(onChange).toHaveBeenCalledWith('vendor/new-model', null)
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -372,7 +377,7 @@ describe('ModelChip', () => {
     await userEvent.click(screen.getByRole('button'))
     expect(await screen.findByRole('status')).toHaveTextContent('No models available')
     await userEvent.type(screen.getByRole('combobox'), 'vendor/new-model')
-    expect(optionNames()).toEqual(['Custom model ID: vendor/new-model'])
+    await waitFor(() => expect(optionNames()).toEqual(['Custom model ID: vendor/new-model']))
     expect(screen.queryByText('No models available')).toBeNull()
     cleanup()
     // A provider with nothing to list says the same; Favorites with none starred keeps its own line.
@@ -424,8 +429,9 @@ describe('ModelChip', () => {
     await userEvent.click(within(rail()).getByRole('button', { name: 'Ollama' }))
     expect(header('ollama')).not.toHaveTextContent(/quota|Limited/i)
     // Search mixes providers and has no header, so each row carries its group's limit beside the provider.
+    searches = { 'gemini 2.5': { groups: (catalog as typeof COLON_CATALOG).groups.slice(1, 3), offer_custom_id: true } }
     await userEvent.type(screen.getByRole('combobox'), 'gemini 2.5')
-    const gemini = screen.getByRole('option', { name: `Gemini 2.5 Flash · Gemini · Limited until ${time}` })
+    const gemini = await screen.findByRole('option', { name: `Gemini 2.5 Flash · Gemini · Limited until ${time}` })
     expect(gemini.querySelector('[data-model-limit="account"]')).toHaveTextContent(`Limited until ${time}`)
     expect(screen.getByRole('option', { name: 'Gemini 2.5 Flash · Google · Quota nearly out' })).toHaveTextContent('Quota nearly out')
   })

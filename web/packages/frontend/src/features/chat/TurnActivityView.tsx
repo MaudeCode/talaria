@@ -153,11 +153,12 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
     for (let i = 0; i < list.length;) {
       const item = list[i]
       if (!item) break
-      // TAL-1968: a call whose card the user must see (server `shows_card`) stands alone, outside a folded run.
-      const alone = (entry: ActivityItem | undefined) => entry?.kind === 'text' || entry?.kind === 'steering' || (entry?.kind === 'tool' && entry.call.showsCard === true)
+      // TAL-1968: a call whose card the user must see (server `shows_card`) stands alone, outside a folded run, as does an
+      // item the server put in no group (TAL-2481).
+      const alone = (entry: ActivityItem | undefined) => entry?.kind === 'text' || entry?.kind === 'steering' || (entry?.kind === 'tool' && entry.call.showsCard === true) || entry?.groupId === undefined
       if (alone(item) || mode !== 'compact_worklog') { blocks.push(renderMerged(item, tail && i === list.length - 1)); i++; continue }
       const start = i
-      // TAL-2332: the server's groups decide the run; a native gateway stream's rows (no `group_id`) run until prose or a steer.
+      // TAL-2332: the server's groups decide the run.
       while (i < list.length && !alone(list[i]) && list[i]?.groupId === item.groupId) i++
       const run = list.slice(start, i)
       const contents = run.map((entry, j) => renderMerged(entry, tail && start + j === list.length - 1))

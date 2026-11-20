@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test'
-import { expect, settle, test } from './fixtures'
+import { expect, MODELS_URL, modelsAnswer, settle, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
@@ -30,12 +30,12 @@ async function openSession(page: Page) {
   let held: (() => void) | null = null
   let holdNext = false
   let ids = IDS
-  await page.route('**/api/models', async (route) => {
+  await page.route(MODELS_URL, async (route) => {
     if (holdNext) {
       holdNext = false
       await new Promise<void>((resolve) => { held = resolve })
     }
-    await route.fulfill({ json: catalog(ids) })
+    await route.fulfill({ json: modelsAnswer(catalog(ids), route.request().url()) })
   })
   const sid = 'model-picker-focus'
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {

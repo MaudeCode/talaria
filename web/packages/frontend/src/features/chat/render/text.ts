@@ -1,4 +1,5 @@
 /** Text normalisation ported from the legacy renderer: tool-call XML removal and inline thinking split. */
+import type { Message } from '../../../contracts'
 
 const DSML = '(?:\\s*｜\\s*DSML\\s*[｜|]\\s*)?'
 
@@ -54,20 +55,7 @@ export function extractInlineThinking(raw: string, streaming = false): ThinkingS
   return { reasoning: reasoning.trim(), content: content.replace(/^\s+/, ''), inThinking }
 }
 
-/** Plain text of a message content value (string or typed parts). */
-export function messageText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content
-      .map((p) => {
-        if (typeof p === 'string') return p
-        if (p && typeof p === 'object') {
-          const part = p as { type?: string; text?: unknown; content?: unknown }
-          if (part.type === 'text' || part.type === 'input_text' || part.type === 'output_text') return typeof part.text === 'string' ? part.text : typeof part.content === 'string' ? part.content : ''
-        }
-        return ''
-      })
-      .join('')
-  }
-  return ''
+/** TAL-2481: a stored row's text: the server's `_display_text` for a row of content parts, else its string `content`. */
+export function rowText(message: Pick<Message, 'content' | '_display_text'>): string {
+  return message._display_text ?? (typeof message.content === 'string' ? message.content : '')
 }

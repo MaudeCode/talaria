@@ -7,10 +7,22 @@ import { deferred } from '../src/test/fixtures'
 import { REVEAL_MS } from '../src/lib/motion'
 import { fullToolResult, hydrateAnchorActivityScenes, withTurnIds } from '../../server/dist/sessions/anchor.js'
 import { publicToolFrame, redactSessionData } from '../../server/dist/redact.js'
+import { LiveActivityGroups } from '../../server/dist/sessions/activity-groups.js'
 import { reasoningProjection } from '../../server/dist/sessions/reasoning-display.js'
 
 /** Mocked transcripts pass through the server's own turn and public projection, so the page sees exactly what the server sends. */
 const asServer = (messages: unknown[]): unknown[] => redactSessionData({ messages: hydrateAnchorActivityScenes(withTurnIds(messages), {}) }, true).messages as unknown[]
+/** Mocked live frames with the activity groups the server stamps on them (TAL-2332, TAL-2481): prose and steers end a group. */
+function withServerGroups(events: [string, Record<string, unknown>][]): [string, Record<string, unknown>][] {
+  const groups = new LiveActivityGroups()
+  return events.map(([event, data]) => {
+    if (event === 'token' && typeof data.text === 'string' && data.text.trim()) groups.close()
+    if (event === 'reasoning') return [event, { ...data, ...groups.reasoning() }]
+    if (event === 'tool') return [event, { ...data, ...groups.start(String(data.id), data.name) }]
+    if (event === 'tool_complete') return [event, { ...data, ...groups.complete(String(data.id), data.name, data.is_error === true) }]
+    return [event, data]
+  })
+}
 
 test.use({ serviceWorkers: 'block' })
 
@@ -115,7 +127,7 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   ].map((m) => ({ ...m, _turn_id: 'worklog-run' }))
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Inspect the files', messages: finished ? asServer(messages) : messages.slice(0, 1), active_stream_id: finished ? null : 'worklog-run' } } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'worklog-run', replay_available: true } }))
-  const events: [string, Record<string, unknown>][] = [
+  const events = withServerGroups([
     ['server_turn_started', { session_id: sid, stream_id: 'worklog-run', user_message_id: 1 }],
     ['token', { text: 'First pass' }],
     ['tool', { id: 'a', name: 'read_file', args: { path: 'a.txt' } }],
@@ -126,7 +138,7 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
     ['tool_complete', { id: 'b', name: 'read_file', result_view: { text: 'B contents' } }],
     ['tool_complete', { id: 'c', name: 'read_file', result_view: { text: 'C contents' } }],
     ['reasoning', { text: 'Verifying the second batch.', titles: ['Verifying results'] }],
-  ]
+  ])
   let stream: ServerResponse | undefined
   const server = createServer((_request, response) => {
     stream = response
@@ -359,7 +371,7 @@ test('a credential in a tool command never reaches the page, live or settled', a
 })
 
 test('recovered worklog can fetch its omitted history', async ({ page, errors }, testInfo) => {
-  const tool = (id: string, order_index: number) => ({ row_id: `tool:${id}`, order_index, role: 'tool', tool: { id, name: 'read_file', args: { path: `${id}.txt` }, preview: null, result: null, done: true, is_error: false, duration: null, cost_usd: null } })
+  const tool = (id: string, order_index: number) => ({ row_id: `tool:${id}`, order_index, role: 'tool', group_id: 'group:0', tool: { id, name: 'read_file', args: { path: `${id}.txt` }, preview: null, result: null, done: true, is_error: false, duration: null, cost_usd: null } })
   let mode = 'compact_worklog'
   await page.route('**/api/settings', (route) => route.fulfill({ json: { chat_activity_display_mode: mode } }))
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
@@ -567,11 +579,11 @@ test('live status animations use the built cascade and keep readable glyphs', as
     })
     expect(box).toBeGreaterThanOrEqual(glyphs)
     await expect(label).toHaveCSS('animation-timing-function', 'steps(30)')
-    stream!.write(`id: label-run:2\nevent: reasoning\ndata: ${JSON.stringify({ text: 'Checking files.' })}\n\n`)
+    stream!.write(`id: label-run:2\nevent: reasoning\ndata: ${JSON.stringify({ text: 'Checking files.', group_id: 'group:0' })}\n\n`)
     const thinking = page.locator('.thinking-card-label')
     await expect(thinking).toBeVisible()
     await expect(thinking).toHaveCSS('animation-timing-function', 'steps(30)')
-    stream!.write(`id: label-run:3\nevent: tool\ndata: ${JSON.stringify({ id: 'inspect', name: 'terminal', args: { command: 'ls' } })}\n\n`)
+    stream!.write(`id: label-run:3\nevent: tool\ndata: ${JSON.stringify({ id: 'inspect', name: 'terminal', args: { command: 'ls' }, group_id: 'group:0' })}\n\n`)
     await page.getByRole('button', { name: 'Running a tool', exact: true }).click()
     const dot = page.locator('.tool-card-running-dot')
     await expect(dot).toBeVisible()

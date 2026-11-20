@@ -2495,6 +2495,26 @@ describe('session detail stamps compaction markers (TAL-305)', () => {
   })
 })
 
+describe('session detail ships each row\'s text (TAL-2481)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('joins a row of content parts into `_display_text` in every window, and leaves a string row as its own text', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = (await s.deps.sessionStore.get(sid))
+    session.messages = [
+      { role: 'user', content: [{ type: 'text', text: 'Describe' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,AA==' } }, { type: 'input_text', input_text: 'this image' }], timestamp: 1000 },
+      { role: 'assistant', content: 'A plain reply', timestamp: 1001 },
+    ]
+    await s.deps.sessionStore.save(session)
+    for (const query of ['', '&msg_limit=120']) {
+      const messages = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json).messages as Json[]
+      expect(messages.map((m) => m._display_text), query).toEqual(['Describe\nthis image', undefined])
+    }
+  })
+})
+
 describe('session detail collapses very long message bodies (TAL-456)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

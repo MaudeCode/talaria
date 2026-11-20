@@ -50,7 +50,7 @@ test('a double-clicked Regenerate removes and resends one exchange', async ({ pa
   await page.route('**/api/session/retry', async (route) => {
     retries += 1
     await held
-    await route.fulfill({ json: { ok: true, last_user_text: 'Summarize the logs', last_user_prompt: 'Summarize the logs', last_user_attachments: [], removed_count: 2 } })
+    await route.fulfill({ json: { ok: true, last_user_text: 'Summarize the logs', last_user_prompt: 'Summarize the logs', last_user_attachments: [], removed_count: 2, retry_token: 'held-prompt' } })
   })
   await page.goto('/session/double')
   await page.getByRole('button', { name: 'Regenerate response' }).dblclick()

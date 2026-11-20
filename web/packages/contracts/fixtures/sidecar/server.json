@@ -396,6 +396,7 @@
             "pending_count": 1,
             "prompt": {
               "approval_id": "approval-1",
+              "allowed_choices": ["once", "session", "always", "deny"],
               "command": "rm -rf build",
               "description": "delete build output"
             }

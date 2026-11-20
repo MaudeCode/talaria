@@ -50,9 +50,10 @@ test('an answered approval tucks behind the composer, and the row it held lights
   const chip = page.locator('[data-notice="live"]')
   const card = page.locator('.approval-card')
   const answer = async (id: string, tool: string, command: string, button: RegExp, outcome: string, keyframes: string, row: Locator) => {
-    send('tool', { id: tool, name: 'terminal', kind: 'shell', target: command })
+    // TAL-2481: the server puts both calls in one activity group.
+    send('tool', { id: tool, name: 'terminal', kind: 'shell', target: command, group_id: 'group:0' })
     await expect(row).toBeVisible()
-    send('approval', { approval_id: id, tool_call_id: tool, command, description: 'Force-pushing rewrites the history of the remote branch.' })
+    send('approval', { allowed_choices: ['once', 'session', 'always', 'deny'], approval_id: id, tool_call_id: tool, command, description: 'Force-pushing rewrites the history of the remote branch.' })
     await expect(card).toHaveClass(/visible/)
     await expect(chip).toHaveCount(0)
     await card.getByRole('button', { name: button }).click()
@@ -67,20 +68,20 @@ test('an answered approval tucks behind the composer, and the row it held lights
   }
   await expect(chip).toBeVisible()
   await answer('a1', 'push', 'git push origin main --force-with-lease', /allow once/i, 'allowed', 'newflash', page.locator('[data-tool-id="push"] .tool-card-header'))
-  send('tool_complete', { id: 'push', name: 'terminal', kind: 'shell', target: 'git push origin main --force-with-lease', is_error: false, duration: 1.2 })
+  send('tool_complete', { id: 'push', name: 'terminal', kind: 'shell', target: 'git push origin main --force-with-lease', is_error: false, duration: 1.2, group_id: 'group:0' })
   await answer('a2', 'reset', 'git reset --hard origin/main', /^deny$/i, 'denied', 'newflash-error', page.locator('.tool-worklog-summary'))
-  send('tool_complete', { id: 'reset', name: 'terminal', kind: 'shell', target: 'git reset --hard origin/main', is_error: true, duration: 0.1 })
+  send('tool_complete', { id: 'reset', name: 'terminal', kind: 'shell', target: 'git reset --hard origin/main', is_error: true, duration: 0.1, group_id: 'group:0' })
 })
 
 /** A dismissed approval card no longer answers Enter; the next approval shows again (TAL-503). */
 test('dismissing an approval stops Enter from approving it; the next approval in the turn is visible', async ({ page, approval: { send, responses } }) => {
   const card = page.getByRole('alertdialog')
-  send('approval', { approval_id: 'a1', command: 'rm -rf build' })
+  send('approval', { allowed_choices: ['once', 'session', 'always', 'deny'], approval_id: 'a1', command: 'rm -rf build' })
   await expect(card).toContainText('rm -rf build')
   await card.getByRole('button', { name: 'Dismiss approval' }).click()
   await expect(card).toHaveCount(0)
   await page.locator('body').press('Enter')
-  send('approval', { approval_id: 'a2', command: 'rm -rf dist' })
+  send('approval', { allowed_choices: ['once', 'session', 'always', 'deny'], approval_id: 'a2', command: 'rm -rf dist' })
   await expect(card).toContainText('rm -rf dist')
   expect(responses).toEqual([])
 })
@@ -91,11 +92,11 @@ test('a deny carries an instruction, Esc goes back, and a refusal brings the tex
   const card = page.getByRole('alertdialog')
   const tell = card.getByRole('button', { name: 'No, and tell Hermes instead' })
   const box = card.getByRole('textbox', { name: 'What should Hermes do instead?' })
-  send('approval', { approval_id: 'plain', command: 'echo no row', can_deny_with_instruction: false })
+  send('approval', { allowed_choices: ['once', 'session', 'always', 'deny'], approval_id: 'plain', command: 'echo no row', can_deny_with_instruction: false })
   await expect(card).toContainText('echo no row')
   await expect(tell).toHaveCount(0)
   await shot('no-row')
-  send('approval', { approval_id: 'told', command: 'DROP TABLE build_cache', can_deny_with_instruction: true })
+  send('approval', { allowed_choices: ['once', 'session', 'always', 'deny'], approval_id: 'told', command: 'DROP TABLE build_cache', can_deny_with_instruction: true })
   await expect(card).toContainText('DROP TABLE build_cache')
   await shot('choices')
   await tell.click()
@@ -139,7 +140,7 @@ test('a deny carries an instruction, Esc goes back, and a refusal brings the tex
 test('menu keyboard actions retain ownership while an approval is visible', async ({ page, approval: { send, responses } }, info) => {
   const card = page.getByRole('alertdialog')
   const screenshot = async (state: string) => { await page.screenshot({ path: info.outputPath(`${state}.png`) }) }
-  send('approval', { approval_id: 'menu-approval', command: 'echo fixture' })
+  send('approval', { allowed_choices: ['once', 'session', 'always', 'deny'], approval_id: 'menu-approval', command: 'echo fixture' })
   await expect(card).toContainText('echo fixture')
   if (info.project.name !== 'mobile') {
     const actions = page.locator('.session-item[data-sid="approval-dismiss"]').getByRole('button', { name: 'Conversation actions' })
@@ -174,7 +175,7 @@ test.describe('at 594×368', () => {
 
   test('an approval card keeps its heading, command and every answer in reach', async ({ page, approval: { send } }, info) => {
     const card = page.getByRole('alertdialog')
-    send('approval', { approval_id: 'short', command: 'rm -rf build', can_deny_with_instruction: true })
+    send('approval', { allowed_choices: ['once', 'session', 'always', 'deny'], approval_id: 'short', command: 'rm -rf build', can_deny_with_instruction: true })
     await expect(card).toContainText('rm -rf build')
     // A wider window keeps the desktop card rules, which have no scrolling of their own.
     for (const viewport of [{ width: 594, height: 368 }, { width: 951, height: 400 }]) {
@@ -205,7 +206,7 @@ test.describe('at 594×368', () => {
 })
 
 test('an approval card stays above the composer at heights over 480 px', async ({ page, approval: { send } }, info) => {
-  send('approval', { approval_id: 'tall', command: 'rm -rf build' })
+  send('approval', { allowed_choices: ['once', 'session', 'always', 'deny'], approval_id: 'tall', command: 'rm -rf build' })
   const card = page.getByRole('alertdialog')
   await expect(card).toContainText('rm -rf build')
   for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }, { width: 382, height: 580 }, { width: 669, height: 867 }, { width: 951, height: 585 }, { width: 385, height: 571 }, { width: 594, height: 481 }]) {

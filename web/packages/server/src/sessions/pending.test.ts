@@ -43,6 +43,14 @@ describe('pending prompt streams', () => {
     expect(String(pending.clarifyPending('s1').pending?.head_id)).toMatch(/^[A-Za-z0-9_-]{22}$/)
   })
 
+  it('writes out every choice for an approval that names none, and keeps the ones an approval names (TAL-2481)', () => {
+    const pending = new PendingPrompts(new SessionEventBus())
+    pending.submitApproval('unnamed', { approval_id: 'a', command: 'pwd' })
+    pending.submitApproval('named', { approval_id: 'b', command: 'pwd', allowed_choices: ['deny', 'once'] })
+    expect(pending.approvalPending('unnamed').pending?.allowed_choices).toEqual(['once', 'session', 'always', 'deny'])
+    expect(pending.approvalPending('named').pending?.allowed_choices).toEqual(['once', 'deny'])
+  })
+
   it('names one description for clients: the description, else the question, else the reason (TAL-2333)', () => {
     const pending = new PendingPrompts(new SessionEventBus())
     const head = (sid: string, approval: Record<string, unknown>) => { pending.submitApproval(sid, { approval_id: 'a', ...approval }); return pending.approvalPending(sid).pending?.description }

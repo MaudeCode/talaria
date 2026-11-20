@@ -1,14 +1,14 @@
 {
   "approval_write": {
-    "approval_id": "w1", "session_id": "fixture-session", "tool_call_id": "call-write", "command": "write /etc/hosts", "description": "Protected path",
+    "approval_id": "w1", "allowed_choices": ["once", "session", "always", "deny"], "session_id": "fixture-session", "tool_call_id": "call-write", "command": "write /etc/hosts", "description": "Protected path",
     "tool": { "name": "write_file", "kind": "write", "target": "/etc/hosts", "args_fields": [{ "key": "path", "value": "/etc/hosts", "multiline": false }, { "key": "content", "value": "127.0.0.1 example\n::1 example", "multiline": true }] }
   },
   "approval_shell": {
-    "approval_id": "s1", "session_id": "fixture-session", "tool_call_id": "call-push", "command": "git push --force", "description": "Force push",
+    "approval_id": "s1", "allowed_choices": ["once", "session", "always", "deny"], "session_id": "fixture-session", "tool_call_id": "call-push", "command": "git push --force", "description": "Force push",
     "tool": { "name": "terminal", "kind": "shell", "target": "git push --force" }
   },
   "approval_mcp": {
-    "approval_id": "m1", "session_id": "fixture-session", "tool_call_id": "call-issue",
+    "approval_id": "m1", "allowed_choices": ["once", "session", "always", "deny"], "session_id": "fixture-session", "tool_call_id": "call-issue",
     "tool": { "name": "mcp__linear__create_issue", "kind": "mcp", "target": "Create issue", "app": { "name": "Linear", "logo_url": null }, "args_fields": [{ "key": "title", "value": "Ship it", "multiline": false }] }
   },
   "delegate_background": {

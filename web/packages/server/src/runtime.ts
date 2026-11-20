@@ -837,9 +837,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     return sid
   }
   /** TAL-1168: the oldest approval and clarify `sid` waits on, each with its queue's depth, as the pending routes ship them. */
+  // Each prompt is the one its pending route ships (the queue writes `allowed_choices`); its type is erased as the routers do.
   const pendingEntries = async (sid: string) => (await Promise.all((['approval', 'clarify'] as const).map(async (kind) => {
     const { pending: prompt, pending_count } = await pendingPrompt(deps, sid, kind)
-    return prompt ? [{ session_id: sid, kind, id: str(kind === 'approval' ? prompt.approval_id : prompt.clarify_id), pending_count, prompt }] : []
+    return prompt ? [{ session_id: sid, kind, id: str(kind === 'approval' ? prompt.approval_id : prompt.clarify_id), pending_count, prompt: prompt as never }] : []
   }))).flat()
   const writeRefusal = async (target: Session): Promise<string | null> => (await sessions.readOnlyReason(target))
     ?? ((await sessions.isSubagentViewOnly(target.session_id)) ? 'Subagent sessions are view-only and cannot be written from WebUI' : null)

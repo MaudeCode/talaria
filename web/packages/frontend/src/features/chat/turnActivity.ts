@@ -4,7 +4,7 @@ import type { LiveTurn, Segment } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import type { ToolCardData } from './blocks/ToolCard'
 import { ActivityGroupSchema, TurnSummaryPartSchema, type ActivityGroup, type TurnSummaryPart, ApprovalAnsweredBySchema, BackgroundLinkSchema, DisplayMediaSchema, ToolFieldSchema, ToolKindSchema, ToolProgressSchema, ToolAppSchema, ToolResultViewSchema, ToolVerbSchema, type DisplayMedia, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
-import { extractInlineThinking, messageText, stripToolCallXml } from './render/text'
+import { extractInlineThinking, rowText, stripToolCallXml } from './render/text'
 import type { VisibleMessage } from './useTranscript'
 
 /** TAL-186: the server's display text for a body, with its media references rewritten, and the media it references. */
@@ -39,7 +39,7 @@ export interface TurnActivity {
   continued?: boolean
   sceneRows?: unknown[]
   history?: { ref: string; index: number; before: number }
-  /** TAL-2332: the server's activity groups by `group_id`; absent on a native gateway stream, which groups on the client. */
+  /** TAL-2332: the server's activity groups by `group_id`, on owned and native gateway turns alike (TAL-2481). */
   groups?: Record<string, ActivityGroup>
   /** TAL-2332: the work phase after the last consumed steer, which the turn's last "Worked" header words. */
   finalPhase?: ActivityGroup
@@ -156,9 +156,9 @@ export function persistedActivity(row: VisibleMessage): TurnActivity {
   const scene = record(last.message._anchor_activity_scene)
   const key = row.turnKey ?? row.key
   if (scene.version !== 'activity_scene_v1' || !Array.isArray(scene.activity_rows)) {
-    const bodies = parts.filter((part) => messageText(part.message.content).trim())
-    const display = bodies.some((part) => part.message._display_content !== undefined) ? bodies.map((part) => part.message._display_content ?? messageText(part.message.content)).join('\n\n') : undefined
-    return { key, items: [], finalAnswer: bodies.map((part) => messageText(part.message.content)).join('\n\n'), finalAnswerDisplay: displayBody(display, bodies.flatMap((part) => part.message._media ?? [])), status: 'completed' }
+    const bodies = parts.filter((part) => rowText(part.message).trim())
+    const display = bodies.some((part) => part.message._display_content !== undefined) ? bodies.map((part) => part.message._display_content ?? rowText(part.message)).join('\n\n') : undefined
+    return { key, items: [], finalAnswer: bodies.map((part) => rowText(part.message)).join('\n\n'), finalAnswerDisplay: displayBody(display, bodies.flatMap((part) => part.message._media ?? [])), status: 'completed' }
   }
   return {
     key, items: sceneItems(scene.activity_rows), ...serverGroups(scene), finalAnswer: text(scene.final_answer), finalAnswerDisplay: displayBody(scene.final_answer_display, scene.final_answer_media), ...(text(scene.final_answer_excerpt) ? { finalAnswerExcerpt: text(scene.final_answer_excerpt) } : {}), status: text(scene.terminal_state) || 'completed', expandedByDefault: scene.expanded_by_default === true,

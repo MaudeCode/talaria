@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Tool calls in chats a messaging gateway runs now fold into the same Worked groups as other chats.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

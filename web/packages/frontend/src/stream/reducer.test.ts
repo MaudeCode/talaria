@@ -90,7 +90,7 @@ describe('stream reducer: ordering and projection', () => {
   })
   it('records approval and clarify prompts and clears them on done', () => {
     let s = started()
-    s = ev(s, 'approval', { approval_id: 'a1', command: 'rm -rf x', pending_count: 1 })
+    s = ev(s, 'approval', { allowed_choices: ['once', 'session', 'always', 'deny'], approval_id: 'a1', command: 'rm -rf x', pending_count: 1 })
     expect(s.turns[SID]!.approval?.approval_id).toBe('a1')
     s = ev(s, 'clarify', { clarify_id: 'q1', question: 'Which?', choices: ['a', 'b'] })
     expect(s.turns[SID]!.clarify?.question).toBe('Which?')
@@ -101,7 +101,7 @@ describe('stream reducer: ordering and projection', () => {
   })
   it('drops the approval card when the server withdraws the last approval (TAL-514)', () => {
     let s = started()
-    s = ev(s, 'approval', { approval_id: 'a1', command: 'rm -rf x', pending_count: 1 })
+    s = ev(s, 'approval', { allowed_choices: ['once', 'session', 'always', 'deny'], approval_id: 'a1', command: 'rm -rf x', pending_count: 1 })
     const status = s.turns[SID]!.status
     s = ev(s, 'approval_cleared', { session_id: SID, pending_count: 0 })
     expect(s.turns[SID]!.approval).toBeNull()
@@ -109,7 +109,7 @@ describe('stream reducer: ordering and projection', () => {
   })
   it('clears only the approval the client answered, never the one queued behind it (TAL-1783)', () => {
     let s = started()
-    s = ev(s, 'approval', { approval_id: 'next', command: 'git tag', pending_count: 1 })
+    s = ev(s, 'approval', { allowed_choices: ['once', 'session', 'always', 'deny'], approval_id: 'next', command: 'git tag', pending_count: 1 })
     s = streamReducer(s, { type: 'clear_approval', sessionId: SID, approvalId: 'answered' })
     expect(s.turns[SID]!.approval?.approval_id).toBe('next')
     s = streamReducer(s, { type: 'clear_approval', sessionId: SID, approvalId: 'next' })

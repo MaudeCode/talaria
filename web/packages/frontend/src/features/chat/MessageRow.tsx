@@ -7,7 +7,7 @@ import { m } from '../../paraglide/messages.js'
 import type { BackgroundLine, Message } from '../../contracts'
 import { StatusIcon } from '../background/BackgroundWork'
 import { Markdown } from './render/Markdown'
-import { messageText } from './render/text'
+import { rowText } from './render/text'
 import type { ActivityMode } from './blocks/Worklog'
 import { activityText, continuedActivity, persistedActivity } from './turnActivity'
 import type { LiveTurn } from '../../stream/reducer'
@@ -107,7 +107,7 @@ function AttachmentList({ message, sessionId }: { message: Message; sessionId: s
 }
 
 export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown, sessionId, actions, pending = false, arrive = false }: { row: VisibleMessage; renderMarkdown: boolean; sessionId: string | undefined; actions: RowActions; pending?: boolean; /** The user just sent it: it lands from below as it mounts (TAL-1753). */ arrive?: boolean }) {
-  const text = messageText(row.message.content)
+  const text = rowText(row.message)
   // Decided at mount: the same row staying on screen as the stream takes it over never lands twice.
   const [lands] = useState(arrive)
   const rowRef = useRef<HTMLDivElement>(null)
@@ -170,7 +170,7 @@ function BackgroundLineRow({ line, parentReview }: { line: BackgroundLine; paren
 export const BackgroundUpdateRow = memo(function BackgroundUpdateRow({ row }: { row: VisibleMessage }) {
   const update = row.message._background_update
   if (!update) return null
-  const text = messageText(row.message.content)
+  const text = rowText(row.message)
   const lines = <ul className="flex flex-col gap-1">{update.lines.map((line, i) => <BackgroundLineRow key={i} line={line} parentReview={update.review_state} />)}</ul>
   const description = update.lines.map((line) => reviewDescription(line, update.review_state)).join(', ')
   const body = <>
@@ -213,13 +213,13 @@ export const MarkerRow = memo(function MarkerRow({ row }: { row: VisibleMessage 
     <div className="msg-row" data-role="marker" data-marker-kind="content_refused" data-msg-idx={row.index} data-message-key={row.key}>
       {message._refused_notice ? <TranscriptActivityLine title={message._refused_notice} icon={<ShieldX size={14} aria-hidden="true" className="shrink-0" />} /> : null}
       <CollapsedBody excerpt={message._display_truncated ? message._display_excerpt : undefined}>
-        {(excerpt) => <div className="msg-body whitespace-pre-wrap">{excerpt ?? messageText(message.content)}</div>}
+        {(excerpt) => <div className="msg-body whitespace-pre-wrap">{excerpt ?? rowText(message)}</div>}
       </CollapsedBody>
     </div>
   )
   const tasks = message._marker_kind === 'preserved_task_list'
   const Icon = tasks ? ListChecks : Shrink
-  const text = message._marker_body ?? messageText(message.content)
+  const text = message._marker_body ?? rowText(message)
   return (
     <div className="msg-row" data-role="marker" data-msg-idx={row.index} data-message-key={row.key}>
       <TranscriptActivityLine title={tasks ? m.marker_preserved_task_list() : m.marker_context_compaction()} icon={<Icon size={14} aria-hidden="true" className="shrink-0" />}>
@@ -245,7 +245,7 @@ export const NoticeRow = memo(function NoticeRow({ row }: { row: VisibleMessage 
     <div className="msg-row" data-role="notice" data-msg-idx={row.index} data-message-key={row.key}>
       <p role="note" className="flex items-center gap-2 text-[13px] text-muted">
         <Icon size={14} aria-hidden="true" className={cn("shrink-0", failed && "text-warning")} />
-        <span className="min-w-0">{paused ?? (assignment ? assignment.lead === null ? m.group_auto_routed({ members: assignment.assignees.join(', ') }) : assignment.assignees.length ? m.group_lead_assigned({ lead: assignment.lead, members: assignment.assignees.join(', ') }) : m.group_lead_took({ lead: assignment.lead }) : messageText(row.message.content))}</span>
+        <span className="min-w-0">{paused ?? (assignment ? assignment.lead === null ? m.group_auto_routed({ members: assignment.assignees.join(', ') }) : assignment.assignees.length ? m.group_lead_assigned({ lead: assignment.lead, members: assignment.assignees.join(', ') }) : m.group_lead_took({ lead: assignment.lead }) : rowText(row.message))}</span>
       </p>
     </div>
   )

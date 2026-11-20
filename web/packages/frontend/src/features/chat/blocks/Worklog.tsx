@@ -93,19 +93,12 @@ export function terminalOutcomeLabel(status: string): string | null {
  * TAL-2332: a header's words from the server's record of the calls under it: each kind's phrase in the server's order,
  * running while any call runs. Clients never count calls themselves when the server sent the record.
  */
-function groupSummary(group: Pick<ActivityGroup, 'parts' | 'running'>, locale: string): string {
+function groupSummary(group: Pick<ActivityGroup, 'parts' | 'running'> | undefined, locale: string): string {
   const text = toolText(locale)
-  return text.summaryJoin(group.parts.map((part) => text.worklogSummary(part.kind, group.running ? 'running' : 'done', part.count))) || m.thinking_label()
+  return text.summaryJoin((group?.parts ?? []).map((part) => text.worklogSummary(part.kind, group?.running ? 'running' : 'done', part.count))) || m.thinking_label()
 }
 
-/** The record a native gateway stream's calls make (it sends no groups), counted on the client. */
-function countedGroup(calls: ToolCardData[]): Pick<ActivityGroup, 'parts' | 'running' | 'failed'> {
-  const parts = new Map<string, { kind: string; count: number; failed: number }>()
-  for (const c of calls) { const part = parts.get(c.kind) ?? { kind: c.kind, count: 0, failed: 0 }; part.count += 1; parts.set(c.kind, part) }
-  return { parts: [...parts.values()] as ActivityGroup['parts'], running: calls.some((c) => !c.done), failed: calls.filter((call) => call.isError).length }
-}
-
-/** `group`: the server's record of these calls (TAL-2332), which words the header; without it the calls are counted here. */
+/** `group`: the server's record of these calls (TAL-2332), which words the header; until it arrives the header names no calls. */
 export function Worklog({ calls, group, merged = false, status, children, sequenceKey, disclosureId = 'turn', active = false, activeLabel, activeSince, expandedByDefault = false }: { calls: ToolCardData[]; group?: Pick<ActivityGroup, 'parts' | 'running' | 'failed'> | undefined; /** TAL-2332: a merged run's row, whose calls indent under it. */ merged?: boolean; status: string; children: ReactNode; sequenceKey?: string; /** A turn-level disclosure's key, one per phase of a steered turn. */ disclosureId?: string; active?: boolean; activeLabel?: string | undefined; /** TAL-2340: when the running call `activeLabel` names started (epoch ms). */ activeSince?: number | undefined; expandedByDefault?: boolean }) {
   const locale = useLocale()
   const nested = sequenceKey !== undefined
@@ -141,10 +134,9 @@ export function Worklog({ calls, group, merged = false, status, children, sequen
   const [resets] = useState(() => new Set<() => void>())
   const [all, setAll] = useState<boolean>()
   const setEvery = (next: boolean) => { for (const reset of resets) reset(); setAll(next) }
-  const record = group ?? countedGroup(calls)
-  const failed = record.failed
+  const failed = group?.failed ?? 0
   const summary = activeLabel || (nested || (!running && status !== 'completed')
-    ? groupSummary(record, locale)
+    ? groupSummary(group, locale)
     : toolText(locale).processedElapsed())
   return (
     <div className={cn('tool-group tool-worklog-group agent-activity-group activity', nested && 'activity-sequence-group', merged && 'activity-merged-run', open && 'open', running && 'running', !open && 'tool-worklog-tool-group-collapsed')} data-tool-worklog-group="1" data-worklog-status={status} data-activity-sequence-group={nested ? '1' : undefined} data-live-activity-current={active ? '1' : undefined} data-open={open ? '1' : '0'}>

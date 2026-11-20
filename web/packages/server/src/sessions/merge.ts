@@ -1612,6 +1612,15 @@ export function withDisplayMedia<T>(messages: T[], project: (text: string) => Me
   })
 }
 
+/**
+ * TAL-2481: each non-tool row whose `content` is a list of parts carries `_display_text`, the text of those parts as
+ * `messageText` joins them, so clients never join parts themselves; a row whose `content` is a string is its own text. A
+ * tool row's result shows through its call, never as row text. Returns copies.
+ */
+export function withDisplayText<T>(messages: T[]): T[] {
+  return messages.map((m) => isDict(m) && m.role !== 'tool' && Array.isArray(m.content) ? { ...m, _display_text: messageText(m.content) } : m)
+}
+
 /** Anthropic-style tool calls: `tool_use` blocks in the content array, interleaved with the text around them. */
 export function hasToolUseBlocks(message: Record<string, unknown>): boolean {
   return Array.isArray(message.content) && message.content.some((part) => isDict(part) && part.type === 'tool_use')

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractInlineThinking, messageText, stripToolCallXml } from './text'
+import { extractInlineThinking, stripToolCallXml } from './text'
 
 describe('stripToolCallXml', () => {
   it('removes complete and truncated function_calls blocks', () => {
@@ -22,13 +22,5 @@ describe('extractInlineThinking', () => {
   })
   it('supports channel and turn markers', () => {
     expect(extractInlineThinking('<|channel|>thought\nhmm<channel|>Yes')).toEqual({ reasoning: 'hmm', content: 'Yes', inThinking: false })
-  })
-})
-
-describe('messageText', () => {
-  it('joins text parts and ignores non-text parts', () => {
-    expect(messageText([{ type: 'text', text: 'a' }, { type: 'image_url', image_url: { url: 'x' } }, { type: 'output_text', text: 'b' }])).toBe('ab')
-    expect(messageText('s')).toBe('s')
-    expect(messageText(null)).toBe('')
   })
 })

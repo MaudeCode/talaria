@@ -108,6 +108,27 @@ export function repairSessionModel(catalog: ModelsCatalog, model: string, provid
 
 export interface ModelsCatalog { availability?: CatalogAvailability; active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }>; favorites?: ModelFavorite[] | null; favorite_option_ids?: string[]; favorite_models?: ModelEntry[]; hidden_models?: ModelFavorite[] }
 
+/** TAL-2193, TAL-2481: a picker search hit: the row's label, id or provider label holds `needle` (lower-cased), or no needle. */
+function modelMatches(entry: ModelEntry, providerLabel: string, needle: string): boolean {
+  return !needle || [entry.label, entry.id, providerLabel].some((text) => text.toLocaleLowerCase().includes(needle))
+}
+
+/**
+ * TAL-2481: the composer catalog searched by `q`: each group keeps its matching rows, in order, and its sections only those
+ * rows; a group with none drops out. `offer_custom_id` offers the trimmed query as a custom id when no catalog id is it.
+ */
+export function searchedCatalog(catalog: ModelsCatalog, q: string): ModelsCatalog & { offer_custom_id: boolean } {
+  const query = q.trim()
+  const needle = query.toLocaleLowerCase()
+  const groups = catalog.groups.flatMap((group) => {
+    const models = group.models.filter((entry) => modelMatches(entry, group.provider, needle))
+    if (!models.length) return []
+    const ids = new Set(models.map((entry) => entry.id))
+    return [{ ...group, models, ...(group.sections ? { sections: group.sections.map((section) => ({ ...section, model_ids: section.model_ids.filter((id) => ids.has(id)) })).filter((section) => section.model_ids.length) } : {}) }]
+  })
+  return { ...catalog, groups, offer_custom_id: query !== '' && !catalog.groups.some((group) => group.models.some((entry) => entry.id === query)) }
+}
+
 /**
  * TAL-388: stamp each auxiliary slot with its display value and the catalog entry whose provider/model pair equals the
  * saved one, so clients tick exactly one option (a bare id listed under two providers matches only its own provider).
@@ -1494,7 +1515,7 @@ export class ProviderCatalog {
       (!query.provider || entry.provider_id === query.provider)
       && (query.show_hidden === 'true' || !entry.hidden)
       && (query.favorites !== 'true' || Boolean(entry.favorite))
-      && (!needle || [entry.label, entry.id, providerLabel].some((text) => text.toLocaleLowerCase().includes(needle)))
+      && modelMatches(entry, providerLabel, needle)
     const groups = catalog.groups.flatMap((group) => {
       if (query.provider && group.provider_id !== query.provider) return []
       const models = group.models.filter((entry) => matches(entry, group.provider))

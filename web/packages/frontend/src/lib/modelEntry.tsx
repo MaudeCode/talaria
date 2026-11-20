@@ -49,13 +49,11 @@ export function ModelOptionContent({ entry }: { entry: ModelEntry }) {
   </span>
 }
 
-/** Join the server's section membership to its rows; search only filters this display list. */
-export function catalogModelSections(group: Models['groups'][number], query = '') {
+/** Join the server's section membership to its rows; the server searches (TAL-2481). */
+export function catalogModelSections(group: Models['groups'][number]) {
   const rows = group.models
-  const q = query.trim().toLowerCase()
-  const matches = (entry: ModelEntry) => !q || `${entry.label ?? ''} ${entry.id} ${group.provider}`.toLowerCase().includes(q)
-  if (!group.sections) return [{ label: '', models: rows.filter(matches) }]
+  if (!group.sections) return [{ label: '', models: rows }]
   return group.sections.map((section) => ({ label: section.kind === 'recommended' ? m.plan_recommended() : m.plan_other(),
-    models: section.model_ids.map((id) => rows.find((entry) => entry.id === id)).filter((entry): entry is ModelEntry => !!entry && matches(entry)),
+    models: section.model_ids.map((id) => rows.find((entry) => entry.id === id)).filter((entry): entry is ModelEntry => !!entry),
   })).filter((section) => section.models.length)
 }

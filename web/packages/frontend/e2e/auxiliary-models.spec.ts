@@ -1,6 +1,6 @@
 import type { DelegationSettings } from '@maudecode/talaria-web-contracts'
 import type { Page } from '@playwright/test'
-import { expect, settle, test } from './fixtures'
+import { expect, MODELS_URL, modelsAnswer, settle, test } from './fixtures'
 
 // Service-worker requests bypass page routing; these fixtures own every response.
 test.use({ serviceWorkers: 'block' })
@@ -49,7 +49,7 @@ for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: width > 600 ? 900 : 844 })
     let state = auxiliary
     await page.route('**/api/model/auxiliary', (route) => route.fulfill({ json: state }))
-    await page.route('**/api/models', (route) => route.fulfill({ json: models }))
+    await page.route(MODELS_URL, (route) => route.fulfill({ json: modelsAnswer(models, route.request().url()) }))
     const writes: unknown[] = []
     await page.route('**/api/model/set', async (route) => {
       const body = route.request().postDataJSON() as { task: string; reasoning_effort?: string }

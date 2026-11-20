@@ -24,13 +24,14 @@ import { SessionNotices } from './notices.js'
 import type { RunJournal, RunJournalWriter } from './journal.js'
 import { SessionEventBus } from './events.js'
 import { messageCountsAsRenderable, messageWindowForDisplay, messagesForLimitedPayload } from './window.js'
-import { compactionRow, isCompactionRow, messageText, pendingUserRow, stripToolCallXml } from './merge.js'
+import { compactionRow, isCompactionRow, messageText, pendingUserRow, stripToolCallXml, withDisplayText } from './merge.js'
 import { withTurnIds } from './anchor.js'
 import { TalariaActivitySchema, type TalariaActivity } from '@maudecode/talaria-web-contracts'
 import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
 import { isDict } from './merge.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
+import { LiveActivityGroups } from './activity-groups.js'
 import { CANONICAL_READ_ONLY_REASON, WEB_DIAGNOSTIC_REQUEST_PREFIX } from './state-db.js'
 import { toolProgress } from './tool-display.js'
 import { deriveTodoState, normalizeTodoSnapshot, type PlanProgress } from './todo.js'
@@ -921,7 +922,7 @@ export class GatewaySessions {
       const model = str(snapshot.info.model) || str(base.model) || null
       const provider = Object.hasOwn(snapshot.info, 'provider')
         ? str(snapshot.info.provider) || null : str(base.model_provider) || null
-      Object.assign(fields, { messages: limit === null ? rows : messagesForLimitedPayload(rows), message_count: Math.max(snapshot.message_count, nativeRows.length), _messages_offset: offset, _messages_truncated: offset > 0,
+      Object.assign(fields, { messages: withDisplayText(limit === null ? rows : messagesForLimitedPayload(rows)), message_count: Math.max(snapshot.message_count, nativeRows.length), _messages_offset: offset, _messages_truncated: offset > 0,
         title: str(snapshot.info.title) || base.title, model: str(snapshot.info.model) || base.model,
         model_provider: provider, model_option_id: this.deps.service.deps.modelOptionFor?.(model, provider) ?? null,
         // TAL-978: the owner runs this session's turns; a route the Web copy recorded says nothing about them.
@@ -1427,6 +1428,10 @@ export class GatewaySessions {
       // TAL-1723: a stable title snapshot is due only after reasoning grew, as on direct turns.
       let reasoningChanged = false
       let titles = new ReasoningTitleTracker()
+      // TAL-2481: the run's activity groups, numbered as its settled scene numbers them, as on direct turns (TAL-2332).
+      let groups = new LiveActivityGroups()
+      // The subagent rows already in a group, by row id.
+      let subagents = new Set<string>()
       // TAL-1723: the Show reasoning preference, read once, again after `session.info`, and when the config file's
       // fingerprint changed (checked at most once per second), never once per streamed frame.
       // A failed read hides reasoning but keeps no fingerprint, so the next check reads again.
@@ -1454,7 +1459,7 @@ export class GatewaySessions {
         for (const call of calls) if (call.progress) await put('tool_progress', { id: call.tid, progress: null })
         calls.length = 0
       }
-      const resetProjection = async () => { await clearTools(); liveRunning = false; reasoning = ''; reasoningChanged = false; usage = {}; completion = null; titles = new ReasoningTitleTracker() }
+      const resetProjection = async () => { await clearTools(); liveRunning = false; reasoning = ''; reasoningChanged = false; usage = {}; completion = null; titles = new ReasoningTitleTracker(); groups = new LiveActivityGroups(); subagents = new Set() }
       const meter = async (data: Row, complete = false) => {
         usage = { ...usage, ...ownerUsage(data, complete) }
         if (['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens'].every((key) => typeof usage[key] === 'number')) await put('metering', { session_id: target.sid, usage: { ...usage, estimated_cost: usage.estimated_cost ?? null }, tps: usage.tps ?? null, tps_available: usage.tps !== undefined, estimated: false })
@@ -1613,21 +1618,29 @@ export class GatewaySessions {
               const stable = reasoningChanged ? titles.stableSnapshot(reasoning) : null
               reasoningChanged = false
               if (stable !== null && await showReasoning()) await put('reasoning', { text: '', titles: stable })
-              await put('token', { text: str(data.text || data.delta || data.content) })
+              const text = str(data.text || data.delta || data.content)
+              // Visible prose ends the open group.
+              if (text.trim()) groups.close()
+              await put('token', { text })
             }
             else if (kind === 'reasoning.delta') {
               reasoning += str(data.text)
               reasoningChanged = true
-              if (await showReasoning()) await put('reasoning', titles.prepare(reasoningEventPayload(data.text, reasoning)))
+              if (await showReasoning()) await put('reasoning', { ...titles.prepare(reasoningEventPayload(data.text, reasoning)), ...groups.reasoning() })
             }
             else if (kind.startsWith('subagent.') && str(data.subagent_id)) {
               // Reuse the delegate activity row; each child keeps one identity through progress and completion.
               const complete = kind === 'subagent.complete'
               const visible = kind !== 'subagent.thinking' || await showReasoning()
               const preview = visible ? str(data.summary || data.tool_preview || data.text) : ''
-              await put(complete ? 'tool_complete' : 'tool', { id: `owner-subagent-${str(data.subagent_id)}`, name: 'subagent_progress',
+              const id = `owner-subagent-${str(data.subagent_id)}`
+              // The child's first frame takes its group; later progress keeps it, and its completion settles it there.
+              const first = !complete && !subagents.has(id)
+              subagents.add(id)
+              const grouped = complete ? groups.complete(id, 'subagent_progress', data.status !== 'completed') : first ? groups.start(id, 'subagent_progress') : {}
+              await put(complete ? 'tool_complete' : 'tool', { id, name: 'subagent_progress',
                 args: { task: str(data.goal) }, preview: preview || null,
-                ...(complete ? { is_error: data.status !== 'completed', duration: data.duration_seconds } : {}) })
+                ...(complete ? { is_error: data.status !== 'completed', duration: data.duration_seconds } : {}), ...grouped })
             }
             else if (kind === 'session.usage') await meter(data)
             else if (kind === 'message.complete') {
@@ -1651,7 +1664,7 @@ export class GatewaySessions {
                 calls.push(started)
                 registry.noteToolEvent(watch.stream, this.deps.now(), true, started)
                 // TAL-2340: a live start is when it arrived; a replayed one has no time of its own, so its row shows no timer.
-                await put('tool', { ...data, id, name: data.name || data.tool_name, ...(replaying ? {} : { started_at: this.deps.now() }) })
+                await put('tool', { ...data, id, name: data.name || data.tool_name, ...(replaying ? {} : { started_at: this.deps.now() }), ...groups.start(id, data.name || data.tool_name) })
               } else if (kind === 'tool.progress') {
                 if (!id || !call || call.done || !watch.snapshot.running) return
                 call.progress = toolProgress({ ...data, message: typeof data.message === 'string' ? redactString(data.message, this.deps.redactEnabled()) : null })
@@ -1659,7 +1672,7 @@ export class GatewaySessions {
               } else {
                 if (call?.done) return
                 if (call) Object.assign(call, { done: true, progress: null })
-                const frame = await put('tool_complete', { ...data, id, name: data.name || data.tool_name, progress: null })
+                const frame = await put('tool_complete', { ...data, id, name: data.name || data.tool_name, progress: null, ...groups.complete(id, data.name || data.tool_name, data.is_error === true) })
                 // TAL-2336: the run's activity names the call as its transcript row shows it: failed, with its outcome.
                 if (call) Object.assign(call, { is_error: frame.is_error === true, ...(frame.result_view ? { result_view: frame.result_view } : {}), ...(typeof frame.process_id === 'string' ? { process_id: frame.process_id } : {}) })
                 registry.noteToolEvent(watch.stream, this.deps.now(), false, call)
