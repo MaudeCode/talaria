@@ -463,7 +463,7 @@ public final class ChatViewModel {
     public private(set) var agentCommands: [AgentCommand] = []
     public private(set) var workspaceRoots: [WorkspaceRoot] = []
     public private(set) var workspaceSuggestions: [String] = []
-    public private(set) var personalitySuggestions: [String] = ["none"]
+    public private(set) var personalitySuggestions: [String] = []
     public private(set) var skillSlashSuggestions: [SkillSlashSuggestion] = []
     public private(set) var profileOptions: [ProfileSummary] = []
     public private(set) var isSingleProfileMode = false
@@ -1536,14 +1536,11 @@ extension ChatViewModel {
     public func loadPersonalitySuggestions() async {
         let load = personalitySuggestionsLoad ?? Task {
             do {
-                personalitySuggestions = (try await client.personalities()).slashAutocompleteNames
+                personalitySuggestions = (try await client.personalities()).autocompleteNames ?? []
             } catch {
                 personalitySuggestionsLoad = nil
                 lastError = error
                 composerConfigurationErrorMessage = error.localizedDescription
-                if personalitySuggestions.isEmpty {
-                    personalitySuggestions = ["none"]
-                }
                 throw error
             }
         }

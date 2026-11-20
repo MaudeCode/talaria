@@ -385,25 +385,3 @@ final class ModelCatalogTests: XCTestCase {
     }
 
 }
-
-final class PersonalityAutocompleteTests: XCTestCase {
-    func testSlashAutocompleteNamesPrependsNoneAndDeduplicates() throws {
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let response = try decoder.decode(
-            PersonalitiesResponse.self,
-            from: Data("""
-            {
-              "personalities": [
-                {"name": "mentor", "description": "Patient technical coach"},
-                {"name": "none", "description": "Should not duplicate the clear option"},
-                {"name": "critic"},
-                {"name": "   "}
-              ]
-            }
-            """.utf8)
-        )
-
-        XCTAssertEqual(response.slashAutocompleteNames, ["none", "mentor", "critic"])
-    }
-}

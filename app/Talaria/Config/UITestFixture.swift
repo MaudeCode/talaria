@@ -1072,7 +1072,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
         case "/api/git/branches" where ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.gitRepositoryArgument):
             return json(["branches": ["is_git": true, "current": "main", "detached": false, "local": [["name": "main"]], "remote": []]])
         case "/api/personalities":
-            return json(["personalities": []])
+            return json(["personalities": [], "autocomplete_names": ["none"]])
         case "/api/skills":
             return json(["skills": []])
         case "/api/session/compress/start", "/api/session/compress/status":

@@ -1300,16 +1300,16 @@ extension ChatViewModelSendTests {
         requests.request(at: 0).fail(with: URLError(.timedOut))
         await survivingCaller.value
         XCTAssertNotNil(viewModel.composerConfigurationErrorMessage)
-        XCTAssertEqual(viewModel.personalitySuggestions, ["none"])
+        XCTAssertEqual(viewModel.personalitySuggestions, [], "A failed load offers no client-made suggestions")
 
         let retryingCaller = Task { @MainActor in
             await viewModel.loadPersonalitySuggestions()
         }
         try await waitUntil { requests.count == 2 }
-        requests.request(at: 1).complete(withJSON: #"{"personalities": [{"name": "Pirate"}]}"#)
+        requests.request(at: 1).complete(withJSON: #"{"personalities": [{"name": " Pirate"}], "autocomplete_names": ["none", "Pirate"]}"#)
         await retryingCaller.value
 
-        XCTAssertEqual(viewModel.personalitySuggestions, ["none", "Pirate"])
+        XCTAssertEqual(viewModel.personalitySuggestions, ["none", "Pirate"], "Suggestions are the server's autocomplete_names")
         await viewModel.loadPersonalitySuggestions()
         XCTAssertEqual(requests.count, 2, "A successful load is cached")
     }

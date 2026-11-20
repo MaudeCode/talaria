@@ -35,22 +35,8 @@ public struct ReasoningStatusResponse: Decodable, Equatable, Sendable {
 
 public struct PersonalitiesResponse: Decodable, Equatable, Sendable {
     public let personalities: [PersonalitySummary]?
-}
-
-extension PersonalitiesResponse {
-    public var slashAutocompleteNames: [String] {
-        var seen = Set<String>()
-        return (["none"] + (personalities ?? []).compactMap { personality in
-            guard let name = personality.name?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !name.isEmpty
-            else {
-                return nil
-            }
-
-            return name
-        })
-        .filter { seen.insert($0).inserted }
-    }
+    /// TAL-2500: the server's `/personality` argument completions, the clear keyword first.
+    public let autocompleteNames: [String]?
 }
 
 public struct PersonalitySummary: Decodable, Equatable, Hashable, Identifiable, Sendable {

@@ -127645,10 +127645,18 @@
                         ],
                         "additionalProperties": {}
                       }
+                    },
+                    "autocomplete_names": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "TAL-2500: `/personality` argument completions: `none` (the clear keyword) first, then each personality name trimmed, non-blank and once, in `personalities` order."
                     }
                   },
                   "required": [
-                    "personalities"
+                    "personalities",
+                    "autocomplete_names"
                   ],
                   "additionalProperties": {}
                 }
