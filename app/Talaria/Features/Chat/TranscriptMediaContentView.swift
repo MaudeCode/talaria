@@ -24,18 +24,6 @@ struct TranscriptMediaContentView: View {
                     loadMediaData: loadMediaData,
                     onPreviewMedia: onPreviewMedia
                 ))
-                .markdownImageProvider(TranscriptMediaImageProvider(
-                    display: display,
-                    cacheNamespace: cacheNamespace,
-                    loadMediaImage: loadMediaImage,
-                    loadMediaData: loadMediaData,
-                    onPreviewMedia: onPreviewMedia
-                ))
-                .markdownInlineImageProvider(TranscriptMediaInlineImageProvider(
-                    display: display,
-                    cacheNamespace: cacheNamespace,
-                    loadMediaImage: loadMediaImage
-                ))
 
             ForEach(display.tiles) { reference in
                 TranscriptMediaThumbnailView(
@@ -52,49 +40,49 @@ struct TranscriptMediaContentView: View {
     }
 }
 
-/// An image alone in its paragraph (a list item, a quote, a link): the body's server media shows as the
-/// tappable thumbnail; any other image loads as MarkdownUI would. MarkdownUI names it by its alt text.
+/// An image alone in its paragraph (a list item, a quote, a link) in any chat Markdown: a body's server media shows as
+/// the tappable thumbnail; any other image loads through `ChatMarkdownImageLoader`. MarkdownUI names it by its alt text.
+/// `ChatMarkdownView` installs it, since MarkdownUI's innermost provider wins.
 struct TranscriptMediaImageProvider: ImageProvider {
-    let display: TranscriptDisplayBody
-    let cacheNamespace: String
-    let loadMediaImage: (@MainActor (TranscriptMediaReference) async -> Data?)?
-    let loadMediaData: (@MainActor (TranscriptMediaReference) async -> Data?)?
-    let onPreviewMedia: (@MainActor (TranscriptMediaReference) -> Void)?
+    let media: TranscriptMediaParagraphImages?
 
     @ViewBuilder
     func makeImage(url: URL?) -> some View {
-        if let reference = display.image(for: url) {
-            MarkdownMainActorBlock { [cacheNamespace, loadMediaImage, loadMediaData, onPreviewMedia] in
+        if let media, let reference = media.display.image(for: url) {
+            MarkdownMainActorBlock {
                 TranscriptMediaThumbnailView(
                     reference: reference,
-                    cacheNamespace: cacheNamespace,
-                    loadMediaImage: loadMediaImage,
-                    loadMediaData: loadMediaData,
-                    onPreviewMedia: onPreviewMedia
+                    cacheNamespace: media.cacheNamespace,
+                    loadMediaImage: media.loadMediaImage,
+                    loadMediaData: media.loadMediaData,
+                    onPreviewMedia: media.onPreviewMedia
                 )
                 .forcedLeftToRight()
             }
-        } else {
-            DefaultImageProvider.default.makeImage(url: url)
+        } else if let url {
+            MarkdownMainActorBlock { ChatMarkdownImage(url: url) }
         }
     }
 }
 
-/// An image inside a line of text (`**before ![x](…) after**`): the body's server media loads through the
-/// authenticated loader, shown fitted to the thumbnail box; any other image loads as MarkdownUI would.
+/// An image inside a line of text (`**before ![x](…) after**`) in any chat Markdown: a body's server media loads through
+/// the authenticated loader, shown fitted to the thumbnail box; any other image loads through `ChatMarkdownImageLoader`.
+/// `ChatMarkdownView` installs it, since MarkdownUI's innermost provider wins.
 struct TranscriptMediaInlineImageProvider: InlineImageProvider {
-    let display: TranscriptDisplayBody
-    let cacheNamespace: String
-    let loadMediaImage: (@MainActor (TranscriptMediaReference) async -> Data?)?
+    let media: TranscriptMediaParagraphImages?
 
     static let maxSize = CGSize(width: 210, height: 132)
+    /// One transparent point: an empty `UIImage` draws a placeholder glyph in a line of text.
+    private static let blank = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
 
     func image(with url: URL, label: String) async throws -> Image {
-        guard let reference = display.image(for: url) else {
-            return try await DefaultInlineImageProvider.default.image(with: url, label: label)
+        guard let media, let reference = media.display.image(for: url) else {
+            // An image that does not load is left out; a throw would drop the paragraph's other images with it.
+            guard let image = await ChatMarkdownImageLoader.image(from: url)?.cgImage else { return Image(uiImage: Self.blank) }
+            return Image(image, scale: 1, label: Text(label))
         }
-        guard let loadMediaImage else { throw URLError(.resourceUnavailable) }
-        let key = DecodedImageCacheKey(namespace: cacheNamespace, resourceID: reference.id)
+        guard let loadMediaImage = media.loadMediaImage else { throw URLError(.resourceUnavailable) }
+        let key = DecodedImageCacheKey(namespace: media.cacheNamespace, resourceID: reference.id)
         guard let image = await DecodedImageCache.shared.thumbnail(
             for: key,
             covering: ImagePreviewDownsampler.transcriptThumbnailPixelSize,
@@ -157,5 +145,79 @@ extension EnvironmentValues {
     var transcriptMediaParagraphImages: TranscriptMediaParagraphImages? {
         get { self[TranscriptMediaParagraphImagesKey.self] }
         set { self[TranscriptMediaParagraphImagesKey.self] = newValue }
+    }
+}
+
+/// TAL-2582: the only loader chat Markdown images other than a body's server media use (both providers above). It never
+/// requests a remote image: raw Markdown, such as a streaming reply, can name one whose URL carries data a prompt
+/// injection put there, and the App has no CSP to stop it. A remote image shows as a link instead
+/// (`ChatMarkdownParagraph`); any other source, such as an inline `data:` image, loads through the shared session.
+enum ChatMarkdownImageLoader {
+    static func image(from url: URL) async -> UIImage? {
+        guard !RemoteMarkdownImage.isRemote(url), let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
+        return UIImage(data: data)
+    }
+}
+
+/// A Markdown image `ChatMarkdownImageLoader` loads, at most its own size and fitted to the width; nothing until then,
+/// or when it does not load, as MarkdownUI's own image did.
+struct ChatMarkdownImage: View {
+    let url: URL
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: image.size.width)
+            } else {
+                // Nothing to read: a remote image's link, which follows the paragraph, carries its alt text.
+                Color.clear.frame(width: 0, height: 0).accessibilityHidden(true)
+            }
+        }
+        .task(id: url) { image = await ChatMarkdownImageLoader.image(from: url) }
+    }
+}
+
+/// TAL-2582: an image raw Markdown names on another host, which the App never loads; the paragraph shows it as a link to
+/// the image, labelled with its alt text or else its host, as the server's display text does once a reply settles.
+struct RemoteMarkdownImage: Identifiable {
+    let url: URL
+    let label: String
+    var id: String { "\(label)\u{0}\(url.absoluteString)" }
+
+    /// `http(s):`, or protocol-relative `//host/…`, which loads from another host too.
+    static func isRemote(_ url: URL) -> Bool {
+        if let scheme = url.scheme?.lowercased() { return scheme == "http" || scheme == "https" }
+        return url.host != nil
+    }
+
+    /// Each remote image in a paragraph once, in order; a body's own server media is never one.
+    static func all(in paragraphMarkdown: String, display: TranscriptDisplayBody?) -> [RemoteMarkdownImage] {
+        guard paragraphMarkdown.contains("!["), let parsed = try? AttributedString(markdown: paragraphMarkdown) else { return [] }
+        var images: [RemoteMarkdownImage] = []
+        for run in parsed.runs {
+            guard let url = run.imageURL, isRemote(url), display?.image(for: url) == nil else { continue }
+            let alt = String(parsed[run.range].characters).trimmingCharacters(in: .whitespacesAndNewlines)
+            let image = RemoteMarkdownImage(url: url, label: alt.isEmpty ? (url.host ?? url.absoluteString) : alt)
+            if !images.contains(where: { $0.id == image.id }) { images.append(image) }
+        }
+        return images
+    }
+}
+
+/// A remote image as a link to it; it opens through the chat's own link handling.
+struct RemoteMarkdownImageLink: View {
+    let image: RemoteMarkdownImage
+
+    var body: some View {
+        Link(destination: image.url) {
+            Label(image.label, systemImage: "photo")
+        }
+        // The paragraph's text styles would draw it as body text; it reads as a link.
+        .foregroundStyle(.tint)
+        .accessibilityLabel(image.label)
     }
 }

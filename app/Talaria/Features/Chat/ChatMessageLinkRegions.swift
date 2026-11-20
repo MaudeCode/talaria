@@ -82,10 +82,26 @@ struct ChatMarkdownLinkTrackedText<Label: View>: View {
     @ViewBuilder let label: Label
 
     @Environment(\.chatMessageLinkRegionStore) private var store
+    @Environment(\.transcriptMediaParagraphImages) private var media
     @State private var paragraphID = UUID()
 
+    /// TAL-2582: a link to each remote image follows the text, which never loads it; paragraphs, headings and table cells
+    /// all draw their text here.
     @ViewBuilder
     var body: some View {
+        let remote = RemoteMarkdownImage.all(in: content.renderMarkdown(), display: media?.display)
+        if remote.isEmpty {
+            tracked
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                tracked
+                ForEach(remote) { RemoteMarkdownImageLink(image: $0) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var tracked: some View {
         if tracksLinks, let store, case let links = self.links, !links.isEmpty {
             label
                 .textRenderer(

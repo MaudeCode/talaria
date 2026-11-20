@@ -11,6 +11,8 @@ struct ChatMarkdownView: View {
     let colorScheme: ColorScheme
     let isStreaming: Bool
 
+    @Environment(\.transcriptMediaParagraphImages) private var media
+
     /// Space above a fence drawn after the Markdown: the code block's own top margin, or the bottom margin every
     /// chat block ends with, whichever is larger, as the renderer spaces them.
     private static let openFenceSpacing: CGFloat = 16
@@ -35,6 +37,9 @@ struct ChatMarkdownView: View {
                         BackgroundColor(SwiftUI.Color(.tertiarySystemGroupedBackground))
                     }
                     .markdownCodeSyntaxHighlighter(.plainText)
+                    // TAL-2582: every image loads through the App's own loader, which never requests a remote one.
+                    .markdownImageProvider(TranscriptMediaImageProvider(media: media))
+                    .markdownInlineImageProvider(TranscriptMediaInlineImageProvider(media: media))
             }
             if let openFence {
                 MathFenceOrCodeBlock(language: openFence.language, content: openFence.code, isStreaming: true)
