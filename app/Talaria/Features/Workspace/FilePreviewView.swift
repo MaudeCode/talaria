@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 import TalariaKit
 
 private extension View {
@@ -203,7 +202,7 @@ struct FilePreviewView: View {
         }
 
         Button {
-            UIPasteboard.general.string = content
+            PlatformHooks.copyText(content)
         } label: {
             Label("Copy", systemImage: "doc.on.doc")
         }

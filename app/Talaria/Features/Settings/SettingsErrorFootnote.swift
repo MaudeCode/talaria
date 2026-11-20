@@ -39,7 +39,7 @@ private struct CopyableErrorModifier: ViewModifier {
         if let error {
             Menu {
                 Button("Copy", systemImage: "doc.on.doc") {
-                    UIPasteboard.general.string = error.copiedText
+                    PlatformHooks.copyText(error.copiedText)
                 }
             } label: {
                 content.contentShape(Rectangle())

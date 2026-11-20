@@ -1345,10 +1345,11 @@ extension TranscriptHostedTests {
         XCTAssertGreaterThan(widest.contentSize.width, widestFrame.width + 1, "The widest block still scrolls")
         attachHostedScreenshot(window, name: "code-width-pad")
 
+        let copied = recordCopies()
         let copy = HostedAccessibility.elements(in: window).filter { $0.accessibilityLabel == "Copy code" }
             .sorted { $0.accessibilityFrame.minY < $1.accessibilityFrame.minY }
         HostedAccessibility.activate(try XCTUnwrap(copy.last))
-        XCTAssertEqual(UIPasteboard.general.string?.trimmingCharacters(in: .newlines), Self.widestCodeLine, "Copy takes the whole block")
+        XCTAssertEqual(copied.last?.trimmingCharacters(in: .newlines), Self.widestCodeLine, "Copy takes the whole block")
     }
 
     /// A chat no wider than the column, such as the Duo's inner display beside the sidebar, keeps the column.

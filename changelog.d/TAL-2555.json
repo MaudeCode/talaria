@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Copy buttons across the app now share one copy path so automated checks can verify them; copying works as before.",
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}

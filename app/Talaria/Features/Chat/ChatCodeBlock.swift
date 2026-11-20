@@ -3,7 +3,6 @@ import MarkdownUI
 import OSLog
 import Splash
 import SwiftUI
-import UIKit
 import TalariaKit
 
 extension EnvironmentValues {
@@ -50,7 +49,7 @@ struct ChatCodeBlock: View {
                 .accessibilityLabel(wrapsCodeBlockLines ? "Disable code line wrapping" : "Enable code line wrapping")
 
                 Button {
-                    UIPasteboard.general.string = content
+                    PlatformHooks.copyText(content)
                     copyConfirmation.copied(at: .now)
                 } label: {
                     Image(systemName: copyConfirmation.isShowing ? "checkmark" : "square.on.square")

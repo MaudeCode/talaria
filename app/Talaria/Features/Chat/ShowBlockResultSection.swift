@@ -105,7 +105,7 @@ struct ShowBlockResultSection: View {
             guard let path = block.file?.path, let openFile else { return save }
             return save + [Action(id: "open", label: String(localized: "Open")) { openFile(WorkspaceFileLink(path: path)) }]
         case .table:
-            return [Action(id: "copy", label: String(localized: "Copy table")) { UIPasteboard.general.string = block.tsv }]
+            return [Action(id: "copy", label: String(localized: "Copy table")) { PlatformHooks.copyText(block.tsv) }]
         case .chart:
             return []
         case .html:

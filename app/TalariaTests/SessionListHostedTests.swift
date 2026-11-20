@@ -1323,7 +1323,7 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertTrue(restored)
         let send = try await requireElement(in: window, label: "Send")
         XCTAssertFalse(send.accessibilityTraits.contains(.notEnabled), "Send retries a refused start")
-        HostedAccessibility.activate(send)
+        try await activateSend(in: window)
         let sent = await awaitCondition { count("/api/chat/start") == 1 }
         XCTAssertTrue(sent, "Send did not start the chat")
         XCTAssertEqual(count("/api/session/new"), 2)
@@ -1439,7 +1439,7 @@ final class SessionListHostedTests: XCTestCase {
         }
         let send = try await requireElement(in: window, label: "Send")
         XCTAssertFalse(send.accessibilityTraits.contains(.notEnabled), "Send must accept local intent during creation")
-        HostedAccessibility.activate(send)
+        try await activateSend(in: window)
         let started = await awaitCondition { creation != nil }
         XCTAssertTrue(started)
         if withImportedFile {
@@ -1479,11 +1479,7 @@ final class SessionListHostedTests: XCTestCase {
             let retried = await awaitCondition { UITestFixtureURLProtocol.initialUploadAttemptCount == 3 }
             XCTAssertTrue(retried, "Retry must upload the retained failed initial file")
             guard retried else { return }
-            let sendable = await awaitCondition {
-                HostedAccessibility.element(in: window, label: "Send")?.accessibilityTraits.contains(.notEnabled) == false
-            }
-            XCTAssertTrue(sendable)
-            HostedAccessibility.activate(try await requireElement(in: window, label: "Send"))
+            try await activateSend(in: window)
             XCTAssertEqual(creationCount, 1, "Retrying imports must reuse the created session")
             XCTAssertEqual(UITestFixtureURLProtocol.initialUploadAttemptCount, 3, "Only the failed import should retry")
         }
@@ -1578,8 +1574,8 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertTrue(restored)
         let send = try await requireElement(in: window, label: "Send")
         XCTAssertFalse(send.accessibilityTraits.contains(.notEnabled), "A retryable refusal leaves Send enabled")
-        HostedAccessibility.activate(send)
-        HostedAccessibility.activate(send)
+        try await activateSend(in: window)
+        try await activateSend(in: window)
         let retried = await awaitCondition { creation != nil }
         XCTAssertTrue(retried)
         XCTAssertEqual(creationCount, 2, "Repeated Send must join the one replacement creation")
@@ -1614,7 +1610,7 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertEqual(composerDraftText(in: window), "/model fixture-model")
         let send = try await requireElement(in: window, label: "Send")
         XCTAssertFalse(send.accessibilityTraits.contains(.notEnabled), "Send retries the refused start for a slash command")
-        HostedAccessibility.activate(send)
+        try await activateSend(in: window)
         let retried = await awaitCondition { creationCount == 2 }
         XCTAssertTrue(retried, "Send did not retry the start")
     }
@@ -1661,7 +1657,7 @@ final class SessionListHostedTests: XCTestCase {
             .onDisappear { didDisappear = true })
         defer { creation?.resume(returning: .failed("Test ended")) }
         XCTAssertNil(creation)
-        HostedAccessibility.activate(try await requireElement(in: window, label: "Send"))
+        try await activateSend(in: window)
         let started = await awaitCondition { creation != nil }
         XCTAssertTrue(started)
         window.rootViewController = UIHostingController(rootView: Color.clear)
@@ -2988,9 +2984,9 @@ final class SessionActionsHostedTests: XCTestCase {
         XCTAssertTrue(ready)
         let menu = try XCTUnwrap(titleMenu(in: window))
         let copyLink = try XCTUnwrap(actions(in: menu).first { $0.title == "Copy Deeplink" })
-        UIPasteboard.general.string = nil
+        let copied = recordCopies()
         XCTAssertTrue(HostedAccessibility.activate(copyLink))
-        XCTAssertTrue(UIPasteboard.general.string?.contains(UITestFixtureURLProtocol.forkSessionID) == true,
+        XCTAssertTrue(copied.last?.contains(UITestFixtureURLProtocol.forkSessionID) == true,
                       "The fork's title menu still targets the parent")
 
         // A busy main run loop lets an immediate response settle between SwiftUI frames.

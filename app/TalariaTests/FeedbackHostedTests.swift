@@ -144,9 +144,6 @@ final class FeedbackHostedTests: XCTestCase {
         let model = model(attachments: true)
         await model.loadAttachmentOptions()
         await model.addImage(syntheticPhoto())?.value
-        let previousItems = UIPasteboard.general.items
-        defer { UIPasteboard.general.items = previousItems }
-        UIPasteboard.general.images = [try XCTUnwrap(UIImage(data: syntheticPhoto()))]
         try await renderHostedPage("feedback-paste") {
             FeedbackSheet(model: model)
         } inspect: { window, _ in

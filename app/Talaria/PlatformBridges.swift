@@ -14,6 +14,7 @@ enum PlatformBridges {
         HapticButtonHaptics.perform = UIKitHaptics.perform
         PlatformHooks.refreshProfileShortcuts = { ProfileEntityProvider.refreshAppShortcuts(changed: $0) }
         PlatformHooks.liveActivityManager = { AgentLiveActivityManager.shared }
+        PlatformHooks.copyText = { UIPasteboard.general.string = $0 }
         PlatformHooks.isApplicationActive = { UIApplication.shared.applicationState == .active }
         PlatformHooks.authenticateInBrowser = { url, scheme in
             try await OIDCWebAuthenticationPresenter.shared.authenticate(url: url, callbackScheme: scheme)

@@ -12,6 +12,10 @@ public enum PlatformHooks {
     /// Whether the App is the active, foreground application (`UIApplication.applicationState == .active`).
     public static var isApplicationActive: () -> Bool = { true }
 
+    /// Puts text a Copy action copies on the general pasteboard. Hosted tests record it instead, so no test reads or
+    /// writes the simulator-wide pasteboard.
+    public static var copyText: (String) -> Void = { _ in }
+
     /// The App's shared ActivityKit Live Activity manager, used when a chat does not inject one.
     public static var liveActivityManager: () -> any AgentLiveActivityManaging = { DisabledLiveActivityManager.shared }
 

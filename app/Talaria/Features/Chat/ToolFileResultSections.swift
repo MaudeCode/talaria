@@ -27,7 +27,7 @@ private struct ToolFilePath: View {
             if let focusPath, let openFile {
                 Button(openLabel) { openFile(WorkspaceFileLink(path: focusPath, line: line)) }
             }
-            Button(String(localized: "Copy file path")) { UIPasteboard.general.string = path }
+            Button(String(localized: "Copy file path")) { PlatformHooks.copyText(path) }
         }
     }
 
@@ -177,7 +177,7 @@ struct SearchMatchesSection: View {
             if let focusPath = file.focusPath, let openFile {
                 Button(openLabel) { openFile(WorkspaceFileLink(path: focusPath, line: match.line)) }
             }
-            Button(String(localized: "Copy")) { UIPasteboard.general.string = match.text }
+            Button(String(localized: "Copy")) { PlatformHooks.copyText(match.text) }
         }
     }
 }

@@ -370,7 +370,7 @@ struct ToolCallCardView: View {
                 .help(isRaw ? String(localized: "Show formatted") : String(localized: "Show raw"))
             }
             Button {
-                UIPasteboard.general.string = copyText
+                PlatformHooks.copyText(copyText)
                 copyConfirmation.copied(at: .now)
             } label: {
                 Image(systemName: copyConfirmation.isShowing ? "checkmark" : "doc.on.doc")
@@ -574,7 +574,7 @@ struct DelegateAgentRows: View {
                     if openBackgroundTask != nil {
                         Button(String(localized: "Show in Background tasks"), systemImage: "list.bullet") { openBackgroundTask?(agent.taskId) }
                     }
-                    Button(String(localized: "Copy"), systemImage: "doc.on.doc") { UIPasteboard.general.string = agent.goal }
+                    Button(String(localized: "Copy"), systemImage: "doc.on.doc") { PlatformHooks.copyText(agent.goal) }
                 }
             }
         }
