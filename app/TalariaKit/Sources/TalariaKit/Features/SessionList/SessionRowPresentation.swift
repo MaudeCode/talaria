@@ -1,5 +1,18 @@
 import SwiftUI
 
+/// What a session row says waits on the user, from the server's `attention` (TAL-760).
+public enum SessionRowAttention: String, Sendable {
+    case approval, input, decision
+
+    public var title: String {
+        switch self {
+        case .approval: String(localized: "Approval")
+        case .input: String(localized: "Input")
+        case .decision: String(localized: "Decision")
+        }
+    }
+}
+
 public enum SessionRowPresentation {
     public static func displayTitle(for session: SessionSummary) -> String {
         let title = session.title?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -11,6 +24,17 @@ public enum SessionRowPresentation {
 
     public static func isActiveStreaming(_ session: SessionSummary) -> Bool {
         session.isStreaming == true
+    }
+
+    /// The server ranks the kinds and decides the state; a kind this build does not know shows the live row.
+    /// A cached row carries no `attention` (`CacheStore`), so it shows none.
+    public static func attention(for session: SessionSummary) -> SessionRowAttention? {
+        switch session.attention?.kind {
+        case .approval: .approval
+        case .clarify: .input
+        case .decision: .decision
+        case .other, nil: nil
+        }
     }
 
     public static func metadataLabel(for session: SessionSummary) -> String? {
@@ -51,7 +75,9 @@ public enum SessionRowPresentation {
     ) -> [String] {
         var labels: [String] = []
 
-        if isActiveStreaming(session) {
+        if let attention = attention(for: session) {
+            labels.append(attention.title)
+        } else if isActiveStreaming(session) {
             labels.append(String(localized: "Streaming"))
         }
 

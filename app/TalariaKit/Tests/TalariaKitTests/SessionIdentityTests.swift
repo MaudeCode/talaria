@@ -91,6 +91,25 @@ final class SessionIdentityTests: XCTestCase {
         )
     }
 
+    /// TAL-760: a row shows what the server says waits on the user in place of the live state; with nothing waiting,
+    /// or a kind this build does not know, it keeps the live state.
+    func testSessionRowAttentionReplacesTheLiveStateWhileTheServerSaysSomethingWaits() {
+        let cases: [(attention: SessionAttention.Kind?, streaming: Bool, expected: SessionRowAttention?, labels: [String])] = [
+            (nil, true, nil, ["Streaming"]),
+            (nil, false, nil, []),
+            (.approval, true, .approval, ["Approval"]),
+            (.clarify, true, .input, ["Input"]),
+            (.decision, false, .decision, ["Decision"]),
+            (.other, true, nil, ["Streaming"])
+        ]
+        for (kind, streaming, expected, labels) in cases {
+            let session = SessionSummary(sessionId: "row", isStreaming: streaming, attention: kind.map { SessionAttention(kind: $0, count: 1) })
+            let name = "\(String(describing: kind)), streaming \(streaming)"
+            XCTAssertEqual(SessionRowPresentation.attention(for: session), expected, name)
+            XCTAssertEqual(SessionRowPresentation.accessibilityStateLabels(for: session, isViewingCachedData: false), labels, name)
+        }
+    }
+
     func testSessionSummaryFallbackIDIsDeterministicWithoutSessionID() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

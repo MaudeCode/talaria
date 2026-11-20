@@ -1071,6 +1071,44 @@ final class SessionListHostedTests: XCTestCase {
         }
     }
 
+    /// A running chat the server says waits on the user shows its attention mark in place of the live state: an orange
+    /// icon in the sidebar row's trailing slot and an orange badge in the regular row, and no green streaming dot or
+    /// "Live" badge in either (TAL-760).
+    func testSessionRowsShowTheServersAttentionInPlaceOfTheLiveState() async throws {
+        let approval = SessionSummary(sessionId: "approval", title: "Waiting approval", isStreaming: true,
+                                      attention: SessionAttention(kind: .approval, count: 1))
+        let input = SessionSummary(sessionId: "input", title: "Waiting input", isStreaming: true,
+                                   attention: SessionAttention(kind: .clarify, count: 1))
+        let window = try hostWindow(VStack(spacing: 0) {
+            SessionRowView(session: approval, style: .sidebar)
+            SessionRowView(session: input, style: .regular)
+            Spacer()
+        }.background(Color(.systemBackground)))
+        let sidebar = try await requireElement(in: window, "The sidebar row is missing") { $0.accessibilityLabel?.hasPrefix("Waiting approval") == true }
+        let regular = try await requireElement(in: window, "The regular row is missing") { $0.accessibilityLabel?.hasPrefix("Waiting input") == true }
+        XCTAssertEqual(sidebar.accessibilityLabel, "Waiting approval, Approval")
+        XCTAssertTrue(regular.accessibilityLabel?.hasPrefix("Waiting input, Input") == true, regular.accessibilityLabel ?? "")
+        XCTAssertFalse(regular.accessibilityLabel?.contains("Streaming") == true, regular.accessibilityLabel ?? "")
+
+        // One render for both rows; each is classified by hue over its own frame.
+        let frames = [sidebar.accessibilityFrame, regular.accessibilityFrame].map { window.convert($0, from: nil).integral }
+        let points = frames.map { frame in
+            stride(from: frame.minY, to: frame.maxY, by: 1).flatMap { y in stride(from: frame.minX, to: frame.maxX, by: 1).map { CGPoint(x: $0, y: y) } }
+        }
+        let pixels = windowPixels(window, at: points.flatMap(\.self))
+        attachHostedScreenshot(window, name: "session-row-attention")
+        // The attention tint is orange (red over green over blue); the streaming dot and Live badge are green.
+        func isOrange(_ p: [UInt8]) -> Bool { p.count >= 3 && Int(p[2]) > Int(p[1]) && Int(p[1]) > Int(p[0]) && Int(p[2]) - Int(p[0]) > 80 }
+        func isGreen(_ p: [UInt8]) -> Bool { p.count >= 3 && Int(p[1]) > Int(p[2]) + 40 && Int(p[1]) > Int(p[0]) + 40 }
+        var offset = 0
+        for (name, rowPoints) in zip(["sidebar", "regular"], points) {
+            let row = pixels[offset..<offset + rowPoints.count]
+            offset += rowPoints.count
+            XCTAssertGreaterThan(row.filter(isOrange).count, 10, "The \(name) row shows no attention mark")
+            XCTAssertEqual(row.filter(isGreen).count, 0, "The \(name) row still shows the live state")
+        }
+    }
+
     /// Rows that load behind the closed drawer rest clear once it slides in. A swipe slides a row's List cell off its
     /// List's edge; the drawer slides the whole List, which every row once read as a swipe (TAL-2559). The swipe itself
     /// is a system gesture a hosted test cannot drive; the phone check covers its grey shape.

@@ -423,6 +423,22 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertFalse(try makeChatViewModel(session: subagent, server: serverURL).canBranch)
     }
 
+    /// A prompt waiting on the user is live state: a cached row shows no Approval or Input (TAL-760).
+    func testACachedRowShowsNoAttention() throws {
+        let context = try makeContext()
+        let serverURL = URL(string: "https://example.test")!
+        let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
+        let waiting = SessionSummary(sessionId: "waiting", isStreaming: true, attention: SessionAttention(kind: .approval, count: 1))
+        XCTAssertEqual(SessionRowPresentation.attention(for: waiting), .approval)
+        try CacheStore.cacheSessions([waiting], serverURL: serverURL, in: context, cachedAt: cachedAt)
+
+        let cached = try XCTUnwrap(
+            CacheStore.cachedSessions(serverURL: serverURL, in: context, now: cachedAt.addingTimeInterval(60)).first
+        )
+        XCTAssertNil(SessionRowPresentation.attention(for: cached))
+        XCTAssertFalse(SessionRowPresentation.accessibilityStateLabels(for: cached, isViewingCachedData: true).contains("Approval"))
+    }
+
     /// A row cached before the gates were stored offers nothing until the next list load rewrites it (TAL-723).
     func testACachedRowWithoutGatesOffersNoRowActions() throws {
         let context = try makeContext()
