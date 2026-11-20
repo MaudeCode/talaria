@@ -699,23 +699,41 @@ def _config_stamp(entry):
     return hashlib.sha256(_config_text(entry)).hexdigest()
 
 
-def _unit_sections(text):
-    """``systemctl cat`` output as (path, bytes) for the unit, then each drop-in; [] when unparseable."""
-    sections = []
-    for line in text.splitlines(keepends=True):
-        if line.startswith(b'# /'):
-            sections.append([line[2:].strip().decode('utf-8', 'replace'), b''])
-        elif sections:
-            sections[-1][1] += line
-        else:
+def _unit_files(entry):
+    """The unit's fragment, then its drop-ins, as systemd reports them: the only real file boundaries in its
+    ``systemctl cat``, whose header lines a file's own content can imitate."""
+    from hermes_cli.update_cmd_fleet import _systemctl
+    result = _systemctl(_systemd_scope_cmd(entry) + ['show', '-p', 'FragmentPath', '-p', 'DropInPaths', entry['unit']], timeout=10)
+    if result.returncode:
+        raise RuntimeError(f'{_name(entry)} service files are unreadable.')
+    properties = dict(line.partition('=')[::2] for line in result.stdout.splitlines())
+    return [path for path in (properties.get('FragmentPath', ''), *properties.get('DropInPaths', '').split()) if path]
+
+
+def _unit_sections(text, paths):
+    """``systemctl cat`` output as (path, bytes) per real file, split only where systemd's own file list says.
+    [] when a boundary is missing, repeated or out of order, so imitated headers can never re-split it."""
+    lines = text.splitlines(keepends=True)
+    starts = []
+    for path in paths:
+        hits = [i for i, line in enumerate(lines) if line.rstrip(b'\r\n') == b'# ' + path.encode()]
+        if len(hits) != 1:
             return []
-    return sections
+        starts.append(hits[0])
+    if not starts or starts[0] != 0 or starts != sorted(starts):
+        return []
+    # systemctl prints one newline before each later file's header; it belongs to neither file.
+    bodies = [b''.join(lines[start + 1:end]) for start, end in zip(starts, [*starts[1:], len(lines)])]
+    return [(path, body[:-1] if index < len(paths) - 1 and body.endswith(b'\n') else body)
+            for index, (path, body) in enumerate(zip(paths, bodies))]
 
 
 def _dropins(entry, text):
+    """Each drop-in's digest, or None when the unit's files cannot be told apart."""
     if entry['kind'] == 'launchd':
         return {}
-    return {path: hashlib.sha256(body).hexdigest() for path, body in _unit_sections(text)[1:]}
+    sections = _unit_sections(text, _unit_files(entry))
+    return {path: hashlib.sha256(body).hexdigest() for path, body in sections[1:]} if sections else None
 
 
 def _print_generated_launch_files(request):
@@ -759,10 +777,12 @@ def _agent_rewrite(entry, text, dropins, generated):
     digest = hashlib.sha256(text).hexdigest()
     if entry['kind'] == 'launchd':
         return Path(generated['path']).resolve() == Path(entry['plist']).resolve() and digest == generated['sha256']
-    sections = _unit_sections(text)
-    if not sections or Path(sections[0][0]).resolve() != Path(generated['path']).resolve() or Path(generated['path']).name != entry['unit']:
+    paths = _unit_files(entry)
+    if not paths or Path(paths[0]).resolve() != Path(generated['path']).resolve() or Path(generated['path']).name != entry['unit']:
         return False
     after = _dropins(entry, text)
+    if after is None:
+        return False
     try:
         unit = hashlib.sha256(Path(generated['path']).read_bytes()).hexdigest()
     except OSError:
@@ -909,10 +929,11 @@ class ServiceRecovery:
         for entry in self.state['entries']:
             try:
                 text = _config_text(entry)
+                dropins = _dropins(entry, text) if hashlib.sha256(text).hexdigest() == entry['config_stamp'] else None
             except (OSError, RuntimeError):
                 continue
-            if hashlib.sha256(text).hexdigest() == entry['config_stamp']:
-                entry['launch_refresh'] = {'dropins': _dropins(entry, text)}
+            if dropins is not None:
+                entry['launch_refresh'] = {'dropins': dropins}
         self.save()
         detail = refresh()
         self.settle_launch_refresh()
@@ -925,13 +946,14 @@ class ServiceRecovery:
         for entry, generated in zip(marked, _generated_launch_files(self.root, marked)):
             try:
                 text = _config_text(entry)
+                changed = hashlib.sha256(text).hexdigest() != entry['config_stamp']
+                if changed and generated is None:
+                    continue  # Unattested: the mark stays for the next resume, which refuses meanwhile.
+                accepted = changed and _agent_rewrite(entry, text, entry['launch_refresh']['dropins'], generated)
             except (OSError, RuntimeError):
                 continue
-            if hashlib.sha256(text).hexdigest() != entry['config_stamp']:
-                if generated is None:
-                    continue  # Unattested: the mark stays for the next resume, which refuses meanwhile.
-                if _agent_rewrite(entry, text, entry['launch_refresh']['dropins'], generated):
-                    entry['config_stamp'] = hashlib.sha256(text).hexdigest()
+            if accepted:
+                entry['config_stamp'] = hashlib.sha256(text).hexdigest()
             del entry['launch_refresh']
         self.save()
 
