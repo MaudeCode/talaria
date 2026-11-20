@@ -1472,7 +1472,11 @@ export const FileContentSchema = z.looseObject({ ...ManagedFileFields, name: z.s
   preview: FilePreviewKindSchema, table: z.array(z.array(z.string())).optional(), table_truncated: z.boolean().optional(),
   preview_url: z.string().optional(),
 })
-const GitBadgeSchema = z.looseObject({ is_git: z.boolean().optional(), branch: NullableString.optional(), dirty: z.number().optional(), modified: z.number().optional(), untracked: z.number().optional(), ahead: z.number().optional(), behind: z.number().optional() })
+/** `indicator` is `changes` while there is uncommitted work or upstream commits to pull (TAL-2499). */
+const GitBadgeSchema = z.looseObject({
+  is_git: z.boolean().optional(), branch: NullableString.optional(), dirty: z.number().optional(), modified: z.number().optional(), untracked: z.number().optional(), ahead: z.number().optional(), behind: z.number().optional(),
+  indicator: z.enum(['none', 'changes']),
+})
 export const GitInfoSchema = z.looseObject({ git: GitBadgeSchema.nullable().optional() })
 
 // ── tools ────────────────────────────────────────────────────────────────

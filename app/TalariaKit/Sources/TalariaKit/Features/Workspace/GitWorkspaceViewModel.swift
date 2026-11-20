@@ -528,9 +528,8 @@ public struct GitToolbarPresentation: Equatable, Sendable {
     }
 
     var statusDot: GitToolbarStatusDot? {
-        guard hasRepository else { return nil }
-        if (info?.dirty ?? 0) > 0 || (info?.behind ?? 0) > 0 { return .gray }
-        return nil
+        guard hasRepository, info?.indicator == "changes" else { return nil }
+        return .gray
     }
 
     public var accessibilityValue: String {

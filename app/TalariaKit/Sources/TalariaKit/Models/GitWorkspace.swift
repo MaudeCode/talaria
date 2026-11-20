@@ -28,6 +28,8 @@ public struct GitInfo: Decodable, Equatable, Sendable {
     public let ahead: Int?
     public let behind: Int?
     public let isGit: Bool?
+    /// `changes` while there is uncommitted work or upstream commits to pull, else `none` (TAL-2499).
+    let indicator: String?
 }
 
 // MARK: - git/status (the status sheet's source of truth)
@@ -54,9 +56,9 @@ public struct GitStatus: Decodable, Equatable, Sendable {
     /// The server's `totals.changed`; a non-repo status sends neither totals nor files.
     public var changedCount: Int { totals?.changed ?? 0 }
 
-    /// Total additions/deletions across the changed files.
-    public var totalAdditions: Int { trackedFiles.reduce(0) { $0 + ($1.additions ?? 0) } }
-    public var totalDeletions: Int { trackedFiles.reduce(0) { $0 + ($1.deletions ?? 0) } }
+    /// The server's `totals.additions` and `totals.deletions` across the changed files (TAL-2499).
+    public var totalAdditions: Int { totals?.additions ?? 0 }
+    public var totalDeletions: Int { totals?.deletions ?? 0 }
 }
 
 struct GitTotals: Decodable, Equatable {
@@ -65,6 +67,8 @@ struct GitTotals: Decodable, Equatable {
     let unstaged: Int?
     let untracked: Int?
     let conflicts: Int?
+    let additions: Int?
+    let deletions: Int?
 }
 
 public struct GitFile: Decodable, Equatable, Identifiable, Sendable {
@@ -73,8 +77,9 @@ public struct GitFile: Decodable, Equatable, Identifiable, Sendable {
     let oldPath: String?
     public let workspacePath: String?
     /// Raw git status code (`M/A/D/R/C/T/U`, `"??"`, or two-char conflicts).
-    /// Prefer the booleans below for display; treat this as a fallback label.
     public let status: String?
+    /// The server's `change_kind` (TAL-2499); `.unknown` when it is missing or unrecognized.
+    public let changeKind: ChangeKind
     public let staged: Bool?
     let unstaged: Bool?
     public let untracked: Bool?
@@ -88,6 +93,7 @@ public struct GitFile: Decodable, Equatable, Identifiable, Sendable {
         case oldPath
         case workspacePath
         case status
+        case changeKind
         case staged
         case unstaged
         case untracked
@@ -103,6 +109,7 @@ public struct GitFile: Decodable, Equatable, Identifiable, Sendable {
         oldPath = container.decodeLossyStringIfPresent(forKey: .oldPath)
         workspacePath = container.decodeLossyStringIfPresent(forKey: .workspacePath)
         status = container.decodeLossyStringIfPresent(forKey: .status)
+        changeKind = container.decodeLossyStringIfPresent(forKey: .changeKind).flatMap(ChangeKind.init(rawValue:)) ?? .unknown
         staged = container.decodeLossyBoolIfPresent(forKey: .staged)
         unstaged = container.decodeLossyBoolIfPresent(forKey: .unstaged)
         untracked = container.decodeLossyBoolIfPresent(forKey: .untracked)
@@ -127,9 +134,8 @@ public struct GitFile: Decodable, Equatable, Identifiable, Sendable {
 }
 
 extension GitFile {
-    /// A normalized change kind derived from the booleans first (the reliable signal),
-    /// falling back to the raw `status` code. UI maps this to a localized chip + colour.
-    public enum ChangeKind: Equatable, Sendable {
+    /// The server's change kind for one file. UI maps this to a localized chip + colour.
+    public enum ChangeKind: String, Equatable, Sendable {
         case conflict
         case untracked
         case added
@@ -137,21 +143,6 @@ extension GitFile {
         case renamed
         case modified
         case unknown
-    }
-
-    public var changeKind: ChangeKind {
-        if conflict == true { return .conflict }
-        if untracked == true { return .untracked }
-
-        switch (status ?? "").uppercased().first {
-        case "A": return .added
-        case "D": return .deleted
-        case "R": return .renamed
-        case "M", "T": return .modified
-        default:
-            // A tracked change with an unrecognized code is still a modification.
-            return (staged == true || unstaged == true) ? .modified : .unknown
-        }
     }
 
     /// Last path component, e.g. `ContentView.swift`.
