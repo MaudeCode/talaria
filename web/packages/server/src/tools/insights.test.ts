@@ -61,6 +61,17 @@ describe('resolveInsightsRange (TAL-1117)', () => {
   })
 })
 
+describe('exact bounds (TAL-1117)', () => {
+  it('admit a session by its fractional activity time, from the index or merged with state.db', async () => {
+    const t = at('2026-03-05T12:00:00Z')
+    const entries = [{ session_id: 'web', created_at: t - 60, updated_at: t + 0.5, input_tokens: 10, model: 'm' }, { session_id: 'both', created_at: t - 60, updated_at: t - 1, input_tokens: 20, model: 'm' }]
+    const stateRows = () => [{ session_id: 'both', created_at: t - 60, updated_at: t + 0.75, input_tokens: 20, model: 'm' }]
+    const read = (start: number, end: number) => buildInsights(entries, { start: String(start), end: String(end) }, NOW, stateRows)
+    expect(await read(t + 0.25, t + 0.9)).toMatchObject({ total_sessions: 2, total_input_tokens: 30 })
+    expect(await read(t, t + 0.25)).toMatchObject({ total_sessions: 0 })
+  })
+})
+
 describe('the shared insights-range fixture (TAL-1117)', () => {
   it('is what the server serves for its custom and fallback queries', async () => {
     const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/insights-range.json'), 'utf8')) as { now: string; timezone: string; entries: Record<string, unknown>[]; custom: { query: InsightsRangeQuery; body: unknown }; fallback: { query: InsightsRangeQuery; body: unknown } }

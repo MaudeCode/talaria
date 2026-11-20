@@ -15,8 +15,10 @@ const cost = (v: unknown): number => {
 
 const USAGE_FIELDS = ['message_count', 'input_tokens', 'output_tokens', 'cache_read_tokens'] as const
 const dayKey = (d: Date): string => `${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+/** A unix-seconds timestamp with its fraction, so an exact range bound admits it precisely (TAL-1117); 0 when unreadable. */
+const seconds = (v: unknown): number => { const n = Number.parseFloat(str(v)); return Number.isFinite(n) && n > 0 ? n : 0 }
 /** A session's activity time: the one timestamp that both admits it to the window and picks its day. */
-const activityAt = (e: Dict): number => Math.max(num(e.created_at), num(e.updated_at))
+const activityAt = (e: Dict): number => Math.max(seconds(e.created_at), seconds(e.updated_at))
 /** TAL-2479: a chart's peak point (the first of equal largest values, null when empty) and scale maximum (0 when none is positive). */
 const chartPeak = (values: number[]): { peak_index: number | null; max: number } => ({
   peak_index: values.length ? values.indexOf(Math.max(...values)) : null,
@@ -144,8 +146,8 @@ export async function buildInsights(entries: Dict[], query: InsightsRangeQuery, 
     const row = state.get(str(e.session_id))
     if (!row) return e
     state.delete(str(e.session_id))
-    const model = num(row.updated_at) > num(e.updated_at) ? str(row.model) || str(e.model) : str(e.model) || str(row.model)
-    return { ...e, ...Object.fromEntries(USAGE_FIELDS.map((k) => [k, Math.max(num(e[k]), num(row[k]))])), estimated_cost: Math.max(cost(e.estimated_cost), cost(row.estimated_cost)), updated_at: Math.max(num(e.updated_at), num(row.updated_at)), model }
+    const model = seconds(row.updated_at) > seconds(e.updated_at) ? str(row.model) || str(e.model) : str(e.model) || str(row.model)
+    return { ...e, ...Object.fromEntries(USAGE_FIELDS.map((k) => [k, Math.max(num(e[k]), num(row[k]))])), estimated_cost: Math.max(cost(e.estimated_cost), cost(row.estimated_cost)), updated_at: Math.max(seconds(e.updated_at), seconds(row.updated_at)), model }
   })
   const sessions = [...merged, ...state.values()].filter((e) => admitted(activityAt(e)))
   let totalMessages = 0
