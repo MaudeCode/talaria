@@ -34,11 +34,11 @@ final class DuoFoldHostedTests: XCTestCase {
         _ scenario: [String] = [],
         size inner: CGSize = HostedSize.duoInner,
         closed: Bool,
-        opensDirectly: Bool = false,
+        linkedSessionID: String? = nil,
         list: @MainActor (FixtureApp) async throws -> AnyView = { AnyView($0.sessionList()) }
     ) async throws -> Folding {
         let fixture = try FixtureApp(scenario, for: self)
-        if opensDirectly { fixture.pendingSessionID = UITestFixtureURLProtocol.sessionID }
+        fixture.pendingSessionID = linkedSessionID
         let display = HostedDuoDisplay()
         display.sizeClass = closed ? .compact : .regular
         let size = closed ? HostedSize.duoOuter : inner
@@ -46,7 +46,7 @@ final class DuoFoldHostedTests: XCTestCase {
             $0.horizontalSizeClass = closed ? .compact : .regular
             $0.verticalSizeClass = .regular
         }
-        if !opensDirectly {
+        if linkedSessionID == nil {
             try await openSidebar(in: window)
             let row = try await requireElement(in: window, "Missing deterministic session fixture") {
                 $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
@@ -228,9 +228,9 @@ final class DuoFoldHostedTests: XCTestCase {
     }
 
     private func assertFocusedDraftHandoff(closing: Bool) async throws {
-        let folding = try await openChatOnDuo(closed: !closing, opensDirectly: true)
+        let folding = try await openChatOnDuo(closed: !closing, linkedSessionID: "ui-fixture-session-1")
         let window = folding.window
-        _ = try await requireElement(in: window, "The transcript never loaded", where: FixtureApp.isLoadedTranscriptRow)
+        _ = try await requireElement(in: window, label: "Fixture Session 01 reply")
         let draft = closing ? "Fold this draft" : "Fold the draft"
         try await typeIntoComposer(draft, in: window)
         let replaced = try XCTUnwrap(mountedEditor(in: window))
