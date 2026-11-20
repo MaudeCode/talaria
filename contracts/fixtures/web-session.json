@@ -9748,6 +9748,7 @@
               ],
               "kind": "question",
               "target": "",
+              "shows_card": true,
               "function": {
                 "name": "clarify",
                 "arguments": "{\"questions\":[{\"question\":\"Which branch?\",\"choices\":[\"main\",\"dev\"]}]}"
@@ -9865,6 +9866,8 @@
                   ],
                   "kind": "memory",
                   "target": "user",
+                  "raw_args": "{\n  \"target\": \"user\",\n  \"operations\": [\n    {\n      \"action\": \"add\",\n      \"content\": \"Prefers short replies\"\n    }\n  ]\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"done\": true,\n  \"target\": \"user\",\n  \"usage\": \"4% — 88/2,200 chars\",\n  \"entry_count\": 2,\n  \"message\": \"Applied 1 operation(s).\",\n  \"note\": \"Write saved.\"\n}",
                   "args": {
                     "target": "user",
                     "operations": [
@@ -9895,9 +9898,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"target\": \"user\",\n  \"operations\": [\n    {\n      \"action\": \"add\",\n      \"content\": \"Prefers short replies\"\n    }\n  ]\n}",
-                  "raw_result": "{\n  \"success\": true,\n  \"done\": true,\n  \"target\": \"user\",\n  \"usage\": \"4% — 88/2,200 chars\",\n  \"entry_count\": 2,\n  \"message\": \"Applied 1 operation(s).\",\n  \"note\": \"Write saved.\"\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0"
               },
@@ -9928,6 +9929,8 @@
                   ],
                   "kind": "skill",
                   "target": "digest",
+                  "raw_args": "{\n  \"action\": \"create\",\n  \"name\": \"digest\",\n  \"content\": \"# Digest\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"staged\": true,\n  \"pending_id\": \"pend-1\",\n  \"gist\": \"New digest skill\",\n  \"message\": \"Waiting for the user to approve.\"\n}",
                   "args": {
                     "action": "create",
                     "name": "digest",
@@ -9962,9 +9965,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"action\": \"create\",\n  \"name\": \"digest\",\n  \"content\": \"# Digest\"\n}",
-                  "raw_result": "{\n  \"success\": true,\n  \"staged\": true,\n  \"pending_id\": \"pend-1\",\n  \"gist\": \"New digest skill\",\n  \"message\": \"Waiting for the user to approve.\"\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0",
                 "merged_count": 2
@@ -9986,6 +9987,8 @@
                   ],
                   "kind": "skill",
                   "target": "pdf",
+                  "raw_args": "{\n  \"name\": \"pdf\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"name\": \"pdf\",\n  \"description\": \"Read PDFs\",\n  \"tags\": [],\n  \"content\": \"# PDF\\n\\nUse **pdftotext**.\",\n  \"path\": \"pdf/SKILL.md\",\n  \"linked_files\": null,\n  \"readiness_status\": \"setup_needed\",\n  \"setup_needed\": true,\n  \"setup_note\": \"Set $PDF_KEY.\"\n}",
                   "args": {
                     "name": "pdf"
                   },
@@ -10015,9 +10018,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"name\": \"pdf\"\n}",
-                  "raw_result": "{\n  \"success\": true,\n  \"name\": \"pdf\",\n  \"description\": \"Read PDFs\",\n  \"tags\": [],\n  \"content\": \"# PDF\\n\\nUse **pdftotext**.\",\n  \"path\": \"pdf/SKILL.md\",\n  \"linked_files\": null,\n  \"readiness_status\": \"setup_needed\",\n  \"setup_needed\": true,\n  \"setup_note\": \"Set $PDF_KEY.\"\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0",
                 "merged_into": "tool:call-skill"
@@ -10039,6 +10040,8 @@
                   ],
                   "kind": "session",
                   "target": "deploy",
+                  "raw_args": "{\n  \"query\": \"deploy\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"mode\": \"discover\",\n  \"query\": \"deploy\",\n  \"detail\": \"summary\",\n  \"results\": [\n    {\n      \"session_id\": \"past-1\",\n      \"when\": \"November 16, 2026 at 09:00 AM\",\n      \"source\": \"web\",\n      \"model\": \"m\",\n      \"title\": \"Deploy fix\",\n      \"matched_role\": \"user\",\n      \"snippet\": \"the deploy failed\"\n    }\n  ],\n  \"count\": 1\n}",
                   "args": {
                     "query": "deploy"
                   },
@@ -10063,9 +10066,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"query\": \"deploy\"\n}",
-                  "raw_result": "{\n  \"success\": true,\n  \"mode\": \"discover\",\n  \"query\": \"deploy\",\n  \"detail\": \"summary\",\n  \"results\": [\n    {\n      \"session_id\": \"past-1\",\n      \"when\": \"November 16, 2026 at 09:00 AM\",\n      \"source\": \"web\",\n      \"model\": \"m\",\n      \"title\": \"Deploy fix\",\n      \"matched_role\": \"user\",\n      \"snippet\": \"the deploy failed\"\n    }\n  ],\n  \"count\": 1\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0"
               },
@@ -10091,6 +10092,8 @@
                   ],
                   "kind": "schedule",
                   "target": "job-1",
+                  "raw_args": "{\n  \"action\": \"pause\",\n  \"job_id\": \"job-1\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"job\": {\n    \"job_id\": \"job-1\",\n    \"name\": \"Morning digest\",\n    \"schedule\": \"every day at 09:00\",\n    \"next_run_at\": null,\n    \"last_status\": \"ok\",\n    \"enabled\": false,\n    \"state\": \"paused\"\n  }\n}",
                   "args": {
                     "action": "pause",
                     "job_id": "job-1"
@@ -10121,9 +10124,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"action\": \"pause\",\n  \"job_id\": \"job-1\"\n}",
-                  "raw_result": "{\n  \"success\": true,\n  \"job\": {\n    \"job_id\": \"job-1\",\n    \"name\": \"Morning digest\",\n    \"schedule\": \"every day at 09:00\",\n    \"next_run_at\": null,\n    \"last_status\": \"ok\",\n    \"enabled\": false,\n    \"state\": \"paused\"\n  }\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0"
               },
@@ -10149,6 +10150,8 @@
                   ],
                   "kind": "connection",
                   "target": "",
+                  "raw_args": "{\n  \"action\": \"connect\",\n  \"connectors\": [\n    \"github\"\n  ]\n}",
+                  "raw_result": "{\n  \"targets\": [\n    {\n      \"name\": \"github\",\n      \"kind\": \"connector\",\n      \"action\": \"connect\",\n      \"state\": \"initiated\",\n      \"connect_url\": \"https://portal.example/authorize?code=abc\"\n    }\n  ],\n  \"status\": \"initiated\",\n  \"note\": \"Show each connect_url to the user.\"\n}",
                   "args": {
                     "action": "connect",
                     "connectors": [
@@ -10179,9 +10182,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"action\": \"connect\",\n  \"connectors\": [\n    \"github\"\n  ]\n}",
-                  "raw_result": "{\n  \"targets\": [\n    {\n      \"name\": \"github\",\n      \"kind\": \"connector\",\n      \"action\": \"connect\",\n      \"state\": \"initiated\",\n      \"connect_url\": \"https://portal.example/authorize?code=abc\"\n    }\n  ],\n  \"status\": \"initiated\",\n  \"note\": \"Show each connect_url to the user.\"\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0"
               },
@@ -10202,6 +10203,9 @@
                   ],
                   "kind": "question",
                   "target": "",
+                  "shows_card": true,
+                  "raw_args": "{\n  \"questions\": [\n    {\n      \"question\": \"Which branch?\",\n      \"choices\": [\n        \"main\",\n        \"dev\"\n      ]\n    }\n  ]\n}",
+                  "raw_result": "{\n  \"responses\": [\n    {\n      \"question\": \"Which branch?\",\n      \"choices_offered\": [\n        \"main\",\n        \"dev\"\n      ],\n      \"status\": \"answered\",\n      \"user_response\": \"dev\"\n    }\n  ],\n  \"outcome\": \"answered\"\n}",
                   "args": {
                     "questions": [
                       {
@@ -10234,17 +10238,15 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"questions\": [\n    {\n      \"question\": \"Which branch?\",\n      \"choices\": [\n        \"main\",\n        \"dev\"\n      ]\n    }\n  ]\n}",
-                  "raw_result": "{\n  \"responses\": [\n    {\n      \"question\": \"Which branch?\",\n      \"choices_offered\": [\n        \"main\",\n        \"dev\"\n      ],\n      \"status\": \"answered\",\n      \"user_response\": \"dev\"\n    }\n  ],\n  \"outcome\": \"answered\"\n}"
+                  "cost_usd": null
                 },
-                "group_id": "group:0"
+                "group_id": "group:1"
               }
             ],
             "final_answer": "Done.",
             "turn_duration": null,
             "terminal_state": "completed",
-            "expanded_by_default": false,
+            "expanded_by_default": true,
             "has_consumed_steering": false,
             "file_changes": [],
             "turn_summary": [
@@ -10257,11 +10259,6 @@
                 "count": 1
               }
             ],
-            "activity_rows_total": 7,
-            "activity_rows_offset": 0,
-            "activity_rows_complete": true,
-            "activity_rows_omitted": 0,
-            "activity_scene_ref": "7b0b0466add55cdf409a40ed305787f721be86a846c92fb04b6fbdccf76e5d60",
             "activity_groups": [
               {
                 "group_id": "group:0",
@@ -10290,7 +10287,14 @@
                     "kind": "connection",
                     "count": 1,
                     "failed": 0
-                  },
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              },
+              {
+                "group_id": "group:1",
+                "parts": [
                   {
                     "kind": "question",
                     "count": 1,
@@ -10337,7 +10341,12 @@
               ],
               "failed": 0,
               "running": false
-            }
+            },
+            "activity_rows_total": 7,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "7b0b0466add55cdf409a40ed305787f721be86a846c92fb04b6fbdccf76e5d60"
           },
           "_turn_id": "rows-run",
           "_display": "row"
@@ -13075,6 +13084,8 @@
                   ],
                   "kind": "talaria",
                   "target": "session_list",
+                  "raw_args": "{\n  \"query\": \"release\"\n}",
+                  "raw_result": "{\n  \"sessions\": [\n    {\n      \"session_id\": \"release-chat\",\n      \"title\": \"Release\"\n    }\n  ]\n}",
                   "args": {
                     "query": "release"
                   },
@@ -13093,9 +13104,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"query\": \"release\"\n}",
-                  "raw_result": "{\n  \"sessions\": [\n    {\n      \"session_id\": \"release-chat\",\n      \"title\": \"Release\"\n    }\n  ]\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0",
                 "merged_count": 4
@@ -13122,6 +13131,8 @@
                   ],
                   "kind": "talaria",
                   "target": "session_send",
+                  "raw_args": "{\n  \"session_id\": \"release-chat\",\n  \"message\": \"Shipped.\"\n}",
+                  "raw_result": "{\n  \"outcome\": \"queued\",\n  \"stream_id\": null,\n  \"steer_id\": \"steer-1\"\n}",
                   "args": {
                     "session_id": "release-chat",
                     "message": "Shipped."
@@ -13155,9 +13166,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"session_id\": \"release-chat\",\n  \"message\": \"Shipped.\"\n}",
-                  "raw_result": "{\n  \"outcome\": \"queued\",\n  \"stream_id\": null,\n  \"steer_id\": \"steer-1\"\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0",
                 "merged_into": "tool:call-list"
@@ -13189,6 +13198,8 @@
                   ],
                   "kind": "talaria",
                   "target": "approval_respond",
+                  "raw_args": "{\n  \"session_id\": \"release-chat\",\n  \"approval_id\": \"approval-1\",\n  \"choice\": \"once\"\n}",
+                  "raw_result": "{\n  \"ok\": true,\n  \"choice\": \"once\"\n}",
                   "args": {
                     "session_id": "release-chat",
                     "approval_id": "approval-1",
@@ -13218,9 +13229,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"session_id\": \"release-chat\",\n  \"approval_id\": \"approval-1\",\n  \"choice\": \"once\"\n}",
-                  "raw_result": "{\n  \"ok\": true,\n  \"choice\": \"once\"\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0",
                 "merged_into": "tool:call-list"
@@ -13247,6 +13256,8 @@
                   ],
                   "kind": "talaria",
                   "target": "goal_set",
+                  "raw_args": "{\n  \"session_id\": \"release-chat\",\n  \"goal\": \"Watch the deploy\"\n}",
+                  "raw_result": "{\n  \"ok\": true,\n  \"action\": \"set\"\n}",
                   "args": {
                     "session_id": "release-chat",
                     "goal": "Watch the deploy"
@@ -13275,9 +13286,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"session_id\": \"release-chat\",\n  \"goal\": \"Watch the deploy\"\n}",
-                  "raw_result": "{\n  \"ok\": true,\n  \"action\": \"set\"\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0",
                 "merged_into": "tool:call-list"
@@ -13309,6 +13318,8 @@
                   ],
                   "kind": "memory",
                   "target": "user",
+                  "raw_args": "{\n  \"action\": \"add\",\n  \"target\": \"user\",\n  \"content\": \"Prefers Postgres\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"done\": true,\n  \"target\": \"user\",\n  \"usage\": \"5% — 110/2,200 chars\",\n  \"entry_count\": 3,\n  \"message\": \"Applied 1 operation(s).\"\n}",
                   "args": {
                     "action": "add",
                     "target": "user",
@@ -13335,9 +13346,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"action\": \"add\",\n  \"target\": \"user\",\n  \"content\": \"Prefers Postgres\"\n}",
-                  "raw_result": "{\n  \"success\": true,\n  \"done\": true,\n  \"target\": \"user\",\n  \"usage\": \"5% — 110/2,200 chars\",\n  \"entry_count\": 3,\n  \"message\": \"Applied 1 operation(s).\"\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0"
               },
@@ -13363,6 +13372,8 @@
                   ],
                   "kind": "schedule",
                   "target": "digest",
+                  "raw_args": "{\n  \"action\": \"pause\",\n  \"job_id\": \"digest\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"job\": {\n    \"job_id\": \"digest\",\n    \"name\": \"Daily digest\",\n    \"schedule\": \"every day at 08:00\",\n    \"next_run_at\": null,\n    \"enabled\": false,\n    \"state\": \"paused\"\n  }\n}",
                   "args": {
                     "action": "pause",
                     "job_id": "digest"
@@ -13392,9 +13403,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"action\": \"pause\",\n  \"job_id\": \"digest\"\n}",
-                  "raw_result": "{\n  \"success\": true,\n  \"job\": {\n    \"job_id\": \"digest\",\n    \"name\": \"Daily digest\",\n    \"schedule\": \"every day at 08:00\",\n    \"next_run_at\": null,\n    \"enabled\": false,\n    \"state\": \"paused\"\n  }\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0"
               }
@@ -13772,6 +13781,8 @@
                   ],
                   "kind": "shell",
                   "target": "npm test -- auth.spec.ts",
+                  "raw_args": "{\n  \"command\": \"npm test -- auth.spec.ts\"\n}",
+                  "raw_result": "{\n  \"output\": \"FAIL auth.spec.ts\\n  expected cookie to outlive token\",\n  \"exit_code\": 1,\n  \"error\": null\n}",
                   "args": {
                     "command": "npm test -- auth.spec.ts"
                   },
@@ -13789,9 +13800,7 @@
                   "done": true,
                   "is_error": true,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"command\": \"npm test -- auth.spec.ts\"\n}",
-                  "raw_result": "{\n  \"output\": \"FAIL auth.spec.ts\\n  expected cookie to outlive token\",\n  \"exit_code\": 1,\n  \"error\": null\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0"
               },
@@ -13812,6 +13821,8 @@
                   ],
                   "kind": "shell",
                   "target": "git status",
+                  "raw_args": "{\n  \"command\": \"git status\"\n}",
+                  "raw_result": "{\n  \"output\": \"On branch main\\nnothing to commit\",\n  \"exit_code\": 0,\n  \"error\": null\n}",
                   "args": {
                     "command": "git status"
                   },
@@ -13823,9 +13834,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"command\": \"git status\"\n}",
-                  "raw_result": "{\n  \"output\": \"On branch main\\nnothing to commit\",\n  \"exit_code\": 0,\n  \"error\": null\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0"
               },
@@ -13846,6 +13855,8 @@
                   ],
                   "kind": "search",
                   "target": "TODO(auth)",
+                  "raw_args": "{\n  \"pattern\": \"TODO(auth)\"\n}",
+                  "raw_result": "{\n  \"total_count\": 0,\n  \"matches\": []\n}",
                   "args": {
                     "pattern": "TODO(auth)"
                   },
@@ -13866,9 +13877,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"pattern\": \"TODO(auth)\"\n}",
-                  "raw_result": "{\n  \"total_count\": 0,\n  \"matches\": []\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0"
               },
@@ -13890,6 +13899,8 @@
                   "kind": "read",
                   "target": "src/auth/session.ts",
                   "focus_path": "src/auth/session.ts",
+                  "raw_args": "{\n  \"path\": \"src/auth/session.ts\"\n}",
+                  "raw_result": "{\n  \"content\": \"10|const expiry = Math.floor(ttl)\",\n  \"total_lines\": 40\n}",
                   "args": {
                     "path": "src/auth/session.ts"
                   },
@@ -13915,9 +13926,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"path\": \"src/auth/session.ts\"\n}",
-                  "raw_result": "{\n  \"content\": \"10|const expiry = Math.floor(ttl)\",\n  \"total_lines\": 40\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0"
               },
@@ -13991,6 +14000,8 @@
                     ]
                   },
                   "focus_path": "src/auth/session.ts",
+                  "raw_args": "{\n  \"path\": \"src/auth/session.ts\",\n  \"old_string\": \"Math.floor(ttl)\",\n  \"new_string\": \"Math.ceil(ttl)\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"diff\": \"--- a/src/auth/session.ts\\n+++ b/src/auth/session.ts\\n@@ -10,3 +10,4 @@\\n-const expiry = Math.floor(ttl)\\n+const expiry = Math.ceil(ttl)\\n+// Round up so the cookie outlives the token.\\n export { expiry }\\n\"\n}",
                   "args": {
                     "path": "src/auth/session.ts",
                     "old_string": "Math.floor(ttl)",
@@ -14016,9 +14027,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"path\": \"src/auth/session.ts\",\n  \"old_string\": \"Math.floor(ttl)\",\n  \"new_string\": \"Math.ceil(ttl)\"\n}",
-                  "raw_result": "{\n  \"success\": true,\n  \"diff\": \"--- a/src/auth/session.ts\\n+++ b/src/auth/session.ts\\n@@ -10,3 +10,4 @@\\n-const expiry = Math.floor(ttl)\\n+const expiry = Math.ceil(ttl)\\n+// Round up so the cookie outlives the token.\\n export { expiry }\\n\"\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0"
               }
@@ -14194,6 +14203,7 @@
               ],
               "kind": "question",
               "target": "",
+              "shows_card": true,
               "function": {
                 "name": "clarify",
                 "arguments": "{\"questions\":[{\"question\":\"Which repository to file in?\",\"choices\":[\"MaudeCode/talaria\",\"MaudeCode/hermes\"]}]}"
@@ -14486,6 +14496,8 @@
                   ],
                   "kind": "web",
                   "target": "hermes agent 0.23.2 release",
+                  "raw_args": "{\n  \"query\": \"hermes agent 0.23.2 release\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"data\": {\n    \"web\": [\n      {\n        \"title\": \"Hermes Agent 0.23.2\",\n        \"url\": \"https://example.com/hermes/0.23.2\",\n        \"description\": \"Release notes\"\n      }\n    ]\n  }\n}",
                   "args": {
                     "query": "hermes agent 0.23.2 release"
                   },
@@ -14507,9 +14519,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"query\": \"hermes agent 0.23.2 release\"\n}",
-                  "raw_result": "{\n  \"success\": true,\n  \"data\": {\n    \"web\": [\n      {\n        \"title\": \"Hermes Agent 0.23.2\",\n        \"url\": \"https://example.com/hermes/0.23.2\",\n        \"description\": \"Release notes\"\n      }\n    ]\n  }\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0",
                 "merged_count": 2
@@ -14531,6 +14541,8 @@
                   ],
                   "kind": "web",
                   "target": "hermes agent 0.24 changelog",
+                  "raw_args": "{\n  \"query\": \"hermes agent 0.24 changelog\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"data\": {\n    \"web\": []\n  }\n}",
                   "args": {
                     "query": "hermes agent 0.24 changelog"
                   },
@@ -14549,9 +14561,7 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"query\": \"hermes agent 0.24 changelog\"\n}",
-                  "raw_result": "{\n  \"success\": true,\n  \"data\": {\n    \"web\": []\n  }\n}"
+                  "cost_usd": null
                 },
                 "group_id": "group:0",
                 "merged_into": "tool:call-web"
@@ -14573,6 +14583,9 @@
                   ],
                   "kind": "question",
                   "target": "",
+                  "shows_card": true,
+                  "raw_args": "{\n  \"questions\": [\n    {\n      \"question\": \"Which repository to file in?\",\n      \"choices\": [\n        \"MaudeCode/talaria\",\n        \"MaudeCode/hermes\"\n      ]\n    }\n  ]\n}",
+                  "raw_result": "{\n  \"responses\": [\n    {\n      \"question\": \"Which repository to file in?\",\n      \"choices_offered\": [\n        \"MaudeCode/talaria\",\n        \"MaudeCode/hermes\"\n      ],\n      \"status\": \"answered\",\n      \"user_response\": \"MaudeCode/talaria\"\n    }\n  ],\n  \"outcome\": \"answered\"\n}",
                   "args": {
                     "questions": [
                       {
@@ -14605,11 +14618,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"questions\": [\n    {\n      \"question\": \"Which repository to file in?\",\n      \"choices\": [\n        \"MaudeCode/talaria\",\n        \"MaudeCode/hermes\"\n      ]\n    }\n  ]\n}",
-                  "raw_result": "{\n  \"responses\": [\n    {\n      \"question\": \"Which repository to file in?\",\n      \"choices_offered\": [\n        \"MaudeCode/talaria\",\n        \"MaudeCode/hermes\"\n      ],\n      \"status\": \"answered\",\n      \"user_response\": \"MaudeCode/talaria\"\n    }\n  ],\n  \"outcome\": \"answered\"\n}"
+                  "cost_usd": null
                 },
-                "group_id": "group:0"
+                "group_id": "group:1"
               },
               {
                 "row_id": "tool:call-move",
@@ -14634,6 +14645,8 @@
                   "kind": "kanban",
                   "target": "t_login",
                   "verb": "update",
+                  "raw_args": "{\n  \"task_id\": \"t_login\",\n  \"summary\": \"Fixed the redirect\"\n}",
+                  "raw_result": "{\n  \"ok\": true,\n  \"task_id\": \"t_login\",\n  \"status\": \"review\"\n}",
                   "args": {
                     "task_id": "t_login",
                     "summary": "Fixed the redirect"
@@ -14663,11 +14676,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"task_id\": \"t_login\",\n  \"summary\": \"Fixed the redirect\"\n}",
-                  "raw_result": "{\n  \"ok\": true,\n  \"task_id\": \"t_login\",\n  \"status\": \"review\"\n}"
+                  "cost_usd": null
                 },
-                "group_id": "group:0"
+                "group_id": "group:2"
               },
               {
                 "row_id": "tool:call-issue",
@@ -14690,6 +14701,8 @@
                     "name": "GitHub",
                     "logo_url": null
                   },
+                  "raw_args": "{\n  \"title\": \"Agent 0.23.2 is out\"\n}",
+                  "raw_result": "{\n  \"error\": \"Resource not accessible by integration\"\n}",
                   "args": {
                     "title": "Agent 0.23.2 is out"
                   },
@@ -14706,11 +14719,9 @@
                   "done": true,
                   "is_error": true,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"title\": \"Agent 0.23.2 is out\"\n}",
-                  "raw_result": "{\n  \"error\": \"Resource not accessible by integration\"\n}"
+                  "cost_usd": null
                 },
-                "group_id": "group:0"
+                "group_id": "group:2"
               },
               {
                 "row_id": "tool:call-mail",
@@ -14738,6 +14749,8 @@
                     "name": "Gmail",
                     "logo_url": null
                   },
+                  "raw_args": "{\n  \"to\": \"owner@example.com\",\n  \"subject\": \"Agent 0.23.2\"\n}",
+                  "raw_result": "{\n  \"id\": \"message-1\",\n  \"threadId\": \"thread-1\"\n}",
                   "args": {
                     "to": "owner@example.com",
                     "subject": "Agent 0.23.2"
@@ -14762,11 +14775,9 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"to\": \"owner@example.com\",\n  \"subject\": \"Agent 0.23.2\"\n}",
-                  "raw_result": "{\n  \"id\": \"message-1\",\n  \"threadId\": \"thread-1\"\n}"
+                  "cost_usd": null
                 },
-                "group_id": "group:0"
+                "group_id": "group:2"
               },
               {
                 "row_id": "tool:call-skill",
@@ -14795,6 +14806,8 @@
                   ],
                   "kind": "skill",
                   "target": "deploy-checklist",
+                  "raw_args": "{\n  \"action\": \"edit\",\n  \"name\": \"deploy-checklist\",\n  \"content\": \"# Deploy checklist\"\n}",
+                  "raw_result": "{\n  \"success\": true,\n  \"staged\": true,\n  \"pending_id\": \"pending-1\",\n  \"gist\": \"Add a rollback step\",\n  \"message\": \"Waiting for the user to approve.\"\n}",
                   "args": {
                     "action": "edit",
                     "name": "deploy-checklist",
@@ -14829,17 +14842,15 @@
                   "done": true,
                   "is_error": false,
                   "duration": null,
-                  "cost_usd": null,
-                  "raw_args": "{\n  \"action\": \"edit\",\n  \"name\": \"deploy-checklist\",\n  \"content\": \"# Deploy checklist\"\n}",
-                  "raw_result": "{\n  \"success\": true,\n  \"staged\": true,\n  \"pending_id\": \"pending-1\",\n  \"gist\": \"Add a rollback step\",\n  \"message\": \"Waiting for the user to approve.\"\n}"
+                  "cost_usd": null
                 },
-                "group_id": "group:0"
+                "group_id": "group:2"
               }
             ],
             "final_answer": "0.23.2 is out. GitHub refused the issue because the integration can't write to that repository, so I emailed you the details instead. The login ticket is in Review.",
             "turn_duration": null,
             "terminal_state": "completed",
-            "expanded_by_default": false,
+            "expanded_by_default": true,
             "has_consumed_steering": false,
             "file_changes": [],
             "turn_summary": [
@@ -14856,12 +14867,26 @@
                     "kind": "web",
                     "count": 2,
                     "failed": 0
-                  },
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              },
+              {
+                "group_id": "group:1",
+                "parts": [
                   {
                     "kind": "question",
                     "count": 1,
                     "failed": 0
-                  },
+                  }
+                ],
+                "failed": 0,
+                "running": false
+              },
+              {
+                "group_id": "group:2",
+                "parts": [
                   {
                     "kind": "kanban",
                     "count": 1,

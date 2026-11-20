@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Questions you answered for the agent stay readable in the chat after the turn ends: each question shows with your answer, or that it went unanswered and why, without opening the call.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

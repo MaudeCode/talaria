@@ -762,6 +762,29 @@ final class TranscriptHostedTests: XCTestCase {
         attachHostedScreenshot(window, name: "activity-groups-merged-open")
     }
 
+    /// TAL-2027: a settled turn shows the question the agent asked and the answer it got, from the shared
+    /// `contracts/fixtures/answered-question.json` row, without opening the call; the open row does not repeat them.
+    func testASettledTurnShowsTheAnsweredQuestionWithoutOpeningIt() async throws {
+        let fixture = try FixtureApp(for: self)
+        let detail = try Self.answeredQuestionDetail()
+        UITestFixtureURLProtocol.sessionDetail.withLock { $0 = detail }
+        let window = try hostWindow(fixture.chat(try await fixture.session()), size: HostedSize.phone)
+
+        let labels = { HostedAccessibility.elements(in: window).compactMap(\.accessibilityLabel) }
+        let expected = ["Which branch should I deploy?", "release", "Run the migrations first?", "No answer", "The clarification timed out."]
+        let shown = await awaitCondition { expected.allSatisfy { text in labels().contains { $0.contains(text) } } }
+        XCTAssertTrue(shown, "The answered question is not in view: \(labels())")
+        let call = try await requireElement(in: window, "The question's row is missing") {
+            $0.accessibilityLabel?.contains("Asked") == true && $0.accessibilityHint == "Double tap to expand details."
+        }
+        settle(0.3)
+        attachHostedScreenshot(window, name: "answered-question-settled")
+        HostedAccessibility.activate(call)
+        let opened = await awaitCondition { HostedAccessibility.elements(in: window).contains { $0.accessibilityHint == "Double tap to collapse details." } }
+        XCTAssertTrue(opened, "The question's row did not open")
+        XCTAssertEqual(labels().filter { $0.contains("No answer") }.count, 1, "The open row repeats the rows: \(labels())")
+    }
+
     /// TAL-1961: the control that pages a long turn's earlier rows reads as one of its activity rows: the row's leading edge
     /// and height, one button named with the remaining count. Tapping it loads the rows in a plain and a steered turn.
     func testEarlierStepsSitInTheActivityColumnAndLoadThePagedRows() async throws {
@@ -875,6 +898,29 @@ final class TranscriptHostedTests: XCTestCase {
                 ["role": "assistant", "content": "All read.", "message_id": "plain-reply", "_turn_id": "plain", "_anchor_activity_scene": plain],
                 ["role": "user", "content": "Check the docs", "message_id": "steered-goal", "_turn_id": "steered"],
                 ["role": "assistant", "content": "Docs checked.", "message_id": "steered-reply", "_turn_id": "steered", "_anchor_activity_scene": steered],
+            ],
+        ]
+        return try JSONSerialization.data(withJSONObject: ["session": session])
+    }
+
+    /// A settled turn as the server ships it: a read, then the shared answered question in a group of its own.
+    private nonisolated static func answeredQuestionDetail() throws -> Data {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("answered-question")) as? [String: Any])
+        var question = try XCTUnwrap(fixture["row"] as? [String: Any])
+        question["order_index"] = 1
+        let read: [String: Any] = ["row_id": "tool:read", "order_index": 0, "role": "tool", "group_id": "group:0",
+                                   "tool": ["id": "read", "name": "read_file", "kind": "read", "target": "deploy.md", "args": [:], "done": true, "is_error": false]]
+        let groups: [[String: Any]] = [
+            ["group_id": "group:0", "parts": [["kind": "read", "count": 1, "failed": 0]], "failed": 0, "running": false],
+            ["group_id": "group:1", "parts": [["kind": "question", "count": 1, "failed": 0]], "failed": 0, "running": false],
+        ]
+        let session: [String: Any] = [
+            "session_id": UITestFixtureURLProtocol.sessionID, "title": "Answered question",
+            "messages": [
+                ["role": "user", "content": "Deploy it", "message_id": "ask-goal", "_turn_id": "ask"],
+                ["role": "assistant", "content": "Deployed release.", "message_id": "ask-reply", "_turn_id": "ask",
+                 "_anchor_activity_scene": ["version": "activity_scene_v1", "terminal_state": "completed", "final_answer": "Deployed release.",
+                                            "expanded_by_default": true, "turn_duration": 9, "activity_rows": [read, question], "activity_groups": groups]],
             ],
         ]
         return try JSONSerialization.data(withJSONObject: ["session": session])

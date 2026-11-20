@@ -88,6 +88,12 @@ struct ToolCallCardView: View {
                 TerminalResultSection(reference: reference)
             }
 
+            // TAL-2027: and an answered question's rows, which the server marks as a card the user must see.
+            if let rows = rowsInView {
+                ToolRowsSection(rows: rows, wraps: true)
+                    .padding(.top, 6)
+            }
+
             // TAL-2325: and the images, speech or video a media tool made. TAL-2341: only inside the open row when the
             // server says so (`media_in_details`).
             if let media = toolCall.resultView?.media, !media.isEmpty, isExpanded || !toolCall.displayFlags.mediaInDetails {
@@ -104,6 +110,10 @@ struct ToolCallCardView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    /// TAL-2027: a card call's rows, shown under its row and not repeated when it opens; a clipped exchange's whole rows once
+    /// the open row's Show full output fetched them.
+    private var rowsInView: ToolRows? { toolCall.displayFlags.showsCard ? fullResult?.view.rows ?? toolCall.resultView?.rows : nil }
 
     private enum ToolsHost { case arguments, result, alone }
 
@@ -166,6 +176,8 @@ struct ToolCallCardView: View {
                 } else if let analysis = shownCall.resultView?.analysis {
                     // TAL-2325: an image or video analysis, formatted.
                     ToolAnalysisSection(analysis: analysis)
+                } else if rowsInView != nil {
+                    EmptyView()
                 } else if let rows = shownCall.resultView?.rows {
                     // TAL-2326: memory, skill, past-chat, job, connection and clarify results as rows.
                     ToolRowsSection(rows: rows)

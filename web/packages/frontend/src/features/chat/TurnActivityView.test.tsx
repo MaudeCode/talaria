@@ -84,6 +84,17 @@ describe('turn worklog presentation', () => {
     expect(settledView.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(2)
   })
 
+  it('shows an answered question and its answer in a settled turn without opening anything (TAL-2027)', () => {
+    const { row } = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/answered-question.json'), 'utf8')) as { row: Record<string, unknown> }
+    const view = render(<View activity={settled({ expanded_by_default: true, activity_rows: rows(toolRow('a'), row, toolRow('b', 'group:2')) })} />)
+    const card = view.container.querySelector('[data-tool-id="ask"]')!
+    expect(card.closest('[data-activity-sequence-group]')).toBeNull()
+    expect(card.querySelector('.tool-card-header')).toHaveAttribute('aria-expanded', 'false')
+    for (const text of ['Which branch should I deploy?', 'release', 'Run the migrations first?', 'No answer', 'The clarification timed out.']) expect(screen.getByText(text)).toBeVisible()
+    fireEvent.click(card.querySelector('.tool-card-header')!)
+    expect(screen.getAllByText('Run the migrations first?'), 'The open row does not repeat the rows').toHaveLength(1)
+  })
+
   it('leaves out the calls the server hides, live and settled, and shows a lookup whose completion failed (TAL-2331)', () => {
     const lookup = (id: string) => ({ event: 'tool', data: { id, name: 'tool_describe', kind: 'read', target: 'session_list', args: {}, hidden: true } }) as const
     const run = liveRun()

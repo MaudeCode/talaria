@@ -340,8 +340,11 @@ function snapshotItems(value: string): string[] {
   return value.startsWith('[') ? Array.from(value.matchAll(QUOTED), (m) => unescapeGoal(m[2] ?? '')) : [value]
 }
 
-/** TAL-1968: calls whose transcript card the user must see, as a settled turn keeps them open (`buildTurnScene`). */
-const CARD_TOOLS = new Set(['show', 'deliver', 'propose', 'draft_card', 'terminal_open'])
+/**
+ * TAL-1968: calls whose transcript card the user must see, as a settled turn keeps them open (`buildTurnScene`). TAL-2027: an
+ * answered question's rows stay in view the same way.
+ */
+const CARD_TOOLS = new Set(['show', 'deliver', 'propose', 'draft_card', 'terminal_open', 'clarify'])
 /** TAL-2325: the media tools, whose media stands alone like a card while `inline_tool_media` is on (TAL-2341). */
 const MEDIA_TOOLS = new Set(Object.entries(TOOL_PRESENTATIONS).flatMap(([name, entry]) => (entry.presentation === 'media' ? [name] : [])))
 const showsCard = (name: unknown): boolean => typeof name === 'string' && (CARD_TOOLS.has(name) || (MEDIA_TOOLS.has(name) && displaySetting('inline_tool_media')))
@@ -679,7 +682,7 @@ export function toolRowsView(name: unknown, data: Record<string, unknown>, args:
     case 'session_search': return sessionSearchRows(data)
     case 'cronjob_manage': return cronRows(data, a)
     case 'manage_connections': return connectionRows(data)
-    case 'clarify': return Array.isArray(data.responses) ? { rows: dicts(data.responses).map((r) => row(str(r.question), clarifyAnswer(r))) } : undefined
+    case 'clarify': return clarifyRows(data)
     case 'browser_cdp': return str(data.method) || str(a.method) ? { rows: [row(str(data.method) || str(a.method), '', 'ok')] } : undefined
     case 'browser_dialog': return dialogRows(data, a)
     case 'browser_vault': return vaultRows(data, a)
@@ -796,11 +799,33 @@ function connectionRows(data: Record<string, unknown>): ToolRows | undefined {
   return undefined
 }
 
-/** A clarify question's answer as the user gave it, or that they skipped it or never answered. */
-function clarifyAnswer(response: Record<string, unknown>): string {
-  const answer = response.user_response
-  if (response.status === 'answered' && answer !== null && answer !== undefined) return Array.isArray(answer) ? answer.map(str).join(', ') : str(answer)
-  return response.status === 'skipped' ? 'Skipped' : 'No answer'
+/** The Agent's legacy one-question reply when the user never answered (its `TIMEOUT_RESPONSE`). */
+const CLARIFY_TIMEOUT_RESPONSE = 'The user did not provide a response within the time limit. Use your best judgement to make the choice and proceed.'
+
+/**
+ * TAL-2027: a clarify result's questions in order, each with its answer (`null` unless the user gave a non-blank one) or that
+ * they skipped it, and the note on how the wait ended: the batch `{responses, outcome | timed_out, notice}` or the legacy
+ * `{question, user_response}`, whose timeout sentinel reads as no answer. Undefined for any other shape.
+ */
+function clarifyExchanges(data: Record<string, unknown>): { exchanges: { question: string; answer: string | null; skipped: boolean }[]; note: string } | undefined {
+  const legacy = !Array.isArray(data.responses) && typeof data.question === 'string'
+  if (!legacy && !Array.isArray(data.responses)) return undefined
+  let timedOut = data.outcome === 'timed_out' || data.timed_out === true
+  const exchanges = (legacy ? [data] : dicts(data.responses)).map((r) => {
+    const raw = r.user_response
+    const sentinel = legacy && raw === CLARIFY_TIMEOUT_RESPONSE
+    if (sentinel) timedOut = true
+    const text = sentinel ? '' : Array.isArray(raw) ? raw.map(str).filter((item) => item.trim()).join(', ') : str(raw)
+    return { question: str(r.question), answer: (r.status ?? 'answered') === 'answered' && text.trim() ? text : null, skipped: r.status === 'skipped' }
+  })
+  return { exchanges, note: str(data.notice).trim() || (timedOut ? 'Timed out waiting for an answer.' : '') }
+}
+
+/** Each clarify question with its answer, or that the user skipped it or never answered, under the note on how the wait ended. */
+function clarifyRows(data: Record<string, unknown>): ToolRows | undefined {
+  const parsed = clarifyExchanges(data)
+  if (!parsed) return undefined
+  return { rows: parsed.exchanges.map((e) => row(e.question, e.answer ?? (e.skipped ? 'Skipped' : 'No answer'))), ...(parsed.note ? { title: parsed.note } : {}) }
 }
 
 /** TAL-2327: a Kanban task's row: its title, else its id, and a muted detail, opening the task on the call's board. */
@@ -993,12 +1018,9 @@ function connectionOutcome(data: Record<string, unknown>): ToolOutcome | undefin
 
 /** A question: the first answer's first line, or that the user skipped it. */
 function clarifyOutcome(data: Record<string, unknown>): ToolOutcome | undefined {
-  const response = dicts(data.responses)[0]
-  if (!response) return undefined
-  if (response.status === 'skipped') return outcome('skipped')
-  const answer = response.user_response
-  if (response.status !== 'answered' || answer === null || answer === undefined) return undefined
-  const value = outcomeValue(Array.isArray(answer) ? answer.map(str).join(', ') : str(answer))
+  const first = clarifyExchanges(data)?.exchanges[0]
+  if (first?.skipped) return outcome('skipped')
+  const value = outcomeValue(first?.answer ?? '')
   return value ? outcome('answered', { value }) : undefined
 }
 

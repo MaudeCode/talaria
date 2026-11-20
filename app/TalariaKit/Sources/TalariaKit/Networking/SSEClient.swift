@@ -255,7 +255,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
     public var startedAt: Double? = nil
     /// TAL-2340: the background process the call started, on its completion.
     public var processID: String? = nil
-    /// TAL-2341: the server's `opens_raw` and `media_in_details`.
+    /// TAL-2341: the server's `opens_raw` and `media_in_details`; TAL-2027: its `shows_card`.
     public var displayFlags = ToolDisplayFlags()
     /// TAL-2341: the server's `activity_unnamed`: a Live Activity does not name this call.
     public var activityUnnamed = false
@@ -263,6 +263,7 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case opensRaw = "opens_raw"
         case mediaInDetails = "media_in_details"
+        case showsCard = "shows_card"
         case activityUnnamed = "activity_unnamed"
         case groupID = "group_id"
         case group
@@ -357,7 +358,8 @@ public struct ToolStreamEvent: Decodable, Equatable, Sendable {
         startedAt = container.decodeLossyDoubleIfPresent(forKey: .startedAt)
         processID = container.decodeLossyStringIfPresent(forKey: .processID)?.nonEmptyToolStreamID
         displayFlags = ToolDisplayFlags(opensRaw: container.decodeLossyBoolIfPresent(forKey: .opensRaw) == true,
-                                        mediaInDetails: container.decodeLossyBoolIfPresent(forKey: .mediaInDetails) == true)
+                                        mediaInDetails: container.decodeLossyBoolIfPresent(forKey: .mediaInDetails) == true,
+                                        showsCard: container.decodeLossyBoolIfPresent(forKey: .showsCard) == true)
         activityUnnamed = container.decodeLossyBoolIfPresent(forKey: .activityUnnamed) == true
     }
 }
