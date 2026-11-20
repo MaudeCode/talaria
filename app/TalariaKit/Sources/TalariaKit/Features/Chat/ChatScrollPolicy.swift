@@ -172,6 +172,25 @@ public enum ChatScrollPolicy {
             && distance > streamingBottomDetectionThreshold
     }
 
+    /// Judges each gesture-free report against the last report the transcript
+    /// received. Reports coalesce per run loop, so this compares delivered
+    /// states, not every intermediate KVO tick.
+    public struct ScrollAwayTracker: Equatable, Sendable {
+        private var delivered: ScrollGeometry?
+
+        public init() {}
+
+        /// True when `current` carries the reader away from the bottom.
+        public func movesAway(to current: ScrollGeometry) -> Bool {
+            isScrollingAwayFromBottom(previous: delivered, current: current)
+        }
+
+        /// Records the geometry behind a report the transcript received.
+        public mutating func deliver(_ geometry: ScrollGeometry) {
+            delivered = geometry
+        }
+    }
+
     /// The follow latch. `isFollowing` is the answer; the second flag lets an
     /// explicit reset outlive a gesture that was still coasting when it landed.
     public struct FollowLatch: Equatable, Sendable {

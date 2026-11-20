@@ -118,10 +118,7 @@ struct ChatScrollObserver: UIViewRepresentable {
         private var metricContext: MetricContext
         private var lastMetrics: ChatScrollMetrics?
         private var pendingMetrics: ChatScrollMetrics?
-        /// Geometry behind the last report the transcript received. Reports
-        /// coalesce per run loop, so the away-from-bottom check compares
-        /// delivered states, not every intermediate KVO tick.
-        private var deliveredGeometry: ChatScrollPolicy.ScrollGeometry?
+        private var scrollAway = ChatScrollPolicy.ScrollAwayTracker()
         private var pendingGeometry: ChatScrollPolicy.ScrollGeometry?
         private var hasScheduledMetricDelivery = false
         /// True from the first drag movement until the gesture, including any
@@ -169,7 +166,7 @@ struct ChatScrollObserver: UIViewRepresentable {
 
             observations.removeAll()
             lastMetrics = nil
-            deliveredGeometry = nil
+            scrollAway = ChatScrollPolicy.ScrollAwayTracker()
             endUserScrollSessionSilently()
             self.scrollView = scrollView
             scrollPositionController?.attach(to: scrollView)
@@ -197,7 +194,7 @@ struct ChatScrollObserver: UIViewRepresentable {
             endUserScrollSessionSilently()
             scrollPositionController?.detach()
             lastMetrics = nil
-            deliveredGeometry = nil
+            scrollAway = ChatScrollPolicy.ScrollAwayTracker()
             pendingMetrics = nil
             pendingGeometry = nil
             hasScheduledMetricDelivery = false
@@ -309,7 +306,7 @@ struct ChatScrollObserver: UIViewRepresentable {
                 distanceFromBottom: geometry.distanceFromBottom,
                 isUserInteracting: isUserInteracting,
                 movedAwayFromBottom: !isUserInteracting && !isPinned
-                    && ChatScrollPolicy.isScrollingAwayFromBottom(previous: deliveredGeometry, current: geometry),
+                    && scrollAway.movesAway(to: geometry),
                 distanceFromTop: max(0, scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
             )
             // The transcript only needs a callback when the derived metrics move,
@@ -318,7 +315,7 @@ struct ChatScrollObserver: UIViewRepresentable {
             // that stays bottom-pinned would make the next gesture-free scroll
             // look like it happened in a different viewport, and be ignored.
             guard metrics != lastMetrics else {
-                deliveredGeometry = geometry
+                scrollAway.deliver(geometry)
                 pendingGeometry = hasScheduledMetricDelivery ? geometry : nil
                 return
             }
@@ -327,7 +324,7 @@ struct ChatScrollObserver: UIViewRepresentable {
 
             switch delivery {
             case .immediate:
-                deliveredGeometry = geometry
+                scrollAway.deliver(geometry)
                 onMetrics(metrics)
             case .deferred:
                 pendingMetrics = metrics
@@ -344,7 +341,7 @@ struct ChatScrollObserver: UIViewRepresentable {
                         self.pendingGeometry = nil
                         self.hasScheduledMetricDelivery = false
                         guard let metrics, self.lastMetrics == metrics else { return }
-                        self.deliveredGeometry = geometry
+                        if let geometry { self.scrollAway.deliver(geometry) }
                         self.onMetrics(metrics)
                     }
                 }
