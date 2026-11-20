@@ -865,7 +865,7 @@ export class GatewaySessions {
       ? [...ReactionEmojiSchema.options, ...(selected ? [null] : [])].map((emoji) => ({ emoji, result: state(emoji === selected ? null : emoji) })) : [] }
   }
 
-  private async view(base: Row, result: GatewaySessionResult, stream: string | null, target: Target, limit: number | null = 120, before: number | null = null, withMessages = true, older: Row[] = []): Promise<Row> {
+  private async view(base: Row, result: GatewaySessionResult, stream: string | null, target: Target, limit: number | null = 120, before: number | null = null, withMessages = true): Promise<Row> {
     const snapshot = result.snapshot
     const showReasoning = await this.deps.service.deps.showReasoning?.(target.profile) ?? true
     const reasoningControl = await this.reasoningControl(target, result)
@@ -889,7 +889,9 @@ export class GatewaySessions {
           return activity ? { ...admission, text: activity.summary, actions: admission.actions.filter((action) => action !== 'edit' && action !== 'retry') } : admission
         }),
       }
-      // TAL-2072: the stored rows before the attach rows lead; only an attach row can take a reaction.
+      // TAL-2072: the stored rows before the attach rows lead in every projection of this chat (a page, an admission
+      // reply, a run's snapshot frames), so each numbers the same history alike; only an attach row can take a reaction.
+      const older = withMessages && snapshot.transcripts ? await this.storedBefore(target, snapshot) : []
       const nativeRows: Row[] = [...older, ...snapshot.messages]
       const attached = older.length + snapshot.messages.length
       const active = stream ? runningAdmission(snapshot) : null
@@ -935,8 +937,7 @@ export class GatewaySessions {
     let watch = this.watches.get(target.key)
     if (result.state !== 'attached') { watch?.controller.abort(); watch = undefined }
     if (result.snapshot && (result.snapshot.running || result.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) && !watch) watch = this.watch(target, base, result.snapshot)
-    const older = withMessages && result.snapshot?.transcripts ? await this.storedBefore(target, result.snapshot) : []
-    return this.view(base, result, watch?.stream ?? null, target, limit, before, withMessages, older)
+    return this.view(base, result, watch?.stream ?? null, target, limit, before, withMessages)
   }
 
   /**

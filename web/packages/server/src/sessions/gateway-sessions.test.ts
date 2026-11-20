@@ -946,6 +946,21 @@ describe('owner stream and projection cost (TAL-1723)', () => {
       expect(reads()[0]!.params).toMatchObject({ action: 'transcript', order: 'oldest' })
     })
 
+    it('numbers a running turn\'s streamed snapshots over the same stored history as a page', async () => {
+      owner(true)
+      const page = await detail('&msg_limit=20')
+      const watch = await observeOwner(snapshot({ messages: resumed, message_count: resumed.length, transcripts: true, running: true, pending: [admission()] }))
+      watch.finish()
+      const frames = (await watch.read).filter((frame) => frame.event === 'session_snapshot')
+      expect(frames.length).toBeGreaterThan(0)
+      for (const frame of frames) {
+        const session = (frame.data as { session: { messages?: unknown[]; message_count?: number } }).session
+        // Every stored row leads, as on the page; the run adds only its pending prompt after the attach rows.
+        expect(texts(session.messages).filter((text) => String(text).startsWith('Old '))).toHaveLength(60)
+        expect(session.message_count).toBe(page.message_count! + 1)
+      }
+    })
+
     it('keeps the attach rows alone for an owner without the stored read', async () => {
       owner(false)
       const recent = await detail('&msg_limit=20')
