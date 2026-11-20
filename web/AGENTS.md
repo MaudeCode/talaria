@@ -111,6 +111,13 @@ same justification. A different parameter combination alone is insufficient.
 Pure Talaria behavior runs once, without Agent imports, process launches or network
 access. Only actual supported-Agent compatibility work runs per supported release.
 
+Record a fixture of real Agent output with a committed generator, and re-record it from a supported release when
+the support window drops the one it names. `sidecar/scripts/record-fixtures.py` records the sidecar RPC fixtures,
+`packages/server/src/test/fixtures/generate-*.py` the server's state.db fixtures, and
+`sidecar/tests/fixtures/record_gateway_owner_events.py` the owner event stream in `gateway-owner-events.json`. From
+the repository root, after `sidecar/scripts/test.sh` has created its venv:
+`python3 scripts/check-agent-compatibility.py --skip-docker --skip-sidecar-tests --command web/sidecar/.venv/bin/python web/sidecar/tests/fixtures/record_gateway_owner_events.py`.
+
 Use `sidecar/scripts/test.sh` for local sidecar validation and the shared
 compatibility/release entry points for their full gates. Collection, layer routing,
 launch policy and exact execution accounting belong in `suite_runner.py`, not

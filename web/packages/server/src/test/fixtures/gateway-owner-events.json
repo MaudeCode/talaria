@@ -1,6 +1,6 @@
 {
-  "release": "v0.22.3",
-  "revision": "5b147ab036d6d19131bff8d20701b5001eab844a",
+  "release": "v0.23.2",
+  "revision": "ae2a81ccc00e9b7c06301523e5bb09608397149c",
   "events": [
     {
       "authority_epoch": 1,
@@ -11,8 +11,7 @@
       "payload": {
         "text": "**Inspecting the task**\nCheck the supplied facts."
       },
-      "replay_epoch": "7d7922d57a584ed990961d6e0c422293",
-      "seq": 7
+      "replay_epoch": "detail-replay-epoch"
     },
     {
       "authority_epoch": 1,
@@ -31,8 +30,7 @@
         "tool_count": 0,
         "text": "Inspect the supplied facts"
       },
-      "replay_epoch": "7d7922d57a584ed990961d6e0c422293",
-      "seq": 12
+      "replay_epoch": "detail-replay-epoch"
     },
     {
       "authority_epoch": 1,
@@ -52,8 +50,7 @@
         "tool_count": 0,
         "text": "Inspect the supplied facts"
       },
-      "replay_epoch": "7d7922d57a584ed990961d6e0c422293",
-      "seq": 13
+      "replay_epoch": "detail-replay-epoch"
     },
     {
       "authority_epoch": 1,
@@ -77,8 +74,8 @@
           "context_source": "provider_usage",
           "context_estimated": false,
           "compressions": 0,
-          "avg_latency_s": 0.3,
-          "avg_tps": 32.3,
+          "avg_latency_s": 1.0,
+          "avg_tps": 1.0,
           "active_subagents": 1
         },
         "input_tokens": 20,
@@ -91,13 +88,13 @@
         "reasoning_tokens": 0,
         "api_calls": 1,
         "last_prompt_tokens": 20,
-        "context_tokens": 333,
+        "context_tokens": 1.0,
         "context_length": 256000,
         "config_context_length": null,
         "context_source": "provider_usage",
         "compression_count": 0,
-        "avg_latency_s": 0.31,
-        "tokens_per_s": 32.3,
+        "avg_latency_s": 1.0,
+        "tokens_per_s": 1.0,
         "last_turn_tokens": 10,
         "rate_limit": null,
         "active_subagents": 1,
@@ -105,8 +102,7 @@
         "provider": "custom",
         "fallback_model": null
       },
-      "replay_epoch": "7d7922d57a584ed990961d6e0c422293",
-      "seq": 16
+      "replay_epoch": "detail-replay-epoch"
     },
     {
       "authority_epoch": 1,
@@ -117,29 +113,7 @@
       "payload": {
         "text": "**Inspecting the task**\nCheck the supplied facts."
       },
-      "replay_epoch": "7d7922d57a584ed990961d6e0c422293",
-      "seq": 19
-    },
-    {
-      "authority_epoch": 1,
-      "execution_generation": 1,
-      "admission_id": "native-input",
-      "type": "subagent.thinking",
-      "session_id": "native-detail-session",
-      "payload": {
-        "goal": "Inspect the supplied facts",
-        "task_count": 1,
-        "task_index": 0,
-        "subagent_id": "detail-child",
-        "child_session_id": "detail-child-session",
-        "delegation_id": "detail-delegation",
-        "depth": 0,
-        "model": "owner-fixture",
-        "tool_count": 0,
-        "text": "\u30fd(>\u2200<\u2606)\u2606 computing..."
-      },
-      "replay_epoch": "7d7922d57a584ed990961d6e0c422293",
-      "seq": 23
+      "replay_epoch": "detail-replay-epoch"
     },
     {
       "authority_epoch": 1,
@@ -163,8 +137,8 @@
           "context_source": "provider_usage",
           "context_estimated": false,
           "compressions": 0,
-          "avg_latency_s": 0.2,
-          "avg_tps": 62.3,
+          "avg_latency_s": 1.0,
+          "avg_tps": 1.0,
           "active_subagents": 1
         },
         "input_tokens": 40,
@@ -177,13 +151,13 @@
         "reasoning_tokens": 0,
         "api_calls": 2,
         "last_prompt_tokens": 20,
-        "context_tokens": 379,
+        "context_tokens": 1.0,
         "context_length": 256000,
         "config_context_length": null,
         "context_source": "provider_usage",
         "compression_count": 0,
-        "avg_latency_s": 0.16,
-        "tokens_per_s": 62.34,
+        "avg_latency_s": 1.0,
+        "tokens_per_s": 1.0,
         "last_turn_tokens": 20,
         "rate_limit": null,
         "active_subagents": 1,
@@ -191,8 +165,27 @@
         "provider": "custom",
         "fallback_model": null
       },
-      "replay_epoch": "7d7922d57a584ed990961d6e0c422293",
-      "seq": 24
+      "replay_epoch": "detail-replay-epoch"
+    },
+    {
+      "authority_epoch": 1,
+      "execution_generation": 1,
+      "admission_id": "native-input",
+      "type": "subagent.thinking",
+      "session_id": "native-detail-session",
+      "payload": {
+        "goal": "Inspect the supplied facts",
+        "task_count": 1,
+        "task_index": 0,
+        "subagent_id": "detail-child",
+        "child_session_id": "detail-child-session",
+        "delegation_id": "detail-delegation",
+        "depth": 0,
+        "model": "owner-fixture",
+        "tool_count": 0,
+        "text": "(◔_◔) pondering..."
+      },
+      "replay_epoch": "detail-replay-epoch"
     },
     {
       "authority_epoch": 1,
@@ -212,8 +205,7 @@
         "tool_count": 0,
         "text": "Owner detail complete."
       },
-      "replay_epoch": "7d7922d57a584ed990961d6e0c422293",
-      "seq": 26
+      "replay_epoch": "detail-replay-epoch"
     },
     {
       "authority_epoch": 1,
@@ -238,10 +230,9 @@
         "text": "Owner detail complete.",
         "status": "completed",
         "summary": "Owner detail complete.",
-        "duration_seconds": 0.04
+        "duration_seconds": 1.0
       },
-      "replay_epoch": "7d7922d57a584ed990961d6e0c422293",
-      "seq": 27
+      "replay_epoch": "detail-replay-epoch"
     },
     {
       "authority_epoch": 1,
@@ -271,8 +262,8 @@
           "context_source": "provider_usage",
           "context_estimated": false,
           "compressions": 0,
-          "avg_latency_s": 0.2,
-          "avg_tps": 62.3,
+          "avg_latency_s": 1.0,
+          "avg_tps": 1.0,
           "active_subagents": 1
         },
         "persisted_turn": {
@@ -291,8 +282,7 @@
           "submission_id": "detail-input"
         }
       },
-      "replay_epoch": "7d7922d57a584ed990961d6e0c422293",
-      "seq": 28
+      "replay_epoch": "detail-replay-epoch"
     }
   ]
 }

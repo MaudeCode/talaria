@@ -1367,7 +1367,8 @@ async def probe_detail(home, peer, desc):
                                  for body in peer.requests[requests_before:]],
             }
             viewer.request('rpc.cancel', {'id': watch})
-            print(json.dumps({'context_inspection': True, 'live_reasoning': True, 'subagent_progress': True, 'usage': True, 'events': kinds}))
+            # record_gateway_owner_events.py records the server's fixture from this line.
+            print('DETAIL ' + json.dumps({'context_inspection': True, 'live_reasoning': True, 'subagent_progress': True, 'usage': True, 'events': events}))
     finally:
         viewer.close()
 
