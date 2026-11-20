@@ -36,8 +36,8 @@ beforeEach(() => {
   window.scrollTo = vi.fn()
 })
 
-async function setup(sessions: SessionRow[] = [fresh, old]) {
-  vi.mocked(api.fetchSessions).mockResolvedValue({ sessions } as never)
+async function setup(sessions: SessionRow[] = [fresh, old], list: Partial<SessionsList> = {}) {
+  vi.mocked(api.fetchSessions).mockResolvedValue({ sessions, ...list } as never)
   // Background refreshes in these tests are the explicit snapshots below.
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, refetchOnWindowFocus: false } } })
   const root = createRootRoute({ component: () => <QueryClientProvider client={client}><SessionListPanel /><Outlet /></QueryClientProvider> })
@@ -168,6 +168,25 @@ describe('the shared session action owner (TAL-1119)', () => {
     await waitFor(() => expect(toast).toHaveBeenCalledWith('no such project', 4000, 'error'))
     await waitFor(() => expect(rowLink('old').querySelector('.session-project-dot')).toBeNull())
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('takes a row moved out of the listed project off at once, and restores it when the move is refused (TAL-2478)', async () => {
+    let refuse!: (error: unknown) => void
+    vi.mocked(api.moveSession).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
+    await setup([fresh, old], { has_unprojected: true })
+    await userEvent.click(screen.getByRole('button', { name: /^Chat filters/ }))
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Unassigned' }))
+    await waitFor(() => expect(api.fetchSessions).toHaveBeenLastCalledWith({ sidebar_source: 'webui', project_id: 'none' }, expect.any(AbortSignal)))
+    await waitFor(() => expect(rowLink('old')).not.toBeNull())
+    await openAction('old', 'Move to project')
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('combobox'))
+    await userEvent.click(await screen.findByRole('option', { name: 'Proj' }))
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.moveSession).toHaveBeenCalledWith('old', 'p1'))
+    await waitFor(() => expect(rowLink('old')).toBeNull())
+    expect(rowLink('fresh')).not.toBeNull()
+    await act(async () => { refuse(new Error('no such project')); await Promise.resolve() })
+    await waitFor(() => expect(rowLink('old')).not.toBeNull())
   })
 
   it.each([

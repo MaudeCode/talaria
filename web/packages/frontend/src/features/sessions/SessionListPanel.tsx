@@ -210,8 +210,15 @@ export function SessionListPanel() {
   const data = list.data
   const effects = useResourceEffects()
   const shown = useShownSessionRows()
-  // Without archived rows listed, a row archives out of the list as soon as the user archives it.
-  const rows = shown(data?.sessions ?? []).filter((r) => showArchived || !r.archived)
+  // The user's own pending archive or move takes a row (and its nested rows) out of this view at once; a refusal
+  // brings it back, and the server's next list converges.
+  const leavesView = (r: SessionRow) => {
+    const pending = effects[`session:${r.session_id}`]?.fields
+    if (!pending) return false
+    if (!showArchived && pending.archived === true) return true
+    return projectParam !== undefined && 'project_id' in pending && (projectParam === 'none' ? !!pending.project_id : pending.project_id !== projectParam)
+  }
+  const rows = shown(data?.sessions ?? []).filter((r) => !leavesView(r))
   const tree = sidebarTree(rows)
   // The server counts each tab (a nested row in its parent's); an optimistic write that hides a row takes it and its nested rows off at once.
   const shownIds = new Set(rows.map((r) => r.session_id))
@@ -244,7 +251,7 @@ export function SessionListPanel() {
   const filterDetail = project === NO_PROJECT ? m.project_unassigned() : project ? projectsById.get(project)?.name : undefined
   // A search shows only the server's matches; until they arrive the list waits for them.
   const matches = searching && q.length >= 2 && (retainSearchMatches || q === term) ? search.data : undefined
-  const { roots: filtered, children } = !searching ? tree : sidebarTree(matches ? shown(matches.sessions).filter((r) => showArchived || !r.archived) : [])
+  const { roots: filtered, children } = !searching ? tree : sidebarTree(matches ? shown(matches.sessions).filter((r) => !leavesView(r)) : [])
   const searchWaiting = searching && !matches
   const previews = new Map((matches?.sessions ?? []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : [])))
   const groups = groupSessionRows(filtered).map((g) => ({ ...g, label: GROUP_LABEL[g.id]() }))
