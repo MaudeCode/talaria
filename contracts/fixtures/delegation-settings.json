@@ -19,7 +19,13 @@
         "label": "Named model routes",
         "description": "Choose a named model route",
         "available": true,
-        "reason": ""
+        "reason": "",
+        "route_keys": [
+          {
+            "name": "daybreak",
+            "type": "boolean"
+          }
+        ]
       },
       {
         "name": "profile_routes",
@@ -42,7 +48,10 @@
           "model": "synthetic-model",
           "api_key_set": true,
           "service_tier": "normal",
-          "fallback_providers": []
+          "fallback_providers": [],
+          "flags": {
+            "daybreak": false
+          }
         }
       ],
       "default": "Research"

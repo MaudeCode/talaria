@@ -68,6 +68,26 @@ with patch.object(socket.socket, 'connect', side_effect=AssertionError('No netwo
     for change in ({'base_url': 'https://other.invalid/v1'}, {'provider': 'anthropic'}):
         assert 'api_key' not in delegation.clean_routes('model_map', {'options': [{**edit, **change}]}, block)['options'][0], change
         assert delegation.clean_routes('model_map', {'options': [{**edit, **change, 'api_key': 'new-synthetic'}]}, block)['options'][0]['api_key'] == 'new-synthetic'
+    # TAL-2059: a stored backend opt-in and a hand-written key survive a rename and a model edit; a key that is
+    # neither core nor declared by the backend is refused.
+    declares = hasattr(DelegationProvider, 'route_keys')
+    if declares:
+        class Daybreak(Synthetic):
+            name = 'model_map'
+            route_keys = ('daybreak', 'note')
+        register_provider(Daybreak())
+    extras = {'options': [{**stored['options'][0], 'daybreak': True, 'hand_written': {'kept': 1}}]}
+    edited = {key: value for key, value in row.items() if key != 'api_key'}
+    for change in ({'name': 'renamed', 'original_name': 'old'}, {'name': 'old', 'model': 'synthetic-2'}):
+        kept = delegation.clean_routes('model_map', {'options': [{**edited, **change, 'bogus': 1, 'flags': {'bogus': True}}]}, extras)['options'][0]
+        assert kept.get('daybreak') is True and kept.get('hand_written') == {'kept': 1}, kept
+        assert 'bogus' not in kept and 'flags' not in kept and 'original_name' not in kept, kept
+    off = delegation.clean_routes('model_map', {'options': [{**edited, 'original_name': 'old', 'flags': {'daybreak': False}}]}, extras)['options'][0]
+    on = delegation.clean_routes('model_map', {'options': [{**edited, 'flags': {'daybreak': True}}]}, {})['options'][0]
+    assert ('daybreak' in off, on.get('daybreak')) == ((False, True) if declares else (True, None)), (off, on)
+    if declares:
+        backend = next(b for b in delegation.registry({})['backends'] if b['name'] == 'model_map')
+        assert backend['route_keys'] == [{'name': 'daybreak', 'type': 'boolean'}, {'name': 'note', 'type': 'value'}], backend
     created = delegation.clean_routes('model_map', {'options': [{**row, 'name': 'new'}, row], 'default': 'new'}, block)
     assert [item['name'] for item in created['options']] == ['new', 'renamed'] and created['default'] == 'new'
     assert delegation.clean_routes('model_map', {'options': [], 'default': None}, block) == {'options': []}

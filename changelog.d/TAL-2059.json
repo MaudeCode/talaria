@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Saving a delegation model route in Talaria Web keeps its Daybreak opt-in and any hand-written settings, and the route editor offers Daybreak when the delegation backend supports it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

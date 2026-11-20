@@ -120138,6 +120138,16 @@
                                 },
                                 "label": {
                                   "type": "string"
+                                },
+                                "flags": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "additionalProperties": {
+                                    "type": "boolean"
+                                  },
+                                  "description": "TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false."
                                 }
                               },
                               "required": [
@@ -120196,6 +120206,16 @@
                                 },
                                 "label": {
                                   "type": "string"
+                                },
+                                "flags": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "additionalProperties": {
+                                    "type": "boolean"
+                                  },
+                                  "description": "TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false."
                                 }
                               },
                               "required": [
@@ -120292,6 +120312,29 @@
                               },
                               "reason": {
                                 "type": "string"
+                              },
+                              "route_keys": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "type": {
+                                      "enum": [
+                                        "boolean",
+                                        "value"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "type"
+                                  ]
+                                },
+                                "description": "TAL-2059: the route keys the backend declares beyond the core route fields (Agent v0.23.1+). A `boolean` key is edited through route `flags`; a `value` key is kept on save but not edited."
                               }
                             },
                             "required": [
@@ -120364,6 +120407,16 @@
                                   },
                                   "label": {
                                     "type": "string"
+                                  },
+                                  "flags": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "boolean"
+                                    },
+                                    "description": "TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false."
                                   }
                                 },
                                 "required": [
@@ -120419,6 +120472,16 @@
                                   },
                                   "label": {
                                     "type": "string"
+                                  },
+                                  "flags": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "boolean"
+                                    },
+                                    "description": "TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false."
                                   }
                                 },
                                 "required": [
@@ -120492,6 +120555,16 @@
                                   },
                                   "label": {
                                     "type": "string"
+                                  },
+                                  "flags": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "boolean"
+                                    },
+                                    "description": "TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false."
                                   }
                                 },
                                 "required": [
@@ -120547,6 +120620,16 @@
                                   },
                                   "label": {
                                     "type": "string"
+                                  },
+                                  "flags": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "boolean"
+                                    },
+                                    "description": "TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false."
                                   }
                                 },
                                 "required": [
@@ -122832,6 +122915,29 @@
                               },
                               "reason": {
                                 "type": "string"
+                              },
+                              "route_keys": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "type": {
+                                      "enum": [
+                                        "boolean",
+                                        "value"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "type"
+                                  ]
+                                },
+                                "description": "TAL-2059: the route keys the backend declares beyond the core route fields (Agent v0.23.1+). A `boolean` key is edited through route `flags`; a `value` key is kept on save but not edited."
                               }
                             },
                             "required": [
@@ -122904,6 +123010,16 @@
                                   },
                                   "label": {
                                     "type": "string"
+                                  },
+                                  "flags": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "boolean"
+                                    },
+                                    "description": "TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false."
                                   }
                                 },
                                 "required": [
@@ -122959,6 +123075,16 @@
                                   },
                                   "label": {
                                     "type": "string"
+                                  },
+                                  "flags": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "boolean"
+                                    },
+                                    "description": "TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false."
                                   }
                                 },
                                 "required": [
@@ -123032,6 +123158,16 @@
                                   },
                                   "label": {
                                     "type": "string"
+                                  },
+                                  "flags": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "boolean"
+                                    },
+                                    "description": "TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false."
                                   }
                                 },
                                 "required": [
@@ -123087,6 +123223,16 @@
                                   },
                                   "label": {
                                     "type": "string"
+                                  },
+                                  "flags": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "boolean"
+                                    },
+                                    "description": "TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false."
                                   }
                                 },
                                 "required": [
@@ -123533,6 +123679,29 @@
                                   },
                                   "reason": {
                                     "type": "string"
+                                  },
+                                  "route_keys": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "enum": [
+                                            "boolean",
+                                            "value"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type"
+                                      ]
+                                    },
+                                    "description": "TAL-2059: the route keys the backend declares beyond the core route fields (Agent v0.23.1+). A `boolean` key is edited through route `flags`; a `value` key is kept on save but not edited."
                                   }
                                 },
                                 "required": [
@@ -123605,6 +123774,16 @@
                                       },
                                       "label": {
                                         "type": "string"
+                                      },
+                                      "flags": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "boolean"
+                                        },
+                                        "description": "TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false."
                                       }
                                     },
                                     "required": [
@@ -123660,6 +123839,16 @@
                                       },
                                       "label": {
                                         "type": "string"
+                                      },
+                                      "flags": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "boolean"
+                                        },
+                                        "description": "TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false."
                                       }
                                     },
                                     "required": [
@@ -123733,6 +123922,16 @@
                                       },
                                       "label": {
                                         "type": "string"
+                                      },
+                                      "flags": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "boolean"
+                                        },
+                                        "description": "TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false."
                                       }
                                     },
                                     "required": [
@@ -123788,6 +123987,16 @@
                                       },
                                       "label": {
                                         "type": "string"
+                                      },
+                                      "flags": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "boolean"
+                                        },
+                                        "description": "TAL-2059: the values of the boolean route keys the backend declares (`route_keys` of type `boolean`, e.g. `daybreak`); a write sets each true key and removes a stored boolean one sent false."
                                       }
                                     },
                                     "required": [
