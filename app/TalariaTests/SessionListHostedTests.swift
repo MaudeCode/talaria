@@ -567,6 +567,57 @@ final class SessionListHostedTests: XCTestCase {
         _ = try await requireElement(in: window) { HostedAccessibility.identifier(of: $0) == "sidebar-send-feedback" }
     }
 
+    /// A drag that opens the drawer draws its settled toolbar before release, so letting go moves nothing (TAL-2570).
+    func testAnOpeningDragDrawsTheSettledSidebarToolbarBeforeRelease() async throws {
+        let drawer = try await DrawerDrag(test: self)
+        let settled = drawer.layout()
+        try await drawer.close()
+
+        drawer.edgePan(.began, 0)
+        drawer.edgePan(.changed, 0.6)
+        _ = await awaitRenderedQuiet(in: drawer.window) { drawer.layout() }
+        attachHostedScreenshot(drawer.window, name: "sidebar-opening-drag")
+        XCTAssertEqual(drawer.layout(), settled, "The partly open drawer must draw its settled toolbar and list")
+        XCTAssertTrue(drawer.sidebarIsHiddenFromVoiceOver, "The drawer's controls stay out of VoiceOver until it opens")
+        XCTAssertEqual(drawer.toggle, "Open navigation", "The drawer opens only on release")
+
+        drawer.edgePan(.ended, 0.6)
+        _ = await awaitRenderedQuiet(in: drawer.window) { drawer.layout() }
+        XCTAssertFalse(drawer.sidebarIsHiddenFromVoiceOver, "Releasing past halfway opens the drawer")
+        XCTAssertEqual(drawer.toggle, "Close navigation")
+        XCTAssertEqual(drawer.layout(), settled, "Releasing must not insert the toolbar and move the list")
+    }
+
+    /// A cancelled opening drag draws the toolbar while visible and leaves the drawer closed, with its controls and
+    /// its search field never taking VoiceOver or keyboard focus (TAL-2570).
+    func testACancelledOpeningDragLeavesTheDrawerClosedWithoutTakingFocus() async throws {
+        let drawer = try await DrawerDrag(test: self)
+        // A search left open reappears with the drawer, and must not take the keyboard while the drag decides.
+        let search = try XCTUnwrap(HostedAccessibility.toolbarItem("Search", in: drawer.window))
+        XCTAssertTrue(HostedAccessibility.activate(search))
+        let focused = await awaitCondition { drawer.focusedField != nil }
+        XCTAssertTrue(focused, "The sidebar search never took focus")
+        _ = await awaitRenderedQuiet(in: drawer.window) { drawer.layout() }
+        let settled = drawer.layout()
+        try await drawer.close()
+        XCTAssertNil(drawer.focusedField)
+
+        drawer.edgePan(.began, 0)
+        drawer.edgePan(.changed, 0.3)
+        _ = await awaitRenderedQuiet(in: drawer.window) { drawer.layout() }
+        XCTAssertEqual(drawer.layout(), settled, "The partly open drawer must draw its settled toolbar and search")
+        XCTAssertTrue(drawer.sidebarIsHiddenFromVoiceOver)
+        XCTAssertNil(drawer.focusedField, "An uncommitted drag must not focus the sidebar search")
+
+        drawer.edgePan(.cancelled, 0.3)
+        let dismissed = await awaitCondition { drawer.layout().items.isEmpty }
+        XCTAssertTrue(dismissed, "The closed drawer must take its toolbar away")
+        XCTAssertTrue(drawer.sidebarIsHiddenFromVoiceOver)
+        XCTAssertFalse(drawer.contentIsHiddenFromVoiceOver, "The screen keeps VoiceOver after a cancelled drag")
+        XCTAssertNil(drawer.focusedField)
+        XCTAssertNotNil(HostedAccessibility.toolbarItem("Open navigation", in: drawer.window), "The drawer stays closed")
+    }
+
     func testResizingAnOpenOverlayIntoTilingConsumesDrawerIntentAndRotationCollapsesTheColumn() async throws {
         let fixture = try FixtureApp(for: self)
         UserDefaults.standard.set("all", forKey: SessionSidebarDisclosureSettings.regularLandscapeVisibilityKey)
@@ -3799,5 +3850,68 @@ private final class RowSkipProtocol: URLProtocol {
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8))
         client?.urlProtocolDidFinishLoading(self)
+    }
+}
+
+/// The phone's session list after its drawer opened once, dragged from closed through the drawer's own edge-pan handler.
+@MainActor
+private final class DrawerDrag {
+    /// What the drawer draws: its toolbar's items besides the toggle, its bars' heights and its top list row's height.
+    struct Layout: Equatable {
+        var items: [String]
+        var bars: [CGFloat]
+        var topRow: CGFloat?
+    }
+
+    let window: UIWindow
+    private let fixture: FixtureApp
+    private let test: XCTestCase
+    private let controller: AppSidebarController
+    private let navigation: UINavigationController
+
+    init(test: XCTestCase) async throws {
+        self.test = test
+        fixture = try FixtureApp(for: test)
+        window = try test.hostWindow(fixture.sessionList())
+        try await test.openSidebar(in: window)
+        _ = try await test.requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Fixture Session 01") == true }
+        controller = try XCTUnwrap(window.rootViewController?.firstDescendant(ofType: AppSidebarController.self))
+        navigation = try XCTUnwrap(controller.children.first?.firstDescendant(ofType: UINavigationController.self))
+        _ = await test.awaitRenderedQuiet(in: window) { self.layout() }
+    }
+
+    var sidebarIsHiddenFromVoiceOver: Bool { controller.children[0].view.accessibilityElementsHidden }
+    var contentIsHiddenFromVoiceOver: Bool { controller.children[1].view.accessibilityElementsHidden }
+    var focusedField: UITextField? { window.firstView(ofType: UITextField.self) { $0.isFirstResponder } }
+    /// The drawer toggle names the committed intent, not the drawn position.
+    var toggle: String? { labels.first { $0.hasSuffix(" navigation") } }
+    private var labels: [String] {
+        HostedAccessibility.toolbarItems(under: navigation).map { $0.accessibilityLabel ?? $0.title ?? "" }
+    }
+
+    func layout() -> Layout {
+        let list = navigation.view.firstView(ofType: UICollectionView.self)
+        let top = list?.visibleCells.map { $0.convert($0.bounds, to: nil).minY }.min()
+        return Layout(
+            items: labels.filter { $0 != toggle },
+            bars: [
+                navigation.isNavigationBarHidden ? 0 : navigation.navigationBar.bounds.height,
+                navigation.isToolbarHidden ? 0 : navigation.toolbar.bounds.height,
+            ].map { $0.rounded() },
+            topRow: top?.rounded()
+        )
+    }
+
+    /// Moves the drawer `fraction` of its width toward open, as the screen-edge pan would.
+    func edgePan(_ state: UIGestureRecognizer.State, _ fraction: CGFloat) {
+        controller.perform(NSSelectorFromString("edgePanned:"),
+                           with: ScriptedPan(state: state, x: fraction * controller.revealWidth))
+    }
+
+    func close() async throws {
+        let close = try await test.requireElement(in: window, label: "Close navigation")
+        XCTAssertTrue(HostedAccessibility.activate(close))
+        let closed = await test.awaitCondition { self.sidebarIsHiddenFromVoiceOver && self.layout().items.isEmpty }
+        XCTAssertTrue(closed, "The drawer did not close")
     }
 }

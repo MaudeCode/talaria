@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Dragging the sidebar open shows its toolbar right away, so nothing jumps when you let go.",
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}

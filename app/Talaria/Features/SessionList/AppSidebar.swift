@@ -6,7 +6,10 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
     @Bindable var presentation: AppSidebarPresentation
     @Bindable var searchPull: SidebarSearchPull
     let searchUsesBottomBar: Bool
+    /// Draws the toolbar and search field; the drawer sets it from the first frame it shows.
     let isActive: Bool
+    /// Whether the panel may take keyboard focus: a drawer only once it is open, not while a drag decides (TAL-2570).
+    let ownsFocus: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.windowOpener) private var windowOpener
     @Environment(\.windowSceneID) private var windowSceneID
@@ -38,7 +41,7 @@ struct AppSidebar<Sessions: View, Actions: ToolbarContent>: View {
                         text: $searchPull.text,
                         prompt: "Search",
                         clearLabel: "Close search",
-                        autofocus: true,
+                        autofocus: ownsFocus,
                         onClose: {
                             searchPull.text = ""
                             searchPull.isSearchPresented = false
