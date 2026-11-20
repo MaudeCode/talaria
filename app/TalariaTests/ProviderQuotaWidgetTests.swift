@@ -265,6 +265,71 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         XCTAssertEqual(ProviderQuotaForecastSummary(state: legacyState).forecastLabel, "Forecast unavailable")
     }
 
+    /// TAL-1533: the App renders the server's `is_stale`, `stale_since` and `pace_needs_refresh`, and on the shared
+    /// fixture they give the values the App computed itself before the server sent them.
+    func testServerFreshnessFieldsRenderTheValuesTheAppComputed() throws {
+        // app/TalariaTests/<file> -> repository root
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: root.appendingPathComponent("contracts/fixtures/provider-quotas.json"))
+        ) as? [String: Any])
+        func source(_ edit: (inout [String: Any]) -> Void) throws -> ProviderQuotaWidgetSource {
+            var body = fixture
+            var sources = try XCTUnwrap(body["sources"] as? [[String: Any]])
+            edit(&sources[0])
+            body["sources"] = sources
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let response = try decoder.decode(ProviderQuotasResponse.self, from: JSONSerialization.data(withJSONObject: body))
+            return ProviderQuotaWidgetSource(try XCTUnwrap(response.sources.first), scopeID: "qscope_fixture", scopeLabel: "Fixture")
+        }
+        let served = try source { _ in }
+        let preServer = try source { row in
+            row["is_stale"] = nil
+            row["stale_since"] = nil
+            row["windows"] = (row["windows"] as? [[String: Any]])?.map { var window = $0; window["pace_needs_refresh"] = nil; return window }
+        }
+        let fetched = served.freshnessDate
+        let sessionReset = try XCTUnwrap(ProviderQuotaDateParser.date(from: served.windows[0].resetAt))
+        let state = { (source: ProviderQuotaWidgetSource, settings: ProviderQuotaEvaluationSettings, date: Date) in
+            ProviderQuotaPresentation.state(for: source, settings: settings, at: date)
+        }
+        // What the screens render; the decoded window itself differs by the new field.
+        let rendered = { (state: ProviderQuotaPresentationState) in
+            "\((state.percent, state.remainingPercent, state.resetAt, state.isStale, state.urgency, state.pace, state.forecast, state.paceNeedsRefresh, state.computedAt))"
+        }
+        for date in [fetched, fetched.addingTimeInterval(900), fetched.addingTimeInterval(901), sessionReset] {
+            for mode in [ProviderQuotaPercentageMode.used, .remaining] {
+                for selection in [ProviderQuotaWidgetWindowSelection.automatic, .session, .weekly] {
+                    for basis in [ProviderQuotaWidgetColorBasis.overall, .pace] {
+                        let settings = ProviderQuotaEvaluationSettings(percentageMode: mode, colorBasis: basis, windowSelection: selection)
+                        XCTAssertEqual(rendered(state(served, settings, date)), rendered(state(preServer, settings, date)), "\(date) \(mode) \(selection) \(basis)")
+                    }
+                }
+            }
+        }
+        let session = ProviderQuotaEvaluationSettings(percentageMode: .used, colorBasis: .overall, windowSelection: .session)
+        XCTAssertFalse(state(served, session, fetched.addingTimeInterval(900)).isStale)
+        XCTAssertTrue(state(served, session, fetched.addingTimeInterval(901)).isStale)
+        XCTAssertEqual(state(served, session, fetched).percent, 10)
+        XCTAssertNotNil(state(served, session, sessionReset.addingTimeInterval(-1)).pace)
+        XCTAssertTrue(state(served, session, sessionReset).paceNeedsRefresh)
+
+        // The server's decisions win over the App's clock: a stale copy, and a pace its read saw expire.
+        let decided = try source { row in
+            row["is_stale"] = true
+            row["windows"] = (row["windows"] as? [[String: Any]])?.map { var window = $0; window["pace_needs_refresh"] = true; return window }
+        }
+        let decidedState = state(decided, session, fetched)
+        XCTAssertTrue(decidedState.isStale)
+        XCTAssertEqual(decidedState.urgency, .stale)
+        XCTAssertTrue(decidedState.paceNeedsRefresh)
+        XCTAssertNil(decidedState.pace)
+        // `stale_since` decides when a copy turns stale.
+        let early = try source { row in row["stale_since"] = "2026-09-28T08:00:00Z" }
+        XCTAssertTrue(state(early, session, fetched.addingTimeInterval(31)).isStale)
+    }
+
     func testWidgetProfilesCaptureProviderIconVisibilityAndStyle() throws {
         let suite = "ProviderQuotaWidgetProfiles.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -465,21 +530,8 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         XCTAssertNil(resolved[0])
     }
 
-    func testSharedStatusAndPercentagePresentationCoversDegradedStates() {
+    func testSharedStatusPresentationCoversDegradedStates() {
         XCTAssertEqual(ProviderQuotaPresentation.statusLabel("dead"), "Credential unavailable")
-        XCTAssertEqual(
-            ProviderQuotaPresentation.usedPercent(
-                ProviderQuotaWindow(label: "Weekly", remainingPercent: 60)
-            ),
-            40
-        )
-        XCTAssertEqual(
-            ProviderQuotaPresentation.percent(
-                ProviderQuotaWindow(label: "Weekly", usedPercent: 40),
-                mode: .remaining
-            ),
-            60
-        )
     }
 
     func testProviderIconRegistryResolvesAliasesStylesAndFallbacks() {

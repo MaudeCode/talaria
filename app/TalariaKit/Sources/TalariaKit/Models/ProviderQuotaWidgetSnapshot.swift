@@ -27,6 +27,9 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
     public let computedAt: String?
     // Optional so a snapshot written before TAL-411 still decodes; widgets show it while the server is unreachable.
     public let urgency: ProviderQuotaUrgencyLevels?
+    // Optional so a snapshot written before TAL-1533 still decodes.
+    public let isStale: Bool?
+    public let staleSince: String?
 
     public init(
         sourceID: String,
@@ -48,7 +51,9 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
         weeklyWindowIndex: Int? = nil,
         computedAt: String? = nil,
         urgency: ProviderQuotaUrgencyLevels? = nil,
-        unavailableReason: String? = nil
+        unavailableReason: String? = nil,
+        isStale: Bool? = nil,
+        staleSince: String? = nil
     ) {
         self.sourceID = sourceID
         self.scopeID = scopeID
@@ -70,6 +75,8 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
         self.weeklyWindowIndex = weeklyWindowIndex
         self.computedAt = computedAt
         self.urgency = urgency
+        self.isStale = isStale
+        self.staleSince = staleSince
     }
 
     public init(_ source: ProviderQuotaSource, scopeID: String, scopeLabel: String) {
@@ -92,7 +99,9 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
             weeklyWindowIndex: source.weeklyWindowIndex,
             computedAt: source.computedAt,
             urgency: source.urgency,
-            unavailableReason: source.unavailableReason
+            unavailableReason: source.unavailableReason,
+            isStale: source.isStale,
+            staleSince: source.staleSince
         )
     }
 
@@ -116,7 +125,9 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
             sessionWindowIndex: source.sessionWindowIndex,
             weeklyWindowIndex: source.weeklyWindowIndex,
             computedAt: source.computedAt,
-            urgency: source.urgency
+            urgency: source.urgency,
+            isStale: source.isStale,
+            staleSince: source.staleSince
         )
     }
 
@@ -141,8 +152,18 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
             weeklyWindowIndex: weeklyWindowIndex,
             computedAt: computedAt,
             urgency: urgency,
-            unavailableReason: unavailableReason
+            unavailableReason: unavailableReason,
+            isStale: isStale,
+            staleSince: staleSince
         )
+    }
+
+    /// The server's stale decision, or a copy shown past its `staleSince` (a widget's cached snapshot).
+    public func isStale(at date: Date) -> Bool {
+        // Old-server fallback (TAL-1533): the stale status, and 15 minutes after the provider read.
+        let since = ProviderQuotaDateParser.date(from: staleSince)
+            ?? freshnessDate.addingTimeInterval(ProviderQuotaWidgetSnapshot.staleAfter)
+        return (isStale ?? (status == "stale")) || date > since
     }
 }
 

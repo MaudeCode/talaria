@@ -201,6 +201,8 @@ const selfHostedEndpoint = (pid: string, config: Config): boolean => SELF_HOSTED
 /** Python `_unqualified_model_id`: strip a picker routing hint (`@provider:`). */
 const unqualifiedModelId = (id: string): string => parseProviderQualifiedModel(id)?.[0] ?? id.trim()
 const ACCOUNT_USAGE_CACHE_TTL_S = 45
+/** TAL-1533: how long a quota snapshot stays fresh after its provider read. */
+const QUOTA_FRESH_S = 15 * 60
 /** TAL-807: the oldest account-usage read the picker still shows a quota level from. */
 const PICKER_USAGE_MAX_AGE_S = 600
 /** TAL-807: how long a picker read waits for a provider's first account-usage read. */
@@ -500,9 +502,14 @@ export function classifyQuotaSource<T extends { status: string; windows: QuotaWi
  * TAL-1870: what a quota row renders, applied to the final rows so stale copies are covered. A source the server marks
  * stale or unavailable outranks its cached windows' levels; otherwise the window's pace level, which already falls back
  * to its remaining classification without a pace (TAL-411). The App's `ProviderQuotaPresentation.state` orders them the same way.
+ * TAL-1533: `is_stale` (the server's own stale decision, as the Web shows it), `stale_since` (when a cached copy of
+ * this data turns stale), and, as of `at`, each window's `pace_needs_refresh`.
  */
-function withQuotaDisplay<T extends QuotaSourceRow>(source: T): T {
+function withQuotaDisplay<T extends QuotaSourceRow>(source: T, at: number): T {
   const urgency = source.urgency as QuotaUrgency | undefined
+  // The data's own time: the provider read, else this source's reference time (retained by a stale copy).
+  const freshMs = Date.parse(isoUtc(source.fetched_at) ?? str(source.computed_at))
+  const staleSince = Number.isNaN(freshMs) ? null : freshMs / 1000 + QUOTA_FRESH_S
   const level = (w?: ClassifiedQuotaWindow): QuotaLevel => source.status !== 'available' ? urgency?.pace ?? 'unavailable' : w?.urgency.pace ?? urgency?.pace ?? 'healthy'
   const name = str(source.provider_label) || source.provider_id || source.source_id
   return {
@@ -510,7 +517,11 @@ function withQuotaDisplay<T extends QuotaSourceRow>(source: T): T {
     display_name: source.account_label && source.account_label !== name ? `${name} · ${source.account_label}` : name,
     status_message: str(source.unavailable_reason) || str(source.message) || null,
     display_level: level(),
-    windows: (source.windows as ClassifiedQuotaWindow[] | undefined ?? []).map((w) => ({ ...w, display_level: level(w) })),
+    is_stale: source.status === 'stale',
+    stale_since: staleSince === null ? null : isoAt(staleSince),
+    windows: (source.windows as ClassifiedQuotaWindow[] | undefined ?? []).map((w) => ({
+      ...w, display_level: level(w), pace_needs_refresh: w.pace !== null && at * 1000 >= Date.parse(w.pace.valid_until),
+    })),
   }
 }
 
@@ -2012,7 +2023,7 @@ export class ProviderCatalog {
     if (currentSource !== source) { poolUnknown = true; sources = [] }
     const latestMembership = this.lastQuotaSources.get(cacheKey)?.membership
     const availability = this.availability(currentSource, !poolUnknown, sources.length > 0)
-    const rows = withProviderHeadlines(sources.map(withQuotaDisplay))
+    const rows = withProviderHeadlines(sources.map((row) => withQuotaDisplay(row, at)))
     // A `?source=` read answers one row, so only a full read carries the page's figures.
     const openRouter = status.providers.some((p) => p.id === 'openrouter' && p.configured === true)
     // The provider the default model routes to, resolved as `buildModels` resolves `default_provider_id`.
@@ -2028,7 +2039,7 @@ export class ProviderCatalog {
   async cachedQuotaSources(profileHome: string, profile: string): Promise<QuotaSourceRow[] | null> {
     const cached = this.lastQuotaSources.get(`${profileHome}\0${await this.quotaProfileScopeId(profile)}`)
     if (cached?.source !== this.sourceFingerprint(profileHome)) return null
-    return cached.sources.map((row) => withQuotaDisplay(cached.unconfirmed ? this.staleQuotaSource(row) : row))
+    return cached.sources.map((row) => withQuotaDisplay(cached.unconfirmed ? this.staleQuotaSource(row) : row, this.deps.now()))
   }
 
   /** `unconfirmed` marks a snapshot the latest read could not confirm, which `quotas` answered stale. */

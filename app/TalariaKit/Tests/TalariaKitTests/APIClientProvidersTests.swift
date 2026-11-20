@@ -9,13 +9,17 @@ final class APIClientProvidersTests: APIClientTestCase {
     func testUnknownQuotaMembershipRetainsOnlyTheMatchingSourceGeneration() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let initial = try decoder.decode(ProviderQuotasResponse.self, from: Data(#"{"scope_id":"qscope_test","profile_id":"default","availability":{"status":"available","authoritative":true,"generation":"generation-one"},"sources":[{"source_id":"qsrc_test","status":"available","windows":[{"label":"5h","remaining_percent":75}]}]}"#.utf8))
+        let initial = try decoder.decode(ProviderQuotasResponse.self, from: Data(#"{"scope_id":"qscope_test","profile_id":"default","availability":{"status":"available","authoritative":true,"generation":"generation-one"},"sources":[{"source_id":"qsrc_test","status":"available","is_stale":false,"windows":[{"label":"5h","remaining_percent":75}]}]}"#.utf8))
         let unavailable = try decoder.decode(ProviderQuotasResponse.self, from: Data(#"{"scope_id":"qscope_test","profile_id":"default","availability":{"status":"unavailable","authoritative":false,"generation":"generation-one","unavailable_reason":"Agent recovery is incomplete."},"sources":[]}"#.utf8))
         let retained = unavailable.retainingUnconfirmedSources(initial.sources, scopeID: initial.scopeID, generation: initial.availability?.generation)
         XCTAssertEqual(retained.map(\.id), ["qsrc_test"])
         XCTAssertEqual(retained.first?.status, "unavailable")
         XCTAssertEqual(retained.first?.windows.first?.remainingPercent, 75)
         XCTAssertEqual(retained.first?.urgency?.remaining, .unavailable)
+        XCTAssertEqual(retained.first?.isStale, false)
+        // A read that keeps last-confirmed data marks each retained source stale, as the server marks its own copies.
+        let stale = try decoder.decode(ProviderQuotasResponse.self, from: Data(#"{"scope_id":"qscope_test","availability":{"status":"stale","authoritative":false,"generation":"generation-one"},"sources":[]}"#.utf8))
+        XCTAssertEqual(stale.retainingUnconfirmedSources(initial.sources, scopeID: initial.scopeID, generation: "generation-one").first?.isStale, true)
         XCTAssertTrue(unavailable.retainingUnconfirmedSources(initial.sources, scopeID: "another-server-profile", generation: "generation-one").isEmpty)
         XCTAssertTrue(unavailable.retainingUnconfirmedSources(initial.sources, scopeID: initial.scopeID, generation: "replacement-credential").isEmpty)
         XCTAssertTrue(unavailable.retainingUnconfirmedSources([], scopeID: initial.scopeID, generation: initial.availability?.generation).isEmpty)
@@ -205,6 +209,9 @@ final class APIClientProvidersTests: APIClientTestCase {
         XCTAssertEqual(loaded.urgency, ProviderQuotaUrgencyLevels(remaining: .healthy, pace: .warning))
         XCTAssertEqual(loaded.windows[1].urgency?.pace, .warning)
         XCTAssertEqual(loaded.windows[1].projectionEligible, true)
+        XCTAssertEqual(loaded.isStale, false)
+        XCTAssertEqual(loaded.staleSince, "2026-09-28T08:14:30Z")
+        XCTAssertEqual(loaded.windows.map(\.paceNeedsRefresh), [false, false, false])
 
         // Written by a build before the server shipped pace: no pace, forecast, indexes, or computedAt.
         defaults.set(Data("""
@@ -234,6 +241,8 @@ final class APIClientProvidersTests: APIClientTestCase {
         XCTAssertNil(legacy.computedAt)
         XCTAssertNil(legacy.urgency)
         XCTAssertNil(legacy.windows.first?.urgency)
+        XCTAssertNil(legacy.staleSince)
+        XCTAssertNil(legacy.windows.first?.paceNeedsRefresh)
     }
 
     private func decodedQuotaFixture() throws -> ProviderQuotasResponse {

@@ -54,7 +54,8 @@
             "remaining": "healthy",
             "pace": "healthy"
           },
-          "display_level": "healthy"
+          "display_level": "healthy",
+          "pace_needs_refresh": false
         },
         {
           "label": "Weekly",
@@ -85,7 +86,8 @@
             "remaining": "healthy",
             "pace": "warning"
           },
-          "display_level": "warning"
+          "display_level": "warning",
+          "pace_needs_refresh": false
         },
         {
           "label": "Monthly",
@@ -101,7 +103,8 @@
             "remaining": "healthy",
             "pace": "healthy"
           },
-          "display_level": "healthy"
+          "display_level": "healthy",
+          "pace_needs_refresh": false
         }
       ],
       "balances": [],
@@ -121,7 +124,9 @@
       "urgency": {
         "remaining": "healthy",
         "pace": "warning"
-      }
+      },
+      "is_stale": false,
+      "stale_since": "2026-09-28T08:14:30Z"
     }
   ],
   "retained_display_level": null,
