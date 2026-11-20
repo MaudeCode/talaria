@@ -91,6 +91,29 @@ public struct ApprovalScope: Decodable, Equatable, Sendable {
     }
 }
 
+/// TAL-2022: the server's "in plain words" summary of what the approval's command does.
+public struct ApprovalExplanation: Decodable, Equatable, Sendable {
+    public enum State: String, Sendable { case pending, ready, unavailable }
+
+    public let state: State
+    /// The summary; set only when `state` is `ready`.
+    public let text: String?
+
+    init(state: State, text: String? = nil) {
+        self.state = state
+        self.text = text
+    }
+
+    enum CodingKeys: String, CodingKey { case state, text }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // A state a newer server adds reads as no summary.
+        state = container.decodeLossyStringIfPresent(forKey: .state).flatMap(State.init(rawValue:)) ?? .unavailable
+        text = container.decodeLossyStringIfPresent(forKey: .text)
+    }
+}
+
 public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
     public var id: String {
         if let approvalId, !approvalId.isEmpty {
@@ -120,6 +143,8 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
     public let scope: ApprovalScope?
     /// TAL-974: false only for an older server without the `scope` field, whose help names the raw keys instead.
     let sendsScope: Bool
+    /// TAL-2022: the line under the command; nil while the server's `explain_approvals` setting is off or the server is older.
+    public let explanation: ApprovalExplanation?
     /// TAL-1043: the choices the approval's owner accepts; nil (an older server without the field) allows all four.
     let allowedChoices: [ApprovalChoice]?
     /// TAL-1043: false when the owner cannot turn on approval bypass for the session.
@@ -176,8 +201,10 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         allowText: String? = nil,
         sendsAllowText: Bool = false,
         scope: ApprovalScope? = nil,
-        sendsScope: Bool = false
+        sendsScope: Bool = false,
+        explanation: ApprovalExplanation? = nil
     ) {
+        self.explanation = explanation
         self.scope = scope
         self.sendsScope = sendsScope
         self.tool = tool
@@ -216,11 +243,13 @@ public struct PendingApproval: Decodable, Equatable, Identifiable, Sendable {
         case allowText
         case allowTextSnake = "allow_text"
         case scope
+        case explanation
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         approvalId = Self.decodeApprovalId(from: container)
+        explanation = try? container.decodeIfPresent(ApprovalExplanation.self, forKey: .explanation)
         headId = Self.normalizedApprovalId(
             container.decodeLossyStringIfPresent(forKey: .headId) ?? container.decodeLossyStringIfPresent(forKey: .headIdSnake)
         )

@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useId, useRef, useState } from 'react'
-import { AlertTriangle, ChevronDown, ChevronUp, X } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronUp, Loader2, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { ApprovalPending } from '../../contracts'
 import * as api from '../../api/endpoints'
@@ -44,6 +44,18 @@ function scopeSentence(pending: ApprovalPending): string | null {
 
 /** How long the exit waits for its transition to report its end: past the 320 ms slide in approvals.css. */
 const EXIT_FALLBACK_MS = 500
+
+/** TAL-2022: the server's "in plain words" summary under the command; only this line shows a busy state while it is written. */
+function ApprovalExplanation({ explanation }: { explanation: NonNullable<ApprovalPending['explanation']> }) {
+  return (
+    <p className="approval-explanation mt-2 text-[13px] text-muted" data-state={explanation.state} aria-live="polite">
+      <span className="font-medium text-text">{m.approval_explanation_label()}</span>{' '}
+      {explanation.state === 'pending'
+        ? <span className="inline-flex items-center gap-1.5"><Loader2 size={12} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />{m.approval_explanation_pending()}</span>
+        : explanation.state === 'ready' ? explanation.text : m.approval_explanation_unavailable()}
+    </p>
+  )
+}
 
 /**
  * Destructive-command approval. Rendered inline above the composer (legacy
@@ -138,6 +150,7 @@ export function ApprovalCard({ sessionId, pending, onResolved, onLeaving, onDism
           <div className="approval-body max-h-[max(4rem,calc(100dvh-290px))] overflow-y-auto">
             {pending.description && <div className="approval-desc mt-1 text-[13px] text-muted" id={descriptionId}>{pending.description}</div>}
             {fields ? <div className="approval-args mt-2 max-h-40 overflow-auto"><FieldRows fields={fields} /></div> : command && <pre className="approval-cmd mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 font-mono text-[12.5px] text-pre-text">{command}</pre>}
+            {pending.explanation && <ApprovalExplanation explanation={pending.explanation} />}
           </div>
           {telling ? <form className="approval-tell mt-3 flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); tell() }}>
             <textarea

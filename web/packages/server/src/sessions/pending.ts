@@ -7,7 +7,17 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { SessionEventBus } from './events.js'
 import { str } from '../util.js'
-import { ApprovalChoiceSchema, type ApprovalScope, type ClarifyAnswers, type ClarifyStep, type PromptWithdrawal, type VaultPrompt, type VaultPromptField } from '@maudecode/talaria-web-contracts'
+import { displaySetting } from './display-settings.js'
+import { ApprovalChoiceSchema, type ApprovalExplanation, type ApprovalScope, type ClarifyAnswers, type ClarifyStep, type PromptWithdrawal, type VaultPrompt, type VaultPromptField } from '@maudecode/talaria-web-contracts'
+
+/**
+ * TAL-2022: writes an approval's "in plain words" summary. `explain` returns the text to ship (null or a throw: unavailable);
+ * `explained` runs once a summary settles while its approval still heads the queue, so the live chat stream re-sends the head.
+ */
+export interface ApprovalExplainer {
+  explain(sid: string, entry: Record<string, unknown>): Promise<string | null>
+  explained(sid: string): void
+}
 
 export interface PendingSubscriber { queue: Record<string, unknown>[]; wake: (() => void) | null; closed: boolean }
 
@@ -211,14 +221,48 @@ export class PendingPrompts {
   private readonly clarifies = new Map<string, Queue>()
   /** Callbacks for clarifies the server answers itself, called once the entry leaves the queue for any reason. */
   private readonly removals = new Map<string, () => void>()
+  /** TAL-2022: each queued approval's summary by `sid\0approval_id`, generated once and dropped when it leaves the queue. */
+  private readonly explanations = new Map<string, ApprovalExplanation>()
+  private explainer: ApprovalExplainer | null = null
 
   constructor(private readonly events: SessionEventBus, private readonly now: () => number = () => Date.now() / 1000) {}
+
+  setApprovalExplainer(explainer: ApprovalExplainer | null): void { this.explainer = explainer }
+
+  /**
+   * TAL-2022: the head's `explanation` while `explain_approvals` is on. The first read asks the explainer; every later read
+   * of the same approval ships the cached state.
+   */
+  private explanation(sid: string, head: Record<string, unknown>): { explanation?: ApprovalExplanation } {
+    const approvalId = str(head.approval_id)
+    if (!this.explainer || !approvalId || !displaySetting('explain_approvals') || !(str(head.command).trim() || str(head.description).trim())) return {}
+    const key = `${sid}\0${approvalId}`
+    const cached = this.explanations.get(key)
+    if (cached) return { explanation: cached }
+    const pending: ApprovalExplanation = { state: 'pending' }
+    this.explanations.set(key, pending)
+    const explainer = this.explainer
+    void explainer.explain(sid, head).catch(() => null).then((text) => {
+      // A resolved approval dropped its entry; its late answer goes nowhere.
+      if (this.explanations.get(key) !== pending) return
+      this.explanations.set(key, text ? { state: 'ready', text } : { state: 'unavailable' })
+      const q = this.approvals.get(sid)
+      if (q?.entries[0]?.approval_id !== approvalId) return
+      this.notify(q)
+      explainer.explained(sid)
+    })
+    return { explanation: pending }
+  }
+
+  private forgetExplanations(sid: string, entries: Record<string, unknown>[]): void {
+    for (const entry of entries) this.explanations.delete(`${sid}\0${str(entry.approval_id)}`)
+  }
 
   private queue(map: Map<string, Queue>, sid: string): Queue {
     let q = map.get(sid)
     if (!q) {
       // TAL-1463/TAL-1469: a head carries `head_id`, the identity Relay shows for it, and an approval its `action_text`.
-      q = new Queue(map === this.approvals ? (head) => approvalHead(sid, head) : (head) => clarifyHead(sid, head), () => this.withdrawals.get(sid) ?? null)
+      q = new Queue(map === this.approvals ? (head) => ({ ...approvalHead(sid, head), ...this.explanation(sid, head) }) : (head) => clarifyHead(sid, head), () => this.withdrawals.get(sid) ?? null)
       map.set(sid, q)
     }
     return q
@@ -314,6 +358,7 @@ export class PendingPrompts {
       if (index < 0) return { entry: null, found: false }
     }
     const [entry] = q.entries.splice(index, 1)
+    if (entry) this.forgetExplanations(sid, [entry])
     if (index === 0) this.rememberWithdrawal(sid, 'approval', reason)
     this.prune(this.approvals, sid, q)
     this.notify(q)
@@ -325,6 +370,7 @@ export class PendingPrompts {
     const q = this.approvals.get(sid)
     if (!q) return []
     const entries = q.entries.splice(0)
+    this.forgetExplanations(sid, entries)
     this.prune(this.approvals, sid, q)
     this.notify(q)
     if (entries.length) this.events.publish('attention_resolved')
@@ -342,6 +388,7 @@ export class PendingPrompts {
     const dropped = q.entries.filter((e) => requestIds.has(str(e.request_id)))
     if (!dropped.length) return []
     q.entries.splice(0, q.entries.length, ...q.entries.filter((e) => !dropped.includes(e)))
+    this.forgetExplanations(sid, dropped)
     this.prune(this.approvals, sid, q)
     this.notify(q)
     this.events.publish('attention_resolved')

@@ -80,7 +80,7 @@ struct ServerSettingsSections: View {
                     (.mergeRepeatedToolCalls, "square.stack"), (.liveToolProgress, "timer"), (.showToolLookups, "text.magnifyingglass")
                 ])
                 toolCallsSection(String(localized: "Around the Chat"), settings, [
-                    (.statusChipCurrentAction, "ellipsis.bubble"), (.turnSummary, "text.badge.checkmark")
+                    (.statusChipCurrentAction, "ellipsis.bubble"), (.turnSummary, "text.badge.checkmark"), (.explainApprovals, "text.bubble")
                 ])
             case .liveActivity:
                 // TAL-2341: off, Live Activities and push alerts name no call.

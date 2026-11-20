@@ -549,6 +549,10 @@
                               "type": "boolean",
                               "description": "TAL-2148: fade the streaming reply's new words in (default true); clients skip code and honour reduced motion."
                             },
+                            "explain_approvals": {
+                              "type": "boolean",
+                              "description": "TAL-2022: approval cards show an AI summary of what the command does (default false); off, the server generates none and sends no `explanation`."
+                            },
                             "show_tool_lookups": {
                               "type": "boolean",
                               "description": "TAL-2331: show the Agent's `tool_search` and `tool_describe` calls in the transcript (default false); off, the server marks them `hidden`."
@@ -114710,6 +114714,26 @@
                               ],
                               "description": "TAL-974: what Allow session and Always allow cover. Null when Allow session is not offered or the Agent named no pattern key; absent on an older server."
                             },
+                            "explanation": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "pending",
+                                    "ready",
+                                    "unavailable"
+                                  ],
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "state"
+                              ],
+                              "description": "TAL-2022: the \"in plain words\" line under the command. Absent while the `explain_approvals` setting is off, when the approval names no command or description, and on an older server."
+                            },
                             "approval_id": {
                               "type": "string"
                             },
@@ -117035,6 +117059,10 @@
                       "type": "boolean",
                       "description": "TAL-2148: fade the streaming reply's new words in (default true); clients skip code and honour reduced motion."
                     },
+                    "explain_approvals": {
+                      "type": "boolean",
+                      "description": "TAL-2022: approval cards show an AI summary of what the command does (default false); off, the server generates none and sends no `explanation`."
+                    },
                     "show_tool_lookups": {
                       "type": "boolean",
                       "description": "TAL-2331: show the Agent's `tool_search` and `tool_describe` calls in the transcript (default false); off, the server marks them `hidden`."
@@ -117565,6 +117593,10 @@
                     "fade_text_effect": {
                       "type": "boolean",
                       "description": "TAL-2148: fade the streaming reply's new words in (default true); clients skip code and honour reduced motion."
+                    },
+                    "explain_approvals": {
+                      "type": "boolean",
+                      "description": "TAL-2022: approval cards show an AI summary of what the command does (default false); off, the server generates none and sends no `explanation`."
                     },
                     "show_tool_lookups": {
                       "type": "boolean",

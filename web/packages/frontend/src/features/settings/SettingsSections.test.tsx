@@ -85,7 +85,7 @@ const PLACEMENT: Record<string, string> = {
   workspace_panel_open: 'chat/workspace-panel', workspace_todos_tab: 'chat/workspace-panel', new_chat_on_workspace_switch: 'chat/workspace-panel',
   terminal_auto_expand_on_output: 'chat/workspace-panel', screen_reader_mode: 'chat/workspace-panel',
   formatted_tool_results: 'chat/tool-calls', inline_tool_media: 'chat/tool-calls', tool_row_outcomes: 'chat/tool-calls', merge_repeated_tool_calls: 'chat/tool-calls',
-  live_tool_progress: 'chat/tool-calls', status_chip_current_action: 'chat/tool-calls', turn_summary: 'chat/tool-calls', live_activity_current_tool: 'notifications',
+  live_tool_progress: 'chat/tool-calls', status_chip_current_action: 'chat/tool-calls', turn_summary: 'chat/tool-calls', explain_approvals: 'chat/tool-calls', live_activity_current_tool: 'notifications',
   default_model: 'models', '#settingsModel': 'models', '[data-group="auxiliary"]': 'models', '[data-group="quota-remaining"]': 'providers/quota-alerts',
   notifications_enabled: 'notifications', sound_enabled: 'notifications', '#completionSound': 'notifications',
   agent_approvals: 'tools',
@@ -132,7 +132,7 @@ const GROUPS: Record<string, [string, string][]> = {
   ],
   'chat/tool-calls': [
     ['Formatted results', 'tool-rows'], ['Media in tool rows', 'tool-rows'], ['Outcomes', 'tool-rows'], ['Merge repeated calls', 'tool-rows'],
-    ['Live progress', 'tool-rows'], ['Show tool lookups', 'tool-rows'], ['Current action in status', 'around-chat'], ['Turn summary', 'around-chat'],
+    ['Live progress', 'tool-rows'], ['Show tool lookups', 'tool-rows'], ['Current action in status', 'around-chat'], ['Turn summary', 'around-chat'], ['Explain approvals in plain words', 'around-chat'],
   ],
   'chat/advanced': [
     ['Name the busy action in the composer', 'transcript-advanced'], ['Event timestamps', 'transcript-advanced'], ['Fade in streamed text', 'transcript-advanced'],
@@ -170,7 +170,7 @@ it('keeps Chat to the composer drawing and at most 14 rows, with links that coun
   expect(page.querySelectorAll('[data-group] label').length + page.querySelectorAll('[data-group="more"] a').length).toBeLessThanOrEqual(14)
   expect(within(page).getByRole('link', { name: /Workspace panel/ })).toHaveTextContent('5 settings')
   expect(within(page).getByRole('link', { name: /Advanced/ })).toHaveTextContent('7 settings')
-  expect(within(page).getByRole('link', { name: /Tool calls/ })).toHaveTextContent('8 settings')
+  expect(within(page).getByRole('link', { name: /Tool calls/ })).toHaveTextContent('9 settings')
   for (const name of ['Send with', 'While the agent is working', 'Activity display']) expect(within(page).getByRole('radiogroup', { name })).toBeInTheDocument()
   expect(within(page).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Enter', 'Ctrl Enter', 'Steer', 'Queue', 'Interrupt', 'Compact', 'Every step', 'Final answer only'])
   expect(page.querySelector('[role="switch"][id^="settings-hide_composer_"]')).toBeNull()

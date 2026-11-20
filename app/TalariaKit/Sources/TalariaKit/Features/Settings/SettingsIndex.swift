@@ -29,6 +29,7 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
     case toolCallsShowLookups = "settings-tool-calls-show-lookups"
     case toolCallsStatusCurrentAction = "settings-tool-calls-status-current-action"
     case toolCallsTurnSummary = "settings-tool-calls-turn-summary"
+    case toolCallsExplainApprovals = "settings-tool-calls-explain-approvals"
     case chatScrollButtonSide = "settings-chat-scroll-button-side"
     case chatRightToLeftChatLayout = "settings-chat-right-to-left-chat-layout"
     case chatFilesButton = "settings-chat-files-button"
@@ -185,7 +186,7 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
     public var page: SettingsPane {
         switch self {
         case .toolCallsFormattedResults, .toolCallsMedia, .toolCallsOutcomes, .toolCallsMergeRepeated, .toolCallsLiveProgress, .toolCallsShowLookups,
-             .toolCallsStatusCurrentAction, .toolCallsTurnSummary: .toolCalls
+             .toolCallsStatusCurrentAction, .toolCallsTurnSummary, .toolCallsExplainApprovals: .toolCalls
         case .sidebarQuotasDetail, .sidebarQuotasProviderIcon, .sidebarQuotasQuotaRail, .sidebarQuotasPaceMarker, .sidebarQuotasColorByState: .sidebarQuotas
         case .widgetColor, .widgetCustomColor, .widgetWeight, .widgetAutomaticColor, .widgetShowPaceMarker, .widgetProviderIcon, .widgetIconStyle, .widgetStatus, .widgetReset, .widgetLockScreenProviderIcon, .widgetResetTime, .widgetQuotaWindow, .widgetPaceFooter, .widgetTrackColor, .widgetCustomTrackColor, .widgetTrackOpacity, .widgetBackground, .widgetCustomBackgroundColor, .widgetBackgroundOpacity, .widgetTap, .widgetHealthy, .widgetWarning, .widgetCritical, .widgetStale, .widgetUnavailable: .providerQuotaWidget
         case .widgetCustomHealthyColor, .widgetCustomWarningColor, .widgetCustomCriticalColor, .widgetCustomStaleColor, .widgetCustomUnavailableColor: .providerQuotaWidget
@@ -255,6 +256,7 @@ public enum SettingsIndex: String, CaseIterable, Identifiable, Sendable {
         case .toolCallsShowLookups: .init(category: .chats, section: "Tool Rows", title: "Show Tool Lookups", scope: .interface)
         case .toolCallsStatusCurrentAction: .init(category: .chats, section: "Around the Chat", title: "Current Action in Status", scope: .interface)
         case .toolCallsTurnSummary: .init(category: .chats, section: "Around the Chat", title: "Turn Summary", scope: .interface)
+        case .toolCallsExplainApprovals: .init(category: .chats, section: "Around the Chat", title: "Explain Approvals in Plain Words", scope: .interface)
         case .chatScrollButtonSide: .init(category: .chats, section: "Conversation", title: "Scroll Button Side", scope: .synced)
         case .chatRightToLeftChatLayout: .init(category: .chats, section: "Conversation", title: "Right-to-Left Chat Layout", scope: .synced)
         case .chatFilesButton: .init(category: .chats, section: "Conversation", title: "Files Button", scope: .synced)
@@ -405,6 +407,7 @@ extension ToolCallSetting {
         case .showToolLookups: .toolCallsShowLookups
         case .statusChipCurrentAction: .toolCallsStatusCurrentAction
         case .turnSummary: .toolCallsTurnSummary
+        case .explainApprovals: .toolCallsExplainApprovals
         }
     }
 }

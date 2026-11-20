@@ -23,6 +23,7 @@ import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.j
 import { TRANSCRIPT_WINDOW, ChatUsageSchema, type TurnUsage, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ApprovalAnswerer, type ApprovalInstructionOutcome, type ClarifyAnswers, type VaultPrompt, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
 import { connectorLogoUnread, startedProcessId, toolProgress } from './tool-display.js'
 import { catalogNames, connectorOperation, rememberCatalogNames } from '../tools/connectors.js'
+import { approvalExplanationMessages, approvalExplanationText } from './approval-explanation.js'
 import { PendingPrompts, approvalAllows, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
 import type { JournalEventMeta } from './storage/backend.js'
 import { materializeTurnAttachments, type BlobStore } from './storage/blobs.js'
@@ -143,6 +144,8 @@ export interface TurnRunnerDeps {
   personalities?: (profile: string | null) => Promise<PersonalityRow[]>
   /** TAL-821: a provider's name as the profile's model catalog lists it (`ProviderCatalog.providerLabel`). */
   providerLabel?: (profile: string | null, provider: string) => string
+  /** TAL-2022: the server's `language` setting, which approval summaries are written in; English when absent. */
+  language?: () => string
   /** `auto_title_refresh_every`: a generated title follows the latest exchange every N exchanges; 0 turns it off. */
   titleRefreshEvery?: () => number
   env?: Record<string, string | undefined>
@@ -438,7 +441,35 @@ export class TurnRunner {
   /** A running worker's one-shot `onFailing`, shared with a Stop that publishes `cancel` from outside the worker. */
   private readonly failureSettlers = new Map<string, () => Promise<void>>()
 
-  constructor(readonly deps: TurnRunnerDeps) {}
+  constructor(readonly deps: TurnRunnerDeps) {
+    // TAL-2022: a summary that settles re-sends the head on the live chat stream; the approval stream gets it from the queue.
+    deps.pending.setApprovalExplainer({
+      explain: (sid, entry) => this.explainApproval(sid, entry),
+      explained: (sid) => { void this.emitToSession(sid, ...this.approvalHeadFrame(sid)).catch(() => undefined) },
+    })
+  }
+
+  /** TAL-2022: one approval's summary from the Agent's `approval` auxiliary model, else the chat's own model; null without a sidecar. */
+  private async explainApproval(sessionId: string, entry: Record<string, unknown>): Promise<string | null> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) return null
+    const service = this.deps.service()
+    const s = await this.deps.store.get(sessionId)
+    const [model, provider] = service.turnModel(s)
+    // The command can carry connector data, so the prompt keeps the chat's data-use requirements as title generation does.
+    const messages = withDataUseRequirements(approvalExplanationMessages(entry, this.deps.language?.() ?? 'en'), [...s.messages, ...s.context_messages, ...await service.stateDbRows(s)])
+    try {
+      const result = await sidecar.call('aux.complete', {
+        profile_home: this.deps.profileHome(s.profile), task: 'approval', messages,
+        max_tokens: 160, temperature: 0.2, main_runtime: { model: model ?? '', provider }, main_fallback: true,
+      }, { timeoutMs: 60_000 })
+      return approvalExplanationText(result.text)
+    } catch (error) {
+      // TAL-1024: the condition only; the error text can carry the provider's response.
+      this.deps.log(`[webui] approval explanation failed for ${sessionId}: ${error instanceof SidecarError ? error.condition : (error as Error).name}`)
+      return null
+    }
+  }
 
   /** TAL-1628: whether a drain fences new turns. */
   get draining(): boolean { return this.drainRun !== null }

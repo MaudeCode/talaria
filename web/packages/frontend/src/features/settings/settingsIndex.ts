@@ -62,7 +62,7 @@ export const SETTINGS_INDEX: readonly SettingsIndexEntry[] = [
       [key('tool_row_outcomes'), m.settings_label_tool_row_outcomes], [key('merge_repeated_tool_calls'), m.settings_label_merge_repeated_tool_calls],
       [key('live_tool_progress'), m.settings_label_live_tool_progress], [key('show_tool_lookups'), m.settings_label_show_tool_lookups],
     ]),
-    ...rows('chat', m.settings_group_around_chat, 'interface', [[key('status_chip_current_action'), m.settings_label_status_chip_current_action], [key('turn_summary'), m.settings_label_turn_summary]]),
+    ...rows('chat', m.settings_group_around_chat, 'interface', [[key('status_chip_current_action'), m.settings_label_status_chip_current_action], [key('turn_summary'), m.settings_label_turn_summary], [key('explain_approvals'), m.settings_label_explain_approvals]]),
   ]),
   ...onPage('advanced', [
     ...rows('chat', m.settings_group_transcript, 'interface', [

@@ -1189,7 +1189,7 @@ final class UITestFixtureURLProtocol: URLProtocol {
                         "auto_title_refresh_every": .string("10"), "check_for_updates": .bool(true), "auto_apply_updates": .bool(false), "continue_interrupted_chats": .bool(false),
                         "show_tool_lookups": .bool(false), "formatted_tool_results": .bool(true), "inline_tool_media": .bool(true),
                         "tool_row_outcomes": .bool(true), "merge_repeated_tool_calls": .bool(true), "live_tool_progress": .bool(true),
-                        "status_chip_current_action": .bool(true), "turn_summary": .bool(true), "live_activity_current_tool": .bool(true),
+                        "status_chip_current_action": .bool(true), "turn_summary": .bool(true), "explain_approvals": .bool(false), "live_activity_current_tool": .bool(true),
                         "activity_call_details": .bool(true),
                         "summarize_updates_automatically": .bool(true), "update_channel": .string("stable"),
                         "update_channels": .array([.string("stable"), .string("nightly"), .string("experimental")]),
