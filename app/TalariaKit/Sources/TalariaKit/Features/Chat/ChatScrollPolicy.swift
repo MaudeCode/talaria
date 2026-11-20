@@ -185,7 +185,7 @@ public enum ChatScrollPolicy {
     /// restores the distance. Status-bar, VoiceOver and hardware-keyboard
     /// scrolls animate over several frames, so they still release follow, one
     /// frame later.
-    public struct ScrollAwayTracker: Equatable, Sendable {
+    public struct ScrollAwayTracker: Sendable {
         private var delivered: ScrollGeometry?
         /// The delivered report was itself a move away, not yet confirmed.
         private var deliveredMovedAway = false
