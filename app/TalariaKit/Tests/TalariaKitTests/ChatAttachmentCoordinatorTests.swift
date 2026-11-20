@@ -146,6 +146,31 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         XCTAssertEqual(saved.count, 1)
     }
 
+    /// TAL-2066: leaving the chat while an edit's restored images load drops the read in flight and starts no other.
+    func testLeavingTheChatStopsRestoredImagePreviewReads() async throws {
+        let started = expectation(description: "first preview read held")
+        let state = DeferredUploadState()
+        let client = makeDeferredUploadClient { request, transport in
+            guard state.nextUploadIndex() == 1 else {
+                return transport.complete(with: apiTestJSONResponse(#"{"error":"missing"}"#, statusCode: 404, for: request))
+            }
+            state.setFirstUploadCompletion { transport.complete(with: (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Self.imageData() ?? Data())) }
+            started.fulfill()
+        }
+        let coordinator = makeCoordinator(client: client)
+        coordinator.restoreServerAttachments(["first.png", "second.png"].map {
+            PendingAttachment(name: $0, path: "/srv/\($0)", mime: "image/png", isImage: true)
+        })
+        await fulfillment(of: [started], timeout: 10)
+
+        coordinator.suspendPendingUploads()
+        try XCTUnwrap(state.firstUploadCompletion())()
+        await coordinator.serverPreviewTask?.value
+
+        XCTAssertEqual(state.observedUploadCount(), 1, "A read started after the chat was left")
+        XCTAssertEqual(coordinator.pendingAttachments.map(\.thumbnailData), [nil, nil])
+    }
+
     func testSuspensionFencesLateUploadWithoutDeletingRetryableBytes() async throws {
         for changesContext in [false, true] {
             let started = expectation(description: "held upload")
