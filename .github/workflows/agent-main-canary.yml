@@ -1,0 +1,107 @@
+# The Hermes Agent main canary (TAL-211). Once a day the exact commit Agent `main` names runs the compatibility checker
+# (`check-agent-compatibility.py --main SHA`) when no earlier canary checked it, and the run summary lists the Agent
+# commits since the last canary. A failure leaves the last passing commit in place and fails this run. The canary pins,
+# promotes and deploys nothing, and a pass is never release approval. The external GitHub Scheduler service
+# (MaudeCode/github-scheduler) owns the daily trigger; scripts/agent-main-canary.py documents the state it keeps.
+
+name: Agent main canary
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: talaria-agent-main-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: Check Agent main
+    # Only main's runs write the state the next canary reads.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # The unsharded sidecar suite takes about three of CI's five-minute shards.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read # the last canary's state artifact
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The checker runs unreviewed Agent code; leave no token in the checkout for it to find.
+          persist-credentials: false
+
+      - name: Resolve Agent main and the last canary
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/agent-main-canary.py plan --state-dir "$RUNNER_TEMP/canary" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        if: steps.plan.outputs.run == 'true'
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: web/sidecar/agent_support.json
+
+      - name: Set up Node for server process-boundary proofs
+        if: steps.plan.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build the server process-boundary proof runtime
+        if: steps.plan.outputs.run == 'true'
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build -w packages/contracts
+          npm run build -w packages/server
+
+      - name: Install uv (the Agent's locked dependency resolver)
+        if: steps.plan.outputs.run == 'true'
+        run: python3 -m pip install --disable-pip-version-check "uv==0.11.3"
+
+      # No token: the checker clones the public Agent commit and runs it on disposable state.
+      - name: Check the exact Agent main commit
+        if: steps.plan.outputs.run == 'true'
+        env:
+          SHA: ${{ steps.plan.outputs.sha }}
+          TALARIA_SIDECAR_WORKERS: '2'
+        run: python3 scripts/check-agent-compatibility.py --main "$SHA" --receipt "$RUNNER_TEMP/canary/receipt.json" 2>&1 | tee "$RUNNER_TEMP/canary/check.log"
+
+      - name: Report the canary and the unreleased Agent range
+        if: always() && steps.plan.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.plan.outputs.sha }}
+        run: >-
+          python3 scripts/agent-main-canary.py report --state-dir "$RUNNER_TEMP/canary" --sha "$SHA"
+          --receipt "$RUNNER_TEMP/canary/receipt.json" --log "$RUNNER_TEMP/canary/check.log" --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the canary state for the next run
+        if: always() && steps.plan.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-main-canary-state
+          path: ${{ runner.temp }}/canary/state.json
+          retention-days: 30
+          overwrite: true
+          if-no-files-found: ignore
+
+      - name: Keep the canary diagnostics
+        if: always() && steps.plan.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-main-canary-diagnostics
+          path: |
+            ${{ runner.temp }}/canary/receipt.*
+            ${{ runner.temp }}/canary/check.log
+          retention-days: 14
+          overwrite: true
+          if-no-files-found: ignore

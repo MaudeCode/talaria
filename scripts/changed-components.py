@@ -56,6 +56,7 @@ WORKFLOWS = {
     "web-docs.yml": {"tooling"},
     "release-set.yml": {"tooling"},
     "nightly.yml": {"tooling"},
+    "agent-main-canary.yml": {"tooling"},
     "web-experimental.yml": {"tooling"},
     "production-cutover.yml": {"tooling"},
     "release-freeze.yml": {"tooling"},
@@ -95,6 +96,9 @@ SCRIPTS = {
     # The release gate and the PR sidecar matrix and join (TAL-1776).
     "check-release-agent.py": {"web_sidecar", "tooling"},
     "test-check-release-agent.py": {"tooling"},
+    # The daily Agent main canary (TAL-211).
+    "agent-main-canary.py": {"tooling"},
+    "test-agent-main-canary.py": {"tooling"},
     "check-releases": {"tooling"},
     "check-hosted-runners.py": {"tooling"},
     "test-check-hosted-runners.py": {"tooling"},
