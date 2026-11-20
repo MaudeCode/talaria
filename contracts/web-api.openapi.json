@@ -163115,6 +163115,21 @@
                         }
                       ]
                     },
+                    "refusal": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "stop_pending",
+                            "member_home_unknown",
+                            "disbanding_retry"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "room_id": {
                       "type": "string",
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
@@ -163182,6 +163197,7 @@
                   "required": [
                     "outcome",
                     "reason",
+                    "refusal",
                     "room_id",
                     "event_id",
                     "attachment"
@@ -163797,6 +163813,21 @@
                         }
                       ]
                     },
+                    "refusal": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "stop_pending",
+                            "member_home_unknown",
+                            "disbanding_retry"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "room_id": {
                       "type": "string",
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
@@ -163864,6 +163895,7 @@
                   "required": [
                     "outcome",
                     "reason",
+                    "refusal",
                     "room_id",
                     "event_id",
                     "attachment"
@@ -163959,6 +163991,21 @@
                         }
                       ]
                     },
+                    "refusal": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "stop_pending",
+                            "member_home_unknown",
+                            "disbanding_retry"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "room_id": {
                       "type": "string",
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
@@ -164026,6 +164073,7 @@
                   "required": [
                     "outcome",
                     "reason",
+                    "refusal",
                     "room_id",
                     "event_id",
                     "attachment"

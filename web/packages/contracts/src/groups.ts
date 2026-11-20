@@ -31,7 +31,10 @@ export const GroupViewSchema = z.object({ available: z.boolean(), reason: z.enum
   /** Every paused discussion in the room, oldest first, whichever history page `rows` holds. */
   paused: z.array(GroupPausedSchema), cursor: z.number().int().nonnegative(), has_more: z.boolean(), next_before_seq: z.number().int().positive().nullable() })
 export const GroupCatalogSchema = z.object({ identity: z.string().nullable(), available: z.boolean(), reason: GroupViewSchema.shape.reason, profiles: z.array(z.object({ profile: z.string(), label: z.string() })), rooms: z.array(GroupRoomSchema), actions: z.array(z.literal('create')), next_offset: z.number().int().nullable() })
-export const GroupWriteResultSchema = z.object({ outcome: z.enum(['confirmed', 'refused', 'unknown']), reason: GroupViewSchema.shape.reason, room_id: Id, event_id: Id.nullable(), attachment: GroupAttachmentSchema.nullable() })
+export const GroupWriteResultSchema = z.object({ outcome: z.enum(['confirmed', 'refused', 'unknown']), reason: GroupViewSchema.shape.reason,
+  /** Why the Agent refused, when it named a reason clients word: `stop_pending` (Disband waits until Stop finishes), `member_home_unknown` (a member's profile is no longer configured, so its Stop cannot be confirmed), `disbanding_retry` (already disbanding; Disband again). Null otherwise. */
+  refusal: z.enum(['stop_pending', 'member_home_unknown', 'disbanding_retry']).nullable(),
+  room_id: Id, event_id: Id.nullable(), attachment: GroupAttachmentSchema.nullable() })
 export type GroupView = z.infer<typeof GroupViewSchema>
 export type GroupRoom = z.infer<typeof GroupRoomSchema>
 export type GroupPaused = z.infer<typeof GroupPausedSchema>

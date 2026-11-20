@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
-import { GROUP_ATTACHMENT_BYTES, GROUP_ATTACHMENT_LIMIT, GROUP_ATTACHMENT_BASE64_LIMIT, GROUP_ROOM_NOTES_BYTES, GROUP_ROOM_PURPOSE_LIMIT, GROUP_ROOM_TASK_PREFIX, GroupAttachmentSchema, GroupMemberSchema, GroupTaskActionSchema, NativeGroupRoomRetrySchema, NativeGroupCapabilitiesSchema, NativeGroupContextSchema, NativeGroupListSchema, NativeGroupLogSchema, NativeGroupStateSchema, NativeGroupEventSchema, type SidecarParams, type GroupCatalog, type GroupOperation, type GroupPaused, type GroupRoom, type GroupView, type GroupWriteResult } from '@maudecode/talaria-web-contracts'
+import { GROUP_ATTACHMENT_BYTES, GROUP_ATTACHMENT_LIMIT, GROUP_ATTACHMENT_BASE64_LIMIT, GROUP_ROOM_NOTES_BYTES, GROUP_ROOM_PURPOSE_LIMIT, GROUP_ROOM_TASK_PREFIX, GroupAttachmentSchema, GroupMemberSchema, GroupTaskActionSchema, NativeGroupRoomRetrySchema, NativeGroupCapabilitiesSchema, NativeGroupContextSchema, NativeGroupListSchema, NativeGroupLogSchema, NativeGroupStateSchema, NativeGroupEventSchema, GroupWriteResultSchema, type SidecarParams, type GroupCatalog, type GroupOperation, type GroupPaused, type GroupRoom, type GroupView, type GroupWriteResult } from '@maudecode/talaria-web-contracts'
 import type { AppDeps } from '../http/context.js'
 import { HttpFailure } from './service.js'
 import { StreamChannel, type StreamSubscriber } from './streams.js'
@@ -25,6 +25,7 @@ interface Observation { identity: string; cursor: number; events: NativeEvent[];
 const empty = (reason: GroupView['reason']): GroupView => ({ available: false, reason, room: null, rows: [], paused: [], cursor: 0, has_more: false, next_before_seq: null })
 const reasons = new Set(['unsupported', 'stopped', 'refused', 'unavailable', 'unknown', 'driver_inactive'])
 const safeReason = (reason: string | null): GroupView['reason'] => reasons.has(reason ?? '') ? reason as GroupView['reason'] : 'unavailable'
+const refusals = new Set(GroupWriteResultSchema.shape.refusal.unwrap().options as readonly string[])
 const sameMembers = (left: State['room']['members'], right: State['room']['members']) => left.length === right.length && left.every((m, i) => m.member_id === right[i]?.member_id && m.profile === right[i]?.profile && m.handle === right[i]?.handle)
 const localMembers = (members: State['room']['members']) => members.every((m) => !m.target || m.target.kind === 'local' && m.target.profile === m.profile)
 /** Each pass reads at most this many log pages; the next poll resumes a longer log where this one stopped. */
@@ -329,7 +330,7 @@ export class Groups {
 
   async write(scope: GroupScope, identity: string | null, operation: GroupOperation): Promise<GroupWriteResult> {
     if (!('room_id' in operation) || ['state', 'log', 'attachment.download'].includes(operation.action)) throw new HttpFailure(400, 'Invalid discussion action')
-    const result: GroupWriteResult = { outcome: 'refused', reason: 'unavailable', room_id: operation.room_id, event_id: 'event_id' in operation ? operation.action === 'send' ? nativeEventId(operation.event_id) : operation.event_id : null, attachment: null }
+    const result: GroupWriteResult = { outcome: 'refused', reason: 'unavailable', refusal: null, room_id: operation.room_id, event_id: 'event_id' in operation ? operation.action === 'send' ? nativeEventId(operation.event_id) : operation.event_id : null, attachment: null }
     let forwarded = operation
     let expectedRoom: SidecarParams<'gateway.groups'>['expected_room']
     let granted = 0
@@ -389,6 +390,8 @@ export class Groups {
         const read = await this.view(scope, operation.room_id).catch(() => null)
         if (read?.available && read.room && ((operation.action === 'create' && read.room.name === redactString(operation.name) && sameMembers(read.room.members, operation.members)) || (operation.action === 'rename' && read.room.name === redactString(operation.name)) || (operation.action === 'disband' && read.room.disbanded))) return { ...result, outcome: 'confirmed', reason: null }
       }
+      // A refusal the Agent named never reaches the reconcile reads above: only `unknown` reconciles.
+      if (response.state === 'refused' && refusals.has(response.reason ?? '')) return { ...result, reason: 'refused', refusal: response.reason as GroupWriteResult['refusal'] }
       return { ...result, outcome: response.state === 'unknown' ? 'unknown' : 'refused', reason: safeReason(response.reason) }
     }
     const attachment = operation.action === 'attachment.upload' ? GroupAttachmentSchema.parse(response.value) : null
@@ -458,7 +461,7 @@ export class Groups {
   async receipt(scope: GroupScope, roomId: string, requestId: string): Promise<GroupWriteResult> {
     const eventId = nativeEventId(requestId)
     const observed = await this.findEvent(scope, roomId, eventId) !== null
-    return { outcome: observed ? 'confirmed' : 'unknown', reason: observed ? null : 'unknown', room_id: roomId, event_id: eventId, attachment: null }
+    return { outcome: observed ? 'confirmed' : 'unknown', reason: observed ? null : 'unknown', refusal: null, room_id: roomId, event_id: eventId, attachment: null }
   }
 
   async download(scope: GroupScope, roomId: string, identity: string, eventId: string, attachmentId: string) {

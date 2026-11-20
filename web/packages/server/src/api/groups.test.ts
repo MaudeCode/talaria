@@ -3,7 +3,8 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { groupFixture } from '../test/group-fixture.js'
 import { Groups, type GroupScope } from '../sessions/groups.js'
-import type { GroupView } from '@maudecode/talaria-web-contracts'
+import { readFileSync } from 'node:fs'
+import type { GroupView, GroupWriteResult } from '@maudecode/talaria-web-contracts'
 
 let server: TestServer | undefined
 afterEach(async () => { await server?.close() })
@@ -469,6 +470,21 @@ it('reconciles response-lost sends without sending again', async () => {
   const receipt = await server!.get('/api/groups/receipt?room_id=discussion&request_id=request')
   expect(await receipt.json()).toMatchObject({ outcome: 'confirmed' })
   expect(sidecar.calls.filter((c) => c.method === 'gateway.groups' && (c.params as { operation: { action: string } }).operation.action === 'send')).toHaveLength(1)
+})
+
+const disbandRefusals = (JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/group-disband-refusals.json', import.meta.url), 'utf8')) as { results: GroupWriteResult[] }).results
+for (const expected of disbandRefusals) it(`passes a Disband the Agent refused as ${expected.refusal} through without a reconcile read`, async () => {
+  const { sidecar, state } = await setup()
+  const native = sidecar.responderFor('gateway.groups')!
+  sidecar.respond('gateway.groups', (params, emit, options) => params.operation.action === 'disband' ? { state: 'refused', reason: expected.refusal, value: null } : native(params, emit, options))
+  const view = await read()
+  sidecar.calls.length = 0
+  const result = await post(view.room!.identity, { action: 'disband', room_id: 'discussion', cancel_id: 'disband' })
+  expect(await result.json()).toEqual(expected)
+  const actions = sidecar.calls.filter((c) => c.method === 'gateway.groups').map((c) => (c.params as { operation: { action: string } }).operation.action)
+  expect(actions).toContain('disband')
+  expect(actions.slice(actions.indexOf('disband') + 1)).toEqual([])
+  expect(state.disbanded).toBe(false)
 })
 
 it('pages server-ordered history and advertises no actions for an inactive driver', async () => {

@@ -25,6 +25,9 @@ _FIELDS = {
 _READS = {"capabilities", "list", "state", "log", "attachment.download"}
 _REFUSALS = {"permission_denied", "profile_mismatch", "invalid_params", "stale_generation", "unknown_execution",
              "unsupported_operation", "session_busy", "runtime_coordination_required"}
+# Typed refusals the Agent names (v0.23.1+), reported by their public `refusal` code.
+_TYPED_REFUSALS = {"room_stop_pending": "stop_pending", "member_home_unknown": "member_home_unknown",
+                   "room_disbanding_retry": "disbanding_retry"}
 
 
 def _result(state, reason=None, value=None):
@@ -72,6 +75,8 @@ async def _run(home, subject, operation, discovery, expected_room=None):
     except GatewayRPCError as exc:
         reason = str(exc)
         # Native errors are data, never public diagnostics. Only fixed refusals prove non-admission.
+        if reason in _TYPED_REFUSALS:
+            return _result("refused", _TYPED_REFUSALS[reason])
         if reason in _REFUSALS:
             return _result("refused", "refused")
         if "method" in reason.lower() and not dispatched:

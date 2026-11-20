@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A discussion the Agent will not disband yet now stays listed and says why, such as waiting for Stop to finish, instead of reporting that the outcome could not be confirmed.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

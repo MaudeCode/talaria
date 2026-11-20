@@ -324,6 +324,37 @@ test('a long discussion name leaves Rename and Disband reachable', async ({ page
   } finally { await page.goto('about:blank').catch(() => undefined); await server.close() }
 })
 
+test('rolls a Disband the Agent refuses while a Stop is pending back to the room, with its wording', async ({ page }, info) => {
+  const { sidecar, fixture, server } = await discussionServer()
+  const native = sidecar.responderFor('gateway.groups')!
+  const refused = Promise.withResolvers<undefined>()
+  sidecar.respond('gateway.groups', async (params, emit, options) => {
+    if (params.operation.action !== 'disband') return native(params, emit, options)
+    await refused.promise
+    return { state: 'refused', reason: 'stop_pending', value: null }
+  })
+  const evidence = process.env.TALARIA_GROUP_EVIDENCE
+  if (evidence) mkdirSync(evidence, { recursive: true })
+  const shot = async (name: string) => { if (evidence) await page.screenshot({ path: `${evidence}/disband-${name}-${info.project.name}.png` }) }
+  try {
+    await page.goto(`${server.base}/groups?room=discussion`)
+    const disband = page.getByRole('button', { name: 'Disband', exact: true })
+    await expect(disband).toBeVisible()
+    await shot('before')
+    await disband.click()
+    // Optimistic: the room leaves the list and the page returns to it before the Agent answers.
+    await expect(page).not.toHaveURL(/room=discussion/)
+    await expect(page.locator('#main [data-group-room="discussion"]')).toHaveCount(0)
+    await shot('optimistic')
+    refused.resolve(undefined)
+    await expect(page.getByText('Disband waits until Stop finishes.', { exact: true })).toBeVisible()
+    await expect(page).toHaveURL(/room=discussion/)
+    await expect(disband).toBeVisible()
+    expect(fixture.state.disbanded).toBe(false)
+    await shot('refused')
+  } finally { refused.resolve(undefined); await page.goto('about:blank').catch(() => undefined); await server.close() }
+})
+
 // The same unavailable notice when the gateway answers `unavailable` is owned by the draft-files test below.
 test('an unconfirmed send blocks the composer until a replaced owner clears it, leaving no run', async ({ page }) => {
   const { sidecar, fixture, server } = await discussionServer()

@@ -1,0 +1,7 @@
+{
+  "results": [
+    { "outcome": "refused", "reason": "refused", "refusal": "stop_pending", "room_id": "discussion", "event_id": null, "attachment": null },
+    { "outcome": "refused", "reason": "refused", "refusal": "member_home_unknown", "room_id": "discussion", "event_id": null, "attachment": null },
+    { "outcome": "refused", "reason": "refused", "refusal": "disbanding_retry", "room_id": "discussion", "event_id": null, "attachment": null }
+  ]
+}
