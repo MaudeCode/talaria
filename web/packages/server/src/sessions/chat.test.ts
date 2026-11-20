@@ -1368,7 +1368,7 @@ describe('chat turns through the sidecar', () => {
     expect(res.status).toBe(200)
     expect(await json(res)).toEqual({ ok: true, choice: 'once' })
     pending = await json(await s.get(`/api/approval/pending?session_id=${sid}`))
-    expect(pending).toEqual({ pending: null, pending_count: 0 })
+    expect(pending).toEqual({ pending: null, pending_count: 0, withdrawn: null })
 
     const untilClarify = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'clarify')
     const clarify = untilClarify[untilClarify.length - 1]?.data as Json
@@ -1388,7 +1388,7 @@ describe('chat turns through the sidecar', () => {
     expect((rest.find((f) => f.event === 'title')?.data as Json).title).toBe('clean')
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     expect((detail.messages as Json[]).map((m) => m.content)).toEqual(['clean up', 'ran with once on prod'])
-    expect(await json(await s.get(`/api/clarify/pending?session_id=${sid}`))).toEqual({ pending: null, pending_count: 0 })
+    expect(await json(await s.get(`/api/clarify/pending?session_id=${sid}`))).toEqual({ pending: null, pending_count: 0, withdrawn: null })
     // Stale approval clicks after everything settled are benign.
     expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'deny', approval_id: 'old' }))).toEqual({ ok: true, choice: 'deny', stale_cleared: true })
   })
@@ -1481,7 +1481,7 @@ describe('chat turns through the sidecar', () => {
 
     const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
     expect(eventNames(replay)).toContain('done')
-    expect(await json(await s.get(`/api/clarify/pending?session_id=${sid}`))).toEqual({ pending: null, pending_count: 0 })
+    expect(await json(await s.get(`/api/clarify/pending?session_id=${sid}`))).toEqual({ pending: null, pending_count: 0, withdrawn: null })
     // No answer survives anywhere the server keeps or serves the session.
     const exports = await Promise.all(([
       ['json', 'application/json'], ['markdown', 'text/markdown'], ['html', 'text/html'],
@@ -3089,9 +3089,9 @@ describe('chat turns through the sidecar', () => {
     const session = await s.sse(`/api/session/stream?session_id=${sid}&known_count=0`, (f) => f.event === 'initial')
     expect(session[0]).toMatchObject({ event: 'initial', data: { session_id: sid } })
     const approvals = await s.sse(`/api/approval/stream?session_id=${sid}`, (f) => f.event === 'initial')
-    expect(approvals[0]?.data).toEqual({ pending: null, pending_count: 0 })
+    expect(approvals[0]?.data).toEqual({ pending: null, pending_count: 0, withdrawn: null })
     const clarifies = await s.sse(`/api/clarify/stream?session_id=${sid}`, (f) => f.event === 'initial')
-    expect(clarifies[0]?.data).toEqual({ pending: null, pending_count: 0 })
+    expect(clarifies[0]?.data).toEqual({ pending: null, pending_count: 0, withdrawn: null })
     // Python starts the pending-prompt streams with `Connection: close`; the long-lived session/chat streams do not (#3103).
     for (const path of [`/api/approval/stream?session_id=${sid}`, `/api/clarify/stream?session_id=${sid}`]) {
       const ac = new AbortController()
@@ -3487,7 +3487,7 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'to-2' }))).toEqual({ ok: true, choice: 'once' })
     emitFrame({ event: 'approval_resolved', data: { approval_id: 'to-2', session_id: sid, reason: 'resolved' } })
     const cleared = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:${String(queued.length + promoted.length)}`, (f) => f.event === 'approval_cleared')
-    expect(cleared.filter((f) => f.event.startsWith('approval')).map((f) => [f.event, f.data])).toEqual([['approval_cleared', { session_id: sid, pending_count: 0 }]])
+    expect(cleared.filter((f) => f.event.startsWith('approval')).map((f) => [f.event, f.data])).toEqual([['approval_cleared', { session_id: sid, pending_count: 0, withdrawn: null }]])
     // An approval stream that watched the queue empty still hears the next prompt.
     emitFrame({ event: 'approval', data: { request_id: 'to-3', command: 'rm -rf out', session_id: sid } })
     expect((await watcher.frames).filter((f) => f.event === 'approval').map((f) => f.data)).toMatchObject([{ pending: null, pending_count: 0 }, { pending: { approval_id: 'to-3' }, pending_count: 1 }])

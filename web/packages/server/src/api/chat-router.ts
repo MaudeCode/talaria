@@ -2,7 +2,7 @@
 import { timingOutcome } from '../startup-timing.js'
 import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE } from '../sessions/turn.js'
 import { implement } from '@orpc/server'
-import { chatContract, type ApprovalAnswerer, type BackgroundTask, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
+import { chatContract, type ApprovalAnswerer, type BackgroundTask, type OwnerAttachment, type PromptWithdrawal } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard, resolveStreamOwner, streamRunSummary, streamVisibleToRequest } from './session-visibility.js'
@@ -48,11 +48,11 @@ export async function sessionBackgroundTasks(deps: AppDeps, s: Session, kind?: B
 }
 
 /** TAL-1168: the oldest pending approval or clarify of `sid` and the queue's depth, as its pending route answers them. */
-export async function pendingPrompt(deps: AppDeps, sid: string, kind: 'approval' | 'clarify', owner = false): Promise<{ pending: Record<string, unknown> | null; pending_count: number }> {
+export async function pendingPrompt(deps: AppDeps, sid: string, kind: 'approval' | 'clarify', owner = false): Promise<{ pending: Record<string, unknown> | null; pending_count: number; withdrawn?: PromptWithdrawal | null }> {
   if (await deps.sessions.owner?.isOwned(sid)) return deps.sessions.owner!.pending(sid, kind)
   if (kind === 'approval') return deps.pending.approvalPending(sid)
-  const { pending, pending_count } = deps.pending.clarifyPending(sid)
-  return { pending: pendingForViewer(pending, owner), pending_count }
+  const envelope = deps.pending.clarifyPending(sid)
+  return { ...envelope, pending: pendingForViewer(envelope.pending, owner) }
 }
 
 /** `/api/clarify/respond`'s answer to `reply`, or its refusal; the `clarify_respond` tool shares it (TAL-1168). */

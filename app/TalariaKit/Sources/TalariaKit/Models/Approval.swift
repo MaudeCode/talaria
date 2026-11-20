@@ -7,23 +7,35 @@ public enum ApprovalChoice: String, Codable, CaseIterable, Equatable, Sendable {
     case deny
 }
 
+public struct PromptWithdrawal: Decodable, Equatable, Sendable {
+    public enum Kind: String, Decodable, Sendable { case approval, clarify }
+    public enum Reason: String, Decodable, Sendable { case timeout, stopped, shutdown }
+
+    public let kind: Kind
+    public let reason: Reason
+}
+
 public struct ApprovalPendingResponse: Decodable, Equatable, Sendable {
     public let pending: PendingApproval?
     public let pendingCount: Int?
+    public let withdrawn: PromptWithdrawal?
 
-    init(pending: PendingApproval?, pendingCount: Int?) {
+    init(pending: PendingApproval?, pendingCount: Int?, withdrawn: PromptWithdrawal? = nil) {
         self.pending = pending
         self.pendingCount = pendingCount
+        self.withdrawn = withdrawn
     }
 
     enum CodingKeys: String, CodingKey {
         case pending
         case pendingCount
+        case withdrawn
         case pendingCountSnake = "pending_count"
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        withdrawn = try? container.decodeIfPresent(PromptWithdrawal.self, forKey: .withdrawn)
         pending = try? container.decodeIfPresent(PendingApproval.self, forKey: .pending)
         pendingCount = container.decodeLossyIntIfPresent(forKey: .pendingCount)
             ?? container.decodeLossyIntIfPresent(forKey: .pendingCountSnake)

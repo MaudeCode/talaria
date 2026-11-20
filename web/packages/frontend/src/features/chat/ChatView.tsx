@@ -32,7 +32,7 @@ import { returnToComposer } from '../composer/composerReturn'
 import { ApprovalCards } from './ApprovalCard'
 import { ClarifyCard } from './ClarifyCard'
 import { ConnectCard } from '../connectors/ConnectCard'
-import { useClarify } from './useClarify'
+import { useClarify, useClarifyHead } from './useClarify'
 import { VaultPromptCard, useVaultPrompt } from './VaultPromptCard'
 import { useMarkViewed } from './useMarkViewed'
 import { setWatchingRun } from '../presence/presence'
@@ -99,6 +99,12 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
   const { onEdit, dialog: editDialog, operation, runHistory } = useEditMessage(sessionId, refresh)
   const clarify = useClarify(sessionId, live)
   const vaultPrompt = useVaultPrompt(sessionId, live)
+  const { query: promptQuery } = useClarifyHead(sessionId, live)
+  const withdrawn = intent.send || intent.stop ? null : live?.withdrawn !== undefined ? live.withdrawn : promptQuery.data?.withdrawn
+  const withdrawalText = withdrawn ? {
+    approval: { timeout: m.approval_withdrawn_timeout, stopped: m.approval_withdrawn_stopped, shutdown: m.approval_withdrawn_shutdown },
+    clarify: { timeout: m.clarify_withdrawn_timeout, stopped: m.clarify_withdrawn_stopped, shutdown: m.clarify_withdrawn_shutdown },
+  }[withdrawn.kind][withdrawn.reason]() : null
   useMarkViewed(sessionId, !session?.owner_attachment && (query.isFetchedAfterMount || (query.isSuccess && !query.isStale)), live && isTerminal(live.status) ? live.streamId : null)
   const watchingRun = !!live && !isTerminal(live.status)
   useEffect(() => {
@@ -467,6 +473,7 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
   const runtime = useRuntimeNotices({ live, onRetry, compressingSince, agentNotices: session?.notices, goal: session?.goal })
   const notices = [
     ...runtime.notices,
+    ...(withdrawalText && !live?.approval && !clarify && !vaultPrompt ? [{ id: 'prompt-withdrawal', content: <span role="status">{withdrawalText}</span> }] : []),
     ...(modelNotice ? [modelNotice] : []),
     ...(operation ? [{ id: 'history', content: <span role="status">{operation}</span> }] : []),
     ...(session?.owner_attachment?.restarting ? [{ id: 'owner-restarting', content: <span role="status">{m.owner_restarting()}</span> }] : []),

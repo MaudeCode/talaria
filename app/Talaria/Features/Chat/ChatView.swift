@@ -810,6 +810,7 @@ struct ChatView: View {
         .task(id: didCompleteInitialAppearance) {
             await handleInitialAppearanceTask()
         }
+        .task(id: viewModel.streamCoordinatorSessionID) { await viewModel.refreshPromptWithdrawal() }
         .delayedStatus(viewModel.isSyncingTranscript, isVisible: $showsSyncingPill,
                        resetGeneration: viewModel.transcriptSyncPresentationGeneration)
     }
@@ -892,6 +893,7 @@ struct ChatView: View {
                 }
                 Task {
                     await viewModel.reconnectStreamIfNeeded(modelContext: modelContext)
+                await viewModel.refreshPromptWithdrawal()
 
                     if viewModel.activeStreamID != nil {
                         handleActiveStreamChange()
@@ -1833,7 +1835,7 @@ struct ChatView: View {
     private var hasReservedCompactStatusItems: Bool {
         activeRunStatusPresentation?.reservesTranscriptSpace == true || !visibleSessionNotices.isEmpty
             || showsSheetChipRow || goalChipPresentation != nil || showsApprovalBypassStatus
-            || viewModel.sessionDecisionReview != nil
+            || viewModel.sessionDecisionReview != nil || visiblePromptWithdrawal != nil
     }
 
     private var compactStatusItems: some View {
@@ -1884,12 +1886,34 @@ struct ChatView: View {
                 }
                 .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
             }
+            if let withdrawal = visiblePromptWithdrawal {
+                Text(promptWithdrawalText(withdrawal))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             if showsApprovalChip {
                 approvalChip
             }
             if showsQueuedMessagesChip {
                 queuedMessagesChip
             }
+        }
+    }
+
+    private var visiblePromptWithdrawal: PromptWithdrawal? {
+        guard !viewModel.isSubmittingMessage, viewModel.approvalPrompt == nil,
+              viewModel.clarificationPrompt == nil, viewModel.vaultPrompt == nil else { return nil }
+        return viewModel.promptWithdrawal
+    }
+
+    private func promptWithdrawalText(_ withdrawal: PromptWithdrawal) -> String {
+        switch (withdrawal.kind, withdrawal.reason) {
+        case (.approval, .timeout): String(localized: "Approval timed out, so the action did not run.")
+        case (.approval, .stopped): String(localized: "The approval request was withdrawn when the Agent stopped.")
+        case (.approval, .shutdown): String(localized: "The approval request was withdrawn when the Agent shut down.")
+        case (.clarify, .timeout): String(localized: "The question timed out.")
+        case (.clarify, .stopped): String(localized: "The question was withdrawn when the Agent stopped.")
+        case (.clarify, .shutdown): String(localized: "The question was withdrawn when the Agent shut down.")
         }
     }
 
@@ -2441,7 +2465,7 @@ struct ChatView: View {
         if goalChipPresentation != nil {
             count += 1
         }
-        if viewModel.sessionDecisionReview != nil {
+        if viewModel.sessionDecisionReview != nil || visiblePromptWithdrawal != nil {
             count += 1
         }
         if showsApprovalBypassStatus {

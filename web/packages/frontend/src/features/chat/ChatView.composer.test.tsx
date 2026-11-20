@@ -98,6 +98,23 @@ it.each([
   await waitFor(shown)
 })
 
+it('replaces a withdrawn approval with the server reason', async () => {
+  const session = sessionFixture({ session_id: 'withdrawn-chat', messages: [{ id: 1, role: 'user', content: 'Question' }] })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  vi.mocked(api.fetchSession).mockResolvedValue({ session })
+  qc.setQueryData(keys.sessions.detail(session.session_id), { session })
+  const sessionId = session.session_id
+  const streamId = 'withdrawal-run'
+  dispatch({ type: 'start', sessionId, streamId, turnId: null, userMessageId: null, userText: 'Next question', now: Date.now() })
+  render(<QueryClientProvider client={qc}><ChatView sessionId={sessionId} /></QueryClientProvider>)
+  const emit = (event: ChatEvent, sequence: number) => act(() => dispatch({ type: 'event', sessionId, streamId, event, lastEventId: `${streamId}:${sequence}`, now: Date.now() }))
+  emit({ event: 'approval', data: { allowed_choices: ['once', 'deny'], approval_id: 'test', command: 'pwd' } }, 1)
+  await screen.findByRole('alertdialog')
+  emit({ event: 'approval_cleared', data: { pending_count: 0, withdrawn: { kind: 'approval', reason: 'timeout' } } }, 2)
+  expect(await screen.findByText('Approval timed out, so the action did not run.')).toBeVisible()
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+})
+
 it('renders the composer once for a draft while only its status pill follows three token frames', async () => {
   const session = sessionFixture({ session_id: 'composer-chat', worktree_branch: 'synthetic-worktree', messages: [{ id: 1, role: 'user', content: 'Question' }] })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })

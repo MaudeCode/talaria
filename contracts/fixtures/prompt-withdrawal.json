@@ -1,0 +1,12 @@
+{
+  "approval_timeout": {
+    "pending": null,
+    "pending_count": 0,
+    "withdrawn": { "kind": "approval", "reason": "timeout" }
+  },
+  "resolved": {
+    "pending": null,
+    "pending_count": 0,
+    "withdrawn": null
+  }
+}

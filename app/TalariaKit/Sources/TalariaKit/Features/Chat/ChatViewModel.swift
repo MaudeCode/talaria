@@ -515,6 +515,12 @@ public final class ChatViewModel {
     /// The Agent's active notices for the session, oldest first (TAL-831): the server's list, from the session and the
     /// stream's `notices`.
     public private(set) var sessionNotices: [SessionNotice] = []
+    public var promptWithdrawal: PromptWithdrawal? { pendingActionCoordinator.withdrawal }
+
+    public func refreshPromptWithdrawal() async {
+        await pendingActionCoordinator.refreshWithdrawal()
+    }
+
     public var approvalPrompt: ApprovalPromptState? { pendingActionCoordinator.approvalPrompt }
     public var isRespondingToApproval: Bool { pendingActionCoordinator.isRespondingToApproval }
     public var approvalErrorMessage: String? { pendingActionCoordinator.approvalErrorMessage }
@@ -3660,6 +3666,7 @@ extension ChatViewModel {
                 if let name = file.draftFileName { await attachmentCoordinator.deleteDraftCopy(named: name) }
             }
             guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return ChatSendOutcome(didStart: true) }
+            pendingActionCoordinator.clearWithdrawal(sessionID: sessionID)
             completeExplicitModelPickForChatStart(explicitModelPick)
             streamCoordinator.start(
                 streamID: streamID,

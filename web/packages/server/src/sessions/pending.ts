@@ -7,7 +7,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { SessionEventBus } from './events.js'
 import { str } from '../util.js'
-import { ApprovalChoiceSchema, type ApprovalScope, type ClarifyAnswers, type ClarifyStep, type VaultPrompt, type VaultPromptField } from '@maudecode/talaria-web-contracts'
+import { ApprovalChoiceSchema, type ApprovalScope, type ClarifyAnswers, type ClarifyStep, type PromptWithdrawal, type VaultPrompt, type VaultPromptField } from '@maudecode/talaria-web-contracts'
 
 export interface PendingSubscriber { queue: Record<string, unknown>[]; wake: (() => void) | null; closed: boolean }
 
@@ -187,19 +187,26 @@ function dedupeIdentity(data: Record<string, unknown>): string {
   return JSON.stringify([str(data.question), ((data.choices_offered as unknown[] | undefined) ?? []).map(String)])
 }
 
+interface PromptEnvelope extends Record<string, unknown> {
+  pending: Record<string, unknown> | null
+  pending_count: number
+  withdrawn: PromptWithdrawal | null
+}
+
 class Queue {
   readonly entries: Record<string, unknown>[] = []
   readonly commandIds = new Set<string>()
   readonly subscribers = new Set<PendingSubscriber>()
   /** The head as every reader sees it: the pending route, the prompt streams and the chat stream (TAL-1469). */
-  constructor(private readonly present: (head: Record<string, unknown>) => Record<string, unknown>) {}
+  constructor(private readonly present: (head: Record<string, unknown>) => Record<string, unknown>, private readonly withdrawn: () => PromptWithdrawal | null) {}
 
-  envelope(): { pending: Record<string, unknown> | null; pending_count: number } {
-    return { pending: this.entries[0] ? this.present(this.entries[0]) : null, pending_count: this.entries.length }
+  envelope(): PromptEnvelope {
+    return { pending: this.entries[0] ? this.present(this.entries[0]) : null, pending_count: this.entries.length, withdrawn: this.withdrawn() }
   }
 }
 
 export class PendingPrompts {
+  private readonly withdrawals = new Map<string, PromptWithdrawal>()
   private readonly approvals = new Map<string, Queue>()
   private readonly clarifies = new Map<string, Queue>()
   /** Callbacks for clarifies the server answers itself, called once the entry leaves the queue for any reason. */
@@ -211,7 +218,7 @@ export class PendingPrompts {
     let q = map.get(sid)
     if (!q) {
       // TAL-1463/TAL-1469: a head carries `head_id`, the identity Relay shows for it, and an approval its `action_text`.
-      q = new Queue(map === this.approvals ? (head) => approvalHead(sid, head) : (head) => clarifyHead(sid, head))
+      q = new Queue(map === this.approvals ? (head) => approvalHead(sid, head) : (head) => clarifyHead(sid, head), () => this.withdrawals.get(sid) ?? null)
       map.set(sid, q)
     }
     return q
@@ -231,6 +238,36 @@ export class PendingPrompts {
     }
   }
 
+  clearWithdrawal(sid: string, changing?: Queue): void {
+    if (!this.withdrawals.delete(sid)) return
+    const approval = this.approvals.get(sid)
+    const clarify = this.clarifies.get(sid)
+    if (approval && approval !== changing) this.notify(approval)
+    if (clarify && clarify !== changing) this.notify(clarify)
+  }
+
+  withdrawTurnPrompts(sid: string, shutdown: boolean): void {
+    const approval = this.approvals.get(sid)
+    const clarify = this.clarifies.get(sid)
+    const kind = approval?.entries.length ? 'approval' : clarify?.entries[0] &&
+      !clarify.commandIds.has(str(clarify.entries[0].clarify_id)) ? 'clarify' : null
+    if (shutdown && kind && !clarify?.commandIds.size) this.withdrawals.set(sid, { kind, reason: 'shutdown' })
+    else if (!shutdown) this.clearWithdrawal(sid)
+    this.clearApprovals(sid)
+    this.clearClarifies(sid)
+  }
+
+  private rememberWithdrawal(sid: string, kind: PromptWithdrawal['kind'], reason: unknown): void {
+    if (this.hasPendingApproval(sid) || this.hasPendingClarify(sid)) return
+    const normalized = reason === 'timeout' ? 'timeout'
+      : reason === 'interrupted' || reason === 'cancelled' ? 'stopped'
+      : reason === 'session_closed' ? 'shutdown' : null
+    if (!normalized) return
+    this.withdrawals.set(sid, { kind, reason: normalized })
+    const other = (kind === 'approval' ? this.clarifies : this.approvals).get(sid)
+    if (other) this.notify(other)
+  }
+
   // ── approvals ──
   submitApproval(sid: string, approval: Record<string, unknown>): Record<string, unknown> {
     const entry = { ...approval }
@@ -244,13 +281,14 @@ export class PendingPrompts {
     const q = this.queue(this.approvals, sid)
     if (q.entries.some((e) => e.approval_id === entry.approval_id)) return entry
     q.entries.push(entry)
+    this.clearWithdrawal(sid, q)
     this.notify(q)
     this.events.publish('attention_pending')
     return entry
   }
 
-  approvalPending(sid: string): { pending: Record<string, unknown> | null; pending_count: number } {
-    return this.approvals.get(sid)?.envelope() ?? { pending: null, pending_count: 0 }
+  approvalPending(sid: string): PromptEnvelope {
+    return this.approvals.get(sid)?.envelope() ?? { pending: null, pending_count: 0, withdrawn: this.withdrawals.get(sid) ?? null }
   }
 
   /** The targeted (or oldest) approval without removing it; `found` is false only for a stale id. */
@@ -267,7 +305,7 @@ export class PendingPrompts {
   }
 
   /** Pop the targeted (or oldest) approval; returns it or null when a stale id was given. */
-  resolveApproval(sid: string, approvalId: string): { entry: Record<string, unknown> | null; found: boolean } {
+  resolveApproval(sid: string, approvalId: string, reason?: unknown): { entry: Record<string, unknown> | null; found: boolean } {
     const q = this.approvals.get(sid)
     if (!q?.entries.length) return { entry: null, found: !approvalId }
     let index = 0
@@ -276,6 +314,7 @@ export class PendingPrompts {
       if (index < 0) return { entry: null, found: false }
     }
     const [entry] = q.entries.splice(index, 1)
+    if (index === 0) this.rememberWithdrawal(sid, 'approval', reason)
     this.prune(this.approvals, sid, q)
     this.notify(q)
     this.events.publish('attention_resolved')
@@ -317,7 +356,7 @@ export class PendingPrompts {
     return (this.approvals.get(sid)?.entries.length ?? 0) > 0
   }
 
-  subscribeApprovals(sid: string): [PendingSubscriber, { pending: Record<string, unknown> | null; pending_count: number }] {
+  subscribeApprovals(sid: string): [PendingSubscriber, PromptEnvelope] {
     const q = this.queue(this.approvals, sid)
     const sub: PendingSubscriber = { queue: [], wake: null, closed: false }
     q.subscribers.add(sub)
@@ -355,14 +394,15 @@ export class PendingPrompts {
       entry.clarify_id = str(item.clarify_id) || randomUUID().replace(/-/g, '')
       q.entries.push(entry)
     }
+    this.clearWithdrawal(sid, q)
     if (lifetime === 'command') q.commandIds.add(str(entry.clarify_id))
     this.notify(q)
     this.events.publish('attention_pending')
     return entry
   }
 
-  clarifyPending(sid: string): { pending: Record<string, unknown> | null; pending_count: number } {
-    return this.clarifies.get(sid)?.envelope() ?? { pending: null, pending_count: 0 }
+  clarifyPending(sid: string): PromptEnvelope {
+    return this.clarifies.get(sid)?.envelope() ?? { pending: null, pending_count: 0, withdrawn: this.withdrawals.get(sid) ?? null }
   }
 
   /** Queue head plus depth: what the live chat stream carries on every head change (Python `_callback_head_payload_locked`). */
@@ -375,12 +415,13 @@ export class PendingPrompts {
    * Pop a clarify by id (or the oldest). `head` is the new queue head frame when the
    * resolved entry was the head and others remain — Python re-emits it on the chat stream.
    */
-  resolveClarify(sid: string, clarifyId: string): { entry: Record<string, unknown> | null; head: Record<string, unknown> | null } {
+  resolveClarify(sid: string, clarifyId: string, reason?: unknown): { entry: Record<string, unknown> | null; head: Record<string, unknown> | null } {
     const q = this.clarifies.get(sid)
     if (!q?.entries.length) return { entry: null, head: null }
     const index = clarifyId ? q.entries.findIndex((e) => e.clarify_id === clarifyId) : 0
     if (index < 0) return { entry: null, head: null }
     const [entry] = q.entries.splice(index, 1)
+    if (index === 0) this.rememberWithdrawal(sid, 'clarify', reason)
     q.commandIds.delete(str(entry?.clarify_id))
     this.removed(entry)
     this.prune(this.clarifies, sid, q)
@@ -421,7 +462,7 @@ export class PendingPrompts {
     return (this.clarifies.get(sid)?.entries.length ?? 0) > 0
   }
 
-  subscribeClarifies(sid: string): [PendingSubscriber, { pending: Record<string, unknown> | null; pending_count: number }] {
+  subscribeClarifies(sid: string): [PendingSubscriber, PromptEnvelope] {
     const q = this.queue(this.clarifies, sid)
     const sub: PendingSubscriber = { queue: [], wake: null, closed: false }
     q.subscribers.add(sub)

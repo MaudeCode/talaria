@@ -532,7 +532,7 @@ struct SSEEventDecoder {
             return .approvalPending(ApprovalPendingResponse.streamPayload(from: eventData, decoder: decoder))
         case "approval_cleared":
             // The last approval settled, here or in another client.
-            return .approvalPending(ApprovalPendingResponse(pending: nil, pendingCount: 0))
+            return .approvalPending(ApprovalPendingResponse.streamPayload(from: eventData, decoder: decoder))
         case "clarify":
             logInvalidJSONIfNeeded(eventType: eventType, payloadName: "clarification stream payload", data: eventData)
             return .clarificationPending(ClarificationPendingResponse.streamPayload(from: eventData, decoder: decoder))

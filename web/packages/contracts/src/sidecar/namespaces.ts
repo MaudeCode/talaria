@@ -669,7 +669,7 @@ export const ChatStreamSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('tool_complete'), data: ToolFrame }),
   z.object({ event: z.literal('approval'), data: Loose }),
   z.object({ event: z.literal('clarify'), data: Loose }),
-  z.object({ event: z.literal('clarify_resolved'), data: Loose }),
+  z.object({ event: z.literal('clarify_resolved'), data: z.looseObject({ reason: z.enum(['resolved', 'timeout', 'cancelled']).optional() }) }),
   /** TAL-818: a `manage_connections` card opened; `tool_call_id` is the call that opened it. */
   z.object({ event: z.literal('connection'), data: ConnectorOperationSnapshotSchema }),
   /** The Agent stopped waiting on an approval: `reason` is its settle cause (`resolved`, `timeout`, `interrupted`, `session_closed`). */

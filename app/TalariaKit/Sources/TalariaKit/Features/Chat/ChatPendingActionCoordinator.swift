@@ -44,6 +44,12 @@ protocol ChatPendingActionCoordinatorDelegate: AnyObject {
 @MainActor
 @Observable
 final class ChatPendingActionCoordinator {
+    private var withdrawalBySession: [String: PromptWithdrawal] = [:]
+    var withdrawal: PromptWithdrawal? {
+        guard let sessionID = delegate?.pendingActionSessionID else { return nil }
+        return withdrawalBySession[sessionID]
+    }
+
     private(set) var approvalPrompt: ApprovalPromptState?
     private(set) var isRespondingToApproval = false
     private(set) var approvalErrorMessage: String?
@@ -291,6 +297,23 @@ final class ChatPendingActionCoordinator {
         await refreshClarificationPending(sessionID: sessionID)
     }
 
+    func clearWithdrawal(sessionID: String) {
+        approvalUpdateRevision &+= 1
+        clarificationUpdateRevision &+= 1
+        withdrawalBySession[sessionID] = nil
+    }
+
+    func refreshWithdrawal() async {
+        guard let sessionID = delegate?.pendingActionSessionID else { return }
+        let approvalRevision = approvalUpdateRevision
+        let clarifyRevision = clarificationUpdateRevision
+        guard let response = try? await client.approvalPending(sessionID: sessionID),
+              !Task.isCancelled, delegate?.pendingActionSessionID == sessionID,
+              approvalRevision == approvalUpdateRevision, clarifyRevision == clarificationUpdateRevision
+        else { return }
+        withdrawalBySession[sessionID] = response.withdrawn
+    }
+
     func startMonitoring() {
         connectionRunDidStart()
         startApprovalMonitoring()
@@ -305,6 +328,7 @@ final class ChatPendingActionCoordinator {
 
     func applyApprovalUpdate(_ update: ApprovalPendingResponse, sessionID: String) {
         approvalUpdateRevision &+= 1
+        withdrawalBySession[sessionID] = update.withdrawn
         if let pending = update.pending, !pending.isEmpty {
             let prompt = ApprovalPromptState(
                 sessionID: sessionID,
@@ -431,6 +455,7 @@ final class ChatPendingActionCoordinator {
 
     func applyClarificationUpdate(_ update: ClarificationPendingResponse, sessionID: String) {
         clarificationUpdateRevision &+= 1
+        withdrawalBySession[sessionID] = update.withdrawn
         if let pending = update.pending, !pending.isEmpty {
             var prompt = ClarificationPromptState(
                 sessionID: sessionID,
@@ -606,7 +631,7 @@ final class ChatPendingActionCoordinator {
             // after the chat stream already delivered a newer clarification.
             if update.pending == nil, clarificationUpdateRevision == initialRevision {
                 applyClarificationUpdate(
-                    ClarificationPendingResponse(pending: nil, pendingCount: update.pendingCount),
+                    ClarificationPendingResponse(pending: nil, pendingCount: update.pendingCount, withdrawn: update.withdrawn),
                     sessionID: sessionID
                 )
             }

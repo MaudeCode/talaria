@@ -3,20 +3,24 @@ import Foundation
 public struct ClarificationPendingResponse: Decodable, Equatable, Sendable {
     public let pending: PendingClarification?
     public let pendingCount: Int?
+    public let withdrawn: PromptWithdrawal?
 
-    public init(pending: PendingClarification?, pendingCount: Int?) {
+    public init(pending: PendingClarification?, pendingCount: Int?, withdrawn: PromptWithdrawal? = nil) {
         self.pending = pending
         self.pendingCount = pendingCount
+        self.withdrawn = withdrawn
     }
 
     enum CodingKeys: String, CodingKey {
         case pending
         case pendingCount
+        case withdrawn
         case pendingCountSnake = "pending_count"
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        withdrawn = try? container.decodeIfPresent(PromptWithdrawal.self, forKey: .withdrawn)
         pending = try? container.decodeIfPresent(PendingClarification.self, forKey: .pending)
         pendingCount = container.decodeLossyIntIfPresent(forKey: .pendingCount)
             ?? container.decodeLossyIntIfPresent(forKey: .pendingCountSnake)
@@ -29,6 +33,7 @@ public struct ClarificationPendingResponse: Decodable, Equatable, Sendable {
         }
 
         // The live chat frame is the queue head itself, with the queue depth beside it (TAL-1043).
+        if let wrapped, wrapped.withdrawn != nil { return wrapped }
         if let direct = try? decoder.decode(PendingClarification.self, from: data),
            !direct.isEmpty {
             return ClarificationPendingResponse(pending: direct, pendingCount: wrapped?.pendingCount ?? 1)

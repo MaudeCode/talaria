@@ -1113,6 +1113,9 @@ final class UITestFixtureURLProtocol: URLProtocol {
             chatState.answerApproval()
             return json(["ok": true, "choice": "once"])
         case "/api/approval/pending":
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-prompt-withdrawn"), !chatState.snapshot().started {
+                return json(["pending_count": 0, "withdrawn": ["kind": "approval", "reason": "timeout"]])
+            }
             // The full chat's approval stays pending until answered, as a Live Activity's Allow reads it (TAL-1463).
             let state = chatState.snapshot()
             guard UITestChatScenario.current == .full, state.started, !state.approvalAnswered else {

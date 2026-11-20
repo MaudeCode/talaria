@@ -15,6 +15,7 @@
  */
 import type { AgentRuntimeMetadata } from '@maudecode/talaria-web-contracts'
 import type { ChatEvent } from '../contracts/sse'
+import type { PromptWithdrawal } from '@maudecode/talaria-web-contracts'
 import type { ApprovalPending, Attachment, ClarifyPending, Session } from '../contracts'
 import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
 import type { ActivityGroup, ApprovalAnsweredBy, PendingSteer, RunStatus, ToolApprovalOutcome, ToolField, ToolKind, ToolApp, ToolProgress, ToolResultView, ToolVerb } from '@maudecode/talaria-web-contracts'
@@ -104,6 +105,7 @@ export interface LiveTurn {
   warning: string | null
   error: (AgentRuntimeMetadata & { condition?: string | undefined; type: string; message: string; hint?: string | undefined; continuationSessionId?: string | undefined }) | null
   cancelledMessage: string | null
+  withdrawn?: PromptWithdrawal | null | undefined
   approval: ApprovalPending | null
   clarify: ClarifyPending | null
   /** TAL-818: the turn's open `manage_connections` card; the card reads the operation from the server from here on. */
@@ -288,13 +290,13 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
     }
     case 'approval': {
       if (terminal) return stamped
-      return { ...live(), approval: event.data }
+      return { ...live(), approval: event.data, withdrawn: null }
     }
     case 'approval_cleared':
-      return stamped.approval ? { ...stamped, approval: null } : stamped
+      return { ...stamped, approval: null, withdrawn: event.data.withdrawn ?? null }
     case 'clarify': {
       if (terminal) return stamped
-      return { ...live(), clarify: event.data as ClarifyPending }
+      return { ...live(), clarify: event.data as ClarifyPending, withdrawn: event.data.withdrawn ?? null }
     }
     case 'connect_card': {
       if (terminal) return stamped
@@ -356,12 +358,13 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
         cancelledMessage: cancelled ? (event.data.message ?? '') : null,
         doneSession: sessionOf(event.data),
         ...NO_PROMPTS,
+        withdrawn: event.data.withdrawn === undefined ? stamped.withdrawn : event.data.withdrawn,
         streamEnded: true,
       }
     }
     case 'cancel': {
       if (terminal) return { ...stamped, streamEnded: true }
-      return { ...stamped, status: 'cancelled', terminalState: event.data.terminal_state, doneAt: now, cancelledMessage: '', doneSession: sessionOf(event.data), ...NO_PROMPTS, streamEnded: true }
+      return { ...stamped, status: 'cancelled', terminalState: event.data.terminal_state, doneAt: now, cancelledMessage: '', doneSession: sessionOf(event.data), ...NO_PROMPTS, withdrawn: null, streamEnded: true }
     }
     case 'session_snapshot':
       if (terminal) return stamped
@@ -387,7 +390,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
 export function streamReducer(state: StreamState, action: StreamAction): StreamState {
   switch (action.type) {
     case 'start': {
-      const turn = { ...newTurn(action.sessionId, action.streamId, action.now, action.serverStartedAt), turnId: action.turnId, userMessageId: action.userMessageId, userText: action.userText, userAttachments: action.userAttachments ?? [], status: 'connecting' as const }
+      const turn = { ...newTurn(action.sessionId, action.streamId, action.now, action.serverStartedAt), turnId: action.turnId, userMessageId: action.userMessageId, userText: action.userText, userAttachments: action.userAttachments ?? [], withdrawn: null, status: 'connecting' as const }
       return { turns: { ...state.turns, [action.sessionId]: turn } }
     }
     case 'attach': {

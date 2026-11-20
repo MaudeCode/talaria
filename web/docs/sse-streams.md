@@ -85,6 +85,12 @@ carries the display fields, the inputs (`fields`, each `key` and whether it is
 `key`, or `decline: true`; any empty input declines too. The answer goes to the
 Agent only: the response does not echo it and the server keeps no copy.
 
+The pending endpoints and their dedicated streams include `withdrawn` for a
+session's last timed-out, interrupted, or shutdown prompt when no prompt
+replaces it. The chat stream includes it on `approval_cleared` and on the
+settled `clarify` frame. An answer elsewhere and an explicit Stop do not
+leave a notice. The next admitted turn or new prompt clears the notice.
+
 ## Merged sidebar stream
 
 A browser allows six concurrent HTTP/1.1 connections per origin, and every SSE

@@ -760,6 +760,7 @@ export class TurnRunner {
         this.registry.clearWritebackOwnerIfOwned(s.session_id, streamId)
         return { error: SHUTTING_DOWN_MESSAGE, _status: 503 }
       }
+      this.deps.pending.clearWithdrawal(s.session_id)
       const channel = this.registry.create(streamId, s.session_id)
       admission.admitting = false
       if (opts.goalRelated) this.registry.goalRelated.add(streamId)
@@ -1221,6 +1222,7 @@ export class TurnRunner {
               }
               // Python: the live chat frame carries the queue head plus depth, not the entry that just arrived.
               case 'approval': {
+                if (this.registry.cancelled.has(streamId)) return
                 // TAL-2333: the card shows the call it holds as that call's row does.
                 const held = str(data.tool_call_id) ? liveToolCalls.findLast((call) => call.tid === data.tool_call_id) : undefined
                 deps.pending.submitApproval(sessionId, { ...data, session_id: sessionId, can_deny_with_instruction: true, ...(held ? { tool: approvalTool(held, deps.redactEnabled(), s.workspace) } : {}) })
@@ -1231,19 +1233,24 @@ export class TurnRunner {
               // TAL-514: the Agent stopped waiting on an approval (answer, timeout, or interrupt); withdraw its copy.
               case 'approval_resolved': {
                 if (!str(data.approval_id)) return
-                deps.pending.resolveApproval(sessionId, str(data.approval_id))
+                deps.pending.resolveApproval(sessionId, str(data.approval_id), this.registry.cancelled.has(streamId) ? undefined : data.reason)
                 await emitFrame(...this.approvalHeadFrame(sessionId))
                 return
               }
               case 'clarify': {
+                if (this.registry.cancelled.has(streamId)) return
                 deps.pending.submitClarify(sessionId, { ...data, session_id: sessionId })
                 const head = deps.pending.clarifyHeadFrame(sessionId)
                 if (head) (await emitFrame('clarify', head))
                 return
               }
               case 'clarify_resolved': {
-                const { head } = deps.pending.resolveClarify(sessionId, str(data.clarify_id))
-                if (head) (await emitFrame('clarify', head))
+                const { entry, head } = deps.pending.resolveClarify(sessionId, str(data.clarify_id), this.registry.cancelled.has(streamId) ? undefined : data.reason)
+                if (head) await emitFrame('clarify', head)
+                else {
+                  const { withdrawn } = deps.pending.clarifyPending(sessionId)
+                  if (entry && withdrawn?.kind === 'clarify') await emitFrame('clarify', { clarify_id: data.clarify_id, status: 'resolved', withdrawn })
+                }
                 return
               }
               case 'provider_phase': {
@@ -1866,7 +1873,10 @@ export class TurnRunner {
     if (sessionId) try { snapshot = (await this.publicTerminalSession((await this.deps.store.get(sessionId)), streamId)) } catch { snapshot = null }
     const context = { ...(sessionId ? { session_id: sessionId } : {}), ...(snapshot ? { session: snapshot } : {}) }
     const notice = this.shutdownStops.get(streamId)
-    if (notice) return ['apperror', { type: 'interrupted', terminal_state: 'interrupted', message: `${notice.summary}.`, hint: notice.hint, ...context }]
+    if (notice) {
+      const withdrawn = sessionId ? this.deps.pending.approvalPending(sessionId).withdrawn : null
+      return ['apperror', { type: 'interrupted', terminal_state: 'interrupted', message: `${notice.summary}.`, hint: notice.hint, ...(withdrawn ? { withdrawn } : {}), ...context }]
+    }
     return ['cancel', { type: 'cancelled', status: 'cancelled', terminal_state: 'cancelled', ...context }]
   }
 
@@ -2249,6 +2259,7 @@ export class TurnRunner {
     const sessionId = this.registry.sessionOf(streamId)
     if (shutdown && !this.registry.cancelled.has(streamId)) this.shutdownStops.set(streamId, shutdown)
     this.registry.cancelled.add(streamId)
+    if (sessionId) this.deps.pending.withdrawTurnPrompts(sessionId, this.shutdownStops.has(streamId))
     if (run) { run.phase = 'cancelling'; run.cancelled_at = this.deps.now() }
     // Python `_finalize_webui_steers` drained the Agent's pending steer text at cancel time: the interrupt reply
     // carries it so queued steers settle as consumed / leftover before the terminal row.
@@ -2813,8 +2824,8 @@ export class TurnRunner {
 
   /** The live chat frame after approvals were withdrawn: the new queue head, or `approval_cleared` once none is left. */
   private approvalHeadFrame(sessionId: string): [string, Record<string, unknown>] {
-    const { pending, pending_count } = this.deps.pending.approvalPending(sessionId)
-    return pending ? ['approval', { ...pending, pending_count }] : ['approval_cleared', { session_id: sessionId, pending_count: 0 }]
+    const { pending, pending_count, withdrawn } = this.deps.pending.approvalPending(sessionId)
+    return pending ? ['approval', { ...pending, pending_count }] : ['approval_cleared', { session_id: sessionId, pending_count: 0, withdrawn }]
   }
 
   /**
