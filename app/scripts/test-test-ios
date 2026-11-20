@@ -173,6 +173,21 @@ if [[ "${selectors[0]:-}" == *ConnectedBeforeSuite* || "${selectors[0]:-}" == *R
 fi
 # The runner connects and reports its first suite.
 printf '%s\n' '{"name":{"_value":"testSuiteStarted"}}' >> "$result_stream"
+# Start one test and keep it active. The self-exit bounds the pre-fix run.
+if [[ "${selectors[0]:-}" == *HungTest* ]]; then
+    exec python3 -c '
+import pathlib, signal, sys, time
+stream, bundle = map(pathlib.Path, sys.argv[1:])
+def stop(*_):
+    bundle.mkdir()
+    (bundle / "partial").write_text("flushed on interrupt")
+    sys.exit(65)
+signal.signal(signal.SIGINT, stop)
+with stream.open("a") as handle:
+    print("""{"name":{"_value":"testStarted"},"structuredPayload":{"testIdentifier":{"identifier":{"_value":"TalariaTests.HungTest/testNeverFinishes()"}}}}""", file=handle)
+time.sleep(20)
+' "$result_stream" "$result_bundle"
+fi
 # Repeats until interrupted (passing after 50 tests otherwise), its first test finishing after two seconds; records how many had finished (TAL-2402).
 # Python, since a background job's bash ignores SIGINT and cannot trap it.
 if [[ "${selectors[0]:-}" == *UntilInterrupted* ]]; then
@@ -412,6 +427,24 @@ grep -Eq "The test runner on iOS Test [12] \([A-F-]+\) failed to launch before a
 grep -q "stopping the run as a runner fault" "$state/LaunchFaultAlways.log"
 faulted_bundle=$(grep -m1 -- 'TalariaTests/LaunchFaultOnce|' "$state/runs" | cut -d'|' -f2)
 [[ -d "${faulted_bundle%.xcresult}-launch-1.xcresult" ]]
+
+# The hosted launcher must name the still-running test and give xcodebuild a chance to flush results.
+echo 'build-produced fixture receipt' > "$state/hung.xctestrun"
+hung_status=0
+(
+    source "$repo/scripts/xctest-launch"
+    simulator_id=AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA
+    destination="platform=iOS Simulator,id=$simulator_id"
+    xctest_recover() { return 99; }
+    xctest_launch "$state/hung.xcresult" "$state/hung.log" -xctestrun "$state/hung.xctestrun" \
+        -test-timeouts-enabled YES -default-test-execution-time-allowance 1 \
+        "-only-testing:TalariaTests/HungTest"
+) > "$state/hung.console.log" 2>&1 || hung_status=$?
+grep -Fq "Test Case '-[TalariaTests.HungTest testNeverFinishes]' failed" "$state/hung.log" || {
+    echo "The hosted watchdog did not report TalariaTests.HungTest/testNeverFinishes() before the fixture self-exited." >&2
+    exit 1
+}
+[[ "$hung_status" != 0 && "$(<"$state/hung.xcresult/partial")" == 'flushed on interrupt' ]]
 
 # A simulator the hosted step could not ready (xctest_ready fails) uses the guard's one recovery before the first launch
 # (TAL-2469): a recovered simulator runs the tests, and a failed recovery or a later launch fault is a runner fault.

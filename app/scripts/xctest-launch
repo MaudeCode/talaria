@@ -69,14 +69,54 @@ xctest_recover_once() {
     attempt=2
 }
 
-# Interrupts xcodebuild once the budget is spent after the first complete attempt; returns when xcodebuild ends.
-xctest_watch_budget() {
-    local stream=$1 started finished
+# A host clock backs up XCTest's in-simulator allowance. Allow 10 seconds for XCTest to interrupt the test
+# itself and another 15 after SIGINT for xcodebuild to finalize the partial bundle before enforcing the stop.
+xctest_watch_run() {
+    local stream=$1 allowance=$2 started finished now line partial="" event identifier active="" active_since=0
+    local interrupted_at=0
     started=$(now_us)
     while kill -0 "$xcodebuild_pid" 2>/dev/null; do
-        if (( $(now_us) - started >= TALARIA_TEST_BUDGET * 1000000 )); then
-            # Distinct tests: xcodebuild runs one test's iterations back to back, so a count of finished runs reaches
-            # the planned number while later tests have not started (TAL-2535).
+        now=$(now_us)
+        if (( interrupted_at )); then
+            if (( now - interrupted_at >= 15000000 )); then
+                echo "xcodebuild did not exit after interrupt; stopping it before the shard deadline." | tee -a "$output_log"
+                kill -KILL "$xcodebuild_pid" 2>/dev/null || true
+                return
+            fi
+        elif (( allowance )); then
+            while IFS= read -r line; do
+                line="$partial$line"
+                partial=""
+                case "$line" in
+                    *'"testStarted"'*|*'"testFinished"'*) ;;
+                    *) continue ;;
+                esac
+                IFS=$'\t' read -r event identifier < <(/usr/bin/jq -r '
+                    [.name._value, (.structuredPayload | (.testIdentifier // .test).identifier._value)] | @tsv
+                ' <<< "$line") || continue
+                [[ -n "$identifier" ]] || continue
+                if [[ "$event" == testStarted ]]; then
+                    active=$identifier
+                    active_since=$now
+                elif [[ "$event" == testFinished && "$identifier" == "$active" ]]; then
+                    active=""
+                fi
+            done
+            # A read at EOF may consume a line that xcodebuild is still writing.
+            partial+=$line
+            if [[ -n "$active" ]] && (( now - active_since >= (allowance + 10) * 1000000 )); then
+                echo "Hosted test $active exceeded its ${allowance}s allowance plus 10s; interrupting xcodebuild." | tee -a "$output_log"
+                # The existing failure reporter and CI log parser recognize XCTest's failure line.
+                local suite=${active%/*} method=${active##*/}
+                [[ "$suite" == *.* ]] || suite="TalariaTests.$suite"
+                printf "Test Case '-[%s %s]' failed (host watchdog).\n" "$suite" "${method%()}" | tee -a "$output_log"
+                xctest_watchdog_failed=1
+                interrupted_at=$now
+                kill -INT "$xcodebuild_pid" 2>/dev/null || true
+            fi
+        fi
+        if (( ! interrupted_at && ${TALARIA_TEST_BUDGET:-0} && now - started >= TALARIA_TEST_BUDGET * 1000000 )); then
+            # Distinct tests: iterations are consecutive, so a raw finish count can miss later tests (TAL-2535).
             finished=$(( $({ grep '"_value":"testFinished"' "$stream" || true; } |
                 { grep -o '"identifier":{"_type":{"_name":"String"},"_value":"[^"]*"' || true; } | sort -u | wc -l) ))
             if (( finished >= ${TALARIA_TEST_BUDGET_AFTER:-1} )); then
@@ -95,6 +135,17 @@ xctest_launch() {
     shift 2
     local result_stream="${result_bundle%.xcresult}.stream.json" fifo="${output_log}.fifo"
     local connect_timeout=${TALARIA_RUNNER_CONNECT_TIMEOUT:-30} preparation_timeout=${TALARIA_RUNNER_PREPARATION_TIMEOUT:-30}
+    local allowance=0 timeout_enabled=NO previous="" argument xctest_watchdog_failed=0
+    for argument in "$@"; do
+        case "$previous" in
+            -test-timeouts-enabled) timeout_enabled=$argument ;;
+            -default-test-execution-time-allowance) allowance=$argument ;;
+        esac
+        previous=$argument
+    done
+    if [[ "$timeout_enabled" != YES || ! "$allowance" =~ ^[1-9][0-9]*$ ]]; then
+        allowance=0
+    fi
     local attempt=1 status simulator_name output_start tee_pid connect_started preparation_started runner_phase
     local host_launched reason
     touch "$output_log"
@@ -140,11 +191,14 @@ xctest_launch() {
         done
         if ! kill -0 "$xcodebuild_pid" 2>/dev/null || runner_connected; then
             ! runner_connected || echo "The test runner connected after $(( ($(now_us) - connect_started) / 1000000 ))s."
-            [[ -z "${TALARIA_TEST_BUDGET:-}" ]] || xctest_watch_budget "$result_stream"
+            if (( allowance || ${TALARIA_TEST_BUDGET:-0} )); then
+                xctest_watch_run "$result_stream" "$allowance" < "$result_stream"
+            fi
             status=0
             wait "$xcodebuild_pid" || status=$?
             xcodebuild_pid=""
             xctest_stop_output
+            (( ! xctest_watchdog_failed )) || return 1
             # A connected runner may have run tests, and an unknown failure is not ours to retry.
             if (( status == 0 )) || runner_connected ||
                 ! grep -Eq -- "$xctest_launch_faults" < <(tail -c "+$output_start" "$output_log"); then
