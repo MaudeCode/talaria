@@ -290,30 +290,44 @@ def test_selectors_stay_serial(project):
     assert len(ET.parse(report).findall(".//testcase")) == 1
 
 
-@pytest.mark.parametrize('marked', [True, False])
-def test_the_pm_store_is_warmed_once_only_for_a_marked_case_and_reaches_every_worker(project, marked):
-    # The Agent interpreter stands in for the warm-up admission; it records each call (TAL-2493).
+@pytest.mark.parametrize('source', ['provisioned', 'installed', None])
+def test_the_pm_store_is_warmed_once_only_for_a_marked_case_and_reaches_every_worker(project, source):
+    # The provisioned PM tools seed the store; without them the Agent interpreter installs them once. It records each call.
     calls = project / 'warm-calls'
     python = project / 'agent-python'
-    python.write_text(f'#!/bin/sh\necho "$(cd "$HERMES_HOME/tools" && pwd -P)" >> {calls}\n')
+    python.write_text(f'#!/bin/sh\necho "$(cd "$HERMES_HOME" && pwd -P) $*" >> {calls}\n')
     python.chmod(0o755)
+    provisioned = project / 'agent.pm/tools'
+    provisioned.mkdir(parents=True)
+    (provisioned / 'facts.json').write_text('{"uv": "provisioned"}')
     seen = project / 'seen'
     seen.mkdir()
     (project / 'tests/test_store.py').write_text(
         "import os, pathlib, pytest\n"
-        + "".join(f"{'@pytest.mark.pm_store' if marked and n == 0 else ''}\n"
-                  f"def test_{n}(): pathlib.Path({str(seen)!r}, '{n}').write_text(os.environ.get('TALARIA_PM_STORE', ''))\n"
+        + "".join(f"{'@pytest.mark.pm_store' if source and n == 0 else ''}\n"
+                  f"def test_{n}():\n"
+                  f"    store = os.environ.get('TALARIA_PM_STORE', '')\n"
+                  f"    pathlib.Path({str(seen)!r}, '{n}').write_text(store)\n"
+                  f"    tools = pathlib.Path(store, 'tools', 'facts.json')\n"
+                  f"    if store and tools.exists(): pathlib.Path({str(seen)!r}, 'tools').write_text(tools.read_text())\n"
+                  f"    if store: assert not pathlib.Path(store, 'tools').is_symlink()\n"
                   for n in range(3)))
     (project / 'tests/test_other.py').write_text("def test_other(): pass\n")
     result = subprocess.run([str(project / 'scripts/test.sh')], capture_output=True, text=True, timeout=45, env={
-        **os.environ, 'TALARIA_WEB_AGENT_DIR': str(project), 'TALARIA_WEB_PYTHON': str(python), 'TALARIA_SIDECAR_WORKERS': '4'})
+        **os.environ, 'TALARIA_WEB_AGENT_DIR': str(project), 'TALARIA_WEB_PYTHON': str(python), 'TALARIA_SIDECAR_WORKERS': '4',
+        'TALARIA_WEB_PM_TOOLS': str(provisioned) if source == 'provisioned' else ''})
     assert result.returncode == 0, result.stdout + result.stderr
     stores = {(seen / str(n)).read_text() for n in range(3)}
-    if marked:
-        [warmed_tools] = calls.read_text().splitlines()
+    if source == 'provisioned':
+        [store] = stores
+        assert not calls.exists(), 'a provisioned Agent must not install the PM tools again'
+        # Each worker saw a copy (asserted in the case), so no case writes the Agent cache.
+        assert (seen / 'tools').read_text() == '{"uv": "provisioned"}'
+    elif source == 'installed':
+        [warmed] = calls.read_text().splitlines()
         [store] = stores
         assert Path(store).name == 'pm-store', store
-        assert warmed_tools == os.path.realpath(store) + '/tools', 'the warm-up root must fill the store the workers are given'
+        assert warmed == os.path.realpath(store) + ' -m pm.cli install uv python', 'the install must fill the store the workers are given'
     else:
         assert not calls.exists() and stores == {''}
 

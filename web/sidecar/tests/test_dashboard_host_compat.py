@@ -10,9 +10,9 @@ from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent, shar
 def run_probe(tmp_path, scenario):
     home = tmp_path / '.hermes'
     home.mkdir()
-    share_pm_store(home)
+    offline = share_pm_store(home)
     result = subprocess.run([AGENT_PYTHON, str(pathlib.Path(__file__).with_name('probe_dashboard_plugins.py')), str(AGENT_DIR), scenario],
-                            env=isolated_env(home), capture_output=True, text=True, timeout=90)
+                            env=isolated_env(home, **offline), capture_output=True, text=True, timeout=90)
     assert result.returncode == 0, result.stdout + result.stderr
 
 

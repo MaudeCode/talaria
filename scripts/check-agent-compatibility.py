@@ -7,7 +7,8 @@ checks the active pin. ``--release TAG`` checks a supported release, ``--identit
 candidate, and ``--main SHA`` a canary that never enters the support record. ``--list`` validates the
 record offline and prints its tags.
 
-Provisions the Agent checkout and its venv on the newest Python its lockfile allows (``--python`` overrides).
+Provisions the Agent checkout and its venv on the newest Python its lockfile allows (``--python`` overrides), and
+the Agent's PM ``uv`` and ``python`` in ``<checkout>.pm`` beside it (``TALARIA_WEB_PM_TOOLS``), so tests never download them.
 Supported releases, the active pin among them, are cached under ``$XDG_CACHE_HOME/talaria/agents/<tag>`` and
 reused; each run deletes cached releases that left the support record. Candidates and canaries use a
 temporary directory removed at exit. It runs the Agent probe, the sidecar pytest suite on that interpreter,
@@ -24,6 +25,8 @@ import contextlib
 from datetime import datetime, timezone
 import hashlib
 import fcntl
+import functools
+import importlib.util
 import json
 import os
 import re
@@ -51,12 +54,21 @@ FORMATS = {
 }
 # The mcp extra (shipped in the image via [all]) lets the sidecar suite drive a real stub MCP server.
 SYNC = ["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp"]
-CACHE_SUFFIXES = (".lock", ".ready", ".python", ".tmp")
+CACHE_SUFFIXES = (".lock", ".ready", ".python", ".pm", ".tmp")
 # ponytail: newest of these that the lockfile allows; extend the range when an Agent requires a newer Python.
 PYTHON_MINORS = range(11, 15)
 
 
 STARTED = time.monotonic()
+
+
+@functools.cache
+def sidecar_script(name):
+    """Load ``web/sidecar/scripts/<name>.py``; it is not an importable package."""
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent.parent / f'web/sidecar/scripts/{name}.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def phase(name):
@@ -249,7 +261,7 @@ def prune(root, keep):
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 continue
-            for path in (root / tag, root / f"{tag}.python"):
+            for path in (root / tag, root / f"{tag}.python", root / f"{tag}.pm"):
                 shutil.rmtree(path, ignore_errors=True)
             for path in (root / f"{tag}.ready", root / f"{tag}.tmp"):
                 path.unlink(missing_ok=True)
@@ -271,7 +283,15 @@ def provision(args, kind, identity, env, agent):
         raise RuntimeError(f"Agent {ref} resolves to {actual}, not the recorded {sha}; the tag moved")
     python = args.python or lockfile_python(agent)
     subprocess.run([*SYNC, "--python", python], cwd=agent, env=env, check=True)
+    # The sidecar suite's plugin cases seed their PM store from these, so no case downloads them (TAL-1985). The suite
+    # runner owns the install, so its fallback for an unprovisioned checkout runs the same command.
+    sidecar_script('suite_runner').install_pm_tools(agent / ".venv/bin/python", agent, pm_home(agent), env)
     return python
+
+
+def pm_home(agent):
+    """The Hermes home holding ``agent``'s provisioned PM tools, beside the checkout and removed with it."""
+    return agent.with_name(agent.name + ".pm")
 
 
 @contextlib.contextmanager
@@ -298,8 +318,9 @@ def agent_checkout(args, kind, identity, env):
     def current():
         try:
             expected = provisioned if args.python else \
-                {"sourceRevision": identity["sourceRevision"], "python": lockfile_python(agent), "sync": SYNC}
-            if not expected or json.loads(ready.read_text()) != expected:
+                {"sourceRevision": identity["sourceRevision"], "python": lockfile_python(agent), "sync": SYNC,
+                 "pm": sidecar_script('suite_runner').PM_TOOLS}
+            if not expected or json.loads(ready.read_text()) != expected or not (pm_home(agent) / "tools/facts.json").is_file():
                 return False
         except (OSError, ValueError):
             return False
@@ -315,7 +336,9 @@ def agent_checkout(args, kind, identity, env):
             if not current():
                 ready.unlink(missing_ok=True)
                 shutil.rmtree(agent, ignore_errors=True)
-                provisioned.update(sourceRevision=identity["sourceRevision"], python=provision(args, kind, identity, env, agent), sync=SYNC)
+                shutil.rmtree(pm_home(agent), ignore_errors=True)
+                provisioned.update(sourceRevision=identity["sourceRevision"], python=provision(args, kind, identity, env, agent), sync=SYNC,
+                                   pm=sidecar_script('suite_runner').PM_TOOLS)
                 temporary = root / f"{tag}.tmp"
                 temporary.write_text(json.dumps(provisioned))
                 temporary.replace(ready)
@@ -325,11 +348,7 @@ def agent_checkout(args, kind, identity, env):
 
 def provision_importer(target):
     # Provision immutable API bytes before tests. Runtime trials and tests stay offline.
-    import importlib.util
-    spec = importlib.util.spec_from_file_location('agent_importer_contract', ROOT / 'web/sidecar/scripts/agent_importer_contract.py')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.provision(target)
+    return sidecar_script('agent_importer_contract').provision(target)
 
 
 def check(args, kind, identity, receipt, junit):
@@ -349,7 +368,8 @@ def check(args, kind, identity, receipt, junit):
             agent_python = agent / ".venv/bin/python"
             receipt["python"] = subprocess.check_output([str(agent_python), "-c", "import platform; print(platform.python_version())"],
                                                         env=env, text=True).strip()
-            env.update(TALARIA_WEB_AGENT_DIR=str(agent), TALARIA_WEB_PYTHON=str(agent_python), TALARIA_WEB_TEST_PYTHON=sys.executable)
+            env.update(TALARIA_WEB_AGENT_DIR=str(agent), TALARIA_WEB_PYTHON=str(agent_python), TALARIA_WEB_TEST_PYTHON=sys.executable,
+                       **{sidecar_script('suite_runner').PM_TOOLS_SOURCE: str(pm_home(agent) / "tools")})
             if not args.skip_sidecar_tests or args.command:
                 env['TALARIA_WEB_IMPORTER_DIR'] = str(provision_importer(state / 'agent-importers'))
             # The retained formats first shipped in 0.22.1; promotion must not bypass their probe.

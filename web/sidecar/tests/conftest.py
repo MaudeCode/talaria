@@ -26,6 +26,8 @@ import pytest
 
 SIDECAR_ROOT = pathlib.Path(__file__).resolve().parent.parent
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
+# Holds the network guard, loaded as sitecustomize by every process of a case that shares the PM store.
+OFFLINE = pathlib.Path(__file__).resolve().parent / "offline"
 sys.path.insert(0, str(SIDECAR_ROOT / "scripts"))
 pytest.register_assert_rewrite('suite_runner')
 from suite_runner import PM_STORE, case_layer, link_pm_store, process_snapshot
@@ -82,11 +84,13 @@ def isolated_env(hermes_home: pathlib.Path, *, home: pathlib.Path | None = None,
     return env
 
 
-def share_pm_store(root: pathlib.Path) -> None:
-    """Link a disposable Hermes root's machine-scoped PM toolchain and uv cache into the store the runner warmed for
-    pm_store cases. Without one (a direct pytest run) the case downloads its own, which is slower and still correct."""
+def share_pm_store(root: pathlib.Path) -> dict[str, str]:
+    """Link a disposable Hermes root's machine-scoped PM toolchain and uv cache into the store the runner seeded with the
+    provisioned PM tools, and return the environment that runs the case offline: the network guard and an offline uv.
+    A case that would still download (a direct pytest run has no store) fails fast with the guard's error (TAL-1985)."""
     if store := os.environ.get(PM_STORE):
         link_pm_store(root, pathlib.Path(store))
+    return {"PYTHONPATH": os.pathsep.join([str(OFFLINE), str(SIDECAR_ROOT)]), "UV_OFFLINE": "1"}
 
 
 def agent_script(home: pathlib.Path, code: str) -> None:

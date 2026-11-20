@@ -65,7 +65,7 @@ def synthetic(tmp_path: pathlib.Path):
 
     def start(*enabled: str) -> SimpleNamespace:
         home = tmp_path / "home" / ".hermes"
-        share_pm_store(home)
+        offline = share_pm_store(home)
         for name, kind in (("team-notes", "standalone"), ("solo-backend", "exclusive")):
             path = home / "plugins" / name
             path.mkdir(parents=True)
@@ -73,7 +73,7 @@ def synthetic(tmp_path: pathlib.Path):
             (path / "__init__.py").write_text("def register(ctx):\n    pass\n")
         if enabled:
             (home / "config.yaml").write_text(f"plugins:\n  enabled: {list(enabled)}\n")
-        sidecar = SidecarProcess(home)
+        sidecar = SidecarProcess(home, env=offline)
         sidecars.append(sidecar)
 
         def listed() -> dict:

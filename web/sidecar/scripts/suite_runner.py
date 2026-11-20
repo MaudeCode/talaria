@@ -10,6 +10,7 @@ import json
 import contextlib
 import os
 from pathlib import Path
+import shutil
 import signal
 import statistics
 import subprocess
@@ -37,23 +38,20 @@ def worker_count(value=None):
 
 DURATIONS = Path(__file__).resolve().parents[1] / 'tests/case_durations.json'
 # A case marked pm_store reaches a real PM admission or venv sync. PM keeps its toolchain and uv cache machine-scoped under
-# the default Hermes root, shared by every profile; a disposable root would download and fill them again in each case.
-# The runner warms one store before workers start and names it in PM_STORE; conftest.share_pm_store links a case's root
-# into it (TAL-2493).
+# the default Hermes root, shared by every profile; a disposable root would fill them again in each case.
+# The runner seeds one store before workers start and names it in PM_STORE; conftest.share_pm_store links a case's root
+# into it (TAL-2493) and runs the case offline. The store's tools come from the Agent's provisioned PM tools
+# (PM_TOOLS_SOURCE), so no case downloads uv or Python from GitHub (TAL-1985).
 PM_STORE = 'TALARIA_PM_STORE'
+PM_TOOLS_SOURCE = 'TALARIA_WEB_PM_TOOLS'
 PM_SHARED = ('tools', 'cache/uv', 'cache/partials')
-WARM_PM_STORE = """
-import sys
-sys.path.insert(0, sys.argv[1])
-from hermes_constants import get_hermes_home
-from hermes_cli import plugins_admission
-plugin = get_hermes_home() / 'plugins/pm-warm'
-plugin.mkdir(parents=True)
-(plugin / 'plugin.yaml').write_text('name: pm-warm\\nversion: 0.0.1\\nkind: standalone\\n')
-(plugin / '__init__.py').write_text('def register(ctx):\\n    pass\\n')
-(get_hermes_home() / 'config.yaml').write_text('plugins:\\n  enabled: [pm-warm]\\n')
-plugins_admission.admit_plugin_set_change(set(), {'pm-warm'}, plugin='pm-warm')
-"""
+# The Agent's own PM install of the pinned tools a plugin venv sync needs.
+PM_TOOLS = ['-m', 'pm.cli', 'install', 'uv', 'python']
+
+
+def install_pm_tools(python, agent, home, env):
+    """Install the Agent's pinned PM tools into the Hermes home ``home``; its ``tools`` holds them."""
+    subprocess.run([str(python), *PM_TOOLS], cwd=agent, env={**env, 'HERMES_HOME': str(home)}, check=True, timeout=600)
 
 
 def link_pm_store(root, store):
@@ -65,14 +63,17 @@ def link_pm_store(root, store):
 
 
 def warm_pm_store(state):
-    """One real admission in a throwaway root linked to ``state/pm-store``, so the cases share its downloads."""
-    store, root = state / 'pm-store', state / 'pm-warm/home/.hermes'
-    link_pm_store(root, store)
-    env = {key: os.environ[key] for key in ('PATH', 'LD_LIBRARY_PATH') if key in os.environ}
-    env.update(HOME=str(root.parent), HERMES_HOME=str(root), TMPDIR=str(state / 'pm-warm'), HERMES_STATE_DB_GUARD_BYPASS='1',
-               TIRITH_ENABLED='0', HERMES_DISABLE_LAZY_INSTALLS='1')
-    agent = os.environ['TALARIA_WEB_AGENT_DIR']
-    subprocess.run([os.environ['TALARIA_WEB_PYTHON'], '-c', WARM_PM_STORE, agent], cwd=agent, env=env, check=True, timeout=600)
+    """Seed ``state/pm-store`` with the provisioned PM tools, copied so no case writes the Agent cache. An Agent checkout
+    the compatibility checker did not provision gets them installed here once, before any case's timeout runs."""
+    store = state / 'pm-store'
+    store.mkdir()
+    if os.environ.get(PM_TOOLS_SOURCE):
+        shutil.copytree(os.environ[PM_TOOLS_SOURCE], store / 'tools', symlinks=True)
+    else:
+        env = {key: os.environ[key] for key in ('PATH', 'LD_LIBRARY_PATH') if key in os.environ}
+        env.update(HOME=str(state / 'pm-warm'), TMPDIR=str(state / 'pm-warm'))
+        (state / 'pm-warm').mkdir()
+        install_pm_tools(os.environ['TALARIA_WEB_PYTHON'], os.environ['TALARIA_WEB_AGENT_DIR'], store, env)
     return store
 
 
@@ -539,7 +540,7 @@ def run(args):
                     raise ValueError(f'shard {shard[0]}/{shard[1]} selected no cases')
             if set(expected) & set(collected['pm_store']) and os.environ.get('TALARIA_WEB_PYTHON'):
                 pm_store = warm_pm_store(state)
-                print(f"Warmed the shared PM store: {pm_store}", flush=True)
+                print(f"Seeded the shared PM store: {pm_store}", flush=True)
             print(f"Collected {len(nodeids)} cases; selected {len(expected)} in {layers}"
                   f"{f' for shard {shard[0]}/{shard[1]}' if shard else ''}; diagnostics: {output}", flush=True)
             # Every layer's balanced groups share one pool of `selected` slots, longest estimate first.
