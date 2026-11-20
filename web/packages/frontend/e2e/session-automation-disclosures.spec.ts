@@ -5,7 +5,7 @@ test.use({ serviceWorkers: 'block' })
 // TAL-1639: the server files cron and webhook rows under its Scheduled and Webhook groups; the sidebar shows them as disclosures.
 test('Scheduled and Webhook sessions sit in collapsed disclosures with a View all list', async ({ page }, info) => {
   const now = Math.floor(Date.now() / 1000)
-  const base = { is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, is_messaging_session: false }
+  const base = { is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true, is_messaging_session: false }
   const chat = (id: string, title: string, ago: number) => ({ ...base, session_id: id, title, sort_ts: now - ago, source_kind: 'webui', sidebar_group: 'recent' })
   const cron = Array.from({ length: 7 }, (_, i) => ({ ...base, session_id: `cron_daily_${String(i)}`, title: `Daily digest ${String(i + 1)}`, sort_ts: now - 3600 * (i + 1), source_kind: 'cron', read_only: true, sidebar_group: 'scheduled' }))
   const hooks = [{ ...base, session_id: 'hook-deploy', title: 'Deploy hook', sort_ts: now - 7200, source_kind: 'webhook', read_only: true, sidebar_group: 'webhook' }]

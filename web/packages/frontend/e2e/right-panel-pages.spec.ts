@@ -12,7 +12,7 @@ const agent = (overrides: Record<string, unknown>) => ({
 async function openPanelSession(page: Page) {
   const sid = 'panel-pages'
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    session_id: sid, title: 'Audit the repo', workspace: '/repo', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, transcript_seq: null,
+    session_id: sid, title: 'Audit the repo', workspace: '/repo', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true, transcript_seq: null,
     messages: [{ role: 'user', id: 1, content: 'Split the audit' }],
   } } }))
   await page.route('**/api/background/tasks?**', (route) => {

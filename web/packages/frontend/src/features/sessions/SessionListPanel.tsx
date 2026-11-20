@@ -114,19 +114,13 @@ export function groupSessionRows(rows: SessionRow[], now = Date.now()): { id: Gr
 }
 
 /**
- * TAL-1151: the server's nesting. A row with `sidebar_parent_session_id` shows only under that listed parent, in server
- * order; filters apply to the top-level rows and their nested rows follow them.
+ * TAL-1151, TAL-2478: the server's nesting. A row with a `sidebar_parent_session_id` shows only under that parent, which
+ * lists it in `sidebar_children`; a row the user's pending write hides takes its nested rows with it.
  */
-function nestSessionRows(rows: SessionRow[]): { roots: SessionRow[]; children: Map<string, SessionRow[]> } {
-  const ids = new Set(rows.map((r) => r.session_id))
-  const roots: SessionRow[] = []
-  const children = new Map<string, SessionRow[]>()
-  for (const r of rows) {
-    const parent = r.sidebar_parent_session_id
-    if (!parent) roots.push(r)
-    else if (ids.has(parent)) { const nested = children.get(parent); if (nested) nested.push(r); else children.set(parent, [r]) }
-  }
-  return { roots, children }
+function sidebarTree(rows: readonly SessionRow[]): { roots: SessionRow[]; children: Map<string, SessionRow[]> } {
+  const byId = new Map(rows.map((r) => [r.session_id, r]))
+  const roots = rows.filter((r) => !r.sidebar_parent_session_id)
+  return { roots, children: new Map(roots.map((r) => [r.session_id, (r.sidebar_children ?? []).flatMap((id) => byId.get(id) ?? [])])) }
 }
 
 /** The existing sidebar row, memoized so unchanged server rows retain their rendered subtree. */
@@ -208,24 +202,35 @@ export function SessionListPanel() {
   const [source, setSource] = useState<SessionSource>('webui')
   const [project, setProject] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
-  const listParams = showArchived ? { include_archived: true } : {}
+  // TAL-2478: the server lists only the chosen source tab, project and archive state.
+  const projectParam = project === NO_PROJECT ? 'none' : (project ?? undefined)
+  const listParams: api.SessionListParams = { sidebar_source: source, ...(projectParam ? { project_id: projectParam } : {}), ...(showArchived ? { include_archived: true } : {}) }
   const list = useSessionListQuery(listParams)
   const projects = useProjectsQuery()
   const data = list.data
   const effects = useResourceEffects()
   const shown = useShownSessionRows()
-  const rows = shown(data?.sessions ?? []).filter((r) => showArchived || !r.archived)
-  const tree = nestSessionRows(rows)
+  // The user's own pending archive or move takes a row (and its nested rows) out of this view at once; a refusal
+  // brings it back, and the server's next list converges.
+  const leavesView = (r: SessionRow) => {
+    const pending = effects[`session:${r.session_id}`]?.fields
+    if (!pending) return false
+    if (!showArchived && pending.archived === true) return true
+    return projectParam !== undefined && 'project_id' in pending && (projectParam === 'none' ? !!pending.project_id : pending.project_id !== projectParam)
+  }
+  const rows = shown(data?.sessions ?? []).filter((r) => !leavesView(r))
+  const tree = sidebarTree(rows)
   // The server counts each tab (a nested row in its parent's); an optimistic write that hides a row takes it and its nested rows off at once.
   const shownIds = new Set(rows.map((r) => r.session_id))
-  const listed = nestSessionRows(data?.sessions ?? [])
   const tabCount = (cli: boolean) => ((cli ? data?.cli_session_count : data?.webui_session_count) ?? 0)
-    - listed.roots.reduce((n, r) => ((r.sidebar_source === 'cli') === cli && !shownIds.has(r.session_id) ? n + 1 + (listed.children.get(r.session_id)?.length ?? 0) : n), 0)
+    - (data?.sessions ?? []).reduce((n, r) => (!r.sidebar_parent_session_id && (r.sidebar_source === 'cli') === cli && !shownIds.has(r.session_id) ? n + 1 + (r.sidebar_children?.length ?? 0) : n), 0)
   const cliCount = tabCount(true)
-  // TAL-308: the server searches within the visible project, source tab and archive state; the local title filter covers the wait.
-  const q = useDebounced(filter.trim(), 200)
+  // TAL-308: the server searches within the listed project, source tab and archive state, from two characters.
+  const term = filter.trim()
+  const searching = term.length >= 2
+  const q = useDebounced(term, 200)
   const [retainSearchMatches, setRetainSearchMatches] = useState(false)
-  const searchFilters: api.SessionSearchFilters = { project_id: project === NO_PROJECT ? 'none' : (project ?? undefined), sidebar_source: cliCount > 0 ? source : undefined, include_archived: showArchived }
+  const searchFilters: api.SessionSearchFilters = { project_id: projectParam, sidebar_source: source, include_archived: showArchived }
   const search = useQuery({ queryKey: keys.sessions.search(q, searchFilters), queryFn: ({ signal }) => api.searchSessions(q, searchFilters, 5, signal), enabled: q.length >= 2, staleTime: 15_000,
     // Retain matches only within the same source, project and archive scope.
     placeholderData: (previous, query) => {
@@ -233,27 +238,22 @@ export function SessionListPanel() {
       return retainSearchMatches && before?.project_id === searchFilters.project_id && before?.sidebar_source === searchFilters.sidebar_source && before?.include_archived === searchFilters.include_archived ? keepPreviousData(previous) : undefined
     },
   })
-  // Disabled short-term queries never replace Query's previous data. Re-arm only after a real search result.
-  if (q.length < 2 && retainSearchMatches) setRetainSearchMatches(false)
-  else if (q.length >= 2 && search.data && !search.isPlaceholderData && !retainSearchMatches) setRetainSearchMatches(true)
+  // Disabled short-term queries never replace Query's previous data. A field cut below two characters drops the
+  // matches at once; they re-arm only with a real result for the current term.
+  if ((!searching || q.length < 2) && retainSearchMatches) setRetainSearchMatches(false)
+  else if (searching && q === term && search.data && !search.isPlaceholderData && !retainSearchMatches) setRetainSearchMatches(true)
   const webuiCount = tabCount(false)
   // TAL-785: the server says when state.db could not serve the Agent sessions; an empty list alone would read as deleted history.
   const storage = data?.agent_storage
   const storageNotice = storage?.state === 'corrupt' ? m.agent_storage_corrupt() : storage?.state === 'unavailable' ? m.agent_storage_unavailable() : storage?.state === 'outdated' ? m.agent_storage_outdated() : null
-  const hasUnprojected = rows.some((r) => !r.project_id)
   const projectList = withEffects(projects.data?.projects ?? [], (p) => `project:${p.project_id}`, effects)
   const projectsById = new Map(projectList.map((p) => [p.project_id, p]))
   const filterDetail = project === NO_PROJECT ? m.project_unassigned() : project ? projectsById.get(project)?.name : undefined
-  const { roots: filtered, children } = (() => {
-    const term = q.toLowerCase()
-    let visible = tree.roots
-    if (cliCount > 0) visible = visible.filter((r) => (r.sidebar_source === 'cli') === (source === 'cli'))
-    if (project === NO_PROJECT) visible = visible.filter((r) => !r.project_id)
-    else if (project) visible = visible.filter((r) => r.project_id === project)
-    if (term && q.length >= 2 && search.data) return nestSessionRows(shown(search.data.sessions).filter((r) => showArchived || !r.archived))
-    return { roots: term ? visible.filter((r) => r.title.toLowerCase().includes(term)) : visible, children: tree.children }
-  })()
-  const previews = new Map((q.length >= 2 ? search.data?.sessions ?? [] : []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : [])))
+  // A search shows only the server's matches; until they arrive the list waits for them.
+  const matches = searching && q.length >= 2 && (retainSearchMatches || q === term) ? search.data : undefined
+  const { roots: filtered, children } = !searching ? tree : sidebarTree(matches ? shown(matches.sessions).filter((r) => !leavesView(r)) : [])
+  const searchWaiting = searching && !matches
+  const previews = new Map((matches?.sessions ?? []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : [])))
   const groups = groupSessionRows(filtered).map((g) => ({ ...g, label: GROUP_LABEL[g.id]() }))
   const context = useStreamContext()
   const pin = useSessionPin()
@@ -290,7 +290,7 @@ export function SessionListPanel() {
   }
   const acceptsDrop = (event: DragEvent, pinned: boolean) => !!dragRow && !!drag
     && !list.isError && !search.isPlaceholderData && drag.context === getStreamContext()
-    && qc.getQueryData(keys.sessions.list(listParams)) === drag.list
+    && qc.getQueryData(keys.sessions.list(listParams as Record<string, string | boolean | undefined>)) === drag.list
     && (q.length < 2 || qc.getQueryData(keys.sessions.search(q, searchFilters)) === drag.search)
     && event.dataTransfer.types.length === 1 && event.dataTransfer.types.includes(SESSION_DRAG_TYPE)
     && (dragRow.sidebar_group === 'pinned') !== pinned
@@ -317,7 +317,6 @@ export function SessionListPanel() {
   if (dragRow && groups.every((g) => g.id === 'pinned' || isDisclosure(g.id))) groups.splice(groups.findIndex((g) => g.id === 'pinned') + 1, 0, { id: 'today', label: m.session_unpin(), rows: [] })
   // Disclosures start collapsed; a search opens them on every match, as in the App sidebar.
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({ scheduled: true, webhook: true })
-  const searching = !!filter.trim()
   const isCollapsed = (id: GroupId) => !(searching && isDisclosure(id)) && !!collapsedGroups[id]
   const shownRows = (g: { id: GroupId; rows: SessionRow[] }) => (isDisclosure(g.id) && !searching ? g.rows.slice(0, DISCLOSURE_PREVIEW) : g.rows)
   const disclosureCount: Record<DisclosureId, string> = {
@@ -373,7 +372,7 @@ export function SessionListPanel() {
     <div className="panel-view active" id="panelChat">
       <PanelSearch
         title={<SectionHeader detail={filterDetail ? <span data-chats-detail title={filterDetail}>{filterDetail}</span> : null}>{m.sidebar_chats()}</SectionHeader>}
-        actions={<SessionFilterMenu source={source} onSource={setSource} webuiCount={webuiCount} cliCount={cliCount} project={project} onProject={setProject} projects={projectList} hasUnprojected={hasUnprojected} showArchived={showArchived} onShowArchived={setShowArchived} onImport={() => importInput.current?.click()} />}
+        actions={<SessionFilterMenu source={source} onSource={setSource} webuiCount={webuiCount} cliCount={cliCount} project={project} onProject={setProject} projects={projectList} hasUnprojected={data?.has_unprojected ?? false} showArchived={showArchived} onShowArchived={setShowArchived} onImport={() => importInput.current?.click()} />}
         open={searchOpen} onOpenChange={setSearchOpen} value={filter} onValueChange={setFilter} clearLabel={m.clear_conversation_filter()} className="session-search"
         id="sessionSearch" placeholder={m.filter_conversations()} aria-label={m.filter_conversations()}
       />
@@ -382,7 +381,7 @@ export function SessionListPanel() {
         scope={JSON.stringify([scope, q, collapsedGroups, data?.active_profile, q.length >= 2 ? search.dataUpdatedAt : null])} context={context} ready={list.isSuccess}
         className="session-list" id="sessionList" selection={{ key: activeId, className: 'session-selection' }}>
         {(present, previous, animate) => {
-          const tree = nestSessionRows(present)
+          const tree = sidebarTree(present)
           const renderedGroups = groupSessionRows(tree.roots).map((g) => ({ ...g, label: GROUP_LABEL[g.id]() }))
           for (const g of groups) if (!g.rows.length && !renderedGroups.some((r) => r.id === g.id)) renderedGroups.splice(groups.indexOf(g), 0, g)
           const timeMotion = { previous: new Map(previous.map((r) => [r.session_id, r])), enabled: animate }
@@ -400,7 +399,10 @@ export function SessionListPanel() {
                   {m.error_generic()} <button type="button" className="linklike" onClick={() => { void list.refetch() }}>{m.retry()}</button>
                 </div>
               )}
-              {list.isSuccess && filtered.length === 0 && !(q.length >= 2 && search.isPending) && <div className={LIST_NOTE}>{filter ? m.no_matching_sessions() : m.no_sessions_yet()}</div>}
+              {list.isSuccess && searchWaiting && (search.isError
+                ? <div className="session-list-error" role="alert">{m.error_generic()} <button type="button" className="linklike" onClick={() => { void search.refetch() }}>{m.retry()}</button></div>
+                : <div className={LIST_NOTE} role="status">{m.loading()}</div>)}
+              {list.isSuccess && filtered.length === 0 && !searchWaiting && <div className={LIST_NOTE}>{searching ? m.no_matching_sessions() : m.no_sessions_yet()}</div>}
               {renderedGroups.map((g) => {
                 const collapsed = isCollapsed(g.id)
                 const disclosure = isDisclosure(g.id)
@@ -463,7 +465,7 @@ function SessionGroupDialog({ title, kind, rows, nested, filters, activeId, proj
   const q = useDebounced(filter.trim(), 200)
   const shown = useShownSessionRows()
   const search = useQuery({ queryKey: keys.sessions.search(q, filters), queryFn: ({ signal }) => api.searchSessions(q, filters, 5, signal), enabled: q.length >= 2, staleTime: 15_000, placeholderData: keepPreviousData })
-  const found = search.data ? nestSessionRows(shown(search.data.sessions).filter((r) => filters.include_archived || !r.archived)) : null
+  const found = search.data ? sidebarTree(shown(search.data.sessions).filter((r) => filters.include_archived || !r.archived)) : null
   const matches = q.length < 2 ? rows : found ? found.roots.filter((r) => r.sidebar_group === kind) : null
   const children = q.length < 2 ? nested : found?.children ?? nested
   const previews = new Map((q.length >= 2 ? search.data?.sessions ?? [] : []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : [])))

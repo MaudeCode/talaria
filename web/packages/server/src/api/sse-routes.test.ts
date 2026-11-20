@@ -4,6 +4,7 @@ import * as fsp from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
+import { browserKeys, stubPushService } from '../test/notifications.js'
 import { JsonJournal } from '../sessions/storage/json-journal.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { StreamChannel, StreamSubscriber } from '../sessions/streams.js'
@@ -150,6 +151,29 @@ const resumeFrom = (frames: SseFrame[]): Record<string, string> => {
   return id ? { 'last-event-id': id } : {}
 }
 const played = (frames: SseFrame[]): string[] => frames.filter((frame) => frame.event === 'sessions_changed').flatMap((frame) => ((frame.data as { web_audio?: { identity: string }[] }).web_audio ?? []).map((item) => item.identity))
+
+it('says on each completion whether Web Push delivers it to the browser that opened the stream (TAL-2478)', async () => {
+  const s = server = await bootTestServer()
+  stubPushService(s)
+  const endpoint = 'https://push.example/send/stream-1'
+  const keys = browserKeys()
+  const subscription = (method: string, body: unknown): Promise<Response> => s.get('/api/notifications/web-push/subscriptions', { method, body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+  expect((await subscription('POST', { endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } })).status).toBe(200)
+  const delivers = async (query: string): Promise<unknown[]> => {
+    const frames = await s.sse(`/api/sessions/events${query}`, (frame) => {
+      if (frame.event === 'initial') publishCompletion(s, 'run')
+      return frame.event === 'sessions_changed'
+    })
+    return ((frames.find((frame) => frame.event === 'sessions_changed')?.data as { web_audio: { push_delivers?: unknown }[] }).web_audio).map((item) => item.push_delivers)
+  }
+  const opened = `?push_endpoint=${encodeURIComponent(endpoint)}`
+  expect(await delivers(opened)).toEqual([true])
+  expect(await delivers('')).toEqual([false])
+  expect(await delivers(`?push_endpoint=${encodeURIComponent('https://push.example/send/another')}`)).toEqual([false])
+  const off = { notify_on_approval: true, notify_on_input: true, notify_on_completion: false, notify_on_failure: true }
+  expect((await subscription('PATCH', { endpoint, preferences: off })).status).toBe(200)
+  expect(await delivers(opened)).toEqual([false])
+})
 
 it('plays a completion published between connections to a client resuming with Last-Event-ID, once', async () => {
   const s = server = await bootTestServer()

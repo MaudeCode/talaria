@@ -27,8 +27,8 @@ interface PendingAction { sid: string; kind: ActionKind; active: boolean; list: 
 
 /** The server permission each dialog needs: the menu offers it, and a refreshed row that withdraws it closes the dialog. */
 const allowed: Record<ActionKind, (row: SessionRow) => boolean> = {
-  rename: (row) => !row.read_only,
-  move: (row) => !row.read_only,
+  rename: (row) => row.can_rename,
+  move: (row) => row.can_move,
   delete: (row) => row.can_delete,
   worktree: (row) => !!row.worktree_branch && !row.read_only,
   revoke: (row) => !!row.share_url,

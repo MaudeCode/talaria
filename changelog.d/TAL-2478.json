@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web's chat list now gets each source, project and archive view from the server, and a search shows only the server's matches.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

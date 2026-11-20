@@ -96,8 +96,9 @@ export const setReasoningEffort = (effort: string, model?: string | null, provid
 export const setReasoningDisplay = (display: 'show' | 'hide') => orpc().reasoning.set({ display })
 
 // Sessions
-export interface SessionListParams { include_archived?: boolean; all_profiles?: boolean; sidebar_source?: 'webui' | 'cli' }
-export const fetchSessions = (params: SessionListParams = {}, signal?: AbortSignal) => orpc().sessions.list({ include_archived: flag(params.include_archived), all_profiles: flag(params.all_profiles), sidebar_source: params.sidebar_source }, { signal: timeout(45_000, signal) })
+/** The sidebar selection the server makes (TAL-2478): `project_id: 'none'` selects rows without a project. */
+export interface SessionListParams { include_archived?: boolean; all_profiles?: boolean; sidebar_source?: 'webui' | 'cli'; project_id?: string }
+export const fetchSessions = (params: SessionListParams = {}, signal?: AbortSignal) => orpc().sessions.list({ include_archived: flag(params.include_archived), all_profiles: flag(params.all_profiles), sidebar_source: params.sidebar_source, project_id: params.project_id }, { signal: timeout(45_000, signal) })
 /** The sidebar filters a search answers within (TAL-308); `project_id: 'none'` selects rows without a project. */
 export interface SessionSearchFilters { project_id: string | undefined; sidebar_source: 'webui' | 'cli' | undefined; include_archived: boolean }
 /** The sidebar's complete, ordered search result; rows carry `match_type` and, for content hits, `match_preview`. */

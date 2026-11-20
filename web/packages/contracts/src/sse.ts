@@ -129,6 +129,11 @@ export const WebAudioCompletionSchema = z.object({
   eligible: z.boolean(), expires_at: z.number(),
   /** TAL-2157: what a browser notification for this completion shows, composed with its Web Push; `tag` is the chat's, as the push uses. */
   notification: z.object({ title: z.string(), body: z.string(), url: z.string(), tag: z.string() }).optional(),
+  /**
+   * TAL-2478: Web Push delivers this completion to the browser whose `push_endpoint` opened the stream (its subscription
+   * is held for this profile with completions on), so that tab shows no notification of its own. False without one.
+   */
+  push_delivers: z.boolean().optional(),
 })
 export type WebAudioCompletion = z.infer<typeof WebAudioCompletionSchema>
 /** `GET /api/sessions/events` global invalidation and live Web playback. */

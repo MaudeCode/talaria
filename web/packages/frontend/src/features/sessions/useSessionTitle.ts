@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useSyncExternalStore } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { keys } from '../../api/queryKeys'
 import type { fetchSession, fetchSessions } from '../../api/endpoints'
 import { m } from '../../paraglide/messages.js'
@@ -8,9 +8,17 @@ import { useResourceEffects } from './useResourceMutation'
 /** Both chat headers observe the transcript/list caches; this never starts a second session read. */
 export function useSessionTitle(sessionId: string | null, fallback: string) {
   const detail = useQuery<Awaited<ReturnType<typeof fetchSession>>, Error, string | undefined>({ queryKey: keys.sessions.detail(sessionId ?? ''), enabled: false, select: (data) => data.session.title })
-  const list = useQuery<Awaited<ReturnType<typeof fetchSessions>>, Error, string | undefined>({ queryKey: keys.sessions.list({}), enabled: false, select: (data) => data.sessions.find((row) => row.session_id === sessionId)?.title })
+  // TAL-2478: the sidebar lists one source and project at a time, so any cached list may hold the row.
+  const qc = useQueryClient()
+  const listed = useSyncExternalStore((onChange) => qc.getQueryCache().subscribe(onChange), () => {
+    for (const [, data] of qc.getQueriesData<Awaited<ReturnType<typeof fetchSessions>>>({ queryKey: ['sessions', 'list'] })) {
+      const title = data?.sessions.find((row) => row.session_id === sessionId)?.title
+      if (title !== undefined) return title
+    }
+    return undefined
+  })
   const effects = useResourceEffects()
-  const title = effects[`session:${sessionId}`]?.fields?.title ?? detail.data ?? list.data
+  const title = effects[`session:${sessionId}`]?.fields?.title ?? detail.data ?? listed
   return typeof title === 'string' ? title || m.untitled() : fallback
 }
 

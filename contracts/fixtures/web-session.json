@@ -4692,6 +4692,8 @@
         "attention": null,
         "can_archive": true,
         "can_delete": true,
+        "can_rename": true,
+        "can_move": true,
         "can_branch": true,
         "can_duplicate": true,
         "can_share": true,
@@ -4711,13 +4713,16 @@
         "source_kind": "webui",
         "title": "Pinned chat with a pending prompt",
         "updated_at": 1789100000,
-        "workspace_name": null
+        "workspace_name": null,
+        "sidebar_children": []
       },
       {
         "active_stream_id": null,
         "attention": null,
         "can_archive": true,
         "can_delete": true,
+        "can_rename": true,
+        "can_move": true,
         "can_branch": true,
         "can_duplicate": true,
         "can_share": true,
@@ -4736,13 +4741,16 @@
         "source_kind": "webui",
         "title": "Pinned chat",
         "updated_at": 1789300000,
-        "workspace_name": null
+        "workspace_name": null,
+        "sidebar_children": []
       },
       {
         "active_stream_id": "tal306-run",
         "attention": null,
         "can_archive": true,
         "can_delete": true,
+        "can_rename": true,
+        "can_move": true,
         "can_branch": true,
         "can_duplicate": true,
         "can_share": true,
@@ -4761,13 +4769,16 @@
         "source_kind": "webui",
         "title": "Streaming chat",
         "updated_at": 1789400000,
-        "workspace_name": null
+        "workspace_name": null,
+        "sidebar_children": []
       },
       {
         "active_stream_id": null,
         "attention": null,
         "can_archive": true,
         "can_delete": true,
+        "can_rename": true,
+        "can_move": true,
         "can_branch": true,
         "can_duplicate": true,
         "can_share": true,
@@ -4786,13 +4797,16 @@
         "source_kind": "webui",
         "title": "Newest idle chat",
         "updated_at": 1789420000,
-        "workspace_name": null
+        "workspace_name": null,
+        "sidebar_children": []
       },
       {
         "active_stream_id": null,
         "attention": null,
         "can_archive": true,
         "can_delete": true,
+        "can_rename": true,
+        "can_move": true,
         "can_branch": true,
         "can_duplicate": true,
         "can_share": true,
@@ -4808,13 +4822,16 @@
         "sort_ts": 1789350000,
         "source_kind": "webui",
         "title": "Chat with only a creation time",
-        "workspace_name": null
+        "workspace_name": null,
+        "sidebar_children": []
       },
       {
         "active_stream_id": null,
         "attention": null,
         "can_archive": true,
         "can_delete": true,
+        "can_rename": true,
+        "can_move": true,
         "can_branch": true,
         "can_duplicate": true,
         "can_share": true,
@@ -4833,13 +4850,16 @@
         "source_kind": "webui",
         "title": "Tie with the created-only chat",
         "updated_at": 1789350000,
-        "workspace_name": null
+        "workspace_name": null,
+        "sidebar_children": []
       },
       {
         "active_stream_id": null,
         "attention": null,
         "can_archive": true,
         "can_delete": true,
+        "can_rename": true,
+        "can_move": true,
         "can_branch": true,
         "can_duplicate": true,
         "can_share": true,
@@ -4858,13 +4878,16 @@
         "source_kind": "webui",
         "title": "Chat with no message time",
         "updated_at": 1789250000,
-        "workspace_name": null
+        "workspace_name": null,
+        "sidebar_children": []
       },
       {
         "active_stream_id": null,
         "attention": null,
         "can_archive": true,
         "can_delete": true,
+        "can_rename": true,
+        "can_move": true,
         "can_branch": true,
         "can_duplicate": true,
         "can_share": true,
@@ -4883,7 +4906,8 @@
         "source_kind": "webui",
         "title": "Oldest chat",
         "updated_at": 1789000000,
-        "workspace_name": null
+        "workspace_name": null,
+        "sidebar_children": []
       }
     ]
   },
@@ -7045,6 +7069,8 @@
         "can_archive": true,
         "can_branch": true,
         "can_delete": true,
+        "can_rename": true,
+        "can_move": true,
         "can_duplicate": true,
         "can_pin": true,
         "can_share": true,
@@ -7060,6 +7086,9 @@
         "session_id": "tal1151-parent",
         "sidebar_group": "recent",
         "sidebar_source": "webui",
+        "sidebar_children": [
+          "tal1151-child"
+        ],
         "sidebar_parent_session_id": null,
         "sort_ts": 1789500100,
         "source_kind": "webui",
@@ -7074,6 +7103,8 @@
         "can_archive": false,
         "can_branch": false,
         "can_delete": false,
+        "can_rename": false,
+        "can_move": false,
         "can_duplicate": false,
         "can_pin": false,
         "can_share": true,
@@ -7092,6 +7123,7 @@
         "session_source": "subagent",
         "sidebar_group": "recent",
         "sidebar_source": "webui",
+        "sidebar_children": [],
         "sidebar_parent_session_id": "tal1151-parent",
         "sort_ts": 1789500090,
         "source_kind": "subagent",
@@ -7107,6 +7139,8 @@
         "can_archive": false,
         "can_branch": false,
         "can_delete": false,
+        "can_rename": false,
+        "can_move": false,
         "can_duplicate": false,
         "can_pin": false,
         "can_share": true,
@@ -7125,6 +7159,7 @@
         "session_source": "subagent",
         "sidebar_group": "recent",
         "sidebar_source": "webui",
+        "sidebar_children": [],
         "sidebar_parent_session_id": null,
         "sort_ts": 1789400090,
         "source_kind": "subagent",

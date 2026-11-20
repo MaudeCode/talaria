@@ -49,7 +49,7 @@ export const RAW_ROUTES: readonly RawRoute[] = [
   },
   {
     method: 'GET', path: '/api/sessions/events', summary: 'Global session-list invalidation stream (`initial` on every connection, then `sessions_changed`).', tags: ['sessions'],
-    query: { gateway: { description: '`1` merges the gateway feed with a `stream` discriminator and an initial `gateway_status` frame.' } },
+    query: { gateway: { description: '`1` merges the gateway feed with a `stream` discriminator and an initial `gateway_status` frame.' }, push_endpoint: { description: 'TAL-2478: this browser\'s Web Push endpoint; each completion says whether Web Push delivers it there (`push_delivers`).' } },
     responses: { 200: { description: 'Event stream.', contentType: 'text/event-stream' } },
   },
   {

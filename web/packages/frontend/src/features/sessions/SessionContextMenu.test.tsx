@@ -9,7 +9,7 @@ import { SessionContextMenu } from './SessionContextMenu'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 
-const writable: SessionRow = { session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 }
+const writable: SessionRow = { session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_rename: true, can_move: true, can_duplicate: true, can_share: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 }
 
 async function menuItems(row: SessionRow): Promise<string[]> {
   render(<QueryClientProvider client={new QueryClient()}><SessionContextMenu row={row} active={false} /></QueryClientProvider>)
@@ -19,13 +19,13 @@ async function menuItems(row: SessionRow): Promise<string[]> {
 
 describe('SessionContextMenu', () => {
   it('offers only the actions the server allows for a delegated subagent child (TAL-312)', async () => {
-    const items = await menuItems({ ...writable, session_id: 'child', source_tag: 'subagent', read_only: true, can_branch: false, can_pin: false, can_archive: false, can_delete: false, can_duplicate: false })
+    const items = await menuItems({ ...writable, session_id: 'child', source_tag: 'subagent', read_only: true, can_branch: false, can_pin: false, can_archive: false, can_delete: false, can_rename: false, can_move: false, can_duplicate: false })
     for (const refused of ['Rename', 'Pin', 'Move', 'Duplicate', 'Archive', 'Delete']) expect(items.some((t) => t.startsWith(refused)), refused).toBe(false)
     expect(items.some((t) => t.startsWith('Export'))).toBe(true)
   })
 
   it('keeps pin, archive and duplicate for a read-only import the server still lets Web organize', async () => {
-    const items = await menuItems({ ...writable, session_id: 'import', read_only: true, can_branch: false, can_delete: false })
+    const items = await menuItems({ ...writable, session_id: 'import', read_only: true, can_branch: false, can_delete: false, can_rename: false, can_move: false })
     for (const offered of ['Pin', 'Duplicate', 'Archive']) expect(items.some((t) => t.startsWith(offered)), offered).toBe(true)
     for (const refused of ['Rename', 'Move', 'Delete']) expect(items.some((t) => t.startsWith(refused)), refused).toBe(false)
   })
@@ -35,6 +35,7 @@ describe('SessionContextMenu', () => {
     ['allows sharing', {}, ['Share publicly'], ['Refresh snapshot']],
     ['allows sharing on a shared row', { session_id: 'shared', share_url: '/share/old' }, ['Refresh snapshot'], ['Share publicly']],
     ['refuses deleting a row it still lets Web edit', { session_id: 'kept', can_delete: false }, ['Rename conversation', 'Move to project'], ['Delete conversation']],
+    ['refuses renaming and moving a writable row (TAL-2478)', { session_id: 'locked', can_rename: false, can_move: false }, ['Delete conversation'], ['Rename conversation', 'Move to project']],
   ] as const)('follows the server where it %s (TAL-732)', async (_, extra, offered, refused) => {
     const items = await menuItems({ ...writable, ...extra })
     for (const name of offered) expect(items, name).toContain(name)

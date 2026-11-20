@@ -1394,6 +1394,14 @@
               "type": "boolean",
               "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
             },
+            "can_rename": {
+              "type": "boolean",
+              "description": "TAL-2478: Web may rename this session; the same gate as `can_delete`."
+            },
+            "can_move": {
+              "type": "boolean",
+              "description": "TAL-2478: Web may move this session to another project or out of one; the same gate as `can_delete`."
+            },
             "can_duplicate": {
               "type": "boolean",
               "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
@@ -1512,6 +1520,13 @@
                   "type": "null"
                 }
               ]
+            },
+            "sidebar_children": {
+              "description": "TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             },
             "sidebar_parent_session_id": {
               "description": "TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent's project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it.",
@@ -1638,6 +1653,8 @@
             "can_pin",
             "can_archive",
             "can_delete",
+            "can_rename",
+            "can_move",
             "can_duplicate",
             "can_share"
           ],

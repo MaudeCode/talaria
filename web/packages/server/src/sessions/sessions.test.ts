@@ -423,6 +423,8 @@ describe('session lifecycle over HTTP', () => {
     const archived = async (sid: string): Promise<unknown> => (await s.deps.sessionStore.get(sid)).archived
     const rows = (await json(await s.get('/api/sessions'))).sessions as Json[]
     expect([first, readOnly, subagent].map((sid) => rows.find((r) => r.session_id === sid)?.can_delete)).toEqual([true, false, false])
+    // TAL-2478: rename and move share the delete gate.
+    for (const flag of ['can_rename', 'can_move']) expect([first, readOnly, subagent].map((sid) => rows.find((r) => r.session_id === sid)?.[flag]), flag).toEqual([true, false, false])
 
     const archive = await bulk('archive', [first, subagent, 'bulkprobe-unknown', last])
     expect(archive.status, await archive.clone().text()).toBe(200)

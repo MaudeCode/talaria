@@ -308,14 +308,27 @@ export const SIDEBAR_SESSION_RESPONSE_FIELDS = new Set([
   'is_cli_session', 'is_messaging_session', 'is_streaming', 'cron_running', 'active_stream_id', 'has_pending_user_message', 'pending_started_at',
   'worktree_path', 'worktree_branch', 'parent_session_id', 'parent_title', 'parent_source', 'relationship_type', 'pre_compression_snapshot', '_lineage_root_id',
   '_lineage_tip_id', '_compression_segment_count', '_lineage_collapsed_count', '_parent_lineage_root_id', '_parent_lineage_tip_id', '_cross_surface_child_session',
-  'match_type', 'match_preview', 'read_only', 'read_only_reason', 'can_branch', 'can_pin', 'can_archive', 'can_delete', 'can_duplicate', 'can_share', 'gateway_routing', 'share_url',
-  'execution_mode', 'sidebar_parent_session_id', 'sidebar_source', 'visibility_setting',
+  'match_type', 'match_preview', 'read_only', 'read_only_reason', 'can_branch', 'can_pin', 'can_archive', 'can_delete', 'can_rename', 'can_move', 'can_duplicate', 'can_share', 'gateway_routing', 'share_url',
+  'execution_mode', 'sidebar_parent_session_id', 'sidebar_children', 'sidebar_source', 'visibility_setting',
 ])
 
-/** TAL-1151: keeps each row's `sidebar_parent_session_id` only while that parent row is in `rows` too. */
-export function pruneSidebarParents(rows: Row[]): Row[] {
+/**
+ * TAL-1151, TAL-2478: the nesting `rows` show, in their order. A row keeps its `sidebar_parent_session_id` only while
+ * that parent is in `rows` too, and each row lists the rows nested under it as `sidebar_children`.
+ */
+export function withSidebarChildren(rows: Row[]): Row[] {
   const ids = new Set(rows.map((r) => str(r.session_id)))
-  return rows.map((r) => (r.sidebar_parent_session_id && !ids.has(str(r.sidebar_parent_session_id)) ? { ...r, sidebar_parent_session_id: null } : r))
+  const children = new Map<string, string[]>()
+  const pruned = rows.map((r) => {
+    const parent = str(r.sidebar_parent_session_id)
+    if (!parent) return r
+    if (!ids.has(parent)) return { ...r, sidebar_parent_session_id: null }
+    const nested = children.get(parent)
+    if (nested) nested.push(str(r.session_id))
+    else children.set(parent, [str(r.session_id)])
+    return r
+  })
+  return pruned.map((r) => ({ ...r, sidebar_children: children.get(str(r.session_id)) ?? [] }))
 }
 
 export function isCliSessionRow(row: Row): boolean {
@@ -367,6 +380,8 @@ export interface ListParams {
   showWebhookSessions: boolean
   showKanbanSessions: boolean
   sidebarSource: 'webui' | 'cli' | null
+  /** TAL-2478: the rows of one project, or `none` for rows without one; a nested row files in its parent's project. */
+  projectId?: string | null
   archivedLimit: number | null
   archivedOffset: number
   profilesMatch: (a: string | null | undefined, b: string | null | undefined) => boolean
@@ -601,6 +616,8 @@ export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: Rea
   r.can_pin = stored
   r.can_archive = stored
   r.can_delete = !r.read_only
+  r.can_rename = !r.read_only
+  r.can_move = !r.read_only
   r.can_duplicate = !ownerReadOnly && !subagent && r.can_duplicate !== false
   // `SessionService.createShare` refuses only a Claude Code import (TAL-732).
   r.can_share = kind !== 'claude_code'
@@ -799,6 +816,7 @@ export interface ListPayload {
   include_archived: boolean
   archived_limit: number | null
   archived_offset: number
+  has_unprojected: boolean
   all_profiles: boolean
   active_profile: string
   other_profile_count: number
@@ -878,10 +896,12 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
   const inCliTab = (r: Row): boolean => r.sidebar_source === 'cli'
   const archivedWebuiCount = archivedScoped.filter((r) => r.archived && !inCliTab(r)).length
   const archivedCliCount = archivedScoped.filter((r) => r.archived && inCliTab(r)).length
-  const filterSource = (rows: Row[]) => (params.sidebarSource ? rows.filter((r) => r.sidebar_source === params.sidebarSource) : [...rows])
   const fullScoped = params.includeArchived ? archivedScoped : visibleScoped
   const webuiSessionCount = fullScoped.filter((r) => !inCliTab(r)).length
   const cliSessionCount = fullScoped.filter(inCliTab).length
+  // TAL-2478: with no CLI tab to pick, a `cli` request lists the WebUI rows.
+  const source = params.sidebarSource === 'cli' && !cliSessionCount ? 'webui' : params.sidebarSource
+  const filterSource = (rows: Row[]) => (source ? rows.filter((r) => r.sidebar_source === source) : [...rows])
   const visibleFiltered = filterSource(visibleScoped)
   const archivedFiltered = filterSource(archivedScoped)
   let result = filterSource(fullScoped)
@@ -894,8 +914,12 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
   const truncated = params.truncatedSources ?? new Set<string>()
   // TAL-1151: a subagent row nests under its host when the host is listed too, and files in the host's project.
   const hosts = sidebarHosts(result, params.profilesMatch)
+  const listed = result.map((r): Row => { const host = hosts.get(str(r.session_id)); return host ? { ...r, sidebar_parent_session_id: host.session_id, project_id: host.project_id ?? null } : { ...r, sidebar_parent_session_id: null } })
+  // TAL-2478: a nested row carries its host's project, so the project filter keeps or drops them together.
+  const project = params.projectId?.trim() || null
   return {
-    sessions: result.map((r) => { const host = hosts.get(str(r.session_id)); return host ? { ...r, sidebar_parent_session_id: host.session_id, project_id: host.project_id ?? null } : { ...r, sidebar_parent_session_id: null } }),
+    sessions: project === 'none' ? listed.filter((r) => !r.project_id) : project ? listed.filter((r) => str(r.project_id) === project) : listed,
+    has_unprojected: listed.some((r) => !r.project_id),
     sidebar_reference_sessions: references.map((r) => ({ ...r })),
     cli_count: 0,
     archived_count: archivedWebuiCount + archivedCliCount,
@@ -1029,6 +1053,7 @@ export interface ListResponse extends Record<string, unknown> {
   agent_storage: AgentStorage
   archived_limit?: number
   archived_offset?: number
+  has_unprojected: boolean
 }
 
 export function serverTz(date = new Date()): string {
@@ -1040,7 +1065,7 @@ export function serverTz(date = new Date()): string {
 
 /** Python `_session_list_payload_to_response`; the ETag covers everything but `server_time`. */
 export function sessionListResponse(payload: ListPayload, overlay: RuntimeOverlay, redactEnabled: boolean, now: number, workspaceName: (row: Row) => string | null, detailedRows = false): { body: ListResponse; etag: string } {
-  const runtimeRows = overlayRuntimeRows(payload.sessions, overlay)
+  const runtimeRows = withSidebarChildren(overlayRuntimeRows(payload.sessions, overlay))
   const sessions = runtimeRows.map((r) => {
     const item = sidebarSessionResponseItem(r, redactEnabled, overlay.attention(str(r.session_id)), overlay.activeStreamIds, workspaceName)
     return detailedRows ? { ...item, meta: sidebarRowMeta(r, payload.all_profiles) } : item
@@ -1068,6 +1093,7 @@ export function sessionListResponse(payload: ListPayload, overlay: RuntimeOverla
     webhook_sessions_truncated: payload.webhook_sessions_truncated,
     sidebar_groups: (Object.keys(SIDEBAR_GROUP_TITLES) as SidebarGroupKind[]).filter((kind) => sessions.some((r) => r.sidebar_group === kind)).map((kind) => ({ kind, title: SIDEBAR_GROUP_TITLES[kind] })),
     agent_storage: payload.agent_storage,
+    has_unprojected: payload.has_unprojected,
   }
   if (payload.archived_limit !== null) {
     body.archived_limit = Math.trunc(payload.archived_limit) || 0

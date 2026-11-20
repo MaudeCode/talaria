@@ -65,8 +65,11 @@ function openSessionFeed<T>(path: string, names: readonly string[], parse: (valu
   return { close: () => source.close(), readyState: () => source.readyState }
 }
 
-export function openSessionListStream(cb: SessionFeedCallbacks<SessionListEvent>): SseHandle {
-  return openSessionFeed('api/sessions/events?gateway=1', ['initial', 'sessions_changed', 'gateway_status', 'hello'], (value) => SessionListEventSchema.safeParse(value), cb)
+/** TAL-2478: `pushEndpoint` is this browser's Web Push endpoint; each completion then says whether Web Push shows it here. */
+export function openSessionListStream(cb: SessionFeedCallbacks<SessionListEvent>, pushEndpoint?: string): SseHandle {
+  const params = new URLSearchParams({ gateway: '1' })
+  if (pushEndpoint) params.set('push_endpoint', pushEndpoint)
+  return openSessionFeed(`api/sessions/events?${params.toString()}`, ['initial', 'sessions_changed', 'gateway_status', 'hello'], (value) => SessionListEventSchema.safeParse(value), cb)
 }
 
 export function openSessionStream(sessionId: string, cb: SessionFeedCallbacks<SessionStreamEvent>, knownCount?: number): SseHandle {

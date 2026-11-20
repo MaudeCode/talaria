@@ -21,6 +21,7 @@ import type { SessionsChangedEvent } from '../sessions/events.js'
 import { RELAY_CLOSE_EVENTS, type WebAudioCompletion } from '@maudecode/talaria-web-contracts'
 import { filterAsync, str } from '../util.js'
 import { outsideSourcesShown } from '../settings.js'
+import { notificationRequester } from './sessions-router.js'
 import { resolveStreamOwner, streamRunSummary, streamVisibleToRequest } from './session-visibility.js'
 import { completedToolIndex, publicToolFrame, redactedRunStatus, withDisplaySettings, withToolId } from '../redact.js'
 
@@ -553,20 +554,32 @@ async function personMaySee(ctx: RequestContext, event: SessionsChangedEvent): P
   return !ctx.personAccess || Boolean(event.session_id && await ctx.deps.sessions.personMaySeeSessionId(event.session_id))
 }
 
-/** A global invalidation may span profiles; playback instructions never cross the bound request profile. */
-function profileAudio(ctx: RequestContext, event: SessionsChangedEvent): WebAudioCompletion[] | undefined {
-  return event.web_audio?.filter((completion) => ctx.deps.profilesMatch(completion.profile, ctx.deps.activeProfile()))
+/**
+ * A global invalidation may span profiles; playback instructions never cross the bound request profile. TAL-2478: each
+ * says whether Web Push delivers it to the browser that opened the stream (`pushDelivers`).
+ */
+async function profileAudio(ctx: RequestContext, event: SessionsChangedEvent, pushDelivers: () => Promise<boolean>): Promise<WebAudioCompletion[] | undefined> {
+  const audio = event.web_audio?.filter((completion) => ctx.deps.profilesMatch(completion.profile, ctx.deps.activeProfile()))
+  if (!audio?.length) return audio
+  const push_delivers = await pushDelivers()
+  return audio.map((completion) => ({ ...completion, push_delivers }))
+}
+
+/** TAL-2478: whether Web Push sends completions to the `push_endpoint` the stream was opened with, read at each event. */
+function streamPushDelivers(ctx: RequestContext): () => Promise<boolean> {
+  const endpoint = ctx.query.get('push_endpoint')?.trim()
+  return async () => Boolean(endpoint) && await ctx.deps.webPush.deliversCompletions(endpoint, (await notificationRequester(ctx)).profile).catch(() => false)
 }
 
 /**
  * TAL-1954: completions published after the client's `Last-Event-ID` and before this connection subscribed, under the
  * live rules. No cursor or a malformed one replays nothing, and neither does one past `through` (another server process).
  */
-async function missedCompletions(ctx: RequestContext, resumeFrom: string, through: number): Promise<WebAudioCompletion[]> {
+async function missedCompletions(ctx: RequestContext, resumeFrom: string, through: number, pushDelivers: () => Promise<boolean>): Promise<WebAudioCompletion[]> {
   if (!/^\d+$/.test(resumeFrom)) return []
   const missed: WebAudioCompletion[] = []
   for (const event of ctx.deps.events.completionsSince(Number(resumeFrom), through)) {
-    if (await personMaySee(ctx, event)) missed.push(...profileAudio(ctx, event) ?? [])
+    if (await personMaySee(ctx, event)) missed.push(...await profileAudio(ctx, event, pushDelivers) ?? [])
   }
   return missed
 }
@@ -589,7 +602,8 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
   try {
     const cursor = String(sub.version)
     const resumeFrom = (ctx.header('last-event-id') ?? '').trim()
-    const missed = await missedCompletions(ctx, resumeFrom, sub.version)
+    const pushDelivers = streamPushDelivers(ctx)
+    const missed = await missedCompletions(ctx, resumeFrom, sub.version, pushDelivers)
     sse.start()
     // While a replay is pending, `initial` keeps the client's cursor: only the frame carrying the sounds advances it.
     sse.event('initial', { stream: 'sessions' }, missed.length ? resumeFrom : cursor)
@@ -623,7 +637,7 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
       const named = await personMaySee(ctx, event)
       const payload: Record<string, unknown> = { ...event, stream: 'sessions' }
       if (!named) Reflect.deleteProperty(payload, 'session_id')
-      sse.event(event.type, { ...payload, web_audio: named ? profileAudio(ctx, event) : undefined }, String(event.version))
+      sse.event(event.type, { ...payload, web_audio: named ? await profileAudio(ctx, event, pushDelivers) : undefined }, String(event.version))
       lastWrite = Date.now()
     }
   } finally {
