@@ -234,6 +234,9 @@ def walk(decls):
         yield from walk(decl.children)
 
 
+PRIVATE = {"private", "fileprivate"}
+
+
 def is_test_method(decl):
     return (decl.kind == "func" and decl.name.startswith("test") and not ({"static", "class", "private"} & decl.modifiers)
             and re.match(rf"\s*{re.escape(decl.name)}\s*\(\s*\)", decl.header) is not None)
@@ -363,6 +366,45 @@ class Universe:
         self.trail |= added
         return found
 
+    def private_reach(self, decls, chain):
+        """The tests a changed private or fileprivate declaration reaches. Only its own file can name it, so follow the
+        file's references to it until they leave through a declaration other files can name: matched by bare name
+        across the target, a private member called `type` or `line` reached every test (TAL-2610)."""
+        units, stack = [], list(decls)
+        while stack:
+            unit = stack.pop()
+            units.append(unit)
+            stack.extend(unit.children)
+
+        def hidden(unit):
+            while unit is not None:
+                if PRIVATE & unit.modifiers:
+                    return True
+                unit = unit.parent
+            return False
+
+        names, exits, pending = {decl.name for decl in chain}, set(), True
+        while pending:
+            pending = False
+            for unit in units:
+                if unit.name in names or not unit.refs & names:
+                    continue
+                if hidden(unit):
+                    names.add(unit.name)
+                    pending = True
+                else:
+                    exits.add(unit)
+        result = set()
+        for unit in exits:
+            cls = self.test_class_of(unit)
+            if cls and self.is_test(unit):
+                result |= self.method(cls, unit.name)
+            elif cls:
+                result |= self.whole({cls})
+            else:
+                result |= self.reached({unit.name})
+        return result
+
     def changed(self, decls, lines, numbers):
         """The tests a file's changed lines reach, resolved by name in this universe: a test deleted or renamed since
         that side resolves to nothing, and its new name, if any, is on the other side of the diff."""
@@ -381,6 +423,9 @@ class Universe:
                     result |= self.reached({decl.name for decl in decls}) | self.whole({decl.name for decl in decls})
                 continue
             top, deepest = chain[0], chain[-1]
+            if any(PRIVATE & decl.modifiers for decl in chain):
+                result |= self.private_reach(decls, chain)
+                continue
             cls = top.name if top.is_type and top.name in self.test_classes else None
             if cls is None and top.kind in ("class", "extension") and top.name.endswith(("Tests", "TestCase")) and \
                     top.name in self.superclass:  # Present at the tested revision, under a base this target lacks.

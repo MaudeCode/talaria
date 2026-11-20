@@ -16,6 +16,10 @@ import XCTest
 /// absorbs a finished block into the solid head once its fade has run for a wall-clock delay, which landed inside the
 /// measured ticks only on a slow host, so the harness holds the fade open for the whole test (TAL-2534). That also holds
 /// off the fade clock's pause, which waits on the same fade duration, so neither wall-clock event lands while measuring.
+///
+/// Hosting the chat and raising the keyboard cost more than the measured work, so ticks and keystrokes are separate
+/// tests and each takes both runs in one hosted chat: one test that hosted the chat twice for both ran past the hosted
+/// one-minute allowance on a swapping runner (TAL-2610).
 @MainActor
 final class ChatStreamTickPerformanceTests: XCTestCase {
     private static let tickCount = 40
@@ -43,24 +47,43 @@ final class ChatStreamTickPerformanceTests: XCTestCase {
         super.tearDown()
     }
 
-    func testStreamTicksAndKeystrokesStayWithinTheWorkBudget() async throws {
-        var samples: [ChatStreamTickSample] = []
-        for _ in 0..<Self.runCount {
-            let harness = try await ChatStreamTickHarness(test: self)
-            defer { harness.tearDown() }
-            samples.append(try await harness.run(ticks: Self.tickCount, keystrokes: Self.keystrokeCount))
+    /// Each run sends from the composer, as a reader does, and streams one reply; the second reply follows the first's
+    /// settled row.
+    func testStreamTicksStayWithinTheWorkBudget() async throws {
+        let harness = try await ChatStreamTickHarness(test: self)
+        defer { harness.tearDown() }
+        var samples: [ChatWorkSample] = []
+        for run in 1...Self.runCount {
+            try await harness.openReply(sending: "Show change \(run)")
+            samples.append(try await harness.streamTicks(Self.tickCount))
+            await harness.endReply()
         }
+        assertMinimum(samples, equals: Self.expectedTickWork, phase: "Stream tick")
+    }
 
-        let report = ChatStreamTickSample.table(samples)
+    /// Typing follows a finished reply, as a reader's next message does, and waits for it to end: a live stream silent
+    /// for 12 s starts a stale-stream check (`ChatStreamCoordinatorTiming.transportFreshInterval`), which would make the
+    /// counts depend on how fast the host types. Each run types into an empty draft.
+    func testKeystrokesStayWithinTheWorkBudget() async throws {
+        let harness = try await ChatStreamTickHarness(test: self)
+        defer { harness.tearDown() }
+        try await harness.openReply(sending: "Show the change")
+        await harness.endReply()
+        var samples: [ChatWorkSample] = []
+        for _ in 1...Self.runCount {
+            samples.append(try await harness.type(Self.keystrokeCount))
+        }
+        assertMinimum(samples, equals: Self.expectedKeystrokeWork, phase: "Keystroke")
+    }
+
+    private func assertMinimum(_ samples: [ChatWorkSample], equals expected: [String: Int], phase: String) {
+        let report = samples.enumerated().map { $0.element.line(run: $0.offset + 1) }.joined(separator: "\n")
         let attachment = XCTAttachment(string: report)
-        attachment.name = "Chat stream tick and keystroke work"
+        attachment.name = "\(phase) work"
         attachment.lifetime = .keepAlways
         add(attachment)
-        print("Chat stream tick and keystroke work\n\(report)")
-
-        XCTAssertEqual(minimum(samples.map(\.tickWork)), Self.expectedTickWork, "Stream tick work changed.\n\(report)")
-        XCTAssertEqual(minimum(samples.map(\.keystrokeWork)), Self.expectedKeystrokeWork,
-                       "Keystroke work changed.\n\(report)")
+        print("\(phase) work\n\(report)")
+        XCTAssertEqual(minimum(samples.map(\.work)), expected, "\(phase) work changed.\n\(report)")
     }
 
     /// Each kind of work's smallest count across the runs; work missing from any run counts as none.
@@ -73,7 +96,7 @@ final class ChatStreamTickPerformanceTests: XCTestCase {
     }
 }
 
-/// One hosted chat over a test-owned transcript, with a reply streaming into it.
+/// One hosted chat over a test-owned transcript, with the keyboard up and replies streaming into it on demand.
 @MainActor
 private struct ChatStreamTickHarness {
     let viewModel: ChatViewModel
@@ -117,20 +140,10 @@ private struct ChatStreamTickHarness {
         // The keyboard's first show shrinks the viewport and the long transcript's lazy rows re-measure under it. A pass
         // that moves the offset before the content height reads as the reader scrolling away and can release follow,
         // which left the stream ticks scrolling an unfollowed transcript on a slow host. Raise the keyboard first and send
-        // from the composer, as a reader does: the send re-arms follow once the re-measure has settled (TAL-2002). An
-        // empty composer that loses focus while the keyboard comes up folds back into its shell, so the send types into
-        // whichever composer is mounted by then, not the one focused first (TAL-2549).
+        // from the composer, as a reader does: the send re-arms follow once the re-measure has settled (TAL-2002).
         _ = try await Self.focusComposer(in: window, test: test)
         let keyboardSettled = await test.awaitQuiet { recorder.counts.values.reduce(0, +) }
-        XCTAssertNotNil(keyboardSettled, "The chat must settle under the keyboard before the send")
-        try await test.sendFromComposer("Show the change", in: window)
-        let started = await test.awaitCondition { viewModel.activeStreamID != nil }
-        XCTAssertTrue(started, "The composer's send never started the reply")
-        stream.emit(.token(Self.token(0)))
-        let opened = await test.awaitCondition { viewModel.messages.last?.content == Self.token(0) }
-        XCTAssertTrue(opened, "The streaming reply never reached the transcript")
-        let quiet = await test.awaitQuiet { recorder.counts.values.reduce(0, +) }
-        XCTAssertNotNil(quiet, "The chat must stop re-evaluating after the send before measuring")
+        XCTAssertNotNil(keyboardSettled, "The chat must settle under the keyboard before measuring")
         // Opening the chat renders settled rows, so a zero count while measuring means none re-rendered.
         XCTAssertGreaterThan(recorder.counts["settledRow", default: 0], 0, "The settled-row counter saw no rows")
 
@@ -141,49 +154,70 @@ private struct ChatStreamTickHarness {
         self.test = test
     }
 
-    /// The measured window: `ticks` stream tokens, then the reply ends and `keystrokes` draft edits follow, each
-    /// rendered before the next. Typing waits for the reply to end because a live stream silent for 12 s starts a
-    /// stale-stream check (`ChatStreamCoordinatorTiming.transportFreshInterval`), which would make the keystroke
-    /// counts depend on how fast the host types.
-    func run(ticks: Int, keystrokes: Int) async throws -> ChatStreamTickSample {
+    /// Sends `message` from the composer and waits until the reply's first token reached the transcript and the chat
+    /// went quiet. An empty composer that loses focus while the keyboard comes up folds back into its shell, so the send
+    /// types into whichever composer is mounted by then, not the one focused first (TAL-2549).
+    func openReply(sending message: String) async throws {
+        try await test.sendFromComposer(message, in: window)
+        let started = await test.awaitCondition { viewModel.activeStreamID != nil }
+        XCTAssertTrue(started, "The composer's send never started the reply")
+        stream.emit(.token(Self.token(0)))
+        let opened = await test.awaitCondition { viewModel.messages.last?.content == Self.token(0) }
+        XCTAssertTrue(opened, "The streaming reply never reached the transcript")
+        let quiet = await test.awaitQuiet { recorder.counts.values.reduce(0, +) }
+        XCTAssertNotNil(quiet, "The chat must stop re-evaluating after the send before measuring")
+    }
+
+    /// The measured window: `ticks` stream tokens into the open reply, each rendered before the next.
+    func streamTicks(_ ticks: Int) async throws -> ChatWorkSample {
         recorder.reset()
         var expected = Self.token(0)
-        var tickLineWork: [Int] = []
-        let tickStart = DispatchTime.now().uptimeNanoseconds
+        var lineWork: [Int] = []
+        let start = DispatchTime.now().uptimeNanoseconds
         for tick in 1...ticks {
             let previousLines = recorder.counts["codeLine", default: 0]
             let token = Self.token(tick)
             expected += token
             stream.emit(.token(token))
             await turn()
-            tickLineWork.append(recorder.counts["codeLine", default: 0] - previousLines)
+            lineWork.append(recorder.counts["codeLine", default: 0] - previousLines)
         }
-        let tickSeconds = Self.seconds(since: tickStart)
+        let seconds = Self.seconds(since: start)
         XCTAssertEqual(viewModel.messages.last?.content, expected, "A stream tick was dropped")
-        let tickWork = recorder.counts
+        let ticksByLine = lineWork.enumerated().map { "\($0.offset + 1)=\($0.element)" }.joined(separator: " ")
+        return ChatWorkSample(work: recorder.counts, seconds: seconds, detail: "codeLine by tick \(ticksByLine)")
+    }
 
+    func endReply() async {
         stream.emit(.done(DoneStreamEvent()))
         stream.emit(.streamEnd)
         let ended = await test.awaitCondition { viewModel.activeStreamID == nil }
         XCTAssertTrue(ended, "The reply never ended")
-        // Ending a reply can replace the empty editor with its collapsed shell. Measure input in the mounted
-        // composer, rather than retaining a dismantled UITextView whose delegate no longer publishes draft edits.
+    }
+
+    /// The measured window: `keystrokes` draft edits into an empty draft, each rendered before the next. The draft is
+    /// cleared afterwards, so the next run types the same text.
+    func type(_ keystrokes: Int) async throws -> ChatWorkSample {
+        // Ending a reply or clearing the draft can replace the empty editor with its collapsed shell. Measure input in the
+        // mounted composer, rather than retaining a dismantled UITextView whose delegate no longer publishes draft edits.
         let composer = try await Self.focusComposer(in: window, test: test)
+        XCTAssertEqual(composer.text, "", "Each run types into an empty draft")
         let quiet = await test.awaitQuiet { recorder.counts.values.reduce(0, +) }
-        XCTAssertNotNil(quiet, "The chat must stop re-evaluating after the reply ends before typing")
+        XCTAssertNotNil(quiet, "The chat must stop re-evaluating before typing")
         recorder.reset()
-        let keystrokeStart = DispatchTime.now().uptimeNanoseconds
+        let start = DispatchTime.now().uptimeNanoseconds
         for keystroke in 0..<keystrokes {
             composer.insertText(keystroke % 6 == 5 ? " " : "a")
             await turn()
         }
-        let keystrokeSeconds = Self.seconds(since: keystrokeStart)
+        let seconds = Self.seconds(since: start)
         XCTAssertTrue(composer.window === window && composer.delegate != nil,
                       "The measured keystrokes must reach the mounted composer's delegate")
         XCTAssertEqual(composer.text.count, keystrokes, "A keystroke was dropped")
-        return ChatStreamTickSample(tickWork: tickWork, keystrokeWork: recorder.counts,
-                                    tickSeconds: tickSeconds, keystrokeSeconds: keystrokeSeconds,
-                                    tickLineWork: tickLineWork)
+        let work = recorder.counts
+        composer.selectAll(nil)
+        composer.deleteBackward()
+        return ChatWorkSample(work: work, seconds: seconds, detail: nil)
     }
 
     private static func focusComposer(in window: UIWindow, test: XCTestCase) async throws -> UITextView {
@@ -255,23 +289,15 @@ private struct ChatStreamTickHarness {
     }
 }
 
-private struct ChatStreamTickSample {
-    let tickWork: [String: Int]
-    let keystrokeWork: [String: Int]
-    let tickSeconds: Double
-    let keystrokeSeconds: Double
-    let tickLineWork: [Int]
+/// One measured run: the work it counted, its wall-clock time, and per-step detail for the report.
+private struct ChatWorkSample {
+    let work: [String: Int]
+    let seconds: Double
+    let detail: String?
 
-    static func table(_ samples: [Self]) -> String {
-        func line(_ run: Int, _ phase: String, _ seconds: Double, _ work: [String: Int]) -> String {
-            let counts = work.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " ")
-            return "run \(run): \(phase) \(String(format: "%.0f", seconds * 1000)) ms \(counts)"
-        }
-        return samples.enumerated().flatMap { index, sample in
-            let ticks = sample.tickLineWork.enumerated().map { "\($0.offset + 1)=\($0.element)" }.joined(separator: " ")
-            return [line(index + 1, "ticks", sample.tickSeconds, sample.tickWork),
-                    line(index + 1, "keystrokes", sample.keystrokeSeconds, sample.keystrokeWork),
-                    "run \(index + 1): codeLine by tick \(ticks)"]
-        }.joined(separator: "\n")
+    func line(run: Int) -> String {
+        let counts = work.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " ")
+        let summary = "run \(run): \(String(format: "%.0f", seconds * 1000)) ms \(counts)"
+        return detail.map { "\(summary)\nrun \(run): \($0)" } ?? summary
     }
 }

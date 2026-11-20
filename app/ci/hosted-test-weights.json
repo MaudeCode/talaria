@@ -289,7 +289,6 @@
   "ChatScrollPositionControllerTests/testUserInteractionReleasesUnfinishedNavigationBeforeRealizingRows": 0.1,
   "ChatScrollPositionControllerTests/testVisiblePrependDoesNotJumpToTheOldEndBeforeItsBoundsGrow": 0.1,
   "ChatScrollPositionControllerTests/testVisiblePrependRepairsItsOffsetBeforeTheFrameCanBeCommitted": 0.1,
-  "ChatStreamTickPerformanceTests/testStreamTicksAndKeystrokesStayWithinTheWorkBudget": 111.0,
   "ChatTranscriptRowCacheTests/testFrozenPrependUsesOnePrefixSpacerAndRetainsReaderIdentityAndState": 0.0,
   "ChatTranscriptRowCacheTests/testWindowBoundsLayoutNodesWithoutChangingDocumentExtent": 0.0,
   "ChatVerticalScrollAxisGuardTests/testGuardClampsHorizontalOffsetToAdjustedLeftInset": 0.0,
