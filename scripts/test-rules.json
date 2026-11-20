@@ -81,6 +81,19 @@
       ],
       "message": "test-audit defect loop: fix the cause; a retry hides a flaky test (docs/testing.md)"
     },
+    "hosted-handoff-screenshot-loop": {
+      "paths": [
+        "app/TalariaTests/"
+      ],
+      "patterns": [
+        "^\\s*for\\s+\\(closed,.*\\)\\s+in\\s+\\[\\(true,"
+      ],
+      "nearby": {
+        "lines": 5,
+        "pattern": "\\battachHostedScreenshot\\("
+      },
+      "message": "test-audit heavy and oversized: test each focus handoff from its source posture and capture one screenshot per test (docs/testing.md)"
+    },
     "hosted-layout-loop": {
       "paths": [
         "app/TalariaTests/"

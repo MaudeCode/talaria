@@ -222,28 +222,43 @@ final class StreamHostedTests: XCTestCase {
         ((view as? UITextField).map { $0.isSecureTextEntry ? [$0] : [] } ?? []) + view.subviews.flatMap(secureFields(in:))
     }
 
-    /// A batch steps between questions keeping each answer, and submits typed and selected answers together (TAL-367).
-    func testBatchClarificationDeliversTypedAndMultiSelectAnswers() async throws {
-        let window = try await hostFixtureChat(["--ui-test-chat-batch-clarification"])
-        _ = try await requireElement(in: window, label: "What sounds best for a quiet evening?")
-        try await typeIntoComposer("A movie", in: window)
-        HostedAccessibility.activate(try await requireElement(in: window, label: "Next"))
-        _ = try await requireElement(in: window, label: "Which drinks?")
+    /// A batch keeps each answer when navigating between questions (TAL-367).
+    func testBatchClarificationKeepsAnswersWhenNavigatingBetweenQuestions() async throws {
+        let window = try await advanceToSecondClarificationQuestion()
         XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Question 2 of 2"))
         let secondAnswer = await composerText(in: window)
         XCTAssertEqual(secondAnswer, "")
         HostedAccessibility.activate(try await requireElement(in: window, label: "Tea"))
-        HostedAccessibility.activate(try await requireElement(in: window, label: "Water"))
         HostedAccessibility.activate(try await requireElement(in: window, label: "Previous question"))
+        _ = try await requireElement(in: window, label: "What sounds best for a quiet evening?")
         let firstAnswer = await composerText(in: window)
         XCTAssertEqual(firstAnswer, "A movie")
         HostedAccessibility.activate(try await requireElement(in: window, label: "Next question"))
+        _ = try await requireElement(in: window, "The selected answer was lost when returning", where: {
+            $0.accessibilityLabel == "Tea" && $0.accessibilityTraits.contains(.selected)
+        })
+    }
+
+    /// A batch submits typed and selected answers together (TAL-367).
+    func testBatchClarificationDeliversTypedAndMultiSelectAnswers() async throws {
+        let window = try await advanceToSecondClarificationQuestion()
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Tea"))
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Water"))
         let submit = await awaitElement(in: window) { $0.accessibilityLabel == "Submit clarification" && !$0.accessibilityTraits.contains(.notEnabled) }
         HostedAccessibility.activate(try XCTUnwrap(submit, "Submit never enabled"))
 
         _ = try await requireElement(in: window, label: "Agent received: A movie | Tea, Water")
         let restored = await composerText(in: window)
         XCTAssertEqual(restored, "Ordinary fixture draft")
+    }
+
+    private func advanceToSecondClarificationQuestion() async throws -> UIWindow {
+        let window = try await hostFixtureChat(["--ui-test-chat-batch-clarification"])
+        _ = try await requireElement(in: window, label: "What sounds best for a quiet evening?")
+        try await typeIntoComposer("A movie", in: window)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Next"))
+        _ = try await requireElement(in: window, label: "Which drinks?")
+        return window
     }
 
     /// Answering a clarification in the composer leaves the ordinary draft restored, and it stays after a reopen
