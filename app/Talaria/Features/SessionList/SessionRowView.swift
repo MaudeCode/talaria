@@ -11,6 +11,7 @@ enum SessionRowStyle: Equatable {
 struct SessionRowView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .caption2) private var pinnedIconSize: CGFloat = 11
+    @ScaledMetric(relativeTo: .body) private var attentionIconSize: CGFloat = 14
     @ScaledMetric(relativeTo: .body) private var verticalPadding: CGFloat = 8
     @ScaledMetric(relativeTo: .body) private var sidebarMinimumHeight: CGFloat = 44
     /// Two run cards fill the outer display's landscape list.
@@ -56,7 +57,13 @@ struct SessionRowView: View {
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if SessionRowPresentation.isActiveStreaming(session) {
+            if let attentionBadge, let systemImage = attentionBadge.systemImage {
+                // Static, so Reduce Motion needs no case of its own; the row's label speaks it.
+                Image(systemName: systemImage)
+                    .font(.system(size: attentionIconSize, weight: .semibold))
+                    .foregroundStyle(attentionBadge.tint)
+                    .accessibilityHidden(true)
+            } else if SessionRowPresentation.isActiveStreaming(session) {
                 ActiveSessionStreamingIndicator()
             }
             if isPinned {
@@ -123,7 +130,7 @@ struct SessionRowView: View {
 
     private var regularRow: some View {
         HStack(alignment: .top, spacing: 10) {
-            if SessionRowPresentation.isActiveStreaming(session) {
+            if attentionBadge == nil, SessionRowPresentation.isActiveStreaming(session) {
                 ActiveSessionStreamingIndicator()
                     .padding(.top, streamingIndicatorTopPadding)
             }
@@ -136,6 +143,11 @@ struct SessionRowView: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([accessibilitySummary, pendingStatus].compactMap { $0 }.joined(separator: ", "))
+    }
+
+    /// What the server says waits on the user, shown in place of the live state (TAL-760).
+    private var attentionBadge: SessionRowStateBadgeKind? {
+        SessionRowPresentation.attention(for: session).map(SessionRowStateBadgeKind.init)
     }
 
     private var displayTitle: String {
@@ -282,7 +294,9 @@ struct SessionRowView: View {
     private var visibleStateBadges: [SessionRowStateBadgeKind] {
         var badges: [SessionRowStateBadgeKind] = []
 
-        if SessionRowPresentation.isActiveStreaming(session) {
+        if let attentionBadge {
+            badges.append(attentionBadge)
+        } else if SessionRowPresentation.isActiveStreaming(session) {
             badges.append(.streaming)
         }
 
@@ -353,6 +367,18 @@ enum SessionRowStateBadgeKind: String, Identifiable {
     case streaming
     case cached
     case needsYou
+    /// TAL-760: what the server's `attention` says waits on the user.
+    case approval
+    case input
+    case decision
+
+    init(_ attention: SessionRowAttention) {
+        switch attention {
+        case .approval: self = .approval
+        case .input: self = .input
+        case .decision: self = .decision
+        }
+    }
 
     var id: String { rawValue }
 
@@ -364,6 +390,12 @@ enum SessionRowStateBadgeKind: String, Identifiable {
             return String(localized: "Cached")
         case .needsYou:
             return String(localized: "Needs you")
+        case .approval:
+            return SessionRowAttention.approval.title
+        case .input:
+            return SessionRowAttention.input.title
+        case .decision:
+            return SessionRowAttention.decision.title
         }
     }
 
@@ -371,10 +403,24 @@ enum SessionRowStateBadgeKind: String, Identifiable {
         switch self {
         case .streaming:
             return .green
-        case .cached:
+        case .cached, .approval, .input, .decision:
             return .orange
         case .needsYou:
             return .red
+        }
+    }
+
+    /// The sidebar row's icon for an attention state, which has no room for the badge's words.
+    var systemImage: String? {
+        switch self {
+        case .approval:
+            return "hand.raised.fill"
+        case .input:
+            return "questionmark.bubble.fill"
+        case .decision:
+            return "checklist"
+        case .streaming, .cached, .needsYou:
+            return nil
         }
     }
 }
