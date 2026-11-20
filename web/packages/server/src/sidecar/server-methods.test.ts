@@ -150,7 +150,7 @@ describe('server.queue_list, server.queue_send_now, server.queue_withdraw (TAL-1
     // A streaming target with two pending steers.
     target = await newSession(s)
     finish = () => undefined
-    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null, can_redirect: true }))
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
     sidecar.respond('chat.start', (_params, emit) => new Promise((resolve) => {
       emit({ event: 'token', data: { text: 'working' } })
       finish = () => { resolve(completed('done')) }
@@ -244,7 +244,7 @@ describe('server.session_new, server.session_send, server.session_wait, server.s
       emit({ event: 'token', data: { text: 'working' } })
       finishers.set((params as { session_id: string }).session_id, (answer) => { resolve(completed(answer)) })
     }))
-    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null, can_redirect: true }))
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
     caller = await newSession(s)
     // The caller's access: two toolsets and no YOLO.
     const callerRow = await s.deps.sessionStore.get(caller)

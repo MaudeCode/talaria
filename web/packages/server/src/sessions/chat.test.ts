@@ -2504,7 +2504,7 @@ describe('chat turns through the sidecar', () => {
     const running = async (sid: string, finish: Json[] = []) => {
       let emitLive!: (frame: { event: string; data: Json }) => void
       let release: (extra?: Partial<ChatResult>) => void = () => undefined
-      sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null, can_redirect: true }))
+      sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
       sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
         emitLive = emit
         emit({ event: 'token', data: { text: 'working' } })
@@ -2678,16 +2678,6 @@ describe('chat turns through the sidecar', () => {
       expect(messages.some((m) => m._steer)).toBe(false)
     })
 
-    it('offers no Send now when the Agent cannot redirect', async () => {
-      const sid = await newSession(s)
-      const run = await running(sid)
-      sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null, can_redirect: false }))
-      await post(s, '/api/chat/steer', { session_id: sid, text: 'plain', steer_id: 'steer-c1' })
-      expect(await detailSteers(sid)).toMatchObject([{ steer_id: 'steer-c1', actions: { edit: true, cancel: true, send_now: false } }])
-      expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'steer-c1' }))).toEqual({ redirected: false, outcome: 'failed' })
-      run.release({ pending_steer: '' })
-      await frames(run.streamId, (f) => f.event === 'stream_end')
-    })
   })
 
   it('runs background tasks and side questions in hidden sessions', async () => {

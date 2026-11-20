@@ -347,10 +347,6 @@ class AgentRuntime:
                         os.environ["PATH"] = compose_path(os.environ.get("PATH", ""))
                 module = importlib.import_module("run_agent")
                 getattr(module, "AIAgent")
-                # Agent 0.21.3 snapshots its auth provider registry, discovered plugins included, when hermes_cli.auth
-                # first imports. Take it here, under the launch profile and before any profile-scoped method runs, so
-                # a named profile's plugin loaded later never enters that process-wide snapshot.
-                importlib.import_module("hermes_cli.auth")
                 _check_site_packages_python()
                 try:
                     handoff = importlib.import_module("hermes_cli.guest_handoff")

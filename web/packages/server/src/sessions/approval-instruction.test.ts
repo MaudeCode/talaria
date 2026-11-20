@@ -42,7 +42,7 @@ describe('deny with an instruction in a direct chat', () => {
     sidecar = new FakeSidecar()
     s = await bootTestServer({ sidecar })
     sidecar.respond('approval.respond', () => ({ ok: true, resolved: 1, choice: 'deny' }))
-    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null, can_redirect: false }))
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
   })
   afterEach(async () => { finishTurn(); await s.close() })
 
@@ -71,7 +71,7 @@ describe('deny with an instruction in a direct chat', () => {
   it('refuses a repeat and an allow while the steer is in flight, and steers once', async () => {
     await park()
     let release!: () => void
-    sidecar.respond('chat.steer', () => new Promise((resolve) => { release = () => { resolve({ accepted: true, fallback: null, can_redirect: false }) } }))
+    sidecar.respond('chat.steer', () => new Promise((resolve) => { release = () => { resolve({ accepted: true, fallback: null }) } }))
     const first = tell()
     await vi.waitFor(() => { expect(sent('chat.steer')).toHaveLength(1) })
     for (const attempt of [tell(), respond({ choice: 'once' })]) expect((await attempt).status).toBe(409)
@@ -98,7 +98,7 @@ describe('deny with an instruction in a direct chat', () => {
     const releases = () => sent('approval.set_yolo').filter((p) => p.enabled === true)
     s.deps.pending.submitApproval(sid, { approval_id: 'second-approval', request_id: 'second-approval', command: 'rm -rf y', session_id: sid, can_deny_with_instruction: true })
     let release!: () => void
-    sidecar.respond('chat.steer', () => new Promise((resolve) => { release = () => { resolve({ accepted: true, fallback: null, can_redirect: false }) } }))
+    sidecar.respond('chat.steer', () => new Promise((resolve) => { release = () => { resolve({ accepted: true, fallback: null }) } }))
     const told = post('/api/approval/respond', { session_id: sid, approval_id: 'second-approval', choice: 'deny', instruction: INSTRUCTION })
     await vi.waitFor(() => { expect(sent('chat.steer')).toHaveLength(1) })
     expect((await post('/api/session/yolo', { session_id: sid, enabled: true })).status).toBe(409)

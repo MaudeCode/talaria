@@ -186,7 +186,7 @@ describe('decision reviews (TAL-1963)', () => {
     // The first submit's turn runs until the end of the test, so the second submit steers it.
     let finish: () => void = () => undefined
     sidecar.respond('chat.start', () => new Promise((resolve) => { finish = () => { resolve(completed) } }))
-    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null, can_redirect: true }))
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
     const emitted = vi.spyOn(s.deps.channels, 'emit')
     const id = created(await ask('server.decision_review_put', { title: 'Release\nchoices', items: [item('a')] }))
     expect(await http('POST', `/api/decisions/${id}/submit`)).toMatchObject({ status: 400, body: { code: 'nothing_answered' } })

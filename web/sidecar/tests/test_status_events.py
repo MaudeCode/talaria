@@ -127,6 +127,7 @@ def test_pinned_stream_diagnostics_reach_warning_frames(pinned_stream_diag, monk
     ]
 
 
+# agent-shim: compaction-progress-kind
 def test_marked_compaction_progress_and_compression_warnings_reach_their_frames(monkeypatch, tmp_path):
     """TAL-2290: the callback classifies the Agent's own object, so a context engine's reworded progress still opens
     the span, and a warn-severity notice about compression warns without opening one. The stand-in mirrors Agent

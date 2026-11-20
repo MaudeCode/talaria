@@ -299,6 +299,7 @@ def test_private_auxiliary_routes_and_main_fallback_keep_policy_and_disable_impl
                 yield
             return broken()
         return _response("private title")
+    # agent-shim: aux-effective-provider
     client = SimpleNamespace(**vars(STREAMING_CLIENT), _hermes_aux_effective_provider="nous", base_url="https://nous.example/v1", api_key="test-key")
     _install_call_llm(monkeypatch, client, call_llm)
     if route == "unconfigured":

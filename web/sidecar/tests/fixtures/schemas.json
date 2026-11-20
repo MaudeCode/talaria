@@ -14373,9 +14373,6 @@
           "string",
           "null"
         ]
-      },
-      "can_redirect": {
-        "type": "boolean"
       }
     },
     "required": [

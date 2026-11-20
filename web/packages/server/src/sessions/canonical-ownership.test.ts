@@ -717,7 +717,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     makeLegacy(sid)
     await s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'cli', active_stream_id: stream }, { workspace: s.workspace, model: 'fixture' }))
     s.deps.registry.liveIds.add(stream)
-    sidecar.respond('chat.steer', () => ({ accepted: true, can_redirect: true }))
+    sidecar.respond('chat.steer', () => ({ accepted: true }))
     try {
       expect((await post(s, '/api/chat/steer', { session_id: sid, text: 'previously accepted', steer_id: 'earlier' })).status).toBe(200)
       adopt(sid)

@@ -106,6 +106,9 @@ class _Agent:
         self._pending_steer = f"{self._pending_steer}\n{text}" if self._pending_steer else text
         return True
 
+    def redirect(self, text: str) -> bool:
+        return False  # between model requests: nothing to restart
+
 
 class _Run:
     def __init__(self, agent):
@@ -134,15 +137,10 @@ def test_rpc_methods_rewrite_the_running_agents_slot(monkeypatch):
     methods = _methods(monkeypatch, _Run(agent))
     assert methods["chat.steer_withdraw"](None, {"stream_id": "s", "pending": ["a", "b"], "index": 0}) == {"withdrawn": True}
     assert agent._pending_steer == "b"
-    # An Agent without `redirect` keeps the steer pending, in its place.
-    assert methods["chat.steer_now"](None, {"stream_id": "s", "pending": ["b"], "index": 0}) == {"redirected": False, "withdrawn": True, "requeued": "kept"}
-    assert agent._pending_steer == "b"
-    assert methods["chat.steer"](None, {"stream_id": "s", "text": "c"})["can_redirect"] is False
 
 
 def test_live_agent_between_requests_keeps_the_steer_for_its_next_step(monkeypatch):
     agent = _Agent("a\nb")
-    agent.redirect = lambda text: False
     methods = _methods(monkeypatch, _Run(agent))
     assert methods["chat.steer_now"](None, {"stream_id": "s", "pending": ["a", "b"], "index": 0}) == {"redirected": False, "withdrawn": True, "requeued": "kept"}
     assert agent._pending_steer == "a\nb"

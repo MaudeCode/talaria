@@ -184,6 +184,7 @@ class CheckerTests(unittest.TestCase):
         self.root = Path(temporary.name)
         (self.root / "web/sidecar").mkdir(parents=True)
         self.write(RELEASES, active=RELEASES[1])
+        self.write_shims([])
         self.cache = self.root / "cache/talaria/agents"
         patcher = patch.dict(os.environ, {"XDG_CACHE_HOME": str(self.root / "cache")})
         patcher.start()
@@ -206,9 +207,81 @@ class CheckerTests(unittest.TestCase):
                "services": {"hermes-agent": {"image": active["image"]}}}
         (self.root / "web/sidecar/agent_dependency.json").write_text(json.dumps(pin))
 
+    def write_shims(self, rows, markers=None):
+        (self.root / checker.SHIM_LEDGER).write_text(json.dumps({"schemaVersion": 1, "shims": rows}))
+        for relative, text in (markers or {}).items():
+            path = self.root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+
     def main(self, *argv):
         with patch("sys.argv", ["check-agent-compatibility.py", *argv]):
             checker.main()
+
+    def shim_fixture(self):
+        """Two shims: one the oldest supported release (0.21.3) needs, one the middle release (0.21.4) needs."""
+        rows = [{"id": "old-probe", "lastRequired": "0.21.3", "summary": "0.21.3 lacks the probe.",
+                 "tests": ["web/sidecar/tests/test_old_probe.py"]},
+                {"id": "mid-probe", "lastRequired": "0.21.4", "summary": "0.21.4 lacks the probe.",
+                 "tests": ["web/packages/server/src/mid.test.ts"]}]
+        markers = {"web/sidecar/talaria_sidecar/probe.py": "x = 1  # agent-shim: old-probe\n",
+                   "web/sidecar/tests/test_old_probe.py": "# agent-shim: old-probe\n",
+                   "web/packages/server/src/mid.ts": "const y = 2 // agent-shim: mid-probe\n",
+                   "web/packages/server/src/mid.test.ts": "// agent-shim: mid-probe\n"}
+        self.write_shims(rows, markers)
+        return rows, markers
+
+    def test_shim_is_due_once_its_last_required_release_leaves_the_window(self):
+        rows, _ = self.shim_fixture()
+        self.main("--list")
+        moved = [*RELEASES[1:], release("v0.21.6", "0.21.6", "d")]
+        self.write(moved, active=moved[0])
+        self.stdout.seek(0)
+        self.stdout.truncate()
+        with self.assertRaisesRegex(ValueError, "agent shim old-probe is due: Agent 0.21.3 left the supported window; "
+                                                "remove its code, tests, markers and ledger row"):
+            self.main("--list")
+        self.write_shims(rows[1:])
+        (self.root / "web/sidecar/talaria_sidecar/probe.py").write_text("x = 1\n")
+        (self.root / "web/sidecar/tests/test_old_probe.py").write_text("")
+        self.main("--list")
+        self.assertEqual(json.loads(self.stdout.getvalue()), [entry["releaseTag"] for entry in moved])
+
+    def test_shim_ledger_and_markers_must_agree(self):
+        rows, markers = self.shim_fixture()
+        def row(**values):
+            return [{**rows[0], **values}, rows[1]]
+        cases = {
+            "orphan marker": (rows, {"web/sidecar/talaria_sidecar/extra.py": "# agent-shim: gone-probe\n"},
+                              "markers name shims missing from web/sidecar/agent_shims.json: gone-probe"),
+            "row without a marker": (row(id="unmarked-probe"), {}, "agent shim unmarked-probe has no agent-shim marker"),
+            "test without its marker": (rows, {"web/sidecar/tests/test_old_probe.py": "\n"},
+                                        "lists web/sidecar/tests/test_old_probe.py, which is missing or lacks its marker"),
+            "missing test": (row(tests=["web/sidecar/tests/test_gone.py"]), {},
+                             "lists web/sidecar/tests/test_gone.py, which is missing or lacks its marker"),
+            "no tests": (row(tests=[]), {}, "agent shim old-probe lists no tests"),
+            "unknown lastRequired": (row(lastRequired="0.21.9"), {}, "names lastRequired 0.21.9, which is not a supported"),
+            "newest lastRequired": (row(lastRequired="0.21.5"), {}, "names lastRequired 0.21.5, which is not a supported"),
+            "duplicate id": ([rows[0], rows[0]], {}, "agent shim old-probe is listed twice"),
+            "non-kebab id": (row(id="Old_Probe"), {}, "invalid agent shim row"),
+        }
+        for name, (ledger, edits, message) in cases.items():
+            with self.subTest(name):
+                self.write_shims(ledger, {**markers, **edits})
+                with self.assertRaisesRegex(ValueError, message):
+                    self.main("--list")
+                for relative in edits:
+                    (self.root / relative).unlink(missing_ok=True)
+
+    def test_candidate_review_names_the_shims_promotion_would_retire(self):
+        self.shim_fixture()
+        ledger = (self.root / checker.SHIM_LEDGER).read_bytes()
+        with patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            self.assertEqual(self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker")["result"], "success")
+        self.assertIn("Promoting Agent 0.21.6 makes these agent shims due in web/sidecar/agent_shims.json: old-probe\n",
+                      stderr.getvalue())
+        self.assertNotIn("mid-probe", stderr.getvalue())
+        self.assertEqual((self.root / checker.SHIM_LEDGER).read_bytes(), ledger)
 
     def test_native_contract_does_not_promote_a_supported_release(self):
         path = self.root / "web/sidecar/agent_support.json"
@@ -588,6 +661,9 @@ class CheckerTests(unittest.TestCase):
 
 
 class CommittedRecordTests(unittest.TestCase):
+    def test_committed_shim_ledger_matches_the_support_record(self):
+        checker.check_shims(REPOSITORY, [entry["version"] for entry in checker.supported_releases(REPOSITORY)])
+
     def test_release_list_step_propagates_selector_failure(self):
         lines = (REPOSITORY / ".github/workflows/web-verify.yml").read_text().splitlines()
         step = lines.index("      - name: Validate the support record and list its releases")
