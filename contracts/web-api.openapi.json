@@ -136501,6 +136501,7 @@
     "/api/insights": {
       "get": {
         "operationId": "insights",
+        "summary": "Usage analytics for a trailing `days` preset (1 to 365, default 30) or, with `start` and/or `end`, a custom range on the server calendar (TAL-1117). Each endpoint is a `YYYY-MM-DD` day or exact unix seconds; `range` reports the interval served and any fallback.",
         "tags": [
           "tools"
         ],
@@ -136510,6 +136511,26 @@
             "in": "query",
             "schema": {
               "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "TAL-1117: a `YYYY-MM-DD` day (from its midnight) or exact unix seconds. Omitted: the `days` window ending on `end`'s last day. Blank or unreadable: the `days` preset, `range.fallback_reason` `invalid_start`."
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "TAL-1117: a `YYYY-MM-DD` day (through its end) or exact unix seconds (exclusive). Omitted or after the clock: through now. Blank or unreadable: the `days` preset, `range.fallback_reason` `invalid_end`."
             },
             "allowEmptyValue": true,
             "allowReserved": true
@@ -136524,7 +136545,93 @@
                   "type": "object",
                   "properties": {
                     "period_days": {
-                      "type": "number"
+                      "type": "number",
+                      "description": "The days from `range.start_date` through `range.end_date`."
+                    },
+                    "range": {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "enum": [
+                            "preset",
+                            "custom"
+                          ],
+                          "type": "string",
+                          "description": "`custom` when `start`/`end` were served; `preset` for the trailing `days` window, including a fallback."
+                        },
+                        "start": {
+                          "type": "number",
+                          "description": "Unix seconds, inclusive."
+                        },
+                        "end": {
+                          "type": "number",
+                          "description": "Unix seconds: exclusive, or the server clock while `through_now`."
+                        },
+                        "through_now": {
+                          "type": "boolean"
+                        },
+                        "start_date": {
+                          "type": "string"
+                        },
+                        "end_date": {
+                          "type": "string"
+                        },
+                        "today": {
+                          "type": "string"
+                        },
+                        "timezone": {
+                          "type": "string",
+                          "description": "The IANA zone of the server calendar that dates, days and hours use."
+                        },
+                        "bucket": {
+                          "enum": [
+                            "day",
+                            "month"
+                          ],
+                          "type": "string",
+                          "description": "`month` once the range passes 366 days; each `daily_tokens` row then totals a month, dated by its first day in the range."
+                        },
+                        "fallback_reason": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "invalid_start",
+                                "invalid_end",
+                                "future"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Why a requested custom range was not served: a blank or unreadable endpoint, or a start after the clock. Null otherwise."
+                        },
+                        "adjustments": {
+                          "type": "array",
+                          "items": {
+                            "enum": [
+                              "reversed",
+                              "capped"
+                            ],
+                            "type": "string"
+                          },
+                          "description": "How a served custom range differs from the request: its endpoints swapped, or its start moved up to five calendar years before its last day."
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "start",
+                        "end",
+                        "through_now",
+                        "start_date",
+                        "end_date",
+                        "today",
+                        "timezone",
+                        "bucket",
+                        "fallback_reason",
+                        "adjustments"
+                      ]
                     },
                     "total_sessions": {
                       "type": "number"
@@ -136823,6 +136930,7 @@
                     }
                   },
                   "required": [
+                    "range",
                     "chart_peaks"
                   ],
                   "additionalProperties": {}

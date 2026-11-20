@@ -1479,7 +1479,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     const index = vi.spyOn(s.deps.sessionStore, 'readIndexEntries').mockResolvedValue(entries)
     const clock = vi.spyOn(s.deps, 'nowSeconds').mockReturnValue(now)
     try {
-      const direct = await buildInsights(entries, String(days), now, (cutoff) => insightsSessionRows(dbPath, cutoff))
+      const direct = await buildInsights(entries, { days: String(days) }, now, (cutoff) => insightsSessionRows(dbPath, cutoff))
       const body = await json(await s.get(`/api/insights?days=${String(days)}`))
       expect(body).toEqual(direct)
       const series = body.daily_tokens as Json[]
@@ -1521,6 +1521,39 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     } finally {
       index.mockRestore()
       rmSync(dbPath)
+    }
+  })
+
+  it('insights serve a custom range to index and state.db sessions alike, and fall back on a blank endpoint (TAL-1117)', async () => {
+    const previousTz = process.env.TZ
+    process.env.TZ = 'UTC'
+    const at = (iso: string) => Date.parse(iso) / 1000
+    const clock = vi.spyOn(s.deps, 'nowSeconds').mockReturnValue(at('2026-03-20T12:00:00Z'))
+    const index = vi.spyOn(s.deps.sessionStore, 'readIndexEntries').mockResolvedValue([
+      { session_id: 'web-in', created_at: at('2026-03-02T10:00:00Z'), updated_at: at('2026-03-02T10:00:00Z'), input_tokens: 10, output_tokens: 5, model: 'm' },
+      { session_id: 'web-after', created_at: at('2026-03-11T00:00:00Z'), updated_at: at('2026-03-11T00:00:00Z'), input_tokens: 1000, output_tokens: 1000, model: 'm' },
+    ])
+    const dbPath = join(s.deps.profileHome('default'), 'state.db')
+    const db = openStateDb(dbPath)
+    db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, model TEXT, message_count INTEGER, input_tokens INTEGER, output_tokens INTEGER, started_at REAL, ended_at REAL)')
+    const insert = db.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    insert.run('cli-in', 'cli', 'c', 1, 20, 10, at('2026-03-10T23:59:59Z'), null)
+    insert.run('cli-before', 'cli', 'c', 1, 500, 500, at('2026-02-28T23:59:59Z'), null)
+    db.close()
+    try {
+      const body = await json(await s.get('/api/insights?start=2026-03-01&end=2026-03-10'))
+      expect(body).toMatchObject({ period_days: 10, total_sessions: 2, total_input_tokens: 30, total_output_tokens: 15, range: { mode: 'custom', start_date: '2026-03-01', end_date: '2026-03-10', timezone: 'UTC', fallback_reason: null } })
+      const series = body.daily_tokens as Json[]
+      expect(series.map((d) => d.date)).toEqual(Array.from({ length: 10 }, (_, i) => `2026-03-${String(i + 1).padStart(2, '0')}`))
+      expect(series.filter((d) => d.sessions).map((d) => [d.date, d.input_tokens])).toEqual([['2026-03-02', 10], ['2026-03-10', 20]])
+      const blank = await json(await s.get('/api/insights?days=7&start=&end=2026-03-10'))
+      expect(blank).toMatchObject({ period_days: 7, range: { mode: 'preset', start_date: '2026-03-14', end_date: '2026-03-20', fallback_reason: 'invalid_start' } })
+    } finally {
+      clock.mockRestore()
+      index.mockRestore()
+      rmSync(dbPath)
+      if (previousTz === undefined) delete process.env.TZ
+      else process.env.TZ = previousTz
     }
   })
 
@@ -2177,7 +2210,7 @@ describe('tools helpers', () => {
 
   it('insights total the sessions inside the period and share them by model', async () => {
     const now = 1_760_000_000
-    const insights = await buildInsights([{ created_at: now - 100, updated_at: now - 50, input_tokens: 10, output_tokens: 5, cache_read_tokens: 5, estimated_cost: '$0.5', message_count: 3, model: 'm' }, { created_at: now - 10 * 86_400 * 4 }], '3', now)
+    const insights = await buildInsights([{ created_at: now - 100, updated_at: now - 50, input_tokens: 10, output_tokens: 5, cache_read_tokens: 5, estimated_cost: '$0.5', message_count: 3, model: 'm' }, { created_at: now - 10 * 86_400 * 4 }], { days: '3' }, now)
     expect(insights).toMatchObject({ period_days: 3, total_sessions: 1, total_messages: 3, total_tokens: 15, total_cost: 0.5, total_cache_hit_percent: 50 })
     expect((insights.models as Json[])[0]).toMatchObject({ model: 'm', sessions: 1, session_share: 100, cost_share: 100 })
   })
@@ -2193,13 +2226,13 @@ describe('tools helpers', () => {
         { session_id: 'a', created_at: at('2025-10-08T20:00:00Z'), input_tokens: 90, output_tokens: 10, model: 'm' },
         { session_id: 'b', created_at: at('2025-10-09T08:10:00Z'), input_tokens: 10, output_tokens: 10, estimated_cost: '$0.25', model: 'm' },
         { session_id: 'c', created_at: at('2025-10-09T08:20:00Z'), input_tokens: 5, output_tokens: 5, model: 'm' },
-      ], '3', now)
+      ], { days: '3' }, now)
       expect(insights.chart_peaks).toEqual({
         daily: { tokens: { peak_index: 1, max: 100 }, cost: { peak_index: 2, max: 0.25 }, sessions: { peak_index: 2, max: 2 } },
         by_day: { peak_index: 3, max: 2 },
         by_hour: { peak_index: 8, max: 2 },
       })
-      const empty = await buildInsights([], '3', now)
+      const empty = await buildInsights([], { days: '3' }, now)
       expect(empty.chart_peaks).toMatchObject({ daily: { cost: { peak_index: 0, max: 0 } }, by_day: { peak_index: 0, max: 0 } })
     } finally {
       if (previousTz === undefined) delete process.env.TZ
@@ -2210,7 +2243,7 @@ describe('tools helpers', () => {
   it('insights place a session on the day of the activity that admitted it to the window (TAL-1115)', async () => {
     const now = 1_760_000_000
     // An index entry whose stored update predates its creation is admitted by its creation time and counted on that day.
-    const insights = await buildInsights([{ created_at: now - 100, updated_at: now - 10 * 86_400, input_tokens: 10, output_tokens: 5, model: 'm' }], '3', now)
+    const insights = await buildInsights([{ created_at: now - 100, updated_at: now - 10 * 86_400, input_tokens: 10, output_tokens: 5, model: 'm' }], { days: '3' }, now)
     const series = insights.daily_tokens as Json[]
     expect(insights).toMatchObject({ total_sessions: 1, total_tokens: 15 })
     expect(series.reduce((n, d) => n + Number(d.sessions), 0)).toBe(1)
@@ -2219,7 +2252,7 @@ describe('tools helpers', () => {
 
   it('insights divide cache reads by the whole prompt a Talaria chat records as input (TAL-1173)', async () => {
     const now = 1_760_000_000
-    const insights = await buildInsights([{ created_at: now - 100, updated_at: now - 50, input_tokens: 1000, cache_read_tokens: 900, model: 'm' }], '3', now)
+    const insights = await buildInsights([{ created_at: now - 100, updated_at: now - 50, input_tokens: 1000, cache_read_tokens: 900, model: 'm' }], { days: '3' }, now)
     expect(insights).toMatchObject({ total_input_tokens: 1000, total_cache_hit_percent: 90 })
     expect((insights.models as Json[])[0]).toMatchObject({ model: 'm', cache_hit_percent: 90 })
   })
@@ -2233,7 +2266,7 @@ describe('tools helpers', () => {
       { session_id: 'invalid', created_at: 'soon', updated_at: -5, input_tokens: 40, model: 'i' },
       { session_id: 'dup', created_at: now - 300, updated_at: now - 200, input_tokens: 1, model: 'm' },
       { session_id: 'dup-future', created_at: now + 600, updated_at: now + 600, input_tokens: 2, model: 'f' },
-    ], '7', now, () => [
+    ], { days: '7' }, now, () => [
       { session_id: 'dup', created_at: now - 300, updated_at: now - 100, input_tokens: 5, model: 'm' },
       { session_id: 'dup-future', created_at: now + 600, updated_at: now + 900, input_tokens: 3, model: 'f' },
       { session_id: 'cli-future', created_at: now - 50, updated_at: now + 7200, input_tokens: 50, model: 'f' },

@@ -1,3 +1,5 @@
+import type { InsightsQuery } from './endpoints'
+
 const checkpointTargetKey = (sessionId: string, workspace: string) => ['checkpoints', sessionId, workspace] as const
 
 /** Query key families. Session refreshes use `invalidateSessionQueries` to preserve unrelated transcripts. */
@@ -67,7 +69,7 @@ export const keys = {
   pendingWrites: (kind: 'skills' | 'memory') => ['pending-writes', kind] as const,
   crons: { blueprints: ['crons', 'blueprints'] as const, contextSources: (profile: string, editingId: string, excludeId: string, refs: string[]) => ['crons', 'context-sources', profile, editingId, excludeId, refs] as const, all: ['crons'] as const, list: (allProfiles: boolean) => ['crons', 'list', allProfiles] as const, status: ['crons', 'status'] as const, history: (id: string) => ['crons', 'history', id] as const, run: (id: string, filename: string) => ['crons', 'history', id, filename] as const, output: (id: string) => ['crons', 'output', id] as const, deliveryOptions: ['crons', 'delivery-options'] as const },
   kanban: { boards: ['kanban', 'boards'] as const, inspection: ['kanban', 'inspection'] as const, board: (slug: string | undefined) => ['kanban', 'board', slug ?? ''] as const },
-  insights: (days: number) => ['insights', days] as const,
+  insights: ({ days, start, end }: InsightsQuery) => ['insights', days, start ?? null, end ?? null] as const,
   /** TAL-1964: one decision review; its session's `decision_review` events refresh it. */
   decisionReviews: ['decision-reviews'] as const,
   decisionReview: (id: string) => ['decision-review', id] as const,

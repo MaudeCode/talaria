@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { MessageSchema, SessionSchema } from './session'
 import { ChatEventSchema } from './sse'
-import { ProviderQuotasSchema } from './resources'
+import { InsightsSchema, ProviderQuotasSchema } from './resources'
 import { groupAssistantTurns, persistedActivity } from '../features/chat/turnActivity'
 import { projectMessages } from '../features/chat/useTranscript'
 
@@ -12,6 +12,12 @@ describe('shared monorepo contracts', () => {
     const fixture: unknown = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/provider-quotas.json'), 'utf8'))
     const window = ProviderQuotasSchema.parse(fixture).sources[0]?.windows?.[1]
     expect(window).toMatchObject({ label: 'Weekly', pace: { burn_rate: 1.12 }, forecast: { outcome: 'warning' } })
+  })
+
+  it('parses the shared custom and fallback Insights ranges the App decodes (TAL-1117)', () => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/insights-range.json'), 'utf8')) as Record<'custom' | 'fallback', { body: unknown }>
+    expect(InsightsSchema.parse(fixture.custom.body).range).toMatchObject({ mode: 'custom', start_date: '2026-03-01', end_date: '2026-03-03', fallback_reason: null })
+    expect(InsightsSchema.parse(fixture.fallback.body).range).toMatchObject({ mode: 'preset', fallback_reason: 'invalid_start' })
   })
 
   it('parses the shared compression span the App decodes (TAL-1006)', () => {

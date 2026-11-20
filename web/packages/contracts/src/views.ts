@@ -1611,8 +1611,25 @@ export type LogFile = z.infer<typeof LogFileSchema>
 /** TAL-2479: a chart's peak point (the first of equal largest values; null for an empty series) and its scale maximum (the largest value, 0 when none is positive). Clients format both. */
 export const ChartPeakSchema = z.object({ peak_index: z.number().int().nullable(), max: z.number() })
 export type ChartPeak = z.infer<typeof ChartPeakSchema>
+/**
+ * TAL-1117: the interval an Insights read covers, resolved on the server calendar. A session counts when
+ * `start <= activity < end`, or `<= end` while `through_now`. `start_date` and `end_date` are its first and last days,
+ * `today` the server's current day (the latest a date control offers), `bucket` the span of each `daily_tokens` row.
+ */
+export const InsightsRangeSchema = z.object({
+  mode: z.enum(['preset', 'custom']).describe('`custom` when `start`/`end` were served; `preset` for the trailing `days` window, including a fallback.'),
+  start: z.number().describe('Unix seconds, inclusive.'),
+  end: z.number().describe('Unix seconds: exclusive, or the server clock while `through_now`.'),
+  through_now: z.boolean(),
+  start_date: z.string(), end_date: z.string(), today: z.string(),
+  timezone: z.string().describe('The IANA zone of the server calendar that dates, days and hours use.'),
+  bucket: z.enum(['day', 'month']).describe('`month` once the range passes 366 days; each `daily_tokens` row then totals a month, dated by its first day in the range.'),
+  fallback_reason: z.enum(['invalid_start', 'invalid_end', 'future']).nullable().describe('Why a requested custom range was not served: a blank or unreadable endpoint, or a start after the clock. Null otherwise.'),
+  adjustments: z.array(z.enum(['reversed', 'capped'])).describe('How a served custom range differs from the request: its endpoints swapped, or its start moved up to five calendar years before its last day.'),
+})
+export type InsightsRange = z.infer<typeof InsightsRangeSchema>
 export const InsightsSchema = z.looseObject({
-  period_days: z.number().optional(), total_sessions: z.number().optional(), total_messages: z.number().optional(), total_tokens: z.number().optional(), total_input_tokens: z.number().optional(), total_output_tokens: z.number().optional(),
+  period_days: z.number().optional().describe('The days from `range.start_date` through `range.end_date`.'), range: InsightsRangeSchema, total_sessions: z.number().optional(), total_messages: z.number().optional(), total_tokens: z.number().optional(), total_input_tokens: z.number().optional(), total_output_tokens: z.number().optional(),
   total_cache_read_tokens: z.number().optional(), total_cache_hit_percent: NullableNumber.optional(), total_cost: z.number().optional(), activity_by_day: z.array(z.looseObject({ day: z.string(), sessions: z.number() })).optional(),
   activity_by_hour: z.array(z.looseObject({ hour: z.number(), sessions: z.number() })).optional(), daily_tokens: z.array(z.looseObject({ date: z.string(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), total_tokens: z.number().optional().describe('TAL-1750: input plus output for the day.'), cache_read_tokens: z.number().optional(), cost: z.number().optional(), sessions: z.number().optional() })).optional(),
   /**

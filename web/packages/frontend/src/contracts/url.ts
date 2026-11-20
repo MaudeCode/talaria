@@ -58,8 +58,11 @@ export const LEGACY_SETTINGS_SECTIONS: Readonly<Record<string, { section: Settin
 
 export const InsightsTabSchema = z.enum(['quotas', 'usage'])
 export type InsightsTab = z.infer<typeof InsightsTabSchema>
-/** TAL-1750: `tab` picks Quotas (default) or Usage; `days` is the Usage period. */
-export const InsightsSearchSchema = z.object({ tab: InsightsTabSchema.optional().catch(undefined), days: z.number().int().min(1).max(365).optional().catch(undefined) })
+/** TAL-1750: `tab` picks Quotas (default) or Usage; `days` is the Usage period. TAL-1117: `start` or `end` selects a custom range, sent as typed. */
+export const InsightsSearchSchema = z.object({
+  tab: InsightsTabSchema.optional().catch(undefined), days: z.number().int().min(1).max(365).optional().catch(undefined),
+  start: z.string().max(40).optional().catch(undefined), end: z.string().max(40).optional().catch(undefined),
+})
 export const KanbanSearchSchema = z.object({ board: z.string().max(128).optional().catch(undefined), assignee: z.string().max(128).optional().catch(undefined), archived: z.boolean().optional().catch(undefined), task: z.string().max(128).optional().catch(undefined) })
 export const LoginSearchSchema = z.object({ next: z.string().max(2048).optional().catch(undefined) })
 /** TAL-2326: `skill` opens that skill's detail, as a tool row's link does. */

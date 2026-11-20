@@ -1,16 +1,32 @@
-import { describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
 import type { z } from 'zod'
+import type { Insights, InsightsRange } from '@maudecode/talaria-web-contracts'
 import { ProviderQuotasSchema } from '../../contracts'
 import * as api from '../../api/endpoints'
+import { keys } from '../../api/queryKeys'
 import { BarChart } from './BarChart'
 import { InsightsPage } from './InsightsPage'
 import { ProviderQuotaRows } from './ProviderQuotaRows'
 
-vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({ tab: 'usage', days: 30 }), useNavigate: () => vi.fn() }))
+/** The page's URL search, which `navigate` replaces as the router would. */
+const router = vi.hoisted(() => {
+  let search: Record<string, unknown> = {}
+  const listeners = new Set<() => void>()
+  return {
+    get: () => search,
+    set: (next: Record<string, unknown>) => { search = next; listeners.forEach((l) => { l() }) },
+    subscribe: (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } },
+  }
+})
+vi.mock('@tanstack/react-router', async () => {
+  const { useSyncExternalStore } = await import('react')
+  return { useSearch: () => useSyncExternalStore(router.subscribe, router.get), useNavigate: () => (opts: { search: Record<string, unknown> }) => { router.set(opts.search); return Promise.resolve() } }
+})
+beforeEach(() => { router.set({ tab: 'usage', days: 30 }) })
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), fetchInsights: vi.fn(), fetchProviderQuotas: vi.fn(() => new Promise<never>(() => undefined)) }))
 
 const quotas = ProviderQuotasSchema.parse({
@@ -112,7 +128,7 @@ describe('BarChart', () => {
 describe('InsightsPage usage amounts', () => {
   const none = { peak_index: null, max: 0 }
   it('shows one cent or more at exactly two decimals, less at up to four, each with its exact value in title', async () => {
-    vi.mocked(api.fetchInsights).mockResolvedValue({ total_sessions: 3, total_cost: 0.455, daily_tokens: [{ date: '2030-01-01', cost: 0.3705 }, { date: '2030-01-02', cost: 0.0004 }], models: [{ model: 'synthetic-a', cost: 0.3705 }, { model: 'synthetic-b', cost: 0.0004 }], chart_peaks: { daily: { tokens: none, cost: { peak_index: 0, max: 0.3705 }, sessions: none }, by_day: none, by_hour: none } })
+    vi.mocked(api.fetchInsights).mockResolvedValue({ range: served(), total_sessions: 3, total_cost: 0.455, daily_tokens: [{ date: '2030-01-01', cost: 0.3705 }, { date: '2030-01-02', cost: 0.0004 }], models: [{ model: 'synthetic-a', cost: 0.3705 }, { model: 'synthetic-b', cost: 0.0004 }], chart_peaks: { daily: { tokens: none, cost: { peak_index: 0, max: 0.3705 }, sessions: none }, by_day: none, by_hour: none } })
     render(<QueryClientProvider client={new QueryClient()}><InsightsPage /></QueryClientProvider>)
     expect(await screen.findByTitle('$0.455')).toHaveTextContent(/^\$0\.46$/)
     const table = screen.getByTestId('insights-models')
@@ -124,5 +140,102 @@ describe('InsightsPage usage amounts', () => {
     expect(within(daily as HTMLElement).getByText('Max $0.37')).toBeInTheDocument()
     expect(within(daily as HTMLElement).getByRole('img', { name: 'Daily: peak $0.37 at 2030-01-01' })).toBeInTheDocument()
     expect(within(daily as HTMLElement).getByTitle('2030-01-01: $0.3705')).toBeInTheDocument()
+  })
+})
+
+const none = { peak_index: null, max: 0 }
+/** A range as the server serves it: by default the 30-day preset ending on the server's today. */
+const served = (over: Partial<InsightsRange> = {}): InsightsRange => ({
+  mode: 'preset', start: 0, end: 0, through_now: true, start_date: '2030-01-01', end_date: '2030-01-30', today: '2030-01-30', timezone: 'Europe/Berlin', bucket: 'day', fallback_reason: null, adjustments: [], ...over,
+})
+const usage = (sessions: number, over: Partial<InsightsRange> = {}, period = 30): Insights => ({
+  period_days: period, total_sessions: sessions, range: served(over), chart_peaks: { daily: { tokens: none, cost: none, sessions: none }, by_day: none, by_hour: none },
+})
+const sessionsShown = () => within(screen.getByTestId('insights-stats')).getByText('Sessions').nextElementSibling?.textContent
+const renderPage = () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><InsightsPage /></QueryClientProvider>)
+  return client
+}
+const choosePeriod = async (name: string) => {
+  await userEvent.click(screen.getByRole('combobox', { name: 'Period' }))
+  await userEvent.click(await screen.findByRole('option', { name }))
+}
+
+describe('InsightsPage custom range (TAL-1117)', () => {
+  it('opens Custom on the range on screen, sends typed dates, and keeps them across a preset', async () => {
+    vi.mocked(api.fetchInsights).mockImplementation(({ days, start, end }) => Promise.resolve(start === undefined && end === undefined ? usage(days) : usage(5, { mode: 'custom', start_date: start ?? '', end_date: end ?? '' })))
+    renderPage()
+    await screen.findByTestId('insights-stats')
+    expect(screen.queryByLabelText('Start date')).toBeNull()
+
+    await choosePeriod('Custom')
+    expect(api.fetchInsights).toHaveBeenLastCalledWith({ days: 30, start: '2030-01-01', end: '2030-01-30' })
+    const start = screen.getByLabelText('Start date')
+    expect(start).toHaveAttribute('type', 'date')
+    expect(screen.getByText('Start date').tagName).toBe('LABEL')
+    expect(screen.getByText('End date').tagName).toBe('LABEL')
+    await userEvent.clear(start)
+    await userEvent.type(start, '2029-12-15')
+    expect(api.fetchInsights).toHaveBeenLastCalledWith({ days: 30, start: '2029-12-15', end: '2030-01-30' })
+    expect(await screen.findByText('Dec 15, 2029 – Jan 30, 2030 · Europe/Berlin')).toHaveAttribute('role', 'status')
+
+    await choosePeriod('7 days')
+    expect(api.fetchInsights).toHaveBeenLastCalledWith({ days: 7, start: undefined, end: undefined })
+    await waitFor(() => { expect(screen.queryByLabelText('Start date')).toBeNull() })
+    await choosePeriod('Custom')
+    expect(api.fetchInsights).toHaveBeenLastCalledWith({ days: 7, start: '2029-12-15', end: '2030-01-30' })
+    expect(screen.getByLabelText('Start date')).toHaveValue('2029-12-15')
+  })
+
+  it('says why the server fell back, and when it shortened the range or bucketed it by month', async () => {
+    router.set({ tab: 'usage', days: 30, start: '', end: '2030-01-10' })
+    vi.mocked(api.fetchInsights).mockResolvedValue(usage(0, { fallback_reason: 'invalid_start' }))
+    const { unmount } = render(<QueryClientProvider client={new QueryClient()}><InsightsPage /></QueryClientProvider>)
+    expect(await screen.findByText('Unreadable start date; showing 30 days')).toHaveAttribute('role', 'status')
+    expect(screen.getByRole('combobox', { name: 'Period' })).toHaveTextContent('Custom')
+    unmount()
+
+    router.set({ tab: 'usage', days: 30, start: '2010-01-01', end: '2030-01-10' })
+    const monthly = { ...usage(2, { mode: 'custom', start_date: '2025-01-10', end_date: '2030-01-10', bucket: 'month', adjustments: ['capped'] }, 1827), daily_tokens: [{ date: '2025-01-10', sessions: 1 }, { date: '2025-02-01', sessions: 1 }] }
+    vi.mocked(api.fetchInsights).mockResolvedValue(monthly)
+    renderPage()
+    expect(await screen.findByText('Shortened to the last five years')).toBeInTheDocument()
+    const chart = document.querySelector('[data-chart="daily"]')!
+    expect(chart).toHaveTextContent('Monthly')
+    expect(chart).toHaveTextContent('Jan 2025')
+  })
+
+  it('shows the newest range when an older response arrives last', async () => {
+    router.set({ tab: 'usage', days: 30, start: '2030-01-01', end: '2030-01-10' })
+    const pending = new Map<string | undefined, (body: Insights) => void>()
+    vi.mocked(api.fetchInsights).mockImplementation(({ end }) => new Promise((resolve) => { pending.set(end, resolve) }))
+    const client = renderPage()
+    const end = screen.getByLabelText('End date')
+    await userEvent.clear(end)
+    await userEvent.type(end, '2030-01-20')
+    await waitFor(() => { expect(pending.has('2030-01-20')).toBe(true) })
+    pending.get('2030-01-20')!(usage(20, { mode: 'custom', end_date: '2030-01-20' }))
+    expect(await screen.findByText('Jan 1, 2030 – Jan 20, 2030 · Europe/Berlin')).toBeInTheDocument()
+    pending.get('2030-01-10')!(usage(10, { mode: 'custom', end_date: '2030-01-10' }))
+    await waitFor(() => { expect(client.getQueryState(keys.insights({ days: 30, start: '2030-01-01', end: '2030-01-10' }))?.status).toBe('success') })
+    expect(sessionsShown()).toBe('20')
+    expect(screen.queryByText('Jan 1, 2030 – Jan 10, 2030 · Europe/Berlin')).toBeNull()
+  })
+
+  it('caps the date fields at the server\'s day, which moves on at its midnight without losing a draft', async () => {
+    router.set({ tab: 'usage', days: 30, start: '2030-01-01', end: '2030-01-30' })
+    let today = '2030-01-30'
+    vi.mocked(api.fetchInsights).mockImplementation(({ start, end }) => Promise.resolve(usage(1, { mode: 'custom', start_date: start ?? '', end_date: end ?? '', today })))
+    const client = renderPage()
+    const start = screen.getByLabelText('Start date')
+    await waitFor(() => { expect(start).toHaveAttribute('max', '2030-01-30') })
+    await userEvent.clear(start)
+    await userEvent.type(start, '2030-01-05')
+    today = '2030-01-31'
+    await client.invalidateQueries({ queryKey: ['insights'] })
+    await waitFor(() => { expect(start).toHaveAttribute('max', '2030-01-31') })
+    expect(screen.getByLabelText('End date')).toHaveAttribute('max', '2030-01-31')
+    expect(start).toHaveValue('2030-01-05')
   })
 })

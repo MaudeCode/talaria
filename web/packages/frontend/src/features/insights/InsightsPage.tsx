@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import type { InsightsTab } from '../../contracts/url'
@@ -10,16 +10,23 @@ import { useLocale } from '../../i18n/useLocale'
 import { formatCompact, formatPercent } from '../../i18n/units'
 import { useProviderQuotas } from '../../lib/useProviderQuotas'
 import { HubPage } from '../../shell/AppShell'
+import { FieldRow, TextInput } from '../../ui/Field'
 import { StatLabel } from '../../ui/List'
 import { Select } from '../../ui/Select'
 import { EmptyState, ErrorState, LoadingState, formatUsd } from '../../ui/States'
 import { BarChart, type BarChartRow } from './BarChart'
-import type { ChartPeak } from '@maudecode/talaria-web-contracts'
+import type { ChartPeak, InsightsRange } from '@maudecode/talaria-web-contracts'
 import { ProviderQuotaRows } from './ProviderQuotaRows'
 import { QUOTA_PERCENT_MODES, toQuotaPercentMode, type QuotaPercentMode } from './QuotaMeter'
 import { readPersisted, writePersisted } from '../../lib/persisted'
 
 const PERIODS = [7, 30, 90, 365]
+/** TAL-1117: the period select's custom-range entry. */
+const CUSTOM = 'custom'
+const BOUNDS = ['start', 'end'] as const
+const FALLBACK_NOTE: Record<NonNullable<InsightsRange['fallback_reason']>, (p: { n: number }) => string> = {
+  invalid_start: m.insights_range_fallback_invalid_start, invalid_end: m.insights_range_fallback_invalid_end, future: m.insights_range_fallback_future,
+}
 const TABS: { id: InsightsTab; label: () => string }[] = [{ id: 'quotas', label: m.insights_tab_quotas }, { id: 'usage', label: m.insights_tab_usage }]
 const METRICS = ['tokens', 'cost', 'sessions'] as const
 /** The viewer's Used / Remaining choice for the quota rows: a per-browser convenience, like the App's device setting. */
@@ -45,21 +52,43 @@ export function InsightsPage() {
   const navigate = useNavigate()
   const tab: InsightsTab = search.tab ?? 'quotas'
   const days = search.days ?? 30
+  const custom = search.start !== undefined || search.end !== undefined
   const setTab = (next: InsightsTab) => { void navigate({ to: '/insights', search: { ...search, tab: next }, replace: true }) }
-  const setDays = (next: number) => { void navigate({ to: '/insights', search: { ...search, days: next }, replace: true }) }
+  // TAL-1117: the date fields' drafts outlive a switch to a preset, so Custom comes back with them.
+  const [draft, setDraft] = useState({ start: search.start ?? '', end: search.end ?? '' })
   const [metric, setMetric] = useState<Metric>('tokens')
   const [percentMode, setPercentMode] = useState<QuotaPercentMode>(() => toQuotaPercentMode(readPersisted(PERCENT_MODE_KEY)))
   const choosePercentMode = (next: QuotaPercentMode) => { setPercentMode(next); writePersisted(PERCENT_MODE_KEY, next) }
-  const insights = useQuery({ queryKey: keys.insights(days), queryFn: () => api.fetchInsights(days), staleTime: 60_000, enabled: tab === 'usage' })
+  const query: api.InsightsQuery = { days, start: search.start, end: search.end }
+  const insights = useQuery({ queryKey: keys.insights(query), queryFn: () => api.fetchInsights(query), staleTime: 60_000, enabled: tab === 'usage', placeholderData: keepPreviousData })
   const { quotas, refresh } = useProviderQuotas()
   const d = insights.data
+  const range = d?.range
+  const setPeriod = (value: string) => {
+    if (value !== CUSTOM) { void navigate({ to: '/insights', search: { ...search, days: Number(value), start: undefined, end: undefined }, replace: true }); return }
+    // A first Custom starts from the range on screen.
+    const next = draft.start || draft.end ? draft : { start: range?.start_date ?? '', end: range?.end_date ?? '' }
+    setDraft(next)
+    void navigate({ to: '/insights', search: { ...search, ...next }, replace: true })
+  }
+  const setBound = (bound: (typeof BOUNDS)[number], value: string) => {
+    setDraft((prev) => ({ ...prev, [bound]: value }))
+    void navigate({ to: '/insights', search: { ...search, [bound]: value }, replace: true })
+  }
 
   const integer = new Intl.NumberFormat(locale)
   const compact = (n: number) => formatCompact(locale, n)
   const usd = (n: number) => formatUsd(n, locale, 2)
   const exactUsd = (n: number) => formatUsd(n, locale)
   const percent = (n: number) => formatPercent(locale, n)
-  const dayLabel = (date: string) => localDay(date)?.toLocaleDateString(locale, { month: 'short', day: 'numeric' }) ?? date
+  const monthly = range?.bucket === 'month'
+  const dayLabel = (date: string) => localDay(date)?.toLocaleDateString(locale, monthly ? { month: 'short', year: 'numeric' } : { month: 'short', day: 'numeric' }) ?? date
+  const fullDay = (date: string) => localDay(date)?.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' }) ?? date
+  const rangeNotes = range ? [
+    ...(range.mode === 'custom' ? [m.insights_range({ start: fullDay(range.start_date), end: fullDay(range.end_date), timezone: range.timezone })] : []),
+    ...(range.fallback_reason ? [FALLBACK_NOTE[range.fallback_reason]({ n: d?.period_days ?? days })] : []),
+    ...(range.adjustments.includes('capped') ? [m.insights_range_capped()] : []),
+  ] : []
   const metricLabel: Record<Metric, string> = { tokens: m.insights_tokens(), cost: m.insights_cost(), sessions: m.insights_sessions() }
   const metricValue: Record<Metric, (r: NonNullable<typeof d>['daily_tokens'] extends (infer R)[] | undefined ? R : never) => number> = {
     tokens: (r) => r.total_tokens ?? (r.input_tokens ?? 0) + (r.output_tokens ?? 0), cost: (r) => r.cost ?? 0, sessions: (r) => r.sessions ?? 0,
@@ -89,7 +118,7 @@ export function InsightsPage() {
         <>
           <TabStrip label={m.tab_insights()} tabs={TABS} value={tab} onChange={setTab} panelPrefix="insights" />
           {tab === 'quotas' && <label className="ml-auto flex items-center gap-2 text-xs text-muted">{m.insights_percentage()} <Select value={percentMode} aria-label={m.insights_percentage()} onValueChange={(v) => choosePercentMode(toQuotaPercentMode(v))}>{QUOTA_PERCENT_MODES.map((k) => <option key={k} value={k}>{k === 'used' ? m.provider_quota_metric_used() : m.provider_quota_metric_remaining()}</option>)}</Select></label>}
-          {tab === 'usage' && <label className="ml-auto flex items-center gap-2 text-xs text-muted">{m.insights_period()} <Select value={days} aria-label={m.insights_period()} onValueChange={(v) => setDays(Number(v))}>{PERIODS.map((p) => <option key={p} value={p}>{m.insights_days({ n: p })}</option>)}</Select></label>}
+          {tab === 'usage' && <label className="ml-auto flex items-center gap-2 text-xs text-muted">{m.insights_period()} <Select value={custom ? CUSTOM : String(days)} aria-label={m.insights_period()} onValueChange={setPeriod}>{PERIODS.map((p) => <option key={p} value={String(p)}>{m.insights_days({ n: p })}</option>)}<option value={CUSTOM}>{m.insights_period_custom()}</option></Select></label>}
         </>
       }
     >
@@ -97,7 +126,18 @@ export function InsightsPage() {
         {tab === 'quotas' && <div role="tabpanel" id="insights-quotas"><ProviderQuotaRows quotas={quotas} mode={percentMode} onRefresh={() => { void refresh() }} /></div>}
 
         {tab === 'usage' && <section role="tabpanel" id="insights-usage" className="flex flex-col gap-4" data-section="insights-usage">
-          {insights.isPending && <LoadingState />}
+          {custom && (
+            <div className="flex flex-wrap gap-x-6" data-section="insights-range">
+              {BOUNDS.map((bound) => (
+                <FieldRow key={bound} label={bound === 'start' ? m.insights_range_start() : m.insights_range_end()} htmlFor={`insights-${bound}`}>
+                  {/* The server's own day caps the picker, so it moves on at the server's midnight. */}
+                  <TextInput id={`insights-${bound}`} type="date" value={draft[bound]} max={range?.today} onChange={(e) => setBound(bound, e.target.value)} className="w-auto" />
+                </FieldRow>
+              ))}
+            </div>
+          )}
+          {rangeNotes.map((note) => <p key={note} role="status" className="text-xs text-muted">{note}</p>)}
+          {(insights.isPending || insights.isPlaceholderData) && <LoadingState compact={insights.isPlaceholderData} />}
           {insights.isError && <ErrorState error={insights.error} onRetry={() => { void insights.refetch() }} />}
           {d && (
             <>
@@ -113,7 +153,7 @@ export function InsightsPage() {
               {d.daily_tokens && d.daily_tokens.length > 1 && (
                 <BarChart
                   id="daily"
-                  title={m.insights_daily()}
+                  title={monthly ? m.insights_monthly() : m.insights_daily()}
                   rows={dailyRows}
                   format={metricFormat[metric]}
                   {...scale(dailyRows, d.chart_peaks.daily[metric], metricFormat[metric])}

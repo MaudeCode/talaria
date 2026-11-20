@@ -33,8 +33,13 @@ const byDay = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => 
 const byHour = Array.from({ length: 24 }, (_, hour) => ({ hour, sessions: hour >= 9 && hour <= 18 ? 3 + (hour * 7) % 5 : 0 }))
 /** The server's `chart_peaks` entry for a series (TAL-2479). */
 const peakOf = (values: number[]) => ({ peak_index: values.indexOf(Math.max(...values)), max: Math.max(0, ...values) })
+/** The server's resolved range (TAL-1117): the 30-day preset unless a request names custom dates. */
+const range = {
+  mode: 'preset', start: Date.UTC(2030, 0, 1) / 1000, end: Date.UTC(2030, 0, 30, 12) / 1000, through_now: true, start_date: '2030-01-01', end_date: '2030-01-30', today: '2030-01-30',
+  timezone: 'Europe/Berlin', bucket: 'day', fallback_reason: null, adjustments: [],
+}
 const insights = {
-  period_days: days, total_sessions: sum('sessions'), total_messages: sum('sessions') * 9,
+  period_days: days, range, total_sessions: sum('sessions'), total_messages: sum('sessions') * 9,
   total_input_tokens: sum('input_tokens'), total_output_tokens: sum('output_tokens'), total_tokens: sum('input_tokens') + sum('output_tokens'),
   total_cache_read_tokens: sum('input_tokens') / 2, total_cache_hit_percent: 50, total_cost: sum('cost'),
   models: [
@@ -122,4 +127,52 @@ test('Insights opens on Quotas, whose Used / Remaining choice survives a reload;
   await page.reload()
   await settle(page)
   await expect(page.getByRole('tab', { name: 'Usage' })).toHaveAttribute('aria-selected', 'true')
+})
+
+test('a custom Usage range takes typed dates, survives a preset and says when the server fell back (TAL-1117)', async ({ page }, info) => {
+  const asked: URLSearchParams[] = []
+  await page.route('**/api/provider/quotas**', (route) => route.fulfill({ json: quotas }))
+  await page.route('**/api/insights**', (route) => {
+    const query = new URL(route.request().url()).searchParams
+    asked.push(query)
+    const start = query.get('start')
+    const end = query.get('end')
+    if (start === null && end === null) return route.fulfill({ json: insights })
+    if (!start || !end) return route.fulfill({ json: { ...insights, range: { ...range, fallback_reason: start ? 'invalid_end' : 'invalid_start' } } })
+    return route.fulfill({ json: { ...insights, range: { ...range, mode: 'custom', through_now: false, start_date: start, end_date: end } } })
+  })
+  await page.goto('/insights?tab=usage')
+  await settle(page)
+  const period = page.getByRole('combobox', { name: 'Period', exact: true })
+  await period.click()
+  await page.getByRole('option', { name: 'Custom' }).click()
+  await expect(page).toHaveURL(/start=2030-01-01&end=2030-01-30|end=2030-01-30.*start=2030-01-01/)
+  const start = page.getByLabel('Start date')
+  await expect(start).toHaveValue('2030-01-01')
+  await expect(start).toHaveAttribute('max', '2030-01-30')
+
+  // Keyboard entry into the date field's own segments reaches the server as the typed day.
+  await start.focus()
+  await page.keyboard.type('01052030')
+  await expect(start).toHaveValue('2030-01-05')
+  await expect(page.getByRole('status').filter({ hasText: 'Europe/Berlin' })).toHaveText('Jan 5, 2030 – Jan 30, 2030 · Europe/Berlin')
+  expect(asked.some((query) => query.get('start') === '2030-01-05')).toBe(true)
+  const shot = async (name: string) => {
+    const path = info.outputPath(`insights-${name}-${info.project.name}.png`)
+    await page.screenshot({ path })
+    await info.attach(`insights-${name}-${info.project.name}`, { path, contentType: 'image/png' })
+  }
+  await shot('custom-range')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+
+  await period.click()
+  await page.getByRole('option', { name: '7 days' }).click()
+  await expect(start).toHaveCount(0)
+  await period.click()
+  await page.getByRole('option', { name: 'Custom' }).click()
+  await expect(start).toHaveValue('2030-01-05')
+
+  await page.getByLabel('End date').fill('')
+  await expect(page.getByRole('status').filter({ hasText: 'Unreadable end date' })).toHaveText('Unreadable end date; showing 30 days')
+  await shot('custom-fallback')
 })

@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Pick a custom date range for usage Insights, with the server's time zone shown beside it.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announcement": {
+        "title": "Custom Insights dates",
+        "description": "Pick any start and end date to see your usage for that stretch of time.",
+        "icon": "search"
+      }
+    }
+  ]
+}

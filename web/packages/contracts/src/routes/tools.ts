@@ -123,7 +123,11 @@ export const toolsContract = {
     browse: oc.route({ method: 'GET', path: '/api/wiki/browse', tags, summary: 'Allowlisted `*.md` pages under `entities`, `concepts`, `comparisons`, and `queries`; 404 when the wiki directory is missing.' }).output(WikiBrowseSchema),
     page: oc.route({ method: 'GET', path: '/api/wiki/page', tags, summary: 'One allowlisted page, cut at 2 MiB. 400 for a missing or non-canonical path; 404 for anything not listed.' }).input(z.object({ path: z.string().optional() })).output(WikiPageSchema),
   },
-  insights: oc.route({ method: 'GET', path: '/api/insights', tags }).input(z.object({ days: z.string().optional() })).output(InsightsSchema),
+  insights: oc.route({ method: 'GET', path: '/api/insights', tags, summary: 'Usage analytics for a trailing `days` preset (1 to 365, default 30) or, with `start` and/or `end`, a custom range on the server calendar (TAL-1117). Each endpoint is a `YYYY-MM-DD` day or exact unix seconds; `range` reports the interval served and any fallback.' }).input(z.object({
+    days: z.string().optional(),
+    start: z.string().optional().describe('TAL-1117: a `YYYY-MM-DD` day (from its midnight) or exact unix seconds. Omitted: the `days` window ending on `end`\'s last day. Blank or unreadable: the `days` preset, `range.fallback_reason` `invalid_start`.'),
+    end: z.string().optional().describe('TAL-1117: a `YYYY-MM-DD` day (through its end) or exact unix seconds (exclusive). Omitted or after the clock: through now. Blank or unreadable: the `days` preset, `range.fallback_reason` `invalid_end`.'),
+  })).output(InsightsSchema),
   logs: oc.route({ method: 'GET', path: '/api/logs', tags }).input(z.object({ file: z.string().optional(), tail: z.string().optional(), q: z.string().optional(), level: LogLevelFilterSchema.optional() })).output(LogsSchema),
   ops: {
     agent: oc.route({ method: 'GET', path: '/api/health/agent', tags }).output(AgentHealthSchema),
