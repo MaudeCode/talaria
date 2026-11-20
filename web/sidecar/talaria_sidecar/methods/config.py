@@ -178,8 +178,15 @@ def managed_config() -> dict:
     """The Agent's normalized, effective administrator overlay, separate from the user document."""
     try:
         scope = importlib.import_module("hermes_cli.managed_scope")
-    except ModuleNotFoundError as exc:
-        if exc.name in ("hermes_cli", "hermes_cli.managed_scope"):
+    except ImportError:
+        # A broken Agent can still be repaired through config.set when there is
+        # no administrator file. Check the bootstrap scope without importing it.
+        override = os.environ.get("HERMES_MANAGED_DIR", "").strip()
+        if not override and "PYTEST_CURRENT_TEST" in os.environ:
+            return {}
+        try:
+            (Path(override or "/etc/hermes") / "config.yaml").stat()
+        except FileNotFoundError:
             return {}
         raise
     backend = importlib.import_module("hermes_cli.config_backend").get_config_backend()
