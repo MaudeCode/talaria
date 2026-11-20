@@ -2108,28 +2108,34 @@ final class ChatHostedTests: XCTestCase {
             $0.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
         }
         try await awaitFixtureApproval(in: window)
-        let last = try await requireElement(in: window, label: "Skip all this session")
+        _ = try await requireElement(in: window, label: "Skip all this session")
         let transcript = try transcriptScrollView(in: window)
-        // The approval's own scroll view is the one under the top of its description, which stays on screen.
-        let description = window.convert(try await requireElement(
-            in: window, label: "Allow the deterministic fixture to continue.").accessibilityFrame, from: nil)
-        let scroll = window.firstView(ofType: UIScrollView.self) {
-            $0 !== transcript && $0.contentSize.height > $0.bounds.height
-                && $0.convert($0.bounds, to: window).contains(CGPoint(x: description.midX, y: description.minY + 1))
-        }
-        let viewport = scroll.map { $0.convert($0.bounds, to: window) } ?? window.bounds
+        var lastFrame = CGRect.null
+        var viewport = CGRect.null
         let revealed = await awaitCondition {
-            // Each poll scrolls to the current end, as the content can still grow after a layout pass.
-            if let scroll {
-                let bottom = max(0, scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height)
-                scroll.setContentOffset(CGPoint(x: 0, y: bottom), animated: false)
-            }
-            let frame = window.convert(last.accessibilityFrame, from: nil)
-            return frame.height > 0 && viewport.contains(frame) && window.bounds.contains(frame)
+            // Each poll finds the card's scroll view afresh and scrolls it to its current end: on a slow host the
+            // card's content is still sizing when the choice first appears, so a lookup made once finds nothing.
+            guard let last = HostedAccessibility.element(in: window, label: "Skip all this session"),
+                  let description = HostedAccessibility.element(in: window, label: "Allow the deterministic fixture to continue.")
+            else { return false }
+            lastFrame = window.convert(last.accessibilityFrame, from: nil)
+            let top = window.convert(description.accessibilityFrame, from: nil)
+            // The card's scroll view holds the description in its content, even once scrolled past it.
+            guard let scroll = window.firstView(ofType: UIScrollView.self, where: {
+                $0 !== transcript && $0.contentSize.height > $0.bounds.height
+                    && CGRect(origin: .zero, size: $0.contentSize).contains($0.convert(CGPoint(x: top.midX, y: top.minY + 1), from: window))
+            }) else { return false }
+            let bottom = max(0, scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height)
+            scroll.setContentOffset(CGPoint(x: 0, y: bottom), animated: false)
+            viewport = scroll.convert(scroll.bounds, to: window)
+            lastFrame = window.convert(last.accessibilityFrame, from: nil)
+            // Scrolling is vertical: the choice must lie within the card's visible height, and on screen.
+            return lastFrame.height > 0 && lastFrame.minY >= viewport.minY && lastFrame.maxY <= viewport.maxY
+                && window.bounds.contains(lastFrame)
         }
         settle(0.3)
         attachHostedScreenshot(window, name: "approval-slot-ax5")
-        XCTAssertTrue(revealed, "Skip all this session stays out of view: \(window.convert(last.accessibilityFrame, from: nil)) in \(viewport)")
+        XCTAssertTrue(revealed, "Skip all this session stays out of view: \(lastFrame) in the card's scroll view \(viewport)")
     }
 
     /// TAL-474 through TAL-2021: the approval moves with the composer to the trailing pane of a book fold.
