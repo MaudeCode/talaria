@@ -136,6 +136,8 @@ struct MessageComposerView: View {
     var onToggleClarificationChoice: (String) -> Void = { _ in }
     var onSelectClarificationQuestion: (Int) -> Void = { _ in }
     var onSubmitClarification: (String) -> Void = { _ in }
+    /// TAL-2021: an expanded approval takes the question slot after a question and ahead of a connection operation.
+    var approval: ApprovalRequestContent? = nil
     var connectionOperation: ConnectorOperationView? = nil
     var connectionRunningTargets: Set<String> = []
     var connectionErrorMessage: String? = nil
@@ -644,6 +646,15 @@ struct MessageComposerView: View {
                 .id(clarificationPrompt.id)
                 Divider()
                     .padding(.horizontal, 16)
+            } else if let approval {
+                clarificationResizeHandle
+                    .overlay(alignment: .trailing) { approval.collapseButton.padding(.trailing, 8) }
+                approval
+                    .frame(height: displayedClarificationHeight)
+                    .clipped()
+                    .id(approval.prompt.id)
+                Divider()
+                    .padding(.horizontal, 16)
             } else if let connectionOperation {
                 clarificationResizeHandle
                 // Keyed by the operation, so a replacement starts with no typed credentials.
@@ -701,9 +712,9 @@ struct MessageComposerView: View {
                         )
                     }
             )
-            .accessibilityLabel(clarificationPrompt == nil ? "Resize connection area" : "Resize question area")
+            .accessibilityLabel(clarificationPrompt == nil && approval == nil ? "Resize connection area" : "Resize question area")
             .accessibilityValue("\(Int(displayedClarificationHeight / max(1, maximumClarificationHeight) * 100))%")
-            .accessibilityHint(clarificationPrompt == nil ? "Swipe up or down to resize the connection area." : "Swipe up or down to resize the question area.")
+            .accessibilityHint(clarificationPrompt == nil && approval == nil ? "Swipe up or down to resize the connection area." : "Swipe up or down to resize the question area.")
             .accessibilityAdjustableAction(adjustClarificationHeight)
     }
 
