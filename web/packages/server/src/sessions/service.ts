@@ -2091,7 +2091,7 @@ export class SessionService {
     const toolsets = this.validateToolsetsShape(body.enabled_toolsets)
     await opts.validateSources?.()
     const s = (await this.store.newSession({ ...(opts.sessionId ? { sessionId: opts.sessionId } : {}), workspace, model, modelProvider: provider, profile, projectId: typeof body.project_id === 'string' && body.project_id ? body.project_id : null, worktree: opts.worktree ?? null, enabledToolsets: toolsets }))
-    this.openLocalSession(s.session_id, 'create', s)
+    this.openLocalSession(s.session_id, 'create', s, opts.serverOwner)
     if (opts.worktree) this.publish('session_new', s.profile, s.session_id)
     return s
   }
@@ -2959,7 +2959,7 @@ export class SessionService {
   }
 
   /** Register before returning the new session or acknowledging its detail stream. */
-  openLocalSession(sid: string, reason: 'create' | 'resume', created?: Session): void {
+  openLocalSession(sid: string, reason: 'create' | 'resume', created?: Session, serverOwner = false): void {
     const sidecar = this.deps.sidecar?.()
     if (!sidecar) return
     let pending = this.pendingSessionOpens.get(sid)
@@ -2970,8 +2970,9 @@ export class SessionService {
       if (!session) {
         try { session = await this.store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false }) }
         catch (error) { if (error instanceof SessionNotFound) return; throw error }
-        if (!this.visibleToRequest(session) || await this.isReadOnly(session)) return
       }
+      if (!this.personMaySee(session.owner_person_id) || (!serverOwner && !this.visibleToActiveProfile(session.profile))) return
+      if (!created && await this.isReadOnly(session)) return
       const profile = session.profile ?? this.deps.activeProfile()
       if (this.deps.profileDeleting?.(profile)) return
       const release = this.deps.profileActivity?.(profile)

@@ -172,6 +172,7 @@ describe('manual session compression', () => {
 
   it('holds the profile as active until the job and its finalize settle, and refuses a profile being deleted', async () => {
     const sid = await seeded({ profile: 'work' })
+    const deletingSid = await seeded({ profile: 'work' })
     const deps = s.deps.sessions.deps
     const { profileActivity, profileDeleting } = deps
     const events: string[] = []
@@ -183,7 +184,7 @@ describe('manual session compression', () => {
       await job.done
       expect(events).toEqual(['acquire:work', 'finalize', 'release'])
       Object.assign(deps, { profileDeleting: (profile: string | null) => profile === 'work' })
-      await expect(s.deps.sessions.startCompression(await seeded({ profile: 'work' }), null)).rejects.toMatchObject({ status: 409, message: "Profile 'work' is being deleted." })
+      await expect(s.deps.sessions.startCompression(deletingSid, null)).rejects.toMatchObject({ status: 409, message: "Profile 'work' is being deleted." })
       expect(events).toHaveLength(3)
     } finally {
       Object.assign(deps, { profileActivity, profileDeleting })

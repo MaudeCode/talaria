@@ -285,6 +285,21 @@ describe('person isolation on', () => {
 })
 
 describe('person isolation off', () => {
+  it('restricts session creation to the bound profile for non-owners', async () => {
+    const sidecar = new FakeSidecar()
+    const server = await boot(false, sidecar)
+    const caller = boundLogin(server, 'default')
+    const profile = 'work'
+    mkdirSync(join(server.deps.config.hermesHome, 'profiles', profile), { recursive: true })
+    const denied = await post(server, caller, '/api/session/new', { profile })
+    expect(denied.status).toBe(403)
+    expect(sidecar.calls.filter(({ method }) => method === 'chat.session_open')).toEqual([])
+    expect((await post(server, caller, '/api/session/new', {})).status).toBe(200)
+    expect(sidecar.calls.filter(({ method }) => method === 'chat.session_open')).toEqual([
+      { method: 'chat.session_open', params: { session_id: expect.any(String) as string, profile_home: server.deps.profileHome('default'), reason: 'create' } },
+    ])
+  })
+
   it('keeps the shared single-user behavior and reports no person', async () => {
     const server = await boot(false)
     const alice = signIn(server, 'alice')
