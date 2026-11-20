@@ -375,21 +375,35 @@ extension XCTestCase {
         try await transition()
     }
 
-    /// Evidence of what a passing test laid out, for `TALARIA_TEST_SCREENSHOTS=1 scripts/test-ios`. Any other run draws
-    /// into one pixel: rendering every window took over a tenth of a run, while what a test's next step can rely on is
-    /// only the commit a drawing forces (`testDeepLinkedChatKeepsNavigationStackAndToolbarMounted`) (TAL-1897).
+    /// Evidence of what a passing test laid out, for `TALARIA_TEST_SCREENSHOTS=1 scripts/test-ios`. Any other run only
+    /// commits the window: rendering every window took over a tenth of a run, while what a test's next step can rely on
+    /// is only that commit (`testDeepLinkedChatKeepsNavigationStackAndToolbarMounted`) (TAL-1897).
     @MainActor
     func attachHostedScreenshot(_ window: UIWindow, name: String) {
-        guard keepsHostedScreenshots else {
-            _ = windowImage(window, size: CGSize(width: 1, height: 1))
-            return
-        }
-        // The first drawing commits offscreen SwiftUI updates. Capture the following frame, so a newly mounted
-        // header or composer is not photographed with its previous presentation.
-        _ = windowImage(window, size: CGSize(width: 1, height: 1))
-        window.layoutIfNeeded()
+        // The commit applies offscreen SwiftUI updates. Capture the following frame, so a newly mounted header or
+        // composer is not photographed with its previous presentation.
+        commitDisplay(of: window)
+        guard keepsHostedScreenshots else { return }
         settle()
         attachWindowImage(window, name: name, lifetime: .keepAlways)
+    }
+
+    /// Lays `window` out and waits for two display updates of its scene, so the SwiftUI and UIKit work queued before
+    /// the call has committed and drawn. A one-pixel drawing of the window forced the same commit, but the simulator's
+    /// render server snapshots the whole window for every drawing and, on a hosted runner, kept about 35 MB per
+    /// drawing across tests: ChatHostedTests' drawings took it past 3 GB on a 7 GB runner, which then swapped until a
+    /// test hung (TAL-2553). Bounded by `waitUntil`'s shared ceiling.
+    @MainActor
+    func commitDisplay(of window: UIWindow) {
+        window.layoutIfNeeded()
+        guard let scene = window.windowScene else { return }
+        var updates = 0
+        let link = UIUpdateLink(windowScene: scene)
+        link.addAction(to: .afterUpdateComplete) { _, _ in updates += 1 }
+        link.requiresContinuousUpdates = true
+        link.isEnabled = true
+        defer { link.isEnabled = false }
+        waitUntil { updates >= 2 }
     }
 
     /// What a failing test was showing, once it has failed.
@@ -401,7 +415,9 @@ extension XCTestCase {
 
     @MainActor
     private func attachWindowImage(_ window: UIWindow, name: String, lifetime: XCTAttachment.Lifetime) {
-        let attachment = XCTAttachment(image: windowImage(window, size: window.bounds.size))
+        let attachment = XCTAttachment(image: UIGraphicsImageRenderer(size: window.bounds.size).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        })
         attachment.name = name
         attachment.lifetime = lifetime
         add(attachment)
@@ -422,13 +438,6 @@ extension XCTestCase {
         return points.map { point in
             let offset = Int(point.y) * cgImage.bytesPerRow + Int(point.x) * pixelBytes
             return Array(UnsafeBufferPointer(start: bytes + offset, count: pixelBytes))
-        }
-    }
-
-    @MainActor
-    private func windowImage(_ window: UIWindow, size: CGSize) -> UIImage {
-        UIGraphicsImageRenderer(size: size).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
     }
 
@@ -478,7 +487,7 @@ extension XCTestCase {
     /// to reach the hosted tree.
     @MainActor
     func settle(_ seconds: TimeInterval = 0.05, window: UIWindow? = nil) {
-        if let window { _ = windowImage(window, size: CGSize(width: 1, height: 1)) }
+        if let window { commitDisplay(of: window) }
         RunLoop.current.run(until: Date().addingTimeInterval(seconds))
     }
 
