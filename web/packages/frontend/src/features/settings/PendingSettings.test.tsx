@@ -76,7 +76,7 @@ it('offers no Group discussion limits when the server reports them unavailable (
 
 it('offers the existing restart action only while the server requires one, and rereads settings after it (TAL-1828)', async () => {
   vi.mocked(api.fetchSettings).mockResolvedValue({ ...initial, ...limits, group_discussion_restart_required: true })
-  vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } })
+  vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, display_state: 'ok', gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } })
   vi.mocked(api.restartAgent).mockResolvedValue({ ok: true, message: 'restarted' })
   const qc = await setup()
   act(() => qc.setQueryData(keys.settings, { ...initial, ...limits }))

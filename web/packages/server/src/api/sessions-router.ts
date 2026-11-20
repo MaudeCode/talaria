@@ -771,7 +771,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       try {
         workspaceFileTarget(ctx, s.workspace, rel)
         const entries = listDir(s.workspace, rel)
-        return { entries: serializeEntriesForBrowser(entries) as { name: string; path: string; type: 'dir' | 'file' | 'symlink'; workspace_sort_rank: number }[], signature: dirSignature(s.workspace, rel, entries), path: rel, workspace: s.workspace, workspace_recovered: s.recovered }
+        return { source: 'workspace' as const, entries: serializeEntriesForBrowser(entries) as { name: string; path: string; type: 'dir' | 'file' | 'symlink'; workspace_sort_rank: number }[], signature: dirSignature(s.workspace, rel, entries), path: rel, workspace: s.workspace, workspace_recovered: s.recovered }
       } catch (error) {
         throw fileError(error, 404)
       }
@@ -784,7 +784,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
       if (!input.path) throw new HttpError(400, 'path is required')
       try {
         workspaceFileTarget(ctx, s.workspace, input.path)
-        const file = readFilePreview(s.workspace, input.path)
+        const file = { ...readFilePreview(s.workspace, input.path), source: 'workspace' as const }
         return file.preview === 'html' ? { ...file, preview_url: previewUrl(ctx.deps.auth.signingKey(), s.workspace, input.path) } : file
       } catch (error) {
         throw fileError(error, 404)

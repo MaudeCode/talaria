@@ -20,7 +20,7 @@ describe('parseCommand', () => {
 })
 
 // A synthetic `/api/commands` catalog in server display order (TAL-314).
-const row = (name: string, extra: Partial<Command> = {}): Command => ({ name, description: name, aliases: [], handler: 'client', clients: ['web', 'ios'], ...extra })
+const row = (name: string, extra: Partial<Command> = {}): Command => ({ name, description: name, aliases: [], handler: 'client', clients: ['web', 'ios'], exec: false, ...extra })
 const catalog: Command[] = [
   row('stop'),
   row('terminal', { clients: ['web'], unsupported_message: 'Terminal is not available in the mobile app.' }),

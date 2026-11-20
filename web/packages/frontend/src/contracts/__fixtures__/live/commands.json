@@ -9,7 +9,8 @@
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": false
       },
       {
         "name": "new",
@@ -19,7 +20,8 @@
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": false
       },
       {
         "name": "clear",
@@ -29,7 +31,8 @@
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": false
       },
       {
         "name": "stop",
@@ -39,7 +42,8 @@
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": false
       },
       {
         "name": "interrupt",
@@ -50,7 +54,8 @@
           "web",
           "ios"
         ],
-        "args_hint": "<message>"
+        "args_hint": "<message>",
+        "exec": false
       },
       {
         "name": "queue",
@@ -61,7 +66,8 @@
           "web",
           "ios"
         ],
-        "args_hint": "<message>"
+        "args_hint": "<message>",
+        "exec": false
       },
       {
         "name": "steer",
@@ -72,7 +78,8 @@
           "web",
           "ios"
         ],
-        "args_hint": "<message>"
+        "args_hint": "<message>",
+        "exec": false
       },
       {
         "name": "model",
@@ -83,7 +90,8 @@
           "web",
           "ios"
         ],
-        "args_hint": "<id>"
+        "args_hint": "<id>",
+        "exec": false
       },
       {
         "name": "workspace",
@@ -94,7 +102,8 @@
           "web",
           "ios"
         ],
-        "args_hint": "<path>"
+        "args_hint": "<path>",
+        "exec": false
       },
       {
         "name": "terminal",
@@ -104,7 +113,8 @@
         "clients": [
           "web"
         ],
-        "unsupported_message": "Terminal is not available in the mobile app."
+        "unsupported_message": "Terminal is not available in the mobile app.",
+        "exec": false
       },
       {
         "name": "title",
@@ -115,7 +125,8 @@
           "web",
           "ios"
         ],
-        "args_hint": "<text>"
+        "args_hint": "<text>",
+        "exec": false
       },
       {
         "name": "retry",
@@ -125,7 +136,8 @@
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": false
       },
       {
         "name": "undo",
@@ -135,7 +147,8 @@
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": false
       },
       {
         "name": "compress",
@@ -147,7 +160,8 @@
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": false
       },
       {
         "name": "usage",
@@ -157,7 +171,8 @@
         "clients": [
           "web"
         ],
-        "unsupported_message": "Token usage is not available in the mobile app."
+        "unsupported_message": "Token usage is not available in the mobile app.",
+        "exec": false
       },
       {
         "name": "theme",
@@ -168,7 +183,8 @@
           "web"
         ],
         "args_hint": "<light|dark|system>",
-        "unsupported_message": "Theme switching is not available from mobile slash commands."
+        "unsupported_message": "Theme switching is not available from mobile slash commands.",
+        "exec": false
       },
       {
         "name": "yolo",
@@ -178,7 +194,8 @@
         "clients": [
           "web"
         ],
-        "unsupported_message": "YOLO mode is not available in the mobile app."
+        "unsupported_message": "YOLO mode is not available in the mobile app.",
+        "exec": false
       },
       {
         "name": "branch",
@@ -190,7 +207,8 @@
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": false
       },
       {
         "name": "voice",
@@ -200,7 +218,8 @@
         "clients": [
           "web"
         ],
-        "unsupported_message": "Voice commands are not available in the mobile app."
+        "unsupported_message": "Voice commands are not available in the mobile app.",
+        "exec": false
       },
       {
         "name": "reasoning",
@@ -211,7 +230,8 @@
           "web",
           "ios"
         ],
-        "args_hint": "[show|hide|<level>]"
+        "args_hint": "[show|hide|<level>]",
+        "exec": false
       },
       {
         "name": "personality",
@@ -222,7 +242,8 @@
           "web",
           "ios"
         ],
-        "args_hint": "[name]"
+        "args_hint": "[name]",
+        "exec": false
       },
       {
         "name": "goal",
@@ -233,7 +254,8 @@
           "web",
           "ios"
         ],
-        "args_hint": "[text]"
+        "args_hint": "[text]",
+        "exec": false
       },
       {
         "name": "status",
@@ -243,7 +265,8 @@
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": false
       },
       {
         "name": "btw",
@@ -254,7 +277,8 @@
           "web",
           "ios"
         ],
-        "args_hint": "<question>"
+        "args_hint": "<question>",
+        "exec": false
       },
       {
         "name": "background",
@@ -267,7 +291,8 @@
           "web",
           "ios"
         ],
-        "args_hint": "<message>"
+        "args_hint": "<message>",
+        "exec": false
       },
       {
         "name": "skills",
@@ -277,7 +302,8 @@
         "clients": [
           "web",
           "ios"
-        ]
+        ],
+        "exec": false
       },
       {
         "name": "use",
@@ -288,7 +314,8 @@
           "web"
         ],
         "args_hint": "<skill>",
-        "unsupported_message": "Use `/skills [query]` to search skills."
+        "unsupported_message": "Use `/skills [query]` to search skills.",
+        "exec": false
       },
       {
         "aliases": [],

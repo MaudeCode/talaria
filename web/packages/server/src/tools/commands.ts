@@ -8,7 +8,7 @@ import type { SidecarResult } from '@maudecode/talaria-web-contracts/sidecar'
 type AgentCommand = SidecarResult<'commands.registry'>['commands'][number]
 
 const ALL: CommandClient[] = ['web', 'ios']
-const client = (name: string, description: string, extra: Partial<Command> = {}): Command => ({ name, description, aliases: [], handler: 'client', clients: ALL, ...extra })
+const client = (name: string, description: string, extra: Partial<Command> = {}): Command => ({ name, description, aliases: [], handler: 'client', clients: ALL, exec: false, ...extra })
 const webOnly = (unsupported_message: string): Partial<Command> => ({ clients: ['web'], unsupported_message })
 
 /** Commands a client handles itself, in display order. Every entry outside a client's `clients` carries `unsupported_message`. */

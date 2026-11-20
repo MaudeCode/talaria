@@ -1001,7 +1001,7 @@ describe('projects, workspaces, and files over HTTP', () => {
       expect(res.status).toBe(200)
       return json(res)
     }
-    expect(await read('p.PNG')).toEqual({ path: 'p.PNG', size: 500_000, preview: 'image', mime: 'image/png' })
+    expect(await read('p.PNG')).toEqual({ source: 'workspace', path: 'p.PNG', size: 500_000, preview: 'image', mime: 'image/png' })
     expect(await read('d.pdf')).toMatchObject({ preview: 'pdf', mime: 'application/pdf' })
     expect(await read('a.mp3')).toMatchObject({ preview: 'audio' })
     expect(await read('v.webm')).toMatchObject({ preview: 'video' })

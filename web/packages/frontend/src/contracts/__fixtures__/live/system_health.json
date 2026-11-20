@@ -4,10 +4,13 @@
     "checked_at": "2026-09-15T02:11:17.382232+00:00",
     "cpu": null,
     "disk": {
+      "display_level": "warning",
       "percent": 93.8,
       "total_bytes": 994631127040,
       "used_bytes": 932971446272
     },
+    "display_reason": "Metrics unavailable: cpu, memory",
+    "display_state": "warning",
     "errors": [
       {
         "code": "RuntimeError",

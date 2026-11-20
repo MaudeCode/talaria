@@ -28,7 +28,7 @@ describe('markServerStopped', () => {
     await waitFor(() => expect(result.current.probe.isFetching).toBe(true))
 
     await act(async () => { markServerStopped(qc); await Promise.resolve() })
-    await act(async () => { answer({ alive: true, chat: { available: true, condition: null } }); await new Promise((resolve) => setTimeout(resolve, 0)) })
+    await act(async () => { answer({ alive: true, display_state: 'ok', gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } as const, chat: { available: true, condition: null } }); await new Promise((resolve) => setTimeout(resolve, 0)) })
 
     expect(result.current.failures).toBe(STOPPED_AFTER)
   })
@@ -73,7 +73,7 @@ describe('useRuntimeNotices agent_unavailable', () => {
   })
 
   it('renders a replayed runtime error with the same reason as health', () => {
-    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, chat: { available: true, condition: null } })
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, display_state: 'ok', gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } as const, chat: { available: true, condition: null } })
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children)
     let state = streamReducer(initialStreamState, { type: 'start', sessionId: 's', streamId: 'r', turnId: null, userMessageId: null, userText: 'hi', now: 1 })
@@ -85,7 +85,7 @@ describe('useRuntimeNotices agent_unavailable', () => {
   })
 
   it.each([false, true, undefined])('honors retryable=%s on replayed terminal errors', (retryable) => {
-    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, chat: { available: true, condition: null } })
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, display_state: 'ok', gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } as const, chat: { available: true, condition: null } })
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children)
     let state = streamReducer(initialStreamState, { type: 'start', sessionId: 's', streamId: 'r', turnId: null, userMessageId: null, userText: 'hi', now: 1 })
@@ -104,7 +104,7 @@ describe('useRuntimeNotices agent_unavailable', () => {
 
 describe('useRuntimeNotices agent notices (TAL-803)', () => {
   it('shows each of the session\'s Agent notices in its level\'s tone', () => {
-    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, chat: { available: true, condition: null } })
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, display_state: 'ok', gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } as const, chat: { available: true, condition: null } })
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children)
     const agentNotices = [
@@ -121,7 +121,7 @@ describe('useRuntimeNotices agent notices (TAL-803)', () => {
 describe('useRuntimeNotices standing goal (TAL-808)', () => {
   const base = { text: 'Ship the release notes', turns_used: 3, max_turns: 20, reason: null, parked_until: null }
   const goalRow = (goal: Parameters<typeof useRuntimeNotices>[0]['goal']) => {
-    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, chat: { available: true, condition: null } })
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, display_state: 'ok', gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } as const, chat: { available: true, condition: null } })
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children)
     const { result } = renderHook(() => useRuntimeNotices({ live: null, compressingSince: null, goal }), { wrapper })
@@ -152,7 +152,7 @@ describe('useRuntimeNotices compression (TAL-1006)', () => {
     return state.turns.s!
   }
   const row = (args: Partial<Parameters<typeof useRuntimeNotices>[0]>) => {
-    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, chat: { available: true, condition: null } })
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, display_state: 'ok', gateway_lifecycle: { managed: true, reason: 'local_gateway', start_command: null } as const, chat: { available: true, condition: null } })
     vi.useFakeTimers({ now: NOW })
     try {
       const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })

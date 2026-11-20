@@ -12,6 +12,11 @@
           "agent_runtime_reason": "update_active",
           "retryable": true,
           "restart_scheduled": false
+        },
+        "gateway_lifecycle": {
+          "managed": true,
+          "reason": "local_gateway",
+          "start_command": null
         }
       },
       "http": {
@@ -48,6 +53,11 @@
           "agent_runtime_reason": "recovery_incomplete",
           "retryable": true,
           "restart_scheduled": false
+        },
+        "gateway_lifecycle": {
+          "managed": true,
+          "reason": "local_gateway",
+          "start_command": null
         }
       },
       "http": {
@@ -84,6 +94,11 @@
           "agent_runtime_reason": "unknown",
           "retryable": true,
           "restart_scheduled": false
+        },
+        "gateway_lifecycle": {
+          "managed": true,
+          "reason": "local_gateway",
+          "start_command": null
         }
       },
       "http": {
@@ -120,6 +135,11 @@
           "agent_runtime_reason": "source_changed",
           "retryable": true,
           "restart_scheduled": false
+        },
+        "gateway_lifecycle": {
+          "managed": true,
+          "reason": "local_gateway",
+          "start_command": null
         }
       },
       "http": {
@@ -152,6 +172,11 @@
     "chat": {
       "available": true,
       "condition": null
+    },
+    "gateway_lifecycle": {
+      "managed": true,
+      "reason": "local_gateway",
+      "start_command": null
     }
   },
   "legacy": {
@@ -159,6 +184,13 @@
     "chat": {
       "available": false,
       "condition": "agent_runtime_stale"
+    },
+    "display_state": "ok",
+    "display_reason": null,
+    "gateway_lifecycle": {
+      "managed": true,
+      "reason": "local_gateway",
+      "start_command": null
     }
   }
 }
