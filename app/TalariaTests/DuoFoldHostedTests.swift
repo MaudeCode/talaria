@@ -486,8 +486,8 @@ final class DuoFoldHostedTests: XCTestCase {
             try await reopenFixtureChat(in: window)
             let kept = await awaitCondition { self.readingRow(in: window) == reading }
             XCTAssertTrue(kept, "Revisiting the chat moved the reader from \(reading) to \(readingRow(in: window) ?? "nothing")")
-            let drawn = await awaitCondition { self.mountedTranscriptScrollView(in: window).map(self.drawsContent) == true }
-            XCTAssertTrue(drawn, "The revisited transcript never drew its rows")
+            let sampled = await awaitCondition { !drawnRows.isEmpty }
+            XCTAssertTrue(sampled, "No committed frame showed the revisited transcript")
         }
         XCTAssertEqual(drawnRows, [reading], "Revisiting the chat drew other rows at the top before the reader's")
         await attachRealizedTranscript(window, name: closed ? "revisit-drawer" : "revisit-beside-list")

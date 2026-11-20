@@ -369,6 +369,7 @@ extension XCTestCase {
                                 during transition: () async throws -> Void) async throws {
         let link = UIUpdateLink(windowScene: try XCTUnwrap(window.windowScene))
         link.addAction(to: .afterCATransactionCommit) { _, _ in sample() }
+        link.requiresContinuousUpdates = true
         link.isEnabled = true
         defer { link.isEnabled = false }
         try await transition()
