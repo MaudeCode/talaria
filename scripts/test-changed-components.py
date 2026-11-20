@@ -132,7 +132,7 @@ class RoutingTests(unittest.TestCase):
             (["contracts/versions.json"], CONSUMERS),
             # Only Web's drift check reads the OpenAPI document (TAL-1674).
             (["contracts/web-api.openapi.json"], {"web_server", "contracts"}),
-            (["contracts/fixtures/web-session.json"], FIXTURE_SUITES),
+            (["contracts/fixtures/web-session.json"], FIXTURE_SUITES | {"app"}),
             (["contracts/fixtures/delegation-status.json"], FIXTURE_SUITES | {"app"}),
             (["contracts/fixtures/mcp-events.json"], FIXTURE_SUITES | {"web_sidecar"}),
             (["contracts/fixtures/plan-allowance.json"], FIXTURE_SUITES | {"web_sidecar"}),
