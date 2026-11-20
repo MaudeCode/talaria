@@ -234,6 +234,7 @@ function ConfiguredProvider({ p, catalogUnavailable, sources, cost, spend, onRef
       {!w && cost?.has_enough_data && snapshots.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <BarChart compact id={`provider-spend-${p.id}`} title={m.providers_daily_spend({ n: cost.window_days ?? snapshots.length })} format={(v) => formatUsd(v, locale, 2)}
+            peak={cost.peak_day ? { label: cost.peak_day.date, display: formatUsd(cost.peak_day.spend, locale, 2) } : null}
             rows={snapshots.map((s) => ({ label: s.date.slice(5), title: s.date, value: s.delta ?? 0, display: s.delta === null ? m.provider_cost_no_baseline() : formatUsd(s.delta, locale, 2) }))} />
           <div className="flex items-baseline justify-between gap-3 text-xs text-muted">
             <span>{m.providers_daily_spend({ n: cost.window_days ?? snapshots.length })}</span>

@@ -126881,6 +126881,29 @@
                         }
                       ],
                       "description": "TAL-2135: the newest UTC day with a known spend (`delta`), the one a provider row captions; null without one."
+                    },
+                    "peak_day": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "date": {
+                              "type": "string"
+                            },
+                            "spend": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "date",
+                            "spend"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "TAL-2479: the day with the largest known spend (the first of equal ones), the peak a spend chart names; null without one."
                     }
                   },
                   "required": [
@@ -136121,8 +136144,151 @@
                         },
                         "additionalProperties": {}
                       }
+                    },
+                    "chart_peaks": {
+                      "type": "object",
+                      "properties": {
+                        "daily": {
+                          "type": "object",
+                          "properties": {
+                            "tokens": {
+                              "type": "object",
+                              "properties": {
+                                "peak_index": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "max": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "peak_index",
+                                "max"
+                              ]
+                            },
+                            "cost": {
+                              "type": "object",
+                              "properties": {
+                                "peak_index": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "max": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "peak_index",
+                                "max"
+                              ]
+                            },
+                            "sessions": {
+                              "type": "object",
+                              "properties": {
+                                "peak_index": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "max": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "peak_index",
+                                "max"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "tokens",
+                            "cost",
+                            "sessions"
+                          ]
+                        },
+                        "by_day": {
+                          "type": "object",
+                          "properties": {
+                            "peak_index": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "max": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "peak_index",
+                            "max"
+                          ]
+                        },
+                        "by_hour": {
+                          "type": "object",
+                          "properties": {
+                            "peak_index": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "max": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "peak_index",
+                            "max"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "daily",
+                        "by_day",
+                        "by_hour"
+                      ]
                     }
                   },
+                  "required": [
+                    "chart_peaks"
+                  ],
                   "additionalProperties": {}
                 }
               }
@@ -151163,6 +151329,22 @@
                           "resumable": {
                             "type": "boolean"
                           },
+                          "shown_state": {
+                            "enum": [
+                              "needs_attention",
+                              "schedule_error",
+                              "paused",
+                              "off",
+                              "error",
+                              "active",
+                              "running",
+                              "stopping"
+                            ],
+                            "type": "string"
+                          },
+                          "diagnostics": {
+                            "type": "string"
+                          },
                           "attention_hint": {
                             "anyOf": [
                               {
@@ -151260,6 +151442,8 @@
                         "required": [
                           "schedule_display",
                           "schedule_input",
+                          "shown_state",
+                          "diagnostics",
                           "attention_hint",
                           "can_stop",
                           "stopping",
@@ -152032,6 +152216,22 @@
                         "resumable": {
                           "type": "boolean"
                         },
+                        "shown_state": {
+                          "enum": [
+                            "needs_attention",
+                            "schedule_error",
+                            "paused",
+                            "off",
+                            "error",
+                            "active",
+                            "running",
+                            "stopping"
+                          ],
+                          "type": "string"
+                        },
+                        "diagnostics": {
+                          "type": "string"
+                        },
                         "attention_hint": {
                           "anyOf": [
                             {
@@ -152129,6 +152329,8 @@
                       "required": [
                         "schedule_display",
                         "schedule_input",
+                        "shown_state",
+                        "diagnostics",
                         "attention_hint",
                         "can_stop",
                         "stopping",
@@ -152739,6 +152941,22 @@
                         "resumable": {
                           "type": "boolean"
                         },
+                        "shown_state": {
+                          "enum": [
+                            "needs_attention",
+                            "schedule_error",
+                            "paused",
+                            "off",
+                            "error",
+                            "active",
+                            "running",
+                            "stopping"
+                          ],
+                          "type": "string"
+                        },
+                        "diagnostics": {
+                          "type": "string"
+                        },
                         "attention_hint": {
                           "anyOf": [
                             {
@@ -152836,6 +153054,8 @@
                       "required": [
                         "schedule_display",
                         "schedule_input",
+                        "shown_state",
+                        "diagnostics",
                         "attention_hint",
                         "can_stop",
                         "stopping",
@@ -153249,6 +153469,22 @@
                         "resumable": {
                           "type": "boolean"
                         },
+                        "shown_state": {
+                          "enum": [
+                            "needs_attention",
+                            "schedule_error",
+                            "paused",
+                            "off",
+                            "error",
+                            "active",
+                            "running",
+                            "stopping"
+                          ],
+                          "type": "string"
+                        },
+                        "diagnostics": {
+                          "type": "string"
+                        },
                         "attention_hint": {
                           "anyOf": [
                             {
@@ -153346,6 +153582,8 @@
                       "required": [
                         "schedule_display",
                         "schedule_input",
+                        "shown_state",
+                        "diagnostics",
                         "attention_hint",
                         "can_stop",
                         "stopping",
@@ -153760,6 +153998,22 @@
                         "resumable": {
                           "type": "boolean"
                         },
+                        "shown_state": {
+                          "enum": [
+                            "needs_attention",
+                            "schedule_error",
+                            "paused",
+                            "off",
+                            "error",
+                            "active",
+                            "running",
+                            "stopping"
+                          ],
+                          "type": "string"
+                        },
+                        "diagnostics": {
+                          "type": "string"
+                        },
                         "attention_hint": {
                           "anyOf": [
                             {
@@ -153857,6 +154111,8 @@
                       "required": [
                         "schedule_display",
                         "schedule_input",
+                        "shown_state",
+                        "diagnostics",
                         "attention_hint",
                         "can_stop",
                         "stopping",
@@ -154272,6 +154528,22 @@
                         "resumable": {
                           "type": "boolean"
                         },
+                        "shown_state": {
+                          "enum": [
+                            "needs_attention",
+                            "schedule_error",
+                            "paused",
+                            "off",
+                            "error",
+                            "active",
+                            "running",
+                            "stopping"
+                          ],
+                          "type": "string"
+                        },
+                        "diagnostics": {
+                          "type": "string"
+                        },
                         "attention_hint": {
                           "anyOf": [
                             {
@@ -154369,6 +154641,8 @@
                       "required": [
                         "schedule_display",
                         "schedule_input",
+                        "shown_state",
+                        "diagnostics",
                         "attention_hint",
                         "can_stop",
                         "stopping",
@@ -154793,6 +155067,22 @@
                         "resumable": {
                           "type": "boolean"
                         },
+                        "shown_state": {
+                          "enum": [
+                            "needs_attention",
+                            "schedule_error",
+                            "paused",
+                            "off",
+                            "error",
+                            "active",
+                            "running",
+                            "stopping"
+                          ],
+                          "type": "string"
+                        },
+                        "diagnostics": {
+                          "type": "string"
+                        },
                         "attention_hint": {
                           "anyOf": [
                             {
@@ -154890,6 +155180,8 @@
                       "required": [
                         "schedule_display",
                         "schedule_input",
+                        "shown_state",
+                        "diagnostics",
                         "attention_hint",
                         "can_stop",
                         "stopping",
@@ -155304,6 +155596,22 @@
                         "resumable": {
                           "type": "boolean"
                         },
+                        "shown_state": {
+                          "enum": [
+                            "needs_attention",
+                            "schedule_error",
+                            "paused",
+                            "off",
+                            "error",
+                            "active",
+                            "running",
+                            "stopping"
+                          ],
+                          "type": "string"
+                        },
+                        "diagnostics": {
+                          "type": "string"
+                        },
                         "attention_hint": {
                           "anyOf": [
                             {
@@ -155401,6 +155709,8 @@
                       "required": [
                         "schedule_display",
                         "schedule_input",
+                        "shown_state",
+                        "diagnostics",
                         "attention_hint",
                         "can_stop",
                         "stopping",

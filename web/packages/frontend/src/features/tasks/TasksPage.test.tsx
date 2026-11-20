@@ -29,10 +29,10 @@ const full: CronJob = {
   schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *', attention_hint: null, repeat: { times: null, completed: 4 },
   enabled: true, state: 'scheduled', next_run_at: '2026-09-18T09:00:00+02:00', last_run_at: '2026-09-17T09:00:00+02:00', last_status: 'ok',
   last_error: null, last_delivery_error: null, deliver: 'telegram', workdir: '/srv/digest', reasoning_effort: 'high', profile: 'work', toast_notifications: false,
-  derived_state: 'active', needs_attention: false, resumable: false, last_failure: null, delivery_unconfirmed_platforms: [], timezone: null, catch_up: null, grace_minutes: null, can_stop: false, stopping: false, last_outcome: 'succeeded',
+  derived_state: 'active', shown_state: 'active', diagnostics: '{"id": "ab12cd34ef56"}', needs_attention: false, resumable: false, last_failure: null, delivery_unconfirmed_platforms: [], timezone: null, catch_up: null, grace_minutes: null, can_stop: false, stopping: false, last_outcome: 'succeeded',
 }
 const feed: CronJob = { ...full, id: 'feed0000feed', name: 'Feed', context_from: [], continuity: false, monitor: '', skills: [], reasoning_effort: null, model: null, provider: null, model_option_id: null, workdir: null }
-const attention: CronJob = { ...feed, id: 'a77e0000a77e', name: 'Stuck', enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', derived_state: 'needs_attention', needs_attention: true, resumable: true, attention_hint: 'croniter_missing' }
+const attention: CronJob = { ...feed, id: 'a77e0000a77e', name: 'Stuck', enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', derived_state: 'needs_attention', shown_state: 'needs_attention', diagnostics: '{"id": "a77e0000a77e", "state": "completed"}', needs_attention: true, resumable: true, attention_hint: 'croniter_missing' }
 const foreign: CronJob = { ...feed, id: 'f0e1f0e1f0e1', name: 'Other profile job', read_only: true, owner_profile: 'personal', profile: 'personal' }
 
 /** The route without the app shell: selection is local state instead of `?job=`. */
@@ -114,7 +114,7 @@ describe('TasksPage', () => {
     expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'paused')
     expect(detail.getByRole('button', { name: /^resume$/i })).toBeEnabled()
     expect(screen.queryByText(/Pending/)).toBeNull()
-    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, derived_state: 'paused', resumable: true }, feed]))
+    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, derived_state: 'paused', shown_state: 'paused', resumable: true }, feed]))
     await act(async () => { held.resolve({ ok: true }); await held.promise })
     await waitFor(() => expect(api.fetchCrons).toHaveBeenCalledTimes(2))
     expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'paused')
@@ -126,7 +126,7 @@ describe('TasksPage', () => {
     const pause = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
     const resume = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
     const oldList = deferred<Awaited<ReturnType<typeof api.fetchCrons>>>()
-    const paused: CronJob = { ...feed, derived_state: 'paused', resumable: true }
+    const paused: CronJob = { ...feed, derived_state: 'paused', shown_state: 'paused', resumable: true }
     vi.mocked(api.cronAction).mockImplementation((action) => action === 'pause' ? pause.promise : resume.promise)
     const detail = await openJob('Digest', [full, paused])
     vi.mocked(api.fetchCrons).mockImplementationOnce(() => oldList.promise)
@@ -142,7 +142,7 @@ describe('TasksPage', () => {
     await act(async () => { oldList.resolve(cronList([full, paused])); await stale })
     expect(list.getByRole('button', { name: /Digest/ })).toHaveAttribute('data-state', 'paused')
     expect(list.getByRole('button', { name: /Feed/ })).toHaveAttribute('data-state', 'active')
-    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, derived_state: 'paused', resumable: true }, { ...feed, derived_state: 'active', resumable: false }]))
+    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, derived_state: 'paused', shown_state: 'paused', resumable: true }, { ...feed, derived_state: 'active', shown_state: 'active', resumable: false }]))
     await act(async () => { pause.resolve({ ok: true }); resume.resolve({ ok: true }); await Promise.all([pause.promise, resume.promise]) })
     await waitFor(() => expect(list.getByRole('button', { name: /Feed/ })).toHaveAttribute('data-state', 'active'))
     expect(list.getByRole('button', { name: /Digest/ })).toHaveAttribute('data-state', 'paused')
@@ -151,8 +151,8 @@ describe('TasksPage', () => {
   it('offers Stop only when the server says so, shows stopping at once and rolls back on a refusal (TAL-1819)', async () => {
     const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
     vi.mocked(api.cronAction).mockImplementation(() => held.promise)
-    const live = { ...full, running: true, can_stop: true }
-    const detail = await openJob('Feed', [live, { ...feed, running: true }])
+    const live: CronJob = { ...full, running: true, shown_state: 'running', can_stop: true }
+    const detail = await openJob('Feed', [live, { ...feed, running: true, shown_state: 'running' }])
     expect(detail.queryByRole('button', { name: /^stop$/i })).toBeNull()
     await selectJob('Digest')
     await userEvent.click(detail.getByRole('button', { name: /^stop$/i }))
@@ -166,7 +166,7 @@ describe('TasksPage', () => {
   })
 
   it('says so when the job had already stopped by the time Stop reached the server', async () => {
-    const detail = await openJob('Digest', [{ ...full, running: true, can_stop: true }])
+    const detail = await openJob('Digest', [{ ...full, running: true, shown_state: 'running', can_stop: true }])
     vi.mocked(api.cronAction).mockResolvedValue({ ok: true, job_id: full.id!, status: 'not_running' })
     await userEvent.click(detail.getByRole('button', { name: /^stop$/i }))
     await waitFor(() => expect(showToast).toHaveBeenCalledWith("Job isn't running"))
@@ -227,7 +227,7 @@ describe('TasksPage', () => {
     await act(async () => { old.resolve({ ok: true }); await old.promise })
     expect(showToast).not.toHaveBeenCalled()
     expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'paused')
-    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, derived_state: 'paused', resumable: true }, feed]))
+    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, derived_state: 'paused', shown_state: 'paused', resumable: true }, feed]))
     await act(async () => { replacement.resolve({ ok: true }); await replacement.promise })
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('Job paused'))
   })
@@ -494,7 +494,8 @@ describe('TasksPage', () => {
     expect(api.cronAction).toHaveBeenCalledWith('update', expect.objectContaining({ job_id: '0nce0000once', schedule: runAt }))
   })
 
-  it('blocks a script-only save until the monitor is cleared, then sends the cleared name and monitor', async () => {
+  it('sends a script-only save with its cleared name and monitor, and names the server\'s monitor refusal in the user\'s language (TAL-2479)', async () => {
+    vi.mocked(api.cronAction).mockRejectedValue(new ApiError({ kind: 'http', status: 400, code: 'cron_monitor_no_agent', path: '/api/crons/update', message: 'server wording' }))
     const detail = await openJob('Digest')
     await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
     const dialog = await screen.findByRole('form', { name: /edit job/i })
@@ -502,14 +503,8 @@ describe('TasksPage', () => {
     // Base UI puts the id on its hidden input, so the switch has no accessible name: it is the first switch in the form.
     await userEvent.click(within(dialog).getAllByRole('switch')[0]!)
     await userEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/monitor cannot be combined/i)
-    expect(api.cronAction).not.toHaveBeenCalled()
-    const monitor = within(dialog).getByRole('textbox', { name: /monitor/i })
-    expect(monitor).toBeEnabled()
-    await userEvent.clear(monitor)
-    await userEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
-    await waitFor(() => expect(api.cronAction).toHaveBeenCalledTimes(1))
-    expect(vi.mocked(api.cronAction).mock.calls[0]![1]).toMatchObject({ job_id: 'ab12cd34ef56', name: '', no_agent: true, monitor: '' })
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('A monitor cannot be combined with a script-only job.', 4000, 'error'))
+    expect(api.cronAction).toHaveBeenCalledWith('update', expect.objectContaining({ job_id: 'ab12cd34ef56', name: '', no_agent: true, monitor: 'https://example.com/status' }))
     expect(vi.mocked(api.cronAction).mock.calls[0]![1]).not.toHaveProperty('prompt')
   })
 
@@ -615,9 +610,7 @@ describe('TasksPage', () => {
     await userEvent.click(within(banner).getByRole('button', { name: /run once now/i }))
     expect(api.cronAction).toHaveBeenCalledWith('run', { job_id: 'a77e0000a77e' })
     await userEvent.click(within(banner).getByRole('button', { name: /copy diagnostics/i }))
-    const copied = JSON.parse(writeText.mock.calls[0]![0]) as Record<string, unknown>
-    expect(copied).toMatchObject({ id: 'a77e0000a77e', state: 'completed', enabled: false, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', schedule_display: '0 9 * * *' })
-    expect(copied).not.toHaveProperty('prompt')
+    expect(writeText).toHaveBeenCalledWith(attention.diagnostics)
   })
 
   it('shows one banner for an unwritable store and a job\'s last failure after a later success (TAL-810)', async () => {
@@ -646,7 +639,7 @@ describe('TasksPage', () => {
   })
 
   it('renders the server state and action: a paused job with a stale error offers Resume', async () => {
-    const paused: CronJob = { ...feed, id: 'pa05ed00pa05', name: 'Paused', enabled: false, state: 'paused', next_run_at: null, last_status: 'error', last_error: 'boom', derived_state: 'paused', needs_attention: false, resumable: true }
+    const paused: CronJob = { ...feed, id: 'pa05ed00pa05', name: 'Paused', enabled: false, state: 'paused', next_run_at: null, last_status: 'error', last_error: 'boom', derived_state: 'paused', shown_state: 'paused', needs_attention: false, resumable: true }
     const detail = await openJob('Paused', [paused, feed])
     expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'paused')
     expect(detail.getByRole('button', { name: /^resume/i })).toBeVisible()
@@ -654,11 +647,10 @@ describe('TasksPage', () => {
     expect(detail.queryByText(/needs attention/i)).toBeNull()
   })
 
-  it('shows a neutral status and no Pause/Resume when the server omits the derived fields', async () => {
+  it('offers no Pause/Resume when the server omits the derived fields', async () => {
     const bare: CronJob = { ...feed, enabled: false, state: 'paused' }
     delete bare.derived_state; delete bare.needs_attention; delete bare.resumable
     const detail = await openJob('Feed', [bare])
-    expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'unknown')
     expect(detail.getByRole('button', { name: /run now/i })).toBeVisible()
     expect(detail.queryByRole('button', { name: /^(pause|resume)/i })).toBeNull()
   })

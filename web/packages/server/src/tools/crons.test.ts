@@ -198,7 +198,7 @@ describe('cron job payloads carry the derived fields', () => {
     sidecar.respond('cron.cancel', (params) => { Object.assign(jobs[0]!, { live_execution: { id: 'exec-1', stopping: true } }); return { ok: true, job_id: params.job_id, status: 'stopping' } })
     expect(await service.cancel(home, String(recurring.id))).toEqual({ ok: true, job_id: recurring.id, status: 'stopping' })
     expect(sidecar.calls.find((call) => call.method === 'cron.cancel')?.params).toMatchObject({ profile_home: home, job_id: recurring.id, reason: 'Stopped from Talaria' })
-    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ can_stop: false, stopping: true }])
+    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ can_stop: false, stopping: true, shown_state: 'stopping' }])
   })
 
   it('refuses a Stop the sidecar refuses and never offers Stop on another profile\'s task (TAL-1819)', async () => {
@@ -213,12 +213,13 @@ describe('cron job payloads carry the derived fields', () => {
 
   it('lists running from the manual-run map and returns pause/resume rows through the same shaping', async () => {
     const { service, home, runningJobs } = setup()
-    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ id: recurring.id, derived_state: 'active', resumable: false, running: false, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *' }])
+    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ id: recurring.id, derived_state: 'active', shown_state: 'active', resumable: false, running: false, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *' }])
     runningJobs.set(String(recurring.id), 1)
-    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ running: true }])
-    expect((await service.pause(home, String(recurring.id), null)).job).toMatchObject({ derived_state: 'paused', needs_attention: false, resumable: true, running: true, schedule_input: '0 9 * * *' })
+    expect((await service.list('default', 'counted')).jobs).toMatchObject([{ running: true, shown_state: 'running' }])
+    // TAL-2479: a live run shows over the paused state it will return to.
+    expect((await service.pause(home, String(recurring.id), null)).job).toMatchObject({ derived_state: 'paused', shown_state: 'running', needs_attention: false, resumable: true, running: true, schedule_input: '0 9 * * *' })
     runningJobs.clear()
-    expect((await service.resume(home, String(recurring.id))).job).toMatchObject({ derived_state: 'error', needs_attention: false, resumable: false, running: false, schedule_input: '0 9 * * *' })
+    expect((await service.resume(home, String(recurring.id))).job).toMatchObject({ derived_state: 'error', shown_state: 'error', needs_attention: false, resumable: false, running: false, schedule_input: '0 9 * * *' })
   })
 })
 
@@ -238,6 +239,46 @@ describe('unwritable cron stores (TAL-810)', () => {
     })
     expect(await service.list('default', 'counted')).toMatchObject({ jobs: [], other_profile_count: 1, unwritable_stores: [] })
     expect(await service.list('default', 'all')).toMatchObject({ unwritable_stores: [{ profile: 'research', store: `${homes.research}/cron`, since: null }] })
+  })
+})
+
+describe('cron diagnostics (TAL-2479)', () => {
+  it('copies schedule, status and error fields, never the prompt, origin or delivery chat ids', () => {
+    const job = { ...recurring, enabled: false, state: 'completed', next_run_at: null, last_error: 'croniter missing', last_delivery_error: 'telegram 401', origin: { chat_id: 'never-copied' }, last_delivery_unverified: ['telegram:chat-hidden'] }
+    const text = jobForApi(job).diagnostics
+    expect(text).toEqual(expect.any(String))
+    expect(JSON.parse(text as string)).toEqual({
+      id: 'ab12cd34ef56', name: 'Digest', schedule: recurring.schedule, schedule_display: '0 9 * * *', enabled: false, state: 'completed', next_run_at: null, last_run_at: null,
+      last_status: 'ok', last_error: 'croniter missing', last_delivery_error: 'telegram 401', repeat: { times: null, completed: 12 }, deliver: null,
+    })
+    expect(text).not.toMatch(/never-copied|chat-hidden|Summarise the inbox/)
+  })
+})
+
+describe('script-only jobs refuse a monitor (TAL-2479)', () => {
+  const owner = () => {
+    const sidecar = new FakeSidecar()
+    const home = '/synthetic/talaria-home'
+    const stored: Dict = { ...recurring, profile: null, toast_notifications: true, script: 'probe.sh', no_agent: true, monitor: '', continuity: false, monitor_url: '', monitor_script: '' }
+    sidecar.respond('cron.list', () => ({ jobs: [stored] as never[] }))
+    sidecar.respond('cron.create', (params) => ({ job: { ...stored, ...params.job } as never }))
+    sidecar.respond('cron.update', (params) => ({ job: { ...stored, ...params.updates } as never }))
+    const service = new CronService({ sidecar: () => sidecar, profileHome: () => home, profileNames: () => Promise.resolve([{ name: 'default', visible: true }]), profilesMatch: (a, b) => a === b, isolatedProfileMode: () => false, log: () => undefined, callerIsOwner: () => Promise.resolve(true) })
+    return { service, home, sidecar }
+  }
+  const refusal = { status: 400, extra: { code: 'cron_monitor_no_agent' } }
+
+  it('refuses a create or an edit that leaves a script-only job with a monitor, and writes nothing', async () => {
+    const { service, home, sidecar } = owner()
+    await expect(service.create(home, { schedule: '0 9 * * *', script: 'probe.sh', no_agent: true, monitor: 'https://example.invalid/status' })).rejects.toMatchObject(refusal)
+    await expect(service.update(home, { job_id: recurring.id, monitor: 'check-feed.sh' })).rejects.toMatchObject(refusal)
+    expect(sidecar.calls.filter((call) => call.method === 'cron.create' || call.method === 'cron.update')).toEqual([])
+  })
+
+  it('saves the same edit once the monitor is cleared or the job runs the agent', async () => {
+    const { service, home } = owner()
+    await expect(service.update(home, { job_id: recurring.id, no_agent: true, monitor: '' })).resolves.toMatchObject({ ok: true })
+    await expect(service.update(home, { job_id: recurring.id, no_agent: false, monitor: 'check-feed.sh' })).resolves.toMatchObject({ ok: true })
   })
 })
 

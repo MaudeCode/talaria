@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web's Tasks page now gets each task's shown status and copied diagnostics from the server, the server refuses a script-only task with a monitor, and the Insights charts name the peak and maximum the server picks.",
+      "highlight": false,
+      "announce": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

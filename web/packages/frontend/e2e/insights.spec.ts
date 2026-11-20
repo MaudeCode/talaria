@@ -29,6 +29,10 @@ const daily = Array.from({ length: days }, (_, i) => {
   return { date: date.toISOString().slice(0, 10), input_tokens: input, output_tokens: output, cache_read_tokens: input / 2, sessions: 1 + (i * 5) % 7, cost: ((input + output) / 1_000_000) * 3 }
 })
 const sum = (key: 'input_tokens' | 'output_tokens' | 'sessions' | 'cost') => daily.reduce((n, d) => n + d[key], 0)
+const byDay = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => ({ day, sessions: [4, 9, 6, 7, 5, 2, 1][i]! }))
+const byHour = Array.from({ length: 24 }, (_, hour) => ({ hour, sessions: hour >= 9 && hour <= 18 ? 3 + (hour * 7) % 5 : 0 }))
+/** The server's `chart_peaks` entry for a series (TAL-2479). */
+const peakOf = (values: number[]) => ({ peak_index: values.indexOf(Math.max(...values)), max: Math.max(0, ...values) })
 const insights = {
   period_days: days, total_sessions: sum('sessions'), total_messages: sum('sessions') * 9,
   total_input_tokens: sum('input_tokens'), total_output_tokens: sum('output_tokens'), total_tokens: sum('input_tokens') + sum('output_tokens'),
@@ -38,8 +42,12 @@ const insights = {
     { model: 'claude-haiku-5-5', sessions: 3, input_tokens: 40_000, output_tokens: 9_000, total_tokens: 49_000, cache_read_tokens: 0, cache_hit_percent: 0, cost: 0.3, session_share: 20, token_share: 16, cost_share: 20, display_share: 20 },
   ],
   daily_tokens: daily,
-  activity_by_day: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => ({ day, sessions: [4, 9, 6, 7, 5, 2, 1][i] })),
-  activity_by_hour: Array.from({ length: 24 }, (_, hour) => ({ hour, sessions: hour >= 9 && hour <= 18 ? 3 + (hour * 7) % 5 : 0 })),
+  activity_by_day: byDay,
+  activity_by_hour: byHour,
+  chart_peaks: {
+    daily: { tokens: peakOf(daily.map((d) => d.input_tokens + d.output_tokens)), cost: peakOf(daily.map((d) => d.cost)), sessions: peakOf(daily.map((d) => d.sessions)) },
+    by_day: peakOf(byDay.map((d) => d.sessions)), by_hour: peakOf(byHour.map((d) => d.sessions)),
+  },
 }
 
 test('Insights opens on Quotas, whose Used / Remaining choice survives a reload; Usage holds the stats, charts and model table', async ({ page }, info) => {

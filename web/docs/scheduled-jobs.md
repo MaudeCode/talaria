@@ -89,7 +89,7 @@ on every tick and the monitor saves nothing.
 
 A monitor cannot be combined with **Script-only**: the whole point of a monitor
 is to wake or suppress an agent, and a script-only job has no agent to gate. The
-form blocks the save rather than silently dropping one of the two — clear the
+server refuses the save rather than silently dropping one of the two — clear the
 monitor first, or leave Script-only off.
 
 ### Continuity
