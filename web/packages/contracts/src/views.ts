@@ -1486,7 +1486,7 @@ export const GitInfoSchema = z.looseObject({ git: GitBadgeSchema.nullable().opti
 
 export const SkillSchema = z.looseObject({ ...SkillCatalogIdentitySchema.shape, name: z.string(), description: NullableString.optional(), category: NullableString.optional(), disabled: z.boolean().optional(), locked: z.boolean().nullable().optional() })
 /** TAL-2480: `skills` are the rows `q` and `category` matched; `total` counts every row and `categories` lists every row's category, sorted. */
-export const SkillsSchema = z.looseObject({ skills: z.array(SkillSchema), total: z.number().int(), categories: z.array(z.string()) })
+export const SkillsSchema = z.looseObject({ skills: z.array(SkillSchema), total: z.number().int(), categories: z.array(z.string()), category_groups: z.array(z.object({ category: z.string().nullable(), names: z.array(z.string()) })).optional() })
 /**
  * `linked_files` groups the skill directory's files by folder (`references`, `templates`, ...); open one with `?file=`.
  * A linked file that is not UTF-8 text carries `binary: true` and its `size` instead of `content`.

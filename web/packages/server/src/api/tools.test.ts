@@ -126,22 +126,29 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
 
     // TAL-2480: the filter runs here; `total` and `categories` describe the whole install.
     it('filters skills by name or description and category, with the install total and categories', async () => {
-      sidecar.respond('skills.list', () => ({ success: true, categories: [], count: 4, skills: [
-        { name: 'alpha', description: 'Reads PDFs', category: 'docs', disabled: false, locked: false },
-        { name: 'beta', description: 'Writes PDF reports', category: 'tools', disabled: true, locked: false },
-        { name: 'pdf-gamma', description: '', category: 'tools', disabled: false, locked: false },
-        { name: 'delta', description: 'Other', category: null, disabled: false, locked: false },
+      sidecar.respond('skills.list', () => ({ success: true, categories: [], count: 5, skills: [
+        { name: 'alpha', description: 'Reads PDFs', category: ' docs ', disabled: false, locked: false },
+        { name: 'beta', description: 'Writes PDF reports', category: 'Tools', disabled: true, locked: false },
+        { name: 'pdf-gamma', description: '', category: 'Tools', disabled: false, locked: false },
+        { name: ' zed', description: '', category: 'Tools', disabled: false, locked: false },
+        { name: 'delta', description: 'Other', category: '   ', disabled: false, locked: false },
       ] }))
       const list = async (query: string) => {
         const res = await s.get(`/api/skills${query}`)
         expect(res.status).toBe(200)
         const body = await json(res)
-        return { names: (body.skills as Json[]).map((r) => r.name), total: body.total, categories: body.categories }
+        expect(body.categories).toEqual(['   ', ' docs ', 'Tools'])
+        return { names: (body.skills as Json[]).map((r) => r.name), total: body.total, groups: body.category_groups }
       }
-      expect(await list('')).toEqual({ names: ['alpha', 'beta', 'pdf-gamma', 'delta'], total: 4, categories: ['docs', 'tools'] })
-      expect(await list('?q=%20PDF%20')).toEqual({ names: ['alpha', 'beta', 'pdf-gamma'], total: 4, categories: ['docs', 'tools'] })
-      expect(await list('?q=pdf&category=tools')).toEqual({ names: ['beta', 'pdf-gamma'], total: 4, categories: ['docs', 'tools'] })
-      expect(await list('?category=docs')).toEqual({ names: ['alpha'], total: 4, categories: ['docs', 'tools'] })
+      const groups = [
+        { category: 'docs', names: ['alpha'] },
+        { category: 'Tools', names: ['beta', 'pdf-gamma', ' zed'] },
+        { category: null, names: ['delta'] },
+      ]
+      expect(await list('')).toEqual({ names: ['alpha', 'beta', 'pdf-gamma', ' zed', 'delta'], total: 5, groups })
+      expect(await list('?q=%20PDF%20')).toEqual({ names: ['alpha', 'beta', 'pdf-gamma'], total: 5, groups })
+      expect(await list('?q=pdf&category=Tools')).toEqual({ names: ['beta', 'pdf-gamma'], total: 5, groups })
+      expect(await list('?category=docs')).toEqual({ names: ['alpha'], total: 5, groups })
     })
 
     it('reads usage counters, coercing counts and skipping a malformed row', async () => {

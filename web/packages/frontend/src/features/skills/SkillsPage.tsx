@@ -30,7 +30,7 @@ export function SkillsPage({ initialSkill }: { initialSkill?: string | undefined
   const usage = useQuery({ queryKey: keys.skills.usage, queryFn: api.fetchSkillsUsage, staleTime: 60_000 })
   const effects = useResourceEffects<boolean>()
   const list = withEffects(skills.data?.skills ?? [], (s) => `skill:${s.name}`, effects)
-  const categories = skills.data?.categories ?? []
+  const categories = skills.data?.category_groups?.flatMap(({ category }) => category === null ? [] : [category]) ?? skills.data?.categories ?? []
   const toggle = useResourceMutation({ resource: ({ name }: { name: string; enabled: boolean }) => `skill:${name}`, effect: ({ enabled }) => ({ value: enabled }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled), onError: (e) => showErrorToast(e) })
   const lock = useResourceMutation({ resource: ({ name }: { name: string; locked: boolean }) => `skill-lock:${name}`, effect: ({ locked }) => ({ value: locked }), queryKey: keys.skills.all, readKeys: () => [keys.skills.list], mutationFn: ({ name, locked }: { name: string; locked: boolean }) => api.lockSkill(name, locked), onError: (e) => showErrorToast(e) })
 

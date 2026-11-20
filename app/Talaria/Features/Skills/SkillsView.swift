@@ -26,7 +26,7 @@ struct SkillsView: View {
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search skills...")
     }
 
-    private var filteredGroups: [(category: String, skills: [SkillSummary])] {
+    private var filteredGroups: [(category: String?, skills: [SkillSummary])] {
         viewModel.filteredGroupedSkills(searchText: searchText)
     }
 
@@ -59,7 +59,7 @@ struct SkillsView: View {
         } else {
             SidebarList {
                 ForEach(filteredGroups, id: \.category) { group in
-                    SidebarSectionHeader(group.category)
+                    SidebarSectionHeader(group.category ?? String(localized: "Uncategorized"))
                     SkillRows(
                         skills: group.skills,
                         selection: $selection,

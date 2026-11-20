@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The server orders Skills categories and their rows consistently.",
+      "highlight": false,
+      "announce": false,
+      "components": ["app", "web"]
+    }
+  ]
+}
