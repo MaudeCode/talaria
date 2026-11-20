@@ -341,3 +341,43 @@ def test_archive_queue_refuses_admission_after_its_owner_closes(monkeypatch, tmp
     assert chat._ARCHIVE_QUEUE.empty()
     assert not any(home == tmp_path for home in chat._RELEASES.values())
     assert 'notification unavailable' in caplog.text
+
+
+@pytest.mark.parametrize('consumer', [True, False, None])
+def test_session_open_delivers_only_to_profile_consumer(monkeypatch, tmp_path, consumer):
+    from contextlib import contextmanager
+    import sys
+    from types import SimpleNamespace
+    from talaria_sidecar.methods import Registry, chat
+
+    calls = []
+
+    @contextmanager
+    def scope(home):
+        assert home == tmp_path
+        calls.append('scope enter')
+        try:
+            yield
+        finally:
+            calls.append('scope exit')
+
+    def has_hook(name):
+        assert calls == ['scope enter']
+        assert name == 'on_session_open'
+        return consumer
+
+    def invoke_hook(name, **kwargs):
+        calls.append((name, kwargs))
+
+    lifecycle = SimpleNamespace(invoke_hook=invoke_hook)
+    if consumer is not None:
+        lifecycle.has_hook = has_hook
+    monkeypatch.setitem(sys.modules, 'hermes_cli', SimpleNamespace(lifecycle=lifecycle))
+    monkeypatch.setattr(chat, 'agent_scope', scope)
+    registry = Registry(runtime=None)
+    chat.register(registry)
+    opened = registry.methods.get('chat.session_open')
+    if opened:
+        opened(None, {'session_id': 'opening-chat', 'profile_home': str(tmp_path), 'reason': 'resume'})
+    delivery = [('on_session_open', {'session_id': 'opening-chat', 'platform': 'webui', 'reason': 'resume'})] if consumer else []
+    assert calls == ['scope enter', *delivery, 'scope exit']

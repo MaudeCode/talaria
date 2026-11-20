@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Agent plugins can prepare a chat when Talaria creates or opens it.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

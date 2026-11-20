@@ -14626,6 +14626,20 @@
     ],
     "additionalProperties": false
   },
+  "chat.session_open": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean",
+        "const": true
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "additionalProperties": false
+  },
   "chat.finalize_session": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

@@ -1,4 +1,10 @@
 {
+  "chat.session_open": [
+    {
+      "params": { "profile_home": "<home>", "session_id": "opening-chat", "reason": "resume" },
+      "result": { "ok": true }
+    }
+  ],
   "chat.finalize_session": [
     {
       "params": {

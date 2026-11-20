@@ -676,6 +676,17 @@ after a sidecar restart. Cleanup checks surviving session IDs before removing fi
 The mutated state layers are the Agent database and its transcript artifacts; the
 HTTP server removes its session projection only after the sidecar's busy check.
 
+## Local session opens
+
+Talaria sends `chat.session_open` for a newly created local chat and once per
+accepted session stream for an existing local chat. History reads and polls
+leave it alone. Gateway-owned sessions keep their Agent-owned open lifecycle.
+The sidecar invokes `on_session_open` under the chat's profile with
+`platform: "webui"` and `reason: "create"` or `"resume"` when that Agent
+has a consumer. Open delivery runs independently of the HTTP request.
+A turn waits up to five seconds for pending opens, then proceeds even if
+delivery fails or a plugin is still running. No Talaria session state is written.
+
 ## Prompt refresh after an edit
 
 A continuing session replays its stored system prompt so the provider's prefix cache stays warm, so a SOUL.md or skill
