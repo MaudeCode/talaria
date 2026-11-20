@@ -1,1 +1,10 @@
-{"skip": "Test-only change: hosted tests record copies and activate Send only once it is enabled, and CI rejects new tests that touch the shared pasteboard or tap Send early; no app behavior changes."}
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Copy buttons across the app now share one copy path so automated checks can verify them; copying works as before.",
+      "highlight": false,
+      "announce": false
+    }
+  ]
+}
