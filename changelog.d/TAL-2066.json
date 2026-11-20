@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Editing a sent message with attachments in the App puts the edited text and its attachments back in the composer and reports any that are unavailable.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

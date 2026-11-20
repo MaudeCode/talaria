@@ -392,6 +392,58 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(streamClient.startedURLs.count, 1)
     }
 
+    /// TAL-2066: the cut returns the edited message's files (`contracts/fixtures/session-truncate.json`); they go back in
+    /// the composer beside the edited text, so sending sends both, and the file the server could not keep is one notice.
+    @MainActor
+    func testEditReturnsTheCutMessagesFilesToTheComposerWithItsText() async throws {
+        let fixture = try sharedContractFixture("session-truncate")
+        let returned = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture) as? [String: Any])
+        let file = try XCTUnwrap((returned["last_user_attachments"] as? [[String: Any]])?.first)
+        var startBody: [String: Any]?
+        let viewModel = try makeViewModel(streamClient: SpySSEStreamingClient()) { request in
+            switch request.url?.path {
+            case "/api/session":
+                return apiTestJSONResponse("""
+                {"session": {"session_id": "session-abc", "confirms_deep_truncate": true, "messages": [
+                  {"role": "user", "content": "Look at this", "timestamp": 1, "message_id": "u-0"}
+                ]}}
+                """, for: request)
+            case "/api/session/truncate":
+                return (HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, fixture)
+            case "/api/file/raw":
+                return apiTestJSONResponse(#"{"error": "not found"}"#, statusCode: 404, for: request)
+            case "/api/chat/start":
+                startBody = try apiTestJSONBody(from: request)
+                return apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-edit"}"#, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.loadMessages()
+        let context = try XCTUnwrap(viewModel.actionContext(for: viewModel.messages[0], visibleIndex: 0))
+        let didEdit = await viewModel.editMessage(context, newText: "Edited question")
+
+        XCTAssertTrue(didEdit)
+        XCTAssertNil(startBody)
+        XCTAssertEqual(viewModel.pendingAttachments.map(\.path), [file["path"] as? String])
+        XCTAssertEqual(viewModel.pendingAttachments.map(\.name), [file["filename"] as? String])
+        XCTAssertEqual(viewModel.pendingAttachments.map(\.isImage), [true])
+        let dropped = try XCTUnwrap(returned["dropped_attachment_count"] as? Int)
+        XCTAssertEqual(viewModel.currentNotice?.text, "Attachments no longer available: \(dropped)")
+        let text = viewModel.takeReturnedComposerTexts()
+        XCTAssertEqual(text, ["Edited question"])
+
+        let didSend = await viewModel.sendMessage(text.joined())
+
+        XCTAssertTrue(didSend)
+        XCTAssertEqual(startBody?["message"] as? String, "Edited question")
+        let sent = try XCTUnwrap(startBody?["attachments"] as? [[String: Any]])
+        XCTAssertEqual(sent.map { $0["path"] as? String }, [file["path"] as? String])
+        XCTAssertTrue(viewModel.pendingAttachments.isEmpty)
+    }
+
     /// TAL-929: the server holds a cut of more than one user turn; nothing changes until the confirmed resend.
     @MainActor
     func testDeepEditWaitsForServerConfirmationThenResendsWithItsToken() async throws {

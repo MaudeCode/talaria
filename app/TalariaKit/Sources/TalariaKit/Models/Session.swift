@@ -126,6 +126,9 @@ public struct SessionTruncateResponse: Decodable, Sendable {
     public let discardUserTurns: Int?
     public let discardMessages: Int?
     public let confirmToken: String?
+    /// The cut message's files the server kept for a resend (TAL-2065), and how many it could not keep.
+    public let lastUserAttachments: [MessageAttachment]?
+    public let droppedAttachmentCount: Int?
 }
 
 public struct SessionMutationResponse: Decodable, Sendable {

@@ -36,7 +36,12 @@ final class ChatAttachmentCoordinator {
     /// Files carried by the first pending row during session startup.
     var startupAttachmentCount = 0
     private var stagingCount = 0
-    private var generation = 0
+    private var generation = 0 {
+        // Leaving the chat or clearing the composer stops the restored files' preview reads (TAL-2066).
+        didSet { serverPreviewTask?.cancel() }
+    }
+    /// Reads the previews of files restored from the server; the newest restore owns it.
+    private(set) var serverPreviewTask: Task<Void, Never>?
     private var stagedContexts: [UUID: String] = [:]
     private var startupAttachmentIDs = Set<UUID>()
     var composerAttachments: [PendingAttachment] { pendingAttachments.filter { !startupAttachmentIDs.contains($0.id) } }
@@ -535,6 +540,22 @@ final class ChatAttachmentCoordinator {
         let current = Dictionary(uniqueKeysWithValues: pendingAttachments.map { ($0.id, $0) })
         pendingAttachments = boundedPendingAttachments(attachments.map { current[$0.id] ?? $0 }
             + pendingAttachments.filter { !restoredIDs.contains($0.id) })
+    }
+
+    /// Files already on the server (an edit's cut, TAL-2066) as ready chips; each image's preview is read back from it.
+    func restoreServerAttachments(_ attachments: [PendingAttachment]) {
+        restorePendingAttachments(attachments)
+        serverPreviewTask?.cancel()
+        serverPreviewTask = Task { [weak self] in
+            for attachment in attachments where attachment.isImage {
+                guard !Task.isCancelled else { return }
+                let data = await self?.attachmentImageData(path: attachment.path)
+                guard !Task.isCancelled, let self else { return }
+                guard let data, var restored = pendingAttachments.first(where: { $0.id == attachment.id }) else { continue }
+                restored.thumbnailData = data
+                setPendingAttachment(restored)
+            }
+        }
     }
 
     func consumePendingAttachments() -> [PendingAttachment] {
