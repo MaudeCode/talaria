@@ -685,7 +685,9 @@ The sidecar invokes `on_session_open` under the chat's profile with
 `platform: "webui"` and `reason: "create"` or `"resume"` when that Agent
 has a consumer. Open delivery runs independently of the HTTP request.
 A turn waits up to five seconds for pending opens, then proceeds even if
-delivery fails or a plugin is still running. No Talaria session state is written.
+delivery fails or a plugin is still running. Up to four open callbacks may run
+concurrently. When all slots are busy, new deliveries are skipped and turns can
+proceed. No Talaria session state is written.
 
 ## Prompt refresh after an edit
 

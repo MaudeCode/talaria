@@ -50,6 +50,7 @@ _AGENT_RELEASE_TIMEOUT = 4.0
 _PROFILE_RELEASE_TIMEOUT = 60.0
 _SESSION_FINALIZE_TIMEOUT = 10.0
 _SESSION_OPEN_TIMEOUT = 5.0
+_SESSION_OPEN_SLOTS = threading.BoundedSemaphore(4)
 _TOOL_RESULT_SNIPPET_MAX = 4000
 _STREAM_BATCH_SECONDS = 0.016
 # Predecessor ``_TOOL_ARG_CONTENT_KEYS`` (#4928): card content / diff-reconstruction inputs keep the long cap.
@@ -1060,25 +1061,35 @@ def agent_scope(home: Path):
         yield
 
 
-def _wait_for_lifecycle_callback(home: Path, callback: Callable[[], None], name: str, timeout: float) -> bool:
+def _wait_for_lifecycle_callback(
+    home: Path, callback: Callable[[], None], name: str, timeout: float,
+    *, slots: threading.BoundedSemaphore | None = None,
+) -> bool:
+    if slots is not None and not slots.acquire(blocking=False):
+        log.warning("Skipping %s callback because all workers are busy", name)
+        return True
+
     def run() -> None:
         try:
             callback()
         finally:
             with _RELEASES_LOCK:
                 _RELEASES.pop(worker, None)
+            if slots is not None:
+                slots.release()
 
     worker = threading.Thread(target=run, name=name, daemon=True)
     worker.failed = False  # type: ignore[attr-defined] - hook failures do not prevent profile deletion
     with _RELEASES_LOCK:
         _RELEASES[worker] = home
-    try:
-        worker.start()
-    except RuntimeError:
-        with _RELEASES_LOCK:
+        try:
+            worker.start()
+        except RuntimeError:
             _RELEASES.pop(worker, None)
-        log.warning("Could not start %s callback", name)
-        return True
+            if slots is not None:
+                slots.release()
+            log.warning("Could not start %s callback", name)
+            return True
     worker.join(timeout)
     return not worker.is_alive()
 
@@ -2864,7 +2875,7 @@ def register(registry) -> None:
             except Exception:
                 log.warning("Session open callback failed (%s)", reason)
 
-        if not _wait_for_lifecycle_callback(home, opened, "session-open", _SESSION_OPEN_TIMEOUT):
+        if not _wait_for_lifecycle_callback(home, opened, "session-open", _SESSION_OPEN_TIMEOUT, slots=_SESSION_OPEN_SLOTS):
             log.warning("Session open callback exceeded deadline (%s)", reason)
         return {"ok": True}
 
