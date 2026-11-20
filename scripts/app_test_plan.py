@@ -381,6 +381,10 @@ class Universe:
                     result |= self.reached({decl.name for decl in decls}) | self.whole({decl.name for decl in decls})
                 continue
             top, deepest = chain[0], chain[-1]
+            if any({"private", "fileprivate"} & decl.modifiers for decl in chain):
+                # Swift lets only this file reach it; matched by name it reached every test naming a `type` or `line`.
+                result |= self.whole({decl.name for decl in decls})
+                continue
             cls = top.name if top.is_type and top.name in self.test_classes else None
             if cls is None and top.kind in ("class", "extension") and top.name.endswith(("Tests", "TestCase")) and \
                     top.name in self.superclass:  # Present at the tested revision, under a base this target lacks.

@@ -762,6 +762,30 @@ class AppPlanTests(unittest.TestCase):
                     self.edit(path, old, new)
                 self.assertEqual(self.lanes(self.committed()), expected)
 
+    def test_a_private_helper_reaches_only_its_own_files_tests(self):
+        # Swift lets only its own file reach a private declaration, so a member named like a shared helper's selects
+        # nothing beyond that file (TAL-2610).
+        gamma = "app/TalariaTests/GammaHostedTests.swift"
+        self.write(gamma, """import XCTest
+
+final class GammaHostedTests: XCTestCase {
+    func testProbe() {
+        XCTAssertEqual(Probe().titleMenu(), 3)
+    }
+}
+
+private struct Probe {
+    func titleMenu() -> Int {
+        3
+    }
+}
+""")
+        self.write("app/Talaria.xcodeproj/project.pbxproj", self.project([*HOSTED_SOURCES, "GammaHostedTests.swift"]))
+        self.base = self.commit("private helper")
+        self.edit(gamma, "        3\n    }\n}", "        1 + 2\n    }\n}")
+        self.assertEqual(self.lanes(self.committed()),
+                         {"TalariaKitTests": ("empty", []), "TalariaTests": ("explicit", ["TalariaTests/GammaHostedTests"])})
+
     def test_a_many_line_change_scans_each_name_set_once(self):
         # Every changed line inside one helper seeds the same names, so the reach fixpoint runs once for them (TAL-2473).
         self.edit("app/TalariaTests/Hosted.swift", "        1\n", "        0 +\n            0 +\n            0 +\n            1\n")
