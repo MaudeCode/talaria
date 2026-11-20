@@ -83,6 +83,8 @@ class RoutingTests(unittest.TestCase):
             # Server tests read the sidecar fixtures, and the server job checks schemas.json against the contracts.
             (["web/sidecar/tests/fixtures/schemas.json"], {"web_server", "web_sidecar"}),
             (["web/sidecar/tests/fixtures/usage_account_available.json"], {"web_server", "web_sidecar"}),
+            # Only sidecar tests run the peer scripts beside those fixtures.
+            (["web/sidecar/tests/fixtures/gateway_session_peer.py"], {"web_sidecar"}),
             (["web/packages/frontend/package.json"], {"web_frontend"}),
             (["web/.oxlintrc.json"], {"web_server", "web_frontend"}),
             (["web/static/brand/favicon.ico"], {"web_frontend", "web_server"}),
