@@ -3011,9 +3011,9 @@ final class ApprovalRequestContentTests: XCTestCase {
         XCTAssertNotNil(HostedAccessibility.element(in: pushed, label: "git push --force"))
     }
 
-    /// TAL-974: the card says what Allow session and Always allow cover in the sentence Web shows for the same approval,
-    /// from the shared `contracts/fixtures/tool-approval-and-agents.json`, and never shows the Agent's raw keys.
-    func testAnApprovalSaysWhatAllowSessionAndAlwaysAllowCoverAsWebDoes() throws {
+    /// TAL-974: the card's "?" says what Allow session and Always allow cover in the sentence Web's help shows for the
+    /// same approval, from the shared `contracts/fixtures/tool-approval-and-agents.json`, and never shows the Agent's raw keys.
+    func testAnApprovalSaysWhatAllowSessionAndAlwaysAllowCoverAsWebDoes() async throws {
         let root = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("tool-approval-and-agents")) as? [String: Any])
         for entry in try XCTUnwrap(root["approval_scopes"] as? [[String: Any]]) {
             let pending = try JSONDecoder().decode(PendingApproval.self, from: JSONSerialization.data(withJSONObject: XCTUnwrap(entry["pending"])))
@@ -3022,15 +3022,27 @@ final class ApprovalRequestContentTests: XCTestCase {
                 isResponding: false, errorMessage: nil, onChoice: { _ in }, onSkipAll: {}, onCollapse: {}
             ), size: HostedSize.phone)
             let id = pending.id
-            let shown = HostedAccessibility.elements(in: window, labelContaining: "covers").compactMap(\.accessibilityLabel)
-            XCTAssertEqual(shown, (entry["sentence"] as? String).map { [$0] } ?? [], id)
+            XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "covers").isEmpty, "\(id) shows its scope as sub-text")
             XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "Pattern keys").isEmpty, id)
             // A shell key is the Agent's own danger description, which the card shows as the description.
             for key in pending.displayPatternKeys where key != pending.description {
                 XCTAssertNil(HostedAccessibility.element(in: window, label: key), "\(id) shows its raw key \(key)")
             }
-            if id == "scope-rule" { attachHostedScreenshot(window, name: "approval-scope-tool-rule") }
-            window.isHidden = true
+            let help = HostedAccessibility.element(in: window, label: "What Allow session and Always allow cover")
+            guard let sentence = entry["sentence"] as? String else {
+                XCTAssertNil(help, "\(id) offers help for a one-time prompt")
+                continue
+            }
+            XCTAssertTrue(HostedAccessibility.activate(try XCTUnwrap(help, id)), id)
+            func alert() -> UIAlertController? {
+                var controller = window.rootViewController
+                while let presented = controller?.presentedViewController { controller = presented }
+                return controller as? UIAlertController
+            }
+            let shown = await awaitCondition { alert()?.message == sentence }
+            XCTAssertTrue(shown, "\(id) help shows \(alert()?.message ?? "nothing"), not \(sentence)")
+            if id == "scope-rule" { attachHostedScreenshot(window, name: "approval-scope-tool-rule-help") }
+            window.rootViewController?.dismiss(animated: false)
         }
     }
 

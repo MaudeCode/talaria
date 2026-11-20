@@ -12,6 +12,7 @@ struct ApprovalRequestContent: View {
     let onSkipAll: () -> Void
     let onCollapse: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var scopeHelp: SettingsSectionHelp?
 
     var body: some View {
         // The slot's height is capped, so the whole card scrolls: at large text sizes the last choice scrolls into view.
@@ -26,6 +27,7 @@ struct ApprovalRequestContent: View {
         }
         .frame(maxWidth: 560, alignment: .leading)
         .accessibilityElement(children: .contain)
+        .settingsSectionHelp($scopeHelp)
     }
 
     /// Sits on the slot's resize handle row, so it takes none of the card's height.
@@ -74,6 +76,19 @@ struct ApprovalRequestContent: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            // TAL-974: what Allow session and Always allow cover sits behind help, never the Agent's raw keys.
+            if let scope = prompt.scopeSentence {
+                Spacer(minLength: 0)
+                let title = String(localized: "What Allow session and Always allow cover")
+                Button { scopeHelp = SettingsSectionHelp(title: title, message: scope) } label: {
+                    Image(systemName: "questionmark.circle")
+                        .font(.body)
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(title)
+            }
         }
     }
 
@@ -103,14 +118,6 @@ struct ApprovalRequestContent: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
-            }
-
-            // TAL-974: what Allow session and Always allow cover, never the Agent's raw keys.
-            if let scope = prompt.scopeSentence {
-                Text(scope)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if prompt.pendingCount > 1 {

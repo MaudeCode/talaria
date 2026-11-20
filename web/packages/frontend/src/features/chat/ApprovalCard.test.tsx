@@ -42,11 +42,15 @@ describe('ApprovalCard', () => {
     const { container } = render(<ApprovalCard sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 'q1', command: 'ls', question: 'Allow?', reason: 'Dangerous' }} onResolved={() => undefined} />)
     expect(container.querySelector('.approval-desc')).toBeNull()
   })
-  it('says what Allow session and Always allow cover in the sentence the App shows for the same approval (TAL-974)', () => {
+  it('says what Allow session and Always allow cover behind its help, in the sentence the App shows for the same approval (TAL-974)', async () => {
     for (const { pending, sentence } of scopeFixture) {
-      const { container, unmount } = render(<ApprovalCard sessionId="s1" pending={pending} onResolved={() => undefined} />)
-      if (sentence) expect(container.querySelector('.approval-scope'), String(pending.approval_id)).toHaveTextContent(new RegExp(`^${RegExp.escape(sentence)}$`))
-      else expect(container.querySelector('.approval-scope')).toBeNull()
+      const { unmount } = render(<ApprovalCard sessionId="s1" pending={pending} onResolved={() => undefined} />)
+      const help = screen.queryByRole('button', { name: 'What Allow session and Always allow cover' })
+      if (sentence) {
+        expect(screen.queryByText(sentence), String(pending.approval_id)).toBeNull()
+        fireEvent.click(help!)
+        expect(await screen.findByText(sentence)).toBeVisible()
+      } else expect(help).toBeNull()
       unmount()
     }
   })

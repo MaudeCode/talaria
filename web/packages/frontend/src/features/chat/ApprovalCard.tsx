@@ -15,6 +15,7 @@ import { Keys } from '../../ui/Keys'
 import { ToolKindIcon } from './toolKind'
 import { FieldRows, toolCardLabel } from './blocks/ToolCard'
 import { useLocale } from '../../i18n/useLocale'
+import { HelpTip } from '../../ui/Field'
 
 // Focusable, editable and ARIA widget ancestors own their keyboard activation, including nested icons.
 const interactiveTarget = [
@@ -125,6 +126,8 @@ export function ApprovalCard({ sessionId, pending, onResolved, onLeaving, onDism
             <span id={headingId}>{pending.title ?? m.approval_heading()}</span>
           </>}
           {pending.pending_count && pending.pending_count > 1 && <span className="approval-counter text-xs text-muted">{m.approval_pending_count({ n: pending.pending_count })}</span>}
+          {/* TAL-974: what Allow session and Always allow cover, behind help beside the heading. */}
+          {scope && <HelpTip label={m.approval_scope_help()} className="approval-scope-help -ml-1 font-normal">{scope}</HelpTip>}
           <span className="flex-1" />
           <IconButton label={collapsed ? m.approval_expand() : m.approval_collapse()} className="h-7 w-7" aria-expanded={!collapsed} onClick={() => setCollapsed((c) => !c)}>{collapsed ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}</IconButton>
           <IconButton label={m.approval_dismiss()} className="h-7 w-7" onClick={() => { setDismissed(true); onDismissed?.() }}><X size={14} aria-hidden="true" /></IconButton>
@@ -135,7 +138,6 @@ export function ApprovalCard({ sessionId, pending, onResolved, onLeaving, onDism
           <div className="approval-body max-h-[max(4rem,calc(100dvh-290px))] overflow-y-auto">
             {pending.description && <div className="approval-desc mt-1 text-[13px] text-muted" id={descriptionId}>{pending.description}</div>}
             {fields ? <div className="approval-args mt-2 max-h-40 overflow-auto"><FieldRows fields={fields} /></div> : command && <pre className="approval-cmd mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 font-mono text-[12.5px] text-pre-text">{command}</pre>}
-            {scope && <p className="approval-scope mt-2 text-xs text-muted">{scope}</p>}
           </div>
           {telling ? <form className="approval-tell mt-3 flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); tell() }}>
             <textarea
