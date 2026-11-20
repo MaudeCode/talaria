@@ -638,15 +638,20 @@ export async function compressionPrepareAhead(store: AgentConfig, home: string):
 
 // ── agent approvals ───────────────────────────────────────────────────
 
+export function managedAgentApprovals(managed: Config): boolean | undefined {
+  const talaria = dict(managed.talaria)
+  return 'agent_approvals' in talaria ? configBoolean(talaria.agent_approvals) : undefined
+}
+
 /**
  * TAL-1169: the profile's `talaria.agent_approvals`, a Talaria key the Agent ignores: whether an agent with the talaria
  * toolset may approve once or deny another session's pending command. Off unless set, read as `compression.prepare_ahead`
- * is; null when the config cannot be read, which every gate treats as off.
+ * is. Administrator policy wins over the profile value. An unreadable config is treated as off.
  */
 export async function agentApprovals(store: AgentConfig, home: string): Promise<boolean | null> {
   try {
-    const value = dict((await store.read(home)).talaria).agent_approvals
-    return configBoolean(value)
+    const { config, managed } = await store.readWithManaged(home)
+    return managedAgentApprovals(managed) ?? configBoolean(dict(config.talaria).agent_approvals)
   } catch {
     return null
   }

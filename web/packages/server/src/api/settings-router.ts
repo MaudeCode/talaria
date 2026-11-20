@@ -17,7 +17,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { ModelFavorite, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { configBoolean, agentApprovals, auxiliaryModels, auxiliaryReasoning, previewAuxiliaryReasoning, compressionPrepareAhead, dict, parseProviderQualifiedModel, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, MAX_TOKENS_UNAVAILABLE, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
+import { configBoolean, managedAgentApprovals, auxiliaryModels, auxiliaryReasoning, previewAuxiliaryReasoning, compressionPrepareAhead, dict, parseProviderQualifiedModel, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, MAX_TOKENS_UNAVAILABLE, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
@@ -172,7 +172,7 @@ async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   // TAL-2160: the insights sync writes through the sidecar, so it does nothing without one.
   into.sync_to_insights_available = deps.sidecar() !== null
   into.pinned_sessions_limit_max = PINNED_SESSIONS_LIMIT_RANGE[1]
-  into.agent_approvals = await agentApprovals(deps.agentConfig, home(ctx))
+  into.agent_approvals = null
   Object.assign(into, await groupDiscussionFields(ctx, into.group_discussion_restart_baseline))
   Reflect.deleteProperty(into, 'group_discussion_restart_baseline')
   const pins = await managedSettings(ctx, into.group_discussion_max_rounds !== null, true, into).catch(() => ({}))
@@ -201,8 +201,9 @@ async function managedSettings(ctx: RequestContext, includeDiscussion: boolean, 
     }
     const compression = dict(managed.compression)
     if ('prepare_ahead' in compression) fields.compression_prepare_ahead = { key: PREPARE_AHEAD_KEY, value: configBoolean(compression.prepare_ahead) }
-    const talaria = dict(managed.talaria)
-    if ('agent_approvals' in talaria) fields.agent_approvals = { key: 'talaria.agent_approvals', value: configBoolean(talaria.agent_approvals) }
+    const approvals = managedAgentApprovals(managed)
+    if (projection) projection.agent_approvals = approvals ?? configBoolean(dict(config.talaria).agent_approvals)
+    if (approvals !== undefined) fields.agent_approvals = { key: 'talaria.agent_approvals', value: approvals }
   }
   if (includeDiscussion) {
     const { config, managed } = await store.readWithManaged(ctx.deps.profileHome(ROOT_PROFILE), { profileFile: true })
