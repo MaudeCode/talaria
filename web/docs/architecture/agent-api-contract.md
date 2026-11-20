@@ -150,6 +150,17 @@ not a requirement that independently installed Agent or peer component versions
 be equal. Unreleased Agent `main` canaries never change this pin or the
 support record.
 
+The Agent main canary (`.github/workflows/agent-main-canary.yml`) runs once a day
+when GitHub Scheduler dispatches it on `main`. It resolves the exact commit Agent
+`main` names, skips it when an earlier canary already checked that commit, and
+otherwise runs `--main SHA` on it. Its run summary lists the Agent commits since
+the last canary, newest first with their changed top-level paths, and on failure
+the checker's error, failing tests and log tail. `scripts/agent-main-canary.py`
+keeps the last observed and last passing Agent commits apart in a run artifact,
+so a failure never replaces the last pass. The job holds read-only repository
+permissions and no credentials. A green canary is evidence about unreleased code,
+never release approval.
+
 Compatibility means Talaria works with the selected Agent. The gate tests the
 imports and native update APIs Talaria uses, real `SessionDB` and sidecar writes,
 the full sidecar suite, safe handling of retained state, and the immutable source

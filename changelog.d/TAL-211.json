@@ -1,0 +1,1 @@
+{"skip": "CI tooling only: a daily canary checks the exact Hermes Agent main commit for compatibility and reports the unreleased range; no app behavior changes."}
