@@ -12,7 +12,7 @@ import { MemoryPage } from './MemoryPage'
 // Loaded up front, so the read view's lazy renderer chunk resolves within a query's timeout.
 import '../chat/render/MarkdownRenderer'
 
-const memory = (text: string, revision: string) => ({ memory: text, user: '', soul: '', memory_path: '/h/memories/MEMORY.md', user_path: '/h/memories/USER.md', soul_path: '/h/SOUL.md', memory_name: 'MEMORY.md', user_name: 'USER.md', soul_name: 'SOUL.md', memory_revision: revision, user_revision: 'u1', soul_revision: 's1' })
+const memory = (text: string, revision: string) => ({ memory: text, user: '', soul: '', memory_path: '/h/memories/MEMORY.md', user_path: '/h/memories/USER.md', soul_path: '/h/SOUL.md', memory_name: 'MEMORY.md', user_name: 'USER.md', soul_name: 'SOUL.md', memory_revision: revision, user_revision: 'u1', soul_revision: 's1', project_context_detail: null })
 const CONFLICT = 'MEMORY.md changed after you opened it. Not saved.'
 
 beforeEach(() => {

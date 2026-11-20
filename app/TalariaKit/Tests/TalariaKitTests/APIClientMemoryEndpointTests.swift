@@ -22,9 +22,8 @@ final class APIClientMemoryEndpointTests: APIClientTestCase {
               "user_revision": "rev-user",
               "soul_revision": "rev-soul",
               "project_context": "# Project\\n\\n- Ship it",
-              "project_context_name": "AGENTS.md",
               "project_context_path": "/Users/test/workspace/AGENTS.md",
-              "project_context_workspace": "/Users/test/workspace",
+              "project_context_detail": "AGENTS.md — /Users/test/workspace",
               "project_context_mtime": 1770000300,
               "project_context_shadowed": [
                 {
@@ -51,9 +50,8 @@ final class APIClientMemoryEndpointTests: APIClientTestCase {
         XCTAssertEqual(response.soulMtime, 1_770_000_200)
         XCTAssertEqual(MemorySection.allCases.map { response.revision(for: $0) }, ["rev-memory", "rev-user", "rev-soul"])
         XCTAssertEqual(response.projectContext, "# Project\n\n- Ship it")
-        XCTAssertEqual(response.projectContextName, "AGENTS.md")
         XCTAssertEqual(response.projectContextPath, "/Users/test/workspace/AGENTS.md")
-        XCTAssertEqual(response.projectContextWorkspace, "/Users/test/workspace")
+        XCTAssertEqual(response.projectContextDetail, "AGENTS.md — /Users/test/workspace")
         XCTAssertEqual(response.projectContextMtime, 1_770_000_300)
         XCTAssertEqual(response.projectContextShadowed, true)
         XCTAssertEqual(response.externalNotesEnabled, true)
@@ -81,9 +79,8 @@ final class APIClientMemoryEndpointTests: APIClientTestCase {
         XCTAssertNil(response.userMtime)
         XCTAssertNil(response.soulMtime)
         XCTAssertNil(response.projectContext)
-        XCTAssertNil(response.projectContextName)
         XCTAssertNil(response.projectContextPath)
-        XCTAssertNil(response.projectContextWorkspace)
+        XCTAssertNil(response.projectContextDetail)
         XCTAssertNil(response.projectContextMtime)
         XCTAssertNil(response.projectContextShadowed)
         XCTAssertNil(response.externalNotesEnabled)
