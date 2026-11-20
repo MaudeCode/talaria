@@ -464,7 +464,7 @@ export interface OwnerWorkRow { task: BackgroundTask; ref: OwnerWorkRef; tail: s
  */
 export function ownerWorkRows(home: string, sid: string, work: OwnerWork, now: number): OwnerWorkRow[] {
   const id = (kind: OwnerWorkRef['kind'], native: string): string => `owner-work-${createHash('sha256').update(JSON.stringify([home, sid, work.authority_epoch, kind, native])).digest('hex').slice(0, 32)}`
-  const ref = (kind: OwnerWorkRef['kind'], native: string): OwnerWorkRef => ({ kind, id: native, epoch: work.authority_epoch })
+  const ref = (kind: OwnerWorkRef['kind'], native: string): OwnerWorkRef => ({ kind, id: native, epoch: work.authority_epoch, ...(kind === 'subagent' && work.transcripts ? { transcript: true } : {}) })
   const processes = work.processes.map((p): OwnerWorkRow => {
     const receipt = mergeReceipt(undefined, { ...processReceipt({ process_id: p.process_id, command: p.command, started_at: p.started_at, exited: !p.running, exited_at: p.exited_at, exit_code: p.exit_code, completion_reason: p.completion_reason ?? '', watched: false }), task_id: id('process', p.process_id) }, now)
     const task = taskView(receipt, { canStop: p.running })
@@ -472,10 +472,11 @@ export function ownerWorkRows(home: string, sid: string, work: OwnerWork, now: n
   })
   const subagents = work.subagents.map((a): OwnerWorkRow => {
     const running = RUNNING_STATES.has(a.status)
-    const receipt = mergeReceipt(undefined, delegationReceipt({ delegation_id: id('subagent', a.subagent_id), state: a.status, dispatched_at: a.started_at, completed_at: null, updated_at: null, goals: [a.goal], child_statuses: running ? [] : [a.status], has_result: false, live_status: null }, now), now)
-    // A child of a rebuilt parent stays readable; only its resident owner can tail, stop or steer it.
+    const receipt = mergeReceipt(undefined, delegationReceipt({ delegation_id: id('subagent', a.subagent_id), state: a.status, dispatched_at: a.started_at, completed_at: a.completed_at ?? null, updated_at: null, goals: [a.goal], child_statuses: running ? [] : [a.status], has_result: false, live_status: null }, now), now)
+    // A child of a rebuilt parent stays readable; only its resident owner can tail, stop or steer it. An owner that serves
+    // stored transcripts reads any child, finished ones included (TAL-2072).
     const task = taskView(receipt, { canStop: a.resident })
-    return { task: { ...task, can_steer: Boolean(task.can_stop) && a.accepting_steer, result_available: a.resident }, ref: ref('subagent', a.subagent_id), tail: null, resident: a.resident }
+    return { task: { ...task, can_steer: Boolean(task.can_stop) && a.accepting_steer, result_available: a.resident || work.transcripts === true }, ref: ref('subagent', a.subagent_id), tail: null, resident: a.resident }
   })
   return [...processes, ...subagents]
 }
@@ -661,7 +662,7 @@ export class BackgroundActivity {
     if (launch !== null && launch !== undefined) return launch
     const native = await this.ownerRow(sid, profile, taskId)
     if (native) {
-      const text = native.row.ref.kind === 'process' ? native.row.tail : native.row.resident ? await native.port.workTail(sid, profile ?? undefined, native.row.ref) : null
+      const text = native.row.ref.kind === 'process' ? native.row.tail : native.row.resident || native.row.ref.transcript ? await native.port.workTail(sid, profile ?? undefined, native.row.ref) : null
       return text === null ? null : { task_id: taskId, text }
     }
     const receipt = (await this.deps.store.get(sid, taskId))

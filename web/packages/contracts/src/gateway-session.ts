@@ -37,6 +37,7 @@ export const GatewaySnapshotSchema = z.object({
   running: z.boolean(), authority_epoch: z.number().int(), replay_epoch: z.string(), last_sequence: z.number().int(),
   subscription_id: z.string(), revision: z.number().int(), execution_generation: z.number().int(),
   reactions_supported: z.boolean().optional(),
+  transcripts: z.boolean().optional().describe('TAL-2072: the owner serves `transcript`, its stored history read. Absent on older owners.'),
   todo_state: z.object({ todos: z.array(ObjectSchema), revision: z.number().int().nonnegative().optional() }).nullable().optional()
     .describe('Canonical owner plan. Null clears it; omission retains transcript fallback for older owners.'),
   pending: z.array(GatewayAdmissionSchema), prompts: z.array(ObjectSchema), info: ObjectSchema,
@@ -65,13 +66,24 @@ export const OwnerWorkSchema = z.object({
   processes: z.array(z.object({ process_id: z.string().min(1), command: z.string(), running: z.boolean(), exit_code: z.number().int().nullable(),
     started_at: z.number().nullable(), exited_at: z.number().nullable(), completion_reason: z.string().nullable(), output_tail: z.string() })),
   subagents: z.array(z.object({ subagent_id: z.string().min(1), goal: z.string(), status: z.string(), started_at: z.number().nullable(),
-    accepting_steer: z.boolean(), resident: z.boolean() })),
+    accepting_steer: z.boolean(), resident: z.boolean(),
+    completed_at: z.number().nullable().optional().describe('TAL-2072: when a child the roster no longer lists finished; absent while it runs.') })),
+  transcripts: z.boolean().optional().describe("TAL-2072: the owner serves each child's stored transcript, running or finished (`work_transcript`). Absent on older owners."),
 })
 export type OwnerWork = z.infer<typeof OwnerWorkSchema>
 /** TAL-1336: the owner's verdict on one work control. `found: false` and an exited process are distinct from a refusal. */
 export const OwnerWorkOutcomeSchema = z.enum(['stopped', 'not_running', 'not_found', 'queued', 'rejected'])
 /** A detached native launch has no idempotency key. Unknown never permits an automatic resend. */
 export const SideLaunchStateSchema = z.enum(['pending', 'accepted', 'failed', 'unsupported', 'unknown'])
+/**
+ * TAL-2072: display rows of an owner's stored read. `row_kind: 'compaction'` is a compaction handoff at its place in the
+ * transcript (its summary in `text`); every other row is a display row, as a snapshot's `messages` holds it.
+ */
+export const OwnerTranscriptRowsSchema = z.array(ObjectSchema)
+export const OwnerTranscriptPageSchema = z.object({
+  rows: OwnerTranscriptRowsSchema, next_cursor: z.string().nullable(),
+  reset: z.boolean().describe('The cursor no longer holds (a compaction, rewind or rewrite since): this page starts again from the first row.'),
+})
 export const SideLaunchSchema = z.object({ state: SideLaunchStateSchema, task_id: z.string().min(1).nullable() })
 export type SideLaunch = z.infer<typeof SideLaunchSchema>
 export const GatewaySessionResultSchema = z.object({
@@ -93,6 +105,9 @@ export const GatewaySessionResultSchema = z.object({
   restarting: z.boolean().optional().describe("The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused."),
   work: OwnerWorkSchema.optional().describe('`work_list`: the session\'s processes and subagents on its owner.'),
   work_tail: z.object({ available: z.boolean(), text: z.string(), truncated: z.boolean() }).optional().describe('`work_tail`: a resident subagent\'s live transcript tail.'),
+  transcript: OwnerTranscriptPageSchema.optional().describe('`transcript`: one page of the session\'s stored history, read without attaching.'),
+  work_transcript: z.object({ available: z.boolean(), running: z.boolean(), rows: OwnerTranscriptRowsSchema }).optional()
+    .describe("`work_transcript`: a child's newest stored rows, running or finished; unavailable when its owner cannot place it."),
   work_outcome: OwnerWorkOutcomeSchema.optional().describe('`work_stop`, `work_steer`: what the owner did with this one row.'),
   lock: z.object({ status: z.enum(['ok', 'expired']), remaining: z.array(z.string()).optional() }).optional()
     .describe('`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.'),
@@ -111,7 +126,7 @@ export const ConnectionAnswerSchema = z.union([
 export type ConnectionAnswer = z.infer<typeof ConnectionAnswerSchema>
 export const GatewaySessionParamsSchema = z.object({
   profile_home: z.string().min(1), session_id: z.string().min(1),
-  action: z.enum(['snapshot', 'watch', 'context_detail', 'submit', 'receipt', 'cancel', 'steer', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry', 'work_list', 'work_tail', 'work_stop', 'work_steer', 'launch_background', 'launch_btw']),
+  action: z.enum(['snapshot', 'watch', 'transcript', 'context_detail', 'submit', 'receipt', 'cancel', 'steer', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate', 'export', 'checkpoint_diff', 'terminal_info', 'shell_exec', 'react', 'connection_status', 'connection_wake', 'connection_respond', 'connection_retry', 'work_list', 'work_tail', 'work_transcript', 'work_stop', 'work_steer', 'launch_background', 'launch_btw']),
   row_id: z.number().int().positive().optional(), emoji: ReactionEmojiSchema.nullable().optional(),
   format: OwnerExportFormatSchema.optional(), redact: z.boolean().optional(),
   command: CapturedCommandSchema.optional(),
@@ -128,7 +143,10 @@ export const GatewaySessionParamsSchema = z.object({
   op_id: z.string().min(1).optional().describe('`connection_*`: the operation; bound by the owner to this session, and by `authority_epoch` to this owner.'),
   connection_answer: ConnectionAnswerSchema.optional(),
   connector: z.string().min(1).optional().describe('`connection_retry`: the target to run again.'),
-  work_kind: z.enum(['process', 'subagent']).optional().describe('`work_tail`, `work_stop`, `work_steer`: the roster `work_id` comes from; bound by `authority_epoch` to this owner.'),
+  order: z.enum(['oldest', 'latest']).optional().describe('`transcript`: page forward from the first row or back from the newest.'),
+  cursor: z.string().min(1).max(1024).optional().describe('`transcript`: the `next_cursor` of the page before, for the same order.'),
+  limit: z.number().int().min(1).max(500).optional().describe('`transcript`: rows per page; a tool result may ride with its call beyond it.'),
+  work_kind: z.enum(['process', 'subagent']).optional().describe('`work_tail`, `work_transcript`, `work_stop`, `work_steer`: the roster `work_id` comes from; bound by `authority_epoch` to this owner.'),
   work_id: z.string().min(1).optional(),
   reaction_poll_seconds: z.number().positive().optional().describe("`watch`: how often an idle watch rereads the transcript for another viewer's reaction, which the owner announces with no event. Defaults to 10."),
 })

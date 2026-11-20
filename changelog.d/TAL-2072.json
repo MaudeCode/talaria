@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "On Hermes Agent 0.23.1 and later, Talaria Web shows an Agent-owned chat's full history as you scroll up, including turns from before a compression, and a finished subagent's transcript stays readable in Background Work.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}

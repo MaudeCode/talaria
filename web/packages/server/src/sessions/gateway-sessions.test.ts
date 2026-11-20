@@ -907,4 +907,51 @@ describe('owner stream and projection cost (TAL-1723)', () => {
       expect(reactions).toHaveBeenCalledTimes(reached)
     })
   })
+
+  describe('an owner chat longer than its attach (TAL-2072)', () => {
+    // The owner's stored read: 30 older turns its attach left out, with the compaction that summarized them, then the
+    // ten turns the attach holds. The stored read is the owner's display projection: `text`, never `content`.
+    const turn = (n: number, kind: string) => [
+      { row_kind: 'message', role: 'user', text: `${kind} question ${String(n)}`, row_id: n * 2 - 1, timestamp: n },
+      { row_kind: 'message', role: 'assistant', text: `${kind} answer ${String(n)}`, row_id: n * 2, timestamp: n }]
+    const stored = [...Array.from({ length: 15 }, (_, i) => turn(i + 1, 'Old')).flat(),
+      { row_kind: 'compaction', role: 'system', text: 'Earlier turns summarized', compacted_messages: 30, row_id: 999, timestamp: 15.5 },
+      ...Array.from({ length: 15 }, (_, i) => turn(i + 16, 'Old')).flat(), ...Array.from({ length: 10 }, (_, i) => turn(i + 31, 'Recent')).flat()]
+    // The attach's own rows of the last ten turns; the first says older archived rows were left out.
+    const resumed = Array.from({ length: 10 }, (_, i) => turn(i + 31, 'Recent')).flat()
+      .map(({ row_kind: _kind, text, ...row }, i) => ({ ...row, content: text, ...(i ? {} : { archived_truncated: true }) }))
+    const detail = async (query: string) => SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}${query}`)).json()).session
+    const reads = () => sidecar.calls.filter((c) => c.method === 'gateway.session' && (c.params as { action: string }).action === 'transcript')
+    const owner = (transcripts: boolean) => {
+      sidecar.respond('gateway.session', (params) => params.action === 'transcript'
+        ? { state: 'attached', reason: null, snapshot: null, receipt: null, transcript: { rows: params.cursor ? [] : stored, next_cursor: 'end', reset: false } }
+        : attached(snapshot({ messages: resumed, message_count: resumed.length, ...(transcripts ? { transcripts: true } : {}) })))
+    }
+    const texts = (rows: unknown[] | undefined) => (rows ?? []).map((row) => (row as { content?: unknown }).content)
+
+    it('pages older history from the stored read past the attach, its compaction as the compaction marker', async () => {
+      owner(true)
+      const recent = await detail('&msg_limit=20')
+      expect(texts(recent.messages)).toEqual(resumed.map((row) => row.content))
+      expect(recent._messages_offset).toBe(61)
+      expect(recent._messages_truncated).toBe(true)
+      const older = await detail(`&msg_limit=40&msg_before=${String(recent._messages_offset)}`)
+      const marker = (older.messages ?? []).find((row) => (row as { role?: unknown }).role === 'marker')
+      expect(marker).toMatchObject({ content: 'Earlier turns summarized', _marker_kind: 'context_compaction' })
+      expect(texts(older.messages)).toContain('Old question 12')
+      expect(texts(older.messages)).toContain('Old answer 30')
+      expect(texts(older.messages)).not.toContain('Recent question 31')
+      // The stored rows are read once, never by attaching, and kept while the attach starts at the same row.
+      expect(reads()).toHaveLength(1)
+      expect(reads()[0]!.params).toMatchObject({ action: 'transcript', order: 'oldest' })
+    })
+
+    it('keeps the attach rows alone for an owner without the stored read', async () => {
+      owner(false)
+      const recent = await detail('&msg_limit=20')
+      expect(texts(recent.messages)).toEqual(resumed.map((row) => row.content))
+      expect(recent._messages_offset).toBe(0)
+      expect(reads()).toHaveLength(0)
+    })
+  })
 })

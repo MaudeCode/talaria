@@ -95,7 +95,7 @@ def shared_owner(tmp_path_factory):
 
 @requires_agent
 @pytest.mark.parametrize("mode", ["shared", "reactions", "reaction-watch", "batch", "approval", "approval-tell", "clarify", "detail",
-                                  "queued-controls", "model", "voice-stop", "connections", "work"])
+                                  "queued-controls", "model", "voice-stop", "connections", "work", "transcript"])
 def test_real_native_owner_shared_admission_and_detach(request, shared_owner, mode):
     shared_owner(request, mode)
 
@@ -234,7 +234,7 @@ def native_owner_stub(tmp_path, monkeypatch):
     from talaria_sidecar.methods import gateway_sessions as adapter
 
     owner = SimpleNamespace(receipt=None, replay=[], events=[], frames=[], info={}, payload=None, calls=[], config_failure=None,
-                            export=None, export_failure=None, checkpoint_diff=None, checkpoint_failure=None, checkpoints=[], shell=None, shell_failure=None,
+                            export=None, export_failure=None, transcript=None, checkpoint_diff=None, checkpoint_failure=None, checkpoints=[], shell=None, shell_failure=None,
                             described={"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1,
                                        "capabilities": ["durable-admission-v1", "event-replay-v1"]})
     async def rpc(method, **params):
@@ -287,6 +287,10 @@ def native_owner_stub(tmp_path, monkeypatch):
                 raise TimeoutError()
         if method == "session.events.since":
             return {"events": owner.replay, "last_sequence": 4}
+        if method == "session.transcript":
+            if isinstance(owner.transcript, Exception):
+                raise owner.transcript
+            return owner.transcript
         if method in {"connection.respond", "connectors.operation.status", "connectors.operation.wake", "connectors.connect"}:
             reply = owner.connection[method]
             if isinstance(reply, Exception):
@@ -1308,3 +1312,80 @@ def test_work_controls_validate_closed_inputs_before_connecting(tmp_path, work_o
     with pytest.raises(InvalidParams):
         work_owner.session(None, {"profile_home": str(tmp_path), "session_id": "native", **params})
     assert work_owner.calls == []
+
+
+# TAL-2072: a stored page as the owner answers it: a compaction handoff in place, private row metadata beside the display.
+TRANSCRIPT_PAGE = {"session_id": "native", "next_cursor": "c2", "reset": False, "rows": [
+    {"row_kind": "message", "role": "user", "text": "HEAD", "row_id": 3,
+     "display_metadata": {"gateway_input_owner": "principal", "reactions": [{"author": "agent", "emoji": "🎉"}]}},
+    {"row_kind": "compaction", "role": "system", "text": "Earlier turns summarized", "compacted_messages": 4, "row_id": 9, "timestamp": 5.0},
+    {"row_kind": "message", "role": "tool", "name": "read_file", "tool_call_id": "c1", "context": "app.log", "args": {"path": "app.log"}},
+    {"row_kind": "message", "role": "assistant", "text": "TAIL", "row_id": 11}]}
+SHOWN_PAGE = [
+    {"row_kind": "message", "role": "user", "text": "HEAD", "row_id": 3, "reactions": [{"author": "agent", "emoji": "🎉"}]},
+    {"row_kind": "compaction", "text": "Earlier turns summarized", "compacted_messages": 4, "row_id": 9, "timestamp": 5.0},
+    {"row_kind": "message", "role": "tool", "name": "read_file", "tool_call_id": "c1", "context": "app.log", "args": {"path": "app.log"}, "reactions": []},
+    {"row_kind": "message", "role": "assistant", "text": "TAIL", "row_id": 11, "reactions": []}]
+
+
+@pytest.mark.parametrize("cursor", [None, "c1"])
+def test_transcript_reads_a_stored_page_without_attaching(native_owner_stub, cursor):
+    """A history page is the owner's stored read: no resume, replay read or detach, so it never opens or subscribes."""
+    native_owner_stub.described["capabilities"].append("session-transcript-v1")
+    native_owner_stub.transcript = TRANSCRIPT_PAGE
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "transcript", "order": "oldest", "limit": 50,
+                                          **({"cursor": cursor} if cursor else {})})
+    assert result == {"state": "attached", "reason": None, "snapshot": None, "receipt": None,
+                      "transcript": {"rows": SHOWN_PAGE, "next_cursor": "c2", "reset": False}}
+    assert native_owner_stub.calls == [("runtime.describe", {}), ("session.transcript", {
+        "session_id": "native", "order": "oldest", "limit": 50, **({"cursor": cursor} if cursor else {})})]
+
+
+@pytest.mark.parametrize("serves", [True, False])
+def test_a_snapshot_says_whether_its_owner_serves_stored_reads(native_owner_stub, serves):
+    """A v0.23.0 owner has no session.transcript: its snapshot says so and the read is refused unsent."""
+    if serves:
+        native_owner_stub.described["capabilities"].append("session-transcript-v1")
+    snapshot = native_owner_stub.run(None, {"session_id": "native", "action": "snapshot"})["snapshot"]
+    assert snapshot.get("transcripts", False) is serves
+    if not serves:
+        refused = native_owner_stub.run(None, {"session_id": "native", "action": "transcript", "order": "latest", "limit": 50})
+        assert refused == {"state": "incompatible", "reason": "owner_transcript_unsupported", "snapshot": None, "receipt": None}
+        assert not any(method == "session.transcript" for method, _ in native_owner_stub.calls)
+
+
+@pytest.mark.parametrize("params", [
+    {"action": "transcript", "limit": 50},
+    {"action": "transcript", "order": "newest", "limit": 50},
+    {"action": "transcript", "order": "oldest", "limit": 0},
+    {"action": "transcript", "order": "oldest", "limit": 501},
+    {"action": "transcript", "order": "oldest", "limit": 50, "cursor": ""},
+    {"action": "work_transcript", "work_kind": "subagent", "work_id": "sa"},
+])
+def test_transcript_reads_validate_closed_inputs_before_connecting(tmp_path, native_owner_stub, params):
+    from talaria_sidecar.errors import InvalidParams
+    with pytest.raises(InvalidParams):
+        native_owner_stub.session(None, {"profile_home": str(tmp_path), "session_id": "native", **params})
+    assert native_owner_stub.calls == []
+
+
+def test_work_transcript_reads_a_finished_child_under_its_parent(work_owner):
+    """A child the roster no longer lists stays readable through its parent's stored read (TAL-2072)."""
+    work_owner.described["capabilities"].append("session-transcript-v1")
+    work_owner.transcript = {**TRANSCRIPT_PAGE, "subagent_id": "sa-done", "available": True, "running": False, "child_session_id": "child"}
+    listed = work_owner.run(None, {"session_id": "native", "action": "work_list"})
+    assert listed["work"]["transcripts"] is True
+    read = work_owner.run(None, {"session_id": "native", "action": "work_transcript", "work_kind": "subagent", "work_id": "sa-done", "authority_epoch": 1})
+    assert read["work_transcript"] == {"available": True, "running": False, "rows": SHOWN_PAGE}
+    assert work_owner.calls[-1] == ("session.transcript", {"session_id": "native", "subagent_id": "sa-done", "order": "latest", "limit": 200})
+    assert not any(method in {"session.resume", "session.events.since"} for method, _ in work_owner.calls)
+    # A parent the owner no longer holds, and a child it cannot place, read as unavailable, never as an error.
+    work_owner.transcript = RuntimeError("not_found")
+    gone = work_owner.run(None, {"session_id": "native", "action": "work_transcript", "work_kind": "subagent", "work_id": "sa-done", "authority_epoch": 1})
+    assert gone["work_transcript"] == {"available": False, "running": False, "rows": []}
+
+
+def test_work_transcript_needs_the_stored_read(work_owner):
+    result = work_owner.run(None, {"session_id": "native", "action": "work_transcript", "work_kind": "subagent", "work_id": "sa-done", "authority_epoch": 1})
+    assert result == {"state": "incompatible", "reason": "owner_transcript_unsupported", "snapshot": None, "receipt": None}
+    assert "transcripts" not in work_owner.run(None, {"session_id": "native", "action": "work_list"})["work"]

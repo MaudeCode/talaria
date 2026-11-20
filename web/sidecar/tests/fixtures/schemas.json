@@ -10595,6 +10595,10 @@
               "reactions_supported": {
                 "type": "boolean"
               },
+              "transcripts": {
+                "description": "TAL-2072: the owner serves `transcript`, its stored history read. Absent on older owners.",
+                "type": "boolean"
+              },
               "todo_state": {
                 "description": "Canonical owner plan. Null clears it; omission retains transcript fallback for older owners.",
                 "anyOf": [
@@ -11725,6 +11729,13 @@
                 },
                 "resident": {
                   "type": "boolean"
+                },
+                "completed_at": {
+                  "description": "TAL-2072: when a child the roster no longer lists finished; absent while it runs.",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -11737,6 +11748,10 @@
               ],
               "additionalProperties": false
             }
+          },
+          "transcripts": {
+            "description": "TAL-2072: the owner serves each child's stored transcript, running or finished (`work_transcript`). Absent on older owners.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -11764,6 +11779,66 @@
           "available",
           "text",
           "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "transcript": {
+        "description": "`transcript`: one page of the session's stored history, read without attaching.",
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reset": {
+            "type": "boolean",
+            "description": "The cursor no longer holds (a compaction, rewind or rewrite since): this page starts again from the first row."
+          }
+        },
+        "required": [
+          "rows",
+          "next_cursor",
+          "reset"
+        ],
+        "additionalProperties": false
+      },
+      "work_transcript": {
+        "description": "`work_transcript`: a child's newest stored rows, running or finished; unavailable when its owner cannot place it.",
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          }
+        },
+        "required": [
+          "available",
+          "running",
+          "rows"
         ],
         "additionalProperties": false
       },
@@ -11935,6 +12010,10 @@
               "reactions_supported": {
                 "type": "boolean"
               },
+              "transcripts": {
+                "description": "TAL-2072: the owner serves `transcript`, its stored history read. Absent on older owners.",
+                "type": "boolean"
+              },
               "todo_state": {
                 "description": "Canonical owner plan. Null clears it; omission retains transcript fallback for older owners.",
                 "anyOf": [
@@ -13065,6 +13144,13 @@
                 },
                 "resident": {
                   "type": "boolean"
+                },
+                "completed_at": {
+                  "description": "TAL-2072: when a child the roster no longer lists finished; absent while it runs.",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -13077,6 +13163,10 @@
               ],
               "additionalProperties": false
             }
+          },
+          "transcripts": {
+            "description": "TAL-2072: the owner serves each child's stored transcript, running or finished (`work_transcript`). Absent on older owners.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -13104,6 +13194,66 @@
           "available",
           "text",
           "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "transcript": {
+        "description": "`transcript`: one page of the session's stored history, read without attaching.",
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reset": {
+            "type": "boolean",
+            "description": "The cursor no longer holds (a compaction, rewind or rewrite since): this page starts again from the first row."
+          }
+        },
+        "required": [
+          "rows",
+          "next_cursor",
+          "reset"
+        ],
+        "additionalProperties": false
+      },
+      "work_transcript": {
+        "description": "`work_transcript`: a child's newest stored rows, running or finished; unavailable when its owner cannot place it.",
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          }
+        },
+        "required": [
+          "available",
+          "running",
+          "rows"
         ],
         "additionalProperties": false
       },
