@@ -99,11 +99,13 @@ class ReportTests(unittest.TestCase):
     def report(self, directory, receipt, log=""):
         root = Path(directory)
         (root / "previous.json").write_text(json.dumps({"lastObserved": OLD, "lastObservedResult": "success", "lastPassing": OLD}))
-        (root / "receipt.json").write_text(json.dumps(receipt))
+        if receipt is not None:
+            (root / "receipt.json").write_text(json.dumps(receipt))
         (root / "check.log").write_text(log)
         code, output = run(["report", "--state-dir", directory, "--sha", NEW, "--receipt", str(root / "receipt.json"),
                             "--log", str(root / "check.log")], self.github)
-        return code, output, json.loads((root / "state.json").read_text())
+        state = root / "state.json"
+        return code, output, json.loads(state.read_text()) if state.exists() else None
 
     def test_a_pass_advances_both_commits_and_lists_the_range_newest_first(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -135,11 +137,13 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn("reraised", output)
         self.assertIn("::error title=Agent main canary failed::", output)
 
-    def test_a_receipt_for_another_commit_is_a_failure(self):
-        with tempfile.TemporaryDirectory() as directory:
-            code, output, state = self.report(directory, {"kind": "canary", "sourceRevision": OLD, "result": "success"})
-        self.assertEqual((code, state["lastPassing"]), (1, OLD))
-        self.assertIn("not a canary of this Agent commit", output)
+    def test_a_commit_the_checker_never_reported_on_is_checked_again(self):
+        # A setup step failed before the checker ran, or the receipt names another commit: fail, but write no state.
+        for receipt in (None, {"kind": "canary", "sourceRevision": OLD, "result": "success"}):
+            with self.subTest(receipt=receipt), tempfile.TemporaryDirectory() as directory:
+                code, output, state = self.report(directory, receipt)
+                self.assertEqual((code, state), (1, None))
+                self.assertIn("the next run checks this commit again", output)
 
 
 if __name__ == "__main__":

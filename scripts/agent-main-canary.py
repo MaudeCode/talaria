@@ -35,6 +35,7 @@ LISTED_TESTS = 20
 FAILURE_CHARS = 2000
 LOG_LINES = 40
 PER_PAGE = 100
+RETRY = "The state is unchanged, so the next run checks this commit again."
 
 
 def gh(path):
@@ -168,10 +169,10 @@ def log_tail(log):
 def outcome(receipt_path, sha):
     """Whether the receipt is a passing canary of exactly this commit, and why not."""
     if not receipt_path.is_file():
-        return False, "The checker left no receipt; it was stopped before it finished.", {}
+        return False, f"The checker left no receipt: it did not run or was stopped before it finished. {RETRY}", {}
     receipt = json.loads(receipt_path.read_text())
     if (receipt.get("kind"), receipt.get("sourceRevision")) != ("canary", sha):
-        return False, "The receipt is not a canary of this Agent commit.", receipt
+        return False, f"The receipt is not a canary of this Agent commit. {RETRY}", receipt
     if receipt.get("result") != "success":
         return False, str(receipt.get("failure") or "The checker failed.")[:FAILURE_CHARS], receipt
     return True, None, receipt
@@ -222,8 +223,11 @@ def main():
         parser.error("report needs --sha with an exact commit and --receipt")
     previous = parse_state((args.state_dir / "previous.json").read_text())
     passed, failure, receipt = outcome(args.receipt, args.sha)
-    state = next_state(previous, args.sha, passed)
-    (args.state_dir / "state.json").write_text(json.dumps(state, indent=2) + "\n")
+    # Only a receipt for this commit advances the state: a setup failure or a killed checker tested nothing.
+    checked = (receipt.get("kind"), receipt.get("sourceRevision")) == ("canary", args.sha)
+    state = next_state(previous, args.sha, passed) if checked else previous
+    if checked:
+        (args.state_dir / "state.json").write_text(json.dumps(state, indent=2) + "\n")
     compare = None
     if previous["lastObserved"] not in (None, args.sha):
         try:
