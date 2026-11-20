@@ -166,7 +166,9 @@ schema, server `connectors.test.ts` and `gateway-owner-connections.test.ts`, Web
 `ConnectorsSection.test.tsx`, and the App. TalariaKit
 `ChatViewModelSendTests+ConnectionOperation` covers restore, replacement, exact move
 identity, rollback and read-only reconciliation of a lost answer;
-`ConnectionOperationHostedTests` renders the panel from the same example.
+`ConnectionOperationHostedTests` renders the panel from the same example. Sidecar
+`test_connectors.py` checks that the fixture's Linear launch line is the sidecar's
+own masked output.
 
 Catalog recovery authority uses `contracts/fixtures/catalog-recovery.json` in the
 contract schema, native model and Web cache tests. Server
