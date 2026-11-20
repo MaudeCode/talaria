@@ -132,14 +132,12 @@ final class ChatMarkdownLinkGeometryTests: XCTestCase {
         return store
     }
 
-    /// Draws the window once: the paragraphs publish their link regions from that draw pass.
+    /// Commits and draws the window once: the paragraphs publish their link regions from that draw pass.
     private func host(_ view: some View) throws {
         let window = try hostInOwnWindow(
             view.coordinateSpace(.named(ChatMessageInteraction.rowCoordinateSpace)),
             size: CGSize(width: paragraphWidth, height: 300)
         )
-        _ = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        }
+        commitDisplay(of: window)
     }
 }

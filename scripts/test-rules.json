@@ -94,6 +94,15 @@
         "pattern": "\\blet fixture = try FixtureApp\\("
       },
       "message": "test-audit oversized: put each hosted layout that boots a new app fixture in its own test case (docs/testing.md)"
+    },
+    "heavy-commit-draw": {
+      "paths": [
+        "app/TalariaTests/"
+      ],
+      "patterns": [
+        "UIGraphicsImageRenderer\\(size: CGSize\\(width: 1, height: 1\\)\\)"
+      ],
+      "message": "test-audit heavy: force a commit with commitDisplay(of:) (two display updates), never with a drawing no one keeps; the simulator's render server snapshots the whole window for every drawing (docs/testing.md)"
     }
   }
 }

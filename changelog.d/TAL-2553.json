@@ -1,0 +1,1 @@
+{"skip": "Test-only change: hosted tests commit a window without drawing it, so the simulator render server stops growing; no app behavior changes."}
