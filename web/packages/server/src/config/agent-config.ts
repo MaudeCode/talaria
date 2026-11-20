@@ -128,7 +128,12 @@ export class AgentConfig {
     return resolved?.env === this.envKey(profileHome) ? resolved.config : null
   }
 
-  private async load(profileHome: string, opts: ConfigFileOptions = {}): Promise<{ config: Config; resolved: Config }> {
+  /** Settings refreshes administrator policy independently of the user file fingerprint. */
+  async readWithManaged(profileHome: string, opts: ConfigFileOptions = {}): Promise<{ config: Config; managed: Config }> {
+    return this.load(profileHome, opts)
+  }
+
+  private async load(profileHome: string, opts: ConfigFileOptions = {}): Promise<{ config: Config; resolved: Config; managed: Config }> {
     const file = this.path(profileHome, opts)
     const sidecar = this.deps.sidecar()
     if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; config.yaml is unavailable')
@@ -145,7 +150,7 @@ export class AgentConfig {
         const resolved = resolvedView(isDict(result.resolved) ? result.resolved : config)
         homes.set(profileHome, { env, config: resolved })
         this.cache.set(file, { key: before, config, resolved: homes })
-        return { config, resolved }
+        return { config, resolved, managed: dict(result.managed) }
       }
     }
     throw new ConfigUnavailable('config.yaml changed while it was being read; retry')
@@ -616,6 +621,8 @@ export async function setMaxTokens(store: AgentConfig, home: string, value: unkn
 
 // ── compression ───────────────────────────────────────────────────────
 
+export const configBoolean = (value: unknown): boolean => typeof value === 'string' ? truthy(value) : pyBool(value)
+
 export const PREPARE_AHEAD_KEY = 'compression.prepare_ahead'
 
 /** TAL-1825: the profile's prepared compaction choice, by the Agent's `is_truthy_value`; null when the Agent does not offer it or the config is unavailable. */
@@ -623,7 +630,7 @@ export async function compressionPrepareAhead(store: AgentConfig, home: string):
   if (!(await store.declaresKey(PREPARE_AHEAD_KEY))) return null
   try {
     const value = dict((await store.read(home)).compression).prepare_ahead
-    return typeof value === 'string' ? truthy(value) : pyBool(value)
+    return configBoolean(value)
   } catch {
     return null
   }
@@ -639,7 +646,7 @@ export async function compressionPrepareAhead(store: AgentConfig, home: string):
 export async function agentApprovals(store: AgentConfig, home: string): Promise<boolean | null> {
   try {
     const value = dict((await store.read(home)).talaria).agent_approvals
-    return typeof value === 'string' ? truthy(value) : pyBool(value)
+    return configBoolean(value)
   } catch {
     return null
   }

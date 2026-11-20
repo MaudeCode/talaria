@@ -477,6 +477,24 @@
                         "settings": {
                           "type": "object",
                           "properties": {
+                            "managed_fields": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": "object",
+                                "properties": {
+                                  "managed": {
+                                    "const": true
+                                  }
+                                },
+                                "required": [
+                                  "managed"
+                                ]
+                              },
+                              "description": "Administrator-managed fields keyed by Settings field name. The corresponding Settings value is effective and read-only."
+                            },
                             "kanban_pinned_boards": {
                               "type": "array",
                               "maxItems": 100,
@@ -116271,6 +116289,24 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "managed_fields": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "managed": {
+                            "const": true
+                          }
+                        },
+                        "required": [
+                          "managed"
+                        ]
+                      },
+                      "description": "Administrator-managed fields keyed by Settings field name. The corresponding Settings value is effective and read-only."
+                    },
                     "kanban_pinned_boards": {
                       "type": "array",
                       "maxItems": 100,
@@ -116784,6 +116820,24 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "managed_fields": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "managed": {
+                            "const": true
+                          }
+                        },
+                        "required": [
+                          "managed"
+                        ]
+                      },
+                      "description": "Administrator-managed fields keyed by Settings field name. The corresponding Settings value is effective and read-only."
+                    },
                     "kanban_pinned_boards": {
                       "type": "array",
                       "maxItems": 100,

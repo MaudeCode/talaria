@@ -20,7 +20,7 @@ const trimmed = (draft: string) => draft.trim()
  */
 export function SettingToggle({ label, hint, settingKey, id: givenId, fallback = false, inverted = false, disabled, onSaved, confirmOn, icon, indent, detail }: SettingProps & { fallback?: boolean; inverted?: boolean; onSaved?: () => void; confirmOn?: () => Promise<boolean>; indent?: boolean; detail?: ReactNode }) {
   const id = rowId(givenId, settingKey)
-  const { bool, set } = useSettingField([settingKey])
+  const { bool, managed, set } = useSettingField([settingKey])
   // `confirmOn` (a permission prompt) holds the switch on while it asks; a refusal leaves the setting off.
   const [asking, setAsking] = useState(false)
   const change = (checked: boolean) => {
@@ -31,7 +31,7 @@ export function SettingToggle({ label, hint, settingKey, id: givenId, fallback =
   }
   return (
     <FieldRow label={label} htmlFor={id} hint={hint} icon={icon} indent={indent} detail={detail} inline>
-      <Switch id={id} disabled={disabled} checked={asking || bool(settingKey, fallback) !== inverted} onCheckedChange={change} />
+      <Switch id={id} disabled={disabled || managed(settingKey)} checked={asking || bool(settingKey, fallback) !== inverted} onCheckedChange={change} />
     </FieldRow>
   )
 }
@@ -73,7 +73,7 @@ export function SettingSegmented({ label, hint, settingKey, id: givenId, fallbac
  */
 export function SettingNumber({ label, hint, settingKey, field, id: givenId, fallback = 0, min = 1, max, step, allowEmpty, placeholder, width = 'w-20', disabled, icon, unit, onSaved }: SettingProps & { field?: string; fallback?: number; min?: number; max?: number; step?: number; allowEmpty?: boolean; placeholder?: string; width?: string; unit?: string; onSaved?: () => void }) {
   const id = rowId(givenId, settingKey)
-  const { settings, num, setAsync } = useSettingField([settingKey])
+  const { settings, managed, num, setAsync } = useSettingField([settingKey])
   const [draft, setDraft] = useState<string | null>(null)
   const stored = settings.data?.[settingKey]
   const object = field && typeof stored === 'object' && stored !== null ? stored as Record<string, unknown> : null
@@ -86,9 +86,9 @@ export function SettingNumber({ label, hint, settingKey, field, id: givenId, fal
     void setAsync({ [settingKey]: partialSetting({ [field]: n }) }, onSaved)
   }
   const input = field
-    ? <TextInput id={id} type="number" inputMode="numeric" min={min} max={max} step={step} disabled={disabled} placeholder={placeholder} value={draft ?? (typeof nested === 'number' ? String(nested) : '')}
+    ? <TextInput id={id} type="number" inputMode="numeric" min={min} max={max} step={step} disabled={disabled || managed(settingKey)} placeholder={placeholder} value={draft ?? (typeof nested === 'number' ? String(nested) : '')}
       onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit() }} />
-    : <TextInput id={id} type="number" retainDraft min={min} max={max} step={step} disabled={disabled} placeholder={placeholder} value={num(settingKey, fallback) || ''} onChange={(e) => {
+    : <TextInput id={id} type="number" retainDraft min={min} max={max} step={step} disabled={disabled || managed(settingKey)} placeholder={placeholder} value={num(settingKey, fallback) || ''} onChange={(e) => {
       const raw = e.target.value.trim()
       if (raw === '') return allowEmpty ? setAsync({ [settingKey]: null }, onSaved) : undefined
       const n = Number(raw)

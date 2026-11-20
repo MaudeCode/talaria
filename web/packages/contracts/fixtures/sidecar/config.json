@@ -9,7 +9,8 @@
         "path": "<home>/config.yaml",
         "exists": false,
         "config": {},
-        "resolved": {}
+        "resolved": {},
+        "managed": {}
       }
     }
   ],

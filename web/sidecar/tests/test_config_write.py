@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import pathlib
 
 import pytest
 
 from conftest import SidecarProcess, agent_script, requires_agent
+from talaria_sidecar import SIDECAR_RPC_VERSION
 
 
 @requires_agent
@@ -137,7 +139,7 @@ def test_config_retarget_during_serialization_leaves_both_targets_untouched(tmp_
         return "value: changed\n"
 
     module = SimpleNamespace(get_managed_system=lambda home: None, atomic_config_replace=retarget) if modern else SimpleNamespace(get_managed_system=lambda home: None)
-    monkeypatch.setattr(config.importlib, "import_module", lambda name: module)
+    monkeypatch.setattr(config.importlib, "import_module", lambda name: SimpleNamespace(apply_managed_overlay=lambda config: config) if name == "hermes_cli.managed_scope" else module)
     monkeypatch.setattr(config, "yaml_parser", lambda: SimpleNamespace(safe_dump=retarget, safe_load=lambda text: {"value": "changed"}))
     with pytest.raises(RpcError) as error:
         config.write_config(link, {"value": "changed"})
@@ -160,7 +162,7 @@ def test_agent_writer_failure_does_not_fall_back_or_modify_target(tmp_path: path
         staged.write_text("partial write")
         raise OSError("writer failed")
 
-    monkeypatch.setattr(config.importlib, "import_module", lambda name: SimpleNamespace(get_managed_system=lambda home: None, atomic_config_replace=fail))
+    monkeypatch.setattr(config.importlib, "import_module", lambda name: SimpleNamespace(get_managed_system=lambda home: None, atomic_config_replace=fail, apply_managed_overlay=lambda config: config))
     with pytest.raises(OSError, match="writer failed"):
         config.write_config(path, {"value": "changed"})
     assert path.read_text() == "value: original\n"
@@ -180,7 +182,7 @@ def test_config_staged_value_mismatch_leaves_original_untouched(tmp_path: pathli
     path.write_text(original)
     path.chmod(0o640)
     module = SimpleNamespace(get_managed_system=lambda home: None, atomic_config_replace=lambda path, desired: path.write_text(staged)) if modern else SimpleNamespace(get_managed_system=lambda home: None)
-    monkeypatch.setattr(config.importlib, "import_module", lambda name: module)
+    monkeypatch.setattr(config.importlib, "import_module", lambda name: SimpleNamespace(apply_managed_overlay=lambda config: config) if name == "hermes_cli.managed_scope" else module)
     monkeypatch.setattr(config, "yaml_parser", lambda: SimpleNamespace(safe_load=json.loads, safe_dump=lambda *a, **kw: staged))
     with pytest.raises(RpcError) as error:
         config.write_config(path, {"value": 1})
@@ -342,3 +344,25 @@ for initial, expected in [(0o644, 0o640), (0o666, 0o660), (0o640, 0o640), (None,
     assert config.read_config(path)["config"] == {"value": "changed"}
     assert path.stat().st_mode & 0o777 == expected, (oct(initial or 0), oct(path.stat().st_mode & 0o777))
 '''.replace("FALLBACK", repr(fallback)))
+
+
+@requires_agent
+def test_config_set_refuses_managed_leaf(hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    managed = tmp_path / "managed"
+    managed.mkdir()
+    (managed / "config.yaml").write_text("agent:\n  max_turns: 25\n")
+    path = hermes_home / "config.yaml"
+    original = "agent:\n  max_turns: 10\n  max_tokens: 100\n"
+    path.write_text(original)
+    with contextlib.closing(SidecarProcess(hermes_home, env={"HERMES_MANAGED_DIR": str(managed)})) as sidecar:
+        sidecar.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})
+        params = {"profile_home": str(hermes_home)}
+        response, _ = sidecar.call("config.set", {**params, "config": {"agent": {"max_turns": 30, "max_tokens": 200}}})
+        assert response.get("error", {}).get("data", {}).get("condition") == "config_key_managed", response
+        assert "agent.max_turns" in response["error"]["message"]
+        assert path.read_text() == original
+        snapshot = sidecar.result("config.get", params)
+        assert snapshot["managed"] == {"agent": {"max_turns": 25}}
+        assert snapshot["config"]["agent"]["max_turns"] == 10
+        sidecar.result("config.set", {**params, "config": {"agent": {"max_turns": 25, "max_tokens": 200}}})
+        assert sidecar.result("config.get", params)["config"]["agent"] == {"max_turns": 10, "max_tokens": 200}

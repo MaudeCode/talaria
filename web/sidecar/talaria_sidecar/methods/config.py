@@ -174,11 +174,49 @@ def _drop_other_access(path: str) -> None:  # agent-shim: config-drop-other-acce
         os.chmod(path, mode & ~0o007)
 
 
+def managed_config() -> dict:
+    """The Agent's normalized, effective administrator overlay, separate from the user document."""
+    try:
+        scope = importlib.import_module("hermes_cli.managed_scope")
+    except ModuleNotFoundError as exc:
+        if exc.name in ("hermes_cli", "hermes_cli.managed_scope"):
+            return {}
+        raise
+    return scope.apply_managed_overlay({})
+
+
+_MISSING = object()
+
+
+def _preserve_managed_leaves(desired: dict, current: dict, managed: dict, prefix: str = "") -> None:
+    for key, effective in managed.items():
+        dotted = f"{prefix}{key}"
+        proposed = desired.get(key, _MISSING)
+        previous = current.get(key, _MISSING)
+        if isinstance(effective, dict) and effective:
+            if _same_config_value(proposed, previous):
+                continue
+            if not isinstance(proposed, dict):
+                raise RpcError(f"{dotted} contains administrator-managed keys", condition="config_key_managed")
+            _preserve_managed_leaves(proposed, previous if isinstance(previous, dict) else {}, effective, f"{dotted}.")
+        elif not _same_config_value(proposed, previous):
+            if not _same_config_value(proposed, effective):
+                raise RpcError(f"{dotted} is administrator-managed", condition="config_key_managed")
+            if previous is _MISSING:
+                del desired[key]
+            else:
+                desired[key] = previous
+
+
 def write_config(path: Path, config: dict, *, profile_home: Path | None = None) -> dict:
     if not isinstance(config, dict):
         raise InvalidParams("config must be an object")
     assert_config_writable(profile_home)
     target = _write_target(path)
+    managed = managed_config()
+    if managed:
+        config = copy.deepcopy(config)
+        _preserve_managed_leaves(config, read_config(target)["config"], managed)
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
         replace = getattr(importlib.import_module("hermes_cli.config"), "atomic_config_replace", None)
@@ -356,7 +394,12 @@ def register(registry) -> None:
     @registry.method("config.get", requires_agent=False)
     def get(ctx: CallContext, params: dict) -> dict:
         result = read_config(config_path_param(params))
-        return {**result, "resolved": resolved_config(profile_home_param(params), result["config"])}
+        try:
+            managed = managed_config()
+        except Exception:  # noqa: BLE001 - raw config remains readable even on a broken Agent
+            log.debug("Managed config unavailable", exc_info=True)
+            managed = {}
+        return {**result, "resolved": resolved_config(profile_home_param(params), result["config"]), "managed": managed}
 
     @registry.method("config.set", requires_agent=False)
     def set_(ctx: CallContext, params: dict) -> dict:

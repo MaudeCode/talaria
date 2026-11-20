@@ -17,7 +17,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { ModelFavorite, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { agentApprovals, auxiliaryModels, auxiliaryReasoning, previewAuxiliaryReasoning, compressionPrepareAhead, dict, parseProviderQualifiedModel, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, MAX_TOKENS_UNAVAILABLE, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
+import { configBoolean, agentApprovals, auxiliaryModels, auxiliaryReasoning, previewAuxiliaryReasoning, compressionPrepareAhead, dict, parseProviderQualifiedModel, DISCUSSION_LIMITS_KEY, discussionLimits, type DiscussionLimits, isDict, modelSection, canonicaliseProviderId, ConfigUnavailable, MAX_TOKENS_UNAVAILABLE, maxTokensStatus, PREPARE_AHEAD_KEY, findPersonality, reasoningStatus, setAgentApprovals, setAuxiliaryModel, setDefaultModel, setMaxTokens, unlistedAuxiliaryOverrides, validReasoningEffort, type AuxEfforts, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
@@ -36,8 +36,8 @@ function failure(error: unknown, fallbackStatus?: number): never {
   if (error instanceof HttpFailure) throw new HttpError(error.status, error.message, error.extra ?? {})
   if (error instanceof ProfileError || error instanceof OnboardingError) throw new HttpError(error.status, error.message)
   if (error instanceof SessionNotFound) throw new HttpError(404, 'Session not found')
-  if (error instanceof SidecarError && ['config_write_refused', 'config_policy_unavailable'].includes(error.condition)) {
-    throw new HttpError(error.condition === 'config_write_refused' ? 409 : 503, error.message, { condition: error.condition })
+  if (error instanceof SidecarError && ['config_write_refused', 'config_key_managed', 'config_policy_unavailable'].includes(error.condition)) {
+    throw new HttpError(error.condition === 'config_policy_unavailable' ? 503 : 409, error.message, { condition: error.condition })
   }
   if (error instanceof ConfigUnavailable) throw new HttpError(503, error.message)
   if (fallbackStatus !== undefined) throw new HttpError(fallbackStatus, str((error as Error).message))
@@ -175,10 +175,48 @@ async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   into.agent_approvals = await agentApprovals(deps.agentConfig, home(ctx))
   Object.assign(into, await groupDiscussionFields(ctx, into.group_discussion_restart_baseline))
   Reflect.deleteProperty(into, 'group_discussion_restart_baseline')
+  const pins = await managedSettings(ctx, into.group_discussion_max_rounds !== null, true, into).catch(() => ({}))
+  into.managed_fields = Object.fromEntries(Object.entries(pins).map(([field, pin]) => {
+    into[field] = pin.value
+    return [field, { managed: true }]
+  }))
 }
 
 const DISCUSSION_LIMIT_FIELDS = { group_discussion_max_rounds: 'max_rounds', group_discussion_max_messages: 'max_messages' } as const
 const ROOT_PROFILE = 'default'
+const PROFILE_MANAGED_FIELDS = ['max_tokens', 'compression_prepare_ahead', 'agent_approvals'] as const
+
+interface ManagedSetting { key: string; value: unknown }
+
+async function managedSettings(ctx: RequestContext, includeDiscussion: boolean, includeProfile: boolean, projection?: Dict): Promise<Record<string, ManagedSetting>> {
+  const store = ctx.deps.agentConfig
+  const fields: Record<string, ManagedSetting> = {}
+  if (includeProfile) {
+    const { config, managed } = await store.readWithManaged(home(ctx))
+    const agent = dict(managed.agent)
+    if ('max_tokens' in managed || 'max_tokens' in agent) {
+      const status = maxTokensStatus({ ...config, ...managed, agent: { ...dict(config.agent), ...agent } })
+      if (projection) Object.assign(projection, status)
+      if ('max_tokens' in managed) fields.max_tokens = { key: 'max_tokens', value: status.max_tokens }
+    }
+    const compression = dict(managed.compression)
+    if ('prepare_ahead' in compression) fields.compression_prepare_ahead = { key: PREPARE_AHEAD_KEY, value: configBoolean(compression.prepare_ahead) }
+    const talaria = dict(managed.talaria)
+    if ('agent_approvals' in talaria) fields.agent_approvals = { key: 'talaria.agent_approvals', value: configBoolean(talaria.agent_approvals) }
+  }
+  if (includeDiscussion) {
+    const { config, managed } = await store.readWithManaged(ctx.deps.profileHome(ROOT_PROFILE), { profileFile: true })
+    const pins = dict(dict(managed.hosted_rooms).discussion)
+    const rooms = dict(config.hosted_rooms)
+    const limits = discussionLimits({ hosted_rooms: { discussion: { ...dict(rooms.discussion), ...pins } } })
+    for (const [field, limit] of Object.entries(DISCUSSION_LIMIT_FIELDS)) {
+      if (projection && Object.keys(pins).length) projection[field] = limits[limit]
+      if (limit in pins) fields[field] = { key: `hosted_rooms.discussion.${limit}`, value: limits[limit] }
+    }
+  }
+  return fields
+}
+
 const rootGateways = (ctx: RequestContext): Promise<GatewayProcess[]> => ctx.deps.gatewayRestarts.gateways(ROOT_PROFILE).catch(() => [])
 
 /** TAL-1828: the limits a gateway older than `saved_at` loaded at startup. Kept in settings so a Web restart still knows. */
@@ -206,7 +244,7 @@ async function groupDiscussionFields(ctx: RequestContext, baseline: unknown): Pr
  * limits, since its gateway has read no save since. `saved_at` follows the write, so a gateway starting during it, which
  * read the old file, never counts as restarted. All of it under the config lock, so overlapping saves agree.
  */
-async function saveGroupDiscussionLimits(ctx: RequestContext, patch: Partial<DiscussionLimits>): Promise<void> {
+async function saveGroupDiscussionLimits(ctx: RequestContext, patch: Partial<DiscussionLimits>, pins: Record<string, ManagedSetting>): Promise<void> {
   const gateways = await rootGateways(ctx)
   let loaded: DiscussionLimits
   await ctx.deps.agentConfig.update(ctx.deps.profileHome(ROOT_PROFILE), async (config) => {
@@ -214,7 +252,11 @@ async function saveGroupDiscussionLimits(ctx: RequestContext, patch: Partial<Dis
     const prior = (await ctx.deps.settings.readRaw()).group_discussion_restart_baseline
     loaded = isRestartBaseline(prior) && !restartedSince(prior, gateways) ? prior.limits : before
     const rooms = dict(config.hosted_rooms)
-    config.hosted_rooms = { ...rooms, discussion: { ...dict(rooms.discussion), ...before, ...patch } }
+    const writable = { ...before, ...patch }
+    for (const [field, limit] of Object.entries(DISCUSSION_LIMIT_FIELDS)) {
+      if (field in pins) Reflect.deleteProperty(writable, limit)
+    }
+    config.hosted_rooms = { ...rooms, discussion: { ...dict(rooms.discussion), ...writable } }
   }, { profileFile: true, afterWrite: async () => { await ctx.deps.settings.save({ group_discussion_restart_baseline: { limits: loaded, saved_at: Date.now() } }) } })
 }
 
@@ -242,6 +284,17 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   if ('sync_to_insights' in body && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage the insights sync')
   // The Agent reads Group Chat limits from the root config, for every profile.
   if (Object.keys(DISCUSSION_LIMIT_FIELDS).some((key) => key in body) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage Group Chat limits')
+  Reflect.deleteProperty(body, 'managed_fields')
+  const hasProfilePatch = PROFILE_MANAGED_FIELDS.some((key) => key in body)
+  const hasDiscussionPatch = Object.keys(DISCUSSION_LIMIT_FIELDS).some((key) => key in body)
+  const pins = hasProfilePatch || hasDiscussionPatch ? await managedSettings(ctx, hasDiscussionPatch, hasProfilePatch) : {}
+  if (hasProfilePatch || hasDiscussionPatch) {
+    for (const [field, { key, value }] of Object.entries(pins)) {
+      if (!(field in body)) continue
+      if (body[field] !== value) throw new HttpError(409, `${key} is administrator-managed`, { condition: 'config_key_managed' })
+      Reflect.deleteProperty(body, field)
+    }
+  }
   if ('bot_name' in body) body.bot_name = displayBotName(body.bot_name)
   const authEnabledBefore = await auth.isAuthEnabled()
   const passwordAuthBefore = authEnabledBefore && (await auth.getPasswordHash()) !== null
@@ -299,7 +352,7 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   if (agentApprovalsProvided) await setAgentApprovals(deps.agentConfig, cfgHome, agentApprovalsValue as boolean)
   if (Object.keys(discussionPatch).length) {
     if (!(await discussionLimitsOffered(ctx))) throw new HttpError(409, 'This Agent does not offer Group Chat limits.', { condition: 'setting_unavailable' })
-    await saveGroupDiscussionLimits(ctx, discussionPatch)
+    await saveGroupDiscussionLimits(ctx, discussionPatch, pins)
   }
   const maxTokens = maxTokensProvided ? await setMaxTokens(deps.agentConfig, cfgHome, maxTokensValue) : null
   if (!requestedPasswordless && requestedClear) await deps.clearPasskeys()

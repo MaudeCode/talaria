@@ -22,9 +22,9 @@ beforeEach(() => {
   vi.mocked(api.fetchSettings).mockResolvedValue(initial)
 })
 
-function setup(ui: ReactNode) {
+function setup(ui: ReactNode, data: Record<string, unknown> = initial) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  qc.setQueryData(keys.settings, initial)
+  qc.setQueryData(keys.settings, data)
   render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
 }
 
@@ -220,4 +220,14 @@ it.each([
   held.reject(new ApiError({ kind: 'http', status: 409, path: 'api/settings', message, body: { error: message, condition: 'config_write_refused' } }))
   await waitFor(rolledBack)
   expect(showToast).toHaveBeenCalledWith(message, 4000, 'error')
+})
+
+it('disables the managed settings control and displays its effective value', () => {
+  setup(<SettingToggle label="Prepared compaction" settingKey="compression_prepare_ahead" />, {
+    compression_prepare_ahead: true,
+    managed_fields: { compression_prepare_ahead: { managed: true } },
+  })
+  const toggle = screen.getByRole('switch', { name: 'Prepared compaction' })
+  expect(toggle).toBeChecked()
+  expect(toggle).toHaveAttribute('aria-disabled', 'true')
 })

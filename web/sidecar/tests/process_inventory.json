@@ -920,6 +920,11 @@
         ""
       ]
     },
+    "tests/test_config_write.py::test_config_set_refuses_managed_leaf": {
+      "layer": "compatibility",
+      "reason": "A real supported Agent must load administrator policy from the bootstrap environment and refuse a changing config.set without rewriting the user's YAML.",
+      "cases": [""]
+    },
     "tests/test_config_write.py::test_native_managed_config_policy": {
       "layer": "compatibility",
       "reason": "Exact supported-Agent lightweight management detector contract for environment and owning-profile markers; real unmanaged YAML repair with broken heavy imports.",
