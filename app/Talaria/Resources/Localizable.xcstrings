@@ -10,7 +10,9 @@
     "%@ " : {
       "shouldTranslate" : false
     },
-    "%@ %@" : {},
+    "%@ %@" : {
+      "shouldTranslate" : false
+    },
     "%@ (copy)" : {
       "localizations" : {
         "ar" : {
