@@ -713,6 +713,13 @@
         ""
       ]
     },
+    "tests/test_chat_state_db.py::test_a_refused_turn_leaves_the_model_context_and_stays_on_screen": {
+      "layer": "compatibility",
+      "reason": "The release's real content-filter handling and SessionDB retention must take a refused turn out of the stored model context while keeping the ask for display; an Agent without the retention keeps its stored turn.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_chat_todo.py::test_a_todo_tool_call_carries_its_whole_result": {
       "layer": "compatibility",
       "reason": "The release's todo tool, called directly and through the deferred tool_call bridge, must reach on_tool_complete with its whole result so todo_result carries it.",

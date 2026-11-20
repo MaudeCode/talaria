@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A message the model's safety filter refused no longer gets every later message in the chat refused; Talaria Web shows it greyed with the reason.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
