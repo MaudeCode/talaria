@@ -880,6 +880,12 @@ final class UITestFixtureURLProtocol: URLProtocol {
                 "last_user_attachments": [["filename": "edit.png", "path": "/fixture/attachments/edit.png", "mime": "image/png", "is_image": true, "size": 273]],
                 "dropped_attachment_count": 1
             ])
+        case "/api/session/undo":
+            // TAL-2071: the undone turns changed files that are still on disk.
+            return json([
+                "ok": true, "removed_count": 2, "removed_preview": "Edit the notes",
+                "changed_files": ["notes.txt", "src/app.ts"]
+            ])
         case "/api/file/raw" where url.query?.contains("edit.png") == true:
             return transcriptMediaImage
         case "/api/session/new":

@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "After Undo, the App names the files the undone turns changed.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Undo shows changed files",
+        "description": "After Undo, see which files the undone turns changed.",
+        "icon": "sparkles"
+      }
+    }
+  ]
+}
