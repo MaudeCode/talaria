@@ -7,7 +7,8 @@ import UIKit
 @Observable
 final class AppSidebarPresentation {
     var searchRequested = false
-    /// Keep the sidebar's chrome intact until its closing slide has left the screen.
+    /// The sidebar draws its settled chrome whenever any of it is on screen: from the first frame of an opening drag
+    /// until its closing slide has left (TAL-1587, TAL-2570). Ownership of focus and VoiceOver follows `isPresented`.
     var isVisible = false
     var isPresented = false {
         didSet {
@@ -423,6 +424,7 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
     /// Every visual that follows the sidebar's position, from closed (0) to open (1).
     private func apply(progress: CGFloat) {
         self.progress = progress
+        if progress > 0, !presentation.isVisible { presentation.isVisible = true }
         let slide = slide
         let surfaceOffset = slide.surfaceOffset(progress: progress)
         let sidebarOffset = slide.sidebarOffset(progress: progress)
@@ -477,7 +479,6 @@ final class AppSidebarController: UIViewController, UIGestureRecognizerDelegate,
     }
 
     private func animate(to progress: CGFloat) {
-        if progress > 0 { presentation.isVisible = true }
         let changes = { self.apply(progress: progress) }
         let completion: (Bool) -> Void = { [weak self] finished in
             guard let self, finished, progress == 0, !self.presentation.isPresented else { return }

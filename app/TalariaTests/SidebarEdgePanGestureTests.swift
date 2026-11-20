@@ -267,7 +267,7 @@ final class AppSidebarDragTakeoverTests: XCTestCase {
 }
 
 /// A pan whose state and travel the test sets, handed to the container's own handlers.
-private final class ScriptedPan: UIScreenEdgePanGestureRecognizer {
+final class ScriptedPan: UIScreenEdgePanGestureRecognizer {
     private let scriptedState: UIGestureRecognizer.State
     private let x: CGFloat
 

@@ -671,6 +671,7 @@ struct SessionListView: View {
             searchPull: sidebarSearch,
             searchUsesBottomBar: horizontalSizeClass == .compact,
             isActive: isDrawer ? sidebarPresentation.drawerEnabled && appSidebar.isVisible : sidebarPresentation.showsColumn,
+            ownsFocus: !isDrawer || isPresented,
             quotaSources: appSidebarQuotaSources,
             selectedQuotaSourceID: insightsQuotaSourceID,
             selection: navigationState.section,

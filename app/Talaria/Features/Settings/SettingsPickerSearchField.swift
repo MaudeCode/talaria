@@ -30,7 +30,7 @@ struct SettingsPickerSearchField<Trailing: View>: View {
             TextField(prompt, text: $text)
                 .font(.subheadline)
                 .focused($isFocused)
-                .task { if autofocus { isFocused = true } }
+                .task(id: autofocus) { if autofocus { isFocused = true } }
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
 
