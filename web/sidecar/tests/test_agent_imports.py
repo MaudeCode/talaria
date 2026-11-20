@@ -1,5 +1,6 @@
 """Profile import boundary, using disposable trees and a native structured-API stub."""
 from contextlib import nullcontext
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
@@ -53,14 +54,16 @@ def imports(monkeypatch, tmp_path):
         (dest / 'import-sync.json').write_text('{"agents":{"cursor":{"source":"temporary"}}}')
     monkeypatch.setattr(Path, 'home', lambda: root)
     monkeypatch.setattr(subject.homes, 'scoped_home', lambda *a, **kw: nullcontext())
-    monkeypatch.setattr(subject.plugin_catalog, 'reviewed_importer', lambda _home: (Importer, SimpleNamespace(update_sync_manifest=sync), [state['pin']], bots) if state['supported'] else None)
+    def native_importer(_home):
+        return (Importer, SimpleNamespace(update_sync_manifest=sync), [state['pin']], bots) if state['supported'] else None
+    monkeypatch.setattr(subject.plugin_catalog, 'reviewed_importer', native_importer)
     monkeypatch.setattr(subject.config, 'assert_config_writable', lambda _home: None)
     monkeypatch.setattr(subject, '_PREVIEWS', {})
     monkeypatch.setattr(subject, '_refresh_runtime', lambda _home: True)
     methods = build_methods(SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
     def call(action, **params):
         return methods['profiles.import'](None, dict(profile_home=str(target), action=action, **params))
-    return SimpleNamespace(call=call, target=target, source=source, other=other, effects=effects, state=state, subject=subject, root=root)
+    return SimpleNamespace(call=call, target=target, source=source, other=other, effects=effects, state=state, subject=subject, root=root, native_importer=native_importer)
 
 
 def tree(path):
@@ -211,16 +214,15 @@ def test_openbot_extract_refuses_linked_inputs(imports, link):
         i.subject._openbot_source(OPENBOT)
 
 
-@pytest.mark.parametrize('moved, reaches_bytes', [(True, False), (False, True)])
-def test_auto_update_past_the_reviewed_pin_makes_import_unavailable(imports, monkeypatch, moved, reaches_bytes):
-    """plugins.auto_apply can move Agent Importers past agent_importer.json; the record alone must fail closed."""
+@pytest.fixture
+def importer_admission(imports, monkeypatch):
     from talaria_sidecar.methods import dashboard_plugins
     i = imports
     pin = next(iter(json.loads((Path(i.subject.plugin_catalog.__file__).parents[2] / 'agent_importer.json').read_text())['revisions']))
-    revision = 'f' * 40 if moved else pin
     plugins = i.target / 'plugins'
     (plugins / 'agent-importers').mkdir(parents=True)
     entry = SimpleNamespace(name='agent-importers', sha=pin, repo='https://example.invalid/importers', requires_hermes='')
+    revision = pin
     pc = SimpleNamespace(PluginOperationError=RuntimeError, _sanitize_plugin_name=lambda name, root: root / name,
                          _read_install_metadata=lambda: {'agent-importers': {'revision': revision, 'catalog': {'name': 'agent-importers', 'sha': revision, 'repo': entry.repo}}})
     native = SimpleNamespace(raise_if_removed=lambda *_: None, _refuse_unsupported_catalog_platform=lambda _: None)
@@ -237,13 +239,71 @@ def test_auto_update_past_the_reviewed_pin_makes_import_unavailable(imports, mon
     read = []
     monkeypatch.setattr(i.subject.plugin_catalog, '_agent', lambda: (source, pc, native))
     monkeypatch.setattr(dashboard_plugins, '_supported', lambda: True)
-    monkeypatch.setattr(dashboard_plugins, '_read', lambda _root, name, *_, **__: read.append(name))
+    read_bytes = dashboard_plugins._read
+
+    def read_cache_or_record_plugin_read(root, name, *args, **kwargs):
+        if name != 'cache/plugin-catalog.json':
+            read.append(name)
+        return read_bytes(root, name, *args, **kwargs)
+
+    monkeypatch.setattr(dashboard_plugins, '_read', read_cache_or_record_plugin_read)
     monkeypatch.setattr(i.subject.plugin_catalog, 'reviewed_importer', reviewed_importer)
+    def set_revision(value):
+        nonlocal revision
+        revision = value
+
+    return SimpleNamespace(pin=pin, source=source, read=read, set_revision=set_revision)
+
+
+@pytest.mark.parametrize('moved, reaches_bytes', [(True, False), (False, True)])
+def test_auto_update_past_the_reviewed_pin_makes_import_unavailable(imports, importer_admission, moved, reaches_bytes):
+    """plugins.auto_apply can move Agent Importers past agent_importer.json; the record alone must fail closed."""
+    i = imports
+    if moved:
+        importer_admission.set_revision('f' * 40)
     before = tree(i.target)
     status = i.call('preview', agent='cursor')
     assert status['status'] == 'unavailable' and status['catalog_required'] is True
-    assert ('importer.py' in read) is reaches_bytes, 'The install record decides before the plugin bytes are read'
+    assert ('importer.py' in importer_admission.read) is reaches_bytes, 'The install record decides before the plugin bytes are read'
     assert tree(i.target) == before and i.effects == []
+
+
+@pytest.mark.parametrize('agent_cap, admitted', [
+    (None, True),
+    (5 * 1024 * 1024, True),
+    (5 * 1024 * 1024 - 1, False),
+])
+def test_import_preview_catalog_cache_limit(imports, importer_admission, monkeypatch, agent_cap, admitted):
+    admission = importer_admission
+    if agent_cap is not None:
+        admission.source._MAX_LIVE_BYTES = agent_cap
+    cache = imports.target / 'cache/plugin-catalog.json'
+    cache.parent.mkdir()
+    body = json.dumps({'entries': [{'name': 'agent-importers', 'sha': admission.pin}]}).encode()
+    cache.write_bytes(body.ljust(5 * 1024 * 1024))
+
+    plugin_file = imports.target / 'plugins/agent-importers/importer.py'
+    plugin_file.write_bytes(b'# Synthetic attested importer')
+    manifest = Path(imports.subject.plugin_catalog.__file__).parents[2] / 'agent_importer.json'
+    read_text = Path.read_text
+
+    def read_manifest(path, *args, **kwargs):
+        if path == manifest:
+            return json.dumps({'revisions': {admission.pin: {
+                'importer.py': hashlib.sha256(plugin_file.read_bytes()).hexdigest(),
+            }}})
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'read_text', read_manifest)
+    importer, sync, _, _ = imports.native_importer(imports.target)
+    package = '_talaria_reviewed_agent_importers'
+    monkeypatch.setitem(sys.modules, package, ModuleType(package))
+    monkeypatch.setitem(sys.modules, package + '.importer', SimpleNamespace(AgentImporter=importer))
+    monkeypatch.setitem(sys.modules, package + '.sync', sync)
+
+    result = imports.call('preview', agent='cursor')
+
+    assert result['status'] == ('preview' if admitted else 'unavailable')
 
 
 def test_unknown_outcome_is_durable_and_never_blindly_replayed(imports):
