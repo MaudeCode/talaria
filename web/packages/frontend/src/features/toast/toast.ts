@@ -85,6 +85,15 @@ export function showRichToast(input: Omit<Toast, 'visible'>): void {
   }, input.ttl))
 }
 
+/** TAL-2602: drops every toast and pending timer so no test inherits another's toasts (called by the shared test setup). */
+export function resetToastsForTests(): void {
+  for (const timer of [...removalTimers.values(), ...expiryTimers.values()]) clearTimeout(timer)
+  removalTimers.clear()
+  expiryTimers.clear()
+  toasts = []
+  emit()
+}
+
 export function useToasts(): Toast[] {
   return useSyncExternalStore((l) => { listeners.add(l); return () => listeners.delete(l) }, () => toasts, () => toasts)
 }
