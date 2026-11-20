@@ -34,9 +34,11 @@ final class DuoFoldHostedTests: XCTestCase {
         _ scenario: [String] = [],
         size inner: CGSize = HostedSize.duoInner,
         closed: Bool,
+        linkedSessionID: String? = nil,
         list: @MainActor (FixtureApp) async throws -> AnyView = { AnyView($0.sessionList()) }
     ) async throws -> Folding {
         let fixture = try FixtureApp(scenario, for: self)
+        fixture.pendingSessionID = linkedSessionID
         let display = HostedDuoDisplay()
         display.sizeClass = closed ? .compact : .regular
         let size = closed ? HostedSize.duoOuter : inner
@@ -44,11 +46,13 @@ final class DuoFoldHostedTests: XCTestCase {
             $0.horizontalSizeClass = closed ? .compact : .regular
             $0.verticalSizeClass = .regular
         }
-        try await openSidebar(in: window)
-        let row = try await requireElement(in: window, "Missing deterministic session fixture") {
-            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+        if linkedSessionID == nil {
+            try await openSidebar(in: window)
+            let row = try await requireElement(in: window, "Missing deterministic session fixture") {
+                $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+            }
+            HostedAccessibility.activate(row)
         }
-        HostedAccessibility.activate(row)
         let opened = await awaitCondition { self.composerDraftText(in: window) != nil }
         XCTAssertTrue(opened, "The fixture chat never opened")
         return Folding(fixture: fixture, window: window, display: display, inner: inner)
@@ -215,41 +219,43 @@ final class DuoFoldHostedTests: XCTestCase {
 
     /// TAL-2565: closing or opening the Duo replaces the chat's editor. A focused one hands over its draft, selection and
     /// keyboard, so the next keystroke lands where the writer left it.
-    func testAFocusedDraftKeepsItsSelectionAndKeyboardAcrossClosingAndOpening() async throws {
-        let folding = try await openChatOnInnerDisplay()
-        let window = folding.window
-        _ = try await requireElement(in: window, "The transcript never loaded", where: FixtureApp.isLoadedTranscriptRow)
-        try await typeIntoComposer("Fold this draft", in: window)
-        var editor = try XCTUnwrap(mountedEditor(in: window))
-        XCTAssertTrue(editor.isFirstResponder)
-        // "this", in UTF-16 offsets.
-        var selection = NSRange(location: 5, length: 4)
-        editor.selectedRange = selection
-        var draft = "Fold this draft"
-        attachHostedScreenshot(window, name: "duo-focus-1-open-selected")
+    func testAFocusedDraftKeepsItsSelectionAndKeyboardWhenClosing() async throws {
+        try await assertFocusedDraftHandoff(closing: true)
+    }
 
-        for (closed, typed) in [(true, "the"), (false, "!")] {
-            let moment = closed ? "Closing" : "Opening"
-            let replaced = editor
-            fold(folding, closed: closed)
-            let handedOver = await awaitCondition {
-                guard let mounted = self.mountedEditor(in: window), mounted !== replaced else { return false }
-                return mounted.isFirstResponder && mounted.text == draft && mounted.selectedRange == selection
-            }
-            let mounted = mountedEditor(in: window)
-            XCTAssertTrue(handedOver, """
-                \(moment) the Duo left \(mounted === replaced ? "the same editor" : "a new editor") with \
-                focus \(mounted?.isFirstResponder ?? false), text \(mounted?.text ?? "none"), \
-                selection \(mounted.map { NSStringFromRange($0.selectedRange) } ?? "none")
-                """)
-            attachHostedScreenshot(window, name: closed ? "duo-focus-2-closed" : "duo-focus-3-reopened")
-            editor = try XCTUnwrap(mounted)
-            editor.insertText(typed)
-            draft = (draft as NSString).replacingCharacters(in: selection, with: typed)
-            selection = NSRange(location: selection.location + (typed as NSString).length, length: 0)
-            let reached = await awaitCondition { self.composerDraftText(in: window) == draft }
-            XCTAssertTrue(reached, "Typing after \(moment.lowercased()) wrote \(composerDraftText(in: window) ?? "nothing")")
+    func testAFocusedDraftKeepsItsSelectionAndKeyboardWhenOpening() async throws {
+        try await assertFocusedDraftHandoff(closing: false)
+    }
+
+    private func assertFocusedDraftHandoff(closing: Bool) async throws {
+        let folding = try await openChatOnDuo(closed: !closing, linkedSessionID: "ui-fixture-session-1")
+        let window = folding.window
+        _ = try await requireElement(in: window, label: "Fixture Session 01 reply")
+        let draft = closing ? "Fold this draft" : "Fold the draft"
+        try await typeIntoComposer(draft, in: window)
+        let replaced = try XCTUnwrap(mountedEditor(in: window))
+        XCTAssertTrue(replaced.isFirstResponder)
+        // Select "this" when closing and set the caret after "the" when opening.
+        let selection = closing ? NSRange(location: 5, length: 4) : NSRange(location: 8, length: 0)
+        replaced.selectedRange = selection
+
+        let direction = closing ? "closing" : "opening"
+        fold(folding, closed: closing)
+        let handedOver = await awaitCondition {
+            guard let mounted = self.mountedEditor(in: window), mounted !== replaced else { return false }
+            return mounted.isFirstResponder && mounted.text == draft && mounted.selectedRange == selection
         }
+        let mounted = mountedEditor(in: window)
+        XCTAssertTrue(handedOver, """
+            After \(direction) the Duo left \(mounted === replaced ? "the same editor" : "a new editor") with \
+            focus \(mounted?.isFirstResponder ?? false), text \(mounted?.text ?? "none"), \
+            selection \(mounted.map { NSStringFromRange($0.selectedRange) } ?? "none")
+            """)
+        let editor = try XCTUnwrap(mounted)
+        editor.insertText(closing ? "the" : "!")
+        let expected = closing ? "Fold the draft" : "Fold the! draft"
+        let reached = await awaitCondition { self.composerDraftText(in: window) == expected }
+        XCTAssertTrue(reached, "Typing after \(direction) wrote \(composerDraftText(in: window) ?? "nothing")")
     }
 
     /// TAL-2565: only focus the writer left in place is handed over; a dismissed keyboard stays down.
@@ -480,8 +486,8 @@ final class DuoFoldHostedTests: XCTestCase {
             try await reopenFixtureChat(in: window)
             let kept = await awaitCondition { self.readingRow(in: window) == reading }
             XCTAssertTrue(kept, "Revisiting the chat moved the reader from \(reading) to \(readingRow(in: window) ?? "nothing")")
-            let drawn = await awaitCondition { self.mountedTranscriptScrollView(in: window).map(self.drawsContent) == true }
-            XCTAssertTrue(drawn, "The revisited transcript never drew its rows")
+            let sampled = await awaitCondition { !drawnRows.isEmpty }
+            XCTAssertTrue(sampled, "No committed frame showed the revisited transcript")
         }
         XCTAssertEqual(drawnRows, [reading], "Revisiting the chat drew other rows at the top before the reader's")
         await attachRealizedTranscript(window, name: closed ? "revisit-drawer" : "revisit-beside-list")

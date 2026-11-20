@@ -744,17 +744,19 @@ final class ClarificationTests: APIClientTestCase {
             }
         }
         _ = await model.sendMessage("Continue")
-        let update = try JSONDecoder().decode(ClarificationPendingResponse.self, from: Data(#"{"pending":{"clarify_id":"pages","steps":[{"qid":"q0","question":"First?","choices":[],"multi_select":false},{"qid":"q1","question":"Second?","choices":[],"multi_select":false}]}}"#.utf8))
+        let update = try JSONDecoder().decode(ClarificationPendingResponse.self, from: Data(#"{"pending":{"clarify_id":"pages","steps":[{"qid":"q0","question":"First?","choices":[],"multi_select":false},{"qid":"q1","question":"Second?","choices":["Tea"],"multi_select":true,"multi_select":false}]}}"#.utf8))
         model.applyClarificationUpdate(update, sessionID: "session-abc")
         let first = try XCTUnwrap(model.clarificationPrompt?.id)
         model.setClarificationDraftResponse("First draft", promptID: first)
         model.selectClarificationStep(1, promptID: first)
         let second = try XCTUnwrap(model.clarificationPrompt?.id)
+        model.toggleClarificationChoice("Tea", promptID: second)
         model.setClarificationDraftResponse("Second draft", promptID: second)
         model.selectClarificationStep(0, promptID: second)
         XCTAssertEqual(model.clarificationDraftResponse, "First draft")
         model.setClarificationDraftResponse("", promptID: first)
         model.selectClarificationStep(1, promptID: first)
+        XCTAssertEqual(model.clarificationSelectedChoices, ["Tea"])
         XCTAssertEqual(model.clarificationDraftResponse, "Second draft")
         let incomplete = await model.submitClarificationDraft(promptID: second)
         XCTAssertFalse(incomplete)
@@ -765,7 +767,7 @@ final class ClarificationTests: APIClientTestCase {
         XCTAssertEqual(model.clarificationDraftResponse, "Second draft")
         let submitted = await model.submitClarificationDraft(promptID: second)
         XCTAssertTrue(submitted)
-        XCTAssertEqual(received, ["q0": .string("Edited first"), "q1": .string("Second draft")])
+        XCTAssertEqual(received, ["q0": .string("Edited first"), "q1": .array([.string("Tea"), .string("Second draft")])])
     }
 
     @MainActor

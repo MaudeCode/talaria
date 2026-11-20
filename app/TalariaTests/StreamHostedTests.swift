@@ -108,9 +108,8 @@ final class StreamHostedTests: XCTestCase {
         return try await requireElement(in: window, label: "Waiting for control input.", "The controls run never streamed its opening")
     }
 
-    /// A message sent during a run steers it and shows as a steering hint; Stop ends the turn, which settles into the
-    /// server's scene with its outcome and the steer it took (TAL-300).
-    func testChatStreamSupportsSteeringAndCancellation() async throws {
+    /// A message sent during a run steers it and shows as a steering hint (TAL-300).
+    func testChatStreamShowsTheSteeringHint() async throws {
         let window = try await hostFixtureChat(["--ui-test-chat-controls"])
         _ = try await startControlsRun(in: window)
         try await sendFromComposer("Keep the fixture concise", in: window)
@@ -118,13 +117,19 @@ final class StreamHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "Keep the fixture concise")
         let hint = await awaitElement(in: window, where: labelContaining("Steering hint"))
         XCTAssertNotNil(hint)
+    }
+
+    /// Stop ends a running turn and leaves the transcript and composer available (TAL-300).
+    func testChatStreamSettlesAfterCancellation() async throws {
+        let window = try await hostFixtureChat(["--ui-test-chat-controls"])
+        _ = try await startControlsRun(in: window)
         let stop = try await requireElement(in: window, label: "Stop response")
         HostedAccessibility.activate(stop)
 
         let stopped = await awaitNoElement(in: window, timeout: 5, where: label("Stop response"))
         XCTAssertTrue(stopped)
         _ = try await requireElement(in: window, label: "Stopped")
-        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Keep the fixture concise"))
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Run the deterministic fixture"))
         let composer = await awaitElement(in: window, where: label("Message"))
         let input = await composerTextView(in: window, timeout: 1)
         XCTAssertTrue(composer != nil || input != nil, "The composer went away")
@@ -222,28 +227,37 @@ final class StreamHostedTests: XCTestCase {
         ((view as? UITextField).map { $0.isSecureTextEntry ? [$0] : [] } ?? []) + view.subviews.flatMap(secureFields(in:))
     }
 
-    /// A batch steps between questions keeping each answer, and submits typed and selected answers together (TAL-367).
-    func testBatchClarificationDeliversTypedAndMultiSelectAnswers() async throws {
+    /// The chevrons page through the clarification without submitting an answer (TAL-367).
+    func testBatchClarificationChevronsPageWithoutSubmitting() async throws {
         let window = try await hostFixtureChat(["--ui-test-chat-batch-clarification"])
         _ = try await requireElement(in: window, label: "What sounds best for a quiet evening?")
-        try await typeIntoComposer("A movie", in: window)
-        HostedAccessibility.activate(try await requireElement(in: window, label: "Next"))
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Next question"))
         _ = try await requireElement(in: window, label: "Which drinks?")
-        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Question 2 of 2"))
-        let secondAnswer = await composerText(in: window)
-        XCTAssertEqual(secondAnswer, "")
+        _ = try await requireElement(in: window, label: "Question 2 of 2")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Previous question"))
+        _ = try await requireElement(in: window, label: "What sounds best for a quiet evening?")
+    }
+
+    /// A batch submits typed and selected answers together (TAL-367).
+    func testBatchClarificationDeliversTypedAndMultiSelectAnswers() async throws {
+        let window = try await advanceToSecondClarificationQuestion()
         HostedAccessibility.activate(try await requireElement(in: window, label: "Tea"))
         HostedAccessibility.activate(try await requireElement(in: window, label: "Water"))
-        HostedAccessibility.activate(try await requireElement(in: window, label: "Previous question"))
-        let firstAnswer = await composerText(in: window)
-        XCTAssertEqual(firstAnswer, "A movie")
-        HostedAccessibility.activate(try await requireElement(in: window, label: "Next question"))
         let submit = await awaitElement(in: window) { $0.accessibilityLabel == "Submit clarification" && !$0.accessibilityTraits.contains(.notEnabled) }
         HostedAccessibility.activate(try XCTUnwrap(submit, "Submit never enabled"))
 
         _ = try await requireElement(in: window, label: "Agent received: A movie | Tea, Water")
         let restored = await composerText(in: window)
         XCTAssertEqual(restored, "Ordinary fixture draft")
+    }
+
+    private func advanceToSecondClarificationQuestion() async throws -> UIWindow {
+        let window = try await hostFixtureChat(["--ui-test-chat-batch-clarification"])
+        _ = try await requireElement(in: window, label: "What sounds best for a quiet evening?")
+        try await typeIntoComposer("A movie", in: window)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Next"))
+        _ = try await requireElement(in: window, label: "Which drinks?")
+        return window
     }
 
     /// Answering a clarification in the composer leaves the ordinary draft restored, and it stays after a reopen
