@@ -75,11 +75,18 @@ final class RemoteMarkdownImageTests: XCTestCase {
             And a badge ![y](https://example.com/b.png) inside a sentence, and a dot:
 
             ![dot](\(TestPNG.dataURL))
+
+            # Heading ![h](https://example.com/h.png)
+
+            | Cell |
+            | --- |
+            | ![t](https://example.com/t.png) |
             """, isStreaming: true),
-            size: CGSize(width: 360, height: 600)
+            size: CGSize(width: 360, height: 800)
         )
 
-        for label in ["x", "y"] {
+        // A paragraph, a line of text, a heading and a table cell each draw their text through one view.
+        for label in ["x", "y", "h", "t"] {
             let link = await awaitElement(in: window) { $0.accessibilityLabel == label && $0.accessibilityTraits.contains(.link) }
             XCTAssertNotNil(link, "The remote image \(label) shows as a link")
         }

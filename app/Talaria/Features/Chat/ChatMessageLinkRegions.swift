@@ -82,10 +82,26 @@ struct ChatMarkdownLinkTrackedText<Label: View>: View {
     @ViewBuilder let label: Label
 
     @Environment(\.chatMessageLinkRegionStore) private var store
+    @Environment(\.transcriptMediaParagraphImages) private var media
     @State private var paragraphID = UUID()
 
+    /// TAL-2582: a link to each remote image follows the text, which never loads it; paragraphs, headings and table cells
+    /// all draw their text here.
     @ViewBuilder
     var body: some View {
+        let remote = RemoteMarkdownImage.all(in: content.renderMarkdown(), display: media?.display)
+        if remote.isEmpty {
+            tracked
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                tracked
+                ForEach(remote) { RemoteMarkdownImageLink(image: $0) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var tracked: some View {
         if tracksLinks, let store, case let links = self.links, !links.isEmpty {
             label
                 .textRenderer(
@@ -134,20 +150,15 @@ struct ChatMarkdownParagraph: View {
     @Environment(\.transcriptMediaParagraphImages) private var media
 
     var body: some View {
-        let markdown = configuration.content.renderMarkdown()
-        let nested = media?.nestedImages(in: markdown) ?? []
-        let remote = RemoteMarkdownImage.all(in: markdown, display: media?.display)
-        if nested.isEmpty, remote.isEmpty {
-            text.markdownMargin(.paragraph)
-        } else {
+        if let media, case let nested = media.nestedImages(in: configuration.content.renderMarkdown()), !nested.isEmpty {
             // TAL-186: server images inside emphasis, which MarkdownUI does not load inline, follow the text.
-            // TAL-2582: so does a link to each remote image, which never loads.
             VStack(alignment: .leading, spacing: 8) {
                 text
-                if let media { ForEach(nested) { media.thumbnail($0) } }
-                ForEach(remote) { RemoteMarkdownImageLink(image: $0) }
+                ForEach(nested) { media.thumbnail($0) }
             }
             .markdownMargin(.paragraph)
+        } else {
+            text.markdownMargin(.paragraph)
         }
     }
 
