@@ -349,6 +349,52 @@ async def probe_work(home, peer, desc):
         sidecar.close()
 
 
+async def probe_transcript(home, peer, desc):
+    """TAL-2072: a rotated owner chat's stored read, both ways across its compression lineage, with the handoff as a row.
+    An owner without the read refuses it unsent."""
+    sidecar = SidecarProcess(home)
+    try:
+        async with websocket(home, desc) as native:
+            sid = (await rpc(native, "session.create", request_id="transcript-create", source="cli", toolsets=[]))["result"]["session_id"]
+        def call(action, **params):
+            return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": action, **params})
+        if not (agent / "gateway/session_stored_reads.py").exists():
+            refused = await asyncio.to_thread(call, "transcript", order="oldest", limit=10)
+            assert (refused["state"], refused["reason"]) == ("incompatible", "owner_transcript_unsupported"), refused
+            return
+        for text in ("TRANSCRIPT_HEAD", "TRANSCRIPT_MIDDLE", "TRANSCRIPT_TAIL"):
+            await asyncio.to_thread(call, "submit", request_id="transcript-" + text, text=text)
+            final = await drained(call)
+        compressed = await asyncio.to_thread(call, "mutate", request_id="transcript-compress", expected_revision=final["snapshot"]["revision"],
+            execution_generation=final["snapshot"]["execution_generation"], operation="compress", payload={})
+        assert compressed["state"] == "attached", compressed
+        await asyncio.to_thread(call, "submit", request_id="transcript-after", text="TRANSCRIPT_AFTER")
+        await drained(call)
+        assert (await asyncio.to_thread(call, "snapshot"))["snapshot"].get("transcripts") is True
+
+        async def pages(order):
+            rows, cursor = [], None
+            while True:
+                page = (await asyncio.to_thread(call, "transcript", order=order, limit=2, **({"cursor": cursor} if cursor else {})))["transcript"]
+                assert page is not None and len(page["rows"]) <= 2 + 1, page  # a tool result may ride with its call
+                if not page["rows"]:
+                    return rows
+                rows = rows + page["rows"] if order == "oldest" else page["rows"] + rows
+                cursor = page["next_cursor"]
+                if cursor is None:
+                    return rows
+        oldest, latest = await pages("oldest"), await pages("latest")
+        assert oldest == latest, (oldest, latest)
+        texts = [row.get("text") for row in oldest if row.get("row_kind") == "message" and row.get("role") == "user"]
+        # The head precedes the rotation, so a resume past the cap would not show it; the read pages the whole lineage.
+        assert texts == ["TRANSCRIPT_HEAD", "TRANSCRIPT_MIDDLE", "TRANSCRIPT_TAIL", "TRANSCRIPT_AFTER"], oldest
+        handoffs = [row for row in oldest if row.get("row_kind") == "compaction"]
+        assert len(handoffs) == 1 and handoffs[0]["text"] and handoffs[0]["row_id"] > 0, oldest
+        assert "gateway_input_owner" not in json.dumps(oldest) and "display_metadata" not in json.dumps(oldest)
+    finally:
+        sidecar.close()
+
+
 async def probe_model(home, peer, desc):
     sidecar = SidecarProcess(home)
     viewer = SidecarProcess(home)
@@ -631,6 +677,8 @@ async def probe_session_open(home, peer, desc):
         polled = time.time()
         log.with_suffix(".slow").touch()
         assert (await asyncio.to_thread(call, "snapshot"))["state"] == "attached"
+        # TAL-2072: a history read is the owner's stored read, never an open.
+        assert (await asyncio.to_thread(call, "transcript", order="latest", limit=50))["state"] == "attached"
         submitted = time.monotonic()
         assert (await asyncio.to_thread(call, "submit", request_id="open-turn", text="Run fixture control"))["state"] == "attached"
         while not any("Run fixture control" in json.dumps(request.get("messages")) for request in peer.requests):
@@ -649,7 +697,7 @@ async def probe_session_open(home, peer, desc):
             await asyncio.sleep(POLL_SECONDS)
         log.with_suffix(".slow").unlink()
         opened = await barrier(polled)
-        assert opened == ["resume"], f"Web's snapshot and submit were delivered as opens: {opened} (the last is the barrier); the turn waited {reached:.1f} s"
+        assert opened == ["resume"], f"Web's snapshot, transcript and submit were delivered as opens: {opened} (the last is the barrier); the turn waited {reached:.1f} s"
 
         # The watch is the viewer opening the chat; every control alongside it is not.
         watched = time.time()
@@ -1426,6 +1474,8 @@ def run_on_owner(mode, home, peer, desc, proc, env):
         return probe_connections(home, peer, desc)
     if mode == "work":
         return probe_work(home, peer, desc)
+    if mode == "transcript":
+        return probe_transcript(home, peer, desc)
     if mode == "session-open":
         return probe_session_open(home, peer, desc)
     return probe(home, peer, desc, require_gap=mode == "replay")

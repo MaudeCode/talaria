@@ -227,6 +227,36 @@ describe('native owner background work (TAL-1336)', () => {
     } finally { watch.finish(); await watch.read }
   })
 
+  it.each([true, false])('keeps a finished child readable through Background Work once its owner\'s roster drops it, when the owner serves stored transcripts: %s (TAL-2072)', async (transcripts) => {
+    const { observeOwner } = ownerHelpers(() => ({ s, sidecar }))
+    const stored = [{ row_kind: 'message', role: 'user', text: 'Read the logs', row_id: 1 },
+      { row_kind: 'message', role: 'tool', name: 'read_file', context: 'logs/app.log', tool_call_id: 'c1' },
+      { row_kind: 'message', role: 'assistant', text: 'The log ends in a timeout.', row_id: 3 }]
+    const owner = (params: GatewaySessionParams): GatewaySessionResult | Promise<GatewaySessionResult> =>
+      params.action === 'work_list' ? { state: 'attached', ...bare, work: roster as OwnerWork }
+        : params.action === 'work_transcript' ? { state: 'attached', ...bare, work_transcript: { available: params.work_id === 'sa-resident', running: false, rows: stored } }
+        : attached(snapshot({ session_id: params.session_id, stored_session_id: params.session_id }))
+    roster = { ...native.work, ...(transcripts ? { transcripts } : {}) }
+    sidecar.respond('gateway.session', owner)
+    const watch = await observeOwner(snapshot({ running: true, pending: [] }))
+    watch.event('subagent.complete', { subagent_id: 'sa-resident', goal: 'Read the logs', status: 'completed', duration_seconds: 30 })
+    watch.finish(); await watch.read
+    // The owner unregisters a child as its run ends.
+    roster = { ...roster, subagents: roster.subagents.filter((a) => a.subagent_id !== 'sa-resident') }
+    sidecar.respond('gateway.session', owner)
+    const finished = (await read()).tasks.find((t) => t.title === 'Read the logs')
+    if (!transcripts) {
+      // An older owner cannot read a finished child, so the row leaves with its roster entry, as before.
+      expect(finished).toBeUndefined()
+      return
+    }
+    expect(finished).toMatchObject({ kind: 'delegation', status: 'completed', can_stop: false, can_steer: false, result_available: true, active: false })
+    const result = await s.get(`/api/background/result?session_id=${sid}&task_id=${encodeURIComponent(finished!.task_id)}`)
+    expect(await result.json()).toEqual({ task_id: finished!.task_id, text: 'user: Read the logs\n\ntool read_file: logs/app.log\n\nassistant: The log ends in a timeout.' })
+    expect(ownerCalls('work_transcript')).toEqual([expect.objectContaining({ work_kind: 'subagent', work_id: 'sa-resident', authority_epoch: 1 })])
+    expect(ownerCalls('work_tail')).toHaveLength(0)
+  })
+
   it('announces a background process the owner starts mid-turn (TAL-2266)', async () => {
     const { observeOwner } = ownerHelpers(() => ({ s, sidecar }))
     const published = vi.spyOn(s.deps.events, 'publish')

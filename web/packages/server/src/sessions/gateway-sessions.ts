@@ -24,7 +24,7 @@ import { SessionNotices } from './notices.js'
 import type { RunJournal, RunJournalWriter } from './journal.js'
 import { SessionEventBus } from './events.js'
 import { messageCountsAsRenderable, messageWindowForDisplay, messagesForLimitedPayload } from './window.js'
-import { isCompactionRow, pendingUserRow, stripToolCallXml } from './merge.js'
+import { compactionRow, isCompactionRow, messageText, pendingUserRow, stripToolCallXml } from './merge.js'
 import { withTurnIds } from './anchor.js'
 import { TalariaActivitySchema, type TalariaActivity } from '@maudecode/talaria-web-contracts'
 import type { DocumentBackend } from './storage/backend.js'
@@ -164,11 +164,70 @@ function projectedWindow(rows: Row[], project: (start: number) => unknown[], lim
   }
 }
 
+/** TAL-2072: stored rows per page while looking for where a chat's attach rows begin, and how deep that looks. */
+const STORED_PAGE_ROWS = 500
+const STORED_PAGES = 40
+/** TAL-2072: owner chats whose older stored rows, and finished children, this server keeps; the least recent goes first. */
+const STORED_CHATS = 32
+/**
+ * TAL-2072: serialized bytes of older stored rows one chat keeps (its newest ones), and all chats together. A page is
+ * at most the owner's 2 MiB, so a read holds at most one page beyond a chat's budget.
+ */
+const STORED_CHAT_BYTES = 8 * 1024 * 1024
+const STORED_BYTES = 32 * 1024 * 1024
+/** TAL-2072: finished children kept per chat once the owner's roster drops them. */
+const FINISHED_CHILDREN = 50
+
+/** Keep `key` as the newest entry of `map`, dropping the oldest past `cap`. */
+function keepRecent<K, V>(map: Map<K, V>, key: K, value: V, cap: number): void {
+  map.delete(key)
+  map.set(key, value)
+  if (map.size > cap) map.delete(map.keys().next().value!)
+}
+
+/**
+ * TAL-2072: an owner's stored-read rows (its display projection) as a snapshot's rows: `text` is the content, each tool
+ * row's call joins the assistant row before it, and a compaction handoff is Web's compaction marker (TAL-1566). The
+ * read keeps a tool's output only for edits; any other tool row shows its argument preview.
+ */
+export function storedRows(rows: Row[]): Row[] {
+  const out: Row[] = []
+  let caller: Row | null = null
+  for (const row of rows) {
+    if (row.row_kind === 'compaction') {
+      out.push(compactionRow(str(row.text).trim(), row.timestamp, `owner-${str(row.row_id)}`))
+      caller = null
+      continue
+    }
+    const { row_kind: _kind, text, context, args, ...rest } = row
+    if (row.role !== 'tool') {
+      const shown: Row = { ...rest, content: str(text) }
+      out.push(shown)
+      caller = row.role === 'assistant' ? shown : null
+      continue
+    }
+    if (!caller) out.push(caller = { role: 'assistant', content: '', timestamp: row.timestamp })
+    caller.tool_calls = [...(caller.tool_calls as Row[] | undefined ?? []), { id: str(row.tool_call_id), type: 'function', function: { name: str(row.name), arguments: JSON.stringify(args ?? {}) } }]
+    out.push({ ...rest, content: typeof row.content === 'string' ? row.content : str(context) })
+  }
+  return out
+}
+
+/** TAL-2072: a child's stored rows as Background Work's result text: who said what, oldest first. */
+function transcriptText(rows: Row[]): string {
+  return rows.flatMap((row) => {
+    const text = (row.row_kind === 'compaction' ? str(row.text) : str(row.text) || messageText(row.content) || str(row.context)).trim()
+    const who = row.row_kind === 'compaction' ? 'compaction' : row.role === 'tool' ? `tool ${str(row.name)}` : str(row.role)
+    return text ? [`${who}: ${text}`] : []
+  }).join('\n\n')
+}
+
 /** TAL-1336: owner events after which the session's processes or subagents read differently. */
 const OWNER_WORK_EVENTS: ReadonlySet<string> = new Set(['subagent.start', 'subagent.complete', 'background.complete'])
 const MESSAGE_REFUSED = 'The owning Agent refused this message'
 export type OwnerWorkOutcome = NonNullable<GatewaySessionResult['work_outcome']>
-export interface OwnerWorkRef { kind: 'process' | 'subagent'; id: string; epoch: number }
+/** `transcript`: the owner serves this child's stored transcript (TAL-2072). */
+export interface OwnerWorkRef { kind: 'process' | 'subagent'; id: string; epoch: number; transcript?: boolean }
 export interface OwnerWorkRead { home: string; state: 'available' | 'unsupported' | 'unavailable'; work: OwnerWork | null }
 
 export class GatewaySessions {
@@ -183,6 +242,12 @@ export class GatewaySessions {
   private readonly modelChanges = new Map<string, { epoch: number; replay: string; change: ModelChange }>()
   private readonly deferredReasoning = new Map<string, { epoch: number; replay: string; effort: string | null }>()
   private readonly effortLists = new Map<string, { at: number; efforts: string[] }>()
+  /** TAL-2072: each chat's stored rows before its attach rows, for the attach identity they were read against. */
+  private readonly olderRows = new Map<string, { key: string; rows: Row[]; bytes: number }>()
+  /** TAL-2072: the stored read filling a chat's older rows now; a concurrent view of the same attach joins it. */
+  private readonly olderReads = new Map<string, { key: string; read: Promise<Row[]> }>()
+  /** TAL-2072: children whose `subagent.complete` this server observed, by chat; the owner's roster drops them as they end. */
+  private readonly finishedChildren = new Map<string, Map<string, { epoch: number; goal: string; status: string; completed_at: number; started_at: number | null }>>()
 
   private rememberModelChange(target: Target, snapshot: GatewaySnapshot, change: ModelChange): void {
     this.modelChanges.set(target.key, { epoch: snapshot.authority_epoch, replay: snapshot.replay_epoch, change })
@@ -291,6 +356,7 @@ export class GatewaySessions {
           } else if (frame.event === 'event') {
             const event = frame.data as Row
             const data = (event.payload ?? {}) as Row
+            if (event.type === 'subagent.complete' && event.session_id === target.sid) this.rememberFinished(target, observation.snapshot.authority_epoch, data)
             // Preserve roster invalidation even when the completed side work was launched by another client.
             if (event.session_id === target.sid && (OWNER_WORK_EVENTS.has(str(event.type))
                 || event.type === 'tool.complete' && startsBackgroundWork(data.name, data.result))) this.deps.events.publish('background_task', { profile: target.profile, sessionId: target.sid })
@@ -831,7 +897,11 @@ export class GatewaySessions {
           return activity ? { ...admission, text: activity.summary, actions: admission.actions.filter((action) => action !== 'edit' && action !== 'retry') } : admission
         }),
       }
-      const nativeRows: Row[] = [...snapshot.messages]
+      // TAL-2072: the stored rows before the attach rows lead in every projection of this chat (a page, an admission
+      // reply, a run's snapshot frames), so each numbers the same history alike; only an attach row can take a reaction.
+      const older = withMessages && snapshot.transcripts ? await this.storedBefore(target, snapshot) : []
+      const nativeRows: Row[] = [...older, ...snapshot.messages]
+      const attached = older.length + snapshot.messages.length
       const active = stream ? runningAdmission(snapshot) : null
       let start = active ? nativeRows.findIndex((m) => m.role === 'user' && m.message_id === active.admission_id) : -1
       if (active && stream && start < 0) {
@@ -842,10 +912,10 @@ export class GatewaySessions {
       // Reaction views and the turn projection cost per row, so only the rows the requested page can reach get them.
       const project = (from: number) => this.deps.service.foreignMessages(nativeRows.slice(from).map((message, slot) => {
         const index = from + slot
-        if (index >= snapshot.messages.length) return turnRow(message, index)
+        if (index >= attached) return turnRow(message, index)
         const { reactions, _talaria_activity: _untrusted, ...row } = message
         const activity = row.role === 'user' ? TalariaActivitySchema.safeParse(activities[str(row.message_id)]).data : undefined
-        return turnRow({ ...row, ...(activity ? { _talaria_activity: activity } : {}), reaction_view: this.reactionView({ ...row, reactions }, canReact) }, index)
+        return turnRow({ ...row, ...(activity ? { _talaria_activity: activity } : {}), reaction_view: this.reactionView({ ...row, reactions }, canReact && index >= older.length) }, index)
       }), base, showReasoning, { baseIndex: from })
       const [rows, offset] = withMessages ? projectedWindow(nativeRows.map(turnRow), project, limit, before) : [[], 0]
       const model = str(snapshot.info.model) || str(base.model) || null
@@ -876,6 +946,67 @@ export class GatewaySessions {
     if (result.state !== 'attached') { watch?.controller.abort(); watch = undefined }
     if (result.snapshot && (result.snapshot.running || result.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) && !watch) watch = this.watch(target, base, result.snapshot)
     return this.view(base, result, watch?.stream ?? null, target, limit, before, withMessages)
+  }
+
+  /**
+   * TAL-2072: the chat's stored rows older than its attach rows, which an attach leaves out past its byte budget or
+   * `sessions.max_resume_messages`. Read oldest first from the owner's stored read, never an attach, up to the first
+   * row the attach holds, and kept while the attach starts at the same row of the same owner. Empty when the owner
+   * cannot serve the read or the attach already starts at the first row.
+   */
+  private async storedBefore(target: Target, snapshot: GatewaySnapshot): Promise<Row[]> {
+    const ids = new Set(snapshot.messages.map((row) => row.row_id).filter((id) => Number.isSafeInteger(id)))
+    const first = snapshot.messages.find((row) => Number.isSafeInteger(row.row_id))
+    if (!first) return []
+    const key = JSON.stringify([snapshot.authority_epoch, first.row_id, first.archived_truncated === true])
+    const held = this.olderRows.get(target.key)
+    if (held?.key === key) return held.rows
+    const pending = this.olderReads.get(target.key)
+    if (pending?.key === key) return pending.read
+    const read = this.readStoredBefore(target, ids).then((found) => {
+      // A read the owner refused now is tried again by the next view, never kept as "nothing older".
+      if (!found) return []
+      const { rows, bytes } = found
+      keepRecent(this.olderRows, target.key, { key, rows, bytes }, STORED_CHATS)
+      // The least recently read chats leave first, never the one just read.
+      let total = [...this.olderRows.values()].reduce((sum, entry) => sum + entry.bytes, 0)
+      for (const [chat, entry] of this.olderRows) {
+        if (total <= STORED_BYTES || chat === target.key) break
+        this.olderRows.delete(chat)
+        total -= entry.bytes
+      }
+      return rows
+    }, () => []).finally(() => { if (this.olderReads.get(target.key)?.read === read) this.olderReads.delete(target.key) })
+    this.olderReads.set(target.key, { key, read })
+    return read
+  }
+
+  /**
+   * TAL-2072: the stored rows before the first attach row in `ids`, at most `STORED_CHAT_BYTES` of the newest of them.
+   * Nothing when the read does not reach an attach row within its pages; null when the owner cannot serve it now.
+   */
+  private async readStoredBefore(target: Target, ids: ReadonlySet<unknown>): Promise<{ rows: Row[]; bytes: number } | null> {
+    const rows: { row: Row; bytes: number }[] = []
+    let bytes = 0, cursor: string | undefined
+    for (let page = 0; page < STORED_PAGES; page++) {
+      const result = await this.call(target, { action: 'transcript', order: 'oldest', limit: STORED_PAGE_ROWS, ...(cursor ? { cursor } : {}) })
+      if (!result.transcript) return null
+      if (result.transcript.reset) { rows.length = 0; bytes = 0 }
+      const boundary = result.transcript.rows.findIndex((row) => row.row_kind !== 'compaction' && ids.has(row.row_id))
+      for (const row of boundary < 0 ? result.transcript.rows : result.transcript.rows.slice(0, boundary)) {
+        const size = JSON.stringify(row).length
+        rows.push({ row, bytes: size })
+        bytes += size
+      }
+      // Older rows past the budget leave first, so the rows kept still end where the attach rows begin.
+      while (bytes > STORED_CHAT_BYTES && rows.length) bytes -= rows.shift()!.bytes
+      if (boundary >= 0) return { rows: storedRows(rows.map(({ row }) => row)), bytes }
+      // The end of the read without an attach row: the two do not line up, so nothing is added.
+      if (!result.transcript.rows.length || !result.transcript.next_cursor) break
+      cursor = result.transcript.next_cursor
+    }
+    // Deeper than this read goes, or not lined up: the view keeps the attach rows alone until the attach starts elsewhere.
+    return { rows: [], bytes: 0 }
   }
 
   /** Called before the direct-chat admission path, including for an already materialized foreign session. */
@@ -1044,19 +1175,42 @@ export class GatewaySessions {
     if (result.state === 'attached' && result.work) {
       // Display text follows the redaction policy; process and subagent ids stay native, since controls address them.
       const redact = (text: string) => redactString(text, this.deps.redactEnabled())
+      // TAL-2072: a child the roster dropped once it ended stays listed, and readable, while its owner serves stored transcripts.
+      const listed = new Set(result.work.subagents.map((a) => a.subagent_id))
+      const finished = result.work.transcripts ? [...this.finishedChildren.get(target.key) ?? []]
+        .filter(([id, child]) => child.epoch === result.work!.authority_epoch && !listed.has(id))
+        .map(([subagent_id, child]) => ({ subagent_id, goal: child.goal, status: child.status, started_at: child.started_at, completed_at: child.completed_at, accepting_steer: false, resident: false })) : []
       const work = { ...result.work, processes: result.work.processes.map((p) => ({ ...p, command: redact(p.command), output_tail: redact(p.output_tail) })),
-        subagents: result.work.subagents.map((a) => ({ ...a, goal: redact(a.goal) })) }
+        subagents: [...result.work.subagents, ...finished].map((a) => ({ ...a, goal: redact(a.goal) })) }
       return { home: target.home, state: 'available', work }
     }
     return { home: target.home, state: result.reason === 'unsupported_projection' ? 'unsupported' : 'unavailable', work: null }
   }
 
-  /** A resident subagent's live transcript tail from its owner, or null when the owner cannot serve one. */
+  /**
+   * A subagent's transcript from its owner: its newest stored rows, running or finished, from an owner that serves them
+   * (TAL-2072), else a resident child's live tail. Null when the owner cannot serve either.
+   */
   async workTail(sid: string, profile: string | undefined, ref: OwnerWorkRef): Promise<string | null> {
     const target = await this.target(sid, profile)
     if (!target) return null
-    const result = await this.call(target, { action: 'work_tail', work_kind: ref.kind, work_id: ref.id, authority_epoch: ref.epoch })
+    const fields = { work_kind: ref.kind, work_id: ref.id, authority_epoch: ref.epoch }
+    if (ref.transcript) {
+      const result = await this.call(target, { action: 'work_transcript', ...fields })
+      return result.state === 'attached' && result.work_transcript?.available ? redactString(transcriptText(result.work_transcript.rows), this.deps.redactEnabled()) : null
+    }
+    const result = await this.call(target, { action: 'work_tail', ...fields })
     return result.state === 'attached' && result.work_tail?.available ? redactString(result.work_tail.text, this.deps.redactEnabled()) : null
+  }
+
+  /** TAL-2072: a child's completion as its owner announced it, kept for the roster read that no longer lists the child. */
+  private rememberFinished(target: Target, epoch: number, data: Row): void {
+    if (typeof data.subagent_id !== 'string' || !data.subagent_id || typeof data.status !== 'string' || !data.status) return
+    const children = this.finishedChildren.get(target.key) ?? new Map()
+    const completed = this.deps.now()
+    const duration = typeof data.duration_seconds === 'number' && Number.isFinite(data.duration_seconds) && data.duration_seconds >= 0 ? data.duration_seconds : null
+    keepRecent(children, data.subagent_id, { epoch, goal: str(data.goal), status: data.status, completed_at: completed, started_at: duration === null ? null : completed - duration }, FINISHED_CHILDREN)
+    keepRecent(this.finishedChildren, target.key, children, STORED_CHATS)
   }
 
   /**

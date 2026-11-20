@@ -1,5 +1,16 @@
 # Sidecar RPC (TAL-245)
 
+RPC v101 adds the `gateway.session` actions `transcript` and `work_transcript` and the `transcripts` flag on a
+snapshot and on `work_list` (TAL-2072), for owners advertising `session-transcript-v1`. Both call the owner's
+`session.transcript`, a stored read that neither resumes, reads replay nor subscribes, so it is never an
+`on_session_open`. `transcript` pages a chat's display rows (`order`, `cursor`, `limit` up to 500) across its compression
+lineage, a compaction handoff as a `row_kind: 'compaction'` row. The server prepends the stored rows older than the
+attach's first row to an owner chat's view, kept while the attach starts at the same row of the same owner; the attach
+rows stay the view's recent window, since the stored read drops most tool output. `work_transcript` reads a child's
+newest 200 rows under its parent, running or finished. A child the owner's roster drops as it ends stays a settled
+Background Work row, from the `subagent.complete` the server observed, readable through `/api/background/result`.
+Older owners refuse both unsent (`owner_transcript_unsupported`) and keep the attaching path.
+
 RPC v100 adds `error_code` to `usage.balance` (TAL-2188): a 401 whose small JSON body names an allowlisted
 `error.code` (`api_key_expired`) carries it; every other refusal, and the body itself, stays out.
 

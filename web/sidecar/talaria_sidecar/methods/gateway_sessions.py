@@ -19,10 +19,10 @@ from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
 from .connectors import snapshot_view
 
-_ACTIONS = {"snapshot", "watch", "context_detail", "submit", "receipt", "cancel", "steer", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
+_ACTIONS = {"snapshot", "watch", "transcript", "context_detail", "submit", "receipt", "cancel", "steer", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
             "clarify_lock", "discard", "mutate", "export", "checkpoint_diff", "terminal_info", "shell_exec", "react",
             "connection_status", "connection_wake", "connection_respond", "connection_retry",
-            "work_list", "work_tail", "work_stop", "work_steer", "launch_background", "launch_btw"}
+            "work_list", "work_tail", "work_transcript", "work_stop", "work_steer", "launch_background", "launch_btw"}
 _SIDE_EVENTS = {"background.complete", "btw.complete"}
 _CONNECTION_ACTIONS = {action for action in _ACTIONS if action.startswith("connection_")}
 _WORK_ACTIONS = {action for action in _ACTIONS if action.startswith("work_")}
@@ -35,6 +35,10 @@ _REACTION_EMOJIS = {"👍", "👎", "❤️", "😂", "😮", "🎉"}
 # RESTART_WAIT_WS_METHODS); new work waits for the next owner.
 _RESTART_ACTIONS = {"snapshot", "watch", "receipt", "approval", "clarify", "clarify_lock", "interrupt"}
 _CAPABILITIES = {"durable-admission-v1", "event-replay-v1"}
+# TAL-2072: the owner serves ``session.transcript``, a stored read that neither resumes nor subscribes.
+_TRANSCRIPT = "session-transcript-v1"
+# A child's transcript as Background Work shows it: its newest rows, one page.
+_WORK_TRANSCRIPT_ROWS = 200
 _CONTROL_REFUSALS = {"owner_controls_unverified"}
 # The owner held state.db past the read budget while committing; the caller may retry.
 _STATE_BUSY, _STATE_BUSY_BUDGET = "owner_state_busy", 5.0
@@ -140,14 +144,20 @@ def _event(value: dict) -> dict:
     return value
 
 
-def _snapshot(value: dict) -> dict:
-    # Raw conversation rows contain private principal/admission metadata; the client needs
-    # display rows, not those bindings or the inventory's system prompt and credential hint.
+def _rows(messages) -> list[dict]:
+    """Display rows through a closed allowlist. Raw conversation rows contain private principal/admission metadata; the
+    client needs display rows, not those bindings. A stored read's compaction handoff (``row_kind: 'compaction'``) keeps
+    only its summary and identity."""
+    # A stored read's rows are the owner's display projection: ``text``, and a tool row's ``context`` preview and ``args``.
     message_keys = {"role", "content", "tool_calls", "tool_call_id", "name", "timestamp", "message_id", "row_id",
-                    "reasoning", "reasoning_content", "display_kind", "finish_reason"}
-    info_keys = {"title", "model", "cwd", "source", "provider", "config_warning", "reasoning_effort", "reasoning_effort_wire"}
+                    "reasoning", "reasoning_content", "display_kind", "finish_reason", "row_kind", "text", "context", "args"}
     rows = []
-    for row in value["messages"]:
+    for row in messages if isinstance(messages, list) else []:
+        if not isinstance(row, dict):
+            continue
+        if row.get("row_kind") == "compaction":
+            rows.append({k: row[k] for k in ("row_kind", "text", "compacted_messages", "row_id", "timestamp") if k in row})
+            continue
         metadata = row.get("display_metadata")
         # TAL-825: a micro-compaction's join of adjacent user turns is model context; the archived originals display.
         if isinstance(metadata, dict) and metadata.get("model_only") is True:
@@ -157,7 +167,21 @@ def _snapshot(value: dict) -> dict:
             {"author": reaction["author"], "emoji": reaction["emoji"]} for reaction in reactions
             if isinstance(reaction, dict) and reaction.get("author") in ("user", "agent")
             and isinstance(reaction.get("emoji"), str) and reaction["emoji"] in _REACTION_EMOJIS] if isinstance(reactions, list) else []})
-    return {**value, "messages": rows, "info": {k: v for k, v in value["info"].items() if k in info_keys},
+    return rows
+
+
+def _transcript_page(value) -> dict | None:
+    """One ``session.transcript`` page; None when the reply is not one."""
+    if (not isinstance(value, dict) or not isinstance(value.get("rows"), list) or type(value.get("reset")) is not bool
+            or not (value.get("next_cursor") is None or isinstance(value["next_cursor"], str))):
+        return None
+    return {"rows": _rows(value["rows"]), "next_cursor": value["next_cursor"], "reset": value["reset"]}
+
+
+def _snapshot(value: dict) -> dict:
+    # The client needs display rows, not the inventory's system prompt and credential hint.
+    info_keys = {"title", "model", "cwd", "source", "provider", "config_warning", "reasoning_effort", "reasoning_effort_wire"}
+    return {**value, "messages": _rows(value["messages"]), "info": {k: v for k, v in value["info"].items() if k in info_keys},
             **({"todo_state": _todo_state(value["todo_state"])} if "todo_state" in value else {}),
             **({"pending_connection": _connection(value["pending_connection"])} if "pending_connection" in value else {})}
 
@@ -358,8 +382,19 @@ async def _work_action(client, params: dict, described: dict) -> dict:
             subagents = [row for row in listed if isinstance(row, dict) and isinstance(row.get("subagent_id"), str) and row["subagent_id"]] \
                 if isinstance(listed, list) else []
             tails = [await read("subagent.tail", subagent_id=row["subagent_id"]) for row in subagents]
-            return {**result, "work": _work(described, processes, subagents, tails)}
+            work = _work(described, processes, subagents, tails)
+            return {**result, "work": {**work, "transcripts": True} if _TRANSCRIPT in described["capabilities"] else work}
         native = params["work_id"]
+        if action == "work_transcript":
+            # TAL-2072: the child's stored transcript, running or finished, read under its parent's authority.
+            if _TRANSCRIPT not in described["capabilities"]:
+                return _refused("incompatible", "owner_transcript_unsupported")
+            value = await client.rpc("session.transcript", session_id=sid, subagent_id=native, order="latest", limit=_WORK_TRANSCRIPT_ROWS)
+            page = _transcript_page(value)
+            if page is None or type(value.get("available")) is not bool:
+                return _refused("refused", "owner_work_invalid")
+            return {**result, "work_transcript": {"available": value["available"], "running": value.get("running") is True,
+                                                  "rows": page["rows"] if value["available"] else []}}
         if action == "work_tail":
             value = await client.rpc("subagent.tail", session_id=sid, subagent_id=native)
             if not isinstance(value, dict) or not isinstance(value.get("text"), str):
@@ -382,6 +417,8 @@ async def _work_action(client, params: dict, described: dict) -> dict:
             raise
         if action == "work_tail":
             return {**result, "work_tail": {"available": False, "text": "", "truncated": False}}
+        if action == "work_transcript":
+            return {**result, "work_transcript": {"available": False, "running": False, "rows": []}}
         return {**result, "work_outcome": "not_found"}
 
 
@@ -426,7 +463,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 except GatewayRPCError:
                     pass  # older owners have no stats capability
             return {**_snapshot(value), "plan_gauge": gauge,
-                    "reactions_supported": _verified_contract(endpoint, "message-reactions-v1")}
+                    "reactions_supported": _verified_contract(endpoint, "message-reactions-v1"),
+                    **({"transcripts": True} if _TRANSCRIPT in described["capabilities"] else {})}
 
         receipt = lock = None
         try:
@@ -446,6 +484,15 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                     elif not listed["checkpoints"]:
                         read = _checkpoint_read(value, no_baseline=True)
                 return {"state": "attached", "reason": None, "snapshot": None, "receipt": None, "checkpoint_diff": read}
+            if params["action"] == "transcript":
+                # TAL-2072: a stored read, never a resume, a replay read or a subscription, so it is never an open.
+                if _TRANSCRIPT not in described["capabilities"]:
+                    return _refused("incompatible", "owner_transcript_unsupported")
+                value = await client.rpc("session.transcript", session_id=sid, order=params["order"], limit=params["limit"],
+                                         **({"cursor": params["cursor"]} if params.get("cursor") is not None else {}))
+                page = _transcript_page(value)
+                return {"state": "attached", "reason": None, "snapshot": None, "receipt": None, "transcript": page} if page \
+                    else _refused("refused", "owner_transcript_invalid")
             if params["action"] == "export":
                 # No resume/subscription or mutation: the owner selects its current physical target.
                 fmt = "md" if params["format"] == "markdown" else params["format"]
@@ -714,6 +761,10 @@ def session(ctx, params: dict) -> dict:
             or type(params.get("authority_epoch")) is not int or params["authority_epoch"] < 0
             or not isinstance(params.get("replay_epoch"), str) or not params["replay_epoch"]):
         raise InvalidParams("captured command requires command and owner identity")
+    if action == "transcript" and (params.get("order") not in ("oldest", "latest")
+                                   or type(params.get("limit")) is not int or not 1 <= params["limit"] <= 500
+                                   or not (params.get("cursor") is None or isinstance(params["cursor"], str) and 0 < len(params["cursor"]) <= 1024)):
+        raise InvalidParams("transcript requires an order, a limit of 1 to 500 and at most a cursor")
     if action in _CONNECTION_ACTIONS:
         _validate_connection(action, params)
     if action in _WORK_ACTIONS - {"work_list"} and (

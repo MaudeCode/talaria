@@ -907,4 +907,87 @@ describe('owner stream and projection cost (TAL-1723)', () => {
       expect(reactions).toHaveBeenCalledTimes(reached)
     })
   })
+
+  describe('an owner chat longer than its attach (TAL-2072)', () => {
+    // The owner's stored read: 30 older turns its attach left out, with the compaction that summarized them, then the
+    // ten turns the attach holds. The stored read is the owner's display projection: `text`, never `content`.
+    const turn = (n: number, kind: string) => [
+      { row_kind: 'message', role: 'user', text: `${kind} question ${String(n)}`, row_id: n * 2 - 1, timestamp: n },
+      { row_kind: 'message', role: 'assistant', text: `${kind} answer ${String(n)}`, row_id: n * 2, timestamp: n }]
+    const stored = [...Array.from({ length: 15 }, (_, i) => turn(i + 1, 'Old')).flat(),
+      { row_kind: 'compaction', role: 'system', text: 'Earlier turns summarized', compacted_messages: 30, row_id: 999, timestamp: 15.5 },
+      ...Array.from({ length: 15 }, (_, i) => turn(i + 16, 'Old')).flat(), ...Array.from({ length: 10 }, (_, i) => turn(i + 31, 'Recent')).flat()]
+    // The attach's own rows of the last ten turns; the first says older archived rows were left out.
+    const resumed = Array.from({ length: 10 }, (_, i) => turn(i + 31, 'Recent')).flat()
+      .map(({ row_kind: _kind, text, ...row }, i) => ({ ...row, content: text, ...(i ? {} : { archived_truncated: true }) }))
+    const detail = async (query: string) => SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}${query}`)).json()).session
+    const reads = () => sidecar.calls.filter((c) => c.method === 'gateway.session' && (c.params as { action: string }).action === 'transcript')
+    const owner = (transcripts: boolean) => {
+      sidecar.respond('gateway.session', (params) => params.action === 'transcript'
+        ? { state: 'attached', reason: null, snapshot: null, receipt: null, transcript: { rows: params.cursor ? [] : stored, next_cursor: 'end', reset: false } }
+        : attached(snapshot({ messages: resumed, message_count: resumed.length, ...(transcripts ? { transcripts: true } : {}) })))
+    }
+    const texts = (rows: unknown[] | undefined) => (rows ?? []).map((row) => (row as { content?: unknown }).content)
+
+    it('pages older history from the stored read past the attach, its compaction as the compaction marker', async () => {
+      owner(true)
+      const recent = await detail('&msg_limit=20')
+      expect(texts(recent.messages)).toEqual(resumed.map((row) => row.content))
+      expect(recent._messages_offset).toBe(61)
+      expect(recent._messages_truncated).toBe(true)
+      const older = await detail(`&msg_limit=40&msg_before=${String(recent._messages_offset)}`)
+      const marker = (older.messages ?? []).find((row) => (row as { role?: unknown }).role === 'marker')
+      expect(marker).toMatchObject({ content: 'Earlier turns summarized', _marker_kind: 'context_compaction' })
+      expect(texts(older.messages)).toContain('Old question 12')
+      expect(texts(older.messages)).toContain('Old answer 30')
+      expect(texts(older.messages)).not.toContain('Recent question 31')
+      // The stored rows are read once, never by attaching, and kept while the attach starts at the same row.
+      expect(reads()).toHaveLength(1)
+      expect(reads()[0]!.params).toMatchObject({ action: 'transcript', order: 'oldest' })
+    })
+
+    it('numbers a running turn\'s streamed snapshots over the same stored history as a page', async () => {
+      owner(true)
+      const page = await detail('&msg_limit=20')
+      const watch = await observeOwner(snapshot({ messages: resumed, message_count: resumed.length, transcripts: true, running: true, pending: [admission()] }))
+      watch.finish()
+      const frames = (await watch.read).filter((frame) => frame.event === 'session_snapshot')
+      expect(frames.length).toBeGreaterThan(0)
+      for (const frame of frames) {
+        const session = (frame.data as { session: { messages?: unknown[]; message_count?: number } }).session
+        // Every stored row leads, as on the page; the run adds only its pending prompt after the attach rows.
+        expect(texts(session.messages).filter((text) => String(text).startsWith('Old '))).toHaveLength(60)
+        expect(session.message_count).toBe(page.message_count! + 1)
+      }
+    })
+
+    it('keeps only the newest older rows within its byte budget, read once for concurrent views', async () => {
+      // 60 older rows of 300 kB each: 18 MB, more than one chat's 8 MiB.
+      const pad = 'x'.repeat(300_000)
+      const large = stored.map((row) => row.row_kind === 'message' && row.text.startsWith('Old') ? { ...row, text: `${row.text} ${pad}` } : row)
+      sidecar.respond('gateway.session', (params) => params.action === 'transcript'
+        ? { state: 'attached', reason: null, snapshot: null, receipt: null, transcript: { rows: params.cursor ? [] : large, next_cursor: 'end', reset: false } }
+        : attached(snapshot({ messages: resumed, message_count: resumed.length, transcripts: true })))
+      const [page, again] = await Promise.all([detail('&msg_limit=20'), detail('&msg_limit=20')])
+      expect(reads()).toHaveLength(1)
+      expect(again._messages_offset).toBe(page._messages_offset)
+      const kept = page._messages_offset!
+      expect(kept).toBeGreaterThan(0)
+      expect(kept * 300_000).toBeLessThanOrEqual(8 * 1024 * 1024)
+      const older = await detail(`&msg_limit=200&msg_before=${String(kept)}`)
+      const first = String(texts(older.messages)[0]).split(' ')
+      // The newest older rows stay: the oldest kept is a later turn than the first, and the last older turn is there.
+      expect(texts(older.messages).some((text) => String(text).startsWith('Old answer 30 '))).toBe(true)
+      expect(first.slice(0, 3).join(' ')).not.toBe('Old question 1')
+      expect(reads()).toHaveLength(1)
+    })
+
+    it('keeps the attach rows alone for an owner without the stored read', async () => {
+      owner(false)
+      const recent = await detail('&msg_limit=20')
+      expect(texts(recent.messages)).toEqual(resumed.map((row) => row.content))
+      expect(recent._messages_offset).toBe(0)
+      expect(reads()).toHaveLength(0)
+    })
+  })
 })
