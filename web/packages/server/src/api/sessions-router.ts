@@ -372,7 +372,7 @@ export const sessionsRouter: Router<typeof sessionsContract & typeof workspacesC
     skills: os.session.skills.handler(({ input, context: { ctx } }) => run(async () => {
       if (!input.session_id) throw new HttpError(400, 'Missing session_id')
       await guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.sessionSkills(input.session_id, () => ctx.deps.skills.list(ctx.deps.profileHome(activeProfileName(ctx)), null))
+      return ctx.deps.sessions.sessionSkills(input.session_id, () => ctx.deps.skills.list(ctx.deps.profileHome(activeProfileName(ctx))))
     })),
     outline: os.session.outline.handler(({ input, context: { ctx } }) => run(async () => {
       if (!input.session_id) throw new HttpError(400, 'Missing session_id')

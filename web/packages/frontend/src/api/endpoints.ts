@@ -247,7 +247,7 @@ export const fetchWorktreeStatus = (session_id: string) => orpc().worktree.statu
 export const removeWorktree = (session_id: string, force: boolean) => orpc().worktree.remove({ session_id, force })
 
 // Panels
-export const fetchSkills = (category?: string) => orpc().skills.list(category ? { category } : {})
+export const fetchSkills = ({ q = '', category = '' }: { q?: string; category?: string } = {}) => orpc().skills.list({ ...(q ? { q } : {}), ...(category ? { category } : {}) })
 /** With `file`, one of the skill's `linked_files` instead of its SKILL.md. */
 export const fetchSkillContent = (name: string, file?: string) => orpc().skills.content(file ? { name, file } : { name })
 export const fetchSkillRevisions = (name: string, selection?: { revision?: string; compare_to?: string }, signal?: AbortSignal) => orpc().skills.revisions({ name, ...(selection?.revision ? { revision: selection.revision } : {}), ...(selection?.compare_to ? { compare_to: selection.compare_to } : {}) }, signal ? { signal } : {})

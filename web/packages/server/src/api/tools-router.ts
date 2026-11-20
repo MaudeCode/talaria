@@ -21,6 +21,7 @@ import { catalogNames, connectorOperation, connectorsPage, connectorTools, offer
 import { rememberConnectorLogos } from '../sessions/tool-display.js'
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
 import { buildInsights } from '../tools/insights.js'
+import { skillListing } from '../tools/skills.js'
 import { canonicalExecCommand, commandCatalog, SESSION_EXEC_COMMANDS } from '../tools/commands.js'
 import { spokenText } from './tools-raw.js'
 import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, forgetGatewayProbes, gatewayStatus, logCatalog, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
@@ -548,7 +549,7 @@ export const toolsRouter = os.router({
     replays: os.skills.replays.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.skillReplays.list(await replayScope(ctx), input.name, replayRedact(ctx)))),
     replayStart: os.skills.replayStart.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.skillReplays.start(await replayScope(ctx), home(ctx), input, replayRedact(ctx)))),
     replayCancel: os.skills.replayCancel.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.skillReplays.cancel(await replayScope(ctx), input.id, replayRedact(ctx)))),
-    list: os.skills.list.handler(({ input, context: { ctx } }) => run(async () => ({ skills: await ctx.deps.skills.list(home(ctx), str(input.category).trim() || null) }))),
+    list: os.skills.list.handler(({ input, context: { ctx } }) => run(async () => skillListing(await ctx.deps.skills.list(home(ctx)), input.q, str(input.category).trim()))),
     usage: os.skills.usage.handler(({ context: { ctx } }) => run(() => ctx.deps.skills.usage(home(ctx)) as Promise<never>)),
     content: os.skills.content.handler(({ input, context: { ctx } }) => run(async () => {
       const name = str(input.name)

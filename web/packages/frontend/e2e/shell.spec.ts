@@ -52,7 +52,7 @@ test.describe('shell', () => {
       expect(new Set(pads).size, `${path} header / toolbar / body padding: ${pads.join(' / ')}`).toBe(1)
     }
     // Skills: the heading, the search field and the first row start at one edge.
-    await page.route('**/api/skills', (route) => route.fulfill({ json: { skills: [{ name: 'demo', description: 'Example', category: 'apple', disabled: false }] } }))
+    await page.route('**/api/skills', (route) => route.fulfill({ json: { skills: [{ name: 'demo', description: 'Example', category: 'apple', disabled: false }], total: 1, categories: ['apple'] } }))
     await page.goto('/skills')
     await settle(page)
     const left = async (selector: string) => Math.round((await page.locator(selector).first().boundingBox())!.x)
@@ -69,7 +69,7 @@ test.describe('shell', () => {
   test('a hub names itself once on a phone', async ({ page }, testInfo) => {
     const phone = testInfo.project.name === 'mobile'
     const shown = async (selector: string) => ((await page.locator(selector).boundingBox())?.width ?? 0) > 1
-    await page.route('**/api/skills', (route) => route.fulfill({ json: { skills: [{ name: 'demo', description: 'Example', category: 'apple', disabled: false }] } }))
+    await page.route('**/api/skills', (route) => route.fulfill({ json: { skills: [{ name: 'demo', description: 'Example', category: 'apple', disabled: false }], total: 1, categories: ['apple'] } }))
     await page.route('**/api/skills/usage', (route) => route.fulfill({ json: { usage: {} } }))
     await page.route('**/api/skills/content?**', (route) => route.fulfill({ json: { success: true, name: 'demo', content: 'Skill body.', path: 'apple/demo/SKILL.md' } }))
     // Kanban has actions, Skills has neither help nor actions.

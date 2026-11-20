@@ -22,5 +22,7 @@
       "disabled": false,
       "locked": null
     }
-  ]
+  ],
+  "total": 2,
+  "categories": ["a", "b"]
 }
