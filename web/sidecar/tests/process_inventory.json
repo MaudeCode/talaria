@@ -261,6 +261,14 @@
         ""
       ]
     },
+    "tests/test_agent_mutation.py::test_resume_after_a_source_move_runs_preloaded_modules_after_the_target_refreshes_launch_files": {
+      "layer": "process",
+      "reason": "A real runtime.agent_mutation lease runs its worker child over stdio while a real Git merge replaces the updater's source under it; only that live interpreter shows whether its resume imports the modules loaded before the move, and whether the target tree's launch-file refresh child runs, or its failure is recorded, before the writer resumes.",
+      "cases": [
+        "[rewrites]",
+        "[raises]"
+      ]
+    },
     "tests/test_agent_mutation.py::test_owner_death_stops_and_reaps_a_mutator_before_preserving_torn_tree_debt": {
       "layer": "process",
       "reason": "A real runtime.agent_mutation lease runs its worker child over stdio against a disposable Git checkout and a separate writer process; SIGKILL, cancellation or shutdown of the lease owner must reap the in-flight Git child (an fsmonitor hook) before the pause record becomes unowned torn-tree debt.",
@@ -287,6 +295,13 @@
     "tests/test_agent_services.py::test_native_snapshot_attests_a_barrier_controlled_child_exit": {
       "layer": "compatibility",
       "reason": "The release's gateway.status.get_process_start_time and psutil must exclude a real child that exits at the birth probe, and bind_processes/verify_processes must still pass.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_services.py::test_native_launch_file_attestation_names_each_profiles_own_definition": {
+      "layer": "compatibility",
+      "reason": "The release's hermes_cli.gateway launch-file generators, run in the fresh child Talaria uses to attest a launch-file refresh, must name a distinct generated definition for the root and a named profile home.",
       "cases": [
         ""
       ]

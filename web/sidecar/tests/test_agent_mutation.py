@@ -504,6 +504,42 @@ def test_a_confirmed_legacy_target_can_recover_a_paused_broken_environment(owned
     wait_for(lambda: (home / 'resumed').exists())
 
 
+@pytest.mark.parametrize('refresh', ['rewrites', 'raises'])
+def test_resume_after_a_source_move_runs_preloaded_modules_after_the_target_refreshes_launch_files(owned, refresh):
+    root, home, _, _, sidecar = owned
+    def git(*args):
+        return subprocess.check_output(['git', '-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@example.invalid', '-c', 'commit.gpgsign=false', '-C', str(root), *args], text=True).strip()
+    def revision(name):
+        for module in ('hermes_cli/update_cmd_fleet_unit_budget.py', 'gateway/shutdown_forensics.py'):
+            (root / module).write_text(f'REVISION = {name!r}\n')
+    # Talaria's resume imports the budget module itself; the forensics module is reached only through the Agent's preload.
+    revision('installed')
+    commit = root / 'hermes_cli/update_cmd_commit.py'
+    commit.write_text(commit.read_text() + "def load_post_move_modules():\n import importlib\n importlib.import_module('gateway.shutdown_forensics')\n")
+    windows = root / 'hermes_cli/update_cmd_windows.py'
+    windows.write_text(windows.read_text().replace(" (HOME/'resumed').write_text", " from hermes_cli import update_cmd_fleet_unit_budget as budget\n from gateway import shutdown_forensics as forensics\n (HOME/'resumed-with').write_text(budget.REVISION+' '+forensics.REVISION)\n (HOME/'resumed').write_text"))
+    git('add', '.'); git('commit', '-qm', 'installed updater')
+    installed = git('rev-parse', 'HEAD')
+    revision('target')
+    (root / 'hermes_cli/update_launch_files.py').write_text({
+        'rewrites': "import os\nfrom pathlib import Path\ndef refresh_launch_files():\n home=Path(os.environ['HERMES_HOME'])\n (home/'launch-files').write_text('after resume' if (home/'resumed').exists() else 'before resume')\n",
+        'raises': "def refresh_launch_files(): raise RuntimeError('synthetic launch file failure')\n"}[refresh])
+    git('add', '.'); git('commit', '-qm', 'target updater')
+    target = git('rev-parse', 'HEAD')
+    git('reset', '--hard', installed)
+    begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
+    assert begun['ok'], begun
+    assert rpc(sidecar, root, 'git', token=begun['token'], args=['merge', '--ff-only', target], timeout_ms=10000)['ok']
+    finished = rpc(sidecar, root, 'finish', token=begun['token'])
+    assert finished['ok'], finished
+    wait_for(lambda: (home / 'resumed-with').exists())
+    assert (home / 'resumed-with').read_text() == 'installed installed'
+    if refresh == 'rewrites':
+        assert (home / 'launch-files').read_text() == 'before resume'
+    else:
+        assert 'synthetic launch file failure' in finished['detail']
+
+
 @pytest.mark.parametrize('stop', ['kill', 'cancel', 'shutdown'])
 def test_owner_death_stops_and_reaps_a_mutator_before_preserving_torn_tree_debt(owned, stop):
     root, home, base, target, sidecar = owned

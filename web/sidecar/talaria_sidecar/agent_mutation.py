@@ -599,6 +599,34 @@ def _unverified_baseline(records, root, baseline):
     return '' if whole else why + '.'
 
 
+# Modules Talaria's own resume imports after the checkout moves, beside the Agent's POST_MOVE_MODULES.
+_RESUME_MODULES = ('gateway.status', 'gateway.status_inline_source', 'hermes_cli.update_cmd_fleet',
+                   'hermes_cli.update_cmd_fleet_unit_budget', 'hermes_cli.update_fleet_scope',
+                   'hermes_cli.update_inventory', 'hermes_cli.main_dashboard', 'hermes_cli.gateway')
+_LAUNCH_FILES = 'from hermes_cli.update_launch_files import refresh_launch_files; refresh_launch_files()'
+
+
+def _preload_resume_modules(commit):
+    """Load what resume imports while the tree is still this process's code; a module first loaded
+    after the move would be the target's. Each is protection, not a gate: one absent from an older
+    Agent is imported, as before, when its step runs."""
+    with contextlib.suppress(Exception):
+        commit.load_post_move_modules()
+    for name in _RESUME_MODULES:
+        with contextlib.suppress(Exception):
+            importlib.import_module(name)
+
+
+def _refresh_launch_files(root, custody):
+    """The target Agent regenerates its own units, plists and launcher scripts before any service
+    starts. Its code writes them, so it runs in a fresh process on the moved tree. Returns the
+    failure to record; a failure never blocks resume, which starts the paused definition."""
+    result = _command([sys.executable, '-c', _LAUNCH_FILES], root, 60, threading.Event(), custody)
+    if not result['ok']:
+        return 'Agent launch files were not refreshed: ' + (result['detail'].splitlines() or ['failed'])[-1]
+    return '\n'.join(line.strip() for line in result['detail'].splitlines() if "Update follow-up 'launch_files'" in line)
+
+
 def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None, operation=None):
     if os.name not in {"posix", "nt"}:
         raise RuntimeError("A cooperative Agent writer lease is unavailable on this platform; source was not changed.")
@@ -609,6 +637,7 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
         "update_cmd_windows", "update_custody", "process_identity", "update_cmd_commit")}
     if any(not Path(module.__file__).resolve().is_relative_to(root) for module in modules.values()):
         raise RuntimeError("Agent writer lease imported a different checkout.")
+    _preload_resume_modules(modules["update_cmd_commit"])
     pause, records, identity = (modules[name] for name in ("update_cmd_posix_pause", "update_pause_record", "process_identity"))
     windows = modules["update_cmd_windows"] if os.name == "nt" else None
     lock = modules["update_lock"].UpdateLock(install_root=root)
@@ -620,6 +649,7 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
     handed_off = False
     sync_failed = False
     error = None
+    launch_files = ''
     recovery = None
     gateway_deadline = None
     try:
@@ -909,6 +939,8 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                 pending = _command(modules['update_custody'].git_argv(['git'], ['for-each-ref', '--format=%(objectname)', 'refs/talaria/autostash/pending/']), root, 10, threading.Event(), modules['update_custody'])
                 if not pending['ok'] or pending['detail']:
                     raise RuntimeError('Gateway resume remains owed until retained local Agent edits are restored.')
+                if changed and (root / 'hermes_cli/update_launch_files.py').is_file():
+                    launch_files = recovery.refresh_launch_files(lambda: _refresh_launch_files(root, modules['update_custody']))
                 if recovery.state.get('update_operation'):
                     recovery.state['update_operation']['stage'] = 'gateway_restart'
                     recovery.save(token)
@@ -951,7 +983,7 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                     recovery.save(token)
             finally:
                 lock.release()
-    send({"ok": error is None, "detail": error or ""})
+    send({"ok": error is None, "detail": error or launch_files})
 
 
 def _resume_current(root, custody, stopped=None, complete_revision=None):

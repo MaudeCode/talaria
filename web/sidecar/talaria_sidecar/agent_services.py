@@ -685,14 +685,108 @@ def backend_request(entry, action=None, permit=None):
         raise RuntimeError(f'{_name(entry)} backend lifecycle/readiness could not be verified.') from exc
 
 
-def _config_stamp(entry):
+def _config_text(entry):
     if entry['kind'] == 'launchd':
-        return hashlib.sha256(Path(entry['plist']).read_bytes()).hexdigest()
+        return Path(entry['plist']).read_bytes()
     from hermes_cli.update_cmd_fleet import _systemctl
     result = _systemctl(_systemd_scope_cmd(entry) + ['cat', entry['unit']], timeout=10)
     if result.returncode:
         raise RuntimeError(f'{_name(entry)} original service configuration is unreadable.')
-    return hashlib.sha256(result.stdout.encode()).hexdigest()
+    return result.stdout.encode()
+
+
+def _config_stamp(entry):
+    return hashlib.sha256(_config_text(entry)).hexdigest()
+
+
+def _unit_files(entry):
+    """The unit's fragment, then its drop-ins, as systemd reports them: the only real file boundaries in its
+    ``systemctl cat``, whose header lines a file's own content can imitate."""
+    from hermes_cli.update_cmd_fleet import _systemctl
+    result = _systemctl(_systemd_scope_cmd(entry) + ['show', '-p', 'FragmentPath', '-p', 'DropInPaths', entry['unit']], timeout=10)
+    if result.returncode:
+        raise RuntimeError(f'{_name(entry)} service files are unreadable.')
+    properties = dict(line.partition('=')[::2] for line in result.stdout.splitlines())
+    return [path for path in (properties.get('FragmentPath', ''), *properties.get('DropInPaths', '').split()) if path]
+
+
+def _unit_sections(text, paths):
+    """``systemctl cat`` output as (path, bytes) per real file, split only where systemd's own file list says.
+    [] when a boundary is missing, repeated or out of order, so imitated headers can never re-split it."""
+    lines = text.splitlines(keepends=True)
+    starts = []
+    for path in paths:
+        hits = [i for i, line in enumerate(lines) if line.rstrip(b'\r\n') == b'# ' + path.encode()]
+        if len(hits) != 1:
+            return []
+        starts.append(hits[0])
+    if not starts or starts[0] != 0 or starts != sorted(starts):
+        return []
+    # systemctl prints one newline before each later file's header; it belongs to neither file.
+    bodies = [b''.join(lines[start + 1:end]) for start, end in zip(starts, [*starts[1:], len(lines)])]
+    return [(path, body[:-1] if index < len(paths) - 1 and body.endswith(b'\n') else body)
+            for index, (path, body) in enumerate(zip(paths, bodies))]
+
+
+def _dropins(entry, text):
+    """Each drop-in's digest, or None when the unit's files cannot be told apart."""
+    if entry['kind'] == 'launchd':
+        return {}
+    sections = _unit_sections(text, _unit_files(entry))
+    return {path: hashlib.sha256(body).hexdigest() for path, body in sections[1:]} if sections else None
+
+
+def _print_generated_launch_files(request):
+    """Child of ``_generated_launch_files``: the target Agent's definition for each requested home."""
+    from hermes_cli import gateway
+    out = []
+    for entry in json.loads(request):
+        try:
+            with _native_home(Path(entry['home'])):
+                if entry['kind'] == 'launchd':
+                    path, text = gateway.get_launchd_plist_path(), gateway.generate_launchd_plist()
+                else:
+                    system = entry['scope'] == 'system'
+                    path = gateway.get_systemd_unit_path(system=system)
+                    text = gateway.generate_systemd_unit(system=system, run_as_user=gateway._read_systemd_user_from_unit(path) if system else None)
+            out.append({'path': str(path), 'sha256': hashlib.sha256(text.encode('utf-8')).hexdigest()})
+        except Exception:
+            out.append(None)
+    print(json.dumps(out))
+
+
+def _generated_launch_files(root, entries):
+    """What the target Agent's launch-file refresh writes for each entry's home, from a fresh process on
+    its tree under this worker's environment, as the refresh itself ran. None where it cannot say."""
+    request = json.dumps([{'home': e['home'], 'kind': e['kind'], 'scope': e.get('scope')} for e in entries])
+    env = {**os.environ, 'PYTHONPATH': os.pathsep.join(filter(None, (str(Path(__file__).parents[1]), str(root), os.environ.get('PYTHONPATH'))))}
+    try:
+        result = subprocess.run([sys.executable, '-c', 'import sys; from talaria_sidecar.agent_services import _print_generated_launch_files as p; p(sys.argv[1])', request],
+                                cwd=root, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60, check=True)
+        generated = json.loads(result.stdout.splitlines()[-1])
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        generated = None
+    return generated if isinstance(generated, list) and len(generated) == len(entries) else [None] * len(entries)
+
+
+def _agent_rewrite(entry, text, dropins, generated):
+    """True only when ``text`` is byte-for-byte the target Agent's own definition for the entry, with its
+    drop-ins unchanged apart from the legacy --replace drop-in the Agent's refresh retires."""
+    if not (isinstance(generated, dict) and isinstance(generated.get('path'), str) and isinstance(generated.get('sha256'), str)):
+        return False
+    digest = hashlib.sha256(text).hexdigest()
+    if entry['kind'] == 'launchd':
+        return Path(generated['path']).resolve() == Path(entry['plist']).resolve() and digest == generated['sha256']
+    paths = _unit_files(entry)
+    if not paths or Path(paths[0]).resolve() != Path(generated['path']).resolve() or Path(generated['path']).name != entry['unit']:
+        return False
+    # Authenticate the captured bytes themselves: they are what the new digest will vouch for.
+    sections = _unit_sections(text, paths)
+    if not sections or hashlib.sha256(sections[0][1]).hexdigest() != generated['sha256']:
+        return False
+    after = {path: hashlib.sha256(body).hexdigest() for path, body in sections[1:]}
+    return (all(dropins.get(path) == body for path, body in after.items())
+            and all(path.endswith('.d/20-replace.conf') for path in set(dropins) - set(after)))
 
 
 def _start(entry, pause):
@@ -745,6 +839,7 @@ class ServiceRecovery:
                 not isinstance(e, dict) or e.get('purpose') not in {'gateway', 'dashboard', 'serve'}
                 or e.get('phase') not in {'recorded', 'retiring', 'stopped', 'refreshing'}
                 or (e.get('phase') == 'refreshing' and e.get('legacy_refresh') is not True) or not isinstance(e.get('processes'), dict)
+                or ('launch_refresh' in e and not (isinstance(e['launch_refresh'], dict) and isinstance(e['launch_refresh'].get('dropins'), dict)))
                 for e in self.state['entries'])):
             raise RuntimeError('Service recovery lacks complete source/process custody evidence; source was not changed.')
 
@@ -822,6 +917,48 @@ class ServiceRecovery:
             token['resume_needed'] = bool(token['posix_units'] or token['unmapped'] or token.get('profiles') or token.get('services'))
             self.records.write(token)
             self.save(token)
+
+    def refresh_launch_files(self, refresh):
+        """Let the target Agent regenerate its own launch files before any service starts.
+
+        Each file still unchanged since the pause is marked durably first, so a crash mid-refresh is
+        settled by the next resume. A changed file takes a new identity only when it is byte-for-byte the
+        Agent's own definition for that home: any other edit still refuses ``_start``."""
+        for entry in self.state['entries']:
+            try:
+                text = _config_text(entry)
+                dropins = _dropins(entry, text) if hashlib.sha256(text).hexdigest() == entry['config_stamp'] else None
+            except (OSError, RuntimeError):
+                continue
+            if dropins is not None:
+                entry['launch_refresh'] = {'dropins': dropins}
+        self.save()
+        detail = refresh()
+        self.settle_launch_refresh()
+        return detail
+
+    def settle_launch_refresh(self):
+        changed = []
+        for entry in [entry for entry in self.state['entries'] if 'launch_refresh' in entry]:
+            try:
+                text = _config_text(entry)
+            except (OSError, RuntimeError):
+                continue  # The mark stays for the next resume, which refuses meanwhile.
+            if hashlib.sha256(text).hexdigest() == entry['config_stamp']:
+                del entry['launch_refresh']
+            else:
+                changed.append((entry, text))
+        for (entry, text), generated in zip(changed, _generated_launch_files(self.root, [e for e, _ in changed]) if changed else []):
+            if generated is None:
+                continue  # Unattested: the mark stays for the next resume.
+            try:
+                accepted = _agent_rewrite(entry, text, entry['launch_refresh']['dropins'], generated)
+            except (OSError, RuntimeError):
+                continue
+            if accepted:
+                entry['config_stamp'] = hashlib.sha256(text).hexdigest()
+            del entry['launch_refresh']
+        self.save()
 
     def verify_processes(self, entry, **permissions):
         owed = next(e for e in self.state['entries'] if _service_key(e) == _service_key(entry))
@@ -1075,6 +1212,7 @@ class ServiceRecovery:
         whole, why = self.records.tree_is_whole(self.state['tree'], self.root)
         if not whole or self.state.get('sync_failed'):
             raise RuntimeError('Backend recovery remains owed until source/dependency repair completes: ' + why)
+        self.settle_launch_refresh()  # A refresh interrupted before it settled.
         failures, draining = [], True
         for entry in list(self.state['entries']):
             try:

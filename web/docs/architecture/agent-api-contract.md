@@ -431,7 +431,8 @@ executes bootstrap source or patches Agent globals. A verified running successor
 is adopted without restarting it.
 
 Each backend obligation clears only after a live same-install/profile ledger
-identity, exact supervisor ancestry, unchanged service configuration and an
+identity, exact supervisor ancestry, unchanged service configuration (apart
+from the Agent's own launch-file refresh below) and an
 authenticated identity response at its original endpoint all agree. A fresh
 wrapper PID or unrelated listener is insufficient. Recovery adopts an already
 verified successor instead of starting a duplicate. Each service is settled
@@ -461,6 +462,27 @@ and the server call to the declared deadline plus that margin, so custody outliv
 the drain and its unwind. The server reports the wait as the `applying` update
 notification's detail. A drain that exceeds its budget returns a refusal before
 any source change, with the gateway obligation retained.
+
+The lease worker keeps running the installed updater's code after the checkout
+moves, so before any Git step it loads the Agent's own
+`update_cmd_commit.load_post_move_modules()` set and the modules Talaria's resume
+imports (`gateway.status`, `hermes_cli.update_cmd_fleet_unit_budget` and the
+other service helpers). Each is optional on an Agent that lacks it. After a moved
+tree is verified and repaired, and before any service starts, `finish` asks the
+target Agent to regenerate its own launch files: a fresh process on the target
+tree runs `update_launch_files.refresh_launch_files()` when it exists, which
+rewrites stale systemd units (with a daemon reload), unloaded launchd plists and
+Windows launcher scripts. Talaria never writes service configuration itself.
+Before the refresh, each recorded unit or plist still unchanged since the pause
+is durably marked, with its systemd drop-ins. Afterwards, a changed file takes a
+new configuration digest only when a fresh process on the target tree attests
+that its bytes are exactly the Agent's generated definition for that profile
+home, and its drop-ins are unchanged apart from the legacy `--replace` drop-in
+the Agent retires. Any other edit, made while services were paused or during
+the refresh, still refuses the start. A mark left by a crash is settled by the
+next resume the same way, and stays until the target can attest it. A refresh
+failure is returned as `finish`'s detail and does not block resume, which then
+starts the paused definition.
 
 The supervisor owns every Git/dependency child. Cancellation or a lost sidecar
 pipe stops and reaps an active writer before recovery is judged. A killed
