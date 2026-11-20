@@ -3011,6 +3011,29 @@ final class ApprovalRequestContentTests: XCTestCase {
         XCTAssertNotNil(HostedAccessibility.element(in: pushed, label: "git push --force"))
     }
 
+    /// TAL-974: the card says what Allow session and Always allow cover in the sentence Web shows for the same approval,
+    /// from the shared `contracts/fixtures/tool-approval-and-agents.json`, and never shows the Agent's raw keys.
+    func testAnApprovalSaysWhatAllowSessionAndAlwaysAllowCoverAsWebDoes() throws {
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("tool-approval-and-agents")) as? [String: Any])
+        for entry in try XCTUnwrap(root["approval_scopes"] as? [[String: Any]]) {
+            let pending = try JSONDecoder().decode(PendingApproval.self, from: JSONSerialization.data(withJSONObject: XCTUnwrap(entry["pending"])))
+            let window = try hostWindow(ApprovalRequestContent(
+                prompt: ApprovalPromptState(sessionID: "synthetic-scope-session", pending: pending, pendingCount: 1),
+                isResponding: false, errorMessage: nil, onChoice: { _ in }, onSkipAll: {}, onCollapse: {}
+            ), size: HostedSize.phone)
+            let id = pending.id
+            let shown = HostedAccessibility.elements(in: window, labelContaining: "covers").compactMap(\.accessibilityLabel)
+            XCTAssertEqual(shown, (entry["sentence"] as? String).map { [$0] } ?? [], id)
+            XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "Pattern keys").isEmpty, id)
+            // A shell key is the Agent's own danger description, which the card shows as the description.
+            for key in pending.displayPatternKeys where key != pending.description {
+                XCTAssertNil(HostedAccessibility.element(in: window, label: key), "\(id) shows its raw key \(key)")
+            }
+            if id == "scope-rule" { attachHostedScreenshot(window, name: "approval-scope-tool-rule") }
+            window.isHidden = true
+        }
+    }
+
     func testAnApprovalOfferingNoChoiceSaysSoAndOffersNoAnswer() throws {
         let pending = PendingApproval(approvalId: "synthetic-no-choice-approval", command: "echo fixture",
                                       description: "Run the fixture command?", allowedChoices: [], canEnableYolo: false)

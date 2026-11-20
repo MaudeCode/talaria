@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { act, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react'
@@ -16,6 +18,8 @@ import type { ApprovalPending } from '../../contracts'
 /** Every choice, as the server writes them for an approval that names none (TAL-2481). */
 const ALL: ApprovalPending['allowed_choices'] = ['once', 'session', 'always', 'deny']
 const render = (ui: ReactElement) => renderView(ui, { wrapper: queryWrapper() })
+/** TAL-974: approvals with each server scope and the sentence both clients show, shared with the App's tests. */
+const scopeFixture = (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/tool-approval-and-agents.json'), 'utf8')) as { approval_scopes: { pending: ApprovalPending; sentence: string | null }[] }).approval_scopes
 
 describe('ApprovalCard', () => {
   it('heads the card with the held call\'s icon and label as its tool row shows them, its arguments as rows (TAL-2333)', () => {
@@ -37,6 +41,14 @@ describe('ApprovalCard', () => {
   it('shows only the server\'s description, never a question or reason it did not pick (TAL-2333)', () => {
     const { container } = render(<ApprovalCard sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 'q1', command: 'ls', question: 'Allow?', reason: 'Dangerous' }} onResolved={() => undefined} />)
     expect(container.querySelector('.approval-desc')).toBeNull()
+  })
+  it('says what Allow session and Always allow cover in the sentence the App shows for the same approval (TAL-974)', () => {
+    for (const { pending, sentence } of scopeFixture) {
+      const { container, unmount } = render(<ApprovalCard sessionId="s1" pending={pending} onResolved={() => undefined} />)
+      if (sentence) expect(container.querySelector('.approval-scope'), String(pending.approval_id)).toHaveTextContent(new RegExp(`^${RegExp.escape(sentence)}$`))
+      else expect(container.querySelector('.approval-scope')).toBeNull()
+      unmount()
+    }
   })
   it('offers only owner-approved choices and never offers native YOLO', () => {
     render(<ApprovalCard sessionId="native" pending={{ approval_id: 'native-control', command: 'echo fixture', allowed_choices: ['once', 'deny'], can_enable_yolo: false }} onResolved={() => undefined} />)

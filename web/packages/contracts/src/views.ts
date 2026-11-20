@@ -925,6 +925,18 @@ export type SteerResponse = z.infer<typeof SteerResponseSchema>
  */
 export const ApprovalToolSchema = z.object({ name: z.string(), kind: ToolKindSchema, target: z.string(), verb: ToolDisplayFields.verb, app: ToolDisplayFields.app, args_fields: ToolDisplayFields.args_fields, activity_unnamed: ToolDisplayFields.activity_unnamed })
 export type ApprovalTool = z.infer<typeof ApprovalToolSchema>
+/**
+ * TAL-974: what Allow session and Always allow cover, from the Agent's pattern keys. `kind` picks the clients' sentence;
+ * `subject` is what it names: the Agent's danger description for `command_pattern`, the tool for `tool_rule`, the action and
+ * mode for `computer_use`, null otherwise. `always_is_session_only`: an Always answer keeps a security finding for this
+ * session only.
+ */
+export const ApprovalScopeSchema = z.object({
+  kind: z.enum(['command_pattern', 'tool_rule', 'python', 'ssh_config', 'computer_use', 'security_finding', 'unknown']),
+  subject: z.string().nullable(),
+  always_is_session_only: z.boolean(),
+})
+export type ApprovalScope = z.infer<typeof ApprovalScopeSchema>
 export const ApprovalPendingSchema = z.looseObject({
   allowed_choices: z.array(z.enum(['once', 'session', 'always', 'deny']))
     .describe('The answers this approval accepts: all four when its owner named none (TAL-2481), empty when it offered none Talaria can send.'),
@@ -943,6 +955,8 @@ export const ApprovalPendingSchema = z.looseObject({
     .describe('TAL-2333: what the approval asks, the Agent\'s description, else its question, else its reason. Clients show only this.'),
   allow_text: z.string().nullable().optional()
     .describe('TAL-2333: the whole text an Allow outside the card (Siri, Shortcuts) confirms: the command, else the Agent\'s own description, never its question or reason. Null when it names neither, so the user reviews it in the chat. Absent on an older server, whose `description` is the Agent\'s own.'),
+  scope: ApprovalScopeSchema.nullable().optional()
+    .describe('TAL-974: what Allow session and Always allow cover. Null when Allow session is not offered or the Agent named no pattern key; absent on an older server.'),
   approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(),
   reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional(),
 })

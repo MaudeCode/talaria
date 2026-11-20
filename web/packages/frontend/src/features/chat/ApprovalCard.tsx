@@ -27,6 +27,20 @@ const interactiveTarget = [
     .map((role) => `[role~="${role}"]`),
 ].join(',')
 
+/** TAL-974: the server's scope as one sentence, with what Always allow keeps when the approval offers it. */
+function scopeSentence(pending: ApprovalPending): string | null {
+  const scope = pending.scope
+  if (!scope) return null
+  const subject = scope.subject ?? ''
+  const session = {
+    command_pattern: () => m.approval_scope_command_pattern({ subject }), tool_rule: () => m.approval_scope_tool_rule({ subject }),
+    python: m.approval_scope_python, ssh_config: m.approval_scope_ssh_config, computer_use: () => m.approval_scope_computer_use({ subject }),
+    security_finding: m.approval_scope_security_finding, unknown: m.approval_scope_unknown,
+  }[scope.kind]()
+  if (!pending.allowed_choices.includes('always')) return session
+  return `${session} ${scope.always_is_session_only ? m.approval_scope_always_session_only() : m.approval_scope_always()}`
+}
+
 /** How long the exit waits for its transition to report its end: past the 320 ms slide in approvals.css. */
 const EXIT_FALLBACK_MS = 500
 
@@ -98,6 +112,7 @@ export function ApprovalCard({ sessionId, pending, onResolved, onLeaving, onDism
   // TAL-2333: the held call as its tool row shows it; a shell call keeps its command, any other call shows its argument rows.
   const tool = pending.tool
   const fields = tool?.args_fields?.length ? tool.args_fields : null
+  const scope = scopeSentence(pending)
   return (
     <div className={cn(answered ? 'leaving' : 'visible', collapsed && 'collapsed', "approval-card mx-auto mb-2 w-full max-w-[var(--msg-max)] rounded-xl border border-warning bg-surface shadow-md")} role="alertdialog" aria-labelledby={headingId} aria-describedby={descriptionId} aria-hidden={answered || undefined} inert={answered} id="approvalCard">
       <div className="approval-inner p-3" onTransitionEnd={(e) => { if (answered && e.target === e.currentTarget && e.propertyName === 'transform') setExited(true) }}>
@@ -120,6 +135,7 @@ export function ApprovalCard({ sessionId, pending, onResolved, onLeaving, onDism
           <div className="approval-body max-h-[max(4rem,calc(100dvh-290px))] overflow-y-auto">
             {pending.description && <div className="approval-desc mt-1 text-[13px] text-muted" id={descriptionId}>{pending.description}</div>}
             {fields ? <div className="approval-args mt-2 max-h-40 overflow-auto"><FieldRows fields={fields} /></div> : command && <pre className="approval-cmd mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 font-mono text-[12.5px] text-pre-text">{command}</pre>}
+            {scope && <p className="approval-scope mt-2 text-xs text-muted">{scope}</p>}
           </div>
           {telling ? <form className="approval-tell mt-3 flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); tell() }}>
             <textarea

@@ -114667,6 +114667,49 @@
                               ],
                               "description": "TAL-2333: the whole text an Allow outside the card (Siri, Shortcuts) confirms: the command, else the Agent's own description, never its question or reason. Null when it names neither, so the user reviews it in the chat. Absent on an older server, whose `description` is the Agent's own."
                             },
+                            "scope": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "command_pattern",
+                                        "tool_rule",
+                                        "python",
+                                        "ssh_config",
+                                        "computer_use",
+                                        "security_finding",
+                                        "unknown"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "subject": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "always_is_session_only": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "subject",
+                                    "always_is_session_only"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-974: what Allow session and Always allow cover. Null when Allow session is not offered or the Agent named no pattern key; absent on an older server."
+                            },
                             "approval_id": {
                               "type": "string"
                             },
