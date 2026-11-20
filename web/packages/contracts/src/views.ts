@@ -783,6 +783,7 @@ export const SessionSchema = z.looseObject({
   /** The agent's display name: a named profile's own name, else the `bot_name` setting (TAL-458). */
   assistant_name: z.string().optional(),
   workspace_name: WorkspaceNameSchema,
+  place_label: NullableString.optional().describe("The chat header place: its workspace label, else its profile display name, else null."),
   focus_path: NullableString.optional().describe('TAL-1458: the last non-null `focus_path` of the session\'s persisted tool calls, so a reopened chat shows its file before any stream event; null when none. TAL-1537: absolute paths inside the session workspace count.'),
   branched_from: BranchedFromSchema.nullable().optional().describe('TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat.'),
 })
@@ -811,6 +812,7 @@ export const SessionRowSchema = z.looseObject({
   source_tag: NullableString.optional(), source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(),
   active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), share_url: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.enum(['title', 'metadata', 'content']).optional(), match_preview: NullableString.optional(),
   workspace_name: WorkspaceNameSchema,
+  place_label: NullableString.optional().describe("The chat header place: its workspace label, else its profile display name, else null."),
   sidebar_group: SidebarGroupKindSchema.nullable().optional().describe('TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it.'),
   sidebar_children: z.array(z.string()).optional().describe('TAL-2478: the ids of the listed rows nested under this one, in display order; clients render them under it and never nest by `sidebar_parent_session_id`. `GET /api/sessions` and its sidebar search set it; other routes omit it.'),
   sidebar_parent_session_id: NullableString.optional().describe('TAL-1151: the listed row this subagent row nests under (its nearest non-subagent ancestor, a compressed parent by its lineage tip, same profile); null when that row is not in the same response. A nested row files in its parent\'s project and source tab. `GET /api/sessions` and its sidebar search set it; older servers and other routes omit it.'),

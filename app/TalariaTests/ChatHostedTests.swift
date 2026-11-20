@@ -108,6 +108,17 @@ final class ChatHostedTests: XCTestCase {
     }
 
     /// TAL-839: an external chat shows at once and stays read-only, saying why, until the server verifies it.
+    func testChatHeaderOmitsPlaceWhenTheServerSendsNull() async throws {
+        let fixture = try FixtureApp(["--ui-test-chat-without-place"], for: self)
+        let session = try await fixture.session()
+        let title = try XCTUnwrap(session.title)
+        let window = try hostWindow(fixture.chat(session))
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        let header = try await requireElement(in: window) { ($0.accessibilityLabel ?? "").hasPrefix(title) }
+        XCTAssertEqual(header.accessibilityLabel, title)
+        attachHostedScreenshot(window, name: "chat-header-no-place")
+    }
+
     func testExternalChatChecksAccessUntilTheServerVerifiesIt() async throws {
         let fixture = try FixtureApp(for: self)
         let release = DispatchSemaphore(value: 0)

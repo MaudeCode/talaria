@@ -1504,6 +1504,13 @@
                 "null"
               ]
             },
+            "place_label": {
+              "description": "The chat header place: its workspace label, else its profile display name, else null.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "sidebar_group": {
               "description": "TAL-1534: the sidebar group `GET /api/sessions` and its sidebar search file the row under; null for an archived row outside `scheduled` and `webhook`. Other routes omit it.",
               "anyOf": [

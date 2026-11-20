@@ -492,6 +492,7 @@ private extension SessionSummary {
         title = cachedSession.title
         workspace = cachedSession.workspace
         workspaceName = cachedSession.workspaceName
+        placeLabel = cachedSession.placeLabel
         model = cachedSession.model
         modelProvider = cachedSession.modelProvider
         // Pairs with the live catalog only; the cached row has none (TAL-301).

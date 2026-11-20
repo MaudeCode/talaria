@@ -177,6 +177,7 @@ export interface SessionServiceDeps {
   log: (line: string) => void
   activeProfile: () => string
   profilesMatch: (a: string | null | undefined, b: string | null | undefined) => boolean
+  profileDisplayName?: (profile: string) => Promise<string | null>
   /** The agent's display name for a session's profile (`assistant_name`). */
   assistantName: (profile: string | null) => string
   redactEnabled: () => boolean
@@ -1055,7 +1056,7 @@ export class SessionService {
 
   /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
   async wireRow(s: Session): Promise<Record<string, unknown>> {
-    return withSessionWireFlags((await this.ownerLocked([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, contextWindowSourceFor: this.deps.contextWindowSourceFor, modelOptionFor: this.deps.modelOptionFor }), activity_phase: await this.activityPhase(s), context_detail_key: this.contextDetailKey(s), assistant_name: this.assistantName(s), workspace_name: (await this.workspaceNames([s]))(s), focus_path: sessionFocusPath(s.tool_calls, this.deps.redactEnabled(), s.workspace) }]))[0]!, this.deps.runtime.activeStreamIds)
+    return withSessionWireFlags((await this.ownerLocked([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, contextWindowSourceFor: this.deps.contextWindowSourceFor, modelOptionFor: this.deps.modelOptionFor }), activity_phase: await this.activityPhase(s), context_detail_key: this.contextDetailKey(s), assistant_name: this.assistantName(s), ...await this.sessionPlace(s), focus_path: sessionFocusPath(s.tool_calls, this.deps.redactEnabled(), s.workspace) }]))[0]!, this.deps.runtime.activeStreamIds)
   }
 
   /**
@@ -1075,6 +1076,12 @@ export class SessionService {
   /** The agent's display name for a session's profile (`assistant_name`). */
   assistantName(s: Session): string {
     return this.deps.assistantName(s.profile)
+  }
+
+  private async sessionPlace(s: Session): Promise<{ workspace_name: string | null; place_label: string | null }> {
+    const workspace = (await this.workspaceNames([s]))(s)
+    const profileLabel = workspace === null && s.profile ? await this.deps.profileDisplayName?.(s.profile) : null
+    return { workspace_name: workspace, place_label: workspace ?? profileLabel ?? null }
   }
 
   /** Python `public_session_projection(s.__dict__)`: every persisted field, redacted (session export). */
@@ -1377,7 +1384,7 @@ export class SessionService {
     raw.activity_phase = await this.activityPhase(s)
     raw.refresh_after = null
     raw.assistant_name = this.assistantName(s)
-    raw.workspace_name = (await this.workspaceNames([s]))(s)
+    Object.assign(raw, await this.sessionPlace(s))
     raw.branched_from = (await this.branchedFrom(s))
     raw.focus_path = sessionFocusPath(s.tool_calls, this.deps.redactEnabled(), s.workspace)
     withSessionWireFlags(raw, activeStreamIds)
@@ -1524,7 +1531,7 @@ export class SessionService {
       pinned: synth.pinned, archived: synth.archived, project_id: synth.project_id ?? null, profile: synth.profile,
       is_cli_session: synth.is_cli_session, source_tag: synth.source_tag, raw_source: synth.raw_source, session_source: synth.session_source,
       source_label: synth.source_label, read_only: synth.read_only, can_duplicate: false, messages: page, tool_calls: [], transcript_seq: null,
-      assistant_name: this.assistantName(synth), workspace_name: (await this.workspaceNames([synth]))(synth), confirms_deep_truncate: true,
+      assistant_name: this.assistantName(synth), ...await this.sessionPlace(synth), confirms_deep_truncate: true,
       _messages_truncated: loadMessages && msgLimit !== null && offset > 0, _messages_offset: offset, _msg_limit_max: MAX_MSG_LIMIT,
       refresh_after: running ? RUNNING_CHILD_REFRESH_SECONDS : null,
     }

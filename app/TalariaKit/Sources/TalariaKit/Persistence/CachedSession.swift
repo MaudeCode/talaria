@@ -16,6 +16,7 @@ public final class CachedSession {
     var workspace: String?
     /// The server's label for `workspace` (TAL-303). Optional so the unversioned store opens without a migration.
     var workspaceName: String?
+    var placeLabel: String?
     var model: String?
     var modelProvider: String?
     var messageCount: Int?
@@ -101,6 +102,7 @@ public final class CachedSession {
         row.set(\.title, session.title)
         row.set(\.workspace, session.workspace)
         row.set(\.workspaceName, session.workspaceName)
+        row.set(\.placeLabel, session.placeLabel)
         row.set(\.model, session.model)
         row.set(\.modelProvider, session.modelProvider)
         row.set(\.messageCount, session.messageCount)

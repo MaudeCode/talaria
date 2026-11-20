@@ -1823,19 +1823,21 @@ final class UITestFixtureURLProtocol: URLProtocol {
     }
 
     static func session(id: String, title: String, overrides: [String: Any] = [:]) -> [String: Any] {
+        let noPlace = ProcessInfo.processInfo.arguments.contains("--ui-test-chat-without-place")
         var value: [String: Any] = [
             "session_id": id,
             "title": title,
             "message_count": 48,
             "last_message_at": 2_000_000_000,
             "sort_ts": 2_000_000_000,
-            "workspace": "/fixture",
-            "workspace_name": "Fixture Workspace",
+            "workspace": noPlace ? NSNull() : "/fixture",
+            "workspace_name": noPlace ? NSNull() : "Fixture Workspace",
+            "place_label": noPlace ? NSNull() : "Fixture Workspace",
             "focus_path": id == sessionID && UITestFixtureEnvironment.hasCompanionFocus ? companionFiles[2] : NSNull(),
             "model": "fixture-model",
             "model_provider": "fixture-provider",
             "model_option_id": overrides["model"] ?? "fixture-model",
-            "profile": "fixture-profile",
+            "profile": noPlace ? NSNull() : "fixture-profile",
             "archived": false,
             // Every row action gate the server ships (TAL-723); a row without one offers nothing.
             "can_pin": true,

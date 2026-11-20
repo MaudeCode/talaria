@@ -384,6 +384,7 @@ public final class ChatViewModel {
             }
             presentOwnerModelConfirmation()
             executionMode = session.executionMode
+            serverPlaceLabel = session.placeLabel
         }
         if let show = session?.showReasoning,
            reasoningReadGeneration.map({ $0 > reasoningDisplayReadFloor }) ?? true {
@@ -569,6 +570,7 @@ public final class ChatViewModel {
         currentWorkspace = session.workspace
         serverWorkspacePath = session.workspace
         serverWorkspaceName = session.workspaceName
+        serverPlaceLabel = session.placeLabel
         currentModel = session.model
         currentModelProvider = session.modelProvider
         currentModelOptionID = session.modelOptionID
@@ -631,6 +633,15 @@ public final class ChatViewModel {
     /// The workspace the server last reported for this session, with its label (TAL-303).
     private var serverWorkspacePath: String?
     private var serverWorkspaceName: String?
+    private var serverPlaceLabel: String?
+
+    public var headerPlaceLabel: String? {
+        if !hasSession { return selectedWorkspaceName ?? namedProfileTitle }
+        if isUpdatingComposerConfiguration, currentWorkspace != serverWorkspacePath {
+            return selectedWorkspaceName ?? serverPlaceLabel
+        }
+        return serverPlaceLabel
+    }
     private var currentModel: String? {
         didSet { recomputeSelectedModelTitle() }
     }
@@ -888,6 +899,7 @@ public final class ChatViewModel {
         currentWorkspace = session.workspace
         serverWorkspacePath = session.workspace
         serverWorkspaceName = session.workspaceName
+        serverPlaceLabel = session.placeLabel
         currentModel = session.model
         currentModelProvider = session.modelProvider
         currentModelOptionID = session.modelOptionID
@@ -1061,7 +1073,8 @@ extension ChatViewModel {
     }
 
     /// Adopts the workspace a server session payload reports, with its label (TAL-303).
-    private func applyServerWorkspace(_ path: String?, name: String?) {
+    private func applyServerWorkspace(_ path: String?, name: String?, placeLabel: String?) {
+        serverPlaceLabel = placeLabel
         guard let path else { return }
         currentWorkspace = path
         serverWorkspacePath = path
@@ -1069,9 +1082,13 @@ extension ChatViewModel {
     }
 
     public var selectedProfileTitle: String {
+        namedProfileTitle ?? String(localized: "Profile")
+    }
+
+    private var namedProfileTitle: String? {
         let profileName = selectedProfileName ?? currentProfile
         guard let profileName, !profileName.isEmpty else {
-            return String(localized: "Profile")
+            return nil
         }
 
         if let option = profileOptions.first(where: { $0.name == profileName }) {
@@ -1417,7 +1434,7 @@ extension ChatViewModel {
                 throw APIError.decoding(underlying: DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Model update omitted its authoritative session")))
             }
             applySwitchedModel(session, model: appliedModel, submittedModel: model, provider: provider)
-            applyServerWorkspace(session.workspace, name: session.workspaceName)
+            applyServerWorkspace(session.workspace, name: session.workspaceName, placeLabel: session.placeLabel)
             pendingExplicitModelPick = true
             await refreshReasoningEffortGating()
             return true
@@ -1625,7 +1642,9 @@ extension ChatViewModel {
             )
 
             currentWorkspace = workspace
-            applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
+            if let session = response.session {
+                applyServerWorkspace(session.workspace, name: session.workspaceName, placeLabel: session.placeLabel)
+            }
             if let session = response.session, session.model != nil { currentModelOptionID = session.modelOptionID }
             currentModel = response.session?.model ?? currentModel
             currentModelProvider = response.session?.modelProvider ?? currentModelProvider
@@ -1665,7 +1684,7 @@ extension ChatViewModel {
                 currentModelOptionID = session.modelOptionID
                 currentModelProvider = session.modelProvider
             }
-            applyServerWorkspace(session.workspace, name: session.workspaceName)
+            applyServerWorkspace(session.workspace, name: session.workspaceName, placeLabel: session.placeLabel)
             if operation == "model", let change = session.ownerAttachment?.modelChange {
                 return change.state == "applied"
             }
@@ -2506,7 +2525,7 @@ extension ChatViewModel {
             if let title = session.title, titleVersionAtFetch == sessionListOwner?.resourceMetadataVersion(for: sessionID), ownsCurrentCache {
                 displayTitle = Self.displayTitle(from: title)
             }
-            applyServerWorkspace(session.workspace, name: session.workspaceName)
+            applyServerWorkspace(session.workspace, name: session.workspaceName, placeLabel: session.placeLabel)
             if session.model != nil { currentModelOptionID = session.modelOptionID }
             currentModel = session.model ?? currentModel
             currentModelProvider = session.modelProvider ?? currentModelProvider
@@ -4502,7 +4521,9 @@ extension ChatViewModel {
             )
 
             currentWorkspace = workspace
-            applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
+            if let session = response.session {
+                applyServerWorkspace(session.workspace, name: session.workspaceName, placeLabel: session.placeLabel)
+            }
             if let session = response.session, session.model != nil { currentModelOptionID = session.modelOptionID }
             currentModel = response.session?.model ?? currentModel
             currentModelProvider = response.session?.modelProvider ?? currentModelProvider
@@ -4944,7 +4965,7 @@ extension ChatViewModel {
             if let title = session.title {
                 displayTitle = Self.displayTitle(from: title)
             }
-            applyServerWorkspace(session.workspace, name: session.workspaceName)
+            applyServerWorkspace(session.workspace, name: session.workspaceName, placeLabel: session.placeLabel)
             if session.model != nil { currentModelOptionID = session.modelOptionID }
             currentModel = session.model ?? currentModel
             currentModelProvider = session.modelProvider ?? currentModelProvider
@@ -6546,7 +6567,7 @@ extension ChatViewModel {
             applyLiveActivitySessionTitle(title)
         }
 
-        applyServerWorkspace(completedSession.workspace, name: completedSession.workspaceName)
+        applyServerWorkspace(completedSession.workspace, name: completedSession.workspaceName, placeLabel: completedSession.placeLabel)
         if completedSession.model != nil { currentModelOptionID = completedSession.modelOptionID }
         currentModel = completedSession.model ?? currentModel
         currentModelProvider = completedSession.modelProvider ?? currentModelProvider
