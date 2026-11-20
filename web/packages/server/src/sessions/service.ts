@@ -9,7 +9,7 @@ import { SessionPrefixIndex } from './prefix-index.js'
  * detail payload, list and search, and every mutation with its guards.
  * Runtime concerns owned by other domains arrive through `SessionServiceDeps`.
  */
-import type { AgentStorage, ChatReadiness, PendingSteer, RecoveryAudit, RunStatus, RuntimeDescribe, SessionGoal, SessionNotice, RecoveryRepair, SidecarResult, SidecarServerResultInput } from '@maudecode/talaria-web-contracts'
+import type { AgentStorage, ChatReadiness, PendingSteer, RecoveryAudit, RunStatus, RuntimeDescribe, SessionGoal, SessionNotice, RecoveryRepair, SidecarParams, SidecarResult, SidecarServerResultInput } from '@maudecode/talaria-web-contracts'
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { createHmac, randomUUID } from 'node:crypto'
@@ -83,6 +83,21 @@ const CHAT_READINESS_CHECK_TIMEOUT_MS = 5_000
 const RUNNING_CHILD_REFRESH_SECONDS = 5
 /** The state.db row of a delegated child: a source the Agent gives one, and a link to the session that started it. */
 const isDelegatedChildRow = (row: Row | null | undefined): boolean => Boolean(row?.parent_session_id) && ['subagent', 'tool'].includes(str(row?.source).trim().toLowerCase())
+/** TAL-2069: how long Undo waits for the sidecar to name the files the undone turns changed before answering without them. */
+const UNDO_CHANGED_FILES_TIMEOUT_MS = 10_000
+
+/**
+ * TAL-2069: when the undone span began, as the Agent's `undo_span_start` reads it: the newest stamp among the undone user
+ * row and the rows kept before it. A prompt queued while the previous turn ran is stamped before that turn's checkpoints,
+ * so the kept rows bound the span from below. Null when no row carries a stamp.
+ */
+function undoSpanStart(rows: readonly Message[]): number | null {
+  return rows.reduce<number | null>((start, m) => {
+    const stamp = stateDbTimestampSeconds(m.timestamp)
+    return stamp !== null && stamp > 0 && (start === null || stamp > start) ? stamp : start
+  }, null)
+}
+
 /** TAL-1254: how soon a worktree lock the sidecar could not confirm is tried again. */
 export const WORKTREE_RETAIN_RETRY_MS = 60_000
 
@@ -3059,7 +3074,7 @@ export class SessionService {
 
   async undo(sid: string): Promise<Record<string, unknown>> {
     await this.rejectViewOnly(sid, 'modified')
-    return this.withMutationLock(sid, async () => {
+    const undone = await this.withMutationLock(sid, async () => {
       const s = (await this.mutationTarget(sid, 'modified'))
       const read = await this.stateDbRead(s)
       const history = s.messages
@@ -3067,12 +3082,32 @@ export class SessionService {
       if (lastUser === null) return { error: 'Nothing to undo.' }
       const removedText = str(redactText(extractText(normalizeUserDisplay(history[lastUser])?.content), this.deps.redactEnabled()))
       const removed = history.length - lastUser
+      const since = undoSpanStart(history.slice(0, lastUser + 1))
+      const span = since !== null && s.workspace ? { profile_home: this.deps.profileHome(s.profile ?? this.deps.activeProfile()), workspace: s.workspace, since } : null
       shrinkTo(s, lastUser, this.deps.now())
       this.markStateDbSeen(s, read, { boundary: true })
       await this.store.save(s)
       const preview = removedText.length > 40 ? `${removedText.slice(0, 40)}...` : removedText
-      return { ok: true, removed_count: removed, removed_preview: preview }
+      return { span, result: { ok: true, removed_count: removed, removed_preview: preview } }
     })
+    if ('error' in undone) return undone
+    // Read after the lock: the rewind is saved, and a slow store read never holds the session's mutations.
+    return { ...undone.result, changed_files: await this.undoChangedFiles(undone.span) }
+  }
+
+  /**
+   * TAL-2069: the files the undone turns changed that are still on disk, by the Agent's own `/undo` hint over the
+   * session's profile checkpoint store. Undo only rewinds the conversation, so these name what Checkpoints can restore.
+   * Best effort: no span (no workspace or no stamped row), no sidecar or a failed read answers an empty list.
+   */
+  private async undoChangedFiles(span: SidecarParams<'checkpoints.undo_changed_files'> | null): Promise<string[]> {
+    const sidecar = this.deps.sidecar?.()
+    if (!sidecar || !span) return []
+    try {
+      return (await sidecar.call('checkpoints.undo_changed_files', span, { timeoutMs: UNDO_CHANGED_FILES_TIMEOUT_MS })).files
+    } catch {
+      return []
+    }
   }
 
   async duplicate(sid: string): Promise<Record<string, unknown>> {

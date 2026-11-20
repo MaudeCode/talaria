@@ -10,6 +10,9 @@ import { resetConnectionsForTests } from '../../stream/connection'
 import { ApiError } from '../../contracts/common'
 import { stubAnimate } from '../../test/animate'
 import { ChatPage } from './ChatPage'
+import { Toaster } from '../toast/Toaster'
+import { takeOpenCheckpointsRequest } from '../workspace/openCheckpointsRequest'
+import { setSidePanelOpen } from '../../shell/useShellState'
 
 const { renders, navigate, composer, chatRenders, sidePanel, references, search, projects } = vi.hoisted(() => ({ renders: vi.fn(), navigate: vi.fn(), composer: vi.fn(), chatRenders: vi.fn(), sidePanel: vi.fn(), references: vi.fn(), search: vi.fn((): Record<string, string> => ({})), projects: vi.fn((): { data?: unknown } => ({})) }))
 vi.mock('@tanstack/react-router', async (original) => ({ ...await original<object>(), useNavigate: () => navigate, useSearch: () => search() }))
@@ -470,6 +473,33 @@ it('brings the last exchange back when /undo is refused (TAL-1384)', async () =>
   expect(screen.getByText('Persisted question')).toBeInTheDocument()
   await expect(result).resolves.toBe('refused')
   expect(showToast).toHaveBeenCalledWith('Refused by the server', 4000, 'error')
+})
+
+/** TAL-2069: runs `/undo` against an answer naming `changed_files`, and returns the toasts it left. */
+async function undoNaming(changed: string[]) {
+  vi.mocked(api.undoSession).mockResolvedValue({ ok: true, removed_count: 2, removed_preview: 'Persisted question', changed_files: changed })
+  act(() => { setSidePanelOpen(false) })
+  const toasts = within(render(<Toaster />).container)
+  chat(false)
+  await screen.findByText('Persisted answer')
+  await waitFor(() => expect(lastComposer().session).not.toBeNull())
+  await act(async () => { await expect(lastComposer().onLocalCommand('undo', '')).resolves.toBe(true) })
+  return toasts
+}
+
+it('names the files an /undo of a turn that wrote them left changed, with a way to Checkpoints (TAL-2069)', async () => {
+  const toasts = await undoNaming(['notes.txt', 'src/app.ts'])
+  expect(await toasts.findByText('The undone turns changed these files')).toBeInTheDocument()
+  expect(toasts.getByText('notes.txt · src/app.ts')).toBeInTheDocument()
+  fireEvent.click(toasts.getByRole('button', { name: 'Checkpoints' }))
+  expect(takeOpenCheckpointsRequest('memo-chat')).toEqual({ sessionId: 'memo-chat' })
+  expect(screen.getByRole('button', { name: 'Side panel' })).toHaveAttribute('aria-pressed', 'true')
+})
+
+it('shows nothing extra after an /undo of a chat-only turn (TAL-2069)', async () => {
+  const toasts = await undoNaming([])
+  expect(toasts.queryByText('The undone turns changed these files')).toBeNull()
+  expect(toasts.queryByRole('button', { name: 'Checkpoints' })).toBeNull()
 })
 
 it('brings the transcript back when /clear is refused (TAL-1384)', async () => {

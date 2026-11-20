@@ -4,7 +4,7 @@
  * confirmation: by default only the files the Agent last wrote, keeping the user's hand-edits, or everything (TAL-1260).
  * It loads only while shown, and each read is fresh: the Agent changes these files and checkpoints at will.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FileDiff, RotateCcw } from 'lucide-react'
 import * as api from '../../api/endpoints'
@@ -16,6 +16,7 @@ import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { ContextMenu, MenuItem } from '../../ui/Menu'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { showRichToast, showToast } from '../toast/toast'
+import { takeOpenCheckpointsRequest } from './openCheckpointsRequest'
 
 interface Picked { id: string; message: string }
 
@@ -24,6 +25,8 @@ const listed = (files: string[], message: (inputs: { files: string }) => string)
 /** `onRestored` gets the files a restore rewrote and the workspace it ran in, so another page can drop its unsaved edits of
  * them even when the restore answers after a workspace switch. */
 export function CheckpointsPage({ workspace, sessionId, active, onRestored }: { workspace: string | null | undefined; sessionId: string; active: boolean; onRestored: (paths: string[], workspace: string) => void }) {
+  // TAL-2069: showing this page answers a request to open it.
+  useEffect(() => { if (active) takeOpenCheckpointsRequest(sessionId) }, [active, sessionId])
   return <WorkspaceCheckpoints key={JSON.stringify(keys.checkpoints.all(sessionId, workspace ?? ''))} workspace={workspace ?? ''} sessionId={sessionId} active={active} onRestored={onRestored} />
 }
 

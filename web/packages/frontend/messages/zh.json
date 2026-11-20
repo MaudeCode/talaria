@@ -1846,6 +1846,7 @@
 	"turn_summary_skills_updated": "已更新 {count} 个技能",
 	"turn_summary_tasks_updated": "已更新 {count} 个任务",
 	"type_slash": "输入 / 可查看命令",
+	"undo_changed_files": "已撤销的回合更改了这些文件",
 	"unsaved_confirm": "预览区有未保存修改，要放弃更改并继续跳转吗？",
 	"untitled": "未命名",
 	"update_clear_lock_retry": "清除锁定并重试更新",

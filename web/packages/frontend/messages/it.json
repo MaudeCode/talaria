@@ -2090,6 +2090,7 @@
 	"type_slash": "Digita / per vedere i comandi",
 	"undid_messages_suffix": "messaggio/i.",
 	"undid_n_messages": "Rimossi",
+	"undo_changed_files": "I turni annullati hanno modificato questi file",
 	"undo_exchange": "Annulla ultimo scambio",
 	"undo_failed": "Annulla fallito: ",
 	"unsaved_confirm": "Hai modifiche non salvate nell'anteprima. Scartare e navigare?",

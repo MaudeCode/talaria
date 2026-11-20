@@ -1889,6 +1889,7 @@
 	"type_slash": "輸入 / 檢視命令",
 	"undid_messages_suffix": "則訊息。",
 	"undid_n_messages": "已移除",
+	"undo_changed_files": "已復原的回合變更了這些檔案",
 	"undo_exchange": "復原上一組問答",
 	"undo_failed": "復原失敗：",
 	"unsaved_confirm": "預覽中有未儲存的變更。要捨棄並前往其他位置嗎？",

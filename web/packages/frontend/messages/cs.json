@@ -2132,6 +2132,7 @@
 	"type_slash": "Pro zobrazení příkazů napište /",
 	"undid_messages_suffix": "zpráv(y)",
 	"undid_n_messages": "Odstraněno",
+	"undo_changed_files": "Vrácené kroky změnily tyto soubory",
 	"undo_exchange": "Vrátit zpět poslední výměnu",
 	"undo_failed": "Krok zpět selhal",
 	"unsaved_confirm": "Máte neuložené změny v náhledu. Zahodit a přejít?",

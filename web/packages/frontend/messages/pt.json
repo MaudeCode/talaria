@@ -1909,6 +1909,7 @@
 	"type_slash": "Digite / para ver comandos",
 	"undid_messages_suffix": "mensagem(s).",
 	"undid_n_messages": "Removido",
+	"undo_changed_files": "Os turnos desfeitos alteraram estes arquivos",
 	"undo_exchange": "Desfazer última troca",
 	"undo_failed": "Undo falhou: ",
 	"unsaved_confirm": "Você tem mudanças não salvas. Descartar e navegar?",

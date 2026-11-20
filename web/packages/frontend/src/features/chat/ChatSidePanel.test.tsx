@@ -28,6 +28,7 @@ import * as api from '../../api/endpoints'
 import { showRichToast, showToast } from '../toast/toast'
 import { ChatSidePanel } from './ChatSidePanel'
 import { requestOpenFile } from '../workspace/openFileRequest'
+import { peekOpenCheckpointsRequest, requestOpenCheckpoints } from '../workspace/openCheckpointsRequest'
 import { useTranscript } from './useTranscript'
 import { setSidePanelOpen, useShellState } from '../../shell/useShellState'
 import todosFixture from '../../../../../../contracts/fixtures/web-native-todos.json'
@@ -216,6 +217,17 @@ describe('chat side panel Checkpoints (TAL-571)', () => {
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: action }))
     await waitFor(() => { expect(api.restoreCheckpoint).toHaveBeenCalledWith('s1', 'c1', action === 'Restore everything') })
   }
+
+  it('shows Checkpoints for this chat when an Undo asks, and only then (TAL-2069)', async () => {
+    render(<Panel />)
+    await waitFor(() => { expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('aria-selected', 'true') })
+    act(() => { requestOpenCheckpoints({ sessionId: 'other' }) })
+    expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('aria-selected', 'true')
+    act(() => { requestOpenCheckpoints({ sessionId: 's1' }) })
+    await waitFor(() => { expect(screen.getByRole('tab', { name: 'Checkpoints' })).toHaveAttribute('aria-selected', 'true') })
+    expect(await screen.findByText('before edit')).toBeInTheDocument()
+    expect(peekOpenCheckpointsRequest('s1')).toBeNull()
+  })
 
   it('replaces an open checkpoint diff when the same chat workspace changes', async () => {
     let workspace = '/repo-a'

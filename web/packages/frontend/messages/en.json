@@ -3502,6 +3502,7 @@
 	"type_slash": "Type / to see commands",
 	"undid_messages_suffix": "message(s).",
 	"undid_n_messages": "Removed",
+	"undo_changed_files": "The undone turns changed these files",
 	"undo_exchange": "Undo last exchange",
 	"undo_failed": "Undo failed: ",
 	"unsaved_confirm": "You have unsaved changes in the preview. Discard and navigate?",

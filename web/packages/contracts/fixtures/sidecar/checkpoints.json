@@ -51,5 +51,17 @@
         "failed_deletes": []
       }
     }
+  ],
+  "checkpoints.undo_changed_files": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "workspace": "<user-home>/project",
+        "since": 0.5
+      },
+      "result": {
+        "files": []
+      }
+    }
   ]
 }

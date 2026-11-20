@@ -598,6 +598,8 @@ export const CHECKPOINTS_METHODS = {
   'checkpoints.list': { params: CheckpointTarget, result: z.object({ checkpoints: z.array(AgentCheckpointSchema), store: z.string() }) },
   /** `diff` is `git diff <checkpoint> --cached` over the workspace: `a/` is the checkpoint, `b/` the files now. */
   'checkpoints.diff': { params: CheckpointTarget.extend({ checkpoint: z.string().min(1) }), result: z.object({ stat: z.string(), diff: z.string() }) },
+  /** TAL-2069: the files the turns an undo removed changed, relative to `workspace`, by the Agent's own `/undo` hint; `since` is when the undone span began (epoch seconds). Empty when unknown or on an Agent without the hint. */
+  'checkpoints.undo_changed_files': { params: CheckpointTarget.extend({ since: z.number() }), result: z.object({ files: z.array(z.string()).max(8) }) },
   /**
    * Safe unless `all` (TAL-1260): only files still as the Agent last wrote them are reverted, and `kept_user_edits` names the
    * hand-edited ones left in place. `restored_files` is what a safe restore acted on; null when the whole tree was checked out.

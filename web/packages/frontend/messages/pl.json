@@ -2142,6 +2142,7 @@
 	"type_slash": "Wpisz /, aby zobaczyć polecenia",
 	"undid_messages_suffix": "wiadomość/wiadomości.",
 	"undid_n_messages": "Usunięto",
+	"undo_changed_files": "Cofnięte tury zmieniły te pliki",
 	"undo_exchange": "Cofnij ostatnią wymianę",
 	"undo_failed": "Cofanie nie powiodło się: ",
 	"unsaved_confirm": "Masz niezapisane zmiany w podglądzie. Odrzucić i nawigować dalej?",
