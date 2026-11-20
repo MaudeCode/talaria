@@ -492,7 +492,9 @@ it('names the files an /undo of a turn that wrote them left changed, with a way 
   expect(await toasts.findByText('The undone turns changed these files')).toBeInTheDocument()
   expect(toasts.getByText('notes.txt · src/app.ts')).toBeInTheDocument()
   fireEvent.click(toasts.getByRole('button', { name: 'Checkpoints' }))
-  expect(takeOpenCheckpointsRequest('memo-chat')).toEqual({ sessionId: 'memo-chat' })
+  // The toast outlives the chat it names, so it opens that chat before asking for its Checkpoints page.
+  await waitFor(() => expect(takeOpenCheckpointsRequest('memo-chat')).toEqual({ sessionId: 'memo-chat' }))
+  expect(navigate).toHaveBeenCalledWith({ to: '/session/$sessionId', params: { sessionId: 'memo-chat' } })
   expect(screen.getByRole('button', { name: 'Side panel' })).toHaveAttribute('aria-pressed', 'true')
 })
 

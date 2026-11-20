@@ -351,7 +351,7 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
       case 'terminal': onToggleTerminal(); return true
       case 'title': if (sessionId && args) renameSession(args); return true
       case 'retry': if (sessionId) return await onRegenerate() ? true : 'refused'; return true
-      case 'undo': if (sessionId) return await runHistory(m.history_undoing(), async (current) => { const r = await api.undoSession(sessionId); if (!current()) return; if ('error' in r) throw new Error(r.error); await refresh(undefined, true); showUndoChangedFiles(sessionId, r.changed_files) }, lastExchange) ? true : 'refused'; return true
+      case 'undo': if (sessionId) return await runHistory(m.history_undoing(), async (current) => { const r = await api.undoSession(sessionId); if (!current()) return; if ('error' in r) throw new Error(r.error); await refresh(undefined, true); showUndoChangedFiles(sessionId, r.changed_files, () => navigate({ to: '/session/$sessionId', params: { sessionId } })) }, lastExchange) ? true : 'refused'; return true
       case 'compress': if (sessionId) { void runCompression(sessionId) } return true
       case 'usage': if (sessionId) { const u = await api.fetchSessionUsage(sessionId); showToast(`${(u.input_tokens ?? 0).toLocaleString()} in · ${(u.output_tokens ?? 0).toLocaleString()} out${u.estimated_cost ? ` · $${u.estimated_cost.toFixed(4)}` : ''}`, 4000) } return true
       case 'yolo': onToggleYolo(); return true
@@ -631,10 +631,13 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
   )
 }
 
-/** TAL-2069: Undo only rewinds the chat, so the files the undone turns changed stay on disk; name them with a way to Checkpoints. */
-function showUndoChangedFiles(sessionId: string, files: string[]): void {
+/**
+ * TAL-2069: Undo only rewinds the chat, so the files the undone turns changed stay on disk; name them with a way to
+ * Checkpoints. The toast outlives the chat it names, so its action opens that chat first (`openChat`), then its page.
+ */
+function showUndoChangedFiles(sessionId: string, files: string[], openChat: () => Promise<void>): void {
   if (!files.length) return
   const id = `undo-changed-files-${sessionId}`
   showRichToast({ id, title: m.undo_changed_files(), text: files.join(' · '), ttl: 10000, kind: 'info', dismissible: true,
-    actions: [{ id: 'checkpoints', label: m.checkpoint_title(), style: 'default', onSelect: () => { dismissToast(id); requestOpenCheckpoints({ sessionId }) } }] })
+    actions: [{ id: 'checkpoints', label: m.checkpoint_title(), style: 'default', onSelect: async () => { dismissToast(id); await openChat(); requestOpenCheckpoints({ sessionId }) } }] })
 }
