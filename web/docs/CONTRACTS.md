@@ -50,6 +50,21 @@ is edited.
 - [`docs/architecture/contract-package.md`](architecture/contract-package.md):
   the `packages/contracts` layout and the committed OpenAPI document.
 - [`docs/rfcs/README.md`](rfcs/README.md): RFC conventions and index.
+- Insights ranges (TAL-1117): `GET /api/insights` reads a trailing `days`
+  preset (1 to 365, default 30) or, with `start` and/or `end`, a custom range on
+  the server's calendar and time zone. An endpoint is a `YYYY-MM-DD` day (a
+  whole day: from its midnight, through the next) or exact unix seconds (a
+  half-open `[start, end)` bound). An omitted end, or one after the clock, runs
+  through now; an omitted start opens the preset's trailing window ending on
+  the end's last day. Reversed endpoints swap roles, a range longer than five
+  calendar years keeps its last five, and a range past 366 days buckets
+  `daily_tokens` by month. A blank, impossible, pre-epoch or out-of-range
+  endpoint, or a start after the clock, serves the preset instead. The
+  response's `range` names the interval served (`mode`, bounds, days,
+  `timezone`, `bucket`, `today`), any `fallback_reason` and `adjustments`;
+  totals and every chart admit the same sessions from the session index and
+  state.db. Clients send dates as typed and render `range`;
+  `contracts/fixtures/insights-range.json` is the shared example.
 
 ## Authentication contracts
 

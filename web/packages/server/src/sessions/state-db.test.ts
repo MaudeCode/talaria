@@ -1284,7 +1284,7 @@ describe('remaining indexed readers (TAL-1188)', () => {
     insertSession(db, { id: 'cached', source: 'cli', started_at: 1_760_000_000, model: 'm' })
     db.exec("UPDATE sessions SET input_tokens = 100, cache_read_tokens = 900, cache_write_tokens = 0 WHERE id = 'cached'")
     db.close()
-    const insights = await buildInsights([], '1', 1_760_000_050, (cutoff) => insightsSessionRows(path, cutoff))
+    const insights = await buildInsights([], { days: '1' }, 1_760_000_050, (cutoff) => insightsSessionRows(path, cutoff))
     expect(insights).toMatchObject({ total_input_tokens: 1000, total_cache_read_tokens: 900, total_cache_hit_percent: 90 })
     expect((insights.models as Record<string, unknown>[])[0]).toMatchObject({ model: 'm', cache_hit_percent: 90 })
   })

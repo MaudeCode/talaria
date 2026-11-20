@@ -753,7 +753,7 @@ export const toolsRouter = os.router({
     entries = entries.filter((entry) => sessions.personMaySee(entry.owner_person_id))
     const visible = new Set(entries.map((entry) => str(entry.session_id)))
     const stateRows = async (cutoff: number) => filterAsync(await stateDbSessionReadAsync([], 'insightsSessionRows', join(home(ctx), 'state.db'), cutoff), async (row) => visible.has(str(row.session_id)) || await sessions.personMaySeeForeign(str(row.session_id)))
-    return buildInsights(entries, input.days, ctx.deps.nowSeconds(), stateRows) as never
+    return buildInsights(entries, input, ctx.deps.nowSeconds(), stateRows) as never
   })),
   logs: os.logs.handler(({ input, signal, context: { ctx } }) => run(async () => {
     // TAL-2139: this server's own logs cover every person and profile, so only the server owner reads them.
