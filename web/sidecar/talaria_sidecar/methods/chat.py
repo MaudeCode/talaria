@@ -129,7 +129,8 @@ def _ask_clarify(run: _Run, data: dict, timeout: int, emit=None) -> str | None:
     finally:
         with run.lock:
             run.clarify_entries.pop(entry.clarify_id, None)
-        emit("clarify_resolved", {"clarify_id": entry.clarify_id, "session_id": run.session_id})
+        reason = "cancelled" if run.prompt_cancelled(data) else "timeout" if entry.result is None else "resolved"
+        emit("clarify_resolved", {"clarify_id": entry.clarify_id, "session_id": run.session_id, "reason": reason})
     return None if run.prompt_cancelled(data) else entry.result
 
 

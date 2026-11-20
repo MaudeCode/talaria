@@ -2063,6 +2063,17 @@ final class ChatHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "Clarification Required")
     }
 
+    func testReopenedChatShowsWithdrawalUntilTheNextSend() async throws {
+        let window = try await hostFixtureChat(["--ui-test-chat-full", "--ui-test-prompt-withdrawn"])
+        let label = "Approval timed out, so the action did not run."
+        _ = try await requireElement(in: window, label: label)
+        attachHostedScreenshot(window, name: "approval-withdrawal-reopened")
+        try await sendFromComposer("Run the deterministic fixture", in: window)
+        _ = try await requireElement(in: window, label: "Allow once")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: label))
+        attachHostedScreenshot(window, name: "approval-withdrawal-next-send")
+    }
+
     private static let approvalChoices = ["Allow once", "Allow session", "Always allow", "Deny", "Skip all this session"]
 
     /// The full fixture chat with its approval pending and the keyboard down, as a user reading it leaves it.

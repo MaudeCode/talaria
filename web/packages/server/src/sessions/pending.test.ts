@@ -6,11 +6,25 @@ import { PendingPrompts, type PendingSubscriber } from './pending.js'
 
 const scopeFixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/tool-approval-and-agents.json'), 'utf8')) as { approval_scopes: { pending: Record<string, unknown> }[] }).approval_scopes
 
+const withdrawalFixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/prompt-withdrawal.json'), 'utf8')) as Record<'approval_timeout' | 'resolved', Record<string, unknown>>
+
 function drain(sub: PendingSubscriber): Record<string, unknown>[] {
   return sub.queue.splice(0)
 }
 
 describe('pending prompt streams', () => {
+  it.each([
+    ['timeout', withdrawalFixture.approval_timeout],
+    ['resolved', withdrawalFixture.resolved],
+  ])('reports the final approval withdrawal after %s', (reason, envelope) => {
+    const pending = new PendingPrompts(new SessionEventBus())
+    pending.submitApproval('s', { approval_id: 'a', command: 'pwd' })
+    const [subscriber] = pending.subscribeApprovals('s')
+    pending.resolveApproval('s', 'a', reason)
+    expect(drain(subscriber)).toEqual([envelope])
+    expect(pending.approvalPending('s')).toEqual(envelope)
+  })
+
   it('keeps a command waiter when an overlapping chat turn clears its prompts', () => {
     const pending = new PendingPrompts(new SessionEventBus())
     pending.submitClarify('s', { clarify_id: 'turn', question: 'Turn?' })
@@ -99,7 +113,7 @@ describe('pending prompt streams', () => {
     expect(updates).toHaveLength(1)
     expect(updates[0]).toMatchObject({ pending: { approval_id: 'b', command: 'pwd' }, pending_count: 1 })
     pending.resolveApproval('s1', 'b')
-    expect(drain(sub)).toEqual([{ pending: null, pending_count: 0 }])
+    expect(drain(sub)).toEqual([{ pending: null, pending_count: 0, withdrawn: null }])
 
     pending.clearApprovals('s1')
     drain(sub)
@@ -124,7 +138,7 @@ describe('pending prompt streams', () => {
     const b = pending.submitClarify('s1', { question: 'Second?' })
     expect(drain(sub)).toMatchObject([{ pending: { clarify_id: b.clarify_id }, pending_count: 1 }])
     pending.resolveClarify('s1', String(b.clarify_id))
-    expect(drain(sub)).toEqual([{ pending: null, pending_count: 0 }])
+    expect(drain(sub)).toEqual([{ pending: null, pending_count: 0, withdrawn: null }])
 
     pending.clearClarifies('s1')
     drain(sub)

@@ -84,6 +84,7 @@ def test_real_agent_clarify_through_chat_start(tmp_path, shape, outcome):
     resolved = [data for event, data in observed["frames"] if event == "clarify_resolved"]
     assert len(prompts) == len(resolved) == 1
     assert resolved[0]["clarify_id"] == prompts[0]["clarify_id"]
+    assert resolved[0]["reason"] == {"submitted": "resolved", "timed_out": "timeout", "cancelled": "cancelled"}[outcome]
     assert prompts[0]["timeout_seconds"] == (1 if outcome == "timed_out" else 0)
     assert observed["run_released"] and observed["late"] == {"ok": False}
     assert observed["status"] == ("cancelled" if outcome == "cancelled" else "completed")

@@ -908,6 +908,16 @@ final class SSEClientTests: XCTestCase {
         )
     }
 
+    func testDecodesApprovalWithdrawalFromChatStream() {
+        guard case .approvalPending(let update) = SSEEventDecoder.decode(
+            eventType: "approval_cleared",
+            data: #"{"pending_count":0,"withdrawn":{"kind":"approval","reason":"timeout"}}"#
+        ) else { return XCTFail("Expected the cleared approval envelope") }
+        XCTAssertNil(update.pending)
+        XCTAssertEqual(update.withdrawn?.kind, .approval)
+        XCTAssertEqual(update.withdrawn?.reason, .timeout)
+    }
+
     func testDecodesTitleEventFromUpstreamPayload() {
         let event = SSEEventDecoder.decode(
             eventType: "title",

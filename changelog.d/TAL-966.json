@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Chats explain when an approval request or question is withdrawn before you answer.",
+      "highlight": false,
+      "components": ["web", "app"],
+      "announce": false
+    }
+  ]
+}

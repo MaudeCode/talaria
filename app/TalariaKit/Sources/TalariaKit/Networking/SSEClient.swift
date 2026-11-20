@@ -121,7 +121,7 @@ public enum SSEEvent: Equatable, Sendable {
     /// A provider diagnostic that does not end the response or the SSE connection.
     case warning(String)
     /// A terminal error frame: its message and the server's turn outcome (`terminal_state`).
-    case error(String, terminalState: String? = nil)
+    case error(String, terminalState: String? = nil, withdrawn: PromptWithdrawal? = nil)
     case transportError(String)
     case heartbeat
     case ignored
@@ -532,7 +532,7 @@ struct SSEEventDecoder {
             return .approvalPending(ApprovalPendingResponse.streamPayload(from: eventData, decoder: decoder))
         case "approval_cleared":
             // The last approval settled, here or in another client.
-            return .approvalPending(ApprovalPendingResponse(pending: nil, pendingCount: 0))
+            return .approvalPending(ApprovalPendingResponse.streamPayload(from: eventData, decoder: decoder))
         case "clarify":
             logInvalidJSONIfNeeded(eventType: eventType, payloadName: "clarification stream payload", data: eventData)
             return .clarificationPending(ClarificationPendingResponse.streamPayload(from: eventData, decoder: decoder))
@@ -592,7 +592,8 @@ struct SSEEventDecoder {
             }
             return .error(
                 payload.error ?? payload.message ?? String(localized: "The stream returned an error."),
-                terminalState: payload.terminalState
+                terminalState: payload.terminalState,
+                withdrawn: payload.withdrawn
             )
         default:
             logger.debug("Ignoring unknown SSE event type '\(eventType, privacy: .public)'.")
@@ -727,11 +728,21 @@ private struct ErrorPayload: Decodable {
     let error: String?
     let message: String?
     let terminalState: String?
+    let withdrawn: PromptWithdrawal?
 
     enum CodingKeys: String, CodingKey {
         case error
         case message
         case terminalState = "terminal_state"
+        case withdrawn
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        terminalState = try container.decodeIfPresent(String.self, forKey: .terminalState)
+        withdrawn = try? container.decodeIfPresent(PromptWithdrawal.self, forKey: .withdrawn)
     }
 }
 

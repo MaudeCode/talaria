@@ -90,7 +90,7 @@ it('answers a running plugin command through the ordinary clarification stream w
     expect((await post('/api/clarify/respond', { session_id: sid, clarify_id: 'command-choice', answers: { q0: 'Development' } })).status).toBe(200)
     const result = await command
     expect(await result.json()).toEqual({ output: 'private-dev' })
-    expect(s.deps.pending.clarifyPending(sid)).toEqual({ pending: null, pending_count: 0 })
+    expect(s.deps.pending.clarifyPending(sid)).toEqual({ pending: null, pending_count: 0, withdrawn: null })
     expect(sidecar.calls.filter((c) => c.method === 'commands.exec')).toHaveLength(1)
     expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)
     expect((await s.deps.sessionStore.get(sid)).messages).toEqual([])

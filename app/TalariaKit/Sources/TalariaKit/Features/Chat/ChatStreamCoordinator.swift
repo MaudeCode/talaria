@@ -884,7 +884,12 @@ public final class ChatStreamCoordinator {
                 finishLiveActivity(status: .cancelled, activity: String(localized: "Stopped"), errorSummary: nil)
             }
             finishStream()
-        case .error(let message, let terminalState):
+        case .error(let message, let terminalState, let withdrawn):
+            if let withdrawn {
+                delegate?.streamCoordinatorApplyApprovalUpdate(
+                    ApprovalPendingResponse(pending: nil, pendingCount: 0, withdrawn: withdrawn)
+                )
+            }
             if !isCurrentRunTerminated {
                 let outcome = LiveActivityReconciler.outcome(forTurnTerminalState: terminalState ?? "error")
                 // A run the server reports cancelled ends like a cancel, without a failure message.

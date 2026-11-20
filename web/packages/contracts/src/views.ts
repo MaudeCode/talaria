@@ -961,7 +961,14 @@ export const ApprovalPendingSchema = z.looseObject({
   reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional(),
 })
 export type ApprovalPending = z.infer<typeof ApprovalPendingSchema>
-export const ApprovalPendingEnvelopeSchema = z.looseObject({ pending: ApprovalPendingSchema.nullable(), pending_count: z.number().int() })
+export const PromptWithdrawalSchema = z.object({
+  kind: z.enum(['approval', 'clarify']),
+  reason: z.enum(['timeout', 'stopped', 'shutdown']),
+})
+export type PromptWithdrawal = z.infer<typeof PromptWithdrawalSchema>
+export const PromptWithdrawalField = PromptWithdrawalSchema.nullable().optional()
+
+export const ApprovalPendingEnvelopeSchema = z.looseObject({ pending: ApprovalPendingSchema.nullable(), pending_count: z.number().int(), withdrawn: PromptWithdrawalField })
 export const ApprovalChoiceSchema = z.enum(['once', 'session', 'always', 'deny'])
 export const ApprovalRespondRequestSchema = z.looseObject({ session_id: SessionIdSchema, choice: ApprovalChoiceSchema, approval_id: z.string().optional(), instruction: z.string().optional(), command: z.string().optional(), yolo: z.boolean().optional(), run_id: z.string().optional(), mirror_token: z.string().optional() })
 export const ApprovalRespondResponseSchema = z.looseObject({ ok: z.boolean(), choice: z.string().optional(), yolo_enabled: z.boolean().optional(), stale_cleared: z.boolean().optional(), error: z.string().optional(), pending_count: z.number().optional(),
@@ -1017,7 +1024,7 @@ export const ClarifyPendingSchema = z.looseObject({
   timeout_seconds: z.number().optional(), pending_count: z.number().optional(), index: z.number().optional(), total: z.number().optional(),
 })
 export type ClarifyPending = z.infer<typeof ClarifyPendingSchema>
-export const ClarifyPendingEnvelopeSchema = z.looseObject({ pending: ClarifyPendingSchema.nullable(), pending_count: z.number().int() })
+export const ClarifyPendingEnvelopeSchema = z.looseObject({ pending: ClarifyPendingSchema.nullable(), pending_count: z.number().int(), withdrawn: PromptWithdrawalField })
 export const ClarifyRespondRequestSchema = z.looseObject({ session_id: SessionIdSchema, answers: ClarifyAnswersSchema.optional(), response: z.string().optional(), answer: z.string().optional(), choice: z.string().optional(), clarify_id: z.string().optional(), decline: z.boolean().optional() })
 export const ClarifyRespondResponseSchema = z.looseObject({ ok: z.boolean(), response: z.string().optional(), error: z.string().optional(), stale: z.boolean().optional() })
 

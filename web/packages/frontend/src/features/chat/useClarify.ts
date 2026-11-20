@@ -27,14 +27,15 @@ export interface Clarify {
   send: (text: string) => void
 }
 
-/** The session's clarify queue head while a turn or command runs; every reader shares one query. */
+/** One prompt snapshot supplies the last withdrawal on open and the clarify head while a turn or command runs. */
 export function useClarifyHead(sessionId: string | null, live: LiveTurn | null) {
   const commands = useIsMutating({ mutationKey: keys.commandExec(sessionId) })
   const running = !!sessionId && (commands > 0 || (!!live && !isTerminal(live.status)))
   const query = useQuery({
     queryKey: keys.clarify(sessionId ?? ''),
     queryFn: () => api.fetchClarifyPending(sessionId ?? ''),
-    enabled: running,
+    enabled: !!sessionId,
+    refetchOnMount: 'always',
     refetchInterval: ({ state }) => {
       const status = live?.status
       // A command may have no stream to announce its prompt, and no frame arrives before the stream opens.

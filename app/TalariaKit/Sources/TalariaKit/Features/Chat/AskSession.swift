@@ -186,7 +186,7 @@ public struct AskSession {
             case .clarificationPending(let clarification):
                 guard let pending = clarification.pending, !pending.isEmpty else { continue }
                 return result(.needsInput, pending.steps?.first?.question ?? "")
-            case .error(let message, _):
+            case .error(let message, _, _):
                 return result(.failed, message)
             case .cancelled:
                 return result(.failed, String(localized: "The request was cancelled."))
