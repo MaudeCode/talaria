@@ -69,8 +69,9 @@ it('names the chat whose agent answered the approval on the live row (TAL-1169)'
 
 it('lights the group folding that row, which is all the reader can see of it (TAL-1783)', () => {
   const run = liveRun()
-  run.emit({ event: 'tool', data: { id: 'read', name: 'read_file', kind: 'read', target: 'CHANGELOG.md' } })
-  run.emit({ event: 'tool', data: { id: 'reset', name: 'terminal', kind: 'shell', target: 'git reset' } })
+  // TAL-2481: the server puts both calls in one activity group.
+  run.emit({ event: 'tool', data: { id: 'read', name: 'read_file', kind: 'read', target: 'CHANGELOG.md', group_id: 'group:0' } })
+  run.emit({ event: 'tool', data: { id: 'reset', name: 'terminal', kind: 'shell', target: 'git reset', group_id: 'group:0' } })
   const view = render(<View run={run} />)
   run.emit({ event: 'tool_approval', data: { id: 'reset', outcome: 'denied' } })
   view.rerender(<View run={run} />)

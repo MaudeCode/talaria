@@ -11,12 +11,15 @@ import { ApprovalCard, ApprovalCards } from './ApprovalCard'
 import { Menu, MenuItem } from '../../ui/Menu'
 import { showToast } from '../toast/toast'
 import { ApiError } from '../../contracts/common'
+import type { ApprovalPending } from '../../contracts'
 
+/** Every choice, as the server writes them for an approval that names none (TAL-2481). */
+const ALL: ApprovalPending['allowed_choices'] = ['once', 'session', 'always', 'deny']
 const render = (ui: ReactElement) => renderView(ui, { wrapper: queryWrapper() })
 
 describe('ApprovalCard', () => {
   it('heads the card with the held call\'s icon and label as its tool row shows them, its arguments as rows (TAL-2333)', () => {
-    const { container, unmount } = render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'w1', command: 'write /etc/hosts', description: 'Protected path', question: 'Allow?', reason: 'Dangerous', tool: { name: 'write_file', kind: 'write', target: '/etc/hosts', args_fields: [{ key: 'path', value: '/etc/hosts', multiline: false }, { key: 'content', value: '127.0.0.1 example', multiline: false }] } }} onResolved={() => undefined} />)
+    const { container, unmount } = render(<ApprovalCard sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 'w1', command: 'write /etc/hosts', description: 'Protected path', question: 'Allow?', reason: 'Dangerous', tool: { name: 'write_file', kind: 'write', target: '/etc/hosts', args_fields: [{ key: 'path', value: '/etc/hosts', multiline: false }, { key: 'content', value: '127.0.0.1 example', multiline: false }] } }} onResolved={() => undefined} />)
     expect(screen.getByRole('alertdialog')).toHaveAccessibleName('Approval required: Editing /etc/hosts')
     expect(container.querySelector('.approval-header svg.lucide-file-pen')).not.toBeNull()
     expect(container.querySelector('.approval-desc')).toHaveTextContent(/^Protected path$/)
@@ -24,15 +27,15 @@ describe('ApprovalCard', () => {
     expect(container.querySelector('.approval-cmd')).toBeNull()
     unmount()
     // A shell call keeps its command in the code block; an app's call reads as its app and action.
-    const shell = render(<ApprovalCard sessionId="s1" pending={{ approval_id: 's1', command: 'git push', tool: { name: 'terminal', kind: 'shell', target: 'git push' } }} onResolved={() => undefined} />)
+    const shell = render(<ApprovalCard sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 's1', command: 'git push', tool: { name: 'terminal', kind: 'shell', target: 'git push' } }} onResolved={() => undefined} />)
     expect(shell.container.querySelector('.approval-cmd')).toHaveTextContent('git push')
     expect(shell.container.querySelector('.approval-args')).toBeNull()
     shell.unmount()
-    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'm1', tool: { name: 'mcp__linear__create_issue', kind: 'mcp', target: 'Create issue', app: { name: 'Linear', logo_url: null } } }} onResolved={() => undefined} />)
+    render(<ApprovalCard sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 'm1', tool: { name: 'mcp__linear__create_issue', kind: 'mcp', target: 'Create issue', app: { name: 'Linear', logo_url: null } } }} onResolved={() => undefined} />)
     expect(screen.getByRole('alertdialog')).toHaveAccessibleName('Approval required: Linear · Create issue')
   })
   it('shows only the server\'s description, never a question or reason it did not pick (TAL-2333)', () => {
-    const { container } = render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'q1', command: 'ls', question: 'Allow?', reason: 'Dangerous' }} onResolved={() => undefined} />)
+    const { container } = render(<ApprovalCard sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 'q1', command: 'ls', question: 'Allow?', reason: 'Dangerous' }} onResolved={() => undefined} />)
     expect(container.querySelector('.approval-desc')).toBeNull()
   })
   it('offers only owner-approved choices and never offers native YOLO', () => {
@@ -62,7 +65,7 @@ describe('ApprovalCard', () => {
 
   it('renders the command with alertdialog semantics and answers "allow once"', async () => {
     const onResolved = vi.fn()
-    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a1', command: 'rm -rf build', pending_count: 2 }} onResolved={onResolved} />)
+    render(<ApprovalCard sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 'a1', command: 'rm -rf build', pending_count: 2 }} onResolved={onResolved} />)
     const dialog = screen.getByRole('alertdialog')
     expect(dialog).toHaveAccessibleName()
     expect(screen.getByText('rm -rf build')).toBeInTheDocument()
@@ -73,11 +76,11 @@ describe('ApprovalCard', () => {
 
   it('answers "allow once" on Enter when focus is outside a text field, and denies on Deny', async () => {
     const onResolved = vi.fn()
-    const first = render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a2', command: 'ls' }} onResolved={onResolved} />)
+    const first = render(<ApprovalCard sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 'a2', command: 'ls' }} onResolved={onResolved} />)
     await userEvent.keyboard('{Enter}')
     await waitFor(() => expect(api.respondApproval).toHaveBeenCalledWith(expect.objectContaining({ choice: 'once', approval_id: 'a2' })))
     first.unmount()
-    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a4', command: 'ls' }} onResolved={onResolved} />)
+    render(<ApprovalCard sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 'a4', command: 'ls' }} onResolved={onResolved} />)
     await userEvent.click(screen.getByRole('button', { name: /deny/i }))
     await waitFor(() => expect(api.respondApproval).toHaveBeenCalledWith(expect.objectContaining({ choice: 'deny', approval_id: 'a4' })))
   })
@@ -86,7 +89,7 @@ describe('ApprovalCard', () => {
     let refuse!: (error: unknown) => void
     vi.mocked(api.respondApproval).mockReturnValueOnce(new Promise((_, reject) => { refuse = reject }) as never)
     const onResolved = vi.fn()
-    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a5', command: 'rm -rf build' }} onResolved={onResolved} />)
+    render(<ApprovalCard sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 'a5', command: 'rm -rf build' }} onResolved={onResolved} />)
     await userEvent.click(screen.getByRole('button', { name: /deny/i }))
     expect(screen.queryByRole('alertdialog')).toBeNull()
     await act(async () => { refuse(new ApiError({ kind: 'http', status: 400, path: '/api/approval/respond', message: 'Approval expired' })); await Promise.resolve() })
@@ -100,8 +103,8 @@ describe('ApprovalCard', () => {
   it('brings the card back when the relay to the run is unavailable and the approval still waits (TAL-1384)', async () => {
     const onResolved = vi.fn()
     vi.mocked(api.respondApproval).mockClear().mockRejectedValueOnce(new ApiError({ kind: 'http', status: 409, code: 'gateway_run_unavailable', path: '/api/approval/respond', message: 'The run is not reachable from Web' }))
-    vi.mocked(api.fetchApprovalPending).mockResolvedValueOnce({ pending: { approval_id: 'a7', command: 'deploy', run_id: 'r1' }, pending_count: 1 })
-    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a7', command: 'deploy', run_id: 'r1' }} onResolved={onResolved} />)
+    vi.mocked(api.fetchApprovalPending).mockResolvedValueOnce({ pending: { allowed_choices: ALL, approval_id: 'a7', command: 'deploy', run_id: 'r1' }, pending_count: 1 })
+    render(<ApprovalCard sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 'a7', command: 'deploy', run_id: 'r1' }} onResolved={onResolved} />)
     await userEvent.click(screen.getByRole('button', { name: /deny/i }))
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
     expect(showToast).toHaveBeenLastCalledWith('The run is not reachable from Web', 4000, 'error')
@@ -110,14 +113,14 @@ describe('ApprovalCard', () => {
   })
 
   it.each([
-    ['still waits', { approval_id: 'a6', command: 'rm -rf build' }, true],
+    ['still waits', { allowed_choices: ALL, approval_id: 'a6', command: 'rm -rf build' }, true],
     ['has moved on', null, false],
   ] as const)('asks the server whether the approval still waits after an unknown outcome: it %s (TAL-1384)', async (_, head, back) => {
     const onResolved = vi.fn(() => { view.rerender(<></>) })
     vi.mocked(api.respondApproval).mockClear().mockRejectedValueOnce(new ApiError({ kind: 'network', path: '/api/approval/respond', message: 'Network down' }))
     vi.mocked(api.fetchApprovalPending).mockResolvedValueOnce({ pending: head, pending_count: head ? 1 : 0 })
     // ChatView drops the card when the stream's approval clears.
-    const view = render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a6', command: 'rm -rf build' }} onResolved={onResolved} />)
+    const view = render(<ApprovalCard sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 'a6', command: 'rm -rf build' }} onResolved={onResolved} />)
     await userEvent.click(screen.getByRole('button', { name: /deny/i }))
     await waitFor(() => { expect(api.fetchApprovalPending).toHaveBeenCalledWith('s1') })
     if (back) {
@@ -131,7 +134,7 @@ describe('ApprovalCard', () => {
   })
 
   it('does not treat Enter inside a text field as an approval', async () => {
-    render(<><input aria-label="other" /><ApprovalCard sessionId="s1" pending={{ approval_id: 'a3', command: 'ls' }} onResolved={() => undefined} /></>)
+    render(<><input aria-label="other" /><ApprovalCard sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 'a3', command: 'ls' }} onResolved={() => undefined} /></>)
     vi.mocked(api.respondApproval).mockClear()
     await userEvent.click(screen.getByLabelText('other'))
     await userEvent.keyboard('{Enter}')
@@ -141,7 +144,7 @@ describe('ApprovalCard', () => {
 })
 
 describe('ApprovalCard exit (TAL-1783)', () => {
-  const pending = { approval_id: 'exit', command: 'git push' }
+  const pending = { allowed_choices: ALL, approval_id: 'exit', command: 'git push' }
   const shell = () => document.querySelector('.approval-card')
   /** jsdom has no TransitionEvent: the bare event carries the property React reads. */
   const transitionEnd = (el: Element, propertyName: string) => { act(() => { el.dispatchEvent(Object.assign(new Event('transitionend', { bubbles: true }), { propertyName })) }) }
@@ -210,7 +213,7 @@ describe('ApprovalCard exit (TAL-1783)', () => {
     const onResolved = vi.fn()
     const view = render(<ApprovalCards sessionId="s1" pending={pending} onResolved={onResolved} />)
     await userEvent.click(screen.getByRole('button', { name: /^deny$/i }))
-    view.rerender(<ApprovalCards sessionId="s1" pending={{ approval_id: 'next', command: 'git tag' }} onResolved={onResolved} />)
+    view.rerender(<ApprovalCards sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 'next', command: 'git tag' }} onResolved={onResolved} />)
     expect(document.querySelectorAll('.approval-card')).toHaveLength(2)
     expect(screen.getByRole('alertdialog')).toHaveTextContent('git tag')
     view.rerender(<ApprovalCards sessionId="s1" pending={null} onResolved={onResolved} />)
@@ -223,7 +226,7 @@ describe('ApprovalCard exit (TAL-1783)', () => {
 
 describe('ApprovalCard deny with an instruction (TAL-1912)', () => {
   const tellRow = { name: 'No, and tell Hermes instead' }
-  const pending = { approval_id: 'told', command: 'rm -rf build', can_deny_with_instruction: true }
+  const pending = { allowed_choices: ALL, approval_id: 'told', command: 'rm -rf build', can_deny_with_instruction: true }
   const openBox = async () => {
     await userEvent.click(screen.getByRole('button', tellRow))
     return screen.getByRole('textbox', { name: 'What should Hermes do instead?' })
@@ -236,7 +239,7 @@ describe('ApprovalCard deny with an instruction (TAL-1912)', () => {
     ['an older server omits it', {}, false],
     ['a Group Chat approval', { allowed_choices: ['once', 'deny'] as ('once' | 'deny')[], can_enable_yolo: false, can_deny_with_instruction: false }, false],
   ])('shows the row only when %s', (_, fields, shown) => {
-    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'row', command: 'ls', ...fields }} onResolved={() => undefined} />)
+    render(<ApprovalCard sessionId="s1" pending={{ allowed_choices: ALL, approval_id: 'row', command: 'ls', ...fields }} onResolved={() => undefined} />)
     expect(screen.queryAllByRole('button', tellRow)).toHaveLength(shown ? 1 : 0)
   })
 
@@ -290,7 +293,7 @@ describe('ApprovalCard deny with an instruction (TAL-1912)', () => {
 
 describe('ApprovalCard keyboard ownership', () => {
   beforeEach(() => { vi.clearAllMocks() })
-  const card = (sessionId = 'keyboard', approvalId = 'keyboard-approval') => <ApprovalCard sessionId={sessionId} pending={{ approval_id: approvalId, command: 'echo fixture' }} onResolved={() => undefined} />
+  const card = (sessionId = 'keyboard', approvalId = 'keyboard-approval') => <ApprovalCard sessionId={sessionId} pending={{ allowed_choices: ALL, approval_id: approvalId, command: 'echo fixture' }} onResolved={() => undefined} />
 
   it('sends only always when Enter activates the actual shared menu item', async () => {
     render(card())

@@ -21,7 +21,7 @@ import { configBoolean, managedAgentApprovals, auxiliaryModels, auxiliaryReasoni
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
-import { composerQuota, displayName, providerEnvVar, providerListing, stampAuxiliarySelections, type QuotaSourceRow } from '../providers/catalog.js'
+import { composerQuota, displayName, providerEnvVar, providerListing, searchedCatalog, stampAuxiliarySelections, type QuotaSourceRow } from '../providers/catalog.js'
 import { OAUTH_PROVIDERS, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
 import { displayBotName, KANBAN_PINS_BY_PROFILE_KEY, PINNED_SESSIONS_LIMIT_RANGE, MODEL_FAVORITES_BY_PROFILE_KEY, HIDDEN_MODELS_BY_PROFILE_KEY, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool, sidebarQuotaProjection, composerControlCount, navigationCounts } from '../settings.js'
 import { str } from '../util.js'
@@ -558,10 +558,11 @@ export const settingsRouter = os.router({
   models: {
     picker: os.models.picker.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.settingsModelPicker(home(ctx), activeProfileName(ctx), input))),
     hidden: os.models.hidden.handler(({ input, context: { ctx } }) => run(() => modelPreferenceWrite(async () => ({ ok: true as const, hidden_models: await ctx.deps.settings.setModelHidden(modelPreferenceProfile(ctx, input.profile), canonicalModelPreference(input), input.hidden) })))),
-    list: os.models.list.handler(({ input, context: { ctx } }) => run(() => {
+    list: os.models.list.handler(({ input, context: { ctx } }) => run(async () => {
       const freshness = str(input.freshness).trim().toLowerCase()
       if (freshness && freshness !== 'session_visit') throw new HttpError(400, `unknown models freshness: ${freshness}`)
-      return ctx.deps.catalog.pickerModels(home(ctx), activeProfileName(ctx))
+      const catalog = await ctx.deps.catalog.pickerModels(home(ctx), activeProfileName(ctx))
+      return input.q?.trim() ? searchedCatalog(catalog, input.q) : catalog
     })),
     live: os.models.live.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.liveModels(home(ctx), str(input.provider)))),
     refresh: os.models.refresh.handler(({ input, context: { ctx } }) => run(async () => {

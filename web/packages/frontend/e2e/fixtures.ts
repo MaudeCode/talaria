@@ -234,3 +234,21 @@ export async function expectPromptReachable(page: Page, card: Locator, controls:
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 }
+
+/** `/api/models` with or without its search (TAL-2481), never `/api/models/<route>`. */
+export const MODELS_URL = /\/api\/models(\?.*)?$/
+
+/**
+ * TAL-2481: a fake catalog route's answer, searched by the request's `q` as the server does: each group's rows whose label,
+ * id or provider label holds it, groups with none left out, and `offer_custom_id` when no catalog id is the query.
+ */
+export function modelsAnswer<T extends { groups: { provider: string; models: { id: string; label?: string }[] }[] }>(catalog: T, url: string) {
+  const q = new URL(url).searchParams.get('q')?.trim() ?? ''
+  if (!q) return catalog
+  const needle = q.toLowerCase()
+  const groups = catalog.groups.flatMap((group) => {
+    const models = group.models.filter((entry) => [entry.label ?? '', entry.id, group.provider].some((text) => text.toLowerCase().includes(needle)))
+    return models.length ? [{ ...group, models }] : []
+  })
+  return { ...catalog, groups, offer_custom_id: !catalog.groups.some((group) => group.models.some((entry) => entry.id === q)) }
+}

@@ -37,17 +37,19 @@ function normalizedChoices(raw: unknown): string[] | null {
 
 /**
  * TAL-1414: the approval choices an owner offers, failing closed. A list of strings keeps the choices Talaria can send;
- * anything else (null, an object, a scalar, a mixed list) offers none. Only an approval that never names its choices
- * (no `allowed_choices`) accepts all four.
+ * anything else (null, an object, a scalar, a mixed list) offers none. TAL-2481: an approval that never names its choices
+ * (no `allowed_choices`) accepts all four, and the queue writes them out so clients never assume them.
  */
-function approvalChoices(raw: unknown) {
+function approvalChoices(entry: Record<string, unknown>) {
+  if (!('allowed_choices' in entry)) return [...ApprovalChoiceSchema.options]
+  const raw = entry.allowed_choices
   if (!Array.isArray(raw) || raw.some((choice) => typeof choice !== 'string')) return []
   return ApprovalChoiceSchema.options.filter((choice) => raw.includes(choice))
 }
 
-/** Whether a queued approval accepts this answer (its owner offered it, or the approval never named its choices). */
+/** Whether a queued approval accepts this answer: its owner offered it (the queue always writes `allowed_choices`). */
 export function approvalAllows(entry: Record<string, unknown>, choice: string): boolean {
-  return !Array.isArray(entry.allowed_choices) || entry.allowed_choices.includes(choice)
+  return Array.isArray(entry.allowed_choices) && entry.allowed_choices.includes(choice)
 }
 
 /**
@@ -233,12 +235,10 @@ export class PendingPrompts {
   submitApproval(sid: string, approval: Record<string, unknown>): Record<string, unknown> {
     const entry = { ...approval }
     entry.approval_id ??= str(entry.request_id) || randomUUID().replace(/-/g, '')
-    if ('allowed_choices' in entry) {
-      const allowed = approvalChoices(entry.allowed_choices)
-      entry.allowed_choices = allowed
-      // Skipping approvals answers "once"; an approval whose owner did not offer it cannot be skipped.
-      if (!allowed.includes('once')) entry.can_enable_yolo = false
-    }
+    const allowed = approvalChoices(entry)
+    entry.allowed_choices = allowed
+    // Skipping approvals answers "once"; an approval whose owner did not offer it cannot be skipped.
+    if (!allowed.includes('once')) entry.can_enable_yolo = false
     // TAL-1912: the instruction goes out with a deny, so an approval without one cannot carry it.
     if (!approvalAllows(entry, 'deny')) entry.can_deny_with_instruction = false
     const q = this.queue(this.approvals, sid)
@@ -491,8 +491,7 @@ export const APPROVAL_ACTION_TEXT_LIMIT = 80
  * stands in for a command too long to show), or when the approval does not accept `once`.
  */
 export function approvalActionText(entry: Record<string, unknown>): string | undefined {
-  const allowed = entry.allowed_choices
-  if (Array.isArray(allowed) && !allowed.includes('once')) return undefined
+  if (!approvalAllows(entry, 'once')) return undefined
   const text = [entry.command, entry.description].map((value) => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '').find(Boolean)
   return text && Array.from(text).length <= APPROVAL_ACTION_TEXT_LIMIT ? text : undefined
 }

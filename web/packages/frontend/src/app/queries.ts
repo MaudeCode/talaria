@@ -45,7 +45,7 @@ const favoriteResource = (id: string) => `model-favorite:${id}`
 export function useSetModelFavorite() {
   return useResourceMutation({
     resource: ({ id }: ModelFavoriteWrite) => favoriteResource(id),
-    queryKey: keys.models, readKeys: () => [{ queryKey: keys.models, exact: true }],
+    queryKey: keys.models, readKeys: () => [{ queryKey: keys.models, exact: true }, keys.modelSearches],
     effect: ({ favorite }) => ({ value: favorite }),
     mutationFn: ({ provider_id, bare_id, favorite }) => api.setModelFavorite({ provider_id, model: bare_id, favorite }),
     onError: toastError,
@@ -115,6 +115,14 @@ export function useActiveProfileQuery() {
 
 export function useModelsQuery(opts: Partial<UseQueryOptions<Awaited<ReturnType<typeof api.fetchModels>>>> = {}) {
   return useQuery({ queryKey: keys.models, queryFn: () => api.fetchModels(), staleTime: 60_000, ...opts })
+}
+
+/**
+ * TAL-2481: the server's search of the catalog for `q` (its matching groups and `offer_custom_id`), with the query it
+ * answered. Idle without a query; the previous answer stays shown while the next loads.
+ */
+export function useModelSearchQuery(q: string) {
+  return useQuery({ queryKey: keys.modelSearch(q), queryFn: async () => ({ ...(await api.fetchModels(undefined, q)), q }), enabled: q !== '', staleTime: 60_000, placeholderData: keepPreviousData })
 }
 
 export function useProjectsQuery(enabled = true) {

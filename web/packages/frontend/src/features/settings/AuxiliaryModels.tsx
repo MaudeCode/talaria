@@ -3,7 +3,8 @@ import { Fragment, useState, type ReactNode } from 'react'
 import { Check, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { fetchAuxiliaryModels } from '../../api/endpoints'
-import { auxResource, useAuxiliaryModelsQuery, useModelsQuery, useSetAuxiliaryModel, useSetDelegation } from '../../app/queries'
+import { auxResource, useAuxiliaryModelsQuery, useModelSearchQuery, useModelsQuery, useSetAuxiliaryModel, useSetDelegation } from '../../app/queries'
+import { useDebounced } from '../../lib/useDebounced'
 import type { DelegationSettings, DelegationRoute } from '@maudecode/talaria-web-contracts'
 import { useResourceEffects, withEffects } from '../sessions/useResourceMutation'
 import { BackButton, IconButton } from '../../ui/Button'
@@ -174,10 +175,11 @@ function AuxiliaryModelPicker({ task, models, onDone, onPick }: { task: AuxTask;
     save.mutate({ task: task.task, model, provider: provider ?? null, shown: provider === 'auto' ? { ...AUTO, changed: changedAfter(task, { pinned: false }) } : { is_auto: false, changed: true, in_catalog: true, selected_option_id: model, provider_label: labels.provider_label ?? '', value_label: labels.value_label ?? model } })
     onDone?.()
   }
-  const q = query.trim().toLowerCase()
-  const groups = (models.data?.groups ?? [])
-    .map((g) => ({ ...g, rows: g.models.filter((mm) => !q || `${mm.label ?? ''} ${mm.id} ${g.provider}`.toLowerCase().includes(q)) }))
-    .filter((g) => g.rows.length)
+  // TAL-2481: the server searches the catalog; the list shows its answer while a query is typed.
+  const q = query.trim()
+  const search = useModelSearchQuery(useDebounced(q, 250))
+  const shown = q ? search : models
+  const groups = (shown.data?.groups ?? []).filter((g) => g.models.length)
   return (
     <div className="flex min-h-0 flex-col gap-3">
       {onDone && <div>
@@ -195,11 +197,11 @@ function AuxiliaryModelPicker({ task, models, onDone, onPick }: { task: AuxTask;
             <span className="block text-xs text-muted">{m.auxiliary_models_not_in_catalog()}</span>
           </OptionButton>
         )}
-        {models.isError && <ErrorState error={models.error} onRetry={() => { void models.refetch() }} />}
-        {!models.data ? !models.isError && <LoadingState /> : groups.length === 0 ? <EmptyState compact>{m.model_search_no_results()}</EmptyState> : groups.map((g) => (
+        {shown.isError && <ErrorState error={shown.error} onRetry={() => { void shown.refetch() }} />}
+        {!shown.data ? !shown.isError && <LoadingState /> : groups.length === 0 ? <EmptyState compact>{m.model_search_no_results()}</EmptyState> : groups.map((g) => (
           <section key={g.provider_id ?? g.provider} aria-label={catalogGroupLabel(g)} className="mt-2">
             <SectionHeader className="px-2 py-1">{catalogGroupLabel(g)}</SectionHeader>
-            {catalogModelSections(g, query).map((section) => <div key={section.label}>
+            {catalogModelSections(g).map((section) => <div key={section.label}>
               {section.label && <SectionHeader className="px-2 py-1">{section.label}</SectionHeader>}
               {section.models.map((mm) => <OptionButton key={mm.id} selected={!onPick && mm.id === task.selected_option_id} onClick={() => pick(mm.id, g.provider_id, { provider_label: catalogGroupLabel(g), value_label: mm.label ?? mm.id })}><ModelOptionContent entry={mm} /></OptionButton>)}
             </div>)}

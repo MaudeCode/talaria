@@ -138,6 +138,18 @@ describe('model favorites', () => {
     expect(starred(after)).toEqual(['anthropic/claude-opus-4-7'])
   })
 
+  it('searches the composer catalog by q and offers a custom id only when no catalog id is the query (TAL-2481)', async () => {
+    const searched = async (q: string): Promise<Catalog & { offer_custom_id?: boolean }> => (await (await s.get(`/api/models?q=${encodeURIComponent(q)}`)).json()) as Catalog & { offer_custom_id?: boolean }
+    const all = await catalog()
+    expect(all).not.toHaveProperty('offer_custom_id')
+    const opus = await searched(' OPUS ')
+    expect(opus.groups.map((g) => [g.provider_id, g.models.map((m) => m.bare_id)])).toEqual([['anthropic', ['claude-opus-4-7']]])
+    expect(opus.offer_custom_id).toBe(true)
+    const exact = all.groups[0]!.models[0]!.id
+    expect((await searched(exact)).offer_custom_id).toBe(false)
+    expect(await searched('no-such-model')).toMatchObject({ groups: [], offer_custom_id: true })
+  })
+
   it('refuses a malformed write', async () => {
     expect((await post('/api/models/favorite', { provider_id: '', model: 'x', favorite: true })).status).toBe(400)
     expect((await post('/api/models/favorite', { provider_id: 'anthropic', model: 'x' })).status).toBe(400)

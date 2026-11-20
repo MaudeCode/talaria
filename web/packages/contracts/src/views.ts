@@ -539,6 +539,11 @@ export const MessageSchema = z.looseObject({
    * document; `content` stays as stored for copy and edit. Absent when the text has no such reference.
    */
   _display_content: z.string().optional(),
+  /**
+   * TAL-2481: the text of a row whose `content` is a list of parts, joined by the server; clients show it in place of
+   * joining parts. Absent when `content` is a string, which is the row's text.
+   */
+  _display_text: z.string().optional(),
   /** TAL-186: the media `_display_content` references, in content order. */
   _media: z.array(DisplayMediaSchema).optional(),
   /**
@@ -921,8 +926,8 @@ export type SteerResponse = z.infer<typeof SteerResponseSchema>
 export const ApprovalToolSchema = z.object({ name: z.string(), kind: ToolKindSchema, target: z.string(), verb: ToolDisplayFields.verb, app: ToolDisplayFields.app, args_fields: ToolDisplayFields.args_fields, activity_unnamed: ToolDisplayFields.activity_unnamed })
 export type ApprovalTool = z.infer<typeof ApprovalToolSchema>
 export const ApprovalPendingSchema = z.looseObject({
-  allowed_choices: z.array(z.enum(['once', 'session', 'always', 'deny'])).optional()
-    .describe('The answers this approval accepts; empty when its owner offered none Talaria can send. Absent (older servers, direct sessions) accepts all four.'),
+  allowed_choices: z.array(z.enum(['once', 'session', 'always', 'deny']))
+    .describe('The answers this approval accepts: all four when its owner named none (TAL-2481), empty when it offered none Talaria can send.'),
   can_enable_yolo: z.boolean().optional(),
   can_deny_with_instruction: z.boolean().optional()
     .describe('This approval offers deny and its turn can take a steer, so a deny may carry an instruction. Absent means no.'),

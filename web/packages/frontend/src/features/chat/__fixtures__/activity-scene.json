@@ -35,7 +35,8 @@
               "titles": [
                 "Planning implementation"
               ],
-              "order_index": 1
+              "order_index": 1,
+              "group_id": "group:0"
             },
             {
               "row_id": "tool:call-1",
@@ -56,11 +57,26 @@
                 "duration": null,
                 "cost_usd": null
               },
-              "order_index": 2
+              "order_index": 2,
+              "group_id": "group:0"
             }
           ],
           "terminal_state": "completed",
-          "expanded_by_default": false
+          "expanded_by_default": false,
+          "activity_groups": [
+            {
+              "group_id": "group:0",
+              "parts": [
+                {
+                  "kind": "read",
+                  "count": 1,
+                  "failed": 0
+                }
+              ],
+              "failed": 0,
+              "running": false
+            }
+          ]
         },
         "_turn_id": "legacy:start"
       }

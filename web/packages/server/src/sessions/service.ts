@@ -31,7 +31,7 @@ import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, ha
 import { sessionOutline } from './outline.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, insertCompactionRow, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { agentSteerText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, normalizeUserDisplay, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withheldPromptText, withheldRowForModel, newestSettledReply, refusedNotice, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, isDict as isMessageDict, type ToolResultView } from './merge.js'
+import { agentSteerText, withDisplayText, ApiMessageSummary, isConversationalAssistant, messageText, splitDisplayText, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isCompactionRow, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, normalizeUserDisplay, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withheldPromptText, withheldRowForModel, newestSettledReply, refusedNotice, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, isDict as isMessageDict, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withResultFocusPaths } from './tool-display.js'
 import { inheritedTalariaActivities, pruneTalariaActivities, recordTalariaActivity, talariaActivity, withTalariaActivities } from './talaria-activities.js'
@@ -1325,7 +1325,7 @@ export class SessionService {
         offset = prompt
       }
       // Per-row display fields (TAL-186 media, TAL-456 excerpts cut from that display text) only for the rows sent.
-      truncated = withBodyExcerpts(withDisplayMedia(truncated, (await this.mediaProjector(s))), s.active_stream_id, limited ? limited.newestReply : newestSettledReply(all, s.active_stream_id), offset)
+      truncated = withBodyExcerpts(withDisplayMedia(withDisplayText(truncated), (await this.mediaProjector(s))), s.active_stream_id, limited ? limited.newestReply : newestSettledReply(all, s.active_stream_id), offset)
       if (msgLimit !== null) truncated = messagesForLimitedPayload(truncated)
     } else {
       summaryCount = s.metadataMessageCount ?? s.messages.length
@@ -1513,7 +1513,7 @@ export class SessionService {
       // whole transcript so every page carries the same values; only the page is then clipped and redacted.
       msgs = this.foreignMessages(read.rows, synth, await this.deps.showReasoning?.(synth.profile) ?? true, { running })
       const [rows, start] = messageWindowForDisplay(msgs, msgLimit, msgBefore)
-      page = msgLimit === null ? rows as Message[] : messagesForLimitedPayload(rows)
+      page = withDisplayText(msgLimit === null ? rows as Message[] : messagesForLimitedPayload(rows))
       offset = start
     }
     const count = loadMessages ? msgs.length : summary?.count ?? 0

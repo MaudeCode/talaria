@@ -31,18 +31,18 @@ function View({ activity, mode = 'compact_worklog', scope = 'profile/s', eventTi
   return <WorklogDisclosureProvider key={scope} scope={scope} eventTimestamps={eventTimestamps} fadeText={fadeText}><TurnActivityView activity={activity} mode={mode} /></WorklogDisclosureProvider>
 }
 
-/** Live frames as the server ships them: its kind and redacted target ride along with the args. */
-function tool(id: string) { return { event: 'tool', data: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, args: { path: `${id}.txt` } } } as const }
+/** Live frames as the server ships them: its kind and redacted target ride along with the args, in its activity group (TAL-2481). */
+function tool(id: string, group = 'group:0') { return { event: 'tool', data: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, args: { path: `${id}.txt` }, group_id: group } } as const }
 /** A settled turn as the server ships it: its scene decides the answer, the outcome and what folds. */
 function settled(scene: Record<string, unknown>): TurnActivity {
   const message = { role: 'assistant', id: 'settled', content: '', _turn_id: 'turn', _anchor_activity_scene: { version: 'activity_scene_v1', terminal_state: 'completed', final_answer: '', ...scene } } as Message
   return persistedActivity(groupAssistantTurns(projectMessages([message]))[0]!)
 }
 const proseRow = (id: string, text: string) => ({ row_id: id, role: 'prose', text })
-const toolRow = (id: string) => ({ row_id: `tool:${id}`, role: 'tool', tool: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, preview: null, result: `Contents of ${id}`, done: true, is_error: false, duration: null, cost_usd: null } })
+const toolRow = (id: string, group = 'group:0') => ({ row_id: `tool:${id}`, role: 'tool', group_id: group, tool: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, preview: null, result: `Contents of ${id}`, done: true, is_error: false, duration: null, cost_usd: null } })
 type SceneRows = NonNullable<Message['_anchor_activity_scene']>['activity_rows']
 const rows = (...list: Record<string, unknown>[]): SceneRows => list.map((row, order_index) => ({ ...row, order_index })) as SceneRows
-function completed(id: string) { return { event: 'tool_complete', data: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, result: `Contents of ${id}` } } as const }
+function completed(id: string, group = 'group:0') { return { event: 'tool_complete', data: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, result: `Contents of ${id}`, group_id: group } } as const }
 
 describe('turn worklog presentation', () => {
   it.each(['compact_worklog', 'transparent_stream'] as const)('keeps the selected JSON tree when fade changes and the first tool takes the tail (%s)', async (mode) => {
@@ -236,7 +236,7 @@ describe('turn worklog presentation', () => {
 
   it('expands every row of a worklog longer than the stored-choice cap (TAL-615)', () => {
     const ids = Array.from({ length: 205 }, (_, i) => `t${i}`)
-    const view = render(<View activity={settled({ final_answer: 'Done', activity_rows: rows(...ids.map(toolRow)) })} />)
+    const view = render(<View activity={settled({ final_answer: 'Done', activity_rows: rows(...ids.map((id) => toolRow(id))) })} />)
     fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
     fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
     const headers = () => [...view.container.querySelectorAll('.tool-card-header')].map((header) => header.getAttribute('aria-expanded'))
@@ -253,8 +253,8 @@ describe('turn worklog presentation', () => {
     run.emit({ event: 'token', data: { text: 'Before tools' } })
     run.emit(tool('a'))
     run.emit({ event: 'token', data: { text: 'Between batches' } })
-    run.emit({ event: 'reasoning', data: { text: 'Planning the second batch' } })
-    run.emit(tool('b')); run.emit(tool('c'))
+    run.emit({ event: 'reasoning', data: { text: 'Planning the second batch', group_id: 'group:1' } })
+    run.emit(tool('b', 'group:1')); run.emit(tool('c', 'group:1'))
     const view = render(<View activity={liveActivity(run.turn)} />)
     const group = view.container.querySelector('[data-activity-sequence-group]')!
     expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(1)
@@ -265,7 +265,7 @@ describe('turn worklog presentation', () => {
     expect(group.querySelector('[data-tool-id="c"]')).not.toBeVisible()
     expect(view.container.querySelector('[data-tool-id="a"]')).toBeVisible()
     expect(view.container.querySelector('[data-tool-id="a"]')?.closest('[data-activity-sequence-group]')).toBeNull()
-    run.emit(completed('c'))
+    run.emit(completed('c', 'group:1'))
     view.rerender(<View activity={liveActivity(run.turn)} />)
     expect(view.container.querySelector('[data-activity-sequence-group] > button')).toHaveTextContent('Read c.txt')
     run.emit({ event: 'token', data: { text: 'Done' } })
@@ -277,7 +277,7 @@ describe('turn worklog presentation', () => {
     expect(view.container.querySelector('[data-tool-id="a"]')).toBeVisible()
     expect(view.container.textContent).not.toContain('Worked')
     // The server's settled scene retains the same grouping and adds the outer Worklog.
-    view.rerender(<View activity={settled({ final_answer: 'Done', activity_rows: rows(proseRow('p1', 'Before tools'), toolRow('a'), proseRow('p2', 'Between batches'), { row_id: 'r', role: 'reasoning', text: 'Planning the second batch' }, toolRow('b'), toolRow('c')) })} />)
+    view.rerender(<View activity={settled({ final_answer: 'Done', activity_rows: rows(proseRow('p1', 'Before tools'), toolRow('a'), proseRow('p2', 'Between batches'), { row_id: 'r', role: 'reasoning', text: 'Planning the second batch', group_id: 'group:1' }, toolRow('b', 'group:1'), toolRow('c', 'group:1')) })} />)
     fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
     const nested = view.container.querySelector('[data-activity-sequence-group] > button')!
     expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(1)

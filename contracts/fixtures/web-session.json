@@ -1577,6 +1577,7 @@
             ]
           }
         ],
+        "_display_text": "Searching.",
         "message_id": "tool-anthropic-calls",
         "timestamp": 2011,
         "tool_calls": [
@@ -3920,6 +3921,7 @@
             "text": "Answer typed."
           }
         ],
+        "_display_text": "Answer typed.",
         "message_id": "typed-parts",
         "timestamp": 2031,
         "reasoning": "Plan typed.",

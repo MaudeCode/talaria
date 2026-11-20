@@ -10595,6 +10595,9 @@
                               "_display_content": {
                                 "type": "string"
                               },
+                              "_display_text": {
+                                "type": "string"
+                              },
                               "_media": {
                                 "type": "array",
                                 "items": {
@@ -18306,6 +18309,9 @@
                               "_display_content": {
                                 "type": "string"
                               },
+                              "_display_text": {
+                                "type": "string"
+                              },
                               "_media": {
                                 "type": "array",
                                 "items": {
@@ -24686,6 +24692,9 @@
                                 "type": "boolean"
                               },
                               "_display_content": {
+                                "type": "string"
+                              },
+                              "_display_text": {
                                 "type": "string"
                               },
                               "_media": {
@@ -34253,6 +34262,9 @@
                               "_display_content": {
                                 "type": "string"
                               },
+                              "_display_text": {
+                                "type": "string"
+                              },
                               "_media": {
                                 "type": "array",
                                 "items": {
@@ -39701,7 +39713,10 @@
                       "required": [
                         "ok",
                         "last_user_text",
-                        "removed_count"
+                        "last_user_prompt",
+                        "last_user_attachments",
+                        "removed_count",
+                        "retry_token"
                       ]
                     },
                     {
@@ -43158,6 +43173,9 @@
                                 "type": "boolean"
                               },
                               "_display_content": {
+                                "type": "string"
+                              },
+                              "_display_text": {
                                 "type": "string"
                               },
                               "_media": {
@@ -52651,6 +52669,9 @@
                               "_display_content": {
                                 "type": "string"
                               },
+                              "_display_text": {
+                                "type": "string"
+                              },
                               "_media": {
                                 "type": "array",
                                 "items": {
@@ -58976,6 +58997,9 @@
                                 "type": "boolean"
                               },
                               "_display_content": {
+                                "type": "string"
+                              },
+                              "_display_text": {
                                 "type": "string"
                               },
                               "_media": {
@@ -65367,6 +65391,9 @@
                               "_display_content": {
                                 "type": "string"
                               },
+                              "_display_text": {
+                                "type": "string"
+                              },
                               "_media": {
                                 "type": "array",
                                 "items": {
@@ -71752,6 +71779,9 @@
                                 "type": "boolean"
                               },
                               "_display_content": {
+                                "type": "string"
+                              },
+                              "_display_text": {
                                 "type": "string"
                               },
                               "_media": {
@@ -90808,6 +90838,9 @@
                               "_display_content": {
                                 "type": "string"
                               },
+                              "_display_text": {
+                                "type": "string"
+                              },
                               "_media": {
                                 "type": "array",
                                 "items": {
@@ -97185,6 +97218,9 @@
                                 "type": "boolean"
                               },
                               "_display_content": {
+                                "type": "string"
+                              },
+                              "_display_text": {
                                 "type": "string"
                               },
                               "_media": {
@@ -104252,6 +104288,9 @@
                               "_display_content": {
                                 "type": "string"
                               },
+                              "_display_text": {
+                                "type": "string"
+                              },
                               "_media": {
                                 "type": "array",
                                 "items": {
@@ -110785,6 +110824,9 @@
                                   "_display_content": {
                                     "type": "string"
                                   },
+                                  "_display_text": {
+                                    "type": "string"
+                                  },
                                   "_media": {
                                     "type": "array",
                                     "items": {
@@ -114183,7 +114225,7 @@
                                 ],
                                 "type": "string"
                               },
-                              "description": "The answers this approval accepts; empty when its owner offered none Talaria can send. Absent (older servers, direct sessions) accepts all four."
+                              "description": "The answers this approval accepts: all four when its owner named none (TAL-2481), empty when it offered none Talaria can send."
                             },
                             "can_enable_yolo": {
                               "type": "boolean"
@@ -114376,6 +114418,9 @@
                               "type": "string"
                             }
                           },
+                          "required": [
+                            "allowed_choices"
+                          ],
                           "additionalProperties": {}
                         },
                         {
@@ -121224,6 +121269,7 @@
     "/api/models": {
       "get": {
         "operationId": "models.list",
+        "description": "TAL-2481: with `q`, the catalog searched by it: each group's rows (and sections) whose label, id or provider label holds it, groups with none left out, and `offer_custom_id`.",
         "tags": [
           "settings"
         ],
@@ -121233,6 +121279,16 @@
             "in": "query",
             "schema": {
               "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 500
             },
             "allowEmptyValue": true,
             "allowReserved": true
@@ -121950,6 +122006,10 @@
                         "type": "string"
                       },
                       "description": "TAL-1858: the ids of the entries `favorites` marks, in starred order; the picker lists Favorites in this order."
+                    },
+                    "offer_custom_id": {
+                      "type": "boolean",
+                      "description": "With `q`: offer the trimmed query as a custom model id, because no catalog id is exactly it. Absent without `q`."
                     }
                   },
                   "required": [
@@ -162984,6 +163044,9 @@
                                 "type": "boolean"
                               },
                               "_display_content": {
+                                "type": "string"
+                              },
+                              "_display_text": {
                                 "type": "string"
                               },
                               "_media": {

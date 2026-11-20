@@ -291,8 +291,8 @@ export function ChatView({ sessionId, fromTitle = null }: { sessionId: string | 
       if ('error' in r) { showToast(r.error, 4000, 'error'); return false }
       await refresh(undefined, true)
       if (!current()) return
-      const attachments = r.last_user_attachments ?? []
-      await startTurn({ sessionId, message: r.last_user_prompt ?? '', recover: true, request: { ...turnRequest(session, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}), ...(r.retry_token ? { retry_token: r.retry_token } : {}) } })
+      const attachments = r.last_user_attachments
+      await startTurn({ sessionId, message: r.last_user_prompt, recover: true, request: { ...turnRequest(session, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}), retry_token: r.retry_token } })
     })
   }
 

@@ -177,7 +177,7 @@ test('Retry exposes intent through mutation, detail refresh and admission', asyn
   await page.route('**/api/session/retry', async (route) => {
     await retry.promise
     messages = []
-    await route.fulfill({ json: { ok: true, last_user_text: 'server-decorated text', last_user_prompt: 'Exact prompt', last_user_attachments: [{ path: '/synthetic/notes.txt', filename: 'notes.txt' }], removed_count: 2 } })
+    await route.fulfill({ json: { ok: true, last_user_text: 'server-decorated text', last_user_prompt: 'Exact prompt', last_user_attachments: [{ path: '/synthetic/notes.txt', filename: 'notes.txt' }], removed_count: 2, retry_token: 'held-prompt' } })
   })
   const admission = hold()
   const starts: Record<string, unknown>[] = []

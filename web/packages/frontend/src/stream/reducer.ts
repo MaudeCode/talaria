@@ -204,7 +204,7 @@ function appendText(segments: Segment[], text: string): Segment[] {
 /** A delta continues the open reasoning segment unless the server names a different one. */
 function appendReasoning(segments: Segment[], text: string, titles: string[] | null, disclosureKey: string | undefined, groupId: string | undefined): Segment[] {
   const last = segments[segments.length - 1]
-  if (last?.kind === 'reasoning' && (disclosureKey === undefined || last.disclosureKey === undefined || disclosureKey === last.disclosureKey)) return [...segments.slice(0, -1), { ...last, text: last.text + text, titles: titles ?? last.titles, ...(last.groupId === undefined && groupId !== undefined ? { groupId } : {}) }]
+  if (last?.kind === 'reasoning' && (disclosureKey === undefined || last.disclosureKey === undefined || disclosureKey === last.disclosureKey)) return [...segments.slice(0, -1), { ...last, text: last.text + text, titles: titles ?? last.titles }]
   if (!text && !titles) return segments
   return [...segments, { kind: 'reasoning', text, titles: titles ?? [], ...(disclosureKey === undefined ? {} : { disclosureKey }), ...(groupId === undefined ? {} : { groupId }) }]
 }

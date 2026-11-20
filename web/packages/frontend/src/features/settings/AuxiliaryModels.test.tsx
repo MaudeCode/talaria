@@ -132,12 +132,15 @@ describe('Auxiliary models settings', () => {
   it('searches the catalog, shows the pick in the list at once, and adopts the server state', async () => {
     let answer!: (value: Awaited<ReturnType<typeof api.setAuxiliaryModel>>) => void
     vi.mocked(api.setAuxiliaryModel).mockReturnValue(new Promise((resolve) => { answer = resolve }))
+    // TAL-2481: the server's answer to the search.
+    vi.mocked(api.fetchModels).mockImplementation((_freshness, q) => Promise.resolve(q === 'llama' ? { groups: CATALOG.groups.slice(1), offer_custom_id: true } : CATALOG))
     renderSetting()
     const dialog = await openTask(/Title generation/)
     await dialog.findByRole('region', { name: 'Anthropic' })
     await userEvent.type(dialog.getByRole('searchbox'), 'llama')
+    const beta = await dialog.findByRole('region', { name: 'beta' })
     expect(dialog.queryByRole('region', { name: 'Anthropic' })).not.toBeInTheDocument()
-    await userEvent.click(within(dialog.getByRole('region', { name: 'beta' })).getByRole('button', { name: 'Llama3' }))
+    await userEvent.click(within(beta).getByRole('button', { name: 'Llama3' }))
     expect(api.setAuxiliaryModel).toHaveBeenCalledWith('title_generation', { model: '@custom:beta:llama3', provider: 'custom:beta' })
     const after = within(await screen.findByRole('table', { name: 'Task models' }))
     expect(after.getByRole('row', { name: /Title generation/ })).toHaveTextContent('Llama3')

@@ -452,6 +452,27 @@ describe('canonical owner attachment', () => {
     expect(start('live')).toMatchObject({ started_at: expect.any(Number) as unknown })
   })
 
+  it('groups native tool frames as an owned turn does: prose ends a group, a subagent row keeps its own (TAL-2481)', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('tool.start', { tool_id: 'a', name: 'terminal', args: { command: 'npm test' } })
+    watch.event('tool.complete', { tool_id: 'a', name: 'terminal' })
+    watch.event('tool.start', { tool_id: 'b', name: 'write_file', args: { path: 'notes.md' } })
+    watch.event('message.delta', { text: 'Tests pass.' })
+    watch.event('tool.start', { tool_id: 'c', name: 'terminal', args: { command: 'npm run lint' } })
+    watch.event('subagent.progress', { subagent_id: 'child', goal: 'Review', summary: 'reading' })
+    watch.event('subagent.progress', { subagent_id: 'child', goal: 'Review', summary: 'writing' })
+    watch.event('tool.complete', { tool_id: 'c', name: 'terminal', is_error: true })
+    watch.event('subagent.complete', { subagent_id: 'child', goal: 'Review', status: 'completed' })
+    watch.finish()
+    const frames = (await watch.read).filter((frame) => frame.event === 'tool' || frame.event === 'tool_complete').map((frame) => frame.data as { id: string; group_id?: string; group?: unknown })
+    expect(frames.map((frame) => [frame.id, frame.group_id])).toEqual([
+      ['a', 'group:0'], ['a', 'group:0'], ['b', 'group:0'],
+      ['c', 'group:1'], ['owner-subagent-child', 'group:1'], ['owner-subagent-child', undefined], ['c', 'group:1'], ['owner-subagent-child', 'group:1'],
+    ])
+    expect(frames.at(-2)?.group).toMatchObject({ group_id: 'group:1', failed: 1, running: true })
+    expect(frames.at(-1)?.group).toMatchObject({ group_id: 'group:1', failed: 1, running: false })
+  })
+
   it('carries native MCP progress on one tool row through completion', async () => {
     const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
     watch.event('tool.start', { tool_id: 'index-a', name: 'mcp__index', args: {} })

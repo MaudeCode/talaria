@@ -26,7 +26,8 @@ import { Toolbar } from '@base-ui/react/toolbar'
 import { Check, Search, Star } from 'lucide-react'
 import type { Models } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
-import { useModelFavoriteShown, useModelsQuery, useSetModelFavorite } from '../../app/queries'
+import { useModelFavoriteShown, useModelSearchQuery, useModelsQuery, useSetModelFavorite } from '../../app/queries'
+import { useDebounced } from '../../lib/useDebounced'
 import { catalogGroupLabel, catalogModelSections, ModelOptionContent, modelOptionLabel, type ModelEntry } from '../../lib/modelEntry'
 import { ProviderIcon } from '../../lib/providerIcon'
 import { useLocale } from '../../i18n/useLocale'
@@ -93,8 +94,8 @@ export function lockBackgroundScroll(popup: HTMLElement) {
 
 /**
  * The picker's body: a provider rail (Favorites, then the catalog's groups), search, and one virtualized list. Search
- * spans every provider and hides the rail; each row then names its provider. Selection, search and layout are the
- * client's; every value shown, including `favorite`, is the server's.
+ * spans every provider and hides the rail; each row then names its provider. Selection, the search draft and layout are
+ * the client's; every value shown, including `favorite` and the search's rows (TAL-2481), is the server's.
  */
 export function ModelPickerContent({ selectedId, searchInput, onSelect, onCustom, onClose }: { selectedId: string; searchInput: RefObject<HTMLInputElement | null>; onSelect: (id: string) => void; onCustom: (id: string) => void; onClose: () => void }) {
   const models = useModelsQuery()
@@ -107,6 +108,9 @@ export function ModelPickerContent({ selectedId, searchInput, onSelect, onCustom
   const groups = models.data?.groups ?? []
   const q = query.trim()
   const searching = q !== ''
+  // TAL-2481: the server searches the catalog and decides whether to offer the query as a custom id.
+  const search = useModelSearchQuery(useDebounced(q, 250))
+  const found = searching ? search.data : undefined
   // Favorites in the server's starred order, as the user's pending stars show them: an unstar drops its row, a new star
   // goes last, where the server puts it.
   const byId = new Map(groups.flatMap((group) => group.models.map((entry) => [entry.id, { entry, group }] as const)))
@@ -125,8 +129,8 @@ export function ModelPickerContent({ selectedId, searchInput, onSelect, onCustom
   const options: string[] = []
   const addModel = (entry: ModelEntry, g: Group) => { rows.push({ kind: 'model', key: entry.id, entry, group: g, option: options.length }); options.push(entry.id) }
   if (searching) {
-    for (const g of groups) for (const section of catalogModelSections(g, q)) for (const entry of section.models) addModel(entry, g)
-    if (!groups.some((g) => g.models.some((entry) => entry.id === q))) { rows.push({ kind: 'custom', key: CUSTOM, id: q, option: options.length }); options.push(CUSTOM) }
+    for (const g of found?.groups ?? []) for (const section of catalogModelSections(g)) for (const entry of section.models) addModel(entry, g)
+    if (found?.offer_custom_id) { rows.push({ kind: 'custom', key: CUSTOM, id: found.q, option: options.length }); options.push(CUSTOM) }
   } else if (view === FAVORITES) {
     for (const { entry, group: g } of favorites) addModel(entry, g)
   } else if (group) {
@@ -138,7 +142,7 @@ export function ModelPickerContent({ selectedId, searchInput, onSelect, onCustom
   const mixed = searching || view === FAVORITES
   // The tallest provider tab sets the height, so switching tabs or searching does not resize the popup.
   const tallest = Math.max(favorites.length * TWO_LINE_ROW, ...groups.map((g) => catalogModelSections(g).reduce((sum, s) => sum + (s.label ? LABEL_ROW : 0) + s.models.length * ONE_LINE_ROW, 0)))
-  const choose = (value: string) => { if (value === CUSTOM) onCustom(q); else onSelect(value) }
+  const choose = (value: string) => { if (value === CUSTOM) { if (found) onCustom(found.q) } else onSelect(value) }
   const focusSearch = () => searchInput.current?.focus({ preventScroll: true })
   const toggleStar = (entry: ModelEntry, favorite: boolean) => {
     const { provider_id, bare_id } = entry
@@ -180,7 +184,7 @@ export function ModelPickerContent({ selectedId, searchInput, onSelect, onCustom
               ? <Combobox.Item index={row.option} value={CUSTOM} aria-label={`${m.model_custom_label()}: ${row.id}`} className={ROW}><span className="min-w-0 flex-1 truncate"><span className="font-mono text-xs">{row.id}</span> <span className="text-xs text-muted">{m.model_custom_label()}</span></span></Combobox.Item>
               : <ModelRow entry={row.entry} group={row.group} index={row.option} locale={locale} mixed={mixed} selected={row.entry.id === selectedId} favorite={shown(row.entry)}
                   onStar={toggleStar} />} />
-            : <p role="status" className="px-3 py-4 text-center text-sm text-muted">{searching ? m.model_search_no_results() : view === FAVORITES && byId.size ? m.model_favorites_empty() : m.model_none_available()}</p>}
+            : (!searching || found) && <p role="status" className="px-3 py-4 text-center text-sm text-muted">{searching ? m.model_search_no_results() : view === FAVORITES && byId.size ? m.model_favorites_empty() : m.model_none_available()}</p>}
         </div>
       </Combobox.Root>
     </div>

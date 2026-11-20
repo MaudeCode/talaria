@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test'
-import { expect, settle, test } from './fixtures'
+import { expect, MODELS_URL, modelsAnswer, settle, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block', video: 'on' })
 
@@ -40,7 +40,7 @@ async function openModelMenu(page: Page, mobile: boolean): Promise<Locator> {
 test('long model menu reveals the selection and keeps search and keyboard rows visible', async ({ page }, info) => {
   const mobile = info.project.name === 'mobile'
   const sid = 'long-model-menu'
-  await page.route('**/api/models', (route) => route.fulfill({ json: CATALOG }))
+  await page.route(MODELS_URL, (route) => route.fulfill({ json: modelsAnswer(CATALOG, route.request().url()) }))
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
     session_id: sid, title: 'Long model menu', model: SELECTED, model_provider: 'test', model_option_id: SELECTED, is_streaming: false,
     messages: [{ role: 'user', id: 1, content: 'Pick a model' }],

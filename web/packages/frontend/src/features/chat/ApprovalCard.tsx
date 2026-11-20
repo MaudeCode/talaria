@@ -74,8 +74,8 @@ export function ApprovalCard({ sessionId, pending, onResolved, onLeaving, onDism
   useEffect(() => { if (confirmed === resource && gone) resolve() }, [confirmed, resource, gone])
   const reportLeaving = useEffectEvent((leaving: boolean) => { onLeaving?.(leaving) })
   useEffect(() => { reportLeaving(answered) }, [answered])
-  // The server publishes the choices the approval accepts; absent (the approval never named them) accepts all four (TAL-1414).
-  const offers = (choice: 'once' | 'session' | 'always' | 'deny') => pending.allowed_choices?.includes(choice) ?? true
+  // The server publishes the choices the approval accepts (TAL-1414, TAL-2481).
+  const offers = (choice: 'once' | 'session' | 'always' | 'deny') => pending.allowed_choices.includes(choice)
   const respond = (choice: 'once' | 'session' | 'always' | 'deny', yolo = false) => { if (!answered && offers(choice)) answer({ choice, yolo }) }
   const tell = () => { const text = instruction.trim(); if (text && !answered) answer({ choice: 'deny', yolo: false, instruction: text }) }
   const closeTell = () => { refocusTell.current = true; setTellOpen(false) }
@@ -136,7 +136,7 @@ export function ApprovalCard({ sessionId, pending, onResolved, onLeaving, onDism
               <button type="submit" disabled={!instruction.trim()} className="approval-btn deny inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text hover:bg-hover">{m.approval_tell_send()}</button>
               <button type="button" onClick={closeTell} className="approval-btn more inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-text hover:bg-hover">{m.back()} <Keys keys={['Esc']} /></button>
             </div>
-          </form> : pending.allowed_choices?.length === 0 ? <div className="approval-unavailable mt-3 text-[13px] text-muted">{m.approval_unavailable()}</div> : <div className="approval-btns mt-3 flex flex-wrap items-center gap-2">
+          </form> : pending.allowed_choices.length === 0 ? <div className="approval-unavailable mt-3 text-[13px] text-muted">{m.approval_unavailable()}</div> : <div className="approval-btns mt-3 flex flex-wrap items-center gap-2">
             {offersOnce && <button type="button" onClick={() => { respond('once') }} className="approval-btn once inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg" title={m.approval_btn_once_title()}>{m.approval_btn_once()} <Keys keys={['↵']} /></button>}
             {offers('deny') && <button type="button" onClick={() => { respond('deny') }} className="approval-btn deny inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text hover:bg-hover">{m.approval_btn_deny()}</button>}
             {canTell && <button type="button" ref={(el) => { if (el && refocusTell.current) { refocusTell.current = false; el.focus() } }} onClick={() => { setTellOpen(true) }} className="approval-btn tell inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text hover:bg-hover">{m.approval_tell_instead()}</button>}

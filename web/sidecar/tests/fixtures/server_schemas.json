@@ -2131,7 +2131,6 @@
                     "type": "object",
                     "properties": {
                       "allowed_choices": {
-                        "description": "The answers this approval accepts; empty when its owner offered none Talaria can send. Absent (older servers, direct sessions) accepts all four.",
                         "type": "array",
                         "items": {
                           "type": "string",
@@ -2141,7 +2140,8 @@
                             "always",
                             "deny"
                           ]
-                        }
+                        },
+                        "description": "The answers this approval accepts: all four when its owner named none (TAL-2481), empty when it offered none Talaria can send."
                       },
                       "can_enable_yolo": {
                         "type": "boolean"
@@ -2330,6 +2330,9 @@
                         "type": "string"
                       }
                     },
+                    "required": [
+                      "allowed_choices"
+                    ],
                     "additionalProperties": {}
                   }
                 },

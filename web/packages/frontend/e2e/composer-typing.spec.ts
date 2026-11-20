@@ -1,5 +1,5 @@
 import { createServer, type ServerResponse } from 'node:http'
-import { expect, test } from './fixtures'
+import { expect, MODELS_URL, modelsAnswer, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block', video: 'on' })
 
@@ -11,10 +11,10 @@ test('typing keeps the model picker and clarification answer usable', async ({ p
   const answers: unknown[] = []
   let selectedModel = 'alpha'
   await page.route('**/api/session/stream?**', (route) => route.fulfill({ headers: { 'content-type': 'text/event-stream' }, body: ': synthetic session\n\n' }))
-  await page.route('**/api/models', (route) => route.fulfill({ json: {
+  await page.route(MODELS_URL, (route) => route.fulfill({ json: modelsAnswer({
     active_provider: 'test', default_model: 'alpha', default_option_id: 'alpha',
     groups: [{ provider: 'Test', provider_id: 'test', models: ['alpha', 'alpine', 'beta'].map((id) => ({ id, label: id, provider_id: 'test', bare_id: id })) }],
-  } }))
+  }, route.request().url()) }))
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
     session_id: sid, title: 'Composer typing', model: selectedModel, model_option_id: selectedModel,
     active_stream_id: streamId, is_streaming: true, messages: [{ role: 'user', id: 1, content: 'Check the draft and controls' }],
