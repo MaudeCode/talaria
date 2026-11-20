@@ -961,6 +961,27 @@ describe('owner stream and projection cost (TAL-1723)', () => {
       }
     })
 
+    it('keeps only the newest older rows within its byte budget, read once for concurrent views', async () => {
+      // 60 older rows of 300 kB each: 18 MB, more than one chat's 8 MiB.
+      const pad = 'x'.repeat(300_000)
+      const large = stored.map((row) => row.row_kind === 'message' && row.text.startsWith('Old') ? { ...row, text: `${row.text} ${pad}` } : row)
+      sidecar.respond('gateway.session', (params) => params.action === 'transcript'
+        ? { state: 'attached', reason: null, snapshot: null, receipt: null, transcript: { rows: params.cursor ? [] : large, next_cursor: 'end', reset: false } }
+        : attached(snapshot({ messages: resumed, message_count: resumed.length, transcripts: true })))
+      const [page, again] = await Promise.all([detail('&msg_limit=20'), detail('&msg_limit=20')])
+      expect(reads()).toHaveLength(1)
+      expect(again._messages_offset).toBe(page._messages_offset)
+      const kept = page._messages_offset!
+      expect(kept).toBeGreaterThan(0)
+      expect(kept * 300_000).toBeLessThanOrEqual(8 * 1024 * 1024)
+      const older = await detail(`&msg_limit=200&msg_before=${String(kept)}`)
+      const first = String(texts(older.messages)[0]).split(' ')
+      // The newest older rows stay: the oldest kept is a later turn than the first, and the last older turn is there.
+      expect(texts(older.messages).some((text) => String(text).startsWith('Old answer 30 '))).toBe(true)
+      expect(first.slice(0, 3).join(' ')).not.toBe('Old question 1')
+      expect(reads()).toHaveLength(1)
+    })
+
     it('keeps the attach rows alone for an owner without the stored read', async () => {
       owner(false)
       const recent = await detail('&msg_limit=20')

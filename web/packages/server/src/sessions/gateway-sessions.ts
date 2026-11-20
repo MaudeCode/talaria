@@ -169,6 +169,12 @@ const STORED_PAGE_ROWS = 500
 const STORED_PAGES = 40
 /** TAL-2072: owner chats whose older stored rows, and finished children, this server keeps; the least recent goes first. */
 const STORED_CHATS = 32
+/**
+ * TAL-2072: serialized bytes of older stored rows one chat keeps (its newest ones), and all chats together. A page is
+ * at most the owner's 2 MiB, so a read holds at most one page beyond a chat's budget.
+ */
+const STORED_CHAT_BYTES = 8 * 1024 * 1024
+const STORED_BYTES = 32 * 1024 * 1024
 /** TAL-2072: finished children kept per chat once the owner's roster drops them. */
 const FINISHED_CHILDREN = 50
 
@@ -237,7 +243,9 @@ export class GatewaySessions {
   private readonly deferredReasoning = new Map<string, { epoch: number; replay: string; effort: string | null }>()
   private readonly effortLists = new Map<string, { at: number; efforts: string[] }>()
   /** TAL-2072: each chat's stored rows before its attach rows, for the attach identity they were read against. */
-  private readonly olderRows = new Map<string, { key: string; rows: Row[] }>()
+  private readonly olderRows = new Map<string, { key: string; rows: Row[]; bytes: number }>()
+  /** TAL-2072: the stored read filling a chat's older rows now; a concurrent view of the same attach joins it. */
+  private readonly olderReads = new Map<string, { key: string; read: Promise<Row[]> }>()
   /** TAL-2072: children whose `subagent.complete` this server observed, by chat; the owner's roster drops them as they end. */
   private readonly finishedChildren = new Map<string, Map<string, { epoch: number; goal: string; status: string; completed_at: number; started_at: number | null }>>()
 
@@ -953,23 +961,52 @@ export class GatewaySessions {
     const key = JSON.stringify([snapshot.authority_epoch, first.row_id, first.archived_truncated === true])
     const held = this.olderRows.get(target.key)
     if (held?.key === key) return held.rows
-    const rows: Row[] = []
-    let cursor: string | undefined
+    const pending = this.olderReads.get(target.key)
+    if (pending?.key === key) return pending.read
+    const read = this.readStoredBefore(target, ids).then((found) => {
+      // A read the owner refused now is tried again by the next view, never kept as "nothing older".
+      if (!found) return []
+      const { rows, bytes } = found
+      keepRecent(this.olderRows, target.key, { key, rows, bytes }, STORED_CHATS)
+      // The least recently read chats leave first, never the one just read.
+      let total = [...this.olderRows.values()].reduce((sum, entry) => sum + entry.bytes, 0)
+      for (const [chat, entry] of this.olderRows) {
+        if (total <= STORED_BYTES || chat === target.key) break
+        this.olderRows.delete(chat)
+        total -= entry.bytes
+      }
+      return rows
+    }, () => []).finally(() => { if (this.olderReads.get(target.key)?.read === read) this.olderReads.delete(target.key) })
+    this.olderReads.set(target.key, { key, read })
+    return read
+  }
+
+  /**
+   * TAL-2072: the stored rows before the first attach row in `ids`, at most `STORED_CHAT_BYTES` of the newest of them.
+   * Nothing when the read does not reach an attach row within its pages; null when the owner cannot serve it now.
+   */
+  private async readStoredBefore(target: Target, ids: ReadonlySet<unknown>): Promise<{ rows: Row[]; bytes: number } | null> {
+    const rows: { row: Row; bytes: number }[] = []
+    let bytes = 0, cursor: string | undefined
     for (let page = 0; page < STORED_PAGES; page++) {
       const result = await this.call(target, { action: 'transcript', order: 'oldest', limit: STORED_PAGE_ROWS, ...(cursor ? { cursor } : {}) })
-      if (!result.transcript) return []
-      if (result.transcript.reset) rows.length = 0
+      if (!result.transcript) return null
+      if (result.transcript.reset) { rows.length = 0; bytes = 0 }
       const boundary = result.transcript.rows.findIndex((row) => row.row_kind !== 'compaction' && ids.has(row.row_id))
-      rows.push(...(boundary < 0 ? result.transcript.rows : result.transcript.rows.slice(0, boundary)))
+      for (const row of boundary < 0 ? result.transcript.rows : result.transcript.rows.slice(0, boundary)) {
+        const size = JSON.stringify(row).length
+        rows.push({ row, bytes: size })
+        bytes += size
+      }
+      // Older rows past the budget leave first, so the rows kept still end where the attach rows begin.
+      while (bytes > STORED_CHAT_BYTES && rows.length) bytes -= rows.shift()!.bytes
+      if (boundary >= 0) return { rows: storedRows(rows.map(({ row }) => row)), bytes }
       // The end of the read without an attach row: the two do not line up, so nothing is added.
-      if (boundary < 0 && result.transcript.rows.length && result.transcript.next_cursor) { cursor = result.transcript.next_cursor; continue }
-      const older = boundary < 0 ? [] : storedRows(rows)
-      keepRecent(this.olderRows, target.key, { key, rows: older }, STORED_CHATS)
-      return older
+      if (!result.transcript.rows.length || !result.transcript.next_cursor) break
+      cursor = result.transcript.next_cursor
     }
-    // Deeper than this read goes: the view keeps the attach rows alone until the attach starts elsewhere.
-    keepRecent(this.olderRows, target.key, { key, rows: [] }, STORED_CHATS)
-    return []
+    // Deeper than this read goes, or not lined up: the view keeps the attach rows alone until the attach starts elsewhere.
+    return { rows: [], bytes: 0 }
   }
 
   /** Called before the direct-chat admission path, including for an already materialized foreign session. */
