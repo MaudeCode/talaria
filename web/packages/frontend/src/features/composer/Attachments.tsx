@@ -17,7 +17,7 @@ export interface PendingFile { key: string; file: File; status: 'compressing' | 
  */
 export const pastedText = new WeakMap<File, string>()
 
-const isImage = (f: PendingFile) => f.upload?.is_image || f.file.type.startsWith('image/')
+const isImage = (f: PendingFile) => f.file.type.startsWith('image/') || Boolean(f.previewUrl && f.upload?.is_image)
 const busy = (f: PendingFile) => f.status === 'compressing' || f.status === 'uploading'
 const busyLabel = (f: PendingFile) => f.status === 'compressing' ? m.attachment_compressing() : m.uploading()
 
