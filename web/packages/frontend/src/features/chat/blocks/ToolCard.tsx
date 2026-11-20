@@ -221,28 +221,31 @@ const ROW_DOT: Record<NonNullable<ToolRow['status']>, DotState> = { ok: 'ok', wa
 const ROW_LINK = 'min-w-0 truncate text-accent-text hover:underline'
 
 /** TAL-2326: a row's label, opening the Talaria page the server named: a chat, the scheduled jobs page, connections, a skill or (TAL-2327) a Kanban task. */
-function ToolRowLabel({ row }: { row: ToolRow }) {
+function ToolRowLabel({ row, wrap }: { row: ToolRow; wrap: boolean }) {
   const link = row.link
   if (link?.kind === 'session' && link.id) return <Link to="/session/$sessionId" params={{ sessionId: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>
   if (link?.kind === 'crons') return <Link to="/tasks" search={link.id ? { job: link.id } : {}} className={ROW_LINK} title={row.label}>{row.label}</Link>
   if (link?.kind === 'connectors') return <Link to="/settings/$section" params={{ section: 'tools' }} search={{ tab: 'connectors' }} className={ROW_LINK} title={row.label}>{row.label}</Link>
   if (link?.kind === 'skill' && link.id) return <Link to="/skills" search={{ skill: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>
   if (link?.kind === 'kanban_task' && link.id) return <Link to="/kanban" search={{ ...(link.board ? { board: link.board } : {}), task: link.id }} className={ROW_LINK} title={row.label}>{row.label}</Link>
-  return <span className="min-w-0 truncate text-text" title={row.label}>{row.label}</span>
+  return <span className={cn('min-w-0 text-text', wrap ? 'break-words' : 'truncate')} title={row.label}>{row.label}</span>
 }
 
-/** TAL-2326: a memory, skill, past-chat, scheduled job, connection or clarify result as its title, rows and a skill's text. */
-function ToolRowsResult({ rows }: { rows: ToolRows }) {
+/**
+ * TAL-2326: a memory, skill, past-chat, scheduled job, connection or clarify result as its title, rows and a skill's text.
+ * TAL-2027: rows shown under a folded row (`wrap`) wrap whole, so an answered question reads in full.
+ */
+function ToolRowsResult({ rows, wrap = false }: { rows: ToolRows; wrap?: boolean }) {
   return (
     <div className="tool-rows max-h-72 space-y-1.5 overflow-auto">
-      {rows.title && <div className={cn(LABEL, 'truncate')} title={rows.title}>{rows.title}</div>}
+      {rows.title && <div className={cn(LABEL, wrap ? 'break-words' : 'truncate')} title={rows.title}>{rows.title}</div>}
       {rows.rows.map((row, i) => (
         <div key={i} className="tool-row min-w-0" data-row-status={row.status}>
           <div className="flex min-w-0 items-center gap-1.5">
             {row.status && <Dot state={ROW_DOT[row.status]} />}
-            <ToolRowLabel row={row} />
+            <ToolRowLabel row={row} wrap={wrap} />
           </div>
-          {row.detail && <div className="truncate text-xs text-muted" title={row.detail}>{row.detail}</div>}
+          {row.detail && <div className={cn('text-xs text-muted', wrap ? 'break-words' : 'truncate')} title={row.detail}>{row.detail}</div>}
         </div>
       ))}
       {rows.markdown && <Markdown text={rows.markdown} className="hermes-prose text-[13px]" />}
@@ -281,6 +284,9 @@ function DelegateAgents({ agents, sessionId }: { agents: BackgroundAgent[]; sess
     </ul>
   )
 }
+
+/** TAL-2027: a card call's rows (an answered question) show under its row without opening it (server `shows_card`). */
+const rowsInView = (call: ToolCardData): boolean => call.showsCard === true && Boolean(call.resultView?.rows)
 
 /** The typed section a result view carries in place of its text (TAL-2323, TAL-2324, TAL-2325, TAL-2326). */
 const hasSection = (view: ToolResultView | null): boolean => Boolean(view?.file_excerpt ?? view?.matches ?? view?.links ?? view?.pages ?? view?.analysis ?? view?.rows)
@@ -365,12 +371,14 @@ function ToolCardDetailBody({ call, sessionId, args, result, raw, onToggleRaw, f
   const hasRaw = call.rawArgs !== undefined || call.rawResult !== undefined
   const showRaw = raw && hasRaw
   const showArgs = showRaw ? Boolean(call.rawArgs) : call.argsFields ? call.argsFields.length > 0 : Boolean(args && args !== '{}')
-  const showResult = showRaw ? Boolean(call.rawResult) : Boolean(result || hasSection(call.resultView))
+  // TAL-2027: rows already in view under the header are not repeated in the open row; Copy still takes them.
+  const inView = rowsInView(call)
+  const showResult = showRaw ? Boolean(call.rawResult) : !inView && Boolean(result || hasSection(call.resultView))
   // Copy takes the result as it shows: the whole one once fetched, else the row's own.
   const shownResult = full.data ? resultCopyText(full.data.result_view, resultText(full.data.result_view)) : resultCopyText(call.resultView, result)
   const copyText = showRaw
     ? [showArgs ? call.rawArgs : '', rawResult ?? ''].filter(Boolean).join('\n\n')
-    : [showArgs ? call.argsFields ? fieldsText(call.argsFields) : args : '', showResult ? shownResult : ''].filter(Boolean).join('\n\n')
+    : [showArgs ? call.argsFields ? fieldsText(call.argsFields) : args : '', showResult || inView ? shownResult : ''].filter(Boolean).join('\n\n')
   const copyLabel = showRaw ? m.tool_copy_raw() : m.copy()
   const tools = (
     <>
@@ -479,6 +487,7 @@ export function ToolCard({ call, timestamp, sessionId, arrivalKey }: { call: Too
       {call.resultView?.decision_review && <DecisionReviewResult key={call.resultView.decision_review.review_id} reference={call.resultView.decision_review} />}
       {call.resultView?.proposal && <ProposalResult key={call.resultView.proposal.proposal_id} reference={call.resultView.proposal} />}
       {call.resultView?.block && <ShowBlockResult key={call.resultView.block.block_id} reference={call.resultView.block} />}
+      {rowsInView(call) && call.resultView?.rows && <div className="tool-card-rows px-2.5 pb-2"><ToolRowsResult rows={call.resultView.rows} wrap /></div>}
       {call.background?.agents_detail?.length ? <DelegateAgents agents={call.background.agents_detail} sessionId={sessionId} /> : null}
       {sessionId && call.processId && <ProcessOutputTail sessionId={sessionId} processId={call.processId} />}
       {/* TAL-2325: the images, speech or video a media tool made, in view without opening the call (TAL-2341: only open, while the server says so). */}

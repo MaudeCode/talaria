@@ -29,6 +29,7 @@ it.each([
   { name: 'a draft review', tool: 'draft_card', result: { draft_id: 'd_1234abcd', card: '::draft-card{id="d_1234abcd" v="1"}' }, view: { outbound_draft: { draft_id: 'd_1234abcd', card: 1 } } },
   { name: 'a proposal (TAL-1967)', tool: 'propose', result: { proposal_id: 'pr_0a1b2c3d', status: 'pending', url: '/session/s', kind: 'setting', summary: 'Change setting show_tps' }, view: { proposal: { proposal_id: 'pr_0a1b2c3d', kind: 'setting', summary: 'Change setting show_tps' } } },
   { name: 'a shown block (TAL-1968)', tool: 'show', result: { block_id: 'sb_0a1b2c3d4e5f', url: '/session/s', kind: 'table', title: 'Latency', note: null }, view: { block: { block_id: 'sb_0a1b2c3d4e5f', kind: 'table', title: 'Latency' } } },
+  { name: 'an answered question (TAL-2027)', tool: 'clarify', result: { responses: [{ question: 'Which branch?', choices_offered: ['main', 'dev'], status: 'answered', user_response: 'main' }], outcome: 'submitted' }, view: { rows: { rows: [{ label: 'Which branch?', detail: 'main' }] } } },
 ])('keeps $name visible after its producing turn settles', ({ tool, result, view }) => {
   const scene = buildTurnScene([
     [{ role: 'assistant', content: '', tool_calls: [{ id: tool, function: { name: tool, arguments: '{}' } }] }, 0],

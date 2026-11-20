@@ -1,0 +1,38 @@
+{
+  "result": {
+    "responses": [
+      { "question": "Which branch should I deploy?", "choices_offered": ["main", "release"], "status": "answered", "user_response": "release" },
+      { "question": "Run the migrations first?", "choices_offered": null, "status": "unanswered", "user_response": null }
+    ],
+    "outcome": "timed_out",
+    "notice": "The clarification timed out."
+  },
+  "row": {
+    "row_id": "tool:ask",
+    "role": "tool",
+    "group_id": "group:1",
+    "tool": {
+      "id": "ask",
+      "name": "clarify",
+      "kind": "question",
+      "target": "",
+      "args": { "questions": [{ "question": "Which branch should I deploy?" }, { "question": "Run the migrations first?" }] },
+      "preview": null,
+      "done": true,
+      "is_error": false,
+      "duration": null,
+      "cost_usd": null,
+      "shows_card": true,
+      "result_view": {
+        "rows": {
+          "title": "The clarification timed out.",
+          "rows": [
+            { "label": "Which branch should I deploy?", "detail": "release" },
+            { "label": "Run the migrations first?", "detail": "No answer" }
+          ]
+        },
+        "outcome": { "key": "answered", "tone": "neutral", "value": "release" }
+      }
+    }
+  }
+}

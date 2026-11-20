@@ -105,17 +105,21 @@ public struct ToolDisplayFlags: Equatable, Sendable {
     public var mediaInDetails = false
     /// `activity_unnamed`: a Live Activity does not name this call (an approval's held call carries it too).
     public var activityUnnamed = false
+    /// TAL-2027: `shows_card`: the user must see this call's card, so its result rows show without opening the row.
+    public var showsCard = false
 
-    public init(opensRaw: Bool = false, mediaInDetails: Bool = false, activityUnnamed: Bool = false) {
+    public init(opensRaw: Bool = false, mediaInDetails: Bool = false, activityUnnamed: Bool = false, showsCard: Bool = false) {
         self.opensRaw = opensRaw
         self.mediaInDetails = mediaInDetails
         self.activityUnnamed = activityUnnamed
+        self.showsCard = showsCard
     }
 
     init(_ object: [String: JSONValue]?) {
         opensRaw = object?["opens_raw"]?.boolValue == true
         mediaInDetails = object?["media_in_details"]?.boolValue == true
         activityUnnamed = object?["activity_unnamed"]?.boolValue == true
+        showsCard = object?["shows_card"]?.boolValue == true
     }
 }
 

@@ -1245,6 +1245,10 @@ final class SharedContractTests: XCTestCase {
             XCTAssertEqual(question.resultView?.rows?.rows.map { [$0.label, $0.detail] }, [["Which branch?", "dev"]])
             XCTAssertEqual(AssistantActivitySummary.label(for: question), "Asked a question")
             XCTAssertEqual(AssistantActivitySummary.icon(for: question), "questionmark.bubble")
+            // TAL-2027: the App reads the server's `shows_card` on an answered question; a Web from before it sends none.
+            let messagesJSON = (example["session"] as? [String: Any])?["messages"] as? [[String: Any]] ?? []
+            let rawQuestion = messagesJSON.flatMap { $0["tool_calls"] as? [[String: Any]] ?? [] }.first { $0["id"] as? String == "call-clarify" }
+            XCTAssertEqual(question.displayFlags.showsCard, rawQuestion?["shows_card"] as? Bool == true)
         }
     }
 

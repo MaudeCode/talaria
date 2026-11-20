@@ -8358,7 +8358,7 @@
                                     },
                                     "shows_card": {
                                       "const": true,
-                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                     },
                                     "hidden": {
                                       "const": true,
@@ -9432,7 +9432,7 @@
                                             },
                                             "shows_card": {
                                               "const": true,
-                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                             },
                                             "hidden": {
                                               "const": true,
@@ -11141,7 +11141,7 @@
                               },
                               "shows_card": {
                                 "const": true,
-                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                               },
                               "hidden": {
                                 "const": true,
@@ -16072,7 +16072,7 @@
                                     },
                                     "shows_card": {
                                       "const": true,
-                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                     },
                                     "hidden": {
                                       "const": true,
@@ -17146,7 +17146,7 @@
                                             },
                                             "shows_card": {
                                               "const": true,
-                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                             },
                                             "hidden": {
                                               "const": true,
@@ -18855,7 +18855,7 @@
                               },
                               "shows_card": {
                                 "const": true,
-                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                               },
                               "hidden": {
                                 "const": true,
@@ -22458,7 +22458,7 @@
                                     },
                                     "shows_card": {
                                       "const": true,
-                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                     },
                                     "hidden": {
                                       "const": true,
@@ -23532,7 +23532,7 @@
                                             },
                                             "shows_card": {
                                               "const": true,
-                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                             },
                                             "hidden": {
                                               "const": true,
@@ -25241,7 +25241,7 @@
                               },
                               "shows_card": {
                                 "const": true,
-                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                               },
                               "hidden": {
                                 "const": true,
@@ -32026,7 +32026,7 @@
                                     },
                                     "shows_card": {
                                       "const": true,
-                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                     },
                                     "hidden": {
                                       "const": true,
@@ -33100,7 +33100,7 @@
                                             },
                                             "shows_card": {
                                               "const": true,
-                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                             },
                                             "hidden": {
                                               "const": true,
@@ -34809,7 +34809,7 @@
                               },
                               "shows_card": {
                                 "const": true,
-                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                               },
                               "hidden": {
                                 "const": true,
@@ -40939,7 +40939,7 @@
                                     },
                                     "shows_card": {
                                       "const": true,
-                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                     },
                                     "hidden": {
                                       "const": true,
@@ -42013,7 +42013,7 @@
                                             },
                                             "shows_card": {
                                               "const": true,
-                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                             },
                                             "hidden": {
                                               "const": true,
@@ -43722,7 +43722,7 @@
                               },
                               "shows_card": {
                                 "const": true,
-                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                               },
                               "hidden": {
                                 "const": true,
@@ -50433,7 +50433,7 @@
                                     },
                                     "shows_card": {
                                       "const": true,
-                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                     },
                                     "hidden": {
                                       "const": true,
@@ -51507,7 +51507,7 @@
                                             },
                                             "shows_card": {
                                               "const": true,
-                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                             },
                                             "hidden": {
                                               "const": true,
@@ -53216,7 +53216,7 @@
                               },
                               "shows_card": {
                                 "const": true,
-                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                               },
                               "hidden": {
                                 "const": true,
@@ -56763,7 +56763,7 @@
                                     },
                                     "shows_card": {
                                       "const": true,
-                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                     },
                                     "hidden": {
                                       "const": true,
@@ -57837,7 +57837,7 @@
                                             },
                                             "shows_card": {
                                               "const": true,
-                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                             },
                                             "hidden": {
                                               "const": true,
@@ -59546,7 +59546,7 @@
                               },
                               "shows_card": {
                                 "const": true,
-                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                               },
                               "hidden": {
                                 "const": true,
@@ -63155,7 +63155,7 @@
                                     },
                                     "shows_card": {
                                       "const": true,
-                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                     },
                                     "hidden": {
                                       "const": true,
@@ -64229,7 +64229,7 @@
                                             },
                                             "shows_card": {
                                               "const": true,
-                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                             },
                                             "hidden": {
                                               "const": true,
@@ -65938,7 +65938,7 @@
                               },
                               "shows_card": {
                                 "const": true,
-                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                               },
                               "hidden": {
                                 "const": true,
@@ -69545,7 +69545,7 @@
                                     },
                                     "shows_card": {
                                       "const": true,
-                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                     },
                                     "hidden": {
                                       "const": true,
@@ -70619,7 +70619,7 @@
                                             },
                                             "shows_card": {
                                               "const": true,
-                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                             },
                                             "hidden": {
                                               "const": true,
@@ -72328,7 +72328,7 @@
                               },
                               "shows_card": {
                                 "const": true,
-                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                               },
                               "hidden": {
                                 "const": true,
@@ -75745,7 +75745,7 @@
                               },
                               "shows_card": {
                                 "const": true,
-                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                               },
                               "hidden": {
                                 "const": true,
@@ -88888,7 +88888,7 @@
                                     },
                                     "shows_card": {
                                       "const": true,
-                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                     },
                                     "hidden": {
                                       "const": true,
@@ -89962,7 +89962,7 @@
                                             },
                                             "shows_card": {
                                               "const": true,
-                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                             },
                                             "hidden": {
                                               "const": true,
@@ -91671,7 +91671,7 @@
                               },
                               "shows_card": {
                                 "const": true,
-                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                               },
                               "hidden": {
                                 "const": true,
@@ -95270,7 +95270,7 @@
                                     },
                                     "shows_card": {
                                       "const": true,
-                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                     },
                                     "hidden": {
                                       "const": true,
@@ -96344,7 +96344,7 @@
                                             },
                                             "shows_card": {
                                               "const": true,
-                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                             },
                                             "hidden": {
                                               "const": true,
@@ -98053,7 +98053,7 @@
                               },
                               "shows_card": {
                                 "const": true,
-                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                               },
                               "hidden": {
                                 "const": true,
@@ -102338,7 +102338,7 @@
                                     },
                                     "shows_card": {
                                       "const": true,
-                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                     },
                                     "hidden": {
                                       "const": true,
@@ -103412,7 +103412,7 @@
                                             },
                                             "shows_card": {
                                               "const": true,
-                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                             },
                                             "hidden": {
                                               "const": true,
@@ -105121,7 +105121,7 @@
                               },
                               "shows_card": {
                                 "const": true,
-                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                               },
                               "hidden": {
                                 "const": true,
@@ -109276,7 +109276,7 @@
                                         },
                                         "shows_card": {
                                           "const": true,
-                                          "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                          "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                         },
                                         "hidden": {
                                           "const": true,
@@ -110253,7 +110253,7 @@
                                                 },
                                                 "shows_card": {
                                                   "const": true,
-                                                  "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                                  "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                                 },
                                                 "hidden": {
                                                   "const": true,
@@ -111657,7 +111657,7 @@
                                   },
                                   "shows_card": {
                                     "const": true,
-                                    "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                    "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                   },
                                   "hidden": {
                                     "const": true,
@@ -161525,7 +161525,7 @@
                                     },
                                     "shows_card": {
                                       "const": true,
-                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                      "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                     },
                                     "hidden": {
                                       "const": true,
@@ -162599,7 +162599,7 @@
                                             },
                                             "shows_card": {
                                               "const": true,
-                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. Absent for any other call."
+                                              "description": "TAL-1968: the call puts a card in the transcript that the user must see (`show`, `propose`, `draft_card`); a client keeps it out of a folded run of tool calls. TAL-2027: an answered question (`clarify`) is one, whose `result_view.rows` clients show under its row without opening it. Absent for any other call."
                                             },
                                             "hidden": {
                                               "const": true,

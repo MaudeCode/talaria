@@ -1,4 +1,6 @@
 import { homedir } from 'node:os'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { decidedResultView, toolOutcome, toolResultSnippet, toolResultView, withToolCallOutcomes } from './merge.js'
 import { diffHunks } from '../text/diff.js'
@@ -687,6 +689,28 @@ describe('memory, skills, session search, scheduled job, connection and clarify 
     ], outcome: 'answered' }).rows).toEqual({ rows: [
       { label: 'Which color?', detail: 'blue' }, { label: 'Which sizes?', detail: 'S, M' }, { label: 'Name?', detail: 'Skipped' }, { label: 'Why?', detail: 'No answer' },
     ] })
+  })
+
+  // TAL-2027: the Agent's batch shape (with or without a status), its legacy one-question shape and its timeout sentinel.
+  it('reads a clarify result in each shape the Agent returns, with how its wait ended', () => {
+    const batch = { responses: [{ question: 'Which checks?', user_response: ['Lint', ' ', 'Unit tests'] }, { question: 'Ship it?', user_response: '  ' }] }
+    expect(view('clarify', batch).rows).toEqual({ rows: [{ label: 'Which checks?', detail: 'Lint, Unit tests' }, { label: 'Ship it?', detail: 'No answer' }] })
+    expect(view('clarify', { question: 'Which branch?', choices_offered: ['main', 'dev'], user_response: 'dev' }).rows).toEqual({ rows: [{ label: 'Which branch?', detail: 'dev' }] })
+    const sentinel = 'The user did not provide a response within the time limit. Use your best judgement to make the choice and proceed.'
+    expect(view('clarify', { question: 'Which branch?', choices_offered: null, user_response: sentinel }).rows).toEqual({ title: 'Timed out waiting for an answer.', rows: [{ label: 'Which branch?', detail: 'No answer' }] })
+    expect(view('clarify', { responses: [{ question: 'Which?', status: 'unanswered', user_response: null }], outcome: 'timed_out', notice: 'The clarification timed out.' }).rows)
+      .toEqual({ title: 'The clarification timed out.', rows: [{ label: 'Which?', detail: 'No answer' }] })
+    expect(view('clarify', { ...batch, timed_out: true }).rows?.title).toBe('Timed out waiting for an answer.')
+    const failed = toolOutcome(JSON.stringify({ error: 'questions must be a non-empty array.' }), 'clarify', false).result_view
+    expect(failed.rows).toBeUndefined()
+    expect(failed.error).toBe('questions must be a non-empty array.')
+  })
+
+  it('ships the shared answered-question row: its rows in view, apart from the run of calls around it', () => {
+    const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/answered-question.json'), 'utf8')) as { result: Record<string, unknown>; row: { tool: { args: unknown; kind: string; target: string; shows_card: true; result_view: ToolResultView } } }
+    const { tool } = fixture.row
+    expect(toolDisplay('clarify', tool.args)).toMatchObject({ kind: tool.kind, target: tool.target, shows_card: tool.shows_card })
+    expect(toolOutcome(JSON.stringify(fixture.result), 'clarify', false, tool.args).result_view).toMatchObject(tool.result_view)
   })
 
   it('keeps rows within the result budget and a stored view as it was decided', () => {
