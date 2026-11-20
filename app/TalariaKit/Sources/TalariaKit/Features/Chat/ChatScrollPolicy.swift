@@ -131,7 +131,7 @@ public enum ChatScrollPolicy {
         /// The content offset changed for any other reason: streaming growth,
         /// keyboard presentation, a programmatic scroll, or a live gesture.
         /// `movedAwayFromBottom` marks a scroll with no gesture that carried
-        /// the reader away from the bottom (see `isScrollingAwayFromBottom`);
+        /// the reader away from the bottom (see `ScrollAwayTracker`);
         /// `wasNearBottom` is where the previous report left the reader.
         case contentScrolled(
             isAtBottom: Bool,
@@ -163,13 +163,46 @@ public enum ChatScrollPolicy {
     /// viewport. The offset must actually move upward: lazy measurement can
     /// increase the distance while the reader is stationary or following down.
     /// Actual status-bar, VoiceOver and keyboard scrolls may also remeasure rows.
-    /// Keyboard viewport changes and disclosure pins are excluded.
+    /// Keyboard viewport changes and disclosure pins are excluded, and
+    /// `ScrollAwayTracker` waits for a second report before it counts.
     public static func isScrollingAwayFromBottom(previous: ScrollGeometry?, current: ScrollGeometry) -> Bool {
         guard let previous, previous.visibleHeight == current.visibleHeight,
               current.offsetY < previous.offsetY - 0.5 else { return false }
         let distance = current.distanceFromBottom
         return distance > previous.distanceFromBottom + 0.5
             && distance > streamingBottomDetectionThreshold
+    }
+
+    /// Judges each gesture-free report against the last report the transcript
+    /// received. Reports coalesce per run loop, so this compares delivered
+    /// states, not every intermediate KVO tick.
+    ///
+    /// A move away counts only when the report after it keeps moving away. A
+    /// row above the viewport that re-measures, as a long transcript's lazy
+    /// rows do under a keyboard show or hide, moves the offset up in one report
+    /// and shrinks the content height by the same amount in a later one
+    /// (TAL-2548). The first report looks exactly like a scroll away; the next
+    /// restores the distance. Status-bar, VoiceOver and hardware-keyboard
+    /// scrolls animate over several frames, so they still release follow, one
+    /// frame later.
+    public struct ScrollAwayTracker: Sendable {
+        private var delivered: ScrollGeometry?
+        /// The delivered report was itself a move away, not yet confirmed.
+        private var deliveredMovedAway = false
+
+        public init() {}
+
+        /// True when `current` confirms a move away from the bottom.
+        public func movesAway(to current: ScrollGeometry) -> Bool {
+            deliveredMovedAway && isScrollingAwayFromBottom(previous: delivered, current: current)
+        }
+
+        /// Records the geometry behind a report the transcript received.
+        public mutating func deliver(_ geometry: ScrollGeometry) {
+            guard geometry != delivered else { return }
+            deliveredMovedAway = isScrollingAwayFromBottom(previous: delivered, current: geometry)
+            delivered = geometry
+        }
     }
 
     /// The follow latch. `isFollowing` is the answer; the second flag lets an

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A reply keeps scrolling into view when you open the keyboard while it streams.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

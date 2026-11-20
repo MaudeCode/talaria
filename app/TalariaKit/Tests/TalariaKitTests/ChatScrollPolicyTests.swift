@@ -310,4 +310,50 @@ final class ChatScrollPolicyTests: XCTestCase {
             current: Geometry(offsetY: 4700, contentHeight: 5400, visibleHeight: 700)
         ))
     }
+
+    func testKeyboardRemeasureDuringAReplyKeepsFollowing() {
+        // Measured on a simulator while a reply streamed and the composer took focus (TAL-2548). The keyboard shrinks
+        // the viewport, and a row above it that re-measures moves the offset up in one report and shrinks the
+        // content height by the same amount in a later one: 159.67 pt, then 170.67 pt.
+        let reports = [
+            Geometry(offsetY: 41253, contentHeight: 41809, visibleHeight: 556),
+            Geometry(offsetY: 41093.33, contentHeight: 41809, visibleHeight: 556),
+            Geometry(offsetY: 41093.33, contentHeight: 41809, visibleHeight: 512),
+            Geometry(offsetY: 41093.33, contentHeight: 41649.33, visibleHeight: 512),
+            Geometry(offsetY: 41093.33, contentHeight: 41649.33, visibleHeight: 204),
+            Geometry(offsetY: 41445.33, contentHeight: 41649.33, visibleHeight: 204),
+            Geometry(offsetY: 41434.33, contentHeight: 41649.33, visibleHeight: 204),
+            Geometry(offsetY: 41274.67, contentHeight: 41649.33, visibleHeight: 204),
+            Geometry(offsetY: 41274.67, contentHeight: 41478.67, visibleHeight: 204)
+        ]
+        XCTAssertNil(firstRelease(streaming: reports), "A re-measure under the keyboard released follow")
+    }
+
+    func testGestureFreeScrollAwayStillReleasesFollow() {
+        // A status-bar tap animates the offset toward the top over several frames.
+        let frames = [4300, 4000, 3600, 3100].map { Geometry(offsetY: $0, contentHeight: 5000, visibleHeight: 700) }
+        XCTAssertNotNil(firstRelease(streaming: frames), "A scroll away from the bottom with no gesture kept following")
+    }
+
+    /// Feeds each geometry to a following latch as its own gesture-free report, as `ChatScrollObserver` and
+    /// `ChatView` do while a reply streams, and returns the index of the report that released follow.
+    private func firstRelease(streaming reports: [Geometry]) -> Int? {
+        var tracker = ChatScrollPolicy.ScrollAwayTracker()
+        var latch = Latch()
+        var wasNearBottom = true
+        for (index, geometry) in reports.enumerated() {
+            let distance = geometry.distanceFromBottom
+            let movedAway = tracker.movesAway(to: geometry)
+            tracker.deliver(geometry)
+            latch = ChatScrollPolicy.resolveFollow(current: latch, event: .contentScrolled(
+                isAtBottom: ChatScrollPolicy.isAtBottom(distanceFromBottom: distance),
+                isUserScrolling: false,
+                movedAwayFromBottom: movedAway,
+                wasNearBottom: wasNearBottom
+            ))
+            wasNearBottom = ChatScrollPolicy.isNearBottom(distanceFromBottom: distance, isStreaming: true)
+            if !latch.isFollowing { return index }
+        }
+        return nil
+    }
 }

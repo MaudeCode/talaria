@@ -6,7 +6,7 @@ struct ChatScrollMetrics: Equatable {
     let distanceFromBottom: CGFloat
     let isUserInteracting: Bool
     /// A scroll with no gesture carried the reader away from the bottom since
-    /// the last delivered report; see `ChatScrollPolicy.isScrollingAwayFromBottom`.
+    /// the last delivered report; see `ChatScrollPolicy.ScrollAwayTracker`.
     let movedAwayFromBottom: Bool
     let distanceFromTop: CGFloat
     /// Controlled reader motion still reports geometry without changing follow intent.
