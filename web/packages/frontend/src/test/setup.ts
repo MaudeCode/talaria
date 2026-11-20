@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { afterEach, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
+import { resetToastsForTests } from '../features/toast/toast'
 
 // Component tests own synthetic session data. Feed behavior is exercised by the
 // transcript hook's explicit transport mock and the browser's real SSE tests.
@@ -15,6 +16,8 @@ window.matchMedia ??= ((query: string) => ({ matches: false, media: query, oncha
 
 afterEach(() => {
   cleanup()
+  // A dismissed toast stays in the module-global store until a real timer removes it; the next test must not read it (TAL-2602).
+  resetToastsForTests()
   window.localStorage.clear()
   window.sessionStorage.clear()
 })
