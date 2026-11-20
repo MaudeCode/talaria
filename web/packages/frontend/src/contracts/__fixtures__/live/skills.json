@@ -1,6 +1,8 @@
 {
   "body": {
-    "skills": []
+    "skills": [],
+    "total": 0,
+    "categories": []
   },
   "method": "GET",
   "path": "/api/skills",

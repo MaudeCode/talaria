@@ -8,7 +8,7 @@ import planFixture from '../../../../../../contracts/fixtures/skill-replay-plan.
 import jobFixture from '../../../../../../contracts/fixtures/skill-replay-job.json'
 
 vi.mock('../../api/endpoints', () => ({ fetchSkills: vi.fn(), fetchSkillsUsage: vi.fn(), fetchSkillContent: vi.fn(), fetchSkillRevisions: vi.fn(), fetchSkillReplayPlan: vi.fn(), fetchSkillReplays: vi.fn(), startSkillReplay: vi.fn(), cancelSkillReplay: vi.fn(), saveSkill: vi.fn(), deleteSkill: vi.fn(), toggleSkill: vi.fn(), lockSkill: vi.fn(), fetchPendingWrites: vi.fn(() => Promise.resolve({ kind: 'skills', visible: false, enabled: false, items: [] })) }))
-vi.mock('../../shell/AppShell', () => ({ HubPage: ({ actions, children }: { actions: React.ReactNode; children: React.ReactNode }) => <div>{actions}{children}</div> }))
+vi.mock('../../shell/AppShell', () => ({ HubPage: ({ actions, toolbar, children }: { actions: React.ReactNode; toolbar: React.ReactNode; children: React.ReactNode }) => <div>{actions}{toolbar}{children}</div> }))
 import * as api from '../../api/endpoints'
 import { ApiError } from '../../contracts/common'
 import { teardownAll } from '../../stream/connection'
@@ -18,7 +18,7 @@ import { showToast } from '../toast/toast'
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 
 beforeEach(() => {
-  vi.mocked(api.fetchSkills).mockReset().mockResolvedValue({ skills: [{ name: 'demo', description: 'Example skill', category: null, disabled: false }] })
+  vi.mocked(api.fetchSkills).mockReset().mockResolvedValue({ skills: [{ name: 'demo', description: 'Example skill', category: null, disabled: false }], total: 1, categories: [] })
   vi.mocked(api.fetchSkillsUsage).mockReset().mockResolvedValue({ usage: {} })
   vi.mocked(api.fetchSkillContent).mockReset().mockResolvedValue({ success: true, content: 'Current editable content', linked_files: {} })
   vi.mocked(api.fetchSkillRevisions).mockReset().mockResolvedValue(SkillRevisionsSchema.parse(fixture))
@@ -35,7 +35,7 @@ function renderSkills() {
   render(<QueryClientProvider client={client}><SkillsPage /></QueryClientProvider>)
 }
 
-const lockRow = (locked: boolean | null) => vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'demo', description: '', category: null, disabled: false, locked }] })
+const lockRow = (locked: boolean | null) => vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'demo', description: '', category: null, disabled: false, locked }], total: 1, categories: [] })
 
 it('shows the lock at once, then rolls it back and reports a refusal', async () => {
   lockRow(false)
@@ -63,10 +63,27 @@ it('unlocks a locked skill from its row menu, the same action as the row control
 })
 
 it.each([[null], [undefined]])('offers no lock while the server reports it unavailable (%s)', async (locked) => {
-  vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'demo', description: '', category: null, disabled: false, ...(locked === null ? { locked } : {}) }] })
+  vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'demo', description: '', category: null, disabled: false, ...(locked === null ? { locked } : {}) }], total: 1, categories: [] })
   renderSkills()
   await screen.findByRole('switch', { name: 'demo' })
   expect(screen.queryByRole('button', { name: 'Lock demo' })).toBeNull()
+})
+
+// TAL-2480: the server filters and names the categories; the page sends the filter and shows the answer.
+it('sends the search and category to the server and renders its answer', async () => {
+  vi.mocked(api.fetchSkills).mockImplementation(({ q = '', category = '' } = {}) => Promise.resolve({ total: 3, categories: ['docs', 'tools'],
+    skills: q || category ? [{ name: `${category}:${q}`, description: '', category: null, disabled: false }] : [{ name: 'demo', description: '', category: null, disabled: false }] }))
+  renderSkills()
+  await screen.findByRole('switch', { name: 'demo' })
+  await userEvent.type(screen.getByRole('searchbox'), ' pdf ')
+  expect(await screen.findByRole('switch', { name: ':pdf' })).toBeInTheDocument()
+  expect(api.fetchSkills).toHaveBeenLastCalledWith({ q: 'pdf', category: '' })
+  await userEvent.click(screen.getByRole('combobox', { name: 'All categories' }))
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['All categories', 'docs', 'tools'])
+  await userEvent.click(screen.getByRole('option', { name: 'tools' }))
+  expect(await screen.findByRole('switch', { name: 'tools:pdf' })).toBeInTheDocument()
+  expect(screen.queryByRole('switch', { name: ':pdf' })).toBeNull()
+  expect(api.fetchSkills).toHaveBeenLastCalledWith({ q: 'pdf', category: 'tools' })
 })
 
 it('opens the skill a tool row links to (TAL-2326)', async () => {

@@ -124,10 +124,24 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     })
     const saveMySkill = (): Promise<Response> => post(s, '/api/skills/save', { name: 'My Skill', content: '---\nname: my-skill\n---\n# hi', category: 'custom' })
 
-    it('lists skills from the Agent', async () => {
-      const res = await s.get('/api/skills?category=tools')
-      expect(res.status).toBe(200)
-      expect(((await json(res)).skills as Json[]).map((r) => r.name)).toEqual(['alpha', 'beta'])
+    // TAL-2480: the filter runs here; `total` and `categories` describe the whole install.
+    it('filters skills by name or description and category, with the install total and categories', async () => {
+      sidecar.respond('skills.list', () => ({ success: true, categories: [], count: 4, skills: [
+        { name: 'alpha', description: 'Reads PDFs', category: 'docs', disabled: false, locked: false },
+        { name: 'beta', description: 'Writes PDF reports', category: 'tools', disabled: true, locked: false },
+        { name: 'pdf-gamma', description: '', category: 'tools', disabled: false, locked: false },
+        { name: 'delta', description: 'Other', category: null, disabled: false, locked: false },
+      ] }))
+      const list = async (query: string) => {
+        const res = await s.get(`/api/skills${query}`)
+        expect(res.status).toBe(200)
+        const body = await json(res)
+        return { names: (body.skills as Json[]).map((r) => r.name), total: body.total, categories: body.categories }
+      }
+      expect(await list('')).toEqual({ names: ['alpha', 'beta', 'pdf-gamma', 'delta'], total: 4, categories: ['docs', 'tools'] })
+      expect(await list('?q=%20PDF%20')).toEqual({ names: ['alpha', 'beta', 'pdf-gamma'], total: 4, categories: ['docs', 'tools'] })
+      expect(await list('?q=pdf&category=tools')).toEqual({ names: ['beta', 'pdf-gamma'], total: 4, categories: ['docs', 'tools'] })
+      expect(await list('?category=docs')).toEqual({ names: ['alpha'], total: 4, categories: ['docs', 'tools'] })
     })
 
     it('reads usage counters, coercing counts and skipping a malformed row', async () => {

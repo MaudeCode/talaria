@@ -68,7 +68,7 @@ export function JobForm({ mode, job, jobs, schedulePolicy, onCancel, onSubmitted
   const profiles = useProfilesQuery()
   const models = useModelsQuery()
   const delivery = useQuery({ queryKey: keys.crons.deliveryOptions, queryFn: api.fetchCronDeliveryOptions, staleTime: 60_000 })
-  const skills = useQuery({ queryKey: keys.skills.all, queryFn: () => api.fetchSkills(), staleTime: 60_000, enabled: !isEdit })
+  const skills = useQuery({ queryKey: [...keys.skills.list, { q: '', category: '' }], queryFn: () => api.fetchSkills(), staleTime: 60_000, enabled: !isEdit })
   const [error, setError] = useState<string | null>(null)
   const sourceId = job ? jobId(job) : ''
   const initialModel = job?.model_option_id ?? job?.model ?? ''

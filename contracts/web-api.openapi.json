@@ -132711,10 +132711,20 @@
     "/api/skills": {
       "get": {
         "operationId": "skills.list",
+        "summary": "TAL-2480: `q` keeps rows whose name or description contains it, case-insensitively, and `category` keeps that category's rows; `total` and `categories` describe the whole install.",
         "tags": [
           "tools"
         ],
         "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
           {
             "name": "category",
             "in": "query",
@@ -132800,20 +132810,22 @@
                         "additionalProperties": {}
                       }
                     },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
                     "categories": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {},
-                          {
-                            "type": "null"
-                          }
-                        ]
+                        "type": "string"
                       }
                     }
                   },
                   "required": [
-                    "skills"
+                    "skills",
+                    "total",
+                    "categories"
                   ],
                   "additionalProperties": {}
                 }

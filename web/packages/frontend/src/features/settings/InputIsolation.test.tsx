@@ -61,7 +61,8 @@ vi.mock('../../api/endpoints', async (original) => ({
   fetchUpdatesCheck: vi.fn(() => Promise.resolve({})),
   fetchWhatsNew: vi.fn(() => Promise.resolve({ announcement: null, eligible: false, observation: null, acknowledgement: null })),
   passkeysList: vi.fn(() => Promise.resolve({ credentials: [{ id: 'one', label: 'Laptop' }, { id: 'two', label: 'Phone' }] })),
-  fetchSkills: vi.fn(() => Promise.resolve({ skills })),
+  // The server's filter answer, as for providers and plugins.
+  fetchSkills: vi.fn(({ q = '' } = {}) => Promise.resolve({ skills: skills.filter((s) => s.name.includes(q)).map((s) => ({ ...s })), total: 3, categories: ['test'] })),
   fetchSkillsUsage: vi.fn(() => Promise.resolve({ usage: Object.fromEntries(skills.map((s, i) => [s.name, { use_count: i + 1 }])) })),
   fetchPendingWrites: vi.fn(() => Promise.resolve({ kind: 'skills', visible: false, enabled: false, items: [] })),
   fetchMcpServers: vi.fn(() => Promise.resolve({ toggle_supported: true, servers: [{ name: 'test', status: 'configured', enabled: true, can_toggle: true, tool_count: 3 }] })),
@@ -233,7 +234,7 @@ describe('input render isolation (TAL-1405)', () => {
     await screen.findByDisplayValue('Skill content')
     await userEvent.click(screen.getByRole('button', { name: 'Back' }))
     expect(screen.getByRole('searchbox')).toHaveValue('abcdefghij')
-    expect(screen.queryByRole('switch', { name: 'zebra' })).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('switch', { name: 'zebra' })).toBeNull())
   })
 
   it('skill filtering renders only rows entering the visible list', async () => {
@@ -242,11 +243,11 @@ describe('input render isolation (TAL-1405)', () => {
     const input = screen.getByRole('searchbox')
     reset(renders.skill)
     await userEvent.type(input, 'abcdefghij')
-    expect(screen.queryByRole('switch', { name: 'zebra' })).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('switch', { name: 'zebra' })).toBeNull())
     expect(screen.getByRole('switch', { name: 'abcdefghij one' })).toBeInTheDocument()
     expect(renders.skill).not.toHaveBeenCalled()
     await userEvent.clear(input)
-    expect(screen.getByRole('switch', { name: 'zebra' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'zebra' })).toBeInTheDocument())
     expect(renders.skill.mock.calls.map(([count]) => count)).toEqual([3])
   })
 

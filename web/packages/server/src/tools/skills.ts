@@ -14,6 +14,17 @@ import { requestPromptRefresh } from './memory.js'
 
 const EXCLUDED_DIRS = new Set(['node_modules', '.git', '__pycache__', '.venv', 'venv', '.hg', '.svn', 'dist', 'build'])
 
+/**
+ * TAL-2480: the Skills page's filter keeps rows in `category` whose name or description contains `q`, case-insensitively;
+ * `total` and `categories` describe every row.
+ */
+export function skillListing<T extends { name: string; description: string; category: string | null }>(rows: T[], q = '', category = '') {
+  const needle = q.trim().toLowerCase()
+  const skills = rows.filter((row) => (!category || row.category === category) && (!needle || [row.name, row.description].some((text) => text.toLowerCase().includes(needle))))
+  const categories = [...new Set(rows.flatMap((row) => row.category ? [row.category] : []))].sort()
+  return { skills, total: rows.length, categories }
+}
+
 export class SkillsService {
   constructor(private readonly deps: { sidecar: () => SidecarLike | null; config: AgentConfig; log: (line: string) => void }) {}
 
@@ -38,8 +49,8 @@ export class SkillsService {
     return join(profileHome, 'skills')
   }
 
-  async list(profileHome: string, category: string | null) {
-    const result = await this.sidecar().call('skills.list', { profile_home: profileHome, category })
+  async list(profileHome: string) {
+    const result = await this.sidecar().call('skills.list', { profile_home: profileHome })
     return result.skills
   }
 
@@ -69,7 +80,7 @@ export class SkillsService {
         }
       }
     } catch { /* missing or corrupt → empty */ }
-    const names = [...new Set((await this.list(profileHome, null)).map((s) => s.name))].sort()
+    const names = [...new Set((await this.list(profileHome)).map((s) => s.name))].sort()
     const count = (e: Dict, k: string): number => (typeof e[k] === 'number' ? e[k] : 0)
     const total = Object.values(usage).reduce((acc, e) => acc + count(e, 'use_count') + count(e, 'view_count') + count(e, 'patch_count'), 0)
     const unique = Object.values(usage).filter((e) => count(e, 'use_count') > 0 || count(e, 'view_count') > 0 || count(e, 'patch_count') > 0).length

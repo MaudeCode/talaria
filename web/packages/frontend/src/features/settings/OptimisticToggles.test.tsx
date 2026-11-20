@@ -25,14 +25,14 @@ const manifests = vi.hoisted(() => vi.fn())
 vi.mock('../../extensions/registry', () => ({ fetchExtensionManifestList: manifests }))
 
 const ids = ['alpha', 'beta']
-const skills = () => ({ skills: ids.map((name) => ({ name, disabled: true, category: null, description: '' })) })
+const skills = () => ({ skills: ids.map((name) => ({ name, disabled: true, category: null, description: '' })), total: ids.length, categories: [] })
 const mcp = () => ({ toggle_supported: true, reload_required: true, servers: ids.map((name) => ({ name, enabled: false, can_toggle: true, status: 'disabled', health: 'unhealthy' })) })
 // TAL-2282: unselected available rows, each free to change; `gamma` keeps the list from ever being empty.
 const toolsetDefaults = () => ({ toolsets: [...ids, 'gamma'].map((name) => ({ name, description: '', available: true, selected: name === 'gamma', unavailable_reason: null, group: 'available' as const, can_deselect: true })), selected_toolsets: ['gamma'], using_defaults: true, default_toolsets: ['gamma'] })
 const extensions = () => ({ protocol_version: 1, total: 2, enabled_count: 0, manifests: ids.map((id) => ({ id, name: id, source: 'manifest', enabled: false, can_toggle: true, capabilities: [], permissions: {}, settings_schema: [], warnings: [], sidecar: { origin: 'http://127.0.0.1:1234', consented: false } })) })
 const connectors = () => ({ available: true, policy_revision: 'rev-1', connectors: ids.map((slug) => ({ slug, name: slug, enabled: false, rules_editable: true, connected: true, accounts: [], tools_off: 3, org_locked: false })) })
 const cases = [
-  { name: 'skill', ui: <SkillsPage />, key: keys.skills.all, snapshot: skills, read: () => vi.mocked(api.fetchSkills), write: () => vi.mocked(api.toggleSkill) },
+  { name: 'skill', ui: <SkillsPage />, key: [...keys.skills.list, { q: '', category: '' }], snapshot: skills, read: () => vi.mocked(api.fetchSkills), write: () => vi.mocked(api.toggleSkill) },
   { name: 'MCP', ui: <McpSection />, key: keys.mcp.servers, snapshot: mcp, read: () => vi.mocked(api.fetchMcpServers), write: () => vi.mocked(api.toggleMcpServer) },
   { name: 'extension', ui: <ExtensionsSection />, key: [...keys.extensions.manifests, { q: '' }], snapshot: extensions, read: () => manifests, write: () => vi.mocked(api.extensionAction) },
   { name: 'connector', ui: <ConnectorsSection />, key: keys.connectors.page, snapshot: connectors, read: () => vi.mocked(api.fetchConnectors), write: () => vi.mocked(api.setConnectorRule) },
