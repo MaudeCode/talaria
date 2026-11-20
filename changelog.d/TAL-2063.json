@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web Settings shows administrator-managed values as read-only and refuses saves that try to change them.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

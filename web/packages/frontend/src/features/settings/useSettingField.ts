@@ -6,7 +6,7 @@ import { getStreamContext } from '../../stream/connection'
 
 /** Read confirmed settings with the shared, presentation-only pending field overlay. */
 export function useSettingField(fields: readonly string[]) {
-  const settings = useSettingsQuery(fields)
+  const settings = useSettingsQuery([...fields, 'managed_fields'])
   const save = useSaveSettings()
   const setAsync = (patch: Record<string, unknown>, onSuccess?: () => void) => {
     const context = getStreamContext()
@@ -28,7 +28,8 @@ export function useSettingField(fields: readonly string[]) {
     const v = settings.data?.[key]
     return typeof v === 'number' ? v : fallback
   }
-  return { settings, save, set, setAsync, bool, str, num, savedLabel: m.saved() }
+  const managed = (key: string): boolean => settings.data?.managed_fields?.[key]?.managed === true
+  return { settings, managed, save, set, setAsync, bool, str, num, savedLabel: m.saved() }
 }
 
 /**

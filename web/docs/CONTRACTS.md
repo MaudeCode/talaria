@@ -879,3 +879,17 @@ omitting both route fields reads the current slot. `session_id` cannot accompany
 global/chat reasoning. Its saved/effective fields describe the current slot;
 options describe the proposed route. Clients without the additive field keep
 capability unknown and never substitute model-level efforts or a local ladder.
+
+## Administrator-managed Settings
+
+`config.get` returns the user document in `config` and the Agent's effective
+administrator overlay in `managed`. A null overlay means policy could not be
+verified. The raw YAML remains readable, but authorization and configuration
+writes refuse to proceed when policy is unavailable. `config.set` rejects changes to pinned
+leaves with `config_key_managed` and preserves the user file's underlying values
+when the caller resubmits an unchanged effective value.
+
+Settings reads and saves return effective values in their regular fields. A
+corresponding `managed_fields` entry with `managed: true` makes that control
+read-only. A Settings save that changes a managed field receives HTTP 409 with
+`condition: "config_key_managed"`.

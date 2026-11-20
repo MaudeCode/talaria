@@ -1127,6 +1127,7 @@ export type WebUpdateChannel = z.infer<typeof WebUpdateChannelSchema>
 /** Ordered board preferences; the server deduplicates and projects only active boards. */
 export const KanbanPinnedBoardsSchema = z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)).max(100)
 export const SettingsSchema = z.looseObject({
+  managed_fields: z.record(z.string(), z.object({ managed: z.literal(true) })).optional().describe('Administrator-managed fields keyed by Settings field name. The corresponding Settings value is effective and read-only.'),
   kanban_pinned_boards: KanbanPinnedBoardsSchema.optional().describe('TAL-1851: replace the active profile ordered board pins; stored in Talaria settings, independently of the Agent.'),
   bot_name: z.string().optional(), default_model: z.string().optional(), default_workspace: z.string().optional(), language: z.string().optional(), send_key: z.string().optional(), font_size: z.string().optional(),
   full_width_chat: z.boolean().optional(), chat_width: z.enum(['comfortable', 'wide', 'full']).optional(), auto_scroll_follow: z.boolean().optional(), render_user_markdown: z.boolean().optional(), chat_activity_display_mode: z.string().optional(), default_message_mode: z.string().optional(),

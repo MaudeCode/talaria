@@ -774,6 +774,35 @@ describe('server.approval_respond (TAL-1169)', () => {
       expect(pendingHead(peer)).toEqual({ approval_id: 'held-push', pending_count: 2 })
     })
 
+    it('enforces a managed denial over the user config and leaves the approval pending', async () => {
+      await allowAgentApprovals()
+      sidecar.respond('config.get', (params) => ({
+        path: join(params.profile_home, 'config.yaml'),
+        exists: true,
+        config: { talaria: { agent_approvals: true } },
+        managed: { talaria: { agent_approvals: false } },
+      }))
+      expect(await ask({ session_id: peer, approval_id: 'held-push', choice: 'once' })).toMatchObject({
+        error: { data: { condition: 'agent_approvals_off' } },
+      })
+      expect(relayed).toEqual([])
+      expect(pendingHead(peer)).toEqual({ approval_id: 'held-push', pending_count: 2 })
+    })
+
+    it('refuses approval when administrator policy cannot be verified', async () => {
+      await allowAgentApprovals()
+      sidecar.respond('config.get', (params) => ({
+        path: join(params.profile_home, 'config.yaml'),
+        exists: true,
+        config: { talaria: { agent_approvals: true } },
+        managed: null,
+      }))
+      expect(await ask({ session_id: peer, approval_id: 'held-push', choice: 'once' })).toMatchObject({
+        error: { data: { condition: 'agent_approvals_off' } },
+      })
+      expect(relayed).toEqual([])
+    })
+
     it('never grants a standing permission', async () => {
       await allowAgentApprovals()
       for (const choice of ['session', 'always', 'yolo']) expect(await ask({ session_id: peer, approval_id: 'held-push', choice })).toMatchObject({ error: { data: { condition: 'invalid_params' } } })

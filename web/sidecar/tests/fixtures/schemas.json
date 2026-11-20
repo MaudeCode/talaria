@@ -13887,6 +13887,20 @@
             "type": "null"
           }
         ]
+      },
+      "managed": {
+        "anyOf": [
+          {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "required": [

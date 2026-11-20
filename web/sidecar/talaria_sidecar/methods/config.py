@@ -174,11 +174,80 @@ def _drop_other_access(path: str) -> None:  # agent-shim: config-drop-other-acce
         os.chmod(path, mode & ~0o007)
 
 
+def managed_config() -> dict:
+    """The Agent's normalized, effective administrator overlay, separate from the user document."""
+    try:
+        scope = importlib.import_module("hermes_cli.managed_scope")
+    except ImportError:
+        # A broken Agent can still be repaired through config.set when there is
+        # no administrator file. Check the bootstrap scope without importing it.
+        override = os.environ.get("HERMES_MANAGED_DIR", "").strip()
+        if not override and "PYTEST_CURRENT_TEST" in os.environ:
+            return {}
+        try:
+            (Path(override or "/etc/hermes") / "config.yaml").stat()
+        except FileNotFoundError:
+            return {}
+        raise
+    backend = importlib.import_module("hermes_cli.config_backend").get_config_backend()
+    if not backend.honors_managed_config():
+        return {}
+    directory = scope.get_managed_dir()
+    if directory is None:
+        return {}
+    try:
+        source = (directory / "config.yaml").read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        return {}
+    # The Agent's overlay helper deliberately hides policy errors. Approval authorization
+    # needs the same normalization, with errors still visible on all supported releases.
+    parsed = yaml_parser().safe_load(source)
+    if parsed is None:
+        return {}
+    if not isinstance(parsed, dict):
+        raise ValueError("Administrator config must contain a mapping")
+    agent = importlib.import_module("hermes_cli.config")
+    effective = agent._normalize_root_model_keys(agent._expand_env_vars(parsed))
+    if isinstance(effective.get("model"), str):
+        effective["model"] = {"default": effective["model"]}
+    return effective
+
+
+_MISSING = object()
+
+
+def _preserve_managed_leaves(desired: dict, current: dict, managed: dict, prefix: str = "") -> None:
+    for key, effective in managed.items():
+        dotted = f"{prefix}{key}"
+        proposed = desired.get(key, _MISSING)
+        previous = current.get(key, _MISSING)
+        if isinstance(effective, dict) and effective:
+            if _same_config_value(proposed, previous):
+                continue
+            if not isinstance(proposed, dict):
+                raise RpcError(f"{dotted} contains administrator-managed keys", condition="config_key_managed")
+            _preserve_managed_leaves(proposed, previous if isinstance(previous, dict) else {}, effective, f"{dotted}.")
+        elif not _same_config_value(proposed, previous):
+            if not _same_config_value(proposed, effective):
+                raise RpcError(f"{dotted} is administrator-managed", condition="config_key_managed")
+            if previous is _MISSING:
+                del desired[key]
+            else:
+                desired[key] = previous
+
+
 def write_config(path: Path, config: dict, *, profile_home: Path | None = None) -> dict:
     if not isinstance(config, dict):
         raise InvalidParams("config must be an object")
     assert_config_writable(profile_home)
     target = _write_target(path)
+    try:
+        managed = managed_config()
+    except Exception as exc:  # noqa: BLE001
+        raise RpcError("Cannot verify administrator config policy", condition="config_policy_unavailable") from exc
+    if managed:
+        config = copy.deepcopy(config)
+        _preserve_managed_leaves(config, read_config(target)["config"], managed)
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
         replace = getattr(importlib.import_module("hermes_cli.config"), "atomic_config_replace", None)
@@ -356,7 +425,12 @@ def register(registry) -> None:
     @registry.method("config.get", requires_agent=False)
     def get(ctx: CallContext, params: dict) -> dict:
         result = read_config(config_path_param(params))
-        return {**result, "resolved": resolved_config(profile_home_param(params), result["config"])}
+        try:
+            managed = managed_config()
+        except Exception:  # noqa: BLE001 - raw config remains readable even on a broken Agent
+            log.debug("Managed config unavailable", exc_info=True)
+            managed = None
+        return {**result, "resolved": resolved_config(profile_home_param(params), result["config"]), "managed": managed}
 
     @registry.method("config.set", requires_agent=False)
     def set_(ctx: CallContext, params: dict) -> dict:
