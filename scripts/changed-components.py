@@ -33,7 +33,7 @@ E2E_SERVER_FIXTURES = {"canonical-ownership.json", "compaction-carrier.json"}
 # (TAL-1674). test_fixture_readers_are_routed rescans the readers so the lists cannot fall behind them. The
 # release-note generator and stamp tests share the What's New fixture (TAL-1616).
 FIXTURE_READERS = {
-    "web_sidecar": {"mcp-cost-policy.json", "mcp-events.json", "native-cron-refusal.json", "plan-allowance.json",
+    "web_sidecar": {"connectors.json", "mcp-cost-policy.json", "mcp-events.json", "native-cron-refusal.json", "plan-allowance.json",
                     "talaria-tool-names.json", "tool-presentations.json", "web-native-notices.json", "web-native-todos.json", "web-native-work.json", "web-reactions.json"},
     "tooling": {"whats-new.json"},
     "app": {"connectors.json", "decision-review.json", "delegation-status.json", "execution-modes.json",
@@ -142,7 +142,8 @@ def path_suites(path):
                                                           "TalariaKit/Tests/TalariaKitTests/APIClientSessionListTests.swift",
                                                           "TalariaKit/Tests/TalariaKitTests/Support/")) else {"app"})
     # Server tests read these fixtures, and the server job regenerates schemas.json from the contracts.
-    if path.startswith("web/sidecar/tests/fixtures/"):
+    # Only sidecar tests run the peer scripts beside them (TAL-2522).
+    if path.startswith("web/sidecar/tests/fixtures/") and not path.endswith(".py"):
         return {"web_server", "web_sidecar"}
     if path.startswith("web/sidecar/tests/"):
         return {"web_sidecar"}
