@@ -1,0 +1,1 @@
+{"skip":"Test-only repair: e2e routed fetches open their own connection, so a pooled keep-alive socket the Web server is closing never fails a test."}

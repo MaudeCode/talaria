@@ -1,4 +1,4 @@
-import { test as base, expect, type ConsoleMessage, type Locator, type Page } from '@playwright/test'
+import { test as base, expect, type ConsoleMessage, type Locator, type Page, type Route } from '@playwright/test'
 
 /** Console errors and page exceptions fail the test; the allowlist is deliberately tiny. */
 const BENIGN = [
@@ -31,10 +31,20 @@ function routeMatches(pattern: RouteUrl, url: URL): boolean {
   return new RegExp(`^${source}$`).test(url.href)
 }
 
+/**
+ * TAL-2599: `route.fetch()` pools keep-alive sockets, and the Web server closes one idle for 30 s. A busy worker can
+ * write its next fetch on a pooled socket as the server closes it (`socket hang up`), so every routed fetch opens its own.
+ */
+function freshConnection(route: Route): void {
+  const fetch = route.fetch.bind(route)
+  route.fetch = (options = {}) => fetch({ ...options, headers: { ...(options.headers ?? route.request().headers()), connection: 'close' } })
+}
+
 export const test = base.extend<{ errors: string[]; shellMocks: undefined }>({
   /**
    * A spec that mocks a shell read keeps reading it through its mock: once it routes one, every bootstrap the page gets
-   * drops `shell`, including one a spec's own `/api/bootstrap` route fulfills from `route.fetch()`.
+   * drops `shell`, including one a spec's own `/api/bootstrap` route fulfills from `route.fetch()`. Every page and
+   * context route's `route.fetch()` opens a fresh connection (`freshConnection`).
    */
   shellMocks: [async ({ context, page }, use) => {
     let mocked = false
@@ -47,7 +57,8 @@ export const test = base.extend<{ errors: string[]; shellMocks: undefined }>({
     // Page and context routes alike: a spec may mock a shell read on either.
     for (const target of [page, context] as Pick<Page, 'route'>[]) {
       const route = target.route.bind(target)
-      target.route = async (url, handler, options) => {
+      target.route = async (url, routeHandler, options) => {
+        const handler: typeof routeHandler = (routed, request) => { freshConnection(routed); return routeHandler(routed, request) }
         if (!mocked && SHELL_READS.some((read) => routeMatches(url, read))) {
           mocked = true
           await page.route('**/api/bootstrap', async (bootstrap) => {
