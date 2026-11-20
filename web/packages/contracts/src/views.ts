@@ -1409,7 +1409,10 @@ export const ProviderCostHistorySchema = z.looseObject({
   peak_day: z.object({ date: z.string(), spend: z.number() }).nullable().optional().describe('TAL-2479: the day with the largest known spend (the first of equal ones), the peak a spend chart names; null without one.'),
 })
 export type ProviderCostHistory = z.infer<typeof ProviderCostHistorySchema>
-export const PersonalitiesSchema = z.looseObject({ personalities: z.array(z.looseObject({ name: z.string(), description: z.string().optional() })) })
+export const PersonalitiesSchema = z.looseObject({
+  personalities: z.array(z.looseObject({ name: z.string(), description: z.string().optional() })),
+  autocomplete_names: z.array(z.string()).describe('TAL-2500: `/personality` argument completions: `none` (the clear keyword) first, then each personality name trimmed, non-blank and once, in `personalities` order.'),
+})
 /** One auxiliary task slot in server order (TAL-388). The server owns ordering, normalization, and catalog matching. */
 export const AuxiliaryTaskSchema = z.looseObject({
   task: z.string(), label: z.string(), description: z.string(),

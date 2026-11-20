@@ -797,10 +797,20 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  it('TAL-2500: /personality autocomplete names are the clear keyword, then trimmed, non-blank, unique names in the Agent order', async () => {
+    const row = (name: string) => ({ name, description: '', prompt: '' })
+    sidecar.respond('personalities.list', () => ({ personalities: [row('  mentor '), row('none'), row('critic'), row('   '), row('mentor')] }))
+    try {
+      expect((await json(await s.get('/api/personalities'))).autocomplete_names).toEqual(['none', 'mentor', 'critic'])
+    } finally {
+      sidecar.respond('personalities.list', undefined)
+    }
+  })
+
   it('without an Agent listing, personalities come from config.yaml and personality/set resolves the prompt onto the session', async () => {
     sidecar.respond('personalities.list', () => { throw new SidecarError('Agent unavailable', { condition: 'sidecar_unavailable' }) })
     let res = await s.get('/api/personalities')
-    expect(await json(res)).toEqual({ personalities: [{ name: 'pirate', description: 'Talk like a pirate' }, { name: 'calm', description: 'Calm helper' }] })
+    expect(await json(res)).toEqual({ personalities: [{ name: 'pirate', description: 'Talk like a pirate' }, { name: 'calm', description: 'Calm helper' }], autocomplete_names: ['none', 'pirate', 'calm'] })
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     res = await post(s, '/api/personality/set', { session_id: sid, name: 'calm' })
     expect(res.status).toBe(200)

@@ -78,7 +78,12 @@ const auxiliaryState = async (ctx: RequestContext): Promise<Dict> => {
   const routes = delegation.configured === 'model_map' ? delegation.model_map.options : delegation.configured === 'profile_routes' ? delegation.profile_routes.profiles : null
   return { ...stampAuxiliarySelections(auxiliaryModels(config, tiers, slots, reasoning), catalog, delegation.configured), delegation: { ...visible, can_edit: canEdit, route_count: routes ? routes.length : null }, unlisted_overrides: unlistedAuxiliaryOverrides(config, slots, reserved) }
 }
-const CLEAR_PERSONALITY = new Set(['none', 'default', 'clear'])
+/** The `/personality` argument that clears it, offered first among the completions. */
+const CLEAR_PERSONALITY_KEYWORD = 'none'
+const CLEAR_PERSONALITY = new Set([CLEAR_PERSONALITY_KEYWORD, 'default', 'clear'])
+/** TAL-2500: `/personality` completions: the clear keyword, then each trimmed, non-blank name once, in the Agent's order. */
+const personalityAutocompleteNames = (rows: { name: string }[]): string[] =>
+  [...new Set([CLEAR_PERSONALITY_KEYWORD, ...rows.map((r) => r.name.trim()).filter(Boolean)])]
 const truthy = (v: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase())
 
 /** Python `addr.is_loopback or addr.is_private`: CGNAT/Tailscale `100.64.0.0/10` peers are remote. */
@@ -710,7 +715,10 @@ export const settingsRouter = os.router({
     })),
   },
   personalities: {
-    list: os.personalities.list.handler(({ context: { ctx } }) => run(async () => ({ personalities: (await ctx.deps.agentConfig.personalities(home(ctx))).map(({ name, description }) => ({ name, description })) }))),
+    list: os.personalities.list.handler(({ context: { ctx } }) => run(async () => {
+      const rows = await ctx.deps.agentConfig.personalities(home(ctx))
+      return { personalities: rows.map(({ name, description }) => ({ name, description })), autocomplete_names: personalityAutocompleteNames(rows) }
+    })),
     set: os.personalities.set.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id).trim()
       if (!sid) throw new HttpError(400, 'Missing required field: session_id')
