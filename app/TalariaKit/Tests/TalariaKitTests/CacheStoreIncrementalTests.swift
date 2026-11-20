@@ -195,7 +195,7 @@ final class CacheStoreIncrementalTests: XCTestCase {
                     \.contentPartsData, \.reasoning, \.reasoningTitlesData, \.activitySceneData,
                     \.attachmentsData, \.turnDuration, \.turnTps, \.turnId, \.steerData,
                     \.displayExcerpt, \.collapsible, \.displayBodyData, \.backgroundUpdateData,
-                    \.talariaActivityData, \.backgroundSilent, \.markerKind, \.markerBody, \.display,
+                    \.talariaActivityData, \.backgroundSilent, \.markerKind, \.markerBody, \.refusedNotice, \.display,
                     \.cachedAt, \.expiresAt,
                 ]
                 for field in fields { _ = row[keyPath: field] }
@@ -229,6 +229,7 @@ final class CacheStoreIncrementalTests: XCTestCase {
                     contentParts: [.object(["type": .string("text"), "text": .string(content)])],
                     attachments: [MessageAttachment(name: "a.png", path: "/tmp/a.png", mime: "image/png", size: 10, isImage: true)],
                     steer: ["text": .string("Steer \(index)")], collapsible: true, backgroundUpdate: update,
+                    markerKind: index.isMultiple(of: 4) ? .contentRefused(notice: "Refused \(index)") : nil,
                     talariaActivity: activity)
             }
             return try decoder.decode(ChatMessage.self, from: Data("""

@@ -1,8 +1,9 @@
 import SwiftUI
 import TalariaKit
 
-/// A row the server marks as a compaction marker or preserved task list (TAL-305), in place of a message bubble: one flat
-/// disclosure line on the `ReasoningBlockView` pattern, so it reads like the transcript's other activity rows (TAL-1566).
+/// A row the server marks as a compaction marker, preserved task list (TAL-305) or refused ask (TAL-2058), in place of a
+/// message bubble: one flat disclosure line on the `ReasoningBlockView` pattern, so it reads like the transcript's other
+/// activity rows (TAL-1566).
 struct MarkerMessageCardView: View {
     let kind: ChatMarkerMessageKind?
     let content: String?
@@ -37,6 +38,37 @@ struct MarkerMessageCardView: View {
     private var reviewID: String? { activity?.target?.kind == "decision_review" && openReview != nil ? activity?.target?.id : nil }
 
     var body: some View {
+        if case .contentRefused(let notice) = kind {
+            refusedAsk(notice: notice)
+        } else {
+            disclosure
+        }
+    }
+
+    /// TAL-2058: an ask the safety filter refused, greyed under the server's notice; nothing to open and no actions.
+    private func refusedAsk(notice: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !notice.isEmpty {
+                TranscriptDisclosureRow(
+                    isExpanded: .constant(false), isInteractive: false, showsChevron: false,
+                    accessibilityLabel: notice, identifier: "transcript-marker"
+                ) {
+                    Image(systemName: iconName).resizable().scaledToFit()
+                        .foregroundStyle(.secondary).frame(width: 16, height: 16)
+                    Text(verbatim: notice).font(AppFont.callout()).foregroundStyle(.secondary)
+                }
+            }
+            Text(verbatim: content ?? "")
+                .font(AppFont.body())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 24)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder private var disclosure: some View {
         let body = (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
         VStack(alignment: .leading, spacing: isExpanded ? 6 : 0) {
@@ -79,6 +111,8 @@ struct MarkerMessageCardView: View {
             return "arrow.down.right.and.arrow.up.left"
         case .preservedTaskList:
             return "checklist"
+        case .contentRefused:
+            return "xmark.shield"
         case nil:
             return "info.circle"
         }

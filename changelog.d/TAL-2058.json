@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A message the model's safety filter refused now shows greyed under the reason on iPhone and iPad, without Edit or Retry.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

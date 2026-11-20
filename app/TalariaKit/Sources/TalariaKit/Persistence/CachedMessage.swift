@@ -32,6 +32,7 @@ public final class CachedMessage {
     var backgroundSilent: Bool?
     var markerKind: String?
     var markerBody: String?
+    var refusedNotice: String?
     var display: String?
     var cachedAt: Date
     var expiresAt: Date
@@ -94,6 +95,7 @@ public final class CachedMessage {
         row.set(\.backgroundSilent, message.backgroundSilent ? true : nil)
         row.set(\.markerKind, message.markerKind?.wireValue)
         row.set(\.markerBody, message.markerBody)
+        row.set(\.refusedNotice, message.markerKind?.refusedNotice)
         row.set(\.display, message.display?.rawValue)
         row.setJSON(\.attachmentsData, message.attachments.flatMap { $0.isEmpty ? nil : $0 })
         row.renew(cachedAt: \.cachedAt, expiresAt: \.expiresAt, at: cachedAt)
