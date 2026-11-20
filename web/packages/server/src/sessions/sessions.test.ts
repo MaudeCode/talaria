@@ -1084,6 +1084,24 @@ describe('a truncate that discards more than one user turn waits for confirmatio
       : { ok: true, last_user_attachments: [], dropped_attachment_count: 1 })
   })
 
+  it.each(['duplicate', 'branch'])('restores a usable attachment in a %s chat', async (action) => {
+    const source = String((await newSession(s)).session_id)
+    const dir = join(s.deps.blobs.attachmentRoot(), source)
+    mkdirSync(dir, { recursive: true })
+    const path = join(dir, 'image.png')
+    writeFileSync(path, 'attachment bytes')
+    await writeMessages(s, source, [{ role: 'user', content: 'Edit this', attachments: [{ path, filename: 'image.png', mime: 'image/png' }] }])
+    const copy = await json(await post(s, `/api/session/${action}`, { session_id: source }))
+    const sid = String(action === 'duplicate' ? (copy.session as Json).session_id : copy.session_id)
+
+    const edited = await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 0, confirm_deep_truncate: false }))
+    expect(edited).toMatchObject({ ok: true, dropped_attachment_count: 0, last_user_attachments: [{ filename: 'image.png' }] })
+    const restored = (edited.last_user_attachments as Json[])[0]!
+    const query = new URLSearchParams({ session_id: sid, path: String(restored.path) })
+    const download = await s.get(`/api/file/raw?${query.toString()}`)
+    expect(await download.text()).toBe('attachment bytes')
+  })
+
   // Eight stored rows, seven shown: the tool result folds into its turn's scene. Six are later than the first.
   const threeTurns = (): Json[] => [
     { role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 },

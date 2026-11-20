@@ -43,12 +43,12 @@ import { messagesForLimitedPayload, messageCountsAsRenderable, messageWindowForD
 import { redactString, redactText } from '../redact.js'
 import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } from '../workspace/workspaces.js'
 import { buildShareSnapshot, SHARE_MATERIALIZE_MAX_BYTES, shareAllowedRoots, shareAttachmentDir, shareEmbeddable, shareMediaPaths, type ShareStore } from './shares.js'
-import { attachmentPrefix, blobKeyForPath, type BlobStore } from './storage/blobs.js'
+import { attachmentKey, attachmentPrefix, blobKeyForPath, type BlobStore } from './storage/blobs.js'
 import { mediaAccessFor, mediaAccessResolver, resolveMediaAccess, mediaRefTarget, type MediaAccessBase } from '../workspace/media.js'
 import { meshyDirectives, projectMediaRefs, type MediaProjection, type MeshyDirective } from '../workspace/media-refs.js'
 import { projectBindings, type ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import type { GatewaySessions } from './gateway-sessions.js'
 import { personMaySee as ownerVisibleTo } from '../auth/person.js'
 
@@ -2537,12 +2537,8 @@ export class SessionService {
       const transcript = keep >= s.messages.length ? this.mergedTranscript(s, s.messages, read.rows) : s.messages
       const row = transcript[keep]
       const attachments = row?.role === 'user' ? this.resendAttachments(normalizeUserDisplay(row)) : []
-      const blobs = this.deps.blobs
-      const available = await Promise.all(attachments.map(async (attachment) => {
-        const key = blobKeyForPath(blobs.attachmentRoot(), str(attachment.path))
-        return key?.startsWith(attachmentPrefix(sid)) ? Boolean(await blobs.stat(key)) : false
-      }))
-      const last_user_attachments = attachments.filter((_, index) => available[index])
+      const restored = await Promise.all(attachments.map((attachment) => this.restoreEditAttachment(sid, attachment)))
+      const last_user_attachments = restored.filter((attachment) => attachment !== null)
       const dropped_attachment_count = attachments.length - last_user_attachments.length
       if (keep > s.messages.length) {
         if (s.context_messages.length) s.context_messages = this.modelContext(s, read.rows)
@@ -3076,6 +3072,30 @@ export class SessionService {
     })
     await this.deps.runtime.evictAgent(sid, true)
     return { ok: true, session: (await this.wireRow(s)) }
+  }
+
+  private async restoreEditAttachment(sid: string, attachment: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+    const blobs = this.deps.blobs
+    const path = str(attachment.path)
+    const key = blobKeyForPath(blobs.attachmentRoot(), path)
+    if (!key) return null
+    if (key.startsWith(attachmentPrefix(sid))) return await blobs.stat(key) ? attachment : null
+
+    // Duplicates and forks retain source paths. Check the source's current visibility before copying its bytes
+    // into the destination inbox, where the normal preview, resend and deletion paths can reach them.
+    const sourceId = key.split('/')[1]!
+    const owners = await this.store.inspectOwnership(sourceId, { metadataOnly: true })
+    if (!owners.length || !owners.every((owner) => this.visibleToRequest(owner))) return null
+    const source = await blobs.get(key)
+    if (!source) return null
+    const destination = attachmentKey(sid, `${randomUUID()}-${basename(path)}`)
+    try {
+      await blobs.put(destination, source.body, { exclusive: true, contentType: source.stat.contentType })
+    } finally {
+      source.body.destroy()
+    }
+    const { rollback_token: _receipt, ...rest } = attachment
+    return { ...rest, path: join(blobs.attachmentRoot(), ...destination.split('/').slice(1)) }
   }
 
   private resendAttachments(prompt: Message) {
