@@ -13,6 +13,8 @@ it('pins the shared discussion projection for independently delivered clients', 
   expect(view.rows.at(-2)?.message).toMatchObject({ _notice_kind: 'auto_routed', _lead_assignment: { lead: null, assignees: ['Reviewer'] } })
   expect(view.room?.context).toMatchObject({ routing: 'lead', lead_member_id: 'one' })
   expect(view.room?.members.map((m) => m.lead)).toEqual([true, false])
+  // A seat lent by another computer whose room carries no computer name (TAL-2073).
+  expect(view.room?.members.map((m) => m.remote)).toEqual([null, { computer_label: null, reachability: 'offline' }])
   expect(view.rows.at(-1)?.message._notice_kind).toBe('paused_max_rounds')
   expect(view.paused).toEqual([{ discussion_event_id: 'event-1', event_id: view.rows.at(-1)?.message.message_id, cap: 'max_rounds', continues_left: 5, continue_state: 'offered', excerpt: null }])
   expect(view.room?.members.map((m) => m.phase)).toEqual(['queued', 'running'])

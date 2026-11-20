@@ -30,7 +30,8 @@
             "lead": false,
             "tool": null,
             "started_at": null,
-            "stalled": false
+            "stalled": false,
+            "remote": null
           },
           {
             "member_id": "two",
@@ -42,7 +43,8 @@
             "lead": false,
             "tool": null,
             "started_at": null,
-            "stalled": false
+            "stalled": false,
+            "remote": null
           }
         ],
         "actions": [],
@@ -85,7 +87,8 @@
           "lead": true,
           "tool": null,
           "started_at": null,
-          "stalled": false
+          "stalled": false,
+          "remote": null
         },
         {
           "member_id": "two",
@@ -97,7 +100,11 @@
           "lead": false,
           "tool": "terminal",
           "started_at": 1000,
-          "stalled": false
+          "stalled": false,
+          "remote": {
+            "computer_label": null,
+            "reachability": "offline"
+          }
         }
       ],
       "actions": [

@@ -27,7 +27,21 @@ const reasons = new Set(['unsupported', 'stopped', 'refused', 'unavailable', 'un
 const safeReason = (reason: string | null): GroupView['reason'] => reasons.has(reason ?? '') ? reason as GroupView['reason'] : 'unavailable'
 const refusals = new Set(GroupWriteResultSchema.shape.refusal.unwrap().options as readonly string[])
 const sameMembers = (left: State['room']['members'], right: State['room']['members']) => left.length === right.length && left.every((m, i) => m.member_id === right[i]?.member_id && m.profile === right[i]?.profile && m.handle === right[i]?.handle)
-const localMembers = (members: State['room']['members']) => members.every((m) => !m.target || m.target.kind === 'local' && m.target.profile === m.profile)
+type Member = State['room']['members'][number]
+const local = (m: Member) => !m.target || m.target.kind === 'local' && m.target.profile === m.profile
+/** Each seat is a profile this server manages or a bot another computer lends; the home gateway owns the room and runs both alike. */
+const seated = (members: Member[], managed: Set<string>) => members.every((m) => m.target?.kind === 'peer' && m.target.profile === m.profile || local(m) && managed.has(m.profile))
+/** Desktop names a lent seat "Bot · Computer" (`canonical-groups.ts` `peerLabel`); the Agent keeps no other name for that computer. */
+const PEER_LABEL = ' · '
+/** Agent route states clients show as they are; any other state, or no registered route, cannot reach the seat. */
+const REACHABLE = ['ready', 'needs_reauthorization'] as const
+function remoteSeat(member: Member, routes: NonNullable<State['driver_status']>['peer_routes']): { name: string; remote: GroupRoom['members'][number]['remote'] } {
+  const label = member.display_name || member.profile
+  if (member.target?.kind !== 'peer') return { name: label, remote: null }
+  const at = label.lastIndexOf(PEER_LABEL), status = routes?.find((route) => route.member_id === member.member_id)?.status
+  return { name: at > 0 ? label.slice(0, at) : label, remote: { computer_label: at > 0 ? redactString(label.slice(at + PEER_LABEL.length)) || null : null,
+    reachability: routes === undefined ? null : REACHABLE.find((state) => state === status) ?? 'offline' } }
+}
 /** Each pass reads at most this many log pages; the next poll resumes a longer log where this one stopped. */
 const PAUSE_SCAN_PAGES = 20
 const PAUSE_LEDGERS = 32
@@ -156,7 +170,8 @@ export class Groups {
         const terminal = events.findLast((e) => e.payload.member_id === member.member_id && ['turn.failed', 'turn.settled', 'turn.cancelled', 'turn.deferred'].includes(e.kind))
         const phase = pending.some((a) => a.kind === 'approval') ? 'approval' as const : status === 'indeterminate' || pending.some((a) => a.kind === 'discard') ? 'unknown' as const : status === 'deferred' || pending.some((a) => a.kind === 'retry') ? 'failed' as const : status ?? (driver?.working && driver.member_activity === undefined ? 'unknown' as const : terminal?.kind === 'turn.failed' ? 'failed' as const : 'idle' as const)
         const lastSign = current?.progress_at ?? current?.started_at
-        return { ...GroupMemberSchema.parse(member), display_name: redactString(member.display_name || member.profile), phase, lead: context?.routing === 'lead' && context.lead_member_id === member.member_id,
+        const seat = remoteSeat(member, driver?.peer_routes)
+        return { ...GroupMemberSchema.parse(member), display_name: redactString(seat.name), remote: seat.remote, phase, lead: context?.routing === 'lead' && context.lead_member_id === member.member_id,
           tool: phase === 'running' && current?.tool ? redactString(current.tool) : null,
           started_at: phase === 'running' ? current?.started_at ?? null : null,
           stalled: phase === 'running' && lastSign != null && now - lastSign >= 120,
@@ -176,7 +191,7 @@ export class Groups {
     if (response.state !== 'available' || !parsed.success) return { ...unavailable, reason: safeReason(response.reason) }
     const managed = new Set(profiles.map((p) => p.profile))
     return { identity: this.authorityIdentity(scope, caps.authority_gateway_id), available: true, reason: null, profiles: profiles.filter((p) => caps.seatable_profiles.includes(p.profile)),
-      rooms: parsed.data.rooms.filter((r) => localMembers(r.members) && r.members.every((m) => managed.has(m.profile))).map((room) => this.project(scope, { room }, caps)), actions: caps.methods.includes('groups.create') ? ['create'] : [], next_offset: parsed.data.next_offset }
+      rooms: parsed.data.rooms.filter((r) => seated(r.members, managed)).map((room) => this.project(scope, { room }, caps)), actions: caps.methods.includes('groups.create') ? ['create'] : [], next_offset: parsed.data.next_offset }
   }
 
   private async state(scope: GroupScope, roomId: string, caps: Capabilities, signal?: AbortSignal) {
@@ -184,7 +199,7 @@ export class Groups {
     if (response.state !== 'available') throw new HttpFailure(409, 'Discussion unavailable', { reason: safeReason(response.reason) })
     const state = NativeGroupStateSchema.parse(response.value)
     const managed = new Set((await this.profiles(scope)).map((p) => p.profile))
-    if (state.room.room_id !== roomId || state.room.authority_gateway_id !== caps.authority_gateway_id || !localMembers(state.room.members) || !state.room.members.every((m) => managed.has(m.profile))) throw new HttpFailure(404, 'Discussion not found')
+    if (state.room.room_id !== roomId || state.room.authority_gateway_id !== caps.authority_gateway_id || !seated(state.room.members, managed)) throw new HttpFailure(404, 'Discussion not found')
     return state
   }
 
@@ -403,7 +418,7 @@ export class Groups {
       switch (operation.action) {
         case 'create': case 'rename': {
           const state = NativeGroupStateSchema.parse(value)
-          return state.room.room_id === operation.room_id && state.room.name === operation.name && localMembers(state.room.members) && (operation.action !== 'create' || sameMembers(state.room.members, operation.members))
+          return state.room.room_id === operation.room_id && state.room.name === operation.name && (operation.action !== 'create' || state.room.members.every(local) && sameMembers(state.room.members, operation.members))
         }
         case 'send': {
           const receipt = z.object({ accepted: z.literal(true), client_event_id: z.string(), event: NativeGroupEventSchema }).parse(value)

@@ -4,7 +4,7 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import { groupFixture } from '../test/group-fixture.js'
 import { Groups, type GroupScope } from '../sessions/groups.js'
 import { readFileSync } from 'node:fs'
-import type { GroupView, GroupWriteResult } from '@maudecode/talaria-web-contracts'
+import type { GroupCatalog, GroupView, GroupWriteResult } from '@maudecode/talaria-web-contracts'
 
 let server: TestServer | undefined
 afterEach(async () => { await server?.close() })
@@ -658,4 +658,30 @@ for (const authType of ['trusted', 'oidc'] as const) it(`requires owner authorit
   const response = await server.get('/api/groups', { headers: { cookie: `${server.deps.auth.cookieName()}=${owner}` } })
   expect(response.status).toBe(200)
   expect(await response.json()).toMatchObject({ available: true, profiles: [{ profile: 'default' }, { profile: 'helper' }] })
+})
+
+it('lists, reads and runs a room that seats a bot from another computer, with that seat\'s computer and reachability (TAL-2073)', async () => {
+  const { state, members, sidecar } = await setup()
+  // Agent v0.23.1 `_validate_member_target` and Desktop's `peerLabel`: a lent profile this server does not manage, named "Bot · Computer".
+  Object.assign(members[1]!, { profile: 'lent', display_name: 'Reviewer · Studio Mac', target: { kind: 'peer', peer_id: 'install-b', installation_id: 'install-b', profile: 'lent', capability_digest: 'a'.repeat(64) } })
+  Object.assign(state.driver_status, { working: true, peer_routes: [{ room_id: 'discussion', member_id: 'two', status: 'needs_reauthorization' }] })
+  const catalog = await (await server!.get('/api/groups')).json() as GroupCatalog
+  expect(catalog.rooms.map((room) => room.members.map((m) => [m.display_name, m.remote]))).toEqual([[['Writer', null], ['Reviewer', { computer_label: 'Studio Mac', reachability: null }]]])
+  const remote = async () => (await read()).room!.members[1]!.remote
+  expect(await remote()).toEqual({ computer_label: 'Studio Mac', reachability: 'needs_reauthorization' })
+  for (const [status, reachability] of [['ready', 'ready'], ['unavailable', 'offline']]) {
+    state.driver_status = { ...state.driver_status, peer_routes: [{ room_id: 'discussion', member_id: 'two', status }] } as typeof state.driver_status
+    expect((await remote())?.reachability).toBe(reachability)
+  }
+  // A seat whose route the home never registered cannot be reached.
+  state.driver_status = { ...state.driver_status, peer_routes: [] } as typeof state.driver_status
+  expect((await remote())?.reachability).toBe('offline')
+  const identity = (await read()).room!.identity
+  expect(await (await post(identity, { action: 'send', room_id: 'discussion', event_id: 'to-peer', payload: { text: 'Over to you' } })).json()).toMatchObject({ outcome: 'confirmed' })
+  expect(await (await post(identity, { action: 'stop', room_id: 'discussion', cancel_id: 'stop-peer' })).json()).toMatchObject({ outcome: 'confirmed' })
+  expect([rpcs(sidecar, 'send'), rpcs(sidecar, 'stop')]).toEqual([1, 1])
+  expect((await read()).rows.map((row) => row.author)).toContain('Reviewer · Studio Mac')
+  // A local seat still needs a profile this server manages.
+  Object.assign(members[0]!, { profile: 'unmanaged' })
+  expect((await (await server!.get('/api/groups')).json() as GroupCatalog).rooms).toEqual([])
 })

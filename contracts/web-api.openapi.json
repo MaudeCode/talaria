@@ -159195,6 +159195,47 @@
                                 },
                                 "lead": {
                                   "type": "boolean"
+                                },
+                                "remote": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "computer_label": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "reachability": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "ready",
+                                                "offline",
+                                                "needs_reauthorization"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "computer_label",
+                                        "reachability"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
                                 }
                               },
                               "required": [
@@ -159206,7 +159247,8 @@
                                 "started_at",
                                 "stalled",
                                 "actions",
-                                "lead"
+                                "lead",
+                                "remote"
                               ]
                             }
                           },
@@ -159610,6 +159652,47 @@
                                   },
                                   "lead": {
                                     "type": "boolean"
+                                  },
+                                  "remote": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "computer_label": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "reachability": {
+                                            "anyOf": [
+                                              {
+                                                "enum": [
+                                                  "ready",
+                                                  "offline",
+                                                  "needs_reauthorization"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "computer_label",
+                                          "reachability"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -159621,7 +159704,8 @@
                                   "started_at",
                                   "stalled",
                                   "actions",
-                                  "lead"
+                                  "lead",
+                                  "remote"
                                 ]
                               }
                             },
