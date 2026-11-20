@@ -9363,6 +9363,30 @@
             },
             "reason": {
               "type": "string"
+            },
+            "route_keys": {
+              "description": "TAL-2059: the route keys the backend declares beyond the core route fields (Agent v0.23.1+). A `boolean` key is edited through route `flags`; a `value` key is kept on save but not edited.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "boolean",
+                      "value"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "type"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
