@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -312,8 +313,10 @@ from talaria_sidecar.methods.connectors import operation_view
 argv = ["-y", "mcp-server", "review  server.py", "--api-key=synthetic-flag-value", sys.argv[2]]
 launch = launch_target(None, "npx", argv, {"SYNTHETIC_TOKEN": "synthetic-env-value"}, "/work dir")
 remote = launch_target("https://mcp.example.test/sse", None, None)
+linear = launch_target(None, "npx", ["-y", "mcp-linear", "--api-key=synthetic-flag-value", "two  spaces", sys.argv[2]], {"LINEAR_API_KEY": "synthetic-env-value"}, "/workspace/linear")
 targets = [Target("local", "mcp", "install", launch=launch), Target("hosted", "mcp", "install", launch=remote), Target("older", "mcp", "install")]
-print(json.dumps({"launch": launch, "remote": remote, "view": operation_view(ConnectionOperation(targets, session_key="session"))}))
+print(json.dumps({"launch": launch, "remote": remote, "view": operation_view(ConnectionOperation(targets, session_key="session")),
+                  "linear": operation_view(ConnectionOperation([Target("linear", "mcp", "install", launch=linear)], session_key="session"))["targets"][0]["launch"]}))
 '''
 
 
@@ -336,3 +339,7 @@ def test_an_mcp_operation_carries_the_agents_launch_line_with_keys_masked_and_on
     assert "launch" not in older
     shown = json.dumps(observed["view"])
     assert KEY not in shown and "synthetic-env-value" not in shown and "synthetic-flag-value" not in shown
+    # The shared contract fixture's Linear row is this producer's output for the same command, not a hand-written line.
+    fixture = json.loads((Path(__file__).resolve().parents[3] / "contracts/fixtures/connectors.json").read_text())
+    recorded = [fixture["connect_card"], fixture["native_connection"]["pending_connection"], fixture["native_connection"]["view"]]
+    assert [view["targets"][1]["launch"] for view in recorded] == [observed["linear"]] * 3

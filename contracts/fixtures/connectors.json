@@ -143,7 +143,7 @@
         "connect_url": null,
         "launch": {
           "kind": "stdio",
-          "target": "npx -y mcp-linear --api-key=*** 'two  spaces' sk-proj-abcdefghijklmnopqrstuvwxyz0123456789",
+          "target": "npx -y mcp-linear --api-key=*** 'two  spaces' sk-pro...6789",
           "env": [
             "LINEAR_API_KEY"
           ],
@@ -203,7 +203,7 @@
           ],
           "launch": {
             "kind": "stdio",
-            "target": "npx -y mcp-linear --api-key=*** 'two  spaces' sk-proj-abcdefghijklmnopqrstuvwxyz0123456789",
+            "target": "npx -y mcp-linear --api-key=*** 'two  spaces' sk-pro...6789",
             "env": [
               "LINEAR_API_KEY"
             ],
@@ -270,7 +270,7 @@
           "connect_url": null,
           "launch": {
             "kind": "stdio",
-            "target": "npx -y mcp-linear --api-key=*** 'two  spaces' sk-proj-abcdefghijklmnopqrstuvwxyz0123456789",
+            "target": "npx -y mcp-linear --api-key=*** 'two  spaces' sk-pro...6789",
             "env": [
               "LINEAR_API_KEY"
             ],

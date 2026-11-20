@@ -127,7 +127,7 @@ final class ConnectionOperationHostedTests: XCTestCase {
     /// TAL-1907's consent line renders unchanged when the server sends it; an older server's row simply has none.
     func testAnInstallShowsWhatItRunsOnlyWhenTheServerSaysSo() throws {
         let withLaunch = try hostOperation()
-        let line = "npx -y mcp-linear --api-key=*** 'two  spaces' sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"
+        let line = try XCTUnwrap(operation { _ in }.targets[1].launch?.target)
         for label in ["Runs: \(line)", "Working dir: /workspace/linear", "Env: LINEAR_API_KEY"] {
             XCTAssertNotNil(HostedAccessibility.element(in: withLaunch, label: label), "\(label): \(HostedAccessibility.labels(in: withLaunch))")
         }
