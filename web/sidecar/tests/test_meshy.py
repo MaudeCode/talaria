@@ -1,8 +1,10 @@
 """TAL-1514: the Meshy adapter over synthetic native responses, with real disposable files for asset custody."""
 import base64
 import contextlib
+import hashlib
 import json
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace as NS
 
@@ -14,6 +16,9 @@ from talaria_sidecar.methods import build_methods, meshy
 TASK = '0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b'
 IMAGE_TASK = '0192a3b4-c5d6-7e8f-9a0b-aaaaaaaaaaaa'
 THUMB = 'https://assets.meshy.ai/tasks/thumb.png?Expires=1&Signature=s'
+# The Meshy revision the Agent's catalog installs from v0.23.1 (plugin-catalog/meshy.yaml).
+CATALOG_PIN = '2937702cb55bf4c56cbaf71f6467479e3eb4f2ba'
+REVIEWED_ADMISSION = meshy._producer
 
 
 @pytest.fixture
@@ -29,7 +34,7 @@ def native(tmp_path, monkeypatch):
     user = tmp_path / 'user'
     user.mkdir()
     monkeypatch.setattr(Path, 'home', classmethod(lambda cls: user))
-    state = NS(home=home, model=model, image=images / 'image-1.png', consent=True, configured=True, calls=[], routes={}, supported=True)
+    state = NS(home=home, model=model, image=images / 'image-1.png', consent=True, configured=True, calls=[], routes={}, supported=True, running={})
 
     def local_files():
         return {'dir': str(data.parent), 'files': [
@@ -52,9 +57,15 @@ def native(tmp_path, monkeypatch):
                 {'task_id': IMAGE_TASK, 'kind': 'image', 'thumbnail_url': 'https://evil.example/x.png', 'image_urls': ['http://assets.meshy.ai/a.png', 'https://assets.meshy.ai:8443/b.png', THUMB], 'credits': 3},
                 {'task_id': '../../etc', 'kind': 'model'}]}
         if path == '/active':
-            return 200, {'tasks': [{'task_id': TASK, 'status': 'IN_PROGRESS', 'progress': 140, 'stage': 'preview'}, {'task_id': 'nope'}]}
+            # Since 2937702: only the named kind:id tasks, the running ones in `tasks` and the others in `done`.
+            named = [item.partition(':') for item in query.get('tasks', '').split(',') if item]
+            if any(not kind or not task for kind, _, task in named):
+                return 400, {'detail': 'tasks must be kind:task_id pairs'}
+            return 200, {'tasks': [{'task_id': t, **state.running[t]} for _, _, t in named if t in state.running],
+                         'done': [t for _, _, t in named if t not in state.running], 'missing': [], 'failed': []}
         if path == '/task':
-            return 200, {'task': query.get('task'), 'status': 'SUCCEEDED', 'progress': 99, 'type': 'text-to-3d-preview', 'thumbnail': THUMB, 'credits': 20, 'has_model': True}
+            row = state.running.get(query.get('task'), {'status': 'SUCCEEDED', 'progress': 99, 'thumbnail': THUMB, 'credits': 20, 'has_model': True})
+            return 200, {'task': query.get('task'), 'type': 'text-to-3d-preview', **row}
         return 404, {}
 
     def request(ctx, plugin, params, *, require_panel=True, timeout=10.0):
@@ -72,6 +83,7 @@ def native(tmp_path, monkeypatch):
         yield selected
 
     monkeypatch.setattr(meshy.homes, 'scoped_home', scope)
+    monkeypatch.setattr(meshy, '_WATCH', {})
     monkeypatch.setattr(meshy, '_producer', lambda selected: meshy._PIN if state.consent and str(selected) == str(home) else None)
     monkeypatch.setattr(meshy.host, '_supported', lambda: state.supported)
     monkeypatch.setattr(meshy.host, '_named', lambda selected, name, require_panel=True: {'name': name, '_dir': 'x', '_api_file': 'plugin_api.py'})
@@ -91,8 +103,19 @@ def test_overview_bounds_native_rows_and_never_forwards_foreign_hosts_or_invalid
     assert result['recent'][0]['thumbnail_url'] == THUMB and result['recent'][0]['credits'] is None
     # Only https on the asset host without a port: the http and :8443 links and the foreign thumbnail are dropped.
     assert result['recent'][1]['thumbnail_url'] is None and result['recent'][1]['image_urls'] == [THUMB]
-    assert result['active'] == [{'task_id': TASK, 'status': 'in_progress', 'progress': 100, 'terminal': False, 'stage': 'preview', 'error': None}]
     assert [r['kind'] for r in result['local']] == ['model', 'image'] and result['local'][1]['download_incomplete'] is True
+
+
+def test_overview_asks_native_only_about_running_tasks_a_task_read_saw(native):
+    assert native.call('overview')['active'] == [] and not [c for c in native.calls if c[1] == '/active'], 'Nothing watched, no read'
+    native.running[TASK] = {'status': 'IN_PROGRESS', 'progress': 140, 'stage': 'preview'}
+    assert native.call('task', task_id=TASK)['task']['status'] == 'in_progress'
+    assert native.call('overview')['active'] == [{'task_id': TASK, 'status': 'in_progress', 'progress': 100, 'terminal': False, 'stage': 'preview', 'error': None}]
+    assert ('GET', '/active', {'tasks': f'text-to-3d-preview:{TASK}'}, None, 10.0) in native.calls
+    del native.running[TASK]
+    assert native.call('overview')['active'] == []
+    native.calls.clear()
+    assert native.call('overview')['active'] == [] and not [c for c in native.calls if c[1] == '/active'], 'A finished task leaves the watch'
 
 
 def test_states_are_explicit_for_missing_key_plugin_and_old_agent(native):
@@ -185,3 +208,24 @@ def test_downloads_are_explicit_never_overwrite_and_report_partial_image_sets(na
     native.configured = False
     assert native.call('save', task_id=TASK, format='glb')['complete'] is False
     assert not [c for c in native.calls if c[1] == '/save' and c[3]['format'] == 'glb'], 'No native write without a key'
+
+
+def test_admits_the_catalog_install_and_refuses_another_revision_or_changed_bytes(native, tmp_path, monkeypatch):
+    root = native.home / 'plugins/meshy'
+    files = {'dashboard/plugin_api.py': b'synthetic native routes', 'dashboard/manifest.json': b'{}', 'plugin.json': b'{"name": "meshy"}'}
+    for rel, body in files.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_bytes(body)
+    monkeypatch.setattr(meshy, '_SOURCES', {rel: hashlib.sha256(body).hexdigest() for rel, body in files.items()})
+    metadata = {'meshy': {'revision': CATALOG_PIN, 'catalog': {'name': 'meshy', 'sha': CATALOG_PIN}}}
+    monkeypatch.setitem(sys.modules, 'hermes_cli', NS(plugins_cmd=NS(_read_install_metadata=lambda: metadata)))
+    plugin = {'name': 'meshy', 'enabled': True, 'source': 'user', '_dir': str(root / 'dashboard'), '_asset_anchor': str(native.home)}
+    monkeypatch.setattr(meshy.host, '_plugins', lambda selected: [plugin] if selected == native.home else [])
+    monkeypatch.setattr(meshy, '_producer', REVIEWED_ADMISSION)
+    admitted = native.call('overview')
+    assert (admitted['availability'], admitted['revision']) == ('ready', CATALOG_PIN)
+    metadata['meshy'] = {'revision': meshy._PIN[::-1], 'catalog': {'name': 'meshy', 'sha': meshy._PIN[::-1]}}
+    assert native.call('overview')['availability'] == 'plugin_unavailable', 'Another revision'
+    metadata['meshy'] = {'revision': CATALOG_PIN, 'catalog': {'name': 'meshy', 'sha': CATALOG_PIN}}
+    (root / 'dashboard/plugin_api.py').write_bytes(b'changed native routes at the same pin')
+    assert native.call('overview')['availability'] == 'plugin_unavailable', 'Changed reviewed bytes'

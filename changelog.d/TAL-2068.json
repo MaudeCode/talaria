@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Meshy installed or updated from the plugin catalog opens in the Meshy gallery again, and the gallery shows progress for running generations.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
