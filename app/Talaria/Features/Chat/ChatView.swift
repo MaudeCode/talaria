@@ -210,6 +210,8 @@ struct ChatView: View {
     @State private var compactStatusHeight: CGFloat = 0
     @State private var noticeChipHeight: CGFloat = 0
     @State private var showsQueuedMessagesSheet = false
+    /// TAL-2021: the approval folded into its chip; a new approval arrives expanded.
+    @State private var collapsedApprovalID: String?
     @State private var showsBackgroundWorkSheet = false
     /// TAL-2333: the unit a delegation row's subagent opened in the Background tasks sheet.
     @State private var focusedBackgroundTaskID: String?
@@ -583,6 +585,7 @@ struct ChatView: View {
                 guard let prompt else { return }
                 Task { await submitClarification(response, promptID: prompt.id) }
             },
+            approval: prompt == nil ? approvalContent : nil,
             connectionOperation: viewModel.connectionOperation,
             connectionRunningTargets: viewModel.connectionRunningTargets,
             connectionErrorMessage: viewModel.connectionErrorMessage,
@@ -688,30 +691,6 @@ struct ChatView: View {
                     if shows, !viewModel.hasSession { traceTranscriptReady(.composer) }
                 }
 
-                if let approvalPrompt = viewModel.approvalPrompt {
-                    ApprovalRequestOverlay(
-                        prompt: approvalPrompt,
-                        isResponding: viewModel.isRespondingToApproval,
-                        errorMessage: viewModel.approvalErrorMessage,
-                        onChoice: { choice in
-                            Task {
-                                let didRespond = await viewModel.respondToApproval(choice)
-                                if didRespond {
-                                    ChatHaptics.approvalSubmitted(choice, isEnabled: isHapticsEnabled)
-                                }
-                            }
-                        },
-                        onSkipAll: {
-                            Task {
-                                let didSkip = await viewModel.skipApprovalsForCurrentSession()
-                                if didSkip {
-                                    ChatHaptics.approvalBypassEnabled(isEnabled: isHapticsEnabled)
-                                }
-                            }
-                        }
-                    )
-                    .zIndex(10)
-                }
             }
             // A fixed destination layout anchored to the pane's trailing edge, which is the screen edge and never
             // moves: the chat snaps to its final wrap and place once, and the column slides over or into the
@@ -822,6 +801,11 @@ struct ChatView: View {
             guard opID != nil else { return }
             clarificationPanelHeight = 320
             dismissKeyboard()
+        }
+        // An approval leaves the keyboard alone: its answer is a button, and the user may be typing a follow-up.
+        .onChange(of: viewModel.approvalPrompt?.id, initial: true) { _, approvalID in
+            guard approvalID != nil else { return }
+            clarificationPanelHeight = 320
         }
         .task(id: didCompleteInitialAppearance) {
             await handleInitialAppearanceTask()
@@ -1832,6 +1816,7 @@ struct ChatView: View {
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.sessionDecisionReview)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedBackgroundTasks)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.queuedMessagePreviews)
+            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsApprovalChip)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: ownerAdmissions)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsWorkChips)
         }
@@ -1899,15 +1884,71 @@ struct ChatView: View {
                 }
                 .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
             }
+            if showsApprovalChip {
+                approvalChip
+            }
             if showsQueuedMessagesChip {
                 queuedMessagesChip
             }
         }
     }
 
-    /// What waits to send after this response (TAL-630); tapping opens the queue sheet.
+    /// TAL-2021: the approval the composer's question slot shows, unless it is collapsed into its chip.
+    private var approvalContent: ApprovalRequestContent? {
+        guard isApprovalExpanded, let approvalPrompt = viewModel.approvalPrompt else { return nil }
+        return ApprovalRequestContent(
+            prompt: approvalPrompt,
+            isResponding: viewModel.isRespondingToApproval,
+            errorMessage: viewModel.approvalErrorMessage,
+            onChoice: { choice in
+                Task {
+                    let didRespond = await viewModel.respondToApproval(choice)
+                    if didRespond {
+                        ChatHaptics.approvalSubmitted(choice, isEnabled: isHapticsEnabled)
+                    }
+                }
+            },
+            onSkipAll: {
+                Task {
+                    let didSkip = await viewModel.skipApprovalsForCurrentSession()
+                    if didSkip {
+                        ChatHaptics.approvalBypassEnabled(isEnabled: isHapticsEnabled)
+                    }
+                }
+            },
+            onCollapse: { collapsedApprovalID = approvalPrompt.id }
+        )
+    }
+
+    private var isApprovalExpanded: Bool {
+        viewModel.approvalPrompt.map { $0.id != collapsedApprovalID } == true
+    }
+
+    /// A question takes the slot first, so the chip stands only for an approval the user folded away.
+    private var showsApprovalChip: Bool {
+        viewModel.approvalPrompt != nil && !isApprovalExpanded && viewModel.clarificationPrompt == nil
+    }
+
+    private var approvalChip: some View {
+        Button {
+            collapsedApprovalID = nil
+        } label: {
+            StatusChip(
+                label: String(localized: "Approval needed"),
+                icon: .symbol("exclamationmark.triangle"),
+                emphasis: .attention
+            )
+            .frame(minHeight: 44)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(String(localized: "Shows the approval"))
+    }
+
+    /// What waits on the user or to send after this response (TAL-630, TAL-2021); tapping opens it.
     private var showsSheetChipRow: Bool {
         (showsWorkChips && viewModel.showsBackgroundWorkEntry) || ownerWorkNotice != nil || showsQueuedMessagesChip
+            || showsApprovalChip
     }
 
     /// TAL-1337: an owner chat whose owner cannot show or report its work has no rows to open, so the reason stands on

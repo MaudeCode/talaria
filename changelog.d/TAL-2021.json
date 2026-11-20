@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The App shows a pending approval above the composer without dimming the chat, so the transcript stays scrollable, and its chevron folds it into an Approval needed chip.",
+      "highlight": false,
+      "components": [
+        "app"
+      ],
+      "announcement": {
+        "title": "Approvals above the composer",
+        "description": "Scroll the chat while an approval waits, or fold it into a chip.",
+        "icon": "sparkles"
+      }
+    }
+  ]
+}

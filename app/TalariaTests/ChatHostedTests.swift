@@ -2063,6 +2063,119 @@ final class ChatHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "Clarification Required")
     }
 
+    private static let approvalChoices = ["Allow once", "Allow session", "Always allow", "Deny", "Skip all this session"]
+
+    /// The full fixture chat with its approval pending and the keyboard down, as a user reading it leaves it.
+    private func awaitFixtureApproval(in window: UIWindow) async throws {
+        try await sendFromComposer("Run the deterministic fixture", in: window)
+        _ = try await requireElement(in: window, label: "Allow once")
+        await composerTextView(in: window)?.resignFirstResponder()
+    }
+
+    /// TAL-2021: an approval waits in the composer's question slot, so nothing dims or covers the transcript.
+    func testAPendingApprovalLeavesTheTranscriptUncoveredAndScrollable() async throws {
+        let window = try await hostFixtureChat(["--ui-test-chat-full"])
+        try await awaitFixtureApproval(in: window)
+        settle(0.3)
+        attachHostedScreenshot(window, name: "approval-slot-phone")
+        let transcript = try transcriptScrollView(in: window)
+        XCTAssertTrue(transcript.isScrollEnabled)
+        let visible = transcript.convert(transcript.bounds, to: window)
+        let point = CGPoint(x: visible.midX, y: visible.minY + 120)
+        let hit = try XCTUnwrap(window.hitTest(point, with: nil))
+        XCTAssertTrue(hit.isDescendant(of: transcript), "A view covers the transcript while an approval waits: \(hit)")
+    }
+
+    /// TAL-2021: the chevron folds the approval into a chip above the composer; the chip brings it back.
+    func testCollapsingTheApprovalLeavesAChipThatRestoresIt() async throws {
+        let window = try await hostFixtureChat(["--ui-test-chat-full"])
+        try await awaitFixtureApproval(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Collapse approval"))
+        let chip = try await requireElement(in: window, label: "Approval needed")
+        let hidden = await awaitCondition { HostedAccessibility.element(in: window, label: "Allow once") == nil }
+        XCTAssertTrue(hidden, "Collapsing must hide the approval's choices")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "approval-slot-collapsed")
+        HostedAccessibility.activate(chip)
+        _ = try await requireElement(in: window, label: "Allow once")
+        let chipGone = await awaitCondition { HostedAccessibility.element(in: window, label: "Approval needed") == nil }
+        XCTAssertTrue(chipGone, "The chip must leave once the approval is expanded again")
+    }
+
+    /// TAL-2021: at the largest accessibility text size the approval's last choice scrolls into view.
+    func testTheLastApprovalChoiceScrollsIntoViewAtTheLargestTextSize() async throws {
+        let window = try await hostFixtureChat(["--ui-test-chat-full"]) {
+            $0.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
+        }
+        try await awaitFixtureApproval(in: window)
+        let last = try await requireElement(in: window, label: "Skip all this session")
+        let transcript = try transcriptScrollView(in: window)
+        // The approval's own scroll view is the one under the top of its description, which stays on screen.
+        let description = window.convert(try await requireElement(
+            in: window, label: "Allow the deterministic fixture to continue.").accessibilityFrame, from: nil)
+        let scroll = window.firstView(ofType: UIScrollView.self) {
+            $0 !== transcript && $0.contentSize.height > $0.bounds.height
+                && $0.convert($0.bounds, to: window).contains(CGPoint(x: description.midX, y: description.minY + 1))
+        }
+        let viewport = scroll.map { $0.convert($0.bounds, to: window) } ?? window.bounds
+        let revealed = await awaitCondition {
+            // Each poll scrolls to the current end, as the content can still grow after a layout pass.
+            if let scroll {
+                let bottom = max(0, scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.height)
+                scroll.setContentOffset(CGPoint(x: 0, y: bottom), animated: false)
+            }
+            let frame = window.convert(last.accessibilityFrame, from: nil)
+            return frame.height > 0 && viewport.contains(frame) && window.bounds.contains(frame)
+        }
+        settle(0.3)
+        attachHostedScreenshot(window, name: "approval-slot-ax5")
+        XCTAssertTrue(revealed, "Skip all this session stays out of view: \(window.convert(last.accessibilityFrame, from: nil)) in \(viewport)")
+    }
+
+    /// TAL-474 through TAL-2021: the approval moves with the composer to the trailing pane of a book fold.
+    func testBookFoldMovesTheApprovalAndItsChoices() async throws {
+        let fixture = try FixtureApp(["--ui-test-chat-full"], for: self)
+        let session = try await fixture.session()
+        let window = try hostWindow(FoldHost(content: AnyView(fixture.chat(session))),
+                                    size: CGSize(width: 900, height: 700))
+        try await awaitFixtureApproval(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        let allow = try await requireElement(in: window, label: "Allow once")
+        let displaced = await awaitCondition { window.convert(allow.accessibilityFrame, from: nil).minX >= 470 }
+        XCTAssertTrue(displaced, "The approval still crosses the book fold")
+        for title in Self.approvalChoices {
+            let button = try await requireElement(in: window, label: title)
+            XCTAssertGreaterThanOrEqual(window.convert(button.accessibilityFrame, from: nil).minX, 470, "\(title) crosses the fold")
+        }
+        XCTAssertGreaterThan(try transcriptScrollView(in: window).bounds.width, 800)
+        settle(0.3)
+        attachHostedScreenshot(window, name: "approval-slot-book")
+    }
+
+    /// TAL-474 through TAL-2021: in tabletop the approval sits with the composer below the fold, never across it.
+    func testTabletopKeepsTheApprovalBelowTheFold() async throws {
+        let fixture = try FixtureApp(["--ui-test-chat-full"], for: self)
+        let session = try await fixture.session()
+        let recorder = ChatBodyEvaluationRecorder()
+        let fold = CGRect(x: -100, y: 330, width: 2000, height: 40)
+        let chat = fixture.chat(session, asNavigationDestination: false)
+            .ignoresSafeArea(.container)
+            .environment(\.chatBodyEvaluation, recorder)
+        let window = try hostWindow(FoldHost(content: AnyView(chat), division: fold), size: CGSize(width: 900, height: 900))
+        try await awaitFixtureApproval(in: window)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Toggle fixture fold"))
+        let foldInWindow = fold.offsetBy(dx: 0, dy: recorder.transcriptFrame.minY)
+        let allow = try await requireElement(in: window, label: "Allow once")
+        let moved = await awaitCondition { window.convert(allow.accessibilityFrame, from: nil).minY >= foldInWindow.maxY }
+        XCTAssertTrue(moved, "The approval must sit below the tabletop fold: \(window.convert(allow.accessibilityFrame, from: nil)) fold \(foldInWindow)")
+        for title in Self.approvalChoices {
+            let button = try await requireElement(in: window, label: title)
+            XCTAssertFalse(window.convert(button.accessibilityFrame, from: nil).intersects(foldInWindow), "\(title) crosses the fold")
+        }
+        settle(0.3)
+        attachHostedScreenshot(window, name: "approval-slot-tabletop")
+    }
+
     /// The session's standing `/goal` shows as one chip above the composer, worded from the server's field (TAL-833).
     func testTheStandingGoalShowsAboveTheComposer() async throws {
         let window = try await hostFixtureChat(["--ui-test-goal"])
@@ -2865,86 +2978,7 @@ private struct RecycledBodyView: View {
 
 
 @MainActor
-final class ApprovalOverlayLayoutTests: XCTestCase {
-    func testBookKeepsEveryChoiceOnTheTrailingSide() async throws {
-        let fold = CGRect(x: 440, y: 0, width: 20, height: 760)
-        let window = try hostApproval(size: CGSize(width: 900, height: 760), divisions: [fold])
-        attachHostedScreenshot(window, name: "approval-book")
-        for title in ["Allow once", "Allow session", "Always allow", "Deny", "Skip all this session"] {
-            let button = try XCTUnwrap(HostedAccessibility.element(in: window, label: title))
-            XCTAssertGreaterThanOrEqual(button.accessibilityFrame.minX, fold.maxX + 18,
-                "\(title) must stay inside the trailing pane, including its padding")
-            XCTAssertFalse(button.accessibilityFrame.intersects(fold), "\(title) crosses the fold")
-        }
-    }
-
-    func testTabletopKeepsEveryChoiceAboveTheFold() async throws {
-        let fold = CGRect(x: 0, y: 470, width: 900, height: 20)
-        let window = try hostApproval(size: CGSize(width: 900, height: 960), divisions: [fold])
-        attachHostedScreenshot(window, name: "approval-tabletop")
-        for title in ["Allow once", "Allow session", "Always allow", "Deny", "Skip all this session"] {
-            let button = try XCTUnwrap(HostedAccessibility.element(in: window, label: title))
-            XCTAssertLessThanOrEqual(button.accessibilityFrame.maxY, fold.minY,
-                "\(title) must remain above the fold")
-            XCTAssertFalse(button.accessibilityFrame.intersects(fold), "\(title) crosses the fold")
-        }
-    }
-
-    func testLongDetailsKeepActionsVisibleAboveTheFold() async throws {
-        let fold = CGRect(x: 0, y: 370, width: 900, height: 20)
-        let window = try hostApproval(size: CGSize(width: 900, height: 760), divisions: [fold],
-            description: Array(repeating: "A line of synthetic approval details.", count: 40).joined(separator: "\n"))
-        attachHostedScreenshot(window, name: "approval-tabletop-long-details")
-        for title in ["Allow once", "Allow session", "Always allow", "Deny", "Skip all this session"] {
-            let button = try XCTUnwrap(HostedAccessibility.element(in: window, label: title))
-            XCTAssertGreaterThan(button.accessibilityFrame.height, 0)
-            XCTAssertGreaterThanOrEqual(button.accessibilityFrame.minY, 0)
-            XCTAssertLessThanOrEqual(button.accessibilityFrame.maxY, fold.minY)
-        }
-    }
-
-    func testFlatPhoneKeepsTheOriginalCenteredCard() throws {
-        let window = try hostApproval(size: HostedSize.phone, divisions: [])
-        attachHostedScreenshot(window, name: "approval-flat-phone")
-        let allow = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Allow once"))
-        XCTAssertEqual(allow.accessibilityFrame.minX, 34, accuracy: 1)
-    }
-
-    func testCardFramesRespectBookTabletopAndLayoutDirection() {
-        let bounds = CGRect(x: 0, y: 0, width: 900, height: 760)
-        let book = CGRect(x: 440, y: 0, width: 20, height: 760)
-        let size = CGSize(width: 520, height: 300)
-        XCTAssertEqual(ApprovalRequestOverlay.cardFrame(in: bounds, divisions: [book], cardSize: size),
-                       CGRect(x: 478, y: 230, width: 404, height: 300))
-        XCTAssertEqual(ApprovalRequestOverlay.cardFrame(in: bounds, divisions: [book], cardSize: size,
-                                                       layoutDirection: .rightToLeft),
-                       CGRect(x: 18, y: 230, width: 404, height: 300))
-        let tabletop = CGRect(x: 0, y: 370, width: 900, height: 20)
-        XCTAssertEqual(ApprovalRequestOverlay.cardFrame(in: bounds, divisions: [tabletop], cardSize: size),
-                       CGRect(x: 190, y: 35, width: 520, height: 300))
-    }
-
-    func testFlatAndOffscreenDivisionsKeepTheCenteredFrame() {
-        let bounds = CGRect(x: 0, y: 0, width: 900, height: 760)
-        let size = CGSize(width: 520, height: 300)
-        let expected = CGRect(x: 190, y: 230, width: 520, height: 300)
-        XCTAssertEqual(ApprovalRequestOverlay.cardFrame(in: bounds, divisions: [], cardSize: size), expected)
-        XCTAssertEqual(ApprovalRequestOverlay.cardFrame(in: bounds,
-            divisions: [CGRect(x: 1000, y: 0, width: 20, height: 760)], cardSize: size), expected)
-        let phone = CGRect(x: 0, y: 0, width: 390, height: 844)
-        XCTAssertEqual(ApprovalRequestOverlay.cardFrame(in: phone, divisions: [], cardSize: size),
-                       CGRect(x: 18, y: 272, width: 354, height: 300))
-    }
-
-    func testOversizedCardIsConstrainedWithinThePane() {
-        let bounds = CGRect(x: 30, y: 20, width: 900, height: 760)
-        let fold = CGRect(x: 30, y: 390, width: 900, height: 20)
-        let frame = ApprovalRequestOverlay.cardFrame(in: bounds, divisions: [fold],
-                                                     cardSize: CGSize(width: 2000, height: 2000))
-        XCTAssertEqual(frame, CGRect(x: 220, y: 20, width: 520, height: 370))
-        XCTAssertFalse(frame.intersects(fold))
-    }
-
+final class ApprovalRequestContentTests: XCTestCase {
     /// TAL-2333: an approval heads its card with the held call's icon and label as its tool row reads them; a write shows
     /// its arguments as key/value rows in place of the command, and a shell call keeps its command.
     func testAnApprovalHeadsWithItsHeldCallAndShowsItsArgumentsAsRows() throws {
@@ -2954,10 +2988,10 @@ final class ApprovalOverlayLayoutTests: XCTestCase {
         let shell = ToolCall(id: "call-push", name: "terminal", preview: nil, args: nil, kind: .shell, target: "git push --force")
         func host(_ tool: ToolCall, command: String) throws -> UIWindow {
             let pending = PendingApproval(approvalId: "approval-\(tool.id)", command: command, description: "Protected path", tool: tool)
-            return try hostWindow(ApprovalRequestOverlay(
+            return try hostWindow(ApprovalRequestContent(
                 prompt: ApprovalPromptState(sessionID: "synthetic-tool-approval", pending: pending, pendingCount: 1),
-                isResponding: false, errorMessage: nil, onChoice: { _ in }, onSkipAll: {}, divisionFrames: []
-            ).ignoresSafeArea(), size: HostedSize.phone)
+                isResponding: false, errorMessage: nil, onChoice: { _ in }, onSkipAll: {}, onCollapse: {}
+            ), size: HostedSize.phone)
         }
         let written = try host(write, command: "write /etc/hosts")
         attachHostedScreenshot(written, name: "approval-tool-write")
@@ -2972,23 +3006,16 @@ final class ApprovalOverlayLayoutTests: XCTestCase {
     }
 
     func testAnApprovalOfferingNoChoiceSaysSoAndOffersNoAnswer() throws {
-        let window = try hostApproval(size: HostedSize.phone, divisions: [], allowedChoices: [], canEnableYolo: false)
+        let pending = PendingApproval(approvalId: "synthetic-no-choice-approval", command: "echo fixture",
+                                      description: "Run the fixture command?", allowedChoices: [], canEnableYolo: false)
+        let window = try hostWindow(ApprovalRequestContent(
+            prompt: ApprovalPromptState(sessionID: "synthetic-no-choice-session", pending: pending, pendingCount: 1),
+            isResponding: false, errorMessage: nil, onChoice: { _ in }, onSkipAll: {}, onCollapse: {}
+        ), size: HostedSize.phone)
         attachHostedScreenshot(window, name: "approval-no-choices")
         XCTAssertNotNil(HostedAccessibility.element(in: window, label: "This approval can't be answered here."))
         for title in ["Allow once", "Allow session", "Always allow", "Deny", "Skip all this session"] {
             XCTAssertNil(HostedAccessibility.element(in: window, label: title), title)
         }
-    }
-
-    private func hostApproval(size: CGSize, divisions: [CGRect],
-                              description: String = "Run the fixture command?",
-                              allowedChoices: [ApprovalChoice]? = nil, canEnableYolo: Bool? = nil) throws -> UIWindow {
-        let pending = PendingApproval(approvalId: "synthetic-fold-approval", command: "echo fixture",
-                                      description: description, allowedChoices: allowedChoices, canEnableYolo: canEnableYolo)
-        return try hostWindow(ApprovalRequestOverlay(
-            prompt: ApprovalPromptState(sessionID: "synthetic-fold-session", pending: pending, pendingCount: 1),
-            isResponding: false, errorMessage: nil, onChoice: { _ in }, onSkipAll: {},
-            divisionFrames: divisions
-        ).ignoresSafeArea(), size: size)
     }
 }
