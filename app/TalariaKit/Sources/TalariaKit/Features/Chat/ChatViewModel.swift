@@ -6307,7 +6307,7 @@ extension ChatViewModel {
             break
         case .streamEnd, .cancelled:
             finishBtwStream()
-        case .error(let message, _):
+        case .error(let message, _, _):
             activeBtwAnswer = "Error: \(message)"
             updateActiveBtwMessage(isLoading: false)
             finishBtwStream()

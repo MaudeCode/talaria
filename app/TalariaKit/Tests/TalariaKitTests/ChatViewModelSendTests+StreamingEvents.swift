@@ -1474,4 +1474,24 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(streamClient.stopCount, 1)
     }
 
+    @MainActor
+    func testInterruptedChatKeepsTheWithdrawalFromItsTerminalFrame() async throws {
+        let stream = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: stream) { request in
+            XCTAssertEqual(request.url?.path, "/api/chat/start")
+            return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+        }
+        let started = await viewModel.sendMessage("Run the deterministic fixture")
+        XCTAssertTrue(started)
+
+        stream.emit(SSEEventDecoder.decode(
+            eventType: "apperror",
+            data: #"{"message":"Server shutting down.","terminal_state":"interrupted","withdrawn":{"kind":"clarify","reason":"shutdown"}}"#
+        ))
+
+        XCTAssertNil(viewModel.activeStreamID)
+        XCTAssertEqual(viewModel.promptWithdrawal?.kind, .clarify)
+        XCTAssertEqual(viewModel.promptWithdrawal?.reason, .shutdown)
+    }
+
 }
