@@ -2,6 +2,12 @@ import Foundation
 
 public struct SkillsResponse: Decodable, Equatable, Sendable {
     public let skills: [SkillSummary]?
+    public let categoryGroups: [SkillCategoryGroup]?
+}
+
+public struct SkillCategoryGroup: Decodable, Equatable, Sendable {
+    public let category: String?
+    public let names: [String]
 }
 
 public struct SkillSummary: Decodable, Equatable, Identifiable, Sendable {

@@ -24,5 +24,9 @@
     }
   ],
   "total": 2,
-  "categories": ["a", "b"]
+  "categories": ["a", "b"],
+  "category_groups": [
+    { "category": "a", "names": ["a/one"] },
+    { "category": "b", "names": ["b/two"] }
+  ]
 }

@@ -5,6 +5,7 @@ import Observation
 @Observable
 public final class SkillsViewModel {
     private var loadGeneration = 0
+    private var categoryGroups: [SkillCategoryGroup]?
     public private(set) var skills: [SkillSummary] = []
     public private(set) var isLoading = false
     public private(set) var errorMessage: String?
@@ -22,7 +23,9 @@ public final class SkillsViewModel {
         self.client = client
         self.responseCache = responseCache
         // The last list shows at once (TAL-437); `load` replaces it.
-        skills = responseCache?.entry(ResponseCache.Kind.skills).load(SkillsResponse.self)?.skills ?? []
+        let cached = responseCache?.entry(ResponseCache.Kind.skills).load(SkillsResponse.self)
+        skills = cached?.skills ?? []
+        categoryGroups = cached?.categoryGroups
     }
 
     public func load() async {
@@ -41,6 +44,7 @@ public final class SkillsViewModel {
             let response = try await client.skills(caching: responseCache?.entry(ResponseCache.Kind.skills))
             guard generation == loadGeneration else { return }
             skills = response.skills ?? []
+            categoryGroups = response.categoryGroups
         } catch {
             guard generation == loadGeneration, !APIError.isCancellation(error) else { return }
             lastError = error
@@ -48,13 +52,9 @@ public final class SkillsViewModel {
         }
     }
 
-    var groupedSkills: [(category: String, skills: [SkillSummary])] {
-        Self.groupedSkills(for: skills)
-    }
-
-    public func filteredGroupedSkills(searchText: String) -> [(category: String, skills: [SkillSummary])] {
+    public func filteredGroupedSkills(searchText: String) -> [(category: String?, skills: [SkillSummary])] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return groupedSkills }
+        guard !query.isEmpty else { return displayGroups(for: skills) }
 
         let filtered = skills.filter { skill in
             let name = skill.name?.localizedCaseInsensitiveContains(query) ?? false
@@ -66,7 +66,20 @@ public final class SkillsViewModel {
 
         guard !filtered.isEmpty else { return [] }
 
-        return Self.groupedSkills(for: filtered)
+        return displayGroups(for: filtered)
+    }
+
+    private func displayGroups(for skills: [SkillSummary]) -> [(category: String?, skills: [SkillSummary])] {
+        // Older servers and previously cached responses have no category groups.
+        guard let categoryGroups else { return Self.groupedSkills(for: skills) }
+        var rowsByName: [String: SkillSummary] = [:]
+        for skill in skills {
+            if let name = skill.name { rowsByName[name] = skill }
+        }
+        return categoryGroups.compactMap { group in
+            let rows = group.names.compactMap { rowsByName[$0] }
+            return rows.isEmpty ? nil : (group.category, rows)
+        }
     }
 
     public func setSkill(_ skill: SkillSummary, enabled: Bool) async {
@@ -88,13 +101,13 @@ public final class SkillsViewModel {
         }
     }
 
-    static func groupedSkills(for skills: [SkillSummary]) -> [(category: String, skills: [SkillSummary])] {
+    private static func groupedSkills(for skills: [SkillSummary]) -> [(category: String?, skills: [SkillSummary])] {
         let grouped = Dictionary(grouping: skills, by: categoryName(for:))
         return grouped
             .sorted {
                 $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending
             }
-            .map { (category: $0.key, skills: sortedSkills($0.value)) }
+            .map { (category: Optional($0.key), skills: sortedSkills($0.value)) }
     }
 
     private static func categoryName(for skill: SkillSummary) -> String {

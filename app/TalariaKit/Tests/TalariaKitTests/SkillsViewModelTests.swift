@@ -3,20 +3,6 @@ import XCTest
 
 final class SkillsViewModelTests: APIClientTestCase {
     @MainActor
-    func testGroupedSkillsNormalizesBlankCategoriesAndSortsRows() {
-        let groups = SkillsViewModel.groupedSkills(for: [
-            SkillSummary(name: "zed", category: " coding ", description: nil, path: nil),
-            SkillSummary(name: "Alpha", category: "coding", description: nil, path: nil),
-            SkillSummary(name: "loose", category: "   ", description: nil, path: nil),
-            SkillSummary(name: nil, category: nil, description: nil, path: nil)
-        ])
-
-        XCTAssertEqual(groups.map(\.category), ["coding", "Uncategorized"])
-        XCTAssertEqual(groups.first?.skills.map(\.name), ["Alpha", "zed"])
-        XCTAssertEqual(groups.last?.skills.map { $0.name ?? "Unnamed Skill" }, ["loose", "Unnamed Skill"])
-    }
-
-    @MainActor
     func testToggleSkillOptimisticallyUpdatesThenReloadsServerState() async throws {
         var paths: [String] = []
         var skillsLoadCount = 0

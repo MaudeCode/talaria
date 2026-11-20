@@ -14,15 +14,30 @@ import { requestPromptRefresh } from './memory.js'
 
 const EXCLUDED_DIRS = new Set(['node_modules', '.git', '__pycache__', '.venv', 'venv', '.hg', '.svn', 'dist', 'build'])
 
-/**
- * TAL-2480: the Skills page's filter keeps rows in `category` whose name or description contains `q`, case-insensitively;
- * `total` and `categories` describe every row.
- */
+/** Filter displayed rows while retaining the full install's group and count metadata. */
 export function skillListing<T extends { name: string; description: string; category: string | null }>(rows: T[], q = '', category = '') {
   const needle = q.trim().toLowerCase()
-  const skills = rows.filter((row) => (!category || row.category === category) && (!needle || [row.name, row.description].some((text) => text.toLowerCase().includes(needle))))
+  const collator = new Intl.Collator('en', { sensitivity: 'accent' })
+  const groups = new Map<string | null, T[]>()
+  for (const row of rows) {
+    const key = row.category?.trim() || null
+    const group = groups.get(key)
+    if (group) group.push(row)
+    else groups.set(key, [row])
+  }
+  const ordered = [...groups].sort(([a], [b]) => a === null ? 1 : b === null ? -1 : collator.compare(a, b))
+  const skills: T[] = []
+  const category_groups = ordered.map(([key, group]) => {
+    group.sort((a, b) => collator.compare(a.name.trim(), b.name.trim()))
+    for (const row of group) {
+      if (category && key !== category && row.category !== category) continue
+      if (!needle || [row.name, row.description].some((value) => value.toLowerCase().includes(needle))) skills.push(row)
+    }
+    return { category: key, names: group.map((row) => row.name) }
+  })
+  // Preserve the filter option strings consumed by older Web clients.
   const categories = [...new Set(rows.flatMap((row) => row.category ? [row.category] : []))].sort()
-  return { skills, total: rows.length, categories }
+  return { skills, total: rows.length, categories, category_groups }
 }
 
 export class SkillsService {
