@@ -6,7 +6,13 @@ const Id = GroupIdSchema
 
 export const GroupRoomSchema = z.object({ id: Id, name: z.string(), identity: z.string(), revision: z.number().int(), disbanded: z.boolean(), max_upload_bytes: z.number().int().positive(), attachment_limit: z.number().int().positive(), members: z.array(GroupMemberSchema.extend({ phase: z.enum(['idle', 'queued', 'running', 'stopping', 'unknown', 'failed', 'approval']), tool: z.string().nullable(), started_at: z.number().nullable(), stalled: z.boolean(), actions: z.array(GroupTaskActionSchema),
     /** The member routing this room's messages; true for exactly one member of a lead room. */
-    lead: z.boolean() })), actions: z.array(z.enum(['send', 'rename', 'disband', 'stop', 'context'])),
+    lead: z.boolean(),
+    /**
+     * A seat served by another computer's gateway; null for a profile on this one. `computer_label` names that computer when the
+     * room carries its name, else null and clients word it generically. `reachability` is the home gateway's route state: `offline`
+     * when it has no usable route; null on catalog rows, which carry no driver status.
+     */
+    remote: z.object({ computer_label: z.string().nullable(), reachability: z.enum(['ready', 'offline', 'needs_reauthorization']).nullable() }).nullable() })), actions: z.array(z.enum(['send', 'rename', 'disband', 'stop', 'context'])),
   /** Selectable modes from the driver; everyone and lead on gateways predating routing_modes. */
   routing_modes: z.array(NativeGroupContextSchema.shape.routing),
   /** The room's purpose, shared notes and routing; null when the gateway offers none, on catalog rows, and for a routing this contract does not know. */

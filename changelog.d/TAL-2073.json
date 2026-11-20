@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Discussions in Talaria Web now include group chats that seat a bot from another computer: each such seat names its computer and shows when that computer is offline or needs reauthorization.",
+      "highlight": false,
+      "components": [
+        "web"
+      ],
+      "announce": false
+    }
+  ]
+}
