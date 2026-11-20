@@ -966,6 +966,8 @@ export class GatewaySessions {
       keepRecent(this.olderRows, target.key, { key, rows: older }, STORED_CHATS)
       return older
     }
+    // Deeper than this read goes: the view keeps the attach rows alone until the attach starts elsewhere.
+    keepRecent(this.olderRows, target.key, { key, rows: [] }, STORED_CHATS)
     return []
   }
 
