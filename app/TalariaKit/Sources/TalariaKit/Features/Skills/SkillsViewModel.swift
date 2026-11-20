@@ -54,8 +54,9 @@ public final class SkillsViewModel {
 
     public func filteredGroupedSkills(searchText: String) -> [(category: String?, skills: [SkillSummary])] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return displayGroups(for: skills) }
+
         let filtered = skills.filter { skill in
-            guard !query.isEmpty else { return true }
             let name = skill.name?.localizedCaseInsensitiveContains(query) ?? false
             let description = skill.description?.localizedCaseInsensitiveContains(query) ?? false
             let category = skill.category?.localizedCaseInsensitiveContains(query) ?? false
@@ -63,10 +64,16 @@ public final class SkillsViewModel {
             return name || description || category || tags
         }
 
+        guard !filtered.isEmpty else { return [] }
+
+        return displayGroups(for: filtered)
+    }
+
+    private func displayGroups(for skills: [SkillSummary]) -> [(category: String?, skills: [SkillSummary])] {
         // Older servers and previously cached responses have no category groups.
-        guard let categoryGroups else { return Self.groupedSkills(for: filtered) }
+        guard let categoryGroups else { return Self.groupedSkills(for: skills) }
         var rowsByName: [String: SkillSummary] = [:]
-        for skill in filtered {
+        for skill in skills {
             if let name = skill.name { rowsByName[name] = skill }
         }
         return categoryGroups.compactMap { group in
