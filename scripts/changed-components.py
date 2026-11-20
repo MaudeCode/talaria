@@ -26,6 +26,9 @@ SIDECAR_SERVER_INPUTS = ("packages/server/src/sidecar/", "packages/server/src/ru
                          "packages/server/src/tools/updates.ts", "packages/server/src/test/fixtures/local-reset.json",
                          "packages/server/package.json", "packages/server/tsconfig.json",
                          "packages/server/tsconfig.build.json")
+# The server's unit tests read every server test fixture; the Playwright suite reads only these (TAL-2523).
+# test_server_fixture_readers_are_routed rescans the E2E specs so the list cannot fall behind them.
+E2E_SERVER_FIXTURES = {"canonical-ownership.json", "compaction-carrier.json"}
 # Web and TalariaKit's package tests read every root fixture; Sidecar, the App's hosted tests and Relay read only these
 # (TAL-1674). test_fixture_readers_are_routed rescans the readers so the lists cannot fall behind them. The
 # release-note generator and stamp tests share the What's New fixture (TAL-1616).
@@ -229,6 +232,8 @@ def path_suites(path):
         # the real Node server from the frontend job, so server changes run it too.
         if local.startswith(("sidecar/", *SIDECAR_SERVER_INPUTS)):
             return {"web_server", "web_frontend", "web_sidecar", "contracts"}
+        if local.startswith("packages/server/src/test/fixtures/"):
+            return {"web_server"} | ({"web_frontend"} if Path(local).name in E2E_SERVER_FIXTURES else set())
         if local.startswith("packages/server/"):
             return {"web_server", "web_frontend", "contracts"}
         # Only the contracts/server and frontend lint steps read the shared lint config.
