@@ -299,6 +299,13 @@
         ""
       ]
     },
+    "tests/test_agent_services.py::test_native_launch_file_attestation_names_each_profiles_own_definition": {
+      "layer": "compatibility",
+      "reason": "The release's hermes_cli.gateway launch-file generators, run in the fresh child Talaria uses to attest a launch-file refresh, must name a distinct generated definition for the root and a named profile home.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_agent_services.py::test_native_legacy_backend_identity_resolves_scoped_profile": {
       "layer": "compatibility",
       "reason": "The release's hermes_cli.process_identity and dashboard_procs must resolve a legacy backend's scoped profile through a home alias without backfilling its ledger row.",
