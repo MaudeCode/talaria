@@ -820,6 +820,7 @@ describe('values a browser_exec call types into a page (TAL-2299)', () => {
     ['a quote broken across lines', `fill_input('#pass', 'hun\nter2')`, '***'],
     ['an aliased helper', `typer = fill_input\ntyper('#pass', 'hunter2')`, '***'],
     ['a helper looked up by name', `typer = locals()['type_text']\ntyper('hunter2')`, '***'],
+    ['a wrapped insertion name stored apart from its call', `method = str('Input.insertText')\ncdp(method, {'text': 'hunter2'})`, '***'],
     ['an insertion named apart from its call', `method = "Input.insertText"\ncdp(method, {"text": "hunter2"})`, '***'],
     ['typing calls nested past the work budget', `${'fill_input('.repeat(400)}'hunter2'`, '***'],
     // An import or a comment naming a helper types nothing.

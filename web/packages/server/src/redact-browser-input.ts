@@ -273,6 +273,16 @@ function typedSpans(code: string, cut: boolean): Span[] {
     while (enclosing[open]! >= 0) open = enclosing[open]!
     const close = closes.get(open)!
     spend(close - open)
+    // A call with nothing beside the method name (`method = str('Input.insertText')`) holds no payload: the insertion is elsewhere.
+    let depth = 0
+    let payload = false
+    for (let i = open + 1; i < close && !payload; i++) {
+      const c = skeleton[i]!
+      if (OPEN.includes(c)) depth++
+      else if (CLOSE.includes(c)) depth--
+      else payload = c === ',' && !depth
+    }
+    if (!payload) throw new Withheld()
     const key = /\s*:/y
     for (const other of literalsIn(open + 1, close)) {
       key.lastIndex = other.end
