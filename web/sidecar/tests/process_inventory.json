@@ -1317,6 +1317,13 @@
         ""
       ]
     },
+    "tests/test_env_write.py::test_env_write_refuses_a_redacted_key_mask_with_the_agents_own_predicate": {
+      "layer": "compatibility",
+      "reason": "The installed Agent's redacted-mask predicate (refuse_redacted_env_value, v0.23.2+) must refuse a masked provider key through config.env_write on a real sidecar before any batch key is written, while its password rule still saves a mask-shaped password; a copied regex or fake config module cannot show the release's own policy.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_env_write.py::test_env_write_refuses_an_administrator_managed_key_before_writing": {
       "layer": "compatibility",
       "reason": "The installed Agent's administrator-managed .env refusal (HERMES_MANAGED_DIR) must refuse config.env_write before any key is written, through a real sidecar launched with that environment.",

@@ -120,6 +120,27 @@ def test_env_write_refuses_an_administrator_managed_key_before_writing(hermes_ho
 
 
 @requires_agent
+def test_env_write_refuses_a_redacted_key_mask_with_the_agents_own_predicate(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    path = hermes_home / ".env"
+    original = b"OPENAI_API_KEY=sk-working-synthetic-0001\nEXISTING=1\n"
+    path.write_bytes(original)
+    params = {"profile_home": str(hermes_home)}
+    message, _ = handshaken.call("config.env_write", {**params, "updates": {"FREE_KEY": "value-1", "OPENAI_API_KEY": "sk-pro...ABCD"}})
+    # The guard arrived in v0.23.2 (hermes_cli/config_credential_values.py); older releases keep their old behavior.
+    if (AGENT_DIR / "hermes_cli/config_credential_values.py").exists():
+        assert "error" in message, message
+        assert message["error"]["data"]["condition"] == "env_write_refused", message
+        assert "OPENAI_API_KEY" in message["error"]["message"]
+        assert "sk-working" not in message["error"]["message"]
+        assert path.read_bytes() == original
+    else:
+        assert "error" not in message, message
+    # A real key saves, and a password shaped like a mask follows the Agent's password rule: nothing stored is masked.
+    handshaken.result("config.env_write", {**params, "updates": {"OPENAI_API_KEY": "sk-real-synthetic-0002", "SUDO_PASSWORD": "Hello...2026"}})
+    assert {"OPENAI_API_KEY=sk-real-synthetic-0002", "SUDO_PASSWORD=Hello...2026", "EXISTING=1"} <= set(env_lines(hermes_home))
+
+
+@requires_agent
 def test_native_lock_timeout_maps_to_env_locked(hermes_home: pathlib.Path) -> None:
     (hermes_home / '.env').write_text('EXISTING=1\n')
     holder, go = paused_agent_write(hermes_home)
