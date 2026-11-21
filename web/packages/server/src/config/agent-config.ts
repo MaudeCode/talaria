@@ -846,6 +846,39 @@ export function applyAdvancedModelOptions(target: Dict, advanced: unknown): void
   if (apiKey) target.api_key = apiKey
 }
 
+/** Agent `clear_model_endpoint_credentials`: a route block's inline keys, key pointers and transport, all bound to its endpoint. */
+const ROUTE_CREDENTIAL_KEYS = ['api_key', 'api', 'key_env', 'api_key_env', 'api_mode']
+
+/** Agent `normalize_route_base_url`: one spelling per endpoint (host case, default port, trailing slash, fragment). */
+function routeUrl(raw: unknown): string {
+  const text = str(raw).trim()
+  try {
+    const url = new URL(text)
+    if (!url.hostname) return text
+    url.hash = ''
+    url.pathname = url.pathname.replace(/\/+$/, '')
+    return url.href
+  } catch { return text }
+}
+
+const routeOrigin = (url: string): string => { try { return new URL(url).origin } catch { return 'null' } }
+
+/**
+ * TAL-2294: Agent `clear_aux_credentials_on_route_change`, applied to a route block after a writer re-points it. A new
+ * provider or endpoint drops the old endpoint's keys, key pointers and `api_mode`, so the Agent never hands them to the
+ * new route; only a key this write entered stays. A model-only edit, a re-spelt URL, and a bare `custom` path change on
+ * one origin (its key binds to the origin) keep them; any other writer that re-points a block calls this too. Empty values carry nothing and stay as written.
+ */
+export function bindCredentialsToRoute(previous: Dict, route: Dict, advanced: unknown): Dict {
+  const identity = (block: Dict): [string, string] => { const p = str(block.provider).trim().toLowerCase(); return [p === 'auto' ? '' : p, routeUrl(block.base_url)] }
+  const [[oldProvider, oldUrl], [provider, url]] = [identity(previous), identity(route)]
+  if (oldProvider === provider && oldUrl === url) return route
+  if (provider === 'custom' && oldProvider === 'custom' && routeOrigin(url) !== 'null' && routeOrigin(url) === routeOrigin(oldUrl)) return route
+  const entered = isDict(advanced) && Boolean(str(advanced.api_key).trim())
+  for (const key of ROUTE_CREDENTIAL_KEYS) if (!(key === 'api_key' && entered) && key in route && route[key] !== '') Reflect.deleteProperty(route, key)
+  return route
+}
+
 export function publicAdvancedModelOptions(modelCfg: Dict): Dict {
   return {
     base_url: str(modelCfg.base_url).trim(),
@@ -1038,13 +1071,13 @@ function delegationRoute(entry: unknown, provider: string, model: string, advanc
     // The section has no timeout, concurrency, extra_body, or speed keys; only the endpoint and its key apply.
     applyAdvancedModelOptions(route, Object.fromEntries(['base_url', 'api_key', 'api_key_clear'].filter((k) => k in advanced).map((k) => [k, advanced[k]])))
   }
-  return route
+  return bindCredentialsToRoute(dict(entry), route, advanced)
 }
 
 function autoAuxiliarySlot(entry: unknown): Dict {
   const slot: Dict = { ...dict(entry), provider: 'auto', model: '' }
   Reflect.deleteProperty(slot, 'base_url')
-  return slot
+  return bindCredentialsToRoute(dict(entry), slot, null)
 }
 
 /** The shared route builder for persisted writes and read-only capability previews. */
@@ -1069,7 +1102,7 @@ function auxiliaryRoute(config: Config, saved: unknown, provider: string, model:
       throw new Error((error as Error).message.replace('advanced model options', 'advanced auxiliary options'))
     }
   }
-  return entry
+  return bindCredentialsToRoute(dict(saved), entry, advanced)
 }
 
 /**
@@ -1219,6 +1252,7 @@ export async function setDefaultModel(store: AgentConfig, home: string, modelId:
     for (const field of ['default', 'provider', 'base_url']) {
       if (isReference(written[field]) && shown[field] !== undefined && modelCfg[field] === shown[field]) modelCfg[field] = written[field]
     }
+    bindCredentialsToRoute(written, modelCfg, advanced)
     config.model = modelCfg
     if (modelCfg.service_tier) {
       const [tiers] = await store.speedTiers(home, config, [{ model: persistedModel, provider: persistedProvider }])
