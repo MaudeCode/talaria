@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Generated chat titles no longer show the title model's reasoning, thinking tags, or JSON wrapper.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
