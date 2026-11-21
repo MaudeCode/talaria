@@ -5,7 +5,7 @@
  * like, while selectors, URLs and the rest of the code stay readable.
  *
  * Recognised: the typed argument of `fill_input` and `type_text` by position, `text=` keyword or splat; the arguments of a
- * CDP `insertText` call; a literal assigned to `.value` (page script that assigns anything else is masked whole). A name the
+ * CDP `insertText` call; a literal assigned to `.value` (page script that sets a value any other way is masked whole). A name the
  * typed value uses has every statement that mentions it masked too (its assignments, loops and mutations), with the body of
  * a function the snippet defines under that name and the calls of one that takes it as a parameter.
  * Withheld whole (`***`): a snippet whose brackets or quotes do not pair up, a typing helper used other than by calling it,
@@ -18,7 +18,7 @@ const MASK = "'***'"
 /** A property assignment to `value`, in either spelling (`. value =`, `['value'] =`). */
 const VALUE_ASSIGN = String.raw`(?:\.\s*value|\[\s*['"\`]value['"\`]\s*\])\s*=(?!=)`
 /** Any way a snippet types into a page. */
-const TYPING_RE = new RegExp(String.raw`\b(?:fill_input|type_text)\b|insertText|${VALUE_ASSIGN}`)
+const TYPING_RE = /\b(?:fill_input|type_text|value)\b|insertText/
 const NAME_RE = /[\p{L}_][\p{L}\p{N}_]*/gu
 const NUMBER_RE = /(?<![\p{L}\p{N}_.])\d[\p{L}\p{N}_.]*/gu
 const TYPING_CALL_RE = /(?<![\p{L}\p{N}_])(fill_input|type_text)(?![\p{L}\p{N}_])(\s*\()?/gu
@@ -290,6 +290,8 @@ function typedSpans(code: string, cut: boolean): Span[] {
     // The call may only build the method name (`method = pick('Input.insertText', 1)`): what its statement assigns carries it on.
     followIn(...stmtRange(literal.stmt))
   }
+  /** Each string's `value` assignments that are one self-contained literal, by their span. */
+  const settled = new Map<Literal, [number, number][]>()
   for (const match of code.matchAll(new RegExp(String.raw`${VALUE_ASSIGN}\s*`, 'g'))) {
     const literal = literalAt(match.index)
     // Not in a comment.
@@ -303,10 +305,26 @@ function typedSpans(code: string, cut: boolean): Span[] {
     // statement but not a page-script expression (`''\n + 'pw'`).
     const ends = literal ? /^[ \t]*(?:;|['"]{1,3}$)/ : /^[ \t]*(?:[;\r\n#]|$)/
     const isolated = value !== null && fixed && !code.slice(value[0], value[1]).includes('${') && ends.test(code.slice(value[1], literal ? literal.end : code.length))
-    if (value && isolated) { spans.push(value); continue }
+    if (value && isolated) {
+      spans.push(value)
+      if (literal) settled.set(literal, [...(settled.get(literal) ?? []), [match.index, value[1]]])
+      continue
+    }
     // Anything else (a variable, a concatenation) takes its value from the script or statement around it, masked whole.
     if (literal) maskLiteral(literal)
     maskStatement(literal ? literal.stmt : stmtOf(match.index))
+  }
+  // Page script can set a value in ways no pattern lists (a comment before the `=`, `setAttribute('value', ...)`,
+  // `{ value: ... }`). A string that names `value` and then assigns, lists or labels anything, outside the assignments
+  // settled above, is masked whole; one that only reads it (`return el.value`) stays.
+  for (const literal of literals) {
+    let text = code.slice(literal.start, literal.end)
+    if (!text.includes('value')) continue
+    for (const [from, to] of settled.get(literal) ?? []) text = text.slice(0, from - literal.start) + ' '.repeat(to - from) + text.slice(to - literal.start)
+    const named = text.search(/\bvalue\b/)
+    if (named < 0 || !/(?<![=!<>])=(?![=>])|[:,]/.test(text.slice(named))) continue
+    maskLiteral(literal)
+    maskStatement(literal.stmt)
   }
   if (cut) for (let k = 0; k < stmts.length; k++) maskStatement(k)
 
