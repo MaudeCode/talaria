@@ -159,7 +159,7 @@ function splitQuoted(value: string): { open: string; inner: string; close: strin
 const COOKIE_ANSI_RE = /(\$'(?:Set-)?Cookie:\s*)((?:[^'\\\r\n]|\\.)*)/gi
 const COOKIE_SQ_RE = /((?<!\$)'(?:Set-)?Cookie:\s*)([^'\r\n]*)/gi
 const COOKIE_DQ_RE = /("(?:Set-)?Cookie:\s*)((?:[^"\\\r\n]|\\.)*)/gi
-const COOKIE_BARE_RE = new RegExp(String.raw`((?<!['"])\b(?:Set-)?Cookie:\s*)((?:${QUOTED}|[^'"\\\r\n]|\\(?!"))+)`, 'gi')
+const COOKIE_BARE_RE = new RegExp(String.raw`((?<!['"])\b(?:Set-)?Cookie:\s*)((?:${QUOTED}|'(?=\S)|[^'"\\\r\n]|\\(?!"))+)`, 'gi')
 /**
  * A cookie header's value is a credential when any of its `;` segments is a `name=value` pair, read as
  * `parseCookieHeader` reads it (whatever whitespace `trim()` drops around `=`, after an empty or flag segment), or,
@@ -752,11 +752,13 @@ function escapedJsonClose(text: string, from: number): number {
  * The end (exclusive) of the shell word starting at `start`: adjacent quoted (`'…'`, `"…"` with escapes, `$'…'`), escaped
  * (`\ `) and bare pieces, a leading `[…]`/`{…}`/`(…)` container (balanced; the sidecar's Python repr of nested args), or JSON escaped inside a shell string (`\"…\"`).
  * It stops at shell metacharacters outside a container, at `, ] }` that follow the word, and at the quote that encloses the argument
- * (`-H "X-Api-Key: value"`). An unterminated quote at the word's start runs to the line end; one mid-word ends the word.
+ * (`-H "X-Api-Key: value"`). An unterminated quote at the word's start runs to the line end; one mid-word closes the word
+ * when a word boundary or the end follows it, and is a literal character of the word otherwise (`pre'tail` is one word).
  * One pass, so redaction stays linear.
  */
 function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (from: number, quote: string) => number = enclosingClose(text)): number {
   const lineEnd = (from: number): number => { const n = text.indexOf('\n', from); return n === -1 ? text.length : n }
+  const endsWord = (at: number): boolean => at >= text.length || SHELL_WORD_BOUNDARY_RE.test(text[at]!)
   // Inside an enclosing quote a bare value is literal up to that quote's close, spaces and newlines included; a quoted,
   // container or escaped-JSON value keeps its own piece structure.
   if (enclosing && !/^(?:\$?["'`]|[[{(]|\\")/.test(text.slice(start, start + 2))) {
@@ -785,8 +787,10 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
     else if (c === '$' && text[i + 1] === "'") {
       let k = i + 2
       while (k < text.length && text[k] !== "'") k += text[k] === '\\' ? 2 : 1
-      if (k >= text.length) return i === start ? lineEnd(i) : i
-      i = k + 1
+      if (k < text.length) i = k + 1
+      else if (i === start) return lineEnd(i)
+      else if (endsWord(i + 2)) return i
+      else i += 2
     } else if (c === '$' && text[i + 1] === '"') i += 1
     // A command substitution (`$(…)`, backticks) cannot be bounded without a shell parser (`case` patterns carry unmatched
     // `)`, backticks nest by escaping, and either may span lines): mask to the end of the text. `${…}` is balanced, quote-
@@ -811,13 +815,17 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
     } else if (c === '`') return text.length
     else if (c === "'") {
       const close = text.indexOf("'", i + 1)
-      if (close === -1) return i === start ? lineEnd(i) : i
-      i = close + 1
+      if (close !== -1) i = close + 1
+      else if (i === start) return lineEnd(i)
+      else if (endsWord(i + 1)) return i
+      else i += 1
     } else if (c === '"') {
       let k = i + 1
       while (k < text.length && text[k] !== '"') k += text[k] === '\\' ? 2 : 1
-      if (k >= text.length) return i === start ? lineEnd(i) : i
-      i = k + 1
+      if (k < text.length) i = k + 1
+      else if (i === start) return lineEnd(i)
+      else if (endsWord(i + 1)) return i
+      else i += 1
     } else if ((c === '[' || c === '{' || (c === '(' && i === start)) && (i === start || depth > 0)) { depth += 1; i += 1 }
     else if (c === '(' && depth > 0) { depth += 1; i += 1 }
     else if ((c === ']' || c === '}' || c === ')') && depth > 0) {
