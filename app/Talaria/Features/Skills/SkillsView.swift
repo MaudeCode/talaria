@@ -36,7 +36,7 @@ struct SkillsView: View {
 
     @ViewBuilder
     private var content: some View {
-        if viewModel.isLoading && viewModel.skills.isEmpty && viewModel.query.isEmpty {
+        if viewModel.isLoading && viewModel.skills.isEmpty {
             ProgressView("Loading skills...")
         } else if let errorMessage = viewModel.errorMessage, viewModel.skills.isEmpty {
             ContentUnavailableView {
