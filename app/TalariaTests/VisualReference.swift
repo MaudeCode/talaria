@@ -144,20 +144,27 @@ enum VisualReference {
     /// pipeline build outlasted the image provider's wait, so the first read returned an
     /// unfinished image (TAL-675). Reads until two in a row agree, turning the run loop in
     /// between, so comparison, attachments and recording all see the finished pixels.
-    /// ponytail: two equal unfinished reads would still pass; a bounded wait covers the
-    /// observed 10 s pipeline build.
     @MainActor
     private static func settledPixels(of lazyImage: CGImage) throws -> CGImage {
-        var previous = try pixels(of: lazyImage)
-        for _ in 0..<20 {
-            var current = try pixels(of: lazyImage)
-            if current == previous {
-                return try image(from: &current, width: lazyImage.width, height: lazyImage.height)
-            }
+        guard var settled = try settle(
+            reads: 21,
+            read: { try pixels(of: lazyImage) },
+            wait: { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5)) }
+        ) else { throw VisualReferenceError.renderNeverSettled }
+        return try image(from: &settled, width: lazyImage.width, height: lazyImage.height)
+    }
+
+    /// Reads up to `reads` times, calling `wait` between reads, and returns the first read
+    /// that equals the one before it; nil when the reads run out.
+    static func settle(reads: Int, read: () throws -> [UInt8], wait: () -> Void) rethrows -> [UInt8]? {
+        var previous: [UInt8]?
+        for attempt in 0..<reads {
+            if attempt > 0 { wait() }
+            let current = try read()
+            if current == previous { return current }
             previous = current
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5))
         }
-        throw VisualReferenceError.renderNeverSettled
+        return nil
     }
 
     private static var isRecording: Bool {
@@ -297,5 +304,19 @@ extension XCTestCase {
             MainActor.assumeIsolated { window.isHidden = true }
         }
         return window
+    }
+}
+
+final class VisualReferenceSettleTests: XCTestCase {
+    /// A slow GPU pipeline build leaves `ImageRenderer` returning a fully transparent image
+    /// for several reads (TAL-1281). Equal blank reads must not count as the finished render.
+    func testBlankReadsWaitForTheOpaqueRender() {
+        let blank = [UInt8](repeating: 0, count: 8)
+        let opaque: [UInt8] = [10, 20, 30, 255, 40, 50, 60, 255]
+        var samples = [blank, blank, opaque, opaque]
+
+        let settled = VisualReference.settle(reads: samples.count, read: { samples.removeFirst() }, wait: {})
+
+        XCTAssertEqual(settled, opaque)
     }
 }
