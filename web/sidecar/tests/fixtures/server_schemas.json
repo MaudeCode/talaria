@@ -1578,6 +1578,10 @@
                 }
               ]
             },
+            "access_provisional": {
+              "description": "TAL-2508: true when `read_only` and `can_branch` can change once `GET /api/session` claims or imports the session (CLI, Claude Code and messaging rows), so a client reloads that detail before trusting them; absent or false means they are final.",
+              "type": "boolean"
+            },
             "sidebar_source": {
               "description": "TAL-1863: the source tab the row files in, the one verdict `webui_session_count`, `cli_session_count` and the `sidebar_source` request filter read. A subagent row takes its parent's tab, listed or not, in its own profile; with no resolvable parent it keeps its own (`webui`). `is_cli_session` stays false for a subagent. `GET /api/sessions` and its sidebar search set it; other routes omit it.",
               "type": "string",
