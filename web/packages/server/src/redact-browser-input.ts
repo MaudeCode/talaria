@@ -177,7 +177,7 @@ function typedSpans(code: string, cut: boolean): Span[] {
   }
   const followIn = (text: string): void => { for (const match of text.matchAll(VALUE_NAME_RE)) follow(match[0]) }
   /** An f-string's names are part of the value it builds. */
-  const followLiteral = (literal: Literal): void => { if (literal.f) followIn(code.slice(literal.start, literal.end)) }
+  const followLiteral = (literal: Literal): void => { if (literal.f) for (const match of code.slice(literal.start, literal.end).matchAll(NAME_RE)) follow(match[0]) }
   const maskLiteral = (literal: Literal): void => { spans.push([literal.start, literal.end, MASK]); followLiteral(literal) }
   /** A statement that binds a typed value: its literals and numbers masked, its names followed. */
   const maskStatement = (k: number): void => {
@@ -278,9 +278,12 @@ function typedSpans(code: string, cut: boolean): Span[] {
     if (!literal && skeleton[match.index] !== '.') continue
     const value = innerLiteral(code, match.index + match[0].length)
     // The assigned expression is one literal only when its statement ends there: at a `;`, a line end, or the string's own close.
+    // Page script is fixed text only as a plain string passed straight to a call: an f-string, `%`, `.format`, a
+    // concatenation or a name it is assigned to builds it from the statement around it.
+    const fixed = !literal || (!literal.f && /[(,]\s*$/.test(skeleton.slice(Math.max(0, literal.start - 200), literal.start)) && /^\s*[),]/.test(skeleton.slice(literal.end, literal.end + 200)))
     // A template that interpolates (`${pw}`) takes its value from the script around it.
-    const isolated = value !== null && !code.slice(value[0], value[1]).includes('${') && /^[ \t]*(?:[;\r\n#]|['"]{1,3}$|$)/.test(code.slice(value[1], literal ? literal.end : code.length))
-    if (value && isolated) { spans.push(value); if (literal) followLiteral(literal); continue }
+    const isolated = value !== null && fixed && !code.slice(value[0], value[1]).includes('${') && /^[ \t]*(?:[;\r\n#]|['"]{1,3}$|$)/.test(code.slice(value[1], literal ? literal.end : code.length))
+    if (value && isolated) { spans.push(value); continue }
     // Anything else (a variable, a concatenation) takes its value from the script or statement around it, masked whole.
     if (literal) maskLiteral(literal)
     maskStatement(literal ? literal.stmt : stmtOf(match.index))
