@@ -784,6 +784,7 @@ describe('values a browser_exec call types into a page (TAL-2299)', () => {
     ['concatenated literals', `fill_input('#pass', 'hun' + 'ter2')`, `fill_input('#pass', '***')`],
     ['an f-string', `fill_input('#pass', f'{user}-hunter2')`, `fill_input('#pass', '***')`],
     ['an f-string debug expression', `pw = 'hunter2'\ntype_text(f'{pw=}')`, `pw = '***'\ntype_text('***')`],
+    ['a name read through eval', `pw = 'hunter2'\ntype_text(eval('pw'))`, `pw = '***'\ntype_text('***')`],
     ['a number', `pin = 123456\nfill_input('#pin', str(pin), timeout=5)`, `pin = ***\nfill_input('#pin', '***', timeout=5)`],
     ['an assigned variable', `pw = 'hunter2'\nfill_input('#pass', pw)\ngoto('https://example.com/login')`, `pw = '***'\nfill_input('#pass', '***')\ngoto('https://example.com/login')`],
     ['a tuple target', `sel, pw = '#pass', 'hunter2'\nfill_input(sel, pw)`, `sel, pw = '***', '***'\nfill_input(sel, '***')`],

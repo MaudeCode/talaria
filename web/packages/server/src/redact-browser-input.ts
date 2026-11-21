@@ -182,10 +182,8 @@ function typedSpans(code: string, cut: boolean): Span[] {
       if (enclosing[start + match.index]! < 0 || !KEYWORD_RE.test(skeleton)) follow(match[0])
     }
   }
-  /** Code inside a string (page script, text handed to `exec`) may read any name it spells. */
-  const followText = (literal: Literal): void => { for (const match of code.slice(literal.start, literal.end).matchAll(NAME_RE)) follow(match[0]) }
-  /** An f-string's names are part of the value it builds. */
-  const followLiteral = (literal: Literal): void => { if (literal.f) followText(literal) }
+  /** A string may read any name it spells: an f-string's fields, page script, text handed to `eval` or `exec`. */
+  const followLiteral = (literal: Literal): void => { for (const match of code.slice(literal.start, literal.end).matchAll(NAME_RE)) follow(match[0]) }
   const maskLiteral = (literal: Literal): void => { spans.push([literal.start, literal.end, MASK]); followLiteral(literal) }
   /** A statement that binds a typed value: its literals and numbers masked, its names followed. */
   const maskStatement = (k: number): void => {
@@ -250,7 +248,7 @@ function typedSpans(code: string, cut: boolean): Span[] {
   // A helper called inside a string (code handed to `eval`) types a value this scan cannot reach.
   for (const match of code.matchAll(/\b(?:fill_input|type_text)\s*\(/g)) {
     const literal = literalAt(match.index)
-    if (literal) { followText(literal); maskStatement(literal.stmt) }
+    if (literal) { followLiteral(literal); maskStatement(literal.stmt) }
   }
   for (const match of code.matchAll(/insertText/g)) {
     const literal = literalAt(match.index)
@@ -264,7 +262,7 @@ function typedSpans(code: string, cut: boolean): Span[] {
       continue
     }
     // A longer string carrying the word holds the typing expression itself (JavaScript's `execCommand('insertText', ...)`).
-    if (!/insertText['"]{1,3}$/.test(code.slice(literal.start, literal.end))) { followText(literal); maskStatement(literal.stmt); continue }
+    if (!/insertText['"]{1,3}$/.test(code.slice(literal.start, literal.end))) { followLiteral(literal); maskStatement(literal.stmt); continue }
     const open = enclosing[literal.start]!
     if (open < 0 || code[open] !== '(') throw new Withheld()
     const close = closes.get(open)!
@@ -295,7 +293,7 @@ function typedSpans(code: string, cut: boolean): Span[] {
     const isolated = value !== null && fixed && !code.slice(value[0], value[1]).includes('${') && ends.test(code.slice(value[1], literal ? literal.end : code.length))
     if (value && isolated) { spans.push(value); continue }
     // Anything else (a variable, a concatenation) takes its value from the script or statement around it, masked whole.
-    if (literal) { maskLiteral(literal); followText(literal) }
+    if (literal) maskLiteral(literal)
     maskStatement(literal ? literal.stmt : stmtOf(match.index))
   }
   if (cut) for (let k = 0; k < stmts.length; k++) maskStatement(k)
