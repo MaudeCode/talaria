@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Looking up a model's context window in Talaria Web no longer rotates a credential pool, runs a key command or installs a provider plugin.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

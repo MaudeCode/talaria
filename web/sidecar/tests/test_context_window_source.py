@@ -69,85 +69,100 @@ def test_a_marker_that_raises_or_answers_empty_gives_null(monkeypatch) -> None:
         assert chat._context_length(agent) == {"context_length": 1, "context_window_source": None}
 
 
-ROUTING_PROBE = """
+SELECTION_PROBE = """
 import json, os, sys
 from pathlib import Path
-sys.path.append(sys.argv[1])
-from hermes_cli.runtime_provider import resolve_runtime_provider
-import agent.model_metadata as metadata
-import agent.context_pin as context_pin
-from talaria_sidecar.home import scoped_home
-from talaria_sidecar.methods import Registry, providers
 from types import SimpleNamespace
+sys.path.append(sys.argv[1])
+import agent.model_metadata as metadata
+import hermes_cli.left_core_migration as left_core
+from talaria_sidecar.methods import Registry, providers
 
-home = Path(os.environ["HERMES_HOME"])
-provider = json.loads((home / "config.yaml").read_text())["model"]["provider"]
-with scoped_home(home):
-    runtime = resolve_runtime_provider(requested=provider, target_model="synthetic-model")
-recorded, marked = [], []
-metadata.get_model_context_length = lambda model, **kw: recorded.append(kw) or 123456
-context_pin.context_window_marker = lambda *a, **kw: marked.append(kw) or None
+home, lab, keyed = Path(os.environ["HERMES_HOME"]), sys.argv[2], sys.argv[3]
+sent, delivered = [], []
+metadata.get_model_context_length = lambda model, **kw: sent.append(kw) or 123456
+left_core.recover_for_provider = lambda name: delivered.append(name)
 registry = Registry(SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
 providers.register(registry)
-reply = registry.methods["models.context_length"](None, {
-    "profile_home": str(home), "model": "synthetic-model", "provider": provider,
-    "base_url": sys.argv[2], "api_key": sys.argv[3], "config_context_length": 123456,
-})
-print(json.dumps({"runtime": [runtime["base_url"], runtime["api_key"]],
-                  "lookup": [recorded[0]["base_url"], recorded[0]["api_key"]],
-                  "marker_url": marked[0]["base_url"], "reply": reply}))
+lookup = registry.methods["models.context_length"]
+pool = lambda: json.loads((home / "auth.json").read_text())["credential_pool"]
+before = pool()
+for provider, url in [("lab", lab)] * 3 + [("keyed", keyed)] * 2 + [("lab", "https://elsewhere.invalid/v1")]:
+    reply = lookup(None, {"profile_home": str(home), "model": "synthetic-model", "provider": provider,
+                          "base_url": url, "config_context_length": 64000})
+    assert reply["context_length"] == 123456, reply
+try:
+    from hermes_cli.runtime_provider_custom import main_endpoint_key_for
+    selector = True
+except ImportError:
+    selector = False
+print(json.dumps({"sent": [[kw["base_url"], kw["api_key"], kw["config_context_length"]] for kw in sent],
+                  "pool_unchanged": pool() == before, "delivered": delivered, "selector": selector}))
 """
 
 
 @requires_agent
-@pytest.mark.parametrize("provider,config,env,server_url,expected", [
-    ("custom:box", {"model": {"base_url": "https://modelblock.invalid/v1"}, "providers": {
-        "custom:box": {"api": "https://box.invalid/v1", "api_key": "sk-synthetic-box"}}}, {},
-     "https://modelblock.invalid/v1", ["https://box.invalid/v1", "sk-synthetic-box"]),
-    ("openrouter", {"custom_providers": [{"name": "openrouter", "base_url": "https://legacy.invalid/v1"}]},
-     {"OPENROUTER_API_KEY": "sk-synthetic-openrouter"}, "https://legacy.invalid/v1",
-     ["https://openrouter.ai/api/v1", "sk-synthetic-openrouter"]),
-    ("anthropic", {"model": {"base_url": "https://proxy.invalid/v1"}},
-     {"ANTHROPIC_API_KEY": "sk-synthetic-anthropic"}, "https://proxy.invalid/v1",
-     ["https://api.anthropic.com", "sk-synthetic-anthropic"]),
-], ids=["custom-owner", "builtin-legacy-name", "anthropic-proxy"])
-def test_lookup_keeps_the_agents_runtime_key_and_url_together(tmp_path, provider, config, env, server_url, expected) -> None:
-    root = tmp_path / ".hermes"
+def test_repeated_lookups_leave_inference_credentials_untouched(tmp_path) -> None:
+    """TAL-2595: a context-window read selects no pool row, mints no key_cmd token and delivers no plugin; it sends
+    only the Agent's metadata selection for the configured main endpoint (0.23.3+), else nothing."""
+    root, lab, keyed = tmp_path / ".hermes", "https://lab.invalid/v1", "https://keyed.invalid/v1"
     root.mkdir()
-    config.setdefault("model", {})["provider"] = provider
-    (root / "config.yaml").write_text(json.dumps(config))
-    run = subprocess.run([AGENT_PYTHON, "-c", ROUTING_PROBE, str(AGENT_DIR), server_url, expected[1]],
-                         env=isolated_env(root, **env), capture_output=True, text=True, timeout=120)
+    minted = tmp_path / "minted"
+    (root / "config.yaml").write_text(json.dumps({
+        "model": {"provider": "lab", "default": "synthetic-model", "base_url": lab},
+        "providers": {"lab": {"base_url": lab},
+                      "keyed": {"base_url": keyed, "key_cmd": f"touch {minted} && echo sk-synthetic-minted"}},
+        "credential_pool_strategies": {"lab": "round_robin"}}))
+    rows = [{"id": f"k{i}", "label": f"row{i}", "auth_type": "api_key", "priority": i, "source": "manual",
+             "access_token": f"sk-synthetic-pool-{i}", "base_url": lab} for i in (1, 2)]
+    (root / "auth.json").write_text(json.dumps({"version": 1, "providers": {}, "credential_pool": {"lab": rows}}))
+    run = subprocess.run([AGENT_PYTHON, "-c", SELECTION_PROBE, str(AGENT_DIR), lab, keyed],
+                         env=isolated_env(root), capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
     out = json.loads(run.stdout.strip().splitlines()[-1])
-    assert out["runtime"] == expected
-    assert out["lookup"] == out["runtime"]
-    assert out["marker_url"] == out["lookup"][0]
-    assert out["reply"]["context_length"] == 123456
+    matched = "sk-synthetic-pool-1" if out["selector"] else ""
+    assert out["sent"] == [[lab, matched, 64000]] * 3 + [[keyed, "", 64000]] * 2 + [["https://elsewhere.invalid/v1", "", 64000]]
+    assert out["pool_unchanged"]
+    assert not minted.exists()
+    assert out["delivered"] == []
 
 
-@pytest.mark.parametrize("resolver", ["raises", "missing"])
-def test_lookup_without_runtime_resolution_uses_a_keyless_fallback(tmp_path, monkeypatch, resolver) -> None:
-    def fail(**kwargs):
-        raise RuntimeError("synthetic resolver failure")
+def _fail(exc):
+    def selector(model_cfg, base_url):
+        raise exc
+    return selector
 
-    module = ModuleType("hermes_cli.runtime_provider")
-    if resolver == "raises":
-        module.resolve_runtime_provider = fail
-    monkeypatch.setitem(sys.modules, "hermes_cli", ModuleType("hermes_cli"))
-    monkeypatch.setitem(sys.modules, "hermes_cli.runtime_provider", module)
+
+@pytest.mark.parametrize("selector,provider,expected", [
+    (lambda cfg, url: f"sk-synthetic-{cfg['provider']}@{url}", "", "sk-synthetic-lab@https://lab.invalid/v1"),
+    (lambda cfg, url: f"sk-synthetic-{cfg['provider']}@{url}", " LAB ", "sk-synthetic-lab@https://lab.invalid/v1"),
+    (lambda cfg, url: "sk-synthetic-other", "custom:box", ""),
+    (lambda cfg, url: lambda: "sk-synthetic-minted", "lab", ""),
+    (_fail(RuntimeError("synthetic selector failure")), "lab", ""),
+    (_fail(SystemExit("synthetic config backend outage")), "lab", ""),
+    (None, "lab", ""),
+], ids=["main-route", "same-provider", "other-route", "credential-source", "raises", "backend-exit", "older-agent"])
+def test_lookup_sends_only_the_agents_main_endpoint_selection(monkeypatch, selector, provider, expected) -> None:
+    custom = ModuleType("hermes_cli.runtime_provider_custom")
+    if selector is not None:
+        custom.main_endpoint_key_for = selector
+    config = ModuleType("hermes_cli.config")
+    config.load_config = lambda: {"model": {"provider": "lab", "base_url": "https://lab.invalid/v1"}}
     recorded = []
     metadata = ModuleType("agent.model_metadata")
     metadata.get_model_context_length = lambda model, **kw: recorded.append(kw) or 123456
-    monkeypatch.setitem(sys.modules, "agent", ModuleType("agent"))
-    monkeypatch.setitem(sys.modules, "agent.model_metadata", metadata)
+    for name, module in {"hermes_cli": ModuleType("hermes_cli"), "hermes_cli.config": config,
+                         "hermes_cli.runtime_provider_custom": custom, "agent": ModuleType("agent"),
+                         "agent.model_metadata": metadata}.items():
+        monkeypatch.setitem(sys.modules, name, module)
     monkeypatch.setattr(providers, "scoped_home", lambda *a: nullcontext())
     monkeypatch.setattr(providers, "context_window_source", lambda *a, **kw: None)
     registry = Registry(SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
     providers.register(registry)
     reply = registry.methods["models.context_length"](None, {
-        "profile_home": str(tmp_path), "model": "synthetic-model", "provider": "custom:box",
-        "base_url": "https://fallback.invalid/v1", "api_key": "sk-synthetic-server",
+        "profile_home": "unused", "model": "synthetic-model", "provider": provider,
+        "base_url": "https://lab.invalid/v1", "config_context_length": 64000,
     })
     assert reply["context_length"] == 123456
-    assert (recorded[0]["base_url"], recorded[0]["api_key"]) == ("https://fallback.invalid/v1", "")
+    assert (recorded[0]["base_url"], recorded[0]["api_key"], recorded[0]["config_context_length"]) == (
+        "https://lab.invalid/v1", expected, 64000)
