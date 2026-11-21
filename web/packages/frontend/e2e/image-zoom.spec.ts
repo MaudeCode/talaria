@@ -19,7 +19,7 @@ const svg = ([w, h, fill]: [number, number, string]) => Buffer.from(
  * path, so a repeated source URL); an image in `broken` answers 404 until removed.
  */
 async function gallery(page: Page, files: string[], broken = new Set<string>()) {
-  const attachments = files.map((file) => ({ name: file, path: `/tmp/${file.split('#')[0]}`, is_image: true }))
+  const attachments = files.map((file) => ({ name: file, path: `/tmp/${file.split('#')[0]}`, kind: 'image' }))
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'zoom', title: 'Zoom', messages: [{ role: 'user', content: 'shots', attachments }] } } }))
   await page.route('**/api/file/raw**', (route) => {
     const name = (new URL(route.request().url()).searchParams.get('path') ?? '').replace('/tmp/', '')
@@ -72,7 +72,7 @@ const centre = (b: { x: number; y: number; width: number; height: number }) => (
 
 test('clicking a sent image opens it enlarged, the arrow keys step through the message images, and Escape closes it (TAL-608)', async ({ page }) => {
   const shots = ['a.png', 'b.png', 'c.png']
-  const attachments = [...shots.map((name) => ({ name, path: `/tmp/${name}`, is_image: true })), { name: 'notes.txt', path: '/tmp/notes.txt' }]
+  const attachments = [...shots.map((name) => ({ name, path: `/tmp/${name}`, kind: 'image' })), { name: 'notes.txt', path: '/tmp/notes.txt', kind: 'file' }]
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'gallery', title: 'Gallery', messages: [{ role: 'user', content: 'three shots', attachments }] } } }))
   await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
   await page.route('**/api/file/raw**', (route) => route.fulfill({ contentType: 'image/png', body: PNG }))

@@ -266,7 +266,7 @@ export class Groups {
       const author = scheduled ? event.actor.display_name?.trim() || event.actor.id.replace(SCHEDULED_ACTOR, '') : user ? '' : member?.display_name || member?.profile || ''
       const attachments = (event.payload.attachments ?? []).map((a) => ({ ...a, event_id: event.event_id, download_url: `/api/groups/file?${new URLSearchParams({ room_id: state.room.room_id, event_id: event.event_id, attachment_id: a.attachment_id, identity: this.identity(scope, state.room) }).toString()}` }))
       return [{ key: `${event.seq}:${event.event_id}`, index: event.seq, author: redactString(author), thread_id: event.payload.thread_id || null, scheduled,
-        message: { role: user && !scheduled ? 'user' as const : 'assistant' as const, content: redactString(event.payload.text ?? ''), message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, attachments: attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size, is_image: a.kind === 'image', download_url: a.download_url })) }, attachments }]
+        message: { role: user && !scheduled ? 'user' as const : 'assistant' as const, content: redactString(event.payload.text ?? ''), message_id: event.event_id, timestamp: event.created_at, _turn_id: event.event_id, attachments: attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size, is_image: a.kind === 'image', kind: a.kind, download_url: a.download_url })) }, attachments }]
     })
   }
 

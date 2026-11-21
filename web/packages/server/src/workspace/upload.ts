@@ -7,7 +7,9 @@ import { isWithin, resolvePathLikePython } from './paths.js'
 import { attachmentKey, attachmentSessionName, BlobExists, BlobKeyRejected, localSignature, type BlobStat, type BlobStore } from '../sessions/storage/blobs.js'
 import { extractArchive, type Extraction } from './extract.js'
 import { mimeFor } from './media.js'
-import { MAX_CHAT_ATTACHMENTS } from '@maudecode/talaria-web-contracts'
+import { kindFor } from './media-refs.js'
+import { MAX_CHAT_ATTACHMENTS, type DisplayMedia } from '@maudecode/talaria-web-contracts'
+import { str } from '../util.js'
 
 export interface MultipartFile { filename: string; body: Buffer }
 /** `files` keeps the last part per field name; `parts` keeps every file part in order (repeated field names included). */
@@ -170,7 +172,7 @@ export class UploadInbox {
   }
 
   /** Store one upload with an exclusive put under a name free in the session's attachments. */
-  async store(sessionId: string, filename: string, bytes: Buffer): Promise<{ filename: string; path: string; size: number; mime: string; is_image: boolean; rollback_token: string; named_in_prompt: true; max_attachments_per_message: number }> {
+  async store(sessionId: string, filename: string, bytes: Buffer): Promise<{ filename: string; path: string; size: number; mime: string; is_image: boolean; kind: DisplayMedia['kind']; rollback_token: string; named_in_prompt: true; max_attachments_per_message: number }> {
     const safeName = sanitizeUploadName(filename)
     this.sessionDir(sessionId)
     // Python `_upload_destination`: a name already in the inbox gets `-1`, `-2`, ... (every clipboard paste is
@@ -190,7 +192,7 @@ export class UploadInbox {
     // The response reports the name actually stored (Python `test_duplicate_upload_response_reports_actual_stored_filename`).
     // The server names every attached file in the turn's prompt (TAL-276) and keeps at most
     // MAX_CHAT_ATTACHMENTS per message, so clients send the bare draft and stage no more (TAL-635).
-    return { filename: stored, path: await this.blobs.localPath(key), size: bytes.length, mime, is_image: mime.startsWith('image/'), rollback_token: token, named_in_prompt: true, max_attachments_per_message: MAX_CHAT_ATTACHMENTS }
+    return { filename: stored, path: await this.blobs.localPath(key), size: bytes.length, mime, is_image: mime.startsWith('image/'), kind: attachmentKind({ mime }), rollback_token: token, named_in_prompt: true, max_attachments_per_message: MAX_CHAT_ATTACHMENTS }
   }
 
   /** Python `handle_upload_extract`: unpack into `<session inbox>/<stem>`, store every file, and return a tree receipt. */
@@ -245,6 +247,20 @@ export function guessMime(name: string): string {
   const fromMap = mimeFor(name)
   if (fromMap !== 'application/octet-stream' && !name.toLowerCase().endsWith('.ts') && !name.toLowerCase().endsWith('.tsx')) return fromMap
   const ext = name.toLowerCase().slice(name.lastIndexOf('.'))
-  const extra: Record<string, string> = { '.txt': 'text/plain', '.md': 'text/markdown', '.csv': 'text/csv', '.py': 'text/x-python', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.xml': 'application/xml', '.zip': 'application/zip', '.gz': 'application/gzip', '.tar': 'application/x-tar', '.yaml': 'application/yaml', '.yml': 'application/yaml', '.ts': 'video/mp2t', '.tsx': 'application/octet-stream', '.heic': 'image/heic', '.tif': 'image/tiff', '.tiff': 'image/tiff', '.avif': 'image/avif' }
+  const extra: Record<string, string> = { '.txt': 'text/plain', '.md': 'text/markdown', '.csv': 'text/csv', '.py': 'text/x-python', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.xml': 'application/xml', '.zip': 'application/zip', '.gz': 'application/gzip', '.tar': 'application/x-tar', '.yaml': 'application/yaml', '.yml': 'application/yaml', '.ts': 'video/mp2t', '.tsx': 'application/octet-stream', '.heic': 'image/heic', '.heif': 'image/heif', '.caf': 'audio/x-caf', '.tif': 'image/tiff', '.tiff': 'image/tiff', '.avif': 'image/avif' }
   return extra[ext] ?? 'application/octet-stream'
+}
+
+/**
+ * TAL-2507: a chat attachment's display kind, which clients render as sent. The upload's own `is_image` wins, then its
+ * mime, then a mime its name, filename or path implies, so a row without a mime (older or imported) still classifies.
+ * Any `image/` type is an image here: an attachment opens in a viewer, unlike an inline Markdown image.
+ */
+export function attachmentKind(attachment: Record<string, unknown>): DisplayMedia['kind'] {
+  if (attachment.is_image === true) return 'image'
+  for (const mime of [str(attachment.mime).toLowerCase(), ...[attachment.name, attachment.filename, attachment.path].map((n) => guessMime(str(n)))]) {
+    const kind = mime.startsWith('image/') ? 'image' : kindFor(mime)
+    if (kind !== 'file') return kind
+  }
+  return 'file'
 }

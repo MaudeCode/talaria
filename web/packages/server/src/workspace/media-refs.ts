@@ -370,7 +370,7 @@ function mediaFor(ref: string, resolver: MediaRefResolver): DisplayMedia | null 
   return { url, name: basename(ref) || ref, mime, kind: kindFor(mime) }
 }
 
-function kindFor(mime: string): DisplayMedia['kind'] {
+export function kindFor(mime: string): DisplayMedia['kind'] {
   if (INLINE_IMAGE_TYPES.has(mime)) return 'image'
   if (mime.startsWith('audio/')) return 'audio'
   if (mime.startsWith('video/')) return 'video'

@@ -13,6 +13,7 @@ import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
 import { toolResultMedia, toolScreenshotMedia, type MediaProjection } from '../workspace/media-refs.js'
+import { attachmentKind } from '../workspace/upload.js'
 import { codeExcerpt, DATA_URL_RE, decidedEditDiff, decisionReviewRef, humanControlRows, outboundDraftRef, outcomeValue, pageExcerpt, proposalRef, readFileView, resultAnalysisView, resultLinksView, resultPagesView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolCallOutcome, toolEditDiff, toolName, toolPresentation, toolRowsView, toolTextRows } from './tool-display.js'
 import { sourceKind } from './source-kind.js'
 
@@ -1570,9 +1571,14 @@ export function attachmentObjects(items: unknown[]): unknown[] {
   return items.map((a) => (typeof a === 'string' ? { name: a, filename: a } : a))
 }
 
-/** `attachmentObjects` over every message's attachments. Returns copies; stored rows are untouched. */
+/** TAL-2507: `attachmentObjects` with each object's server-classified display `kind`, for the attachments a client renders. */
+export function attachmentViews(items: unknown[]): unknown[] {
+  return attachmentObjects(items).map((a) => (isDict(a) ? { ...a, kind: attachmentKind(a) } : a))
+}
+
+/** `attachmentViews` over every message's attachments. Returns copies; stored rows are untouched. */
 export function withAttachmentObjects<T>(messages: T[]): T[] {
-  return messages.map((m) => (isDict(m) && Array.isArray(m.attachments) && m.attachments.some((a) => typeof a === 'string') ? { ...m, attachments: attachmentObjects(m.attachments) } : m))
+  return messages.map((m) => (isDict(m) && Array.isArray(m.attachments) && m.attachments.length ? { ...m, attachments: attachmentViews(m.attachments) } : m))
 }
 
 /** A scene's prose rows with `display_text` and `media` where `project` rewrites their text; the same array when none does. */

@@ -86,7 +86,7 @@ function AttachmentList({ message, sessionId }: { message: Message; sessionId: s
   const items = (message.attachments ?? []).map((a, i) => {
     const name = a.filename ?? a.name ?? a.path?.split('/').pop() ?? `file-${i + 1}`
     const href = a.download_url ? appUrl(a.download_url).href : a.path && sessionId ? appUrl(rawFileUrl(sessionId, a.path)).href : undefined
-    const image = a.is_image && href ? images.push({ name, src: href }) - 1 : undefined
+    const image = a.kind === 'image' && href ? images.push({ name, src: href }) - 1 : undefined
     return { name, href, image }
   })
   if (items.length === 0) return null

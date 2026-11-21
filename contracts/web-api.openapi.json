@@ -8140,6 +8140,18 @@
                                     },
                                     "rollback_token": {
                                       "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file",
+                                        "model"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                     }
                                   },
                                   "additionalProperties": {}
@@ -12624,6 +12636,18 @@
                               },
                               "rollback_token": {
                                 "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                               }
                             },
                             "additionalProperties": {}
@@ -15881,6 +15905,18 @@
                                     },
                                     "rollback_token": {
                                       "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file",
+                                        "model"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                     }
                                   },
                                   "additionalProperties": {}
@@ -20365,6 +20401,18 @@
                               },
                               "rollback_token": {
                                 "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                               }
                             },
                             "additionalProperties": {}
@@ -22283,6 +22331,18 @@
                                     },
                                     "rollback_token": {
                                       "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file",
+                                        "model"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                     }
                                   },
                                   "additionalProperties": {}
@@ -26767,6 +26827,18 @@
                               },
                               "rollback_token": {
                                 "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                               }
                             },
                             "additionalProperties": {}
@@ -31903,6 +31975,18 @@
                                     },
                                     "rollback_token": {
                                       "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file",
+                                        "model"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                     }
                                   },
                                   "additionalProperties": {}
@@ -36387,6 +36471,18 @@
                               },
                               "rollback_token": {
                                 "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                               }
                             },
                             "additionalProperties": {}
@@ -38676,6 +38772,18 @@
                               },
                               "rollback_token": {
                                 "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                               }
                             },
                             "additionalProperties": {}
@@ -39886,6 +39994,18 @@
                               },
                               "rollback_token": {
                                 "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                               }
                             },
                             "additionalProperties": {}
@@ -40856,6 +40976,18 @@
                                     },
                                     "rollback_token": {
                                       "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file",
+                                        "model"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                     }
                                   },
                                   "additionalProperties": {}
@@ -45340,6 +45472,18 @@
                               },
                               "rollback_token": {
                                 "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                               }
                             },
                             "additionalProperties": {}
@@ -50390,6 +50534,18 @@
                                     },
                                     "rollback_token": {
                                       "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file",
+                                        "model"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                     }
                                   },
                                   "additionalProperties": {}
@@ -54874,6 +55030,18 @@
                               },
                               "rollback_token": {
                                 "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                               }
                             },
                             "additionalProperties": {}
@@ -56736,6 +56904,18 @@
                                     },
                                     "rollback_token": {
                                       "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file",
+                                        "model"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                     }
                                   },
                                   "additionalProperties": {}
@@ -61220,6 +61400,18 @@
                               },
                               "rollback_token": {
                                 "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                               }
                             },
                             "additionalProperties": {}
@@ -63144,6 +63336,18 @@
                                     },
                                     "rollback_token": {
                                       "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file",
+                                        "model"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                     }
                                   },
                                   "additionalProperties": {}
@@ -67628,6 +67832,18 @@
                               },
                               "rollback_token": {
                                 "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                               }
                             },
                             "additionalProperties": {}
@@ -69550,6 +69766,18 @@
                                     },
                                     "rollback_token": {
                                       "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file",
+                                        "model"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                     }
                                   },
                                   "additionalProperties": {}
@@ -74034,6 +74262,18 @@
                               },
                               "rollback_token": {
                                 "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                               }
                             },
                             "additionalProperties": {}
@@ -88933,6 +89173,18 @@
                                     },
                                     "rollback_token": {
                                       "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file",
+                                        "model"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                     }
                                   },
                                   "additionalProperties": {}
@@ -93417,6 +93669,18 @@
                               },
                               "rollback_token": {
                                 "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                               }
                             },
                             "additionalProperties": {}
@@ -95331,6 +95595,18 @@
                                     },
                                     "rollback_token": {
                                       "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file",
+                                        "model"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                     }
                                   },
                                   "additionalProperties": {}
@@ -99815,6 +100091,18 @@
                               },
                               "rollback_token": {
                                 "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                               }
                             },
                             "additionalProperties": {}
@@ -101043,6 +101331,18 @@
                             },
                             "rollback_token": {
                               "type": "string"
+                            },
+                            "kind": {
+                              "enum": [
+                                "image",
+                                "audio",
+                                "video",
+                                "pdf",
+                                "file",
+                                "model"
+                              ],
+                              "type": "string",
+                              "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                             }
                           },
                           "additionalProperties": {}
@@ -102416,6 +102716,18 @@
                                     },
                                     "rollback_token": {
                                       "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file",
+                                        "model"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                     }
                                   },
                                   "additionalProperties": {}
@@ -106900,6 +107212,18 @@
                               },
                               "rollback_token": {
                                 "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "image",
+                                  "audio",
+                                  "video",
+                                  "pdf",
+                                  "file",
+                                  "model"
+                                ],
+                                "type": "string",
+                                "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                               }
                             },
                             "additionalProperties": {}
@@ -109372,6 +109696,18 @@
                                         },
                                         "rollback_token": {
                                           "type": "string"
+                                        },
+                                        "kind": {
+                                          "enum": [
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "pdf",
+                                            "file",
+                                            "model"
+                                          ],
+                                          "type": "string",
+                                          "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                         }
                                       },
                                       "additionalProperties": {}
@@ -113443,6 +113779,18 @@
                                   },
                                   "rollback_token": {
                                     "type": "string"
+                                  },
+                                  "kind": {
+                                    "enum": [
+                                      "image",
+                                      "audio",
+                                      "video",
+                                      "pdf",
+                                      "file",
+                                      "model"
+                                    ],
+                                    "type": "string",
+                                    "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                   }
                                 },
                                 "additionalProperties": {}
@@ -161769,6 +162117,18 @@
                                     },
                                     "rollback_token": {
                                       "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file",
+                                        "model"
+                                      ],
+                                      "type": "string",
+                                      "description": "TAL-2507: the server's display kind for this attachment, from its `is_image`, mime or name. Stamped on every session message, pending and upload attachment; clients render it and never classify names or mimes. Writes omit it."
                                     }
                                   },
                                   "additionalProperties": {}

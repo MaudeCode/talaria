@@ -260,22 +260,20 @@ final class ChatAttachmentPreviewViewModelTests: APIClientTestCase {
         TestImages.pngData(width: 4, height: 4)
     }
 
-    func testChatAttachmentPreviewItemInfersImageMessageAttachment() {
-        let item = ChatAttachmentPreviewItem(
-            message: MessageAttachment(
-                name: nil,
-                path: "/tmp/workspace/photo.PNG",
-                mime: nil,
-                size: 128,
-                isImage: nil
-            ),
-            localData: Data([0x01])
-        )
+    /// TAL-2507: a server message attachment renders the server's `kind`; its name, path and mime decide nothing
+    /// (the server's session test owns name and mime classification).
+    func testChatAttachmentPreviewItemRendersTheServerKind() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        func item(_ json: String) throws -> ChatAttachmentPreviewItem {
+            ChatAttachmentPreviewItem(message: try decoder.decode(MessageAttachment.self, from: Data(json.utf8)), localData: nil)
+        }
 
-        XCTAssertEqual(item.displayName, "photo.PNG")
-        XCTAssertEqual(item.displayPath, "/tmp/workspace/photo.PNG")
-        XCTAssertTrue(item.inferredIsImage)
-        XCTAssertFalse(item.isKnownUnsupportedBinary)
+        let file = try item(#"{"path":"/tmp/workspace/photo.PNG","mime":"audio/mpeg","kind":"file"}"#)
+        XCTAssertFalse(file.inferredIsImage)
+        XCTAssertFalse(file.inferredIsAudio)
+        XCTAssertTrue(try item(#"{"name":"scan","kind":"image"}"#).inferredIsImage)
+        XCTAssertTrue(try item(#"{"name":"Voice note","kind":"audio"}"#).inferredIsAudio)
     }
 
     func testChatAttachmentPreviewItemUsesPendingFileMetadata() {
