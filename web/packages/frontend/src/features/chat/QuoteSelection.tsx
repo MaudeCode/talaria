@@ -59,8 +59,10 @@ export function QuoteSelection({ transcript, onQuote }: { transcript: RefObject<
     const place = () => setAt(placeAction(range, pane, button.current))
     place()
     pane.addEventListener('scroll', place, { passive: true })
-    window.addEventListener('resize', place)
-    return () => { pane.removeEventListener('scroll', place); window.removeEventListener('resize', place) }
+    // The pane also resizes without a window resize, as when the side panel is dragged.
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place)
+    resize?.observe(pane)
+    return () => { pane.removeEventListener('scroll', place); resize?.disconnect() }
   }, [range, transcript])
   if (!selected) return null
   return <Button

@@ -11,7 +11,7 @@ let selectionEnd = box(0, 0, 0, 0)
 let pane = box(0, 0, 0, 0)
 Range.prototype.getClientRects = function () { return [selectionEnd] as unknown as DOMRectList }
 Range.prototype.getBoundingClientRect = function () { return selectionEnd }
-afterEach(() => { cleanup(); window.getSelection()?.removeAllRanges(); vi.restoreAllMocks(); selectionEnd = box(0, 0, 0, 0) })
+afterEach(() => { cleanup(); window.getSelection()?.removeAllRanges(); vi.restoreAllMocks(); vi.unstubAllGlobals(); selectionEnd = box(0, 0, 0, 0) })
 function layOut(view: { container: HTMLElement }) {
   vi.spyOn(view.container.querySelector<HTMLElement>('#messages')!, 'getBoundingClientRect').mockImplementation(() => pane)
   vi.spyOn(HTMLButtonElement.prototype, 'offsetWidth', 'get').mockReturnValue(100)
@@ -115,4 +115,19 @@ it('follows the selection as the transcript scrolls and hides once it leaves the
   selectionEnd = box(100, -60, 300, -40)
   fireEvent.scroll(scroller)
   expect(screen.queryByRole('button', { name: 'Quote selection' })).toBeNull()
+})
+
+it('re-places the action when the transcript pane resizes without a window resize', () => {
+  let resized: (() => void) | undefined
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { resized = callback } observe = vi.fn(); disconnect = vi.fn() })
+  const view = render(<Transcript {...props()} />)
+  layOut(view)
+  pane = box(0, 0, 800, 600)
+  selectionEnd = box(100, 200, 300, 220)
+  select(view.container.querySelector('.msg-body')!)
+  // A dragged side panel narrows the pane and rewraps the selection.
+  pane = box(0, 0, 500, 600)
+  selectionEnd = box(100, 240, 480, 260)
+  act(() => resized!())
+  expect(screen.getByRole('button', { name: 'Quote selection' }).style.left).toBe('392px')
 })
