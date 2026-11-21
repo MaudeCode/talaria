@@ -790,6 +790,8 @@ describe('values a browser_exec call types into a page (TAL-2299)', () => {
     ['a parameter of a function the snippet defines', `def login(sel, pw):\n    fill_input(sel, pw)\nlogin('#pass', 'hunter2')\nclick('#go')`, `def login(sel, pw):\n    fill_input(sel, '***')\nlogin('***', '***')\nclick('#go')`],
     ['a value stored under a key', `creds = {}\ncreds['pw'] = 'hunter2'\ntype_text(creds['pw'])`, `creds = {}\ncreds['***'] = '***'\ntype_text('***')`],
     ['a helper called inside a string', `exec("fill_input('#pass', 'hunter2')")`, `exec('***')`],
+    ['a function the snippet defines to produce the value', `def password():\n    return 'hunter2'\n\ntype_text(password())\ngoto('https://example.com')`, `def password():\n    return '***'\n\ntype_text('***')\ngoto('https://example.com')`],
+    ['a container the snippet fills', `pw = []\npw.append('hunter2')\ntype_text(''.join(pw))`, `pw = []\npw.append('***')\ntype_text('***')`],
     ['a splatted list', `args = ['#pass', 'hunter2']\nfill_input(*args)`, `args = ['***', '***']\nfill_input(*'***')`],
     ['a splatted dict', `kw = {'text': 'hunter2'}\nfill_input('#pass', **kw)`, `kw = {'***': '***'}\nfill_input('#pass', **'***')`],
     ['a .value assignment in page script', `js("document.querySelector('#pass').value = 'hunter2'")`, `js("document.querySelector('#pass').value = '***'")`],

@@ -5,8 +5,9 @@
  * like, while selectors, URLs and the rest of the code stay readable.
  *
  * Recognised: the typed argument of `fill_input` and `type_text` by position, `text=` keyword or splat; the arguments of a
- * CDP `insertText` call; a literal assigned to `.value` (page script that assigns anything else is masked whole). A name the typed value uses has the statements that bind it masked
- * too (assignments, tuple targets, loops, `as`, and the calls of a function the snippet defines with that parameter).
+ * CDP `insertText` call; a literal assigned to `.value` (page script that assigns anything else is masked whole). A name the
+ * typed value uses has every statement that mentions it masked too (its assignments, loops and mutations), with the body of
+ * a function the snippet defines under that name and the calls of one that takes it as a parameter.
  * Withheld whole (`***`): a snippet whose brackets or quotes do not pair up, a typing helper used other than by calling it,
  * an `insertText` that is no call's argument, and a snippet that names more than `MAX_NAMES` bindings. Code the sidecar cut
  * at its cap has every literal masked, since the typing call may sit past the cut.
@@ -20,10 +21,8 @@ const NAME_RE = /[\p{L}_][\p{L}\p{N}_]*/gu
 const NUMBER_RE = /(?<![\p{L}\p{N}_.])\d[\p{L}\p{N}_.]*/gu
 const TYPING_CALL_RE = /(?<![\p{L}\p{N}_])(fill_input|type_text)(?![\p{L}\p{N}_])(\s*\()?/gu
 const STRING_PREFIX_RE = /[fFrRbBuU]{1,2}(?=['"])/y
-/** A name bound right where it stands (`pw = `, `pw: str = `, `pw := `, `pw += `), and one bound as part of a target (`sel, pw = `, `creds['pw'] = `). */
-const DIRECT_ASSIGN_RE = /[^\S\r\n]*(?::[^=\n\r(]{0,200})?[-+*/%|&^@:]?=(?!=)/y
-const TARGET_ASSIGN_RE = /[\p{L}\p{N}_,.()[\]*\0 \t]{0,200}=(?!=)/yu
-const BINDING_STATEMENT_RE = /(?<![\p{L}\p{N}_])(?:for|as|lambda)(?![\p{L}\p{N}_])/u
+/** A name a value is built from; a keyword argument's own name is not one. */
+const VALUE_NAME_RE = /[\p{L}_][\p{L}\p{N}_]*(?![\p{L}\p{N}_])(?!\s*=(?!=))/gu
 const DEF_RE = /^\s*(?:async\s+)?def\s+([\p{L}_][\p{L}\p{N}_]*)\s*\(/u
 const IMPORT_RE = /^\s*(?:from|import)(?![\p{L}\p{N}_])/u
 /** Words a typed expression uses that bind nothing. */
@@ -156,6 +155,8 @@ function typedSpans(code: string, cut: boolean): Span[] {
   const masked = new Set<number>()
   const followed = new Set<string>()
   const queue: string[] = []
+  /** The typed expressions and insertion calls already handled: a name used inside one binds nothing there. */
+  const typed: [number, number][] = []
   let work = 0
   const spend = (amount: number): void => { if ((work += amount) > 16 * code.length + 1000) throw new Withheld() }
 
@@ -174,7 +175,7 @@ function typedSpans(code: string, cut: boolean): Span[] {
     followed.add(name)
     queue.push(name)
   }
-  const followIn = (text: string): void => { for (const match of text.matchAll(NAME_RE)) follow(match[0]) }
+  const followIn = (text: string): void => { for (const match of text.matchAll(VALUE_NAME_RE)) follow(match[0]) }
   /** An f-string's names are part of the value it builds. */
   const followLiteral = (literal: Literal): void => { if (literal.f) followIn(code.slice(literal.start, literal.end)) }
   const maskLiteral = (literal: Literal): void => { spans.push([literal.start, literal.end, MASK]); followLiteral(literal) }
@@ -195,6 +196,7 @@ function typedSpans(code: string, cut: boolean): Span[] {
     const end = from + text.trimEnd().length
     if (start >= end) return
     spend(end - start)
+    typed.push([start, end])
     spans.push([start, end, MASK])
     followIn(skeleton.slice(start, end))
     for (const literal of literalsIn(start, end)) followLiteral(literal)
@@ -265,6 +267,7 @@ function typedSpans(code: string, cut: boolean): Span[] {
       key.lastIndex = other.end
       if (other !== literal && !key.test(skeleton)) maskLiteral(other)
     }
+    typed.push([open + 1, close])
     const region = skeleton.slice(open + 1, close)
     // A number the payload types (`str(123456)`) is masked like a string.
     for (const number of region.matchAll(NUMBER_RE)) spans.push([open + 1 + number.index, open + 1 + number.index + number[0].length, WITHHELD])
@@ -284,37 +287,43 @@ function typedSpans(code: string, cut: boolean): Span[] {
   if (cut) for (let k = 0; k < stmts.length; k++) maskStatement(k)
 
   const defs = new Set<string>()
-  const binding = new Map<number, boolean>()
-  /** A statement with a loop, `as` or `lambda` binds the names it mentions. */
-  const bindsItsNames = (k: number): boolean => {
-    let binds = binding.get(k)
-    if (binds === undefined) binding.set(k, binds = BINDING_STATEMENT_RE.test(skeleton.slice(...stmtRange(k))))
-    return binds
+  const call = /\s*\(/y
+  /** A function's `def` and its body: the statements indented under it. */
+  const maskFunction = (k: number): void => {
+    const indent = (j: number): number => skeleton.slice(...stmtRange(j)).search(/\S/)
+    const own = indent(k)
+    maskStatement(k)
+    for (let j = k + 1; j < stmts.length; j++) {
+      const depth = indent(j)
+      if (depth < 0) continue
+      if (depth <= own) break
+      maskStatement(j)
+    }
   }
+  // Every statement that mentions a followed name may bind or build the typed value: an assignment, a loop, a mutation.
   for (let name = queue.pop(); name !== undefined; name = queue.pop()) {
     for (const at of names.get(name) ?? []) {
+      spend(typed.length)
+      if (typed.some(([start, end]) => start <= at && at < end)) continue
       const k = stmtOf(at)
-      if (masked.has(k)) continue
-      const after = at + name.length
-      DIRECT_ASSIGN_RE.lastIndex = TARGET_ASSIGN_RE.lastIndex = after
-      const open = enclosing[at]!
       const [start, end] = stmtRange(k)
-      const statement = skeleton.slice(start, Math.min(end, start + 400))
-      const def = DEF_RE.exec(statement)
-      const params = def ? start + def[0].length - 1 : -1
-      if (def && open === params && !defs.has(def[1]!)) {
+      const def = DEF_RE.exec(skeleton.slice(start, Math.min(end, start + 400)))
+      if (def && at === start + def[0].lastIndexOf(def[1]!)) {
+        // A function the snippet defines under the name produces the value.
+        maskFunction(k)
+        continue
+      }
+      if (def && enclosing[at] === start + def[0].length - 1 && !defs.has(def[1]!)) {
         // A parameter of a function the snippet defines is bound by every call of it.
         defs.add(def[1]!)
-        const call = /\s*\(/y
         for (const use of names.get(def[1]!) ?? []) {
           call.lastIndex = use + def[1]!.length
           if (use !== start + def[0].lastIndexOf(def[1]!) && call.test(skeleton)) maskStatement(stmtOf(use))
         }
       }
-      // A keyword argument's `=` binds nothing: an assignment's sits outside every bracket, a default's in its `def`, and `:=` anywhere.
-      const assigned = DIRECT_ASSIGN_RE.test(skeleton) ? DIRECT_ASSIGN_RE.lastIndex - 1 : TARGET_ASSIGN_RE.test(skeleton) ? TARGET_ASSIGN_RE.lastIndex - 1 : -1
-      const bound = (assigned >= 0 && (enclosing[assigned]! < 0 || skeleton[assigned - 1] === ':' || (def !== null && open === params))) || bindsItsNames(k)
-      if (bound) maskStatement(k)
+      // Calling the name binds nothing: what it returns is masked where it is defined or assigned.
+      call.lastIndex = at + name.length
+      if (def || !call.test(skeleton)) maskStatement(k)
     }
   }
   return spans
