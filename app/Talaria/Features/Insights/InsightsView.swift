@@ -133,7 +133,7 @@ struct InsightsView: View {
                     }
                 }
             }
-            .task(id: viewModel.selectedTimeframe) {
+            .task(id: viewModel.request) {
                 await loadInsights()
             }
             .refreshesLive(on: .runEnded, showsStatus: false) {
@@ -354,7 +354,7 @@ struct InsightsView: View {
 
     @ViewBuilder
     private var analyticsSections: some View {
-        Picker("Timeframe", selection: $viewModel.selectedTimeframe) {
+        Picker("Timeframe", selection: Binding(get: { viewModel.selectedTimeframe }, set: { viewModel.select($0) })) {
             ForEach(AnalyticsTimeframe.allCases) { timeframe in
                 Text(timeframe.pickerTitle).tag(timeframe)
             }
@@ -362,19 +362,37 @@ struct InsightsView: View {
         .pickerStyle(.segmented)
         .plainSectionRow(separator: .hidden)
 
+        if viewModel.selectedTimeframe == .custom {
+            customDayPicker("Start date", bound: \.start)
+            customDayPicker("End date", bound: \.end)
+        }
+
+        ForEach(viewModel.rangeNotes, id: \.self) { note in
+            Text(note)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .plainSectionRow(separator: .hidden)
+        }
+
         Section {
             InsightsStatGrid(stats: summaryStats)
                 .plainSectionRow(separator: .hidden)
         } header: {
-            PlainSectionHeader(title: viewModel.periodTitle, isRefreshing: viewModel.isLoading, refreshingLabel: "Refreshing usage analytics")
+            PlainSectionHeader(
+                title: viewModel.periodTitle,
+                detail: viewModel.rangeTimezone,
+                isRefreshing: viewModel.isLoading,
+                refreshingLabel: "Refreshing usage analytics"
+            )
         }
 
         if viewModel.dailyTokens.count > 1 {
+            let monthly = viewModel.range?.isMonthly == true
             Section {
-                InsightsDailyChart(days: viewModel.dailyTokens, metric: $dailyMetric)
+                InsightsDailyChart(days: viewModel.dailyTokens, monthly: monthly, metric: $dailyMetric)
                     .plainSectionRow(separator: .hidden)
             } header: {
-                PlainSectionHeader(title: String(localized: "Daily"))
+                PlainSectionHeader(title: monthly ? String(localized: "Monthly") : String(localized: "Daily"))
             }
         }
 
@@ -425,6 +443,21 @@ struct InsightsView: View {
                     .plainSectionRow(separator: .hidden)
             }
         }
+    }
+
+    /// One end of the custom range; the server's own day is the latest it offers.
+    private func customDayPicker(_ title: LocalizedStringKey, bound: WritableKeyPath<InsightsCustomRange, String>) -> some View {
+        let today = insightsCalendarDay(viewModel.range?.today) ?? .distantFuture
+        let selection = Binding<Date> {
+            insightsCalendarDay(viewModel.customRange?[keyPath: bound]) ?? min(today, .now)
+        } set: { date in
+            let day = insightsDayText(date)
+            var range = viewModel.customRange ?? InsightsCustomRange(start: day, end: day)
+            range[keyPath: bound] = day
+            viewModel.customRange = range
+        }
+        return DatePicker(title, selection: selection, in: Date.distantPast...today, displayedComponents: .date)
+            .plainSectionRow(separator: .hidden)
     }
 
     private var summaryStats: [InsightsStat] {

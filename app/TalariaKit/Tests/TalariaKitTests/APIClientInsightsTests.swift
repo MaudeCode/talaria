@@ -75,6 +75,31 @@ final class APIClientInsightsTests: APIClientTestCase {
         XCTAssertEqual(response.activityByHour?.first?.hour, 14)
     }
 
+    /// TAL-1118: the App sends a custom range's days as picked and decodes the range the server says it served.
+    func testInsightsSendsACustomRangeAndDecodesTheServedRange() async throws {
+        let fixture = try InsightsRangeFixture.load()
+        for example in [fixture.custom, fixture.fallback] {
+            let client = makeClient { request in
+                let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
+                let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+                XCTAssertEqual(query, ["days": "30", "start": example.start, "end": example.end])
+                return (HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: nil)!, example.body)
+            }
+
+            let response = try await client.insights(days: 30, start: example.start, end: example.end)
+            let range = try XCTUnwrap(response.range)
+
+            XCTAssertEqual(range.mode, example.range["mode"] as? String)
+            XCTAssertEqual(range.startDate, example.range["start_date"] as? String)
+            XCTAssertEqual(range.endDate, example.range["end_date"] as? String)
+            XCTAssertEqual(range.today, example.range["today"] as? String)
+            XCTAssertEqual(range.timezone, example.range["timezone"] as? String)
+            XCTAssertEqual(range.bucket, example.range["bucket"] as? String)
+            XCTAssertEqual(range.fallbackReason, example.range["fallback_reason"] as? String)
+            XCTAssertEqual(range.adjustments, example.range["adjustments"] as? [String])
+        }
+    }
+
     func testInsightsResponseToleratesMissingArraysAndLossyCounts() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -84,6 +109,7 @@ final class APIClientInsightsTests: APIClientTestCase {
             from: Data("""
             {
               "period_days": "30",
+              "range": "not an object",
               "total_sessions": "4",
               "total_cost": "$1.25",
               "models": "not an array",
@@ -94,6 +120,7 @@ final class APIClientInsightsTests: APIClientTestCase {
         )
 
         XCTAssertEqual(response.periodDays, 30)
+        XCTAssertNil(response.range)
         XCTAssertEqual(response.totalSessions, 4)
         XCTAssertEqual(try XCTUnwrap(response.totalCost), 1.25, accuracy: 0.0001)
         XCTAssertNil(response.totalCacheReadTokens)
@@ -143,5 +170,44 @@ final class APIClientInsightsTests: APIClientTestCase {
         let german = Locale(identifier: "de_DE")
         XCTAssertEqual(formatTokens(1_234, locale: german), "1.234")
         XCTAssertEqual(formatTokens(9_876_543_210, locale: german), "9.876.543.210")
+    }
+}
+
+/// `contracts/fixtures/insights-range.json`: the server's own custom and fallback responses (TAL-1117).
+struct InsightsRangeFixture {
+    struct Example {
+        let start: String
+        let end: String
+        /// The response body exactly as the server sent it.
+        let body: Data
+        let response: InsightsResponse
+        let range: [String: Any]
+    }
+
+    let custom: Example
+    let fallback: Example
+
+    static func load() throws -> InsightsRangeFixture {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("contracts/fixtures/insights-range.json"))
+        let fixture = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        func example(_ name: String) throws -> Example {
+            let entry = try XCTUnwrap(fixture[name] as? [String: Any])
+            let query = try XCTUnwrap(entry["query"] as? [String: String])
+            let body = try XCTUnwrap(entry["body"] as? [String: Any])
+            let bodyData = try JSONSerialization.data(withJSONObject: body)
+            return Example(
+                start: try XCTUnwrap(query["start"]),
+                end: try XCTUnwrap(query["end"]),
+                body: bodyData,
+                response: try decoder.decode(InsightsResponse.self, from: bodyData),
+                range: try XCTUnwrap(body["range"] as? [String: Any])
+            )
+        }
+        return InsightsRangeFixture(custom: try example("custom"), fallback: try example("fallback"))
     }
 }

@@ -2,6 +2,8 @@ import Foundation
 
 public struct InsightsResponse: Codable, Equatable, Sendable {
     public let periodDays: Int?
+    /// The interval the server served (TAL-1117); nil from a server that predates custom ranges.
+    public let range: InsightsRange?
     public let totalSessions: Int?
     public let totalMessages: Int?
     public let totalInputTokens: Int?
@@ -17,6 +19,7 @@ public struct InsightsResponse: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case periodDays
+        case range
         case totalSessions
         case totalMessages
         case totalInputTokens
@@ -34,6 +37,7 @@ public struct InsightsResponse: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         periodDays = container.decodeLossyIntIfPresent(forKey: .periodDays)
+        range = (try? container.decodeIfPresent(InsightsRange.self, forKey: .range)) ?? nil
         totalSessions = container.decodeLossyIntIfPresent(forKey: .totalSessions)
         totalMessages = container.decodeLossyIntIfPresent(forKey: .totalMessages)
         totalInputTokens = container.decodeLossyIntIfPresent(forKey: .totalInputTokens)
@@ -134,11 +138,66 @@ public struct InsightsDailyToken: Codable, Equatable, Sendable {
 
     /// The server's `YYYY-MM-DD` bucket as a local calendar day, for charting; nil for any other text.
     public var day: Date? {
-        guard let date, date.count == 10 else { return nil }
-        let parts = date.split(separator: "-").compactMap { Int($0) }
-        guard parts.count == 3 else { return nil }
-        return Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+        insightsCalendarDay(date)
     }
+}
+
+/// A server `YYYY-MM-DD` day as that day's local midnight, for display and date pickers; nil for any other text.
+public func insightsCalendarDay(_ text: String?) -> Date? {
+    guard let text, text.count == 10 else { return nil }
+    let parts = text.split(separator: "-").compactMap { Int($0) }
+    guard parts.count == 3 else { return nil }
+    return Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+}
+
+/// A picked local day as the `YYYY-MM-DD` text the server reads on its own calendar.
+public func insightsDayText(_ date: Date) -> String {
+    let day = Calendar.current.dateComponents([.year, .month, .day], from: date)
+    return String(format: "%04ld-%02ld-%02ld", day.year ?? 0, day.month ?? 0, day.day ?? 0)
+}
+
+/// TAL-1117: the interval an Insights read covers, resolved on the server calendar. Clients render it as sent.
+public struct InsightsRange: Codable, Equatable, Sendable {
+    /// `custom` when the requested start/end were served; `preset` for the trailing `days` window, fallbacks included.
+    public let mode: String?
+    public let startDate: String?
+    public let endDate: String?
+    /// The server's current day, the latest a date control offers.
+    public let today: String?
+    public let timezone: String?
+    /// `month` once the range passes 366 days: each `daily_tokens` row then totals a month.
+    public let bucket: String?
+    /// Why a requested custom range was not served: `invalid_start`, `invalid_end` or `future`.
+    public let fallbackReason: String?
+    /// `reversed` and/or `capped` when the served custom range differs from the request.
+    public let adjustments: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case mode
+        case startDate
+        case endDate
+        case today
+        case timezone
+        case bucket
+        case fallbackReason
+        case adjustments
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mode = container.decodeLossyStringIfPresent(forKey: .mode)
+        startDate = container.decodeLossyStringIfPresent(forKey: .startDate)
+        endDate = container.decodeLossyStringIfPresent(forKey: .endDate)
+        today = container.decodeLossyStringIfPresent(forKey: .today)
+        timezone = container.decodeLossyStringIfPresent(forKey: .timezone)
+        bucket = container.decodeLossyStringIfPresent(forKey: .bucket)
+        fallbackReason = container.decodeLossyStringIfPresent(forKey: .fallbackReason)
+        adjustments = ((try? container.decodeIfPresent([String].self, forKey: .adjustments)) ?? nil) ?? []
+    }
+
+    public var isCustom: Bool { mode == "custom" }
+    public var isMonthly: Bool { bucket == "month" }
+    public var isCapped: Bool { adjustments.contains("capped") }
 }
 
 public struct InsightsActivityByDay: Codable, Equatable, Sendable {

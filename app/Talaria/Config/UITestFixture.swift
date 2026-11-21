@@ -1912,20 +1912,25 @@ final class UITestFixtureURLProtocol: URLProtocol {
         ])
     }
 
-    /// Thirty days of synthetic usage, so the analytics charts have a series to draw.
+    /// Thirty days of synthetic usage, so the analytics charts have a series to draw. A `start` and `end` pair serves
+    /// those days as a custom range (TAL-1118).
     private static func insightsResponse(_ url: URL) -> Data {
-        let days = Int(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
-            .first { $0.name == "days" }?.value ?? "") ?? 30
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func value(_ name: String) -> String? { query.first { $0.name == name }?.value }
         let calendar = Calendar(identifier: .gregorian)
         let today = calendar.startOfDay(for: Date())
         let formatter = DateFormatter()
         formatter.calendar = calendar
         formatter.dateFormat = "yyyy-MM-dd"
+        let picked = [value("start"), value("end")].compactMap { $0.flatMap(formatter.date(from:)) }.sorted()
+        let custom = picked.count == 2
+        let last = custom ? picked[1] : today
+        let days = custom ? (calendar.dateComponents([.day], from: picked[0], to: last).day ?? 0) + 1 : Int(value("days") ?? "") ?? 30
         let series: [[String: Any]] = (0..<days).reversed().map { offset in
             let input = 12_000 + (offset * 7_919) % 90_000
             let output = 2_000 + (offset * 3_571) % 20_000
             return [
-                "date": formatter.string(from: calendar.date(byAdding: .day, value: -offset, to: today)!),
+                "date": formatter.string(from: calendar.date(byAdding: .day, value: -offset, to: last)!),
                 "input_tokens": input, "output_tokens": output, "cache_read_tokens": input / 2,
                 "sessions": 1 + (offset * 5) % 7, "cost": Double(input + output) / 1_000_000 * 3,
             ]
@@ -1936,6 +1941,11 @@ final class UITestFixtureURLProtocol: URLProtocol {
         let cost = series.reduce(0.0) { $0 + ($1["cost"] as! Double) }
         return json([
             "period_days": days,
+            "range": [
+                "mode": custom ? "custom" : "preset", "through_now": !custom, "today": formatter.string(from: today),
+                "start_date": series.first?["date"] ?? "", "end_date": series.last?["date"] ?? "",
+                "timezone": "UTC", "bucket": "day", "fallback_reason": NSNull(), "adjustments": [String](),
+            ] as [String: Any],
             "total_sessions": sessions, "total_messages": sessions * 9,
             "total_input_tokens": input, "total_output_tokens": output, "total_tokens": input + output,
             "total_cache_read_tokens": input / 2, "total_cache_hit_percent": 50, "total_cost": cost,

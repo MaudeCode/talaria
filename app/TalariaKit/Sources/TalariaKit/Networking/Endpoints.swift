@@ -132,7 +132,7 @@ public enum Endpoint: Sendable {
     case updateNotificationDismiss(id: String)
     case updateNotificationAction(id: String, actionID: String)
     case logs(file: String, tail: Int)
-    case insights(days: Int)
+    case insights(days: Int, start: String? = nil, end: String? = nil)
     case crons
     case cronCreate
     case cronUpdate
@@ -788,8 +788,10 @@ public enum Endpoint: Sendable {
                 items.append(URLQueryItem(name: "refresh", value: "1"))
             }
             return items
-        case let .insights(days):
+        case let .insights(days, start, end):
+            // TAL-1117: a custom range's days go as picked; the server resolves and validates them.
             return [URLQueryItem(name: "days", value: "\(days)")]
+                + [("start", start), ("end", end)].compactMap { name, value in value.map { URLQueryItem(name: name, value: $0) } }
         case let .skillContent(name, file):
             var items = [URLQueryItem(name: "name", value: name)]
             if let file {

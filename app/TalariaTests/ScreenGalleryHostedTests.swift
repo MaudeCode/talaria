@@ -392,6 +392,19 @@ final class ScreenGalleryHostedTests: XCTestCase {
         }
     }
 
+    /// TAL-1118: Custom adds the two date rows and names the served range above the stats.
+    func testInsightsCustomRange() async throws {
+        try await page("insights-usage-custom", title: "Insights", prepare: { window in
+            HostedAccessibility.activate(try await self.requireElement(in: window, label: "Usage"))
+            HostedAccessibility.activate(try await self.requireElement(in: window, label: "Custom"))
+            for label in ["Start date", "End date", "UTC"] {
+                _ = try await self.requireElement(in: window) { $0.accessibilityLabel == label }
+            }
+        }) {
+            InsightsView(server: server, onAPIError: { XCTFail("\($0)") })
+        }
+    }
+
     // One test per editor over `page(...)` (TAL-2545): together they ran near the one-minute hung-test allowance.
     func testWorkspaceManagerAndAddSheet() async throws {
         let registry = WorkspaceRegistryViewModel(client: fixture.client)

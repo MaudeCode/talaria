@@ -36,9 +36,11 @@ enum InsightsDailyMetric: String, CaseIterable, Identifiable {
 }
 
 /// The whole server `daily_tokens` series as bars, one metric at a time; dragging reads one day.
+/// A range past 366 days arrives in month buckets (TAL-1117), each dated by its first day.
 struct InsightsDailyChart: View {
     @Environment(\.locale) private var locale
     let days: [InsightsDailyToken]
+    var monthly = false
     @Binding var metric: InsightsDailyMetric
     @State private var selectedDay: Date?
 
@@ -65,7 +67,7 @@ struct InsightsDailyChart: View {
             // Every day's figures, for VoiceOver and for reading exact values; the chart itself summarises.
             DisclosureGroup("Values") {
                 ForEach(days.filter { $0.day != nil }, id: \.date) { day in
-                    LabeledContent(day.day?.formatted(.dateTime.month(.abbreviated).day()) ?? day.date ?? "") {
+                    LabeledContent(day.day?.formatted(dayFormat) ?? day.date ?? "") {
                         Text(valueLine(day))
                             .accessibilityValue(valueLine(day, precision: 4))
                             .font(.caption.monospacedDigit())
@@ -78,6 +80,12 @@ struct InsightsDailyChart: View {
             .accessibilityIdentifier("insights-daily-values")
         }
         .padding(.vertical, 4)
+    }
+
+    private var unit: Calendar.Component { monthly ? .month : .day }
+
+    private var dayFormat: Date.FormatStyle {
+        monthly ? .dateTime.month(.abbreviated).year() : .dateTime.month(.abbreviated).day()
     }
 
     private func valueLine(_ day: InsightsDailyToken, precision: Int? = nil) -> String {
@@ -96,19 +104,19 @@ struct InsightsDailyChart: View {
         return Chart {
             ForEach(points, id: \.day) { point in
                 BarMark(
-                    x: .value("Day", point.day, unit: .day),
+                    x: .value("Day", point.day, unit: unit),
                     y: .value(metric.title, point.value)
                 )
                 .foregroundStyle(selected == nil || selected?.day == point.day ? Color.accentColor : Color.accentColor.opacity(0.35))
                 .clipShape(RoundedRectangle(cornerRadius: 2))
             }
             if let selected {
-                RuleMark(x: .value("Selected day", selected.day, unit: .day))
+                RuleMark(x: .value("Selected day", selected.day, unit: unit))
                     .foregroundStyle(.secondary)
                     .lineStyle(StrokeStyle(lineWidth: 1))
                     .annotation(position: .top, alignment: .center, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(selected.day.formatted(.dateTime.month(.abbreviated).day()))
+                            Text(selected.day.formatted(dayFormat))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                             Text(metric.label(selected.value, locale: locale))
@@ -126,7 +134,7 @@ struct InsightsDailyChart: View {
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: points.count > 10 ? 4 : min(points.count, 7))) {
                 AxisGridLine(stroke: InsightsChartAxis.gridStroke)
-                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                AxisValueLabel(format: dayFormat)
             }
         }
         .chartYAxis {
@@ -145,6 +153,10 @@ struct InsightsDailyChart: View {
 
     private func accessibilitySummary(_ points: [(day: Date, value: Double)]) -> String {
         guard let peak = points.max(by: { $0.value < $1.value }) else { return String(localized: "No data") }
-        return String(localized: "\(points.count) days, peak \(metric.label(peak.value, precision: 4, locale: locale)) on \(peak.day.formatted(.dateTime.month(.abbreviated).day()))")
+        let peakValue = metric.label(peak.value, precision: 4, locale: locale)
+        if monthly {
+            return String(localized: "\(points.count) months, peak \(peakValue) in \(peak.day.formatted(dayFormat))")
+        }
+        return String(localized: "\(points.count) days, peak \(peakValue) on \(peak.day.formatted(dayFormat))")
     }
 }
