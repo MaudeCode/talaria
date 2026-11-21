@@ -692,6 +692,31 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     }
   })
 
+  it('New Chat refuses a profile outside the profile grammar before allocating a session or worktree (TAL-2257)', async () => {
+    const sessions = async (): Promise<string[]> => [...new Set([...s.deps.sessionStore.sessions.keys(), ...(await s.deps.sessionStore.persistedIds())])].sort()
+    const before = await sessions()
+    const reference = { session_id: 'tal2257src', tip_session_id: 'tal2257src', profile: 'default' }
+    for (const profile of ['../evil', ' ', 'a/b', '..', 'Work', ' work', 'work\n', 'x'.repeat(65)]) {
+      for (const extra of [{ worktree: false }, { worktree: true }, { execution_mode: 'safe' }, { request_id: 'tal-2257', source_references: [reference] }]) {
+        const res = await post(s, '/api/session/new', { profile, ...extra })
+        expect({ profile, extra, status: res.status, error: (await json(res)).error }).toEqual({ profile, extra, status: 400, error: 'Invalid profile' })
+      }
+    }
+    expect(await sessions()).toEqual(before)
+  })
+
+  it('New Chat keeps an absent, empty, root or named profile through save and reload (TAL-2257)', async () => {
+    const cases: [Json, string][] = [[{}, 'default'], [{ profile: null }, 'default'], [{ profile: '' }, 'default'], [{ profile: 'default' }, 'default'], [{ profile: 'research' }, 'research']]
+    for (const [body, stored] of cases) {
+      const res = await post(s, '/api/session/new', { ...body, worktree: false })
+      expect(res.status, JSON.stringify(body)).toBe(200)
+      const sid = String(((await json(res)).session as Json).session_id)
+      await s.deps.sessionStore.save(await s.deps.sessionStore.get(sid))
+      const raw = JSON.parse(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')) as Json
+      expect({ body, profile: raw.profile }).toEqual({ body, profile: stored })
+    }
+  })
+
   it('a prev_session_id from another profile is ignored, not an error', async () => {
     const other = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const res = await post(s, '/api/session/new', { profile: 'work', prev_session_id: other }, asWork())

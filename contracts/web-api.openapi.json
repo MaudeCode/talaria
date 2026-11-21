@@ -15081,12 +15081,21 @@
                   "profile": {
                     "anyOf": [
                       {
-                        "type": "string"
+                        "anyOf": [
+                          {
+                            "const": ""
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                          }
+                        ]
                       },
                       {
                         "type": "null"
                       }
-                    ]
+                    ],
+                    "description": "TAL-2257: a profile id, or empty/null/absent for the active profile; any other string is refused before anything is created."
                   },
                   "prev_session_id": {
                     "type": "string"

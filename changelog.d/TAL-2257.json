@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Starting a chat with a malformed profile name is now refused instead of saving the chat under that name.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

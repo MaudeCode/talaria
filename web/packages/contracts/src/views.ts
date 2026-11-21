@@ -1132,10 +1132,13 @@ export const SourceReferenceSearchSchema = z.object({
   active_profile: z.string(), max_sources: z.number().int(),
 })
 
+/** The Agent's canonical profile id grammar (`hermes_constants.PROFILE_ID_RE`); `default` and every root alias match it. */
+export const PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
 export const SessionNewRequestSchema = z.looseObject({
   title: z.string().optional(), workspace: z.string().optional(), workspace_inherited_from_prev_session: z.boolean().optional(), model: z.string().nullable().optional(),
   model_provider: z.string().nullable().optional().describe("TAL-2505: sent without `model`, the chat starts on this provider's first catalog model; a provider the catalog does not list starts it on the profile default."),
-  profile: z.string().nullable().optional(), prev_session_id: z.string().optional(), project_id: z.string().nullable().optional(), worktree: Json.optional(), enabled_toolsets: z.array(z.string()).nullable().optional(), parent_session_id: z.string().optional(),
+  profile: z.union([z.literal(''), z.string().regex(PROFILE_ID_RE)]).nullable().optional().describe('TAL-2257: a profile id, or empty/null/absent for the active profile; any other string is refused before anything is created.'),
+  prev_session_id: z.string().optional(), project_id: z.string().nullable().optional(), worktree: Json.optional(), enabled_toolsets: z.array(z.string()).nullable().optional(), parent_session_id: z.string().optional(),
   execution_mode: ExecutionModeSchema.optional().describe('TAL-1040: `ignore_config` and `safe` start the session through the Agent owner; omitted means normal.'),
   request_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional().describe('TAL-1040: stable creation identity for a diagnostic or referenced chat. Reuse it only to retry the same creation.'),
   source_references: z.array(SourceReferenceSchema).max(MAX_SOURCE_REFERENCES).optional().describe('Same-profile search pointers. Nonempty selections require request_id; unavailable or changed identities refuse creation.'),
