@@ -4202,6 +4202,28 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     }
   })
 
+  it.each([
+    ['a Chinese answer beyond the display cap', '请解释云存储故障', '请参考这个回答', '云'.repeat(50) + '，这是同步故障的解决方案。', null, 'llm_invalid_aux'],
+    ['a decomposed Korean answer', '동기화 오류를 설명해 주세요', '해결 방법입니다', '동기화 설정을 확인하고 연결을 다시 시작해 보세요！'.normalize('NFD'), null, 'llm_invalid_aux'],
+    ['a long Japanese noun title', 'クラウドストレージの同期エラー', '同期エラーの調査', 'クラウドストレージの同期エラーとネットワーク接続設定', 'クラウドストレージの同期エラーとネットワーク接続設定', 'llm_aux'],
+    ['a byte-spelled accent', 'Écris une salutation', 'Une salutation à Hugo', 'Salutation amicale Ă\u00a0 Hugo', 'Salutation amicale à Hugo', 'llm_aux'],
+    ['proven byte damage with residue', 'check this salutation à Hugo', 'Une salutation à Hugo', 'Salutation Ă\u00a0 μƒ Hugo', 'check salutation Hugo', 'local_summary:llm_invalid_aux'],
+    ['clean Romanian', 'Întrebare despre limba română', 'Gramatică și vocabular', 'Gramatică și vocabular român', 'Gramatică și vocabular român', 'llm_aux'],
+    ['clean Turkish', 'İş ve arkadaşlık hakkında konuşalım', 'İş arkadaşlığı', 'İş arkadaşlığı', 'İş arkadaşlığı', 'llm_aux'],
+    ['clean Greek', 'Ελληνική γραμματική και λέξεις', 'Ελληνική γραμματική', 'Ελληνική γραμματική', 'Ελληνική γραμματική', 'llm_aux'],
+  ])('sanitizes generated title output for %s (TAL-2300)', async (_case, user, assistant, text, title, status) => {
+    const sid = await sessionWith('llama3.2', 'ollama')
+    const session = await s.deps.sessionStore.get(sid)
+    session.messages = [{ role: 'user', content: user }, { role: 'assistant', content: assistant }]
+    const original = sidecar.responderFor('aux.complete')
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text, usage: null }))
+    try {
+      expect(await s.deps.turns.generateTitle(session)).toMatchObject({ title, status })
+    } finally {
+      sidecar.respond('aux.complete', original)
+    }
+  })
+
   it.each(['explicit regenerate', 'claimed session'])('repairs the title runtime on a cold catalog for %s (TAL-1013)', async (route) => {
     useConfig('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['kilo/auto', 'kilo/minimax/minimax-m3'] })
     const sid = await sessionWith('kilo/minimax/minimax-m3', 'ollama')

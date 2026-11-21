@@ -2077,7 +2077,7 @@ export class TurnRunner {
         continue
       }
       if (!raw) { status = 'llm_empty_aux'; continue }
-      const title = sanitizeGeneratedTitle(raw)
+      const title = sanitizeGeneratedTitle(raw, userText, assistantText)
       if (!title) return { title: '', status: 'llm_invalid_aux', rawPreview: raw.slice(0, 120) }
       if (titleLanguageMismatch(userText, title)) return { title: '', status: 'llm_language_mismatch_aux', rawPreview: raw.slice(0, 120) }
       return { title, status: idx === 0 ? 'llm_aux' : 'llm_aux_retry', rawPreview: '' }
