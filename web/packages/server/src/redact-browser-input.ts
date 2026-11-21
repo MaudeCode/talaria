@@ -5,7 +5,7 @@
  * like, while selectors, URLs and the rest of the code stay readable.
  *
  * Recognised: the typed argument of `fill_input` and `type_text` by position, `text=` keyword or splat; the arguments of a
- * CDP `insertText` call; a literal assigned to `.value`. A name the typed value uses has the statements that bind it masked
+ * CDP `insertText` call; a literal assigned to `.value` (page script that assigns anything else is masked whole). A name the typed value uses has the statements that bind it masked
  * too (assignments, tuple targets, loops, `as`, and the calls of a function the snippet defines with that parameter).
  * Withheld whole (`***`): a snippet whose brackets or quotes do not pair up, a typing helper used other than by calling it,
  * an `insertText` that is no call's argument, and a snippet that names more than `MAX_NAMES` bindings. Code the sidecar cut
@@ -178,12 +178,12 @@ function typedSpans(code: string, cut: boolean): Span[] {
   /** An f-string's names are part of the value it builds. */
   const followLiteral = (literal: Literal): void => { if (literal.f) followIn(code.slice(literal.start, literal.end)) }
   const maskLiteral = (literal: Literal): void => { spans.push([literal.start, literal.end, MASK]); followLiteral(literal) }
-  /** A statement that binds a typed value: its literals and numbers masked (`keep` aside), its names followed. */
-  const maskStatement = (k: number, keep?: Literal): void => {
+  /** A statement that binds a typed value: its literals and numbers masked, its names followed. */
+  const maskStatement = (k: number): void => {
     if (masked.has(k)) return
     masked.add(k)
     const [start, end] = stmtRange(k)
-    for (const literal of literalsIn(start, end)) if (literal !== keep) maskLiteral(literal)
+    for (const literal of literalsIn(start, end)) maskLiteral(literal)
     const text = skeleton.slice(start, end)
     for (const match of text.matchAll(NUMBER_RE)) spans.push([start + match.index, start + match.index + match[0].length, WITHHELD])
     followIn(text)
@@ -265,16 +265,21 @@ function typedSpans(code: string, cut: boolean): Span[] {
       key.lastIndex = other.end
       if (other !== literal && !key.test(skeleton)) maskLiteral(other)
     }
-    followIn(skeleton.slice(open + 1, close))
+    const region = skeleton.slice(open + 1, close)
+    // A number the payload types (`str(123456)`) is masked like a string.
+    for (const number of region.matchAll(NUMBER_RE)) spans.push([open + 1 + number.index, open + 1 + number.index + number[0].length, WITHHELD])
+    followIn(region)
   }
   for (const match of code.matchAll(/\.value\s*=(?!=)\s*/g)) {
     const literal = literalAt(match.index)
     if (!literal && skeleton[match.index] !== '.') continue
     const value = innerLiteral(code, match.index + match[0].length)
-    if (value) spans.push(value)
-    if (literal) followLiteral(literal)
-    // A value that is no literal comes from the statement around it.
-    if (!value) maskStatement(literal ? literal.stmt : stmtOf(match.index), literal)
+    // The assigned expression is one literal only when its statement ends there: at a `;`, a line end, or the string's own close.
+    const isolated = value !== null && /^[ \t]*(?:[;\r\n#]|['"]{1,3}$|$)/.test(code.slice(value[1], literal ? literal.end : code.length))
+    if (value && isolated) { spans.push(value); if (literal) followLiteral(literal); continue }
+    // Anything else (a variable, a concatenation) takes its value from the script or statement around it, masked whole.
+    if (literal) maskLiteral(literal)
+    maskStatement(literal ? literal.stmt : stmtOf(match.index))
   }
   if (cut) for (let k = 0; k < stmts.length; k++) maskStatement(k)
 
