@@ -872,6 +872,8 @@
 	"model_none_available": "Aucun modèle disponible",
 	"model_not_found_label": "Modèle introuvable",
 	"model_picker_providers": "Fournisseurs",
+	"model_role_fallback": "Secours {position}",
+	"model_role_main": "Principal",
 	"model_scope_advisory": "S'applique à cette conversation à partir de votre prochain message.",
 	"model_scope_toast": "S'applique à cette conversation à partir de votre prochain message.",
 	"model_search_no_results": "Aucun modèle trouvé",

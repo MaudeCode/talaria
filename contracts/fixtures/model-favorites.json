@@ -7,7 +7,7 @@
         "provider": "Anthropic",
         "provider_id": "anthropic",
         "models": [
-          { "id": "claude-sonnet-4.5", "label": "Claude Sonnet 4.5", "provider_id": "anthropic", "bare_id": "claude-sonnet-4.5", "favorite": true },
+          { "id": "claude-sonnet-4.5", "label": "Claude Sonnet 4.5", "provider_id": "anthropic", "bare_id": "claude-sonnet-4.5", "favorite": true, "configured_role": { "kind": "main" } },
           { "id": "shared-model", "label": "Shared Model", "provider_id": "anthropic", "bare_id": "shared-model", "favorite": false }
         ]
       },
@@ -15,7 +15,7 @@
         "provider": "OpenRouter",
         "provider_id": "openrouter",
         "models": [
-          { "id": "@openrouter:shared-model", "label": "Shared Model", "provider_id": "openrouter", "bare_id": "shared-model", "favorite": true }
+          { "id": "@openrouter:shared-model", "label": "Shared Model", "provider_id": "openrouter", "bare_id": "shared-model", "favorite": true, "configured_role": { "kind": "fallback", "position": 1 } }
         ]
       }
     ],

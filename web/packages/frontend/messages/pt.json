@@ -742,6 +742,8 @@
 	"model_none_available": "Nenhum modelo disponível",
 	"model_not_found_label": "Modelo não encontrado",
 	"model_picker_providers": "Fornecedores",
+	"model_role_fallback": "Alternativo {position}",
+	"model_role_main": "Principal",
 	"model_search_no_results": "Nenhum modelo encontrado",
 	"model_search_placeholder": "Buscar modelos…",
 	"model_show_all_models": "Mostrar todos os {a0} modelos",

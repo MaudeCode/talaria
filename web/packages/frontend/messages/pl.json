@@ -888,6 +888,8 @@
 	"model_none_available": "Brak dostępnych modeli",
 	"model_not_found_label": "Model nie został znaleziony",
 	"model_picker_providers": "Dostawcy",
+	"model_role_fallback": "Zapasowy {position}",
+	"model_role_main": "Główny",
 	"model_scope_advisory": "Dotyczy tej konwersacji od Twojej następnej wiadomości.",
 	"model_scope_toast": "Dotyczy tej konwersacji od Twojej następnej wiadomości.",
 	"model_search_no_results": "Nie znaleziono żadnych modeli",

@@ -859,6 +859,8 @@
 	"model_none_available": "Žádné modely nejsou k dispozici",
 	"model_not_found_label": "Model nenalezen",
 	"model_picker_providers": "Poskytovatelé",
+	"model_role_fallback": "Záložní {position}",
+	"model_role_main": "Hlavní",
 	"model_scope_advisory": "Vztahuje se na tuto konverzaci z vaší další zprávy.",
 	"model_scope_toast": "Vztahuje se na tuto konverzaci z vaší další zprávy.",
 	"model_search_no_results": "Nenalezeny žádné modely",

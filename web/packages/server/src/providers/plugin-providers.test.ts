@@ -103,6 +103,52 @@ describe('installed model-provider plugins in the provider catalog', () => {
     expect(badges['@fake-sub:claude-sonnet-4-6']).toBeUndefined()
   })
 
+  it('stamps each configured provider and model pair with its Main or first Fallback role on every picker list (TAL-2258)', async () => {
+    const longModel = `lab-${'very-long-model-name-'.repeat(6)}v1`
+    configs.set(s.state, {
+      model: { default: 'claude-sonnet-4-6', provider: 'anthropic' },
+      custom_providers: [{ name: 'Lab', base_url: 'http://lab.test/v1', api_key: 'sk-test', model: longModel }],
+      fallback_providers: [
+        { provider: 'fake-sub', model: 'fake-opus' },
+        { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+        { provider: 'anthropic', model: 'claude-opus-4-7' },
+        { provider: 'anthropic', model: 'claude-opus-4-7' },
+        { provider: 'custom:lab', model: longModel },
+      ],
+    })
+    s.deps.agentConfig.invalidate(s.state)
+    s.deps.catalog.invalidate()
+    interface Entry { id: string; provider_id?: string; bare_id?: string; configured_role?: Json }
+    const roles = (entries: Entry[]): Record<string, Json | undefined> => Object.fromEntries(entries.map((e) => [`${String(e.provider_id)}/${String(e.bare_id)}`, e.configured_role]))
+    const expected = {
+      'anthropic/claude-sonnet-4-6': { kind: 'main' },
+      'anthropic/claude-opus-4-7': { kind: 'fallback', position: 3 },
+      'fake-sub/fake-opus': { kind: 'fallback', position: 1 },
+      // The same bare id on another provider is a different model.
+      'fake-sub/claude-sonnet-4-6': undefined,
+      [`custom:lab/${longModel}`]: { kind: 'fallback', position: 5 },
+    }
+    try {
+      for (const favorite of [{ provider_id: 'fake-sub', model: 'fake-opus' }, { provider_id: 'fake-sub', model: 'claude-sonnet-4-6' }, { provider_id: 'anthropic', model: 'claude-sonnet-4-6' }]) {
+        expect((await post(s, '/api/models/favorite', { ...favorite, favorite: true })).status).toBe(200)
+      }
+      const catalog = (await models()) as { groups: { models: Entry[] }[]; favorite_models: Entry[] }
+      expect(roles(catalog.groups.flatMap((g) => g.models))).toMatchObject(expected)
+      const favoriteRoles = { 'fake-sub/fake-opus': expected['fake-sub/fake-opus'], 'fake-sub/claude-sonnet-4-6': undefined, 'anthropic/claude-sonnet-4-6': expected['anthropic/claude-sonnet-4-6'] }
+      expect(roles(catalog.favorite_models)).toEqual(favoriteRoles)
+      const settings = (await json(await s.get('/api/models/picker'))) as { groups: { models: Entry[] }[]; visible_favorite_models: Entry[] }
+      expect(roles(settings.groups.flatMap((g) => g.models))).toMatchObject(expected)
+      expect(roles(settings.visible_favorite_models)).toEqual(favoriteRoles)
+    } finally {
+      for (const favorite of [{ provider_id: 'fake-sub', model: 'fake-opus' }, { provider_id: 'fake-sub', model: 'claude-sonnet-4-6' }, { provider_id: 'anthropic', model: 'claude-sonnet-4-6' }]) {
+        await post(s, '/api/models/favorite', { ...favorite, favorite: false })
+      }
+      configs.set(s.state, { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' } })
+      s.deps.agentConfig.invalidate(s.state)
+      s.deps.catalog.invalidate()
+    }
+  })
+
   it('a plugin that is not set up is a truthful card without picker models or a key fallback', async () => {
     const row = ((await providers()).providers as Row[]).find((p) => p.id === 'fake-missing')
     expect(row).toMatchObject({ is_plugin_provider: true, has_key: false, configurable: false, key_source: 'none', models: [], models_total: 0 })

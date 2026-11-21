@@ -303,6 +303,8 @@ describe('contracts package', () => {
     const fixture = shared('fixtures/model-favorites.json') as Record<string, unknown>
     const models = ModelsSchema.parse(fixture.models)
     expect(models.groups.flatMap((g) => g.models.map((e) => e.favorite))).toEqual([true, false, true])
+    // TAL-2258: the role follows the provider and bare id pair, so the same bare id under Anthropic carries none.
+    expect(models.groups.flatMap((g) => g.models.map((e) => e.configured_role ?? null))).toEqual([{ kind: 'main' }, null, { kind: 'fallback', position: 1 }])
     expect(models.favorites?.map((f) => f.model)).toEqual(['shared-model', 'claude-sonnet-4.5', 'gpt-5.5'])
     // TAL-1858: the marked rows in starred order; the unlisted model's favorite marks none.
     expect(models.favorite_option_ids).toEqual(['@openrouter:shared-model', 'claude-sonnet-4.5'])

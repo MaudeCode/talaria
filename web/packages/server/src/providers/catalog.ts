@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { providerIcon } from './icons.js'
-import type { CatalogAvailability, QuotaCredits, ModelAllowance, ModelFavorite, SettingsModelPicker, SettingsModelPickerQuery, PlanUsage, ProviderIcon, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { CatalogAvailability, ConfiguredModelRole, QuotaCredits, ModelAllowance, ModelFavorite, SettingsModelPicker, SettingsModelPickerQuery, PlanUsage, ProviderIcon, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { BALANCE_PROVIDERS, ModelsLiveSchema, SettingsModelPickerSchema } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { QUOTA_THRESHOLD_DEFAULTS, type QuotaThresholds } from '../settings.js'
@@ -30,7 +30,7 @@ import {
   modelSection, parseProviderQualifiedModel, pluginAliasTargets, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict, type SpeedTier,
 } from '../config/agent-config.js'
 
-export interface ModelEntry { id: string; label: string; favorite?: boolean; hidden?: boolean; preferences_editable?: boolean; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string; allowance?: ModelAllowance; limit?: { scope: 'model'; resets_at: string } }
+export interface ModelEntry { id: string; label: string; favorite?: boolean; hidden?: boolean; preferences_editable?: boolean; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string; allowance?: ModelAllowance; limit?: { scope: 'model'; resets_at: string }; configured_role?: ConfiguredModelRole }
 type PluginProvider = SidecarResult<'plugins.providers'>['providers'][number]
 export interface QuotaSourceRow extends Dict { source_id: string; provider_id: string; account_label: string }
 interface CatalogLookup<T> { value: T | null; authoritative: boolean }
@@ -59,6 +59,42 @@ function stampModelEntries(models: ModelEntry[], providerId: string): ModelEntry
   if (providerId !== 'custom' && !providerId.startsWith('custom:')) return stamped
   const exact = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
   return stamped.sort((a, b) => NATURAL_ORDER.compare(a.bare_id, b.bare_id) || exact(a.bare_id, b.bare_id) || exact(a.provider_id, b.provider_id) || exact(a.id, b.id))
+}
+
+interface ConfiguredModel { provider: string; model: string; role: ConfiguredModelRole }
+/** The profile's main model, then its `fallback_providers` in order, each with the role it holds there. */
+function configuredModels(active: string | null, defaultModel: string, fallback: Dict[]): ConfiguredModel[] {
+  const entries: ConfiguredModel[] = []
+  if (active && defaultModel) entries.push({ provider: active, model: defaultModel, role: { kind: 'main' } })
+  fallback.forEach((entry, i) => {
+    const provider = resolveProviderAlias(entry.provider)
+    const model = str(entry.model).trim()
+    if (provider && model) entries.push({ provider, model, role: { kind: 'fallback', position: i + 1 } })
+  })
+  return entries
+}
+
+const roleKey = (provider: string, bare: string): string => `${provider.toLowerCase()}\0${bare}`
+
+/**
+ * TAL-2258: each configured canonical `provider_id`/`bare_id` pair's role. The first role listed wins, so Main beats a
+ * fallback naming the same pair and a repeated fallback keeps its first position.
+ */
+function configuredRoles(configured: ConfiguredModel[]): Map<string, ConfiguredModelRole> {
+  const roles = new Map<string, ConfiguredModelRole>()
+  for (const { provider, model, role } of configured) {
+    const [bare, pid] = parseProviderQualifiedModel(model) ?? [model, provider]
+    if (!roles.has(roleKey(pid, bare))) roles.set(roleKey(pid, bare), role)
+  }
+  return roles
+}
+
+/** TAL-2258: marks each entry whose pair is configured with that pair's role; same bare ids on other providers stay unmarked. */
+function stampConfiguredRoles(models: ModelEntry[], roles: Map<string, ConfiguredModelRole>): ModelEntry[] {
+  return models.map((m) => {
+    const role = roles.get(roleKey(str(m.provider_id), m.bare_id ?? m.id))
+    return role ? { ...m, configured_role: role } : m
+  })
 }
 
 /** TAL-301: the catalog entry a stored `(model, provider)` pair selects, so clients render the pairing instead of computing it. */
@@ -1411,18 +1447,20 @@ export class ProviderCatalog {
     const availability = this.availability(source, providerState.availability.authoritative && localLookup.authoritative && !unconfirmed.size && source === this.sourceFingerprint(profileHome), previous?.availability?.status === 'available' || previous?.availability?.status === 'stale')
     for (const g of kept) g.availability = this.availability(source, !unconfirmed.has(g.provider_id) && providerState.availability.authoritative, Boolean(previous?.groups.some((old) => old.provider_id === g.provider_id && old.availability?.status !== 'unavailable')))
     const defaults = { availability, active_provider: active, default_model: defaultModel, default_provider_id: defaultProvider, default_bare_id: defaultBare }
+    const configuredPairs = configuredModels(active, defaultModel, fallbackCfg)
+    const roles = configuredRoles(configuredPairs)
     if (!kept.length && pickerDefault) {
       const providerId = active ?? 'default'
-      return this.remember(profileHome, { source, generation, unconfirmed, attempt }, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} })
+      return this.remember(profileHome, { source, generation, unconfirmed, attempt }, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampConfiguredRoles(stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId), roles) }], aliases: {}, configured_model_badges: {} })
     }
-    const stamped = kept.map((g) => ({ ...g, models: stampModelEntries(g.models, g.provider_id) }))
+    const stamped = kept.map((g) => ({ ...g, models: stampConfiguredRoles(stampModelEntries(g.models, g.provider_id), roles) }))
     for (const g of stamped) if (g.plan_usage) {
       const featured = new Set(g.plan_usage.featured_model_ids)
       g.sections = (['recommended', 'other'] as const).map((kind) => ({ kind,
         model_ids: g.models.filter((m) => featured.has(m.bare_id ?? m.id) === (kind === 'recommended')).map((m) => m.id),
       })).filter((section) => section.model_ids.length)
     }
-    return this.remember(profileHome, { source, generation, unconfirmed, attempt }, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
+    return this.remember(profileHome, { source, generation, unconfirmed, attempt }, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, configuredPairs) })
   }
 
   private applyPlanAllowance(profileHome: string, group: ModelGroup, source = this.sourceFingerprint(profileHome)): void {
@@ -1635,14 +1673,8 @@ export class ProviderCatalog {
   }
 
   /** Python `_configured_model_badges_from_static_catalog`: which picker rows are the main/fallback selections. */
-  private badges(groups: ModelGroup[], active: string | null, defaultModel: string, fallback: Dict[]): ModelsCatalog['configured_model_badges'] {
-    const entries: { provider: string; model: string; role: string; label: string }[] = []
-    if (active && defaultModel) entries.push({ provider: active, model: defaultModel, role: 'main', label: 'Main' })
-    fallback.forEach((entry, i) => {
-      const provider = resolveProviderAlias(entry.provider)
-      const m = str(entry.model).trim()
-      if (provider && m) entries.push({ provider, model: m, role: 'fallback', label: `Fallback ${String(i + 1)}` })
-    })
+  private badges(groups: ModelGroup[], configured: ConfiguredModel[]): ModelsCatalog['configured_model_badges'] {
+    const entries = configured.map(({ provider, model, role }) => ({ provider, model, role: role.kind, label: role.kind === 'main' ? 'Main' : `Fallback ${String(role.position)}` }))
     const providerOf = new Map<string, string>()
     for (const g of groups) for (const m of g.models) providerOf.set(m.id, g.provider_id)
     const badges: ModelsCatalog['configured_model_badges'] = {}

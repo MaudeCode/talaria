@@ -858,6 +858,8 @@
 	"model_none_available": "No hay modelos disponibles",
 	"model_not_found_label": "Modelo no encontrado",
 	"model_picker_providers": "Proveedores",
+	"model_role_fallback": "Alternativo {position}",
+	"model_role_main": "Principal",
 	"model_scope_advisory": "Se aplica a esta conversación desde tu próximo mensaje.",
 	"model_scope_toast": "Se aplica a esta conversación desde tu próximo mensaje.",
 	"model_search_no_results": "No se encontraron modelos",

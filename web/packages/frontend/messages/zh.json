@@ -810,6 +810,8 @@
 	"model_none_available": "没有可用的模型",
 	"model_not_found_label": "未找到模型",
 	"model_picker_providers": "提供商",
+	"model_role_fallback": "备用 {position}",
+	"model_role_main": "主要",
 	"model_scope_advisory": "从下一条消息起应用于当前对话。",
 	"model_scope_toast": "从下一条消息起应用于当前对话。",
 	"model_search_no_results": "未找到模型",

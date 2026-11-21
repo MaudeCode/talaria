@@ -897,6 +897,8 @@
 	"model_none_available": "Нет доступных моделей",
 	"model_not_found_label": "Модель не найдена",
 	"model_picker_providers": "Провайдеры",
+	"model_role_fallback": "Резервная {position}",
+	"model_role_main": "Основная",
 	"model_scope_advisory": "Применяется к этой беседе со следующего сообщения.",
 	"model_scope_toast": "Применяется к этой беседе со следующего сообщения.",
 	"model_search_no_results": "Модели не найдены",

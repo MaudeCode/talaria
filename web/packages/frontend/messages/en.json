@@ -1560,6 +1560,8 @@
 	"model_picker_providers": "Providers",
 	"model_quota_critical": "Quota nearly out",
 	"model_quota_warning": "Low quota",
+	"model_role_fallback": "Fallback {position}",
+	"model_role_main": "Main",
 	"model_scope_advisory": "Applies to this conversation from your next message.",
 	"model_scope_toast": "Applies to this conversation from your next message.",
 	"model_search_no_results": "No models found",

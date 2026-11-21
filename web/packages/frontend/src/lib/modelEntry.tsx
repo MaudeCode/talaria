@@ -1,5 +1,4 @@
 import { useLocale } from '../i18n/useLocale'
-import { cn } from '../ui/cn'
 import { m } from '../paraglide/messages.js'
 import { isLocale } from '../paraglide/runtime.js'
 import type { Models } from '@maudecode/talaria-web-contracts'
@@ -31,21 +30,34 @@ function allowanceLabel(allowance: ModelEntry['allowance'], locale?: string): st
   return [level, state?.({}, options)].filter(Boolean).join(' · ')
 }
 
+/** Localized wording for the server's configured role (TAL-2258): Main, or Fallback N. */
+function roleLabel(role: ModelEntry['configured_role'], locale?: string): string {
+  if (!role) return ''
+  const options = locale && isLocale(locale) ? { locale } : undefined
+  return role.kind === 'main' ? m.model_role_main({}, options) : m.model_role_fallback({ position: String(role.position) }, options)
+}
+
+/** The row's secondary text: its configured role, then its allowance. */
+function optionDetail(entry: ModelEntry, locale?: string): string {
+  return [roleLabel(entry.configured_role, locale), allowanceLabel(entry.allowance, locale)].filter(Boolean).join(' · ')
+}
+
 export function modelOptionLabel(entry: ModelEntry, locale?: string): string {
-  return [entry.label ?? entry.id, allowanceLabel(entry.allowance, locale)].filter(Boolean).join(' · ')
+  return [entry.label ?? entry.id, optionDetail(entry, locale)].filter(Boolean).join(' · ')
 }
 
 /** Shared noninteractive content for MenuRadioItem, Select options and model-choice buttons. */
 export function ModelOptionContent({ entry }: { entry: ModelEntry }) {
   const locale = useLocale()
   const name = entry.label ?? entry.id
-  const detail = allowanceLabel(entry.allowance, locale)
-  if (!detail) return <span className="min-w-0 truncate" title={name}>{name}</span>
+  const role = roleLabel(entry.configured_role, locale)
+  const allowance = allowanceLabel(entry.allowance, locale)
+  if (!role && !allowance) return <span className="min-w-0 truncate" title={name}>{name}</span>
   const tone = entry.allowance?.state === 'blocked' ? 'text-error' : entry.allowance?.state === 'credits' ? 'text-warning' : 'text-muted'
   return <span className="flex min-w-0 flex-1 items-center gap-1.5 pe-0.5" title={modelOptionLabel(entry, locale)}>
     <span className="min-w-0 flex-1 truncate">{name}</span>
     {' · '}
-    <span className={cn('max-w-[65%] shrink-0 whitespace-normal text-end text-xs leading-tight', tone)}>{detail}</span>
+    <span className="max-w-[65%] shrink-0 whitespace-normal text-end text-xs leading-tight text-muted">{role}{role && allowance && ' · '}{allowance && <span className={tone}>{allowance}</span>}</span>
   </span>
 }
 

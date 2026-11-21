@@ -833,6 +833,8 @@
 	"model_none_available": "利用できるモデルがありません",
 	"model_not_found_label": "モデルが見つかりません",
 	"model_picker_providers": "プロバイダー",
+	"model_role_fallback": "フォールバック {position}",
+	"model_role_main": "メイン",
 	"model_scope_advisory": "次回のメッセージからこの会話に適用されます。",
 	"model_scope_toast": "次回のメッセージからこの会話に適用されます。",
 	"model_search_no_results": "モデルが見つかりません",
