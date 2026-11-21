@@ -5,7 +5,7 @@
  * like, while selectors, URLs and the rest of the code stay readable.
  *
  * Recognised: the typed argument of `fill_input` and `type_text` by position, `text=` keyword or splat; the arguments of a
- * CDP `insertText` call; a literal assigned to `.value` (page script that sets a value any other way is masked whole). A name the
+ * CDP `insertText` call, and of any `cdp` call whose method name is built rather than written; a literal assigned to `.value` (page script that sets a value any other way is masked whole). A name the
  * typed value uses has every statement that mentions it masked too (its assignments, loops and mutations), with the body of
  * a function the snippet defines under that name and the calls of one that takes it as a parameter.
  * Withheld whole (`***`): a snippet whose brackets or quotes do not pair up, a typing helper used other than by calling it,
@@ -18,7 +18,7 @@ const MASK = "'***'"
 /** A property assignment to `value`, in either spelling (`. value =`, `['value'] =`). */
 const VALUE_ASSIGN = String.raw`(?:\.\s*value|\[\s*['"\`]value['"\`]\s*\])\s*=(?!=)`
 /** Any way a snippet types into a page. */
-const TYPING_RE = /\b(?:fill_input|type_text|value)\b|insertText/
+const TYPING_RE = /\b(?:fill_input|type_text|value|cdp)\b|insertText/
 const NAME_RE = /[\p{L}_][\p{L}\p{N}_]*/gu
 const NUMBER_RE = /(?<![\p{L}\p{N}_.])\d[\p{L}\p{N}_.]*/gu
 const TYPING_CALL_RE = /(?<![\p{L}\p{N}_])(fill_input|type_text)(?![\p{L}\p{N}_])(\s*\()?/gu
@@ -208,7 +208,7 @@ function typedSpans(code: string, cut: boolean): Span[] {
     followIn(start, end)
     for (const literal of literalsIn(start, end)) followLiteral(literal)
   }
-  /** A typing call's arguments: the one at `position`, a `text=` keyword and every splat are typed; all of them when none is. */
+  /** A typing call's arguments: the one at `position`, a `text=` keyword and every splat are typed; all of them when none is, or for a negative `position`. */
   const maskTypedArguments = (open: number, position: number): void => {
     const close = closes.get(open)!
     spend(close - open)
@@ -234,7 +234,7 @@ function typedSpans(code: string, cut: boolean): Span[] {
       const value: [number, number] = [from + ((keyword ?? star)?.[0].length ?? 0), to]
       values.push(value)
       // A positional argument after a splat sits at an unknown position.
-      const typed = star ? true : keyword ? keyword[1] === 'text' : splat || index === position
+      const typed = position < 0 || (star ? true : keyword ? keyword[1] === 'text' : splat || index === position)
       if (star) splat = true
       else if (!keyword) index++
       if (typed) { found = true; maskValue(...value) }
@@ -255,6 +255,19 @@ function typedSpans(code: string, cut: boolean): Span[] {
     if (!match[1]) throw new Withheld()
     followLiteral(literal)
     maskStatement(literal.stmt)
+  }
+  // A CDP call whose method is not one plain string (`'Input.insert' + 'Text'`, a variable) may be an insertion: every
+  // argument is typed. A plain method name is an insertion only when it says so, which the next scan handles.
+  for (const match of skeleton.matchAll(/(?<![\p{L}\p{N}_])cdp(?![\p{L}\p{N}_])(\s*\()?/gu)) {
+    if (!match[1]) {
+      if (!IMPORT_RE.test(skeleton.slice(...stmtRange(stmtOf(match.index))))) throw new Withheld()
+      continue
+    }
+    const open = match.index + match[0].length - 1
+    const close = closes.get(open)!
+    const first = literalAt(open + 1 + skeleton.slice(open + 1, close).search(/\S/))
+    const plain = first !== undefined && !skeleton.slice(open + 1, first.start).trim() && /^\s*(?:,|$)/.test(skeleton.slice(first.end, close))
+    if (!plain) maskTypedArguments(open, -1)
   }
   for (const match of code.matchAll(/insertText/g)) {
     const literal = literalAt(match.index)
