@@ -312,10 +312,13 @@ final class ChatHostedTests: XCTestCase {
         // At this size only the newest reply fits on screen.
         _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("FixturePlainLead") == true }
         let draft = "Keep this accessibility draft visible"
+        let keyboardOpening = XCTNSNotificationExpectation(name: UIResponder.keyboardWillShowNotification)
         let keyboardShown = try await awaitKeyboard(UIResponder.keyboardDidShowNotification) {
             try await self.typeIntoComposer(draft, in: window)
         }
-        guard keyboardShown else {
+        // A hardware keyboard may leave the editor focused without presenting a software keyboard.
+        let softwareKeyboardStarted = await XCTWaiter().fulfillment(of: [keyboardOpening], timeout: 0) == .completed
+        if softwareKeyboardStarted && !keyboardShown {
             XCTFail("The keyboard must finish opening before resizing its pane")
             return
         }
@@ -331,6 +334,11 @@ final class ChatHostedTests: XCTestCase {
             let settled = await awaitRenderedQuiet(in: window) { editor.convert(editor.bounds, to: window) }
             XCTAssertTrue(settled, "\(name): the composer must settle")
             attachHostedScreenshot(window, name: "composer-accessibility-\(name)")
+            // The text container can reflow after the editor frame settles.
+            _ = await awaitCondition {
+                guard let end = editor.selectedTextRange?.end else { return false }
+                return editor.bounds.insetBy(dx: -1, dy: -1).contains(editor.caretRect(for: end))
+            }
             XCTAssertGreaterThanOrEqual(editor.bounds.height, lineHeight, "\(name): the editor cuts its line")
             let caret = editor.caretRect(for: try XCTUnwrap(editor.selectedTextRange).end)
             XCTAssertTrue(editor.bounds.insetBy(dx: -1, dy: -1).contains(caret),
