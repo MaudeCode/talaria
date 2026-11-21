@@ -755,16 +755,26 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(MessageActionContext(message: prompt, visibleIndex: 0, messagesOffset: nil)?.copyText, prompt.content)
     }
 
-    func testOnlyAServerCollapsedExcerptIsKeptAndALongBodyGetsNoLinkPreview() throws {
+    func testOnlyAServerCollapsedExcerptIsKept() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         func message(_ json: String) throws -> ChatMessage { try decoder.decode(ChatMessage.self, from: Data(json.utf8)) }
-        let collapsed = try message(#"{"role":"user","content":"See https://example.test/page and more","_display_truncated":true,"_display_excerpt":"See"}"#)
-        let unflagged = try message(#"{"role":"user","content":"See https://example.test/page","_display_excerpt":"See"}"#)
+        let collapsed = try message(#"{"role":"user","content":"See more","_display_truncated":true,"_display_excerpt":"See"}"#)
+        let unflagged = try message(#"{"role":"user","content":"See more","_display_excerpt":"See"}"#)
         XCTAssertEqual(collapsed.displayExcerpt, "See")
         XCTAssertNil(unflagged.displayExcerpt)
-        XCTAssertNil(TranscriptLinkPreviewEligibility.previewURL(for: collapsed, isStreaming: false))
-        XCTAssertEqual(TranscriptLinkPreviewEligibility.previewURL(for: unflagged, isStreaming: false)?.absoluteString, "https://example.test/page")
+    }
+
+    /// TAL-2504: the server picks the URL a row previews; a settled row shows exactly that one, and a body is never scanned.
+    func testLinkPreviewShowsOnlyTheServerMarkedURL() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        func message(_ json: String) throws -> ChatMessage { try decoder.decode(ChatMessage.self, from: Data(json.utf8)) }
+        let unmarked = try message(#"{"role":"user","content":"See https://example.test/page"}"#)
+        let marked = try message(#"{"role":"assistant","content":"See https://example.test/page","_link_preview_url":"https://example.test/chosen"}"#)
+        XCTAssertNil(TranscriptLinkPreviewEligibility.previewURL(for: unmarked, isStreaming: false))
+        XCTAssertEqual(TranscriptLinkPreviewEligibility.previewURL(for: marked, isStreaming: false)?.absoluteString, "https://example.test/chosen")
+        XCTAssertNil(TranscriptLinkPreviewEligibility.previewURL(for: marked, isStreaming: true))
     }
 
     func testSharedWebSessionNamesItsAgent() throws {

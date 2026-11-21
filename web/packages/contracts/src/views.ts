@@ -528,6 +528,8 @@ export const MessageSchema = z.looseObject({
   /** A settled body too long to lay out whole. The session-global newest settled visible assistant reply and running output carry no excerpt. Only a newer visible terminal answer transfers that exemption. Clients render `_display_excerpt` with a local "Show more" for full `content`. */
   _display_truncated: z.boolean().optional().describe("Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."),
   _display_excerpt: z.string().optional().describe("Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."),
+  /** TAL-2504: clients fetch and show a link card for this URL; they never scan the body for one. */
+  _link_preview_url: z.string().optional().describe("The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."),
   /**
    * TAL-452: a typed user message (never a steer, background update or marker) longer than 20 lines or 2,000
    * characters. Clients show it folded to a few lines with a local "Show more"; copy and edit use the whole `content`.

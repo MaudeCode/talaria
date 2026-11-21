@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Link cards in chats now show on messages and final answers, not on the steps inside Worked.",
+      "highlight": false,
+      "announce": false,
+      "components": ["app"]
+    }
+  ]
+}

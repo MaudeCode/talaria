@@ -328,6 +328,61 @@ describe('withBodyExcerpts (TAL-456)', () => {
   })
 })
 
+describe('link preview URL (TAL-2504)', () => {
+  const previewOf = (content: unknown, role = 'user'): unknown => (withBodyExcerpts([{ role, content }], null, null)[0] as Record<string, unknown>)._link_preview_url
+
+  it.each([
+    ['prose', 'Read https://example.com/docs for details.', 'https://example.com/docs'],
+    ['first URL wins', 'First https://first.example/path, then https://second.example/path.', 'https://first.example/path'],
+    ['a Markdown link', 'Open [the docs](https://docs.example/guide).', 'https://docs.example/guide'],
+    ['a Markdown link destination as written', 'Get [download](https://example.com/file?token=abc_).', 'https://example.com/file?token=abc_'],
+    ['a titled Markdown link', 'See [docs](https://docs.example/a_(b) "Docs").', 'https://docs.example/a_(b)'],
+    ['adjacent Markdown links', 'See [one](https://first.example/a),[two](https://second.example/b).', 'https://first.example/a'],
+    ['a URL as its own link text', 'See [https://docs.example/a](https://docs.example/a).', 'https://docs.example/a'],
+    ['unopened closing parentheses', `Read (https://example.test/page${')'.repeat(20)}.`, 'https://example.test/page'],
+    ['balanced parentheses', 'See https://en.example/wiki/Foo_(bar) now', 'https://en.example/wiki/Foo_(bar)'],
+    ['inline code', 'Do not preview `https://internal.example/token`; use https://public.example instead.', 'https://public.example'],
+    ['a double-backtick span', 'Skip ``a ` https://internal.example`` then https://public.example', 'https://public.example'],
+    ['an unclosed backtick', 'A stray ` then https://public.example', 'https://public.example'],
+    ['fenced code', 'Before\n```json\n{"url": "https://internal.example/token"}\n```\nAfter https://public.example', 'https://public.example'],
+    ['a tilde fence', '~~~\nhttps://internal.example\n~~~\nhttps://public.example', 'https://public.example'],
+    ['an unclosed fence', 'Before\n```\nhttps://internal.example', undefined],
+    ['indented code', '    https://internal.example\n\thttps://tab.example\nhttps://public.example', 'https://public.example'],
+    ['JSON lines', '{"url": "https://json.example"}\n["https://array.example"]\n"key": "https://key.example"', undefined],
+    ['log levels', 'ERROR failed to fetch https://logs.example/error\nwarning: retry https://warn.example', undefined],
+    ['timestamps', '2026-11-20T10:00:00Z GET https://time.example\n[10:00:00] https://clock.example', undefined],
+    ['stack frames', 'at fetchThing (https://stack.example/app.js:10:2)\n#0 https://frame.example\nTraceback https://tb.example\nFile "x.py", line 3 https://py.example', undefined],
+    ['shell prompts', '$ open https://shell.example\n% open https://zsh.example', undefined],
+    ['declarations', 'let callbackURL = "https://code.example/callback"\nString url = "https://java.example"', undefined],
+    ['curl, wget and git lines', 'curl https://api.example\nwget https://get.example\ngit clone https://git.example/repo', undefined],
+    ['non-web schemes', 'Open file:///tmp/report.txt, ssh://server.test, and talaria://session/1.', undefined],
+    ['text parts', [{ type: 'text', text: 'Parts https://parts.example' }], 'https://parts.example'],
+  ])('%s', (_name, content, expected) => {
+    expect(previewOf(content)).toBe(expected)
+  })
+
+  it('marks settled user and assistant rows only, never an excerpted, tool or running row', () => {
+    const url = 'See https://example.test/page'
+    const rows = [
+      { role: 'user', content: url, _turn_id: 'A' },
+      { role: 'assistant', content: `${url} ${'a'.repeat(4000)}`, _turn_id: 'A' },
+      { role: 'tool', content: url, _turn_id: 'A' },
+      { role: 'assistant', content: url, _turn_id: 'A' },
+      { role: 'user', content: url, _turn_id: 'run' },
+      { role: 'assistant', content: url, _turn_id: 'run' },
+    ]
+    const out = withBodyExcerpts(rows, 'run', null) as Record<string, unknown>[]
+    expect(out.map((m) => m._link_preview_url ?? null)).toEqual(['https://example.test/page', null, null, 'https://example.test/page', null, null])
+    expect(out[1]?._display_truncated).toBe(true)
+    expect(rows[0]).not.toHaveProperty('_link_preview_url')
+  })
+
+  it('drops a stale stamp from a stored row', () => {
+    const [out] = withBodyExcerpts([{ role: 'user', content: 'no link', _link_preview_url: 'https://stale.example' }], null, null) as Record<string, unknown>[]
+    expect(out).not.toHaveProperty('_link_preview_url')
+  })
+})
+
 describe('withDisplayMedia (TAL-186)', () => {
   const project = (text: string) => (text.includes('MEDIA:') ? { text: text.replaceAll('MEDIA:/tmp/a.png', '![a.png](u)'), media: [{ url: 'u', name: 'a.png', mime: 'image/png', kind: 'image' as const }] } : null)
 

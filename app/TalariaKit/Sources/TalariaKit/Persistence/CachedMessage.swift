@@ -25,6 +25,7 @@ public final class CachedMessage {
     var turnId: String?
     var steerData: Data?
     var displayExcerpt: String?
+    var linkPreviewURL: String?
     var collapsible: Bool?
     var displayBodyData: Data?
     var backgroundUpdateData: Data?
@@ -88,6 +89,7 @@ public final class CachedMessage {
         row.set(\.turnId, message.turnId)
         row.setJSON(\.steerData, message.steer)
         row.set(\.displayExcerpt, message.displayExcerpt)
+        row.set(\.linkPreviewURL, message.linkPreviewURL?.absoluteString)
         row.set(\.collapsible, message.collapsible ? true : nil)
         row.setJSON(\.displayBodyData, message.displayBody)
         row.setJSON(\.backgroundUpdateData, message.backgroundUpdate)

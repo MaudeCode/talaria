@@ -10639,6 +10639,10 @@
                                 "type": "string",
                                 "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
+                              "_link_preview_url": {
+                                "type": "string",
+                                "description": "The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."
+                              },
                               "_collapsible": {
                                 "type": "boolean"
                               },
@@ -18364,6 +18368,10 @@
                                 "type": "string",
                                 "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
+                              "_link_preview_url": {
+                                "type": "string",
+                                "description": "The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."
+                              },
                               "_collapsible": {
                                 "type": "boolean"
                               },
@@ -24760,6 +24768,10 @@
                               "_display_excerpt": {
                                 "type": "string",
                                 "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
+                              },
+                              "_link_preview_url": {
+                                "type": "string",
+                                "description": "The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -34373,6 +34385,10 @@
                                 "type": "string",
                                 "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
+                              "_link_preview_url": {
+                                "type": "string",
+                                "description": "The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."
+                              },
                               "_collapsible": {
                                 "type": "boolean"
                               },
@@ -43318,6 +43334,10 @@
                               "_display_excerpt": {
                                 "type": "string",
                                 "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
+                              },
+                              "_link_preview_url": {
+                                "type": "string",
+                                "description": "The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -52846,6 +52866,10 @@
                                 "type": "string",
                                 "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
+                              "_link_preview_url": {
+                                "type": "string",
+                                "description": "The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."
+                              },
                               "_collapsible": {
                                 "type": "boolean"
                               },
@@ -59186,6 +59210,10 @@
                               "_display_excerpt": {
                                 "type": "string",
                                 "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
+                              },
+                              "_link_preview_url": {
+                                "type": "string",
+                                "description": "The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -65590,6 +65618,10 @@
                                 "type": "string",
                                 "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
+                              "_link_preview_url": {
+                                "type": "string",
+                                "description": "The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."
+                              },
                               "_collapsible": {
                                 "type": "boolean"
                               },
@@ -71990,6 +72022,10 @@
                               "_display_excerpt": {
                                 "type": "string",
                                 "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
+                              },
+                              "_link_preview_url": {
+                                "type": "string",
+                                "description": "The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -91367,6 +91403,10 @@
                                 "type": "string",
                                 "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
+                              "_link_preview_url": {
+                                "type": "string",
+                                "description": "The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."
+                              },
                               "_collapsible": {
                                 "type": "boolean"
                               },
@@ -97759,6 +97799,10 @@
                               "_display_excerpt": {
                                 "type": "string",
                                 "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
+                              },
+                              "_link_preview_url": {
+                                "type": "string",
+                                "description": "The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -104839,6 +104883,10 @@
                                 "type": "string",
                                 "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
+                              "_link_preview_url": {
+                                "type": "string",
+                                "description": "The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."
+                              },
                               "_collapsible": {
                                 "type": "boolean"
                               },
@@ -111385,6 +111433,10 @@
                                   "_display_excerpt": {
                                     "type": "string",
                                     "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
+                                  },
+                                  "_link_preview_url": {
+                                    "type": "string",
+                                    "description": "The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."
                                   },
                                   "_collapsible": {
                                     "type": "boolean"
@@ -164178,6 +164230,10 @@
                               "_display_excerpt": {
                                 "type": "string",
                                 "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
+                              },
+                              "_link_preview_url": {
+                                "type": "string",
+                                "description": "The URL a settled user or assistant row previews: its first http(s) URL outside code, log, shell or JSON lines. Absent on rows with `_display_excerpt`, tool rows and the running turn."
                               },
                               "_collapsible": {
                                 "type": "boolean"

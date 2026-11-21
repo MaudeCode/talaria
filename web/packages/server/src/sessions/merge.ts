@@ -1678,10 +1678,98 @@ export function bodyExcerpt(text: string, limit = BODY_EXCERPT_LIMIT): string {
   return head.slice(0, cut).trimEnd()
 }
 
+const FENCE = /^ {0,3}(```|~~~)/
+/** Lines whose URL is code, a log, a shell command or JSON, never something the writer meant to share. */
+const CODE_OR_LOG_LINES = [
+  /^[{}]/,
+  /^\[.*"/,
+  /^"[^"]+"\s*:/,
+  /^[$%]\s+/,
+  /^(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL|NOTICE)\b/i,
+  /^\d{4}-\d{2}-\d{2}[T\s]/,
+  /^(\d{2}:\d{2}:\d{2}|\[\d{2}:\d{2}:\d{2}\])/,
+  /^(at\s+\S+|#\d+\s+|Thread\s+\d+|Caused by:|Traceback\b|File\s+"[^"]+",\s+line\s+\d+)/i,
+  /^(let|var|const|final|static|private|public|return)\b/i,
+  /^[A-Za-z_][A-Za-z0-9_.<>]*\s+[A-Za-z_][A-Za-z0-9_]*\s*=/,
+  /^(curl|wget|git|ssh|scp)\b/i,
+]
+
+/** A line's text outside inline code spans, as segments; a backtick run closes only on a run of the same length. */
+function outsideInlineCode(line: string): string[] {
+  const runs = [...line.matchAll(/`+/g)]
+  const segments: string[] = []
+  let textStart = 0
+  for (let i = 0; i < runs.length; i += 1) {
+    const open = runs[i]!
+    const close = runs.findIndex((run, j) => j > i && run[0].length === open[0].length)
+    if (close < 0) continue
+    segments.push(line.slice(textStart, open.index))
+    textStart = runs[close]!.index + runs[close]![0].length
+    i = close
+  }
+  segments.push(line.slice(textStart))
+  return segments
+}
+
+/** A Markdown link's destination, kept whole (one level of parentheses, an optional title), or a bare URL in prose, which
+ * ends at a square bracket so `[https://a](https://b)` is not one URL. */
+const WEB_URL = /\]\((https?:\/\/[^\s()]*(?:\([^\s()]*\)[^\s()]*)*)(?:\s+"[^"]*")?\)|https?:\/\/[^\s<>"`[\]]+/gi
+
+/** The first http(s) URL: a link destination as written, or a bare URL without trailing punctuation or an unopened bracket. */
+function firstWebUrl(segment: string): string | undefined {
+  for (const [match, destination] of segment.matchAll(WEB_URL)) {
+    const url = destination ?? trimProseUrl(match)
+    if (URL.canParse(url) && new URL(url).hostname) return url
+  }
+  return undefined
+}
+
+/** One pass from the end (TAL-2504: linear on any input): drops trailing punctuation and each unopened `)`. */
+function trimProseUrl(url: string): string {
+  let opens = 0
+  let closes = 0
+  for (const char of url) {
+    if (char === '(') opens += 1
+    else if (char === ')') closes += 1
+  }
+  let end = url.length
+  for (; end > 0; end -= 1) {
+    const last = url[end - 1]!
+    if (last === ')' && opens < closes) closes -= 1
+    else if (!/[.,;:!?'*_~]/.test(last)) break
+  }
+  return url.slice(0, end)
+}
+
+/**
+ * TAL-2504: the URL a message's link preview shows: the first http(s) URL outside fenced, indented and inline code, and
+ * outside JSON, log, stack-trace, shell, declaration and curl/wget/git lines.
+ */
+export function linkPreviewUrl(markdown: string): string | undefined {
+  let fence: string | null = null
+  for (const line of markdown.split(/\r\n?|\n|\u2028|\u2029/)) {
+    const marker = FENCE.exec(line)?.[1] ?? null
+    if (fence) {
+      if (marker?.[0] === fence[0]) fence = null
+      continue
+    }
+    if (marker) { fence = marker; continue }
+    if (/^( {4}|\t)/.test(line)) continue
+    const trimmed = line.trim()
+    if (CODE_OR_LOG_LINES.some((pattern) => pattern.test(trimmed))) continue
+    for (const segment of outsideInlineCode(line)) {
+      const url = firstWebUrl(segment)
+      if (url) return url
+    }
+  }
+  return undefined
+}
+
 /**
  * TAL-456: stamps `_display_excerpt` and `_display_truncated` on settled user and assistant rows whose display text is longer than
  * `BODY_EXCERPT_LIMIT`, and `final_answer_excerpt` on a settled scene whose final answer is, so clients render a bounded
  * excerpt instead of laying out the whole body. The newest settled answer and running turn stay full; copy and edit retain full text.
+ * TAL-2504: a settled row without an excerpt carries `_link_preview_url` when its text has one; a collapsed body gets no preview.
  * Runs after scene hydration. Returns copies; stored rows are untouched.
  */
 export function withBodyExcerpts<T>(messages: T[], activeTurnId: string | null, newestReplyIndex = newestSettledReply(messages, activeTurnId), offset = 0): T[] {
@@ -1690,15 +1778,23 @@ export function withBodyExcerpts<T>(messages: T[], activeTurnId: string | null, 
     let out: Record<string, unknown> = { ...m }
     delete out._display_excerpt
     delete out._display_truncated
+    delete out._link_preview_url
     if (isDict(out._anchor_activity_scene)) {
       const scene = { ...out._anchor_activity_scene }
       delete scene.final_answer_excerpt
       out._anchor_activity_scene = scene
     }
-    if ((activeTurnId && m._turn_id === activeTurnId) || index + offset === newestReplyIndex) return out as T
+    if (activeTurnId && m._turn_id === activeTurnId) return out as T
+    const newest = index + offset === newestReplyIndex
     // A delivery shows its body under its own label (TAL-816), so the excerpt is the body's.
     const text = isDict(m._delivery) ? str(m._delivery.body) : typeof m._display_content === 'string' ? m._display_content : messageText(m.content)
-    if (text.length > BODY_EXCERPT_LIMIT) out = { ...out, _display_excerpt: bodyExcerpt(text), _display_truncated: true }
+    if (!newest && text.length > BODY_EXCERPT_LIMIT) {
+      out = { ...out, _display_excerpt: bodyExcerpt(text), _display_truncated: true }
+    } else {
+      const preview = linkPreviewUrl(messageText(m.content))
+      if (preview) out._link_preview_url = preview
+    }
+    if (newest) return out as T
     const scene = out._anchor_activity_scene
     const finalAnswer = isDict(scene) ? (typeof scene.final_answer_display === 'string' ? scene.final_answer_display : scene.final_answer) : null
     if (isDict(scene) && typeof finalAnswer === 'string' && finalAnswer.length > BODY_EXCERPT_LIMIT) {
