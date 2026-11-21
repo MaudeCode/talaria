@@ -212,6 +212,10 @@ def register(registry) -> None:
             return _payload(ok=False, action=action, error="invalid_goal" if action == "set" else "invalid_command", message=result.output, state=state)
         # A running turn's judge continues a resumed goal itself.
         kickoff = result.prompt if result.prompt and not params.get("stream_running") else None
+        # TAL-2315: the Agent's set kickoff is the headline alone; its parsed contract is the first turn's input too.
+        contract = state.contract.render_block() if kickoff and state is not None and state.has_contract() else ""
+        if contract and contract not in kickoff:
+            kickoff = f"{kickoff}\n\nCompletion contract:\n{contract}"
         return _payload(action=action, message=result.output, state=state, kickoff_prompt=kickoff, **_localized(action, state, had_goal))
 
     @registry.method("goals.snapshot")

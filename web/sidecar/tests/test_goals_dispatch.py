@@ -115,3 +115,18 @@ def test_running_turn_refuses_only_goal_setting_text(goal):
     refused = goal("something else", stream_running=True)
     assert refused["ok"] is False and refused["error"] == "agent_running", refused
     assert goal("status")["goal"]["goal"] == "ship the release notes"
+
+
+def test_kickoff_carries_the_completion_contract(goal):
+    """TAL-2315: the first turn's input names the parsed contract; the explanatory message alone never reaches the model."""
+    fields = {"outcome": "widget shipped", "verify": "fixture check passes", "must not": "break the old widget",
+              "scope": "widgets/ only", "stop when": "the fixture is missing"}
+    started = goal("Ship synthetic widget\n" + "\n".join(f"{key}: {value}" for key, value in fields.items()))
+    assert started["ok"] and started["goal"]["goal"] == "Ship synthetic widget", started
+    block = goal("show")["message"].split("\n", 1)[1]
+    assert all(value in block for value in fields.values()), block
+    assert started["kickoff_prompt"] == f"Ship synthetic widget\n\nCompletion contract:\n{block}"
+    # The Agent's own resume continuation already renders the contract; it is not repeated.
+    goal("pause")
+    assert goal("resume")["kickoff_prompt"].count(block) == 1
+    assert goal("ship the release notes")["kickoff_prompt"] == "ship the release notes"

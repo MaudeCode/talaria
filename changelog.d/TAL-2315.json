@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A goal set with completion lines such as verify: or must not: now gives them to the agent in its first turn, not only to later turns.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
