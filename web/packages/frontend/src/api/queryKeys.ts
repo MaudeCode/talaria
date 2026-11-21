@@ -48,6 +48,8 @@ export const keys = {
   projects: ['projects'] as const,
   prompts: ['prompts'] as const,
   commands: ['commands'] as const,
+  /** TAL-1927: under `commands`, so a catalog refresh drops the decisions it made. */
+  commandDecision: (text: string, sessionId: string | null) => ['commands', 'decision', sessionId, text] as const,
   commandExec: (sessionId: string | null) => ['command-exec', sessionId] as const,
   workspaces: ['workspaces'] as const,
   files: {

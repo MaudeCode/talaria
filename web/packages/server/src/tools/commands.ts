@@ -2,7 +2,7 @@
  * The canonical slash-command catalog (TAL-314). Clients hold only handlers and localized wording; which commands exist,
  * their aliases, display order, and which client can run each come from here through `GET /api/commands`.
  */
-import type { Command, CommandClient } from '@maudecode/talaria-web-contracts'
+import type { Command, CommandClient, CommandDecision } from '@maudecode/talaria-web-contracts'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts/sidecar'
 
 type AgentCommand = SidecarResult<'commands.registry'>['commands'][number]
@@ -97,6 +97,31 @@ const OWNER_ONLY_MESSAGE = 'Only the server owner can open the terminal.'
 
 export const commandCatalog = (agent: readonly AgentCommand[], owner = true): Command[] => buildCatalog(agent).commands
   .map((command) => owner || !OWNER_COMMANDS.has(command.name) ? command : { ...command, clients: [], unsupported_message: OWNER_ONLY_MESSAGE })
+
+/** What admission and classification answer for a command token when the Agent registry cannot be read. */
+export const COMMAND_REGISTRY_UNAVAILABLE = 'Slash commands are unavailable because the Agent command registry could not be loaded.'
+
+/** The command token in `text`: `/name` followed by whitespace or the end, so `/tmp/x.js explain` has none (TAL-1926). */
+export function commandToken(text: string): { name: string; args: string } | null {
+  const [, name, rest = ''] = /^\/([a-zA-Z][\w-]*)(?=\s|$)\s*([\s\S]*)$/.exec(text.trimStart()) ?? []
+  return name === undefined ? null : { name: name.toLowerCase(), args: rest.trim() }
+}
+
+/**
+ * TAL-1927: the one decision for submitted text, shared by chat admission and `POST /api/commands/classify`. The token's
+ * name matches an entry's name or alias case-insensitively. `client` is the requester's client; without one, as at
+ * admission, only an entry no client runs is unsupported. `agent` null means the registry is unavailable: a token only
+ * the client table can answer gets its decision, any other returns null so the caller fails closed.
+ */
+export function classifyCommand(text: string, agent: readonly AgentCommand[] | null, { owner = true, client }: { owner?: boolean; client?: CommandClient } = {}): CommandDecision | null {
+  const token = commandToken(text)
+  if (!token) return { kind: 'text' }
+  const entry = commandCatalog(agent ?? [], owner).find((c) => [c.name, ...c.aliases].some((n) => n.toLowerCase() === token.name))
+  if (!entry) return agent === null ? null : { kind: 'text' }
+  if (client ? !entry.clients.includes(client) : entry.clients.length === 0) return { kind: 'unsupported', name: entry.name, message: entry.unsupported_message ?? unsupportedPromptMessage(entry.name) }
+  const kind = entry.exec ? 'exec' : entry.handler === 'client' ? 'client' : entry.handler === 'prompt' ? 'prompt' : null
+  return kind ? { kind, name: entry.name, args: token.args } : { kind: 'text' }
+}
 
 /**
  * `command` with a generated separator alias (TAL-1577) replaced by its command's name, which is what the sidecar

@@ -1592,12 +1592,10 @@ export const PromptsSchema = z.looseObject({ prompts: z.array(PromptSchema) })
  * One slash command in the server's canonical catalog (TAL-314). `GET /api/commands` lists the client-handled commands
  * first, then the Agent registry, in display order; each name appears once. `handler` says who runs it, `clients` which
  * clients can run it, and `unsupported_message` is the English text a client outside `clients` shows when it is typed.
- * Clients suggest the entries listing them whose name or any alias starts with the typed text (case-insensitive), and
- * resolve a typed alias to the entry's `name`. `exec` marks an Agent entry `POST /api/commands/exec` runs: the client
- * posts the typed text there with the open chat's `session_id` and shows the returned output instead of starting a chat turn
- * (TAL-561); `/refine` reviews that chat (TAL-902).
- * `handler: 'prompt'` marks an Agent prompt built-in: the client sends the typed text as a chat turn and the server starts the
- * turn with the Agent's expansion of it (TAL-817).
+ * Clients suggest the entries listing them whose name or any alias starts with the typed text (case-insensitive); what
+ * submitted text does is the server's `CommandDecision` (TAL-1927). `exec` marks an Agent entry `POST /api/commands/exec`
+ * runs (TAL-561); `/refine` reviews that chat (TAL-902). `handler: 'prompt'` marks an Agent prompt built-in the server starts
+ * the turn with its expansion of (TAL-817).
  */
 export const CommandClientSchema = z.enum(['web', 'ios'])
 export const CommandRowSchema = z.looseObject({
@@ -1608,6 +1606,21 @@ export const CommandRowSchema = z.looseObject({
 export const CommandsSchema = z.looseObject({ commands: z.array(CommandRowSchema) })
 export type Command = z.infer<typeof CommandRowSchema>
 export type CommandClient = z.infer<typeof CommandClientSchema>
+/**
+ * TAL-1927: what submitted composer text does, decided by the server from the requester's catalog. A command is `/name`
+ * followed by whitespace or the end (so `/tmp/x.js explain` is `text`), matched case-insensitively against each entry's
+ * name and aliases; `name` is the entry's canonical name and `args` the trimmed rest.
+ * `text` starts a chat turn as typed (unknown slash words included). `client` runs the client's own handler for `name`.
+ * `exec` posts the typed text to `POST /api/commands/exec` and shows its output instead of starting a turn (TAL-561).
+ * `prompt` starts a chat turn as typed; the server sends the Agent's expansion (TAL-817). `unsupported` shows `message`
+ * and keeps the text. Classifying runs nothing and persists nothing.
+ */
+export const CommandDecisionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('text') }),
+  z.object({ kind: z.enum(['client', 'exec', 'prompt']), name: z.string(), args: z.string() }),
+  z.object({ kind: z.literal('unsupported'), name: z.string(), message: z.string() }),
+])
+export type CommandDecision = z.infer<typeof CommandDecisionSchema>
 /** TAL-2139: a log line's level, from its first level token; a traceback continuation takes the line before it. */
 export const LogLevelSchema = z.enum(['error', 'warning', 'info', 'debug'])
 /** The Logs page's level filter: `warning` keeps warnings and errors, `error` keeps errors. */

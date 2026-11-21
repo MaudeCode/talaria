@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
-import type { Command, Session, Settings } from '../../contracts'
+import type { CommandDecision, Session, Settings } from '../../contracts'
 import * as api from '../../api/endpoints'
 import { ApiError } from '../../contracts/common'
 import { dispatch, getStreamState, resetStreamStoreForTests, getTurnIntent } from '../../stream/store'
@@ -21,7 +21,7 @@ import { resolve } from 'node:path'
 import type { DelegationStatus } from '@maudecode/talaria-web-contracts'
 import { keys } from '../../api/queryKeys'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), cancelChat: vi.fn(), fetchStreamStatus: vi.fn(), fetchSession: vi.fn(), uploadFile: vi.fn(), rollbackUpload: vi.fn(), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), fetchBackgroundResult: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), fetchModels: vi.fn(() => Promise.reject(new Error('offline'))), fetchProviderQuotas: vi.fn(() => Promise.reject(new Error('offline'))), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn(), fetchExecutionModes: vi.fn(() => Promise.resolve({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false }, { mode: 'safe', available: true, reason: null, can_attach: false }], selectable: true } satisfies ExecutionModes)) }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), cancelChat: vi.fn(), fetchStreamStatus: vi.fn(), fetchSession: vi.fn(), uploadFile: vi.fn(), rollbackUpload: vi.fn(), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), fetchBackgroundResult: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), classifyCommand: vi.fn(), fetchModels: vi.fn(() => Promise.reject(new Error('offline'))), fetchProviderQuotas: vi.fn(() => Promise.reject(new Error('offline'))), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn(), fetchExecutionModes: vi.fn(() => Promise.resolve({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false }, { mode: 'safe', available: true, reason: null, can_attach: false }], selectable: true } satisfies ExecutionModes)) }))
 // jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
 vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
@@ -53,6 +53,10 @@ import { dictateLive, NoSpeechError } from '../voice/liveDictation'
 import * as browserDictation from '../voice/dictation'
 
 const noop = (): void => undefined
+/** TAL-1927: the server's decisions for synthetic text, as its own test pins them; other text decides as `extra` says, else `text`. */
+const fixtureDecisions = (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/command-decisions.json'), 'utf8')) as { cases: { text: string; decision: CommandDecision }[] }).cases
+const decide = (extra: Record<string, CommandDecision> = {}) => vi.mocked(api.classifyCommand).mockReset().mockImplementation((text) => Promise.resolve(extra[text] ?? fixtureDecisions.find((c) => c.text.trim() === text)?.decision ?? { kind: 'text' }))
+const client = (name: string, args = ''): CommandDecision => ({ kind: 'client', name, args })
 function renderComposer(session: Session | null, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings, onEnsureSession: () => Promise<Session> = () => Promise.resolve(session!), onLocalCommand: ComposerProps['onLocalCommand'] = () => Promise.resolve(false), overrides: Partial<ComposerProps> = {}, bootstrap = DEFAULT_BOOTSTRAP) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const tree = (turn: LiveTurn | null, record = session, shown = settings) => (
@@ -536,6 +540,7 @@ describe('Composer', () => {
     vi.mocked(api.fetchStreamStatus).mockReset().mockResolvedValue({ active: false, stream_id: 'run', blocking_stream_id: null })
     vi.mocked(api.fetchBackgroundTasks).mockReset().mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [], pinned_count: 0 })
     vi.mocked(api.fetchCommands).mockReset().mockResolvedValue({ commands: [] })
+    decide({ '/background summarize repo': client('background', 'summarize repo'), '/retry': client('retry'), '/undo': client('undo'), '/clear': client('clear') })
     vi.mocked(api.saveDraft).mockReset().mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null })
     vi.mocked(api.fetchDraft).mockReset().mockResolvedValue({ draft: { text: '', files: [] }, draft_version: null })
     vi.mocked(api.fetchTranscribeCapability).mockReset().mockResolvedValue({ ok: true, available: true, provider: 'openai', streaming: false, warm_supported: false })
@@ -953,9 +958,7 @@ describe('Composer', () => {
     ['/agents foo', false],
     ['/agents/notes.md summarize', true],
     ['/tmp/example.js explain', true],
-  ])('routes slash-looking text by its complete command token (TAL-1926): %s', async (text, sendAsText) => {
-    const agents: Command = { name: 'agents', description: 'List agents', category: 'Session', aliases: [], handler: 'agent', clients: [], unsupported_message: '/agents runs only in the Hermes CLI.', exec: false }
-    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [agents] })
+  ])('routes slash-looking text by the server\'s decision, with no browser catalog (TAL-1926, TAL-1927): %s', async (text, sendAsText) => {
     vi.mocked(api.startChat).mockClear().mockResolvedValue({ stream_id: 'path-message', session_id: 's1' })
     vi.mocked(showToast).mockClear()
     const onLocalCommand = vi.fn(() => Promise.resolve(false))
@@ -963,25 +966,22 @@ describe('Composer', () => {
     await act(async () => { await Promise.resolve() })
     const box = screen.getByRole('textbox')
     fireEvent.change(box, { target: { value: text } })
-    await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }); await Promise.resolve() })
+    fireEvent.keyDown(box, { key: 'Enter' })
     if (sendAsText) {
-      expect(api.startChat).toHaveBeenCalledWith(expect.objectContaining({ session_id: 's1', message: text }))
+      await waitFor(() => expect(api.startChat).toHaveBeenCalledWith(expect.objectContaining({ session_id: 's1', message: text })))
       expect(showToast).not.toHaveBeenCalled()
     } else {
-      expect(showToast).toHaveBeenCalledWith('/agents runs only in the Hermes CLI.', 3000)
+      await waitFor(() => expect(showToast).toHaveBeenCalledWith('/agents runs only in the Hermes CLI.', 3000))
       expect(box).toHaveValue(text)
       expect(onLocalCommand).not.toHaveBeenCalled()
       expect(api.startChat).not.toHaveBeenCalled()
     }
   })
 
-  // TAL-314: the server catalog resolves a typed alias and says which client runs each command.
-  it('runs a typed alias as its server catalog command and refuses a command Web cannot run', async () => {
-    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [
-      { name: 'branch', aliases: ['fork'], handler: 'client', clients: ['web', 'ios'], exec: false },
-      { name: 'background', aliases: ['bg'], handler: 'client', clients: ['web', 'ios'], exec: false },
-      { name: 'history', aliases: [], handler: 'agent', clients: [], unsupported_message: '/history runs only in the Hermes CLI.', exec: false },
-    ] })
+  // TAL-314, TAL-1927: the server resolves a typed alias and says which client runs each command; the catalog only suggests.
+  it('runs a typed alias as the server decides and refuses a command Web cannot run', async () => {
+    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [{ name: 'branch', aliases: ['fork'], handler: 'client', clients: ['web', 'ios'], exec: false }] })
+    decide({ '/fork Copy': client('branch', 'Copy'), '/history': { kind: 'unsupported', name: 'history', message: '/history runs only in the Hermes CLI.' } })
     vi.mocked(api.startBackground).mockResolvedValue({ ok: true, task_id: 'bg1', stream_id: 'bgs', session_id: 'hidden' })
     vi.mocked(api.startChat).mockClear()
     const onLocalCommand = vi.fn((name: string) => Promise.resolve(name === 'branch'))
@@ -996,15 +996,67 @@ describe('Composer', () => {
     await userEvent.type(box, '/bg summarize repo{Enter}')
     await waitFor(() => expect(api.startBackground).toHaveBeenCalledWith('s1', 'summarize repo'))
     onLocalCommand.mockClear()
+    vi.mocked(showToast).mockClear()
     await userEvent.type(box, '/history{Enter}')
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('/history runs only in the Hermes CLI.', 3000))
     expect(box).toHaveValue('/history')
     expect(onLocalCommand).not.toHaveBeenCalled()
     expect(api.startChat).not.toHaveBeenCalled()
   })
 
+  // TAL-1927: a decision that arrives late acts only on the draft and chat it was asked for, and only once.
+  it.each([
+    ['nothing', 1, '/reload_skills'],
+    ['the draft', 0, '/reload_skills now'],
+    ['the chat', 0, '/reload_skills'],
+  ] as const)('runs a late decision once, and not at all after %s changed', async (changed, runs, left) => {
+    const decision = deferred<CommandDecision>()
+    vi.mocked(api.classifyCommand).mockReturnValue(decision.promise)
+    vi.mocked(api.execCommand).mockReset().mockResolvedValue({ output: 'Reloaded.' })
+    renderComposer({ ...writable, is_streaming: false })
+    const box = screen.getByRole('textbox')
+    fireEvent.change(box, { target: { value: '/reload_skills' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    if (changed === 'the draft') fireEvent.change(box, { target: { value: left } })
+    if (changed === 'the chat') act(() => resetConnectionsForTests())
+    await act(async () => { decision.resolve({ kind: 'exec', name: 'reload-skills', args: '' }); await decision.promise })
+    await waitFor(() => expect(api.execCommand).toHaveBeenCalledTimes(runs))
+    expect(box).toHaveValue(runs ? '' : left)
+  })
+
+  it('keeps the draft when classifying fails, and never replays a start whose outcome is unknown (TAL-1927)', async () => {
+    let classified = 0
+    vi.mocked(api.classifyCommand).mockImplementation(() => ++classified === 1 ? Promise.reject(new Error('Network down')) : Promise.resolve({ kind: 'text' }))
+    vi.mocked(api.startChat).mockClear().mockRejectedValue(new ApiError({ kind: 'network', path: '/api/chat/start', message: 'Connection lost' }))
+    vi.mocked(showToast).mockClear()
+    renderComposer({ ...writable, is_streaming: false })
+    const box = screen.getByRole('textbox')
+    fireEvent.change(box, { target: { value: 'Ship it' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('Network down', 4000, 'error'))
+    expect(box).toHaveValue('Ship it')
+    expect(box).toBeEnabled()
+    expect(screen.queryByText(/Pending/)).toBeNull()
+    expect(api.startChat).not.toHaveBeenCalled()
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(api.startChat).toHaveBeenCalledOnce())
+    await act(async () => { await Promise.resolve() })
+    expect(api.startChat).toHaveBeenCalledOnce()
+  })
+
+  it('names a busy send by the server\'s decision for the draft (TAL-1927)', async () => {
+    decide({ '/aside how big is it?': client('btw', 'how big is it?') })
+    renderComposer(writable, running())
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '/aside how big is it?' } })
+    expect(await screen.findByRole('button', { name: 'Send message' })).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'how big is it?' } })
+    expect(await screen.findByRole('button', { name: 'Steer current response' })).toBeInTheDocument()
+  })
+
   // TAL-882: a refused local command (`/goal gate add` without a goal) shows the server's reason and keeps the text.
   it('shows why a local command was refused and keeps the typed command', async () => {
-    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [{ name: 'goal', aliases: [], handler: 'client', clients: ['web', 'ios'], exec: false }] })
+    decide({ '/goal gate add true': client('goal', 'gate add true') })
     vi.mocked(showToast).mockClear()
     const onLocalCommand = vi.fn(() => Promise.reject(new Error('/goal gate add: no active goal')))
     renderComposer({ ...writable, is_streaming: false }, null, noop, undefined, undefined, onLocalCommand)
@@ -1020,7 +1072,7 @@ describe('Composer', () => {
     renderComposer({ ...writable, is_streaming: false }, null, noop, undefined, undefined, () => decision.promise)
     const box = screen.getByRole('textbox')
     await userEvent.type(box, `/${command}{Enter}`)
-    expect(box).toHaveValue('')
+    await waitFor(() => expect(box).toHaveValue(''))
     await userEvent.type(box, 'Newer draft')
     await act(async () => { decision.resolve('refused'); await decision.promise })
     expect(box).toHaveValue(`Newer draft\n\n/${command}`)
@@ -1031,6 +1083,7 @@ describe('Composer', () => {
     renderComposer({ ...writable, is_streaming: false }, null, noop, undefined, undefined, () => decision.promise.then(() => { throw new Error('Refused') }))
     const box = screen.getByRole('textbox')
     await userEvent.type(box, '/retry{Enter}')
+    await waitFor(() => expect(box).toHaveValue(''))
     await userEvent.type(box, 'Newer identity')
     act(() => resetConnectionsForTests())
     await act(async () => { decision.resolve(false); await decision.promise })
@@ -1039,12 +1092,11 @@ describe('Composer', () => {
 
   // TAL-561: an entry the server marks `exec` runs through the exec route; its output shows above the composer.
   it('runs a server command through exec and shows its output, never starting a turn', async () => {
-    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [{ name: 'reload-skills', aliases: ['reload_skills'], handler: 'agent', clients: ['web', 'ios'], exec: true }] })
+    decide({ '/reload-skills': { kind: 'exec', name: 'reload-skills', args: '' } })
     vi.mocked(api.execCommand).mockReset().mockResolvedValue({ output: 'Reloaded skills from disk.\nTotal skills: 5' })
     vi.mocked(api.startChat).mockClear()
     const onLocalCommand = vi.fn(() => Promise.resolve(false))
     renderComposer({ ...writable, is_streaming: false }, null, noop, undefined, undefined, onLocalCommand)
-    await waitFor(() => expect(api.fetchCommands).toHaveBeenCalled())
     const box = screen.getByRole('textbox')
     await userEvent.type(box, '/reload_skills {Enter}')
     await waitFor(() => expect(api.execCommand).toHaveBeenCalledWith('/reload_skills', 's1', expect.any(AbortSignal)))

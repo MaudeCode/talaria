@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type
 import { Mic, Paperclip, Square, ArrowUp, ListPlus, Layers, CornerUpRight, SkipForward } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
-import type { Session, Settings } from '../../contracts'
+import type { CommandDecision, Session, Settings } from '../../contracts'
 import type { ExecutionMode, OwnerActionRequest } from '@maudecode/talaria-web-contracts'
 import { adoptTurn, cancelTurn, getStreamContext, retryPendingTurn, startTurn } from '../../stream/connection'
 import { forgetOwnSteer, onReturnToComposer, rememberOwnSteer, returnToComposer } from './composerReturn'
@@ -14,7 +14,7 @@ import { showErrorToast } from '../toast/errorToast'
 import { appUrl } from '../../lib/appRoot'
 import { AttachmentTray, pastedText, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
-import { parseCommand, resolveCommand, type CommandSuggestion } from './commands'
+import { useCommandDecision, type CommandSuggestion } from './commands'
 import { ContextRing, QuotaChip, type ContextFigures } from './chips'
 import { ComposerControls, chatModelChoice, hideComposerControl, quotaChipShown } from './ComposerControls'
 import { beginUpload, clearDraft, dropStagedFiles, finishUpload, moveStagedFiles, readLocalDraft, useDraftPersistence, useServerDraft, useStagedFiles } from './useDraft'
@@ -343,7 +343,6 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
   }
   const canAnswer = !!value.trim() || !!clarify?.selected.length
   const palette = useCommandPalette(clarify || room ? '' : text)
-  const catalog = palette.catalog
   // A newly resolved identity first adopts its text. Persisting the previous render would erase
   // the loaded draft or copy another owner's text; the identity state also preserves early typing.
   useDraftPersistence(draftIdentity === localStateId ? localStateId : null, text, !room && !session?.owner_attachment)
@@ -612,6 +611,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
 
   const { ask: askBtw, notice: btwNotice } = useBtw(sessionId)
   const { run: runCommand, notice: commandNotice } = useCommandOutput(sessionId)
+  const commandDecision = useCommandDecision(text, sessionId, !room && !readOnly)
 
   const send = async (mode: BusyMode = effectiveMode) => {
     if (locked) return
@@ -644,13 +644,17 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
         setFiles([])
         void cancelTurn(sessionId)
       }
-      const parsed = parseCommand(value)
-      // TAL-314: a typed alias resolves to its server catalog entry; one Web cannot run shows the server's message.
-      const entry = parsed ? resolveCommand(parsed.name, catalog) : undefined
-      if (entry && !entry.clients.includes('web')) { showToast(entry.unsupported_message ?? m.cmd_unsupported(), 3000); return }
-      // TAL-561: an entry the server runs shows its output behind a composer chip; it never reaches the model.
-      if (entry?.exec) { setText(''); void runCommand(value); return }
-      const cmd = parsed && { ...parsed, name: entry?.name ?? parsed.name }
+      // TAL-1927: the server decides what the text does. A decision that arrives after the chat changed or the draft was
+      // edited acts on nothing; the draft stays for the user to send again.
+      const decisionScope = getStreamContext()
+      let decision: CommandDecision
+      try { decision = await commandDecision.decide(value) } catch (e) { showErrorToast(e); return }
+      if (decisionScope !== getStreamContext() || textarea.current?.value.trim() !== value) return
+      // TAL-314: a command Web cannot run shows the server's message and keeps the text.
+      if (decision.kind === 'unsupported') { showToast(decision.message, 3000); return }
+      // TAL-561: a command the server runs shows its output behind a composer chip; it never reaches the model.
+      if (decision.kind === 'exec') { setText(''); void runCommand(value); return }
+      const cmd = decision.kind === 'client' ? decision : null
       if (cmd) {
         if (cmd.name === 'theme') { const v = ThemeSchema.safeParse(cmd.args); if (v.success) setTheme(v.data); setText(''); return }
         // A refused command (e.g. `/goal gate add` without a goal) shows the server's reason and keeps the text.
@@ -894,7 +898,7 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
     ...(sessionId && (queued.length > 0 || ownerInputs) ? [{ id: 'queue', tone: outcomeUnknown ? 'warning' as const : undefined, content: <><ListPlus size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{outcomeUnknown ? m.owner_outcome_unknown() : m.queued_count({ n: queued.length + ownerInputs })}</span></>, detail: { title: ownerInputs ? m.owner_inputs() : m.queued_count({ n: queued.length }), content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} pendingId={intent.send?.queueId} admissions={admissions} onAdmissionAction={props.onOwnerAction} /> } }] : []),
   ]
   // A `/btw` draft asks beside the turn instead of steering, queueing or interrupting it (TAL-518).
-  const plainBusySend = nativeOwner || parseCommand(text)?.name === 'btw'
+  const plainBusySend = nativeOwner || commandDecision.shownClient === 'btw'
   const shownMode = intent.stop ? 'queue' : effectiveMode
   const busyLabel = plainBusySend ? m.composer_send() : shownMode === 'queue' ? m.composer_queue() : shownMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
   const stopping = busy || !!intent.stop

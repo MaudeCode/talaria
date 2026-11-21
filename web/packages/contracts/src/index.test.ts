@@ -1,4 +1,4 @@
-import { AcceptedSourceReferenceSchema, ApprovalPendingSchema, BackgroundLinkSchema, ApprovalRespondRequestSchema, ApprovalRespondResponseSchema, AuxiliaryReasoningSchema, SessionNewRequestSchema } from './views.js'
+import { AcceptedSourceReferenceSchema, ApprovalPendingSchema, CommandDecisionSchema, BackgroundLinkSchema, ApprovalRespondRequestSchema, ApprovalRespondResponseSchema, AuxiliaryReasoningSchema, SessionNewRequestSchema } from './views.js'
 import { settingsContract, ReasoningUnsupportedSchema } from './routes/settings.js'
 import { SessionStreamEventSchema } from './sse.js'
 import { RpcRequestSchema } from './sidecar/rpc.js'
@@ -22,6 +22,11 @@ describe('contracts package', () => {
     const event = ChatEventSchema.parse({ event: 'todo_state', data: { session_id: 'native-todo', ...state } })
     expect(event.data).toMatchObject(fixture.public)
     expect(SessionSchema.parse({ ...fixture.session, todo_state: undefined }).todo_state).toBeUndefined()
+  })
+  it('parses every shared command decision and refuses one without its fields (TAL-1927)', () => {
+    const { cases } = shared('fixtures/command-decisions.json') as { cases: { decision: unknown }[] }
+    for (const { decision } of cases) expect(CommandDecisionSchema.parse(decision)).toEqual(decision)
+    expect(CommandDecisionSchema.safeParse({ kind: 'unsupported', name: 'agents' }).success).toBe(false)
   })
   it('pins server reasoning visibility and the older-server fallback', () => {
     const fixture = shared('fixtures/reasoning-display.json') as Record<string, unknown>

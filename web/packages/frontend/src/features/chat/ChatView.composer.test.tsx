@@ -34,6 +34,7 @@ vi.mock('../../api/endpoints', async (original) => ({
   fetchTranscribeCapability: () => Promise.resolve({ streaming: false }),
   fetchBackgroundTasks: () => Promise.resolve({ tasks: [] }),
   fetchCommands: () => Promise.resolve({ commands: [] }),
+  classifyCommand: vi.fn(() => Promise.resolve({ kind: 'text' })),
   fetchModels: () => Promise.resolve({ models: [], groups: [] }),
   fetchToolsetsCatalog: () => Promise.resolve({ toolsets: [] }),
   fetchDraft: () => Promise.resolve({ draft: { text: '' }, draft_version: '0' }),
@@ -175,6 +176,7 @@ it.each(['high', 'default'])('routes native /reasoning %s with the current conve
   const view = render(<QueryClientProvider client={qc}><ChatView sessionId={session.session_id} /></QueryClientProvider>)
   await waitFor(() => expect(qc.isFetching()).toBe(0))
   expect(view.container.querySelector('.composer-reasoning-wrap')).not.toBeInTheDocument()
+  vi.mocked(api.classifyCommand).mockResolvedValue({ kind: 'client', name: 'reasoning', args: effort })
   fireEvent.change(screen.getByRole('textbox'), { target: { value: `/reasoning ${effort}` } })
   fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', code: 'Enter' })
   await waitFor(() => expect(adapter.calls.filter((call) => call.url.pathname.endsWith('/api/reasoning'))).toHaveLength(1))
@@ -202,6 +204,7 @@ it.each([
   qc.setQueryData(keys.sessions.detail(session.session_id), { session })
   const view = render(<QueryClientProvider client={qc}><ChatView sessionId={session.session_id} /></QueryClientProvider>)
   await waitFor(() => expect(qc.isFetching()).toBe(0))
+  vi.mocked(api.classifyCommand).mockResolvedValue({ kind: 'client', name: 'reasoning', args: 'hide' })
   fireEvent.change(screen.getByRole('textbox'), { target: { value: '/reasoning hide' } })
   fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', code: 'Enter' })
   await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue(''))

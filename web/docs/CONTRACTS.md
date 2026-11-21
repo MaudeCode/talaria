@@ -107,8 +107,8 @@ have (a `monitor` that is not a URL, or `monitor_script`), or delivering to a
 Group Chat room (`room:`), is refused with the same 403. The server ships the
 matching capability fields: `GET /api/mcp/servers` answers a non-owner with
 `toggle_supported: false` and every row's `can_toggle`, `events.can_edit` and
-`cost_policy.can_edit` false, and `GET /api/commands` lists `/terminal` for no
-client. Web hides Terminal, provider setup, MCP edits and a task's script
+`cost_policy.can_edit` false, `GET /api/commands` lists `/terminal` for no
+client, and `POST /api/commands/classify` answers `/terminal` as unsupported. Web hides Terminal, provider setup, MCP edits and a task's script
 fields by `auth.can_manage_server` and those fields; a non-owner's task save
 leaves `script` and `no_agent` out, so the stored values stay.
 
