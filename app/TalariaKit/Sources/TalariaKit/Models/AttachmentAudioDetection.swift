@@ -1,9 +1,8 @@
 import Foundation
 import UniformTypeIdentifiers
 
-/// Pure, testable audio-attachment detection shared by the chat bubble and the
-/// full-screen attachment preview. Mirrors the image-detection rules used by
-/// `GridAttachmentCell.inferredIsImage` / `ChatAttachmentPreviewItem.inferredIsImage`.
+/// Audio detection for an attachment without the server's `kind` (TAL-2507): a device-picked or optimistic
+/// attachment, or one from an older server. Mirrors `ChatAttachmentPreviewItem.isLocalImage`.
 public enum AttachmentAudioDetection {
     /// File extensions we treat as audio. `AVAudioPlayer` natively decodes the
     /// first group (m4a/mp3/wav/aac/caf); ogg/oga/opus/flac are still detected
@@ -100,8 +99,15 @@ public enum AudioDurationFormatter {
 }
 
 extension MessageAttachment {
-    /// Whether this attachment should render as a playable audio clip.
+    /// Whether this attachment should render as a playable audio clip: the server's `kind`, else the local check.
     public var inferredIsAudio: Bool {
-        AttachmentAudioDetection.isAudio(isImage: isImage, mime: mime, name: name, path: path)
+        if let kind { return kind == .audio }
+        return AttachmentAudioDetection.isAudio(isImage: isImage, mime: mime, name: name, path: path)
+    }
+
+    /// Whether this attachment should render as an image: the server's `kind`, else the local check.
+    public var inferredIsImage: Bool {
+        if let kind { return kind == .image }
+        return ChatAttachmentPreviewItem.isLocalImage(isImage: isImage, mime: mime, name: name, path: path)
     }
 }

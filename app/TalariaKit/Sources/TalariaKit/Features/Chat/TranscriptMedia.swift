@@ -5,6 +5,16 @@ public enum TranscriptMediaKind: String, Codable, Equatable, Sendable {
     case audio
     case video
     case unsupported
+
+    /// The server's `kind` (`DisplayMedia.kind`); a kind the App does not play (`pdf`, `file`, `model`) is unsupported.
+    init(serverValue: String) {
+        self = switch serverValue {
+        case "image": .image
+        case "audio": .audio
+        case "video": .video
+        default: .unsupported
+        }
+    }
 }
 
 /// One media item the server resolved in a message's text (`_media`, TAL-186). The server decides
@@ -68,13 +78,9 @@ public struct TranscriptMediaReference: Codable, Equatable, Identifiable, Sendab
                 if case let .string(value)? = object[key] { return value }
                 return ""
             }
-            let kind: TranscriptMediaKind = switch string("kind") {
-            case "image": .image
-            case "audio": .audio
-            case "video": .video
-            default: .unsupported
-            }
-            return TranscriptMediaReference(url: url, name: string("name"), mime: string("mime"), mediaKind: kind)
+            return TranscriptMediaReference(
+                url: url, name: string("name"), mime: string("mime"), mediaKind: TranscriptMediaKind(serverValue: string("kind"))
+            )
         }
     }
 }

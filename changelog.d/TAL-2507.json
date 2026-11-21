@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web now shows images in older or imported chats as images instead of file links, and the App and Web show each attachment the way your server classifies it.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

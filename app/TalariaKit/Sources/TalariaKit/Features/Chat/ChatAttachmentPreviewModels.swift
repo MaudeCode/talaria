@@ -8,6 +8,7 @@ public struct ChatAttachmentPreviewItem: Identifiable, Equatable, Sendable {
     public let mime: String?
     public let size: Int?
     let isImage: Bool?
+    let kind: TranscriptMediaKind?
     let localImageData: Data?
 
     public init(message attachment: MessageAttachment, localData: Data?) {
@@ -16,6 +17,7 @@ public struct ChatAttachmentPreviewItem: Identifiable, Equatable, Sendable {
         mime = attachment.mime
         size = attachment.size
         isImage = attachment.isImage
+        kind = attachment.kind
         localImageData = localData
     }
 
@@ -25,6 +27,7 @@ public struct ChatAttachmentPreviewItem: Identifiable, Equatable, Sendable {
         mime = attachment.mime
         size = attachment.size
         isImage = attachment.isImage
+        kind = nil
         localImageData = attachment.thumbnailData
     }
 
@@ -52,13 +55,21 @@ public struct ChatAttachmentPreviewItem: Identifiable, Equatable, Sendable {
     }
 
     public var inferredIsImage: Bool {
-        if isImage == true { return true }
-        if let mime = mime?.lowercased(), mime.hasPrefix("image/") { return true }
-        return Self.imageExtensions.contains(pathExtension)
+        if let kind { return kind == .image }
+        return Self.isLocalImage(isImage: isImage, mime: mime, name: name, path: path)
     }
 
     var inferredIsAudio: Bool {
-        AttachmentAudioDetection.isAudio(isImage: isImage, mime: mime, name: name, path: path)
+        if let kind { return kind == .audio }
+        return AttachmentAudioDetection.isAudio(isImage: isImage, mime: mime, name: name, path: path)
+    }
+
+    /// Image detection for an attachment without the server's `kind` (TAL-2507): a device-picked or optimistic
+    /// attachment, or one from an older server.
+    static func isLocalImage(isImage: Bool?, mime: String?, name: String?, path: String?) -> Bool {
+        if isImage == true { return true }
+        if let mime = mime?.lowercased(), mime.hasPrefix("image/") { return true }
+        return imageExtensions.contains(URL(fileURLWithPath: name ?? path ?? "").pathExtension.lowercased())
     }
 
     var isKnownUnsupportedBinary: Bool {

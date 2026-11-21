@@ -33,24 +33,11 @@ struct GridAttachmentCell: View {
 
     @ViewBuilder
     private var cellContent: some View {
-        if inferredIsImage {
+        if attachment.inferredIsImage {
             imageCell
         } else {
             fileCell
         }
-    }
-
-    private var inferredIsImage: Bool {
-        // Explicit server flag is the strongest signal.
-        if attachment.isImage == true { return true }
-
-        // Fall back to MIME type (e.g. "image/jpeg").
-        if let mime = attachment.mime?.lowercased(), mime.hasPrefix("image/") { return true }
-
-        // Fall back to file extension for older sessions where the server
-        // did not persist `is_image`.
-        let ext = URL(fileURLWithPath: attachment.name ?? resolvedPath ?? "").pathExtension.lowercased()
-        return ["jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "tiff", "tif"].contains(ext)
     }
 
     @ViewBuilder

@@ -14,6 +14,7 @@ import { escapeWorkspacePrefixPath, stripWorkspacePrefix, userPromptText } from 
 
 export { escapeWorkspacePrefixPath, WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './prompt-text.js'
 import { toolResultMedia, toolScreenshotMedia, type MediaProjection } from '../workspace/media-refs.js'
+import { attachmentKind } from '../workspace/upload.js'
 import { codeExcerpt, DATA_URL_RE, decidedEditDiff, decisionReviewRef, humanControlRows, outboundDraftRef, outcomeValue, pageExcerpt, proposalRef, readFileView, resultAnalysisView, resultLinksView, resultPagesView, searchFilesView, showBlockRef, terminalRef, toolArgs, toolCallOutcome, toolEditDiff, toolName, toolPresentation, toolRowsView, toolTextRows } from './tool-display.js'
 import { sourceKind } from './source-kind.js'
 
@@ -1558,16 +1559,18 @@ export function withoutRunningTurnOutput(rows: Message[], turn: { localCount: nu
 }
 
 /**
+ * Attachments as a client receives them: in a transcript, as pending files, and in a retry or edit reply.
  * TAL-277: the Python server stored attachments as bare filenames. Ship each as a filename-only object; it gets no `path`,
  * so clients never build a file URL from an untrusted name. Anything else passes through for output validation to judge.
+ * TAL-2507: each object carries the server-classified display `kind`. Admission drops it when a client sends one back.
  */
-export function attachmentObjects(items: unknown[]): unknown[] {
-  return items.map((a) => (typeof a === 'string' ? { name: a, filename: a } : a))
+export function attachmentViews(items: unknown[]): unknown[] {
+  return items.map((a) => (typeof a === 'string' ? { name: a, filename: a } : a)).map((a) => (isDict(a) ? { ...a, kind: attachmentKind(a) } : a))
 }
 
-/** `attachmentObjects` over every message's attachments. Returns copies; stored rows are untouched. */
+/** `attachmentViews` over every message's attachments. Returns copies; stored rows are untouched. */
 export function withAttachmentObjects<T>(messages: T[]): T[] {
-  return messages.map((m) => (isDict(m) && Array.isArray(m.attachments) && m.attachments.some((a) => typeof a === 'string') ? { ...m, attachments: attachmentObjects(m.attachments) } : m))
+  return messages.map((m) => (isDict(m) && Array.isArray(m.attachments) && m.attachments.length ? { ...m, attachments: attachmentViews(m.attachments) } : m))
 }
 
 /** A scene's prose rows with `display_text` and `media` where `project` rewrites their text; the same array when none does. */

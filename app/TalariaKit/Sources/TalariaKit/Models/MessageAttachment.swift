@@ -6,19 +6,23 @@ public struct MessageAttachment: Codable, Equatable, Sendable {
     public let mime: String?
     public let size: Int?
     public let isImage: Bool?
+    /// The server's display kind (TAL-2507); nil for a device-built attachment or one from an older server.
+    public let kind: TranscriptMediaKind?
 
     public init(
         name: String? = nil,
         path: String? = nil,
         mime: String? = nil,
         size: Int? = nil,
-        isImage: Bool? = nil
+        isImage: Bool? = nil,
+        kind: TranscriptMediaKind? = nil
     ) {
         self.name = name
         self.path = path
         self.mime = mime
         self.size = size
         self.isImage = isImage
+        self.kind = kind
     }
 
     public init(from decoder: Decoder) throws {
@@ -33,6 +37,7 @@ public struct MessageAttachment: Codable, Equatable, Sendable {
             self.mime = nil
             self.size = nil
             self.isImage = nil
+            self.kind = nil
             return
         }
 
@@ -43,6 +48,7 @@ public struct MessageAttachment: Codable, Equatable, Sendable {
         self.mime = container.decodeLossyStringIfPresent(forKey: .mime)
         self.size = container.decodeLossyIntIfPresent(forKey: .size)
         self.isImage = container.decodeLossyBoolIfPresent(forKey: .isImage)
+        self.kind = container.decodeLossyStringIfPresent(forKey: .kind).map(TranscriptMediaKind.init(serverValue:))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -52,6 +58,7 @@ public struct MessageAttachment: Codable, Equatable, Sendable {
         try container.encodeIfPresent(mime, forKey: .mime)
         try container.encodeIfPresent(size, forKey: .size)
         try container.encodeIfPresent(isImage, forKey: .isImage)
+        try container.encodeIfPresent(kind?.rawValue, forKey: .kind)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -61,6 +68,7 @@ public struct MessageAttachment: Codable, Equatable, Sendable {
         case mime
         case size
         case isImage
+        case kind
     }
 }
 

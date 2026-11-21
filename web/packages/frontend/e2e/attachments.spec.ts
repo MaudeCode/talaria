@@ -26,7 +26,7 @@ async function mockSession(page: Page, sid: string, uploads: string[] = []) {
     const filename = uploadName(route.request())
     const path = `/tmp/${target}/${filename}`
     uploadedPaths.add(JSON.stringify([target, path]))
-    await route.fulfill({ json: { filename, path, size: PNG.length, mime: 'image/png', is_image: true } })
+    await route.fulfill({ json: { filename, path, size: PNG.length, mime: 'image/png', is_image: true, kind: 'image' } })
   })
   return uploads
 }
@@ -167,7 +167,7 @@ test('removing a chip while it uploads rolls the late upload back', async ({ pag
   await mockSession(page, 'inflight')
   let release!: () => void
   const held = new Promise<void>((resolve) => { release = resolve })
-  await page.route('**/api/upload?**', async (route) => { await held; await route.fulfill({ json: { filename: 'late.png', path: '/tmp/late.png', size: PNG.length, mime: 'image/png', is_image: true, rollback_token: 'tok-late' } }) })
+  await page.route('**/api/upload?**', async (route) => { await held; await route.fulfill({ json: { filename: 'late.png', path: '/tmp/late.png', size: PNG.length, mime: 'image/png', is_image: true, kind: 'image', rollback_token: 'tok-late' } }) })
   const rolledBack: unknown[] = []
   await page.route('**/api/upload/rollback', async (route) => { rolledBack.push(route.request().postDataJSON()); await route.fulfill({ json: { ok: true, rolled_back: 1, failed: 0 } }) })
   await page.goto('/session/inflight')
@@ -225,7 +225,7 @@ test('opening another chat while a new chat is created leaves the hand-off to th
   await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
   await page.route('**/api/upload**', async (route) => {
     uploads.push(new URL(route.request().url()).searchParams.get('session_id') ?? '')
-    await route.fulfill({ json: { filename: 'h.png', path: '/tmp/h.png', size: PNG.length, mime: 'image/png', is_image: true } })
+    await route.fulfill({ json: { filename: 'h.png', path: '/tmp/h.png', size: PNG.length, mime: 'image/png', is_image: true, kind: 'image' } })
   })
   let release!: () => void
   const held = new Promise<void>((resolve) => { release = resolve })
@@ -255,7 +255,7 @@ test('a failed upload stays as an error chip that can be retried or removed', as
   let fail = true
   await page.route('**/api/upload**', async (route) => {
     if (fail) { await route.fulfill({ status: 500, json: { error: 'synthetic upload failure' } }); return }
-    await route.fulfill({ json: { filename: 'r.png', path: '/tmp/r.png', size: PNG.length, mime: 'image/png', is_image: true } })
+    await route.fulfill({ json: { filename: 'r.png', path: '/tmp/r.png', size: PNG.length, mime: 'image/png', is_image: true, kind: 'image' } })
   })
   await page.goto('/session/retry')
   await page.locator('#fileInput').setInputFiles([image('flaky.png'), image('gone.png')])
@@ -281,7 +281,7 @@ test('staged files and their retry stay with their chat when another chat opens 
     const filename = uploadName(route.request())
     uploads.push(`${new URL(route.request().url()).searchParams.get('session_id') ?? ''}/${filename}`)
     if (filename === 'offline.txt' && offline) { await route.fulfill({ status: 500, json: { error: 'synthetic upload failure' } }); return }
-    await route.fulfill({ json: { filename, path: `/tmp/${filename}`, size: PNG.length, mime: filename.endsWith('.png') ? 'image/png' : 'text/plain', is_image: filename.endsWith('.png') } })
+    await route.fulfill({ json: { filename, path: `/tmp/${filename}`, size: PNG.length, mime: filename.endsWith('.png') ? 'image/png' : 'text/plain', is_image: filename.endsWith('.png'), kind: filename.endsWith('.png') ? 'image' : 'file' } })
   })
   const shot = async (name: string) => { if (process.env.TAL1074_SHOTS) await page.screenshot({ path: `${process.env.TAL1074_SHOTS}/${name}-${info.project.name}.png` }) }
   const open = (sid: string) => page.evaluate((path) => { history.pushState({}, '', path); dispatchEvent(new PopStateEvent('popstate')) }, `/session/${sid}`)
