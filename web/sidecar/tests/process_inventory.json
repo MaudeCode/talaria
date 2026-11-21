@@ -1516,6 +1516,13 @@
         ""
       ]
     },
+    "tests/test_goals_dispatch.py::test_kickoff_carries_the_completion_contract": {
+      "layer": "compatibility",
+      "reason": "A goal's first kickoff must carry the completion contract the supported Agent's dispatch_goal_command parsed and persisted, rendered by its own render_block, while a resume continuation keeps it once and a plain goal stays unchanged (TAL-2315). Real sidecar on a disposable home.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_goals_dispatch.py::test_running_turn_refuses_only_goal_setting_text": {
       "layer": "compatibility",
       "reason": "While a turn runs, goals.command must refuse only text the supported Agent classifies as setting a goal, and resume must start the Agent's continuation turn only when idle. Real sidecar on a disposable home.",
