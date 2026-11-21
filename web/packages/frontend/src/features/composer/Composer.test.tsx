@@ -1009,6 +1009,7 @@ describe('Composer', () => {
     ['nothing', 1, '/reload_skills'],
     ['the draft', 0, '/reload_skills now'],
     ['the chat', 0, '/reload_skills'],
+    ['the attachments', 0, '/reload_skills'],
   ] as const)('runs a late decision once, and not at all after %s changed', async (changed, runs, left) => {
     const decision = deferred<CommandDecision>()
     vi.mocked(api.classifyCommand).mockReturnValue(decision.promise)
@@ -1020,9 +1021,15 @@ describe('Composer', () => {
     fireEvent.keyDown(box, { key: 'Enter' })
     if (changed === 'the draft') fireEvent.change(box, { target: { value: left } })
     if (changed === 'the chat') act(() => resetConnectionsForTests())
+    if (changed === 'the attachments') {
+      vi.mocked(api.uploadFile).mockResolvedValue({ filename: 'late.txt', path: '/synthetic/late.txt', size: 1, mime: 'text/plain' })
+      fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: [new File(['x'], 'late.txt', { type: 'text/plain' })] } })
+      await waitFor(() => expect(document.querySelector('.attach-tray [data-status="done"]')).not.toBeNull())
+    }
     await act(async () => { decision.resolve({ kind: 'exec', name: 'reload-skills', args: '' }); await decision.promise })
     await waitFor(() => expect(api.execCommand).toHaveBeenCalledTimes(runs))
     expect(box).toHaveValue(runs ? '' : left)
+    if (changed === 'the attachments') expect(screen.getByRole('button', { name: 'Remove late.txt' })).toBeVisible()
   })
 
   it('keeps the draft when classifying fails, and never replays a start whose outcome is unknown (TAL-1927)', async () => {

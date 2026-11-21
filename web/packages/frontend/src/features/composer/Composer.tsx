@@ -17,7 +17,7 @@ import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { useCommandDecision, type CommandSuggestion } from './commands'
 import { ContextRing, QuotaChip, type ContextFigures } from './chips'
 import { ComposerControls, chatModelChoice, hideComposerControl, quotaChipShown } from './ComposerControls'
-import { beginUpload, clearDraft, dropStagedFiles, finishUpload, moveStagedFiles, readLocalDraft, useDraftPersistence, useServerDraft, useStagedFiles } from './useDraft'
+import { beginUpload, clearDraft, dropStagedFiles, finishUpload, moveStagedFiles, readLocalDraft, stagedFiles, useDraftPersistence, useServerDraft, useStagedFiles } from './useDraft'
 import { createRecognition, dictationSupported, classifyDictationError, type DictationErrorKind } from '../voice/dictation'
 import { dictateLive, liveDictationErrorKind, liveDictationSupported, type LiveDictationHandle } from '../voice/liveDictation'
 import { useExecutionModesQuery, useTranscribeCapabilityQuery } from '../../app/queries'
@@ -644,12 +644,12 @@ export function Composer(input: ComposerProps | RoomComposerProps) {
         setFiles([])
         void cancelTurn(sessionId)
       }
-      // TAL-1927: the server decides what the text does. A decision that arrives after the chat changed or the draft was
-      // edited acts on nothing; the draft stays for the user to send again.
+      // TAL-1927: the server decides what the text does. A decision that arrives after the chat changed, or after the draft's
+      // text or attachments changed, acts on nothing; the draft stays for the user to send again.
       const decisionScope = getStreamContext()
       let decision: CommandDecision
       try { decision = await commandDecision.decide(value) } catch (e) { showErrorToast(e); return }
-      if (decisionScope !== getStreamContext() || textarea.current?.value.trim() !== value) return
+      if (decisionScope !== getStreamContext() || textarea.current?.value.trim() !== value || stagedFiles(trayId) !== files) return
       // TAL-314: a command Web cannot run shows the server's message and keeps the text.
       if (decision.kind === 'unsupported') { showToast(decision.message, 3000); return }
       // TAL-561: a command the server runs shows its output behind a composer chip; it never reaches the model.

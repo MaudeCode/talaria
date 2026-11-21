@@ -30,4 +30,3 @@ describe('suggestCommands', () => {
     expect(suggestCommands('b', catalog).map((c) => c.name)).toEqual(['branch', 'background'])
   })
 })
-
