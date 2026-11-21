@@ -173,6 +173,22 @@ final class AppLockHostedTests: XCTestCase {
         withExtendedLifetime(window) {}
     }
 
+    /// TAL-2623: Add Server for a server already in the list shows that server's own identity, so Add keeps it.
+    func testAddServerForAListedServerShowsItsOwnIdentity() async throws {
+        let fixture = try FixtureApp(for: self)
+        let auth = fixture.environment.authManager
+        let account = try XCTUnwrap(auth.servers.first)
+        auth.updateServerIdentity(account, displayName: "Home Lab", initials: "HL", headerLogoColorHex: account.headerLogoColorHex)
+        auth.flushServerIdentityEdits()
+        let window = try hostWindow(AddServerView(
+            authManager: auth,
+            prefill: TalariaDeepLink.AddServer(url: account.urlString, password: "p", name: "Phone test")
+        ))
+
+        let name = await awaitElement(in: window) { $0.accessibilityValue == "Home Lab" }
+        XCTAssertNotNil(name, "The listed server's name replaces the link's")
+    }
+
     /// TAL-2623: App Store and TestFlight builds never open a link that carries a password.
     func testOtherBuildsIgnoreAnAddServerLink() async throws {
         let router = AppIntentRouter()

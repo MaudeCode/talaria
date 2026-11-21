@@ -35,6 +35,12 @@ struct AddServerView: View {
         (try? AuthManager.normalizedServerURL(from: serverURLString))?.host ?? ""
     }
 
+    /// A server already in the list, which Add signs in again (TAL-2623).
+    private var registeredAccount: ServerAccount? {
+        guard let url = try? AuthManager.normalizedServerURL(from: serverURLString) else { return nil }
+        return authManager.servers.first { $0.id == url.absoluteString }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -102,6 +108,13 @@ struct AddServerView: View {
             }
         }
         .adaptiveFormPresentation()
+        // Signing a listed server in again keeps its identity unless it is edited here.
+        .onChange(of: registeredAccount?.id, initial: true) {
+            guard let account = registeredAccount else { return }
+            displayName = account.displayName
+            initials = account.initials
+            colorHex = account.headerLogoColorHex
+        }
     }
 
     @ViewBuilder
