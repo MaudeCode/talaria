@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 public protocol InsightsDataClient: Sendable {
-    func insights(days: Int) async throws -> InsightsResponse
+    func insights(days: Int, start: String?, end: String?) async throws -> InsightsResponse
 }
 
 extension APIClient: InsightsDataClient {}
@@ -12,6 +12,8 @@ public enum AnalyticsTimeframe: String, CaseIterable, Identifiable, Sendable {
     case last7Days
     case last30Days
     case allTime
+    /// TAL-1117: the picked start and end days, resolved by the server.
+    case custom
 
     public var id: String { rawValue }
 
@@ -25,6 +27,8 @@ public enum AnalyticsTimeframe: String, CaseIterable, Identifiable, Sendable {
             String(localized: "Last 30 Days")
         case .allTime:
             String(localized: "All Time")
+        case .custom:
+            String(localized: "Custom")
         }
     }
 
@@ -34,9 +38,11 @@ public enum AnalyticsTimeframe: String, CaseIterable, Identifiable, Sendable {
         case .last7Days: String(localized: "7 Days")
         case .last30Days: String(localized: "30 Days")
         case .allTime: String(localized: "All Time")
+        case .custom: String(localized: "Custom")
         }
     }
 
+    /// The `days` preset sent with each request; a custom range falls back to the server's default window.
     var serverDays: Int {
         switch self {
         case .today:
@@ -47,7 +53,37 @@ public enum AnalyticsTimeframe: String, CaseIterable, Identifiable, Sendable {
             30
         case .allTime:
             365
+        case .custom:
+            30
         }
+    }
+}
+
+/// TAL-1117: a custom range's start and end days as picked (`YYYY-MM-DD`); the server validates and resolves them.
+public struct InsightsCustomRange: Hashable, Sendable {
+    public var start: String
+    public var end: String
+
+    public init(start: String, end: String) {
+        self.start = start
+        self.end = end
+    }
+}
+
+/// One `/api/insights` read: its request and its cache identity.
+public struct InsightsRequest: Hashable, Sendable {
+    public let timeframe: AnalyticsTimeframe
+    public let custom: InsightsCustomRange?
+
+    public init(timeframe: AnalyticsTimeframe, custom: InsightsCustomRange? = nil) {
+        self.timeframe = timeframe
+        self.custom = timeframe == .custom ? custom : nil
+    }
+
+    /// Presets keep the keys cached before custom ranges existed; a custom range adds its days.
+    var cacheKey: String {
+        guard let custom else { return timeframe.rawValue }
+        return "\(timeframe.rawValue)|\(custom.start)|\(custom.end)"
     }
 }
 
@@ -56,7 +92,9 @@ public enum AnalyticsTimeframe: String, CaseIterable, Identifiable, Sendable {
 public final class InsightsViewModel {
     private(set) var serverInsights: InsightsResponse?
     public var selectedTimeframe: AnalyticsTimeframe = .last30Days
-    private(set) var loadedTimeframe: AnalyticsTimeframe = .last30Days
+    /// The custom range being picked; kept across preset switches so Custom comes back with it.
+    public var customRange: InsightsCustomRange?
+    private(set) var loadedRequest = InsightsRequest(timeframe: .last30Days)
     public private(set) var isLoading = false
     public private(set) var errorMessage: String?
     public private(set) var lastError: Error?
@@ -80,19 +118,33 @@ public final class InsightsViewModel {
         self.client = client
         self.cache = cache
         self.sleep = sleep
-        if let response = cache?.load(timeframe: selectedTimeframe) {
+        if let response = cache?.load(request) {
             serverInsights = response
-            loadedTimeframe = selectedTimeframe
+            loadedRequest = request
         }
+    }
+
+    /// The read the current selection asks for; a view reloads when it changes.
+    public var request: InsightsRequest {
+        InsightsRequest(timeframe: selectedTimeframe, custom: customRange)
+    }
+
+    /// Picks a period. A first Custom starts from the range on screen.
+    public func select(_ timeframe: AnalyticsTimeframe) {
+        if timeframe == .custom, customRange == nil,
+           let range = serverInsights?.range, let start = range.startDate, let end = range.endDate {
+            customRange = InsightsCustomRange(start: start, end: end)
+        }
+        selectedTimeframe = timeframe
     }
 
     public func load() async {
         let loadID = UUID()
-        let timeframe = selectedTimeframe
+        let request = request
         activeLoadID = loadID
-        if let cached = cache?.load(timeframe: timeframe) {
+        if let cached = cache?.load(request) {
             serverInsights = cached
-            loadedTimeframe = timeframe
+            loadedRequest = request
         }
         isLoading = true
         errorMessage = nil
@@ -108,12 +160,16 @@ public final class InsightsViewModel {
         var retryDelays = Self.retryDelays[...]
         while true {
             do {
-                let response = try await client.insights(days: timeframe.serverDays)
+                let response = try await client.insights(
+                    days: request.timeframe.serverDays,
+                    start: request.custom?.start,
+                    end: request.custom?.end
+                )
                 guard activeLoadID == loadID, !Task.isCancelled else { return }
 
                 serverInsights = response
-                loadedTimeframe = timeframe
-                cache?.save(response, timeframe: timeframe)
+                loadedRequest = request
+                cache?.save(response, for: request)
                 return
             } catch is CancellationError {
                 return
@@ -193,11 +249,42 @@ public final class InsightsViewModel {
     }
 
     public var periodTitle: String {
-        if serverInsights != nil, loadedTimeframe == .allTime {
+        if let range, range.isCustom,
+           let start = insightsCalendarDay(range.startDate), let end = insightsCalendarDay(range.endDate), start <= end {
+            return (start..<end).formatted(.interval.year().month(.abbreviated).day())
+        }
+        // All Time and a custom request the server served as its preset both name the days served.
+        if serverInsights != nil, loadedRequest.timeframe == .allTime || loadedRequest.timeframe == .custom {
             return String(localized: "Last \(periodDays) Days")
         }
 
-        return loadedTimeframe.title
+        return loadedRequest.timeframe.title
+    }
+
+    /// The server's range for the loaded read; nil from a server that predates custom ranges.
+    public var range: InsightsRange? {
+        serverInsights?.range
+    }
+
+    /// The custom range's time zone, which its days and hours use.
+    public var rangeTimezone: String? {
+        range?.isCustom == true ? range?.timezone : nil
+    }
+
+    /// Why the served range differs from the requested one, as the server reported it.
+    public var rangeNotes: [String] {
+        guard let range else { return [] }
+        var notes: [String] = []
+        switch range.fallbackReason {
+        case "invalid_start": notes.append(String(localized: "Unreadable start date; showing \(periodDays) days"))
+        case "invalid_end": notes.append(String(localized: "Unreadable end date; showing \(periodDays) days"))
+        case "future": notes.append(String(localized: "Start date is in the future; showing \(periodDays) days"))
+        default: break
+        }
+        if range.isCapped {
+            notes.append(String(localized: "Shortened to the last five years"))
+        }
+        return notes
     }
 
     var periodDays: Int {
@@ -241,14 +328,18 @@ public struct InsightsResponseCache {
         self.defaults = defaults
     }
 
-    func load(timeframe: AnalyticsTimeframe) -> InsightsResponse? {
-        payload()[serverKey]?[timeframe.rawValue]
+    func load(_ request: InsightsRequest) -> InsightsResponse? {
+        payload()[serverKey]?[request.cacheKey]
     }
 
-    func save(_ response: InsightsResponse, timeframe: AnalyticsTimeframe) {
+    /// Keeps one custom range per server, beside each preset, so picking dates never grows the cache.
+    func save(_ response: InsightsResponse, for request: InsightsRequest) {
         var payload = payload()
         var serverResponses = payload[serverKey] ?? [:]
-        serverResponses[timeframe.rawValue] = response
+        if request.custom != nil {
+            serverResponses = serverResponses.filter { !$0.key.hasPrefix("\(AnalyticsTimeframe.custom.rawValue)|") }
+        }
+        serverResponses[request.cacheKey] = response
         payload[serverKey] = serverResponses
         defaults.set(try? JSONEncoder().encode(payload), forKey: Self.storageKey)
     }

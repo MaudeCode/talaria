@@ -327,6 +327,12 @@ final class ContractReadinessTests: APIClientTestCase {
                 path: "/api/insights",
                 query: ["days": "30"]
             ),
+            .init(
+                name: "insights custom range",
+                endpoint: .insights(days: 30, start: "2026-03-01", end: "2026-03-03"),
+                path: "/api/insights",
+                query: ["days": "30", "start": "2026-03-01", "end": "2026-03-03"]
+            ),
             .init(name: "cron blueprints", endpoint: .cronBlueprints, path: "/api/cron/blueprints"),
             .init(name: "cron blueprint fill", endpoint: .cronBlueprintFill, path: "/api/cron/blueprints/fill"),
             .init(name: "crons", endpoint: .crons, path: "/api/crons"),

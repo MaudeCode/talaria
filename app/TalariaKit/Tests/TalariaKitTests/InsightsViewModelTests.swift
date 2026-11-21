@@ -170,7 +170,7 @@ final class InsightsViewModelTests: XCTestCase {
         XCTAssertEqual(client.requestedDays, [30, 30, 30, 30])
         XCTAssertEqual(sleeper.delays, [.seconds(1), .seconds(2), .seconds(4)])
         XCTAssertEqual(viewModel.totalTokens, 125)
-        XCTAssertEqual(cache.load(timeframe: .last30Days)?.totalTokens, 125)
+        XCTAssertEqual(cache.load(InsightsRequest(timeframe: .last30Days))?.totalTokens, 125)
         XCTAssertNil(viewModel.errorMessage)
         XCTAssertNil(viewModel.lastError)
         XCTAssertNil(viewModel.fallbackReason)
@@ -191,7 +191,7 @@ final class InsightsViewModelTests: XCTestCase {
         XCTAssertEqual(client.requestedDays.count, 4)
         XCTAssertEqual(sleeper.delays, [.seconds(1), .seconds(2), .seconds(4)])
         XCTAssertEqual(viewModel.totalTokens, 350)
-        XCTAssertEqual(cache.load(timeframe: .last30Days)?.totalTokens, 350)
+        XCTAssertEqual(cache.load(InsightsRequest(timeframe: .last30Days))?.totalTokens, 350)
         XCTAssertNil(viewModel.errorMessage)
         XCTAssertNotNil(viewModel.lastError)
         XCTAssertTrue(viewModel.sourceDescription?.contains("Showing cached server analytics. Refresh failed") == true)
@@ -294,7 +294,7 @@ final class InsightsViewModelTests: XCTestCase {
         XCTAssertEqual(client.requestedDays, [30, 7])
         XCTAssertEqual(viewModel.totalTokens, 125)
         XCTAssertEqual(viewModel.periodTitle, "Last 7 Days")
-        XCTAssertNil(cache.load(timeframe: .last30Days))
+        XCTAssertNil(cache.load(InsightsRequest(timeframe: .last30Days)))
         XCTAssertFalse(viewModel.isLoading)
     }
 
@@ -304,16 +304,16 @@ final class InsightsViewModelTests: XCTestCase {
         let server = URL(string: "https://insights.test")!
         let cache = InsightsResponseCache(server: server, defaults: defaults)
         let otherServer = InsightsResponseCache(server: URL(string: "https://other.test")!, defaults: defaults)
-        cache.save(try insights(tokens: 7), timeframe: .last7Days)
-        otherServer.save(try insights(tokens: 30), timeframe: .last30Days)
+        cache.save(try insights(tokens: 7), for: InsightsRequest(timeframe: .last7Days))
+        otherServer.save(try insights(tokens: 30), for: InsightsRequest(timeframe: .last30Days))
         let client = ScriptedInsightsClient(results: [.success(try insights(tokens: 125))])
         let viewModel = InsightsViewModel(client: client, cache: cache, sleep: RecordingSleeper().sleep)
 
         await viewModel.load()
 
-        XCTAssertEqual(cache.load(timeframe: .last30Days)?.totalTokens, 125)
-        XCTAssertEqual(cache.load(timeframe: .last7Days)?.totalTokens, 7)
-        XCTAssertEqual(otherServer.load(timeframe: .last30Days)?.totalTokens, 30)
+        XCTAssertEqual(cache.load(InsightsRequest(timeframe: .last30Days))?.totalTokens, 125)
+        XCTAssertEqual(cache.load(InsightsRequest(timeframe: .last7Days))?.totalTokens, 7)
+        XCTAssertEqual(otherServer.load(InsightsRequest(timeframe: .last30Days))?.totalTokens, 30)
     }
 
     private func insights(tokens: Int, days: Int = 30) throws -> InsightsResponse {
@@ -329,7 +329,7 @@ final class InsightsViewModelTests: XCTestCase {
 
     private func seededCache(tokens: Int) throws -> InsightsResponseCache {
         let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: try isolatedDefaults())
-        cache.save(try insights(tokens: tokens), timeframe: .last30Days)
+        cache.save(try insights(tokens: tokens), for: InsightsRequest(timeframe: .last30Days))
         return cache
     }
 
@@ -350,7 +350,7 @@ private final class StubInsightsClient: InsightsDataClient {
         self.insightsResult = insightsResult
     }
 
-    func insights(days: Int) async throws -> InsightsResponse {
+    func insights(days: Int, start: String?, end: String?) async throws -> InsightsResponse {
         requestedDays.append(days)
         return try insightsResult.get()
     }
@@ -371,7 +371,7 @@ private final class DelayedInsightsClient: InsightsDataClient {
         self.firstResponse = firstResponse
     }
 
-    func insights(days: Int) async throws -> InsightsResponse {
+    func insights(days: Int, start: String?, end: String?) async throws -> InsightsResponse {
         if let response = firstResponse {
             firstResponse = nil
             return response
@@ -394,36 +394,46 @@ private final class DelayedInsightsClient: InsightsDataClient {
     }
 }
 
+/// The query one `/api/insights` request sent.
+private struct SentInsightsQuery: Hashable {
+    let days: Int
+    var start: String?
+    var end: String?
+}
+
 @MainActor
 private final class ScriptedInsightsClient: InsightsDataClient {
     private var results: [Result<InsightsResponse, Error>]
-    private var pendingContinuation: CheckedContinuation<InsightsResponse, Error>?
-    private(set) var requestedDays: [Int] = []
+    private var pending: [SentInsightsQuery: CheckedContinuation<InsightsResponse, Error>] = [:]
+    private(set) var requests: [SentInsightsQuery] = []
+    var requestedDays: [Int] { requests.map(\.days) }
 
-    /// Answers each request with the next scripted result, then suspends until the test completes it.
+    /// Answers each request with the next scripted result, then holds it until the test completes that query.
     init(results: [Result<InsightsResponse, Error>]) {
         self.results = results
     }
 
-    func insights(days: Int) async throws -> InsightsResponse {
-        requestedDays.append(days)
+    func insights(days: Int, start: String?, end: String?) async throws -> InsightsResponse {
+        let query = SentInsightsQuery(days: days, start: start, end: end)
+        requests.append(query)
         if !results.isEmpty {
             return try results.removeFirst().get()
         }
         return try await withCheckedThrowingContinuation { continuation in
-            pendingContinuation = continuation
+            pending[query] = continuation
         }
     }
 
-    func waitForPendingRequest() async {
-        while pendingContinuation == nil {
+    func waitForPendingRequest(_ query: SentInsightsQuery? = nil) async {
+        while query.map({ pending[$0] == nil }) ?? pending.isEmpty {
             await Task.yield()
         }
     }
 
-    func completePendingRequest(with result: Result<InsightsResponse, Error>) {
-        pendingContinuation?.resume(with: result)
-        pendingContinuation = nil
+    /// Completes the held request for `query`, or the only one held.
+    func completePendingRequest(_ query: SentInsightsQuery? = nil, with result: Result<InsightsResponse, Error>) {
+        guard let query = query ?? pending.keys.first else { return }
+        pending.removeValue(forKey: query)?.resume(with: result)
     }
 }
 
@@ -490,6 +500,7 @@ extension InsightsViewModelTests {
         let components = Calendar.current.dateComponents([.year, .month, .day], from: try XCTUnwrap(days[0].day))
         XCTAssertEqual([components.year, components.month, components.day], [2030, 2, 3])
         XCTAssertNil(days[1].day)
+        XCTAssertEqual(insightsDayText(try XCTUnwrap(days[0].day)), "2030-02-03", "A picked day goes back to the server as the same text")
     }
 }
 
@@ -504,5 +515,141 @@ extension InsightsViewModelTests {
         XCTAssertEqual(moved, ["d", "c", "a", "b", "hidden"])
         XCTAssertEqual(ProviderQuotaOrderSettings.sourceIDs(from: ProviderQuotaOrderSettings.data(moved)), moved)
         XCTAssertEqual(ProviderQuotaOrderSettings.sourceIDs(from: Data()), [])
+    }
+}
+
+// MARK: - Custom ranges (TAL-1118)
+
+extension InsightsViewModelTests {
+    @MainActor
+    func testCustomRangeRequestsThePickedDaysAndNamesTheServedRange() async throws {
+        let custom = try InsightsRangeFixture.load().custom
+        let client = ScriptedInsightsClient(results: [.success(custom.response)])
+        let viewModel = InsightsViewModel(client: client, sleep: RecordingSleeper().sleep)
+        viewModel.customRange = InsightsCustomRange(start: custom.start, end: custom.end)
+        viewModel.select(.custom)
+
+        await viewModel.load()
+
+        XCTAssertEqual(client.requests, [SentInsightsQuery(days: 30, start: custom.start, end: custom.end)])
+        let year = try XCTUnwrap((custom.range["start_date"] as? String)?.prefix(4))
+        XCTAssertTrue(viewModel.periodTitle.contains(year), viewModel.periodTitle)
+        XCTAssertFalse(AnalyticsTimeframe.allCases.map(\.title).contains(viewModel.periodTitle))
+        XCTAssertFalse(viewModel.periodTitle.contains("Days"), viewModel.periodTitle)
+        XCTAssertEqual(viewModel.rangeTimezone, custom.range["timezone"] as? String)
+        XCTAssertEqual(viewModel.rangeNotes, [])
+    }
+
+    @MainActor
+    func testAFallbackNamesThePresetTheServerServedAndWhy() async throws {
+        let fallback = try InsightsRangeFixture.load().fallback
+        let client = ScriptedInsightsClient(results: [.success(fallback.response)])
+        let viewModel = InsightsViewModel(client: client, sleep: RecordingSleeper().sleep)
+        viewModel.customRange = InsightsCustomRange(start: fallback.start, end: fallback.end)
+        viewModel.select(.custom)
+
+        await viewModel.load()
+
+        let days = try XCTUnwrap(fallback.response.periodDays)
+        XCTAssertEqual(viewModel.periodTitle, "Last \(days) Days")
+        XCTAssertNil(viewModel.rangeTimezone)
+        XCTAssertEqual(viewModel.rangeNotes, ["Unreadable start date; showing \(days) days"])
+    }
+
+    @MainActor
+    func testTheCustomDraftStartsFromTheRangeOnScreenAndOutlivesPresetSwitches() async throws {
+        let served = try InsightsRangeFixture.load().fallback
+        let viewModel = InsightsViewModel(
+            client: ScriptedInsightsClient(results: [.success(served.response)]),
+            sleep: RecordingSleeper().sleep
+        )
+        await viewModel.load()
+
+        viewModel.select(.custom)
+        let onScreen = InsightsCustomRange(
+            start: try XCTUnwrap(served.range["start_date"] as? String),
+            end: try XCTUnwrap(served.range["end_date"] as? String)
+        )
+        XCTAssertEqual(viewModel.request, InsightsRequest(timeframe: .custom, custom: onScreen))
+
+        viewModel.customRange?.start = "2025-01-01"
+        viewModel.select(.last7Days)
+        XCTAssertEqual(viewModel.request, InsightsRequest(timeframe: .last7Days))
+        viewModel.select(.custom)
+        XCTAssertEqual(viewModel.customRange, InsightsCustomRange(start: "2025-01-01", end: onScreen.end))
+    }
+
+    @MainActor
+    func testANewerRangeKeepsAnOlderRangesLateAnswerFromCommitting() async throws {
+        let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: try isolatedDefaults())
+        let client = ScriptedInsightsClient(results: [])
+        let viewModel = InsightsViewModel(client: client, cache: cache, sleep: RecordingSleeper().sleep)
+        let older = InsightsCustomRange(start: "2026-03-01", end: "2026-03-03")
+        let newer = InsightsCustomRange(start: "2026-03-01", end: "2026-03-10")
+        viewModel.customRange = older
+        viewModel.select(.custom)
+        let olderLoad = Task { await viewModel.load() }
+        let olderQuery = SentInsightsQuery(days: 30, start: older.start, end: older.end)
+        await client.waitForPendingRequest(olderQuery)
+
+        viewModel.customRange = newer
+        let newerLoad = Task { await viewModel.load() }
+        let newerQuery = SentInsightsQuery(days: 30, start: newer.start, end: newer.end)
+        await client.waitForPendingRequest(newerQuery)
+        client.completePendingRequest(newerQuery, with: .success(try insights(tokens: 200)))
+        await newerLoad.value
+        client.completePendingRequest(olderQuery, with: .success(try insights(tokens: 100)))
+        await olderLoad.value
+
+        XCTAssertEqual(viewModel.totalTokens, 200)
+        XCTAssertEqual(cache.load(InsightsRequest(timeframe: .custom, custom: newer))?.totalTokens, 200)
+        XCTAssertNil(cache.load(InsightsRequest(timeframe: .custom, custom: older)))
+        XCTAssertFalse(viewModel.isLoading)
+    }
+
+    func testCustomRangesCacheApartFromPresetsAndOtherServers() throws {
+        let defaults = try isolatedDefaults()
+        // A preset entry as builds before custom ranges wrote it.
+        defaults.set(Data(#"{"https://insights.test":{"last30Days":{"totalTokens":350}}}"#.utf8), forKey: InsightsResponseCache.storageKey)
+        let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: defaults)
+        let otherServer = InsightsResponseCache(server: URL(string: "https://other.test")!, defaults: defaults)
+        let first = InsightsRequest(timeframe: .custom, custom: InsightsCustomRange(start: "2026-03-01", end: "2026-03-03"))
+        let second = InsightsRequest(timeframe: .custom, custom: InsightsCustomRange(start: "2026-03-04", end: "2026-03-05"))
+
+        cache.save(try insights(tokens: 1), for: first)
+        cache.save(try insights(tokens: 2), for: second)
+
+        XCTAssertEqual(cache.load(InsightsRequest(timeframe: .last30Days))?.totalTokens, 350)
+        XCTAssertNil(cache.load(first), "One custom range per server: a new pick replaces the last")
+        XCTAssertEqual(cache.load(second)?.totalTokens, 2)
+        XCTAssertNil(otherServer.load(second))
+    }
+
+    @MainActor
+    func testAFailedCustomRefreshKeepsShowingOnlyDataThatMatchesItsLabel() async throws {
+        let custom = try InsightsRangeFixture.load().custom
+        let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: try isolatedDefaults())
+        let cached = InsightsRequest(timeframe: .custom, custom: InsightsCustomRange(start: custom.start, end: custom.end))
+        cache.save(custom.response, for: cached)
+        let client = ScriptedInsightsClient(results: [
+            .failure(APIError.http(statusCode: 400, body: nil)),
+            .failure(APIError.http(statusCode: 400, body: nil)),
+        ])
+        let viewModel = InsightsViewModel(client: client, cache: cache, sleep: RecordingSleeper().sleep)
+        viewModel.customRange = cached.custom
+        viewModel.select(.custom)
+
+        await viewModel.load()
+
+        XCTAssertEqual(viewModel.totalTokens, custom.response.totalTokens)
+        XCTAssertTrue(viewModel.sourceDescription?.contains("Refresh failed") == true)
+        let cachedTitle = viewModel.periodTitle
+
+        viewModel.customRange = InsightsCustomRange(start: "2026-01-01", end: "2026-01-31")
+        await viewModel.load()
+
+        XCTAssertEqual(viewModel.totalTokens, custom.response.totalTokens)
+        XCTAssertEqual(viewModel.periodTitle, cachedTitle, "Retained data keeps the label of the range it covers")
+        XCTAssertNil(viewModel.errorMessage)
     }
 }

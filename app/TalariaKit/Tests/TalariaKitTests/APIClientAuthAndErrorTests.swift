@@ -1340,7 +1340,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             SessionNavigationPersistence.save("\(tag)-session", for: server, defaults: defaults)
             defaults.set(false, forKey: SessionRowDisplaySettings.showCliSessionsKey(for: server))
             defaults.set(false, forKey: SessionRowDisplaySettings.showClaudeCodeSessionsKey(for: server))
-            InsightsResponseCache(server: server, defaults: defaults).save(insights, timeframe: .today)
+            InsightsResponseCache(server: server, defaults: defaults).save(insights, for: InsightsRequest(timeframe: .today))
             defaults.set("\(tag)-board", forKey: KanbanFeatureState.browsedBoardKey(for: server))
             draftStore.setDraft("unsent \(tag)", for: .newChat(server: server))
             draftStore.setAttachments(
@@ -1381,7 +1381,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         XCTAssertNil(SessionNavigationPersistence.load(for: signedOut, defaults: defaults))
         XCTAssertNil(defaults.object(forKey: SessionRowDisplaySettings.showCliSessionsKey(for: signedOut)))
         XCTAssertNil(defaults.object(forKey: SessionRowDisplaySettings.showClaudeCodeSessionsKey(for: signedOut)))
-        XCTAssertNil(InsightsResponseCache(server: signedOut, defaults: defaults).load(timeframe: .today))
+        XCTAssertNil(InsightsResponseCache(server: signedOut, defaults: defaults).load(InsightsRequest(timeframe: .today)))
         XCTAssertNil(defaults.string(forKey: KanbanFeatureState.browsedBoardKey(for: signedOut)))
         XCTAssertNil(ResponseCache(server: signedOut, root: responseCacheRoot).entry("projects").load(ProjectsResponse.self))
         XCTAssertEqual(
@@ -1401,7 +1401,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         XCTAssertEqual(SessionNavigationPersistence.load(for: kept, defaults: defaults), "kept-session")
         XCTAssertEqual(defaults.object(forKey: SessionRowDisplaySettings.showCliSessionsKey(for: kept)) as? Bool, false)
         XCTAssertEqual(defaults.object(forKey: SessionRowDisplaySettings.showClaudeCodeSessionsKey(for: kept)) as? Bool, false)
-        XCTAssertEqual(InsightsResponseCache(server: kept, defaults: defaults).load(timeframe: .today), insights)
+        XCTAssertEqual(InsightsResponseCache(server: kept, defaults: defaults).load(InsightsRequest(timeframe: .today)), insights)
         XCTAssertEqual(defaults.string(forKey: KanbanFeatureState.browsedBoardKey(for: kept)), "kept-board")
         let keptDraft = await draftStore.draft(for: .newChat(server: kept))
         XCTAssertEqual(keptDraft?.text, "unsent kept")

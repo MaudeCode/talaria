@@ -272,8 +272,8 @@ extension APIClient {
         try await send(endpoint: .updateNotificationAction(id: id, actionID: actionID), method: "POST", body: UpdateNotificationActionRequest(perform: true))
     }
 
-    public func insights(days: Int) async throws -> InsightsResponse {
-        try await send(endpoint: .insights(days: days), method: "GET")
+    public func insights(days: Int, start: String? = nil, end: String? = nil) async throws -> InsightsResponse {
+        try await send(endpoint: .insights(days: days, start: start, end: end), method: "GET")
     }
 }
 
