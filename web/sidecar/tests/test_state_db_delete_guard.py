@@ -49,22 +49,27 @@ def test_a_live_turn_lease_or_compression_lock_refuses_the_delete(hermes_home) -
     _seed(hermes_home, "cli-a")
     _seed(hermes_home, "cli-b")
     _seed(hermes_home, "cli-c", delegate="cli-c-child")
+    # A compressed delegate's continuation goes with the conversation too, so its compression lock refuses the whole delete.
+    _seed(hermes_home, "cli-d", delegate="cli-d-child")
     _agent(hermes_home, f"""
+        db.end_session("cli-d-child", "compression")
+        db.create_session(session_id="cli-d-child-tip", source="subagent", parent_session_id="cli-d-child")
         assert lease("cli-a", {OTHER_PROCESS!r})
         assert lock("cli-b", {OTHER_PROCESS!r})
         assert lease("cli-c-child", {OTHER_PROCESS!r})
+        assert lock("cli-d-child-tip", {OTHER_PROCESS!r})
     """)
     proc = SidecarProcess(hermes_home)
     try:
-        for sid in ("cli-a", "cli-b", "cli-c"):
+        for sid in ("cli-a", "cli-b", "cli-c", "cli-d"):
             assert _delete(proc, hermes_home, sid) == {"ok": False, "refused": "active_turn"}, sid
     finally:
         proc.close()
     # Nothing was removed: the rows, their transcripts, and the guards the live writer holds all remain.
-    assert sorted(_rows(hermes_home, "SELECT id FROM sessions")) == ["cli-a", "cli-b", "cli-c", "cli-c-child"]
-    assert sorted(_rows(hermes_home, "SELECT DISTINCT session_id FROM messages")) == ["cli-a", "cli-b", "cli-c"]
+    assert sorted(_rows(hermes_home, "SELECT id FROM sessions")) == ["cli-a", "cli-b", "cli-c", "cli-c-child", "cli-d", "cli-d-child", "cli-d-child-tip"]
+    assert sorted(_rows(hermes_home, "SELECT DISTINCT session_id FROM messages")) == ["cli-a", "cli-b", "cli-c", "cli-d"]
     assert sorted(_rows(hermes_home, "SELECT conversation_id FROM session_turn_leases")) == ["cli-a", "cli-c-child"]
-    assert _rows(hermes_home, "SELECT session_id FROM compression_locks") == ["cli-b"]
+    assert sorted(_rows(hermes_home, "SELECT session_id FROM compression_locks")) == ["cli-b", "cli-d-child-tip"]
 
 
 def test_an_expired_guard_is_reclaimed_and_the_delete_proceeds(hermes_home) -> None:
@@ -415,13 +420,11 @@ def test_runtime_delete_cleanup_failure_recovers_after_restart(hermes_home, fail
             hermes_state_media.collect_retired_media = fail_media
         result = state_db.delete_cli_session(Path({str(hermes_home)!r}), "cli-a")
         assert result["ok"] is False
-        if store or {failure!r} != "manifest":
+        if {failure!r} != "manifest":
             assert result["deleted_ids"] == ["cli-a"]
     """)
-    # Before the storage interface the manifest is written inside the delete's transaction, so a failed one keeps the
-    # rows and their files. The storage interface commits first, so a failed manifest cleans the files at once.
-    assert artifact.exists() == (not NATIVE_STORE or failure != "manifest")
-    assert bool(_rows(hermes_home, "SELECT id FROM sessions")) == (not NATIVE_STORE and failure == "manifest")
+    assert artifact.exists()
+    assert bool(_rows(hermes_home, "SELECT id FROM sessions")) == (failure == "manifest")
     assert bool(list(sessions.glob(".cleanup_manifest_*.json"))) == (failure in ("artifact", "media"))
     proc = SidecarProcess(hermes_home)
     try:

@@ -310,6 +310,8 @@ def _process_stale_manifests(home: Path) -> bool:
 
 # The Agent's ``_CHAIN_CAP`` and the server's ``COMPRESSION_CHAIN_CAP``: the most hops a compression-chain walk takes.
 _COMPRESSION_CHAIN_CAP = 1000
+# How long the guards a storage-interface delete takes outlive a sidecar that dies holding them.
+_DELETE_GUARD_TTL_S = 60.0
 # The Agent's local conversation owner receipt, keyed by the conversation's creation id.
 _LOCAL_POLICY_PREFIX = "gateway.local_policy.v1:"
 
@@ -356,14 +358,15 @@ def _legacy_session_db(home: Path):
 
 
 def _delete_conversation(requested: str, home: Path) -> dict:
-    """The storage interface's whole-conversation user delete, as the Agent's own sessions page runs it: the compression
-    chain both ways, every local reset segment and the delegate cascade go in one transaction, kept whole while any of
-    them holds a live turn lease or compression lock, and refused by the retirement fence while queued, started or
-    unknown work owns a row; an owner receipt that does not hold refuses it first. That delete leaves a compressed
-    delegate's continuations, which the Agent's own delete walk reaches, so a second delete takes them; one still under
-    a live lease stays, and the result is not ok, so the server retries. Then the plugin hook and retired media, as the
-    Agent runs them after its own delete, and the cleanup manifest, which owns the transcript files: the Agent's file
-    sweep would also take the legacy name of a live ``session_<id>`` session's own transcript."""
+    """The storage interface's delete of the conversation's whole footprint, the rows the Agent's own canonical delete
+    reaches: the compression chain both ways, every local reset segment, delegate subtrees and their continuations. An
+    owner receipt that does not hold refuses first. The interface has no read of another holder's guards, so the
+    sidecar takes the Agent's turn lease and compression lock on every row under its own holder: any it cannot take is
+    a live writer's, and nothing is removed. Holding them all, it records the cleanup manifest (a failed one removes
+    nothing) and deletes every row in one transaction, which the retirement fence refuses while queued, started or
+    unknown work owns one. Then the plugin hook and retired media, as the Agent runs them after its own delete; the
+    manifest owns the transcript files, since the Agent's file sweep would also take the legacy name of a live
+    ``session_<id>`` session's own transcript."""
     from gateway.session_ingress_media import native_inputs_root
     from persistence import AuthorityRefusal
     from session_retention import collect_retired_media, emit_session_deleted
@@ -371,52 +374,46 @@ def _delete_conversation(requested: str, home: Path) -> dict:
     with scoped_home(home, read_only=True):
         media_root = str(native_inputs_root())
     db = agent_store.acquire(home)
+    holder, leased, locked = f"talaria-sidecar-delete:{uuid.uuid4().hex}", [], []
     try:
         def members(ids: list[str]) -> list[tuple]:
             rows = [row for sid in ids if (row := db.sessions.get(sid)) is not None]
             return [(row.session_id, row.chat_id, row.user_id, row.session_key, row.source, dict(row.model_config)) for row in rows]
 
-        # Outside the delete's transaction, which the interface keeps to itself; the delete re-reads the lineage.
         _check_local_receipt(requested, lambda sid: getattr(db.sessions.get(sid), "chat_id", None), db.state_meta.get, members)
-        reach = db.runtime.delete_footprint(requested, owner=None).targets
-
-        def delete(ids: list[str]):
-            return db.sessions.delete_many(ids, skip_guarded=True, include_compression_chain=True, media_root=media_root)
-
+        reach = [sid for sid in db.runtime.delete_footprint(requested, owner=None).targets if db.sessions.get(sid) is not None]
+        if not reach:
+            return {"ok": _process_stale_manifests(home), "deleted_ids": []}
+        for sid in reach:
+            if not db.coordination.try_acquire_turn_lease(session_id=sid, holder=holder, ttl_seconds=_DELETE_GUARD_TTL_S):
+                raise _ActiveWriteGuard
+            leased.append(sid)
+            if not db.coordination.try_acquire_compression_lock(session_id=sid, holder=holder, ttl_seconds=_DELETE_GUARD_TTL_S):
+                raise _ActiveWriteGuard
+            locked.append(sid)
+        manifest = _write_cleanup_manifest(home, reach)
         try:
-            outcome = delete([requested])
-        except AuthorityRefusal as exc:
-            if exc.reason in ("session_busy", "unknown_execution"):
+            outcome = db.sessions.delete_many(reach, skip_guarded=False, include_compression_chain=False, media_root=media_root)
+        except BaseException as exc:
+            manifest.unlink(missing_ok=True)  # nothing was removed: no files to clean
+            if isinstance(exc, AuthorityRefusal) and exc.reason in ("session_busy", "unknown_execution"):
                 raise _ActiveWriteGuard from exc
             raise
-        if outcome.skipped_guarded:
-            raise _ActiveWriteGuard
-        deleted_ids, ok = list(outcome.removed_ids), True
-        if leftover := [sid for sid in reach if sid not in deleted_ids and db.sessions.get(sid) is not None]:
-            try:
-                extra = delete(leftover)
-                deleted_ids += [sid for sid in extra.removed_ids if sid not in deleted_ids]
-                ok = not extra.skipped_guarded
-            except AuthorityRefusal as exc:  # committed above; the busy rows stay for the next delete
-                log.warning("Kept %d busy rows of a deleted conversation: %s", len(leftover), exc.reason)
-                ok = False
-        try:
-            if deleted_ids:
-                _write_cleanup_manifest(home, deleted_ids)
-        except OSError:  # committed: clean the files now, without a retry record
-            log.warning("Failed to record the session delete's cleanup manifest", exc_info=True)
-            alive = {sid for sid in (f"session_{removed}" for removed in deleted_ids) if db.sessions.get(sid) is not None}
-            for removed in deleted_ids:
-                _clean_artifacts(home / "sessions", removed, keep_legacy=f"session_{removed}" in alive)
-            ok = False
+        deleted_ids = list(outcome.removed_ids)
+        if extra := sorted(set(deleted_ids) - set(reach)):
+            _write_cleanup_manifest(home, extra)
         emit_session_deleted(db.scope.profile_dir, deleted_ids, reason="delete", primary=requested, sessions_dir=home / "sessions")
         try:
             collect_retired_media(db, db.scope.profile_dir)
         except Exception:  # noqa: BLE001 - committed; the manifest keeps the files for the next delete
             log.warning("Failed to collect retired session media", exc_info=True)
             return {"ok": False, "deleted_ids": deleted_ids}
-        return {"ok": ok and _process_stale_manifests(home), "deleted_ids": deleted_ids}
+        return {"ok": _process_stale_manifests(home), "deleted_ids": deleted_ids}
     finally:
+        for sid in locked:
+            db.coordination.release_compression_lock(session_id=sid, holder=holder)
+        for sid in leased:
+            db.coordination.release_turn_lease(session_id=sid, holder=holder)
         agent_store.release(db)
 
 
@@ -429,7 +426,7 @@ def _write_guard_check(agent_db):
     return None
 
 
-def _write_cleanup_manifest(home: Path, removed_ids: list[str]) -> None:
+def _write_cleanup_manifest(home: Path, removed_ids: list[str]) -> Path:
     sessions_dir = home / "sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
     base = f".cleanup_manifest_{uuid.uuid4().hex}"
@@ -440,6 +437,7 @@ def _write_cleanup_manifest(home: Path, removed_ids: list[str]) -> None:
     except OSError:
         tmp.unlink(missing_ok=True)
         raise
+    return manifest
 
 
 def _check_local_receipt(requested: str, owner_of, meta, members_of, validate=None) -> None:
