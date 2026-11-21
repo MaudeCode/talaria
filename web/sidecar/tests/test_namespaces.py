@@ -30,7 +30,7 @@ def _seed_state_db(home: pathlib.Path) -> None:
 def _seed_checkpoint(home: pathlib.Path, workspace: pathlib.Path) -> None:
     """One Agent checkpoint of ``workspace`` before an edit, as a CLI turn with checkpoints enabled takes it."""
     (workspace / "notes.txt").write_text("original text\n", encoding="utf-8")
-    code = "import sys; sys.path.append(sys.argv[1]); from tools.checkpoint_manager import CheckpointManager; assert CheckpointManager(enabled=True).ensure_checkpoint(sys.argv[2], 'before write_file')"
+    code = "import sys; sys.path.append(sys.argv[1]); from talaria_sidecar.methods.checkpoints import agent_checkpoints; assert agent_checkpoints('manager').CheckpointManager(enabled=True).ensure_checkpoint(sys.argv[2], 'before write_file')"
     subprocess.run([AGENT_PYTHON, "-c", code, str(AGENT_DIR), str(workspace)], check=True, env=isolated_env(home, PATH="/usr/bin:/bin"))
     (workspace / "notes.txt").write_text("edited by the agent\n", encoding="utf-8")
 

@@ -7,12 +7,25 @@ the Agent's.
 
 from __future__ import annotations
 
+import importlib
+
 from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
 
 # The Agent's own ``/undo`` line names at most this many files (``checkpoint_undo_hint._MAX_NAMED_FILES``).
 UNDO_NAMED_FILES = 8
+
+
+def agent_checkpoints(module: str):
+    """The Agent's checkpoint ``module`` (``manager`` or ``undo_hint``): ``agent.checkpoints.<module>`` from 0.23.3, which
+    moved ``tools.checkpoint_<module>`` there with the same names."""
+    try:
+        return importlib.import_module(f"agent.checkpoints.{module}")
+    except ModuleNotFoundError as error:
+        if error.name not in ("agent.checkpoints", f"agent.checkpoints.{module}"):
+            raise
+    return importlib.import_module(f"tools.checkpoint_{module}")
 
 
 def checkpoint_kwargs(cfg: dict | None = None) -> dict:
@@ -36,11 +49,10 @@ def checkpoint_kwargs(cfg: dict | None = None) -> dict:
 
 
 def _manager():
-    from tools.checkpoint_manager import CheckpointManager
-
     kwargs = checkpoint_kwargs()
-    return CheckpointManager(enabled=kwargs["checkpoints_enabled"], max_snapshots=kwargs["checkpoint_max_snapshots"],
-                             max_total_size_mb=kwargs["checkpoint_max_total_size_mb"], max_file_size_mb=kwargs["checkpoint_max_file_size_mb"])
+    return agent_checkpoints("manager").CheckpointManager(
+        enabled=kwargs["checkpoints_enabled"], max_snapshots=kwargs["checkpoint_max_snapshots"],
+        max_total_size_mb=kwargs["checkpoint_max_total_size_mb"], max_file_size_mb=kwargs["checkpoint_max_file_size_mb"])
 
 
 def _param(params: dict, name: str) -> str:
@@ -65,9 +77,8 @@ def _has_agent_writes(manager, workspace: str) -> bool:
     """Whether the Agent's agent-write ledger for ``workspace`` has entries: the same file and key its safe restore reads
     (``_safe_restore_plan``), which takes the full-restore branch when it is empty. A write only adds an entry, so a ledger
     seen here is not empty when the restore reads it."""
-    from tools.checkpoint_manager import _load_ledger, _normalize_path, _store_path
-
-    return bool(_load_ledger(_store_path(), manager._ledger_key(str(_normalize_path(workspace)))))
+    agent = agent_checkpoints("manager")
+    return bool(agent._load_ledger(agent._store_path(), manager._ledger_key(str(agent._normalize_path(workspace)))))
 
 
 def _owned(manager, workspace: str, checkpoint: str) -> str:
@@ -84,9 +95,7 @@ def register(registry) -> None:
     def list_(ctx: CallContext, params: dict) -> dict:
         workspace = _param(params, "workspace")
         with scoped_home(profile_home_param(params)):
-            from tools.checkpoint_manager import _store_path
-
-            return {"checkpoints": _manager().list_checkpoints(workspace), "store": str(_store_path())}
+            return {"checkpoints": _manager().list_checkpoints(workspace), "store": str(agent_checkpoints("manager")._store_path())}
 
     @registry.method("checkpoints.diff")
     def diff(ctx: CallContext, params: dict) -> dict:
@@ -99,14 +108,14 @@ def register(registry) -> None:
     @registry.method("checkpoints.undo_changed_files")
     def undo_changed_files(ctx: CallContext, params: dict) -> dict:
         """TAL-2069: the files the turns an undo removed changed under ``workspace``, by the Agent's own ``/undo`` hint
-        (``tools/checkpoint_undo_hint.py``) over this profile's store; ``since`` is when the undone span began, in epoch
+        (``agent/checkpoints/undo_hint.py``) over this profile's store; ``since`` is when the undone span began, in epoch
         seconds. Best effort and read-only: an empty list when checkpoints are off, no snapshot was taken in the span, or
         the Agent predates the hint."""
         workspace, since = _param(params, "workspace"), params.get("since")
         if isinstance(since, bool) or not isinstance(since, (int, float)):
             raise InvalidParams("since is required")
         try:
-            from tools.checkpoint_undo_hint import undo_changed_files as changed
+            changed = agent_checkpoints("undo_hint").undo_changed_files
         except ImportError:  # Agent v0.23.0 has no undo hint  # agent-shim: undo-changed-files
             return {"files": []}
         with scoped_home(profile_home_param(params)):
