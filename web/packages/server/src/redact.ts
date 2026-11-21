@@ -22,6 +22,15 @@ const assignmentScan = channel('talaria.redaction.assignment-scan')
  * the `Agent redactor parity` tests.
  */
 
+const VENDOR_TOKEN_RULES = [
+  ['AQ.', String.raw`AQ\.[A-Za-z0-9_-]{40,}`],
+  ['ya29.', String.raw`ya29\.(?:[a-z]\.)?[A-Za-z0-9_-]{20,}`],
+  ['GOCSPX-', 'GOCSPX-[A-Za-z0-9_-]{8,}'],
+  ['1//0', '1//0[A-Za-z0-9_-]{20,}'],
+  ['glsa_', 'glsa_[A-Za-z0-9]{10,}(?:_[A-Fa-f0-9]{8})?'],
+  ['glc_eyJ', 'glc_eyJ[A-Za-z0-9+/]{29,}={0,3}'],
+] as const
+
 const CRED_RE = new RegExp(
   '(?<![A-Za-z0-9])(' +
     'sk-[A-Za-z0-9_-]{10,}' +
@@ -44,7 +53,8 @@ const CRED_RE = new RegExp(
     '|sk_live_[A-Za-z0-9]{10,}' +
     '|sk_test_[A-Za-z0-9]{10,}' +
     '|rk_live_[A-Za-z0-9]{10,}' +
-    '|SG\\.[A-Za-z0-9_-]{10,}' +
+    '|SG\\.[A-Za-z0-9_-]{10,}(?:\\.[A-Za-z0-9_-]{10,})?' +
+    '|' + VENDOR_TOKEN_RULES.map(([, pattern]) => pattern).join('|') +
     '|hf_[A-Za-z0-9]{10,}' +
     '|r8_[A-Za-z0-9]{10,}' +
     '|npm_[A-Za-z0-9]{10,}' +
@@ -72,6 +82,41 @@ const CRED_RE = new RegExp(
     ')(?![A-Za-z0-9_-])',
   'g',
 )
+// Decode the first segment to distinguish a Discord snowflake from a dotted identifier.
+const DISCORD_ID_START = String.raw`[MNO][A-Za-z0-9_-]{22,27}\.`
+const DISCORD_ID_MARKER_RE = new RegExp(DISCORD_ID_START)
+const DISCORD_TAIL = String.raw`(?![A-Za-z0-9_-]|\.[A-Za-z0-9_-])`
+const DISCORD_ID_RE = new RegExp(String.raw`(?=(${DISCORD_ID_START}[A-Za-z0-9_-]{6,7}\.[A-Za-z0-9_-]{27,})${DISCORD_TAIL})`, 'g')
+const DISCORD_MFA_RE = new RegExp(String.raw`(?:(?<![A-Za-z0-9_.-])|(?<=\\[nrtbf]|\\x[\da-fA-F]{2}|%[\da-fA-F]{2}|\\u[\da-fA-F]{4}|(?:\x1b|\\x1b|\\033|\\e)\[[\d;]{0,16}m))mfa\.[A-Za-z0-9_-]{84}${DISCORD_TAIL}`, 'g')
+
+function redactDiscordTokens(text: string): string {
+  const spans: [number, number, string][] = []
+  for (const match of text.matchAll(DISCORD_ID_RE)) {
+    const token = match[1]!
+    const snowflake = Buffer.from(token.slice(0, token.indexOf('.')), 'base64url').toString('latin1')
+    if (/^\d{17,20}$/.test(snowflake)) spans.push([match.index, match.index + token.length, token])
+  }
+  for (const match of text.matchAll(DISCORD_MFA_RE)) spans.push([match.index, match.index + match[0].length, match[0]])
+  return maskSpans(text, spans, mask)
+}
+
+// Keep public webhook IDs and hide the path credential or Teams workflow signature.
+const WEBHOOK_HOST_END = String.raw`\.?(?::\d+)?/`
+const WEBHOOK_RE = new RegExp([
+  String.raw`(https?://hooks\.slack(?:-gov)?\.com${WEBHOOK_HOST_END}workflows/[A-Z0-9]+/[A-Z0-9]+/\d+/)([A-Za-z0-9]{8,})`,
+  String.raw`(https?://hooks\.slack(?:-gov)?\.com${WEBHOOK_HOST_END}(?:services|workflows|triggers)/[A-Z0-9]+/[A-Z0-9]+/)(?!\d+/)([A-Za-z0-9]{8,})`,
+  String.raw`(https?://(?:canary\.|ptb\.|www\.)?discord(?:app)?\.com${WEBHOOK_HOST_END}api/(?:v\d+/)?webhooks/\d+/)([\w-]{8,})`,
+  String.raw`(https?://(?:[A-Za-z0-9.-]+\.)?(?:webhook\.office\.com${WEBHOOK_HOST_END}webhookb2|outlook\.office\.com${WEBHOOK_HOST_END}webhook)/)([\w@/%+=-]{8,})`,
+  String.raw`(https?://[A-Za-z0-9.-]+\.(?:logic\.azure\.com|api\.powerplatform\.com)${WEBHOOK_HOST_END}(?:[^\s?#"'<>/]{1,128}/){0,8}workflows/[^\s?#"'<>]{1,512}?\?(?:[^\s#"'<>]{0,1024}?&)?sig=)([A-Za-z0-9_%-]{8,})`,
+].join('|'), 'gi')
+
+function redactWebhookUrls(text: string): string {
+  return text.replace(WEBHOOK_RE, (whole, ...groups: unknown[]) => {
+    const prefix = groups.slice(0, -2).find((group): group is string => typeof group === 'string')
+    return prefix === undefined ? whole : prefix + '***'
+  })
+}
+
 /** One `name=value` auth parameter: an escaped-quoted, quoted or bare value. */
 const AUTH_PARAM = String.raw`[A-Za-z0-9_-]+=(?:\\"(?:[^"\\\r\n]|\\[^"])*\\"|"(?:[^"\\\r\n]|\\.)*"|'[^'\r\n]*'|[^\s,"'\\]*)`
 /**
@@ -309,7 +354,7 @@ const DISPLAY_GAPS_RE = new RegExp(String.raw`(?![\t-\r])(?:${ANSI_GAPS_RE.sourc
 const ANSI_GAP_AT_RE = new RegExp(ANSI_GAPS_RE.source, 'y')
 const TOKEN_CHAR_RE = /[A-Za-z0-9_-]/
 /** A character a credential's prefix or body can hold (`SG.`, `glrt-a.b`, `gAAAA…=`): what a fail-closed run walks. */
-const RUN_CHAR_RE = /[A-Za-z0-9_.=-]/
+const RUN_CHAR_RE = /[A-Za-z0-9_./+=-]/
 const payloadCharacter = (char: string, learned: boolean): boolean => learned ? !CONTROL_CHAR_RE.test(char) : RUN_CHAR_RE.test(char)
 /** A string sequence's opener, with an OSC's command number (`8;`), which is no payload. */
 const STRING_OPENER_RE = new RegExp(String.raw`^(?:(?:${SEQ_ESC}\]|\x9d)(?:\d*;)?|${SEQ_ESC}[PX^_]|[\x90\x98\x9e\x9f])`)
@@ -2110,7 +2155,8 @@ function redactPrivateKeys(text: string): string {
 function redactRules(text: string): string {
   if (!text) return text
   const hasAssignment = text.includes('=')
-  let out = maskSplitTokens(redactPrivateKeys(text)).replace(CRED_RE, (_, t: string) => mask(t))
+  let out = redactDiscordTokens(redactWebhookUrls(redactPrivateKeys(text)))
+  out = maskSplitTokens(out).replace(CRED_RE, (_, t: string) => mask(t))
   if (hasAssignment) {
     out = redactConnectionStrings(out).replace(SAS_RE, (_, head: string, value: string) => {
       const signature = /(?:^|&)sig=[^&]*/i.exec(value)
@@ -2150,6 +2196,7 @@ function redactRules(text: string): string {
 }
 
 const CASE_MARKERS = [
+  ...VENDOR_TOKEN_RULES.map(([marker]) => marker), 'mfa.',
   'sk-', 'ctx7sk-', 'ghp_', 'github_pat_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'AKIA', 'ASIA', 'xoxb-', 'xoxa-', 'xoxp-', 'xoxr-', 'xoxs-', 'AIza', 'pplx-', 'fal_', 'fc-',
   'bb_live_', 'gAAAA', 'sk_live_', 'sk_test_', 'rk_live_', 'SG.', 'hf_', 'r8_', 'npm_', 'pypi-', 'dop_v1_', 'doo_v1_', 'am_', 'sk_', 'tvly-', 'exa_',
   'gsk_', 'syt_', 'retaindb_', 'hsk-', 'mem0_', 'brv_', 'xapp-', 'xai-', 'ntn_', 'fw-', 'fw_', 'fpk_', 'glpat-', 'gloas-', 'gldt-', 'glrt-', 'glrtr-',
@@ -2205,6 +2252,7 @@ function mightContainBuiltinSensitiveText(text: string): boolean {
   // redactor joins split tokens.
   const views = SPLIT_VIEWS.map((gaps) => text.replace(gaps, ''))
   if (CASE_MARKERS.some((m) => views.some((view) => view.includes(m)))) return true
+  if (views.some((view) => DISCORD_ID_MARKER_RE.test(view))) return true
   if (crossPayloadPrefixStarts(text).length) return true
   // So is a key or token an escape sequence splits (`pass\x1b[1mword`, `123456789\x1b[0m:…`).
   return mightContainKeyword(text) || (views[0] !== text && mightContainKeyword(views[0]!))

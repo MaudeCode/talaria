@@ -1160,6 +1160,29 @@ const CONTEXT7_KEY = `ctx7sk-${'0'.repeat(8)}-${'0'.repeat(4)}-${'0'.repeat(4)}-
 /** The shape `secrets.token_urlsafe(32)` prints: 43 characters. */
 const WEBAPP_CREDENTIAL = `Zq7_${'k3Lm'.repeat(9)}x9-`
 const AGENT_PARITY: Record<string, [string, string][]> = {
+  'v0.23.2 vendor credentials': [
+    [`AQ.${'B'.repeat(48)}.`, 'AQ.BBB...BBBB.'],
+    [`A\u200bQ.${'B'.repeat(48)}`, 'AQ.BBB...BBBB'],
+    [`ya29.c.${'B'.repeat(24)}`, 'ya29.c...BBBB'],
+    [`GOCSPX-${'B'.repeat(24)}`, 'GOCSPX...BBBB'],
+    [`1//0${'B'.repeat(24)}`, '1//0BB...BBBB'],
+    [`glsa_${'B'.repeat(32)}_deadbeef`, 'glsa_B...beef'],
+    [`glc_eyJ${'B'.repeat(29)}+/==`, 'glc_ey...+/=='],
+    [`SG.${'A'.repeat(16)}.${'B'.repeat(32)}`, 'SG.AAA...BBBB'],
+    [`MTIzNDU2Nzg5MDEyMzQ1Njc4.YYYYYY.${'B'.repeat(27)}.`, 'MTIzND...BBBB.'],
+    [`mfa.${'B'.repeat(84)}`, 'mfa.BB...BBBB'],
+    ['SomeVeryLongClassName.Config.AnotherLongAttributeName', 'SomeVeryLongClassName.Config.AnotherLongAttributeName'],
+    ['mfa.verify_totp_code_for_user', 'mfa.verify_totp_code_for_user'],
+    ['AQ.example', 'AQ.example'],
+    ['https://hooks.slack.com/services/T123/B456/abcdefghijk', 'https://hooks.slack.com/services/T123/B456/***'],
+    ['https://hooks.slack.com/workflows/T123/A456/12345678/abcdefghijk', 'https://hooks.slack.com/workflows/T123/A456/12345678/***'],
+    ['https://hooks.slack.com/triggers/T123/A456/abcdefghijk', 'https://hooks.slack.com/triggers/T123/A456/***'],
+    ['https://discord.com/api/v10/webhooks/12345678/abcdefghijk', 'https://discord.com/api/v10/webhooks/12345678/***'],
+    ['https://example.webhook.office.com/webhookb2/abcdefghijk', 'https://example.webhook.office.com/webhookb2/***'],
+    ['https://region.logic.azure.com/workflows/abc/triggers/manual?api-version=1&sig=abcdefghijk', 'https://region.logic.azure.com/workflows/abc/triggers/manual?api-version=1&sig=***'],
+    ['https://example.test/callback?code=abcdefghijk&state=abcdefghijk', 'https://example.test/callback?code=abcdefghijk&state=abcdefghijk'],
+    ['https://hooks.slack.com/services/T123/B456/${secret}', 'https://hooks.slack.com/services/T123/B456/${secret}'],
+  ],
   'v0.23 glued credential names': [
     ['PGPASSWORD=s3cretpw psql -h db', 'PGPASSWORD=*** psql -h db'],
     ['MYSQL_PWD=s3cretpw mysql', 'MYSQL_PWD=*** mysql'],
@@ -1431,8 +1454,8 @@ describe('Agent redactor parity', () => {
   })
   for (const [family, cases] of Object.entries(AGENT_PARITY)) {
     it.each(cases)(`masks ${family}: %j`, (input, expected) => {
-      expect(redactText(input, true)).toBe(expected)
       expect(sanitizeShareMessage({ role: 'assistant', content: input }, [], [], '/nonexistent-home')?.content).toBe(expected)
+      expect(redactText(input, true)).toBe(expected)
       if (family.startsWith('v0.23')) {
         const frame = publicToolFrame({ name: 'terminal', args: { command: input } }, true)
         expect(frame.args).toEqual({ command: expected })
