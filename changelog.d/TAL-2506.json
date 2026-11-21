@@ -1,1 +1,13 @@
-{"skip": "Moves reasoning-level cleanup from the App to the server; the levels users see are unchanged."}
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Your server now cleans up the reasoning levels it offers, so the App and Talaria Web list the same levels, each once.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}
