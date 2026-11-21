@@ -252,7 +252,7 @@ function typedSpans(code: string, cut: boolean): Span[] {
   }
   // A helper called inside a string (code handed to `exec`) types a value this scan cannot reach; one only named there
   // (`locals()['type_text']`) is looked up into a name it cannot follow.
-  for (const match of code.matchAll(/\b(?:fill_input|type_text)\b(\s*\()?/g)) {
+  for (const match of code.matchAll(/\b(?:fill_input|type_text|cdp)\b(\s*\()?/g)) {
     const literal = literalAt(match.index)
     if (!literal) continue
     if (!match[1]) throw new Withheld()

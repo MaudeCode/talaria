@@ -795,6 +795,7 @@ describe('values a browser_exec call types into a page (TAL-2299)', () => {
     ['a helper inside a string that reads a variable', `pw = 'hunter2'\nexec('type_text(pw)')`, `pw = '***'\nexec('***')`],
     ['an insertion inside a string that reads a variable', `pw = 'hunter2'\nexec("cdp('Input.insertText', text=pw)")`, `pw = '***'\nexec('***')`],
     ['a .value assignment inside a string that reads a variable', `pw = 'hunter2'\nexec('el.value = pw')`, `pw = '***'\nexec('***')`],
+    ['a CDP call with a built method name inside a string', `exec("cdp('Input.insert' + 'Text', {'text': 'hunter2'})")`, `exec('***')`],
     ['a helper called inside a string', `exec("fill_input('#pass', 'hunter2')")`, `exec('***')`],
     ['a function the snippet defines to produce the value', `def password():\n    return 'hunter2'\n\ntype_text(password())\ngoto('https://example.com')`, `def password():\n    return '***'\n\ntype_text('***')\ngoto('https://example.com')`],
     ['a class the snippet defines to produce the value', `class Field:\n    def __str__(self):\n        return 'hunter2'\ntype_text(str(Field()))`, `class Field:\n    def __str__(self):\n        return '***'\ntype_text('***')`],
