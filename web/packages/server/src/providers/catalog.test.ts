@@ -376,6 +376,7 @@ describe.each([
   ['openrouter', 'OPENROUTER_API_KEY', []],
   ['deepseek', 'DEEPSEEK_API_KEY', []],
   ['opencode-go', 'OPENCODE_GO_API_KEY', ['OPENCODE_API_KEY']],
+  ['commandcode', 'COMMANDCODE_API_KEY', []],
 ] as const)('profile-scoped usage credentials (TAL-932): %s', (provider, envVar, aliases) => {
   it.each(['op://v/i/f', '', 'sk-synthetic-plain'])('routes quota, pool and cost reads with configured key %s', async (key) => {
     const home = mkdtempSync(join(tmpdir(), 'talaria-usage-'))
@@ -393,7 +394,7 @@ describe.each([
         quota: provider === 'openrouter' ? { usage: 3, limit: 100, limit_remaining: 97 } : null,
         is_available: provider === 'deepseek' ? true : null,
         balances: provider === 'deepseek' ? [{ currency: 'USD', total: 97, granted: null, topped_up: 97 }] : [],
-        windows: provider === 'opencode-go' ? [{ key: 'rolling', used_percent: 3, reset_at: '2030-01-01T00:00:00Z', rate_limited: false }] : [],
+        windows: provider === 'opencode-go' || provider === 'commandcode' ? [{ key: 'rolling', used_percent: 3, reset_at: '2030-01-01T00:00:00Z', rate_limited: false, used: null, limit: null }] : [], credits_remaining: null,
       }))
       sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === provider ? liveIds : [] }))
       const config = new AgentConfig({ sidecar: () => sidecar, env: {} })
@@ -1051,6 +1052,74 @@ describe('OpenCode Go key refusals (TAL-2188)', () => {
       rmSync(home, { recursive: true, force: true })
     }
   })
+})
+
+describe('CommandCode account limits (TAL-1657)', () => {
+  type Balance = SidecarResult<'usage.balance'>
+  const read = (over: Partial<Balance> = {}): Balance => ({ status: 'ok', http_status: null, error_code: null, label: null, quota: null, is_available: null, balances: [], credits_remaining: 10, ...over,
+    windows: over.windows ?? [
+      { key: 'five_hour', used_percent: 25, reset_at: '2030-01-01T05:00:00Z', rate_limited: false, used: 3, limit: 12 },
+      { key: 'weekly', used_percent: 40, reset_at: null, rate_limited: false, used: 12, limit: 30 },
+    ] })
+  const refusal = (http_status: number | null, status: Balance['status'] = 'http_error'): Balance => read({ status, http_status, windows: [], credits_remaining: null })
+  const entry = (credential_id: string, status: 'available' | 'exhausted', matches_api_key: boolean) => ({ credential_id, label: credential_id, status, unavailable_reason: status === 'available' ? null : 'Synthetic cooldown.', retry_after: null, matches_api_key })
+
+  async function withCatalog(test: (ctx: { catalog: ProviderCatalog; sidecar: FakeSidecar; home: string; state: { balance: Balance; pool: ReturnType<typeof entry>[] } }) => Promise<void>): Promise<void> {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-commandcode-'))
+    try {
+      writeFileSync(join(home, 'config.yaml'), '# synthetic configuration\n')
+      writeEnvFile(join(home, '.env'), { COMMANDCODE_API_KEY: 'sk-synthetic-commandcode' })
+      const state = { balance: read(), pool: [] as ReturnType<typeof entry>[] }
+      const sidecar = new FakeSidecar()
+      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: { model: { provider: 'commandcode' } } }))
+      sidecar.respond('plugins.providers', () => ({ providers: [{ name: 'commandcode-anthropic', display_name: 'CommandCode (Anthropic)', auth_type: 'api_key', setup: 'ready' }] }))
+      sidecar.respond('usage.pool_providers', () => ({ providers: state.pool.length ? ['commandcode'] : [], keys: {} }))
+      sidecar.respond('usage.pool', (p) => ({ has_api_key: true, entries: p.provider === 'commandcode' ? state.pool : [] }))
+      sidecar.respond('usage.balance', () => state.balance)
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+      const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => 1_893_456_000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+      await test({ catalog, sidecar, home, state })
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  }
+
+  it.each(['commandcode', 'commandcode-anthropic'])('reads %s windows and remaining credits from the shared account with its own key', (provider) => withCatalog(async ({ catalog, sidecar, home }) => {
+    const answer = await catalog.quota(home, provider)
+    expect(answer).toMatchObject({ ok: true, supported: true, status: 'available', message: 'CommandCode account limits loaded.' })
+    expect(answer.account_limits).toMatchObject({ source: 'usage_api', available: true, details: ['Credits remaining: $10'], windows: [
+      { label: '5-hour', window_seconds: 18_000, used_percent: 25, remaining_percent: 75, reset_at: '2030-01-01T05:00:00Z', detail: '$3 used of $12' },
+      { label: 'Weekly', window_seconds: 604_800, used_percent: 40, remaining_percent: 60, reset_at: null, detail: '$12 used of $30' },
+    ] })
+    expect(sidecar.calls.filter((c) => c.method === 'usage.balance').map((c) => c.params)).toEqual([expect.objectContaining({ provider, api_key: 'sk-synthetic-commandcode' })])
+    const source = ((await catalog.quotas(home, 'synthetic')).sources as Json[]).find((s) => s.provider_id === provider)
+    expect(source).toMatchObject({ status: 'available', details: ['Credits remaining: $10'], windows: [expect.objectContaining({ label: '5-hour' }), expect.objectContaining({ label: 'Weekly' })] })
+    expect(JSON.stringify(answer)).not.toContain('sk-synthetic')
+  }))
+
+  it.each(['commandcode', 'commandcode-anthropic'])('tells a missing key, a rejected key, a 403 and a transient failure apart for %s', (provider) => withCatalog(async ({ catalog, home, state }) => {
+    for (const [balance, status, message] of [
+      [refusal(null, 'no_key'), 'no_key', 'CommandCode account limits need an API key configured on the server.'],
+      [refusal(401), 'invalid_key', 'CommandCode rejected the configured API key.'],
+      [refusal(403), 'unavailable', 'CommandCode account limits require an active subscription, or the provider blocked the request.'],
+      [refusal(302), 'unavailable', 'CommandCode account limits are temporarily unavailable.'],
+      [refusal(null, 'unavailable'), 'unavailable', 'CommandCode account limits are temporarily unavailable.'],
+    ] as const) {
+      state.balance = balance
+      expect(await catalog.quota(home, provider, { refresh: true }), message).toMatchObject({ ok: false, status, message, account_limits: null })
+    }
+  }))
+
+  it('keeps each pool account beside the account read, and a single seeded key never masks a refusal as available', () => withCatalog(async ({ catalog, home, state }) => {
+    const rows = async () => ((await catalog.quotas(home, 'synthetic', { refresh: true })).sources as Json[]).filter((s) => s.provider_id === 'commandcode')
+    state.pool = [entry('env', 'available', true), entry('spare', 'exhausted', false)]
+    expect((await rows()).map((s) => [s.account_label, s.status, (s.windows as Json[]).length, s.details])).toEqual([['env', 'available', 2, ['Credits remaining: $10']], ['spare', 'exhausted', 0, []]])
+    state.pool = [entry('env', 'available', true)]
+    state.balance = refusal(401)
+    expect((await rows()).map((s) => [s.account_label, s.status])).toEqual([['env', 'invalid_key']])
+    state.balance = refusal(null, 'unavailable')
+    expect((await rows()).map((s) => s.status)).not.toContain('available')
+  }))
 })
 
 describe('OpenRouter cost history arithmetic (TAL-1655)', () => {

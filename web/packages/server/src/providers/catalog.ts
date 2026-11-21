@@ -18,7 +18,7 @@ import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { providerIcon } from './icons.js'
 import type { CatalogAvailability, QuotaCredits, ModelAllowance, ModelFavorite, SettingsModelPicker, SettingsModelPickerQuery, PlanUsage, ProviderIcon, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
-import { ModelsLiveSchema, SettingsModelPickerSchema } from '@maudecode/talaria-web-contracts'
+import { BALANCE_PROVIDERS, ModelsLiveSchema, SettingsModelPickerSchema } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { QUOTA_THRESHOLD_DEFAULTS, type QuotaThresholds } from '../settings.js'
 import { loadEnvFile } from './env-file.js'
@@ -623,7 +623,6 @@ function looksLikeCodexOauthToken(value: string): boolean {
   }
 }
 
-const BALANCE_PROVIDERS = ['openrouter', 'deepseek', 'opencode-go'] as const
 function isBalanceProvider(pid: string): pid is SidecarParams<'usage.balance'>['provider'] {
   return BALANCE_PROVIDERS.some((provider) => provider === pid)
 }
@@ -667,8 +666,10 @@ export function deduplicateModelIds(groups: ModelGroup[]): void {
 /** TAL-548: one credential-pool account's local state, as the sidecar reads it without probing. */
 type PoolEntry = SidecarResult<'usage.pool'>['entries'][number]
 
-/** OpenCode Go's usage windows: their label and length (Python `_sanitize_opencode_go_account_limits`). */
-const OPENCODE_GO_WINDOWS = { rolling: ['5-hour', FIVE_HOUR_WINDOW_S], weekly: ['Weekly', WEEK_WINDOW_S], monthly: ['Monthly', null] } as const
+/** Usage-API windows by key: their label and length (Python `_sanitize_opencode_go_account_limits`, `_sanitize_commandcode_quota`). */
+const USAGE_API_WINDOWS = { rolling: ['5-hour', FIVE_HOUR_WINDOW_S], five_hour: ['5-hour', FIVE_HOUR_WINDOW_S], weekly: ['Weekly', WEEK_WINDOW_S], monthly: ['Monthly', null] } as const
+/** A usage API's dollar figure, as CommandCode's billing page words it. */
+const usd = (amount: number): string => `$${amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
 
 /** One pool account's local state as account limits; `status` is the account's, which its quota source shows. */
 function poolEntryLimits(entry: PoolEntry, at: number): Dict {
@@ -1861,15 +1862,20 @@ export class ProviderCatalog {
         }
         return status === 401 || status === 403 ? answer(false, 'invalid_key', rejected('DeepSeek rejected the configured API key.'), { balances: [] }) : answer(false, 'unavailable', 'DeepSeek balance is temporarily unavailable.', { balances: [] })
       }
-      if (status === 'no_key') return answer(false, 'no_key', 'OpenCode Go account limits need an API key configured on the server.', { account_limits: null })
-      if (status === 'ok' && read) {
-        // Python `_sanitize_opencode_go_account_limits`: the rolling, weekly and monthly windows of the Go plan.
-        const windows = read.windows.map((w) => ({ label: OPENCODE_GO_WINDOWS[w.key][0], window_seconds: OPENCODE_GO_WINDOWS[w.key][1], used_percent: w.used_percent, reset_at: w.reset_at, detail: w.rate_limited ? 'Rate limited' : null }))
-        const limits = { provider, source: 'usage_api', title: 'Account limits', plan: 'Go', details: [], available: true, unavailable_reason: null, fetched_at: isoAt(at), ...normalizeQuotaWindows(windows, at) }
-        return answer(true, 'available', 'OpenCode Go account limits loaded.', { label: 'OpenCode Go usage', account_limits: limits })
+      // OpenCode Go, and CommandCode under either provider: one account's usage windows. Both CommandCode providers bill the CommandCode account.
+      const account = provider === 'opencode-go' ? name : displayName('commandcode')
+      if (status === 'no_key') return answer(false, 'no_key', `${account} account limits need an API key configured on the server.`, { account_limits: null })
+      if (status === 'ok' && read?.windows.length) {
+        const windows = read.windows.map((w) => ({ label: USAGE_API_WINDOWS[w.key][0], window_seconds: USAGE_API_WINDOWS[w.key][1], used_percent: w.used_percent, reset_at: w.reset_at,
+          detail: w.used !== null && w.limit !== null ? `${usd(w.used)} used of ${usd(w.limit)}` : w.rate_limited ? 'Rate limited' : null }))
+        const details = read.credits_remaining === null ? [] : [`Credits remaining: ${usd(read.credits_remaining)}`]
+        const limits = { provider, source: 'usage_api', title: 'Account limits', plan: provider === 'opencode-go' ? 'Go' : null, details, available: true, unavailable_reason: null, fetched_at: isoAt(at), ...normalizeQuotaWindows(windows, at) }
+        return answer(true, 'available', `${account} account limits loaded.`, { label: `${account} usage`, account_limits: limits })
       }
-      if (status === 401) return answer(false, 'invalid_key', rejected('OpenCode Go rejected the configured API key.'), { account_limits: null })
-      return answer(false, 'unavailable', status === 403 ? 'OpenCode Go account limits require an active subscription.' : 'OpenCode Go account limits are temporarily unavailable.', { account_limits: null })
+      if (status === 401) return answer(false, 'invalid_key', rejected(`${account} rejected the configured API key.`), { account_limits: null })
+      // A 403 is the subscription's answer, or for CommandCode also its firewall's; neither says the key is wrong.
+      const refused = provider === 'opencode-go' ? 'require an active subscription.' : 'require an active subscription, or the provider blocked the request.'
+      return answer(false, 'unavailable', status === 403 ? `${account} account limits ${refused}` : `${account} account limits are temporarily unavailable.`, { account_limits: null })
     }
     // Python `_local_pool_snapshot`: any other provider with a credential pool shows its accounts' local state.
     const entries = credential ? [credential] : (await this.poolEntries(profileHome, provider, null)).value?.entries ?? []

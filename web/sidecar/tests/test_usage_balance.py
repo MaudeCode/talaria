@@ -76,9 +76,9 @@ def test_opencode_go_reads_all_three_windows(monkeypatch):
     result = _read("opencode-go")
     assert result["status"] == "ok"
     assert result["windows"] == [
-        {"key": "rolling", "used_percent": 40, "reset_at": "2026-10-06T05:00:00Z", "rate_limited": False},
-        {"key": "weekly", "used_percent": 10, "reset_at": "2026-10-06T05:00:00Z", "rate_limited": False},
-        {"key": "monthly", "used_percent": 100, "reset_at": "2026-10-06T05:00:00Z", "rate_limited": True},
+        {"key": "rolling", "used_percent": 40, "reset_at": "2026-10-06T05:00:00Z", "rate_limited": False, "used": None, "limit": None},
+        {"key": "weekly", "used_percent": 10, "reset_at": "2026-10-06T05:00:00Z", "rate_limited": False, "used": None, "limit": None},
+        {"key": "monthly", "used_percent": 100, "reset_at": "2026-10-06T05:00:00Z", "rate_limited": True, "used": None, "limit": None},
     ]
     assert requests[0].full_url == "https://opencode.ai/zen/go/v1/usage"
     # A missing window, an out-of-range percent, or an unparseable reset rejects the whole response.
@@ -513,3 +513,84 @@ def test_a_loopback_quota_read_still_parses_and_bounds_failures(monkeypatch):
         assert result["status"] == expected, name
         if name == "ok":
             assert result["label"] == "synthetic" and result["quota"]["usage"] == 3
+
+
+_COMMANDCODE = ["commandcode", "commandcode-anthropic"]
+
+
+def _commandcode_body(**overrides) -> dict:
+    """The upstream-documented `/alpha/billing/credits` shape, with synthetic values."""
+    body = {
+        "credits": {"monthlyCredits": 7, "purchasedCredits": "2.5", "freeCredits": 0.5, "secret": "sk-synthetic-echo"},
+        "windowLimits": {
+            "fiveHour": {"used": 3, "cap": 12, "resetAt": "2030-03-17T17:30:00Z"},
+            "weekly": {"used": 12, "limit": 30, "resetAt": 1899999999000},
+        },
+    }
+    return {**body, **overrides}
+
+
+@pytest.mark.parametrize("provider", _COMMANDCODE)
+def test_commandcode_reads_both_windows_and_remaining_credits(monkeypatch, provider):
+    """TAL-1657: both CommandCode providers read the shared billing account with the key they resolved."""
+    requests = _stub_http(monkeypatch, _commandcode_body())
+    result = _read(provider, api_key="sk-synthetic-commandcode")
+    assert result["status"] == "ok"
+    assert result["windows"] == [
+        {"key": "five_hour", "used_percent": 25.0, "reset_at": "2030-03-17T17:30:00Z", "rate_limited": False, "used": 3, "limit": 12},
+        {"key": "weekly", "used_percent": 40.0, "reset_at": "2030-03-17T17:46:39Z", "rate_limited": False, "used": 12, "limit": 30},
+    ]
+    assert result["credits_remaining"] == 10
+    assert requests[0].full_url == "https://api.commandcode.ai/alpha/billing/credits"
+    assert requests[0].get_header("Authorization") == "Bearer sk-synthetic-commandcode"
+    assert "sk-synthetic" not in json.dumps(result) and "secret" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("provider", _COMMANDCODE)
+def test_commandcode_drops_invalid_windows_resets_and_credits(monkeypatch, provider):
+    """Negative, nonfinite, boolean or zero caps drop their window; a bad reset or credit drops only itself."""
+    cases = [
+        ({"used": -1, "cap": 30}, None),
+        ({"used": "NaN", "cap": 30}, None),
+        ({"used": True, "cap": 30}, None),
+        ({"used": 1, "cap": 0}, None),
+        ({"used": 1, "cap": -5}, None),
+        ({"used": 1}, None),
+        ("weekly", None),
+        ({"used": 45, "cap": 30, "resetAt": "soon"}, {"key": "weekly", "used_percent": 100.0, "reset_at": None, "rate_limited": False, "used": 45, "limit": 30}),
+        ({"used": 0, "cap": 30, "resetAt": True}, {"key": "weekly", "used_percent": 0.0, "reset_at": None, "rate_limited": False, "used": 0, "limit": 30}),
+        ({"used": 0, "cap": 30, "resetAt": 10**400}, {"key": "weekly", "used_percent": 0.0, "reset_at": None, "rate_limited": False, "used": 0, "limit": 30}),
+        ({"used": 0, "cap": 30, "resetAt": "2030-03-17T17:30:00"}, {"key": "weekly", "used_percent": 0.0, "reset_at": "2030-03-17T17:30:00Z", "rate_limited": False, "used": 0, "limit": 30}),
+    ]
+    for weekly, expected in cases:
+        _stub_http(monkeypatch, {"windowLimits": {"weekly": weekly}, "credits": {"monthlyCredits": -3, "purchasedCredits": "Infinity", "freeCredits": True}})
+        result = _read(provider)
+        _assert_finite_wire(result)
+        if expected is None:
+            assert (result["status"], result["windows"], result["credits_remaining"]) == ("unavailable", [], None), weekly
+        else:
+            assert (result["status"], result["windows"], result["credits_remaining"]) == ("ok", [expected], None), weekly
+    # Credits that each fit a double can sum past one: the total is dropped, never sent as Infinity.
+    largest = int(sys.float_info.max)
+    _stub_http(monkeypatch, _commandcode_body(credits={"monthlyCredits": largest, "purchasedCredits": largest}))
+    result = _read(provider)
+    assert (result["status"], result["credits_remaining"]) == ("ok", None)
+    _assert_finite_wire(result)
+
+
+@pytest.mark.parametrize("provider", _COMMANDCODE)
+def test_commandcode_refusals_and_unrecognized_answers(monkeypatch, provider):
+    """401, a subscription or firewall 403, and every unrecognized body stay distinct and carry no body text."""
+    for status in (401, 403, 500):
+        _stub_http(monkeypatch, {"error": "sk-synthetic-echo"}, status=status)
+        result = _read(provider)
+        assert (result["status"], result["http_status"], result["windows"]) == ("http_error", status, [])
+        assert "sk-synthetic" not in json.dumps(result)
+    for body in (b"not json", b"[" * 100_000 + b"]" * 100_000, b"null", b"[]", {"error": "temporarily unavailable"}, {"windowLimits": []}, {"windowLimits": {}},
+                 b'{"windowLimits":{"weekly":{"used":1,"cap":2}},"pad":"' + b"x" * (256 * 1024) + b'"}'):
+        _stub_http(monkeypatch, body)
+        result = _read(provider)
+        assert (result["status"], result["windows"], result["credits_remaining"]) == ("unavailable", [], None), body if not isinstance(body, bytes) else body[:40]
+    requests = _stub_http(monkeypatch, _commandcode_body())
+    assert _read(provider, api_key=None)["status"] == "no_key"
+    assert requests == []

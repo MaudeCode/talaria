@@ -543,14 +543,18 @@ const BalanceNumber = z.number().nullable()
 /**
  * TAL-548: one key-based balance read. The key is the pool entry's (`credential_id`), a raw `api_key`, or resolved from `env_vars` in the profile's secret scope.
  * `ok` carries the provider's sanitised fields: OpenRouter `quota`/`label`, DeepSeek `balances`/`is_available`, OpenCode Go
- * `windows`; `http_error` carries the status code and, for a 401, the provider's `error.code` when it is allowlisted (TAL-2188).
+ * `windows`, CommandCode `windows` with each window's dollar `used` and `limit` plus `credits_remaining` (TAL-1657);
+ * `http_error` carries the status code and, for a 401, the provider's `error.code` when it is allowlisted (TAL-2188).
  */
 export const BalanceResultSchema = z.object({
   status: z.enum(['ok', 'no_key', 'http_error', 'unavailable']), http_status: z.number().int().nullable(), error_code: z.enum(['api_key_expired']).nullable().default(null),
   quota: z.object({ limit_remaining: BalanceNumber, usage: BalanceNumber, limit: BalanceNumber }).nullable(), label: z.string().nullable(),
   is_available: z.boolean().nullable(), balances: z.array(z.object({ currency: z.enum(['CNY', 'USD']), total: z.number(), granted: BalanceNumber, topped_up: BalanceNumber })),
-  windows: z.array(z.object({ key: z.enum(['rolling', 'weekly', 'monthly']), used_percent: z.number(), reset_at: z.string(), rate_limited: z.boolean() })),
+  windows: z.array(z.object({ key: z.enum(['rolling', 'five_hour', 'weekly', 'monthly']), used_percent: z.number(), reset_at: z.string().nullable(), rate_limited: z.boolean(), used: BalanceNumber.default(null), limit: BalanceNumber.default(null) })),
+  credits_remaining: BalanceNumber.default(null),
 })
+/** The providers `usage.balance` reads; both CommandCode providers bill one account (TAL-1657). */
+export const BALANCE_PROVIDERS = ['openrouter', 'deepseek', 'opencode-go', 'commandcode', 'commandcode-anthropic'] as const
 const CredentialId = z.string().min(1).nullable().optional()
 /** TAL-807: the Agent's `CredentialPool.limit_state`: every live account benched until `resets_at`, else the given models no usable account serves until their ISO reset. */
 export const PoolLimitSchema = z.discriminatedUnion('scope', [
@@ -564,7 +568,7 @@ export const USAGE_METHODS = {
   'usage.pool_providers': { params: ProfileHomeParams.extend({ key_envs: z.record(z.string(), z.array(z.string().min(1))).optional() }), result: z.object({ providers: z.array(z.string()), keys: z.record(z.string(), z.object({ present: z.boolean(), revision: z.string().nullable() })).default({}) }) },
   /** TAL-807: pool rate limits by provider slug, only for pooled providers that are limited; `models` are bare ids. */
   'usage.limits': { params: ProfileHomeParams.extend({ providers: z.array(z.object({ slug: z.string().min(1), models: z.array(z.string()) })) }), result: z.object({ limits: z.record(z.string(), PoolLimitSchema) }) },
-  'usage.balance': { params: ProfileHomeParams.extend({ provider: z.enum(['openrouter', 'deepseek', 'opencode-go']), credential_id: CredentialId, api_key: z.string().nullable().optional(), env_vars: z.array(z.string().min(1)).optional() }), result: BalanceResultSchema },
+  'usage.balance': { params: ProfileHomeParams.extend({ provider: z.enum(BALANCE_PROVIDERS), credential_id: CredentialId, api_key: z.string().nullable().optional(), env_vars: z.array(z.string().min(1)).optional() }), result: BalanceResultSchema },
 } as const
 export const CONFIG_METHODS = {
   // `config_path` is the server-resolved file (honouring HERMES_CONFIG_PATH); the sidecar reads and writes exactly that path.
