@@ -1689,6 +1689,49 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  describe('model-slot credentials stay with the endpoint they were saved for (TAL-2294)', () => {
+    // Shared with the sidecar's real-Agent check (tests/test_route_credentials.py), which resolves these saved blocks.
+    const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../sidecar/tests/fixtures/route-credential-switch.json'), 'utf8')) as { before: Json; writes: Json[]; switched: Json; reset: Json }
+    const reset = (config: Json): void => { configs.set(s.state, structuredClone(config)); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
+    const routes = (): Json => { const c = configs.get(s.state) ?? {}; const aux = dictOf(c.auxiliary); return { model: c.model, auxiliary: { vision: aux.vision, compression: aux.compression }, delegation: c.delegation } }
+    let saved: Json | undefined
+    beforeEach(() => { saved = configs.get(s.state) })
+    afterEach(() => { if (saved) reset(saved) })
+
+    it('a provider change and Reset All drop the old endpoint\'s keys and key pointers; a key entered with the change is kept', async () => {
+      reset(fixture.before)
+      for (const write of fixture.writes) expect((await post(s, '/api/model/set', write)).status, JSON.stringify(write)).toBe(200)
+      expect(routes()).toEqual(fixture.switched)
+      reset(fixture.before)
+      expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' })).status).toBe(200)
+      expect(routes()).toEqual(fixture.reset)
+    })
+
+    it('a model-only edit, a re-spelt URL and a bare custom path on one origin keep the key; another origin or named provider drops it', async () => {
+      const key = { api_key: 'synthetic-old-key', key_env: 'OLD_KEY', api_mode: 'chat_completions' }
+      const endpoint = 'https://old.invalid/v1'
+      const keyed = { provider: 'custom', model: 'old-model', base_url: endpoint, ...key }
+      const customProviders = [{ name: 'alpha', base_url: endpoint }, { name: 'beta', base_url: endpoint }]
+      const cases: [string, Json, Json, Json][] = [
+        ['model-only edit', keyed, { model: 'new-model' }, { ...keyed, model: 'new-model' }],
+        ['re-spelt URL', keyed, { advanced: { base_url: 'HTTPS://OLD.INVALID:443/v1/' } }, { ...keyed, base_url: 'HTTPS://OLD.INVALID:443/v1' }],
+        ['bare custom path on one origin', keyed, { advanced: { base_url: 'https://old.invalid/v2' } }, { ...keyed, base_url: 'https://old.invalid/v2' }],
+        ['bare custom on another origin', keyed, { advanced: { base_url: 'https://new.invalid/v1' } }, { provider: 'custom', model: 'old-model', base_url: 'https://new.invalid/v1' }],
+        ['another named provider on the same endpoint', { ...keyed, provider: 'custom:alpha' }, { provider: 'custom:beta' }, { provider: 'custom:beta', model: 'old-model', base_url: endpoint }],
+      ]
+      for (const [name, before, write, expected] of cases) {
+        reset({ custom_providers: customProviders, auxiliary: { vision: before } })
+        const res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'vision', provider: 'custom', model: 'old-model', ...write })
+        expect(res.status, name).toBe(200)
+        expect(dictOf(configs.get(s.state)?.auxiliary).vision, name).toEqual(expected)
+      }
+      reset({ model: { provider: 'custom', default: 'old-model', base_url: endpoint, ...key }, delegation: keyed })
+      expect((await post(s, '/api/model/set', { scope: 'main', provider: 'custom', model: 'new-model' })).status).toBe(200)
+      expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: 'delegation', provider: 'custom', model: 'new-model' })).status).toBe(200)
+      expect(configs.get(s.state)).toMatchObject({ model: { default: 'new-model', base_url: endpoint, ...key }, delegation: { model: 'new-model', base_url: endpoint, ...key } })
+    })
+  })
+
   describe('auxiliary reasoning: server-supported efforts, explicit vs inherited, effort-only and combined writes, reconciliation, rejection, and reset (TAL-1285)', () => {
     interface Reasoning { saved: string | null; effective: string | null; inherited: boolean; default_source: string; options: string[]; unavailable: string | null }
     interface Task { task: string; provider: string; model: string; reasoning: Reasoning }
@@ -2422,12 +2465,15 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     const endpoint = createHttpServer((req, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(req.url === '/v1/models' ? { data: [{ id: 'qwen3' }] } : {})) })
     await new Promise<void>((resolve) => { endpoint.listen(0, '127.0.0.1', resolve) })
     const url = `http://127.0.0.1:${String((endpoint.address() as { port: number }).port)}/v1`
+    // TAL-2294: the previous custom endpoint's key and key pointer stay with it.
+    configs.set(s.state, { ...configs.get(s.state), model: { provider: 'custom', default: 'old-model', base_url: 'https://old.invalid/v1', api_key: 'synthetic-old-key', key_env: 'OLD_KEY', timeout: 30 } })
+    s.deps.agentConfig.invalidate()
     try {
       const res = await post(s, '/api/providers/self-hosted', { provider: 'lmstudio', model: 'qwen3', base_url: `${url}/`, api_key: 'lm-key-12345' })
       expect(res.status).toBe(200)
       expect(await json(res)).toEqual({ ok: true, provider: 'lmstudio', base_url: url, model: 'qwen3' })
       expect((configs.get(s.state)?.providers as Json).lmstudio).toEqual({ base_url: url })
-      expect(configs.get(s.state)?.model).toMatchObject({ provider: 'lmstudio', default: 'qwen3', base_url: url })
+      expect(configs.get(s.state)?.model).toEqual({ provider: 'lmstudio', default: 'qwen3', base_url: url, timeout: 30 })
       expect(loadEnvFile(join(s.state, '.env')).LM_API_KEY).toBe('lm-key-12345')
     } finally {
       endpoint.close()

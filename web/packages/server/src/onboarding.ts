@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import type { AgentConfig, Config, Dict } from './config/agent-config.js'
-import { canonicaliseProviderId, dict, isDict, isReference, modelSection, parseProviderQualifiedModel } from './config/agent-config.js'
+import { bindCredentialsToRoute, canonicaliseProviderId, dict, isDict, isReference, modelSection, parseProviderQualifiedModel } from './config/agent-config.js'
 import { EnvWriteError, loadEnvFile } from './providers/env-file.js'
 import { PROVIDER_CATEGORIES, PROVIDER_DISPLAY, SUPPORTED_PROVIDER_SETUPS, UNSUPPORTED_PROVIDER_NOTE } from './providers/tables.js'
 import type { ModelsCatalog } from './providers/catalog.js'
@@ -247,12 +247,13 @@ export class Onboarding {
     }
     await this.deps.config.update(home, (c) => {
       const m = modelSection(c)
+      const before = { ...m }
       m.provider = provider
       m.default = normalizeModelForProvider(provider, model)
       if (meta.requires_base_url) m.base_url = baseUrl
       else if (meta.default_base_url) m.base_url = meta.default_base_url
       else Reflect.deleteProperty(m, 'base_url')
-      c.model = m
+      c.model = bindCredentialsToRoute(before, m, null)
     })
     // A sign-in provider has no API key: its credential is the Agent's own auth-store entry.
     if (apiKey && meta.env_var) await this.writeCredential(home, meta.env_var, apiKey)
@@ -297,10 +298,11 @@ export class Onboarding {
       c.providers = providers
       if (activate) {
         const m = modelSection(c)
+        const before = { ...m }
         m.provider = provider
         m.default = normalizeModelForProvider(provider, model)
         m.base_url = baseUrl
-        c.model = m
+        c.model = bindCredentialsToRoute(before, m, null)
         persisted = str(m.default)
       }
     })

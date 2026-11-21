@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Switching the main model, an auxiliary task or the subagent model to another provider or endpoint, or resetting them to Auto, now drops the keys saved for the old endpoint instead of sending them to the new one.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

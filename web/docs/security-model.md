@@ -309,7 +309,12 @@ auth, OAuth, certificates and environment are dropped, and a saved-back
 redacted value keeps the stored secret (`tools/mcp.ts` `McpService.update`,
 `endpointOf`). A delegation route keeps its stored `api_key` only while its
 `provider` and `base_url` stay the same
-(`web/sidecar/talaria_sidecar/methods/delegation.py` `clean_routes`).
+(`web/sidecar/talaria_sidecar/methods/delegation.py` `clean_routes`). The main
+model, each auxiliary slot and the top-level delegation block drop their
+`api_key`, `key_env`, `api_key_env` and `api_mode` when a write or reset gives
+them another provider or endpoint; a key entered with that write stays, and a
+bare `custom` endpoint keeps its key across paths on one origin
+(`config/agent-config.ts` `bindCredentialsToRoute`).
 
 ## 7. Deployment
 

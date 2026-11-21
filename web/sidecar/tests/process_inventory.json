@@ -29,6 +29,13 @@
         ""
       ]
     },
+    "tests/test_route_credentials.py::test_real_agent_sends_no_old_endpoint_credential_to_a_new_route": {
+      "layer": "compatibility",
+      "reason": "The supported Agent's real auxiliary, runtime and delegation resolvers must send no key saved for an old endpoint to the route the server re-pointed a block to, and must send a key entered with the change; a fake HTTP transport records what each real client would send. A separate Agent interpreter isolates native imports; all homes, URLs and keys are synthetic.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_agent_imports_contract.py::test_agent_catalog_ships_a_reviewed_importer": {
       "layer": "compatibility",
       "reason": "Reads the selected Agent's real in-tree plugin catalog entry with its own interpreter, so a release that re-pins agent-importers fails even though the fast import matrix stubs admission. Offline, disposable home.",
