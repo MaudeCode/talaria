@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web no longer marks another profile's background delegations as dropped or failed while it checks for finished results.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

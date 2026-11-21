@@ -1005,12 +1005,21 @@ background work drains on the next tick and resets the delay (TAL-1395).
 
 Durable async-delegation results use a separate replay path (TAL-780). Before
 popping events, `process.drain` calls the Agent's `restore_completions()` when
-available, which restores the launch ledger once. It also restores each named
-profile's ledger once under `scoped_home` and calls the Agent's throttled orphan
-sweep for every served home. `process.recover` supplies the base home; each drain
+available, which restores the launch ledger once. The Agent's recovery and expiry
+run only in the ledgers this sidecar owns, the launch home and the drain's own
+profile home (TAL-2256): under `scoped_home` it restores a named owned ledger once
+and calls the Agent's throttled orphan sweep. Every other profile's ledger belongs
+to whatever process runs that profile, so it is only read: pending results with a
+WebUI origin, within the Agent's replay cap, not under a live claim and whose
+owner process is gone are offered once, stamped `restored` and with their
+`ledger_profile_home`. Nothing there is recovered, dropped or created; an unknown
+owner liveness leaves the row to its owner. The read-only offer shares the
+Agent's offer set, so a later Agent replay of that home does not offer it again.
+The server admits such an event only for a session whose owning home is that
+ledger's home, where it claims it. `process.recover` supplies the base home; each drain
 re-enumerates its contained named profiles so inactive and newly created profiles
 are covered even though the server drains only one global queue. A failed named
-replay is retried without blocking the other homes or live queued events. Older
+replay or read is retried without blocking the other homes or live queued events. Older
 Agents keep their existing import-time replay. Restored events retain their
 session ownership, and delivery still uses the Agent's claim/complete/release
 ledger calls; the server requeues events it cannot route to their owner.

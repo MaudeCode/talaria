@@ -123,21 +123,68 @@ def _completion_homes() -> list[Path]:
     return list(dict.fromkeys(home.resolve() for home in homes))
 
 
+def _owned_completion_homes() -> set[Path]:
+    """TAL-2256: the launch home and the drain's runtime home, the only ledgers whose Agent recovery and expiry this
+    sidecar runs. Another profile's ledger belongs to whatever process runs that profile; a directory is not ownership."""
+    from hermes_constants import get_hermes_home
+
+    return {_PROCESS_HOME.resolve(), Path(get_hermes_home()).resolve()}
+
+
+def _offer_foreign_completions(home: Path, target_queue) -> None:
+    """Offer another profile's pending WebUI results without writing its ledger: no recovery, no expiry drop, no claim.
+    A row whose owner lives (or whose liveness is unknown) is left to its owner, which holds its own copy. Each row is
+    offered once through the Agent's own offer set, so a later Agent replay of this home does not offer it again either.
+    Raises when an existing ledger cannot be read, so the caller retries."""
+    from hermes_constants import hermes_home_key
+    from tools import async_delegation as ad
+
+    alive = ad._owner_liveness()
+    ledger = _open_ledger(home) if alive is not None else None
+    if ledger is None:
+        return
+    now = time.time()
+    with ledger as conn:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='async_delegations'").fetchone():
+            return
+        rows = conn.execute("""SELECT delegation_id, event_json, completed_at, dispatched_at, owner_pid, owner_started_at
+            FROM async_delegations WHERE state != 'running' AND delivery_state = 'pending' AND event_json IS NOT NULL
+            AND origin_ui_session_id != '' AND (delivery_claim IS NULL OR delivery_claimed_at < ?)
+            ORDER BY completed_at, delegation_id""", (now - ad._CLAIM_LEASE_S,)).fetchall()
+    key = hermes_home_key(home)
+    for delegation_id, payload, completed_at, dispatched_at, pid, started in rows:
+        if now - (completed_at or dispatched_at or now) > ad._MAX_COMPLETION_REPLAY_AGE_S or alive(pid, started):
+            continue
+        event = _json(payload)
+        if event.get("delegation_id") != delegation_id:
+            continue
+        with ad._orphan_lock:
+            if (key, delegation_id) in ad._offered:
+                continue
+            ad._offered.add((key, delegation_id))
+        target_queue.put({**ad.redact_completion_event(event), "restored": True, "ledger_profile_home": str(home)})
+        # ponytail: an offer is forgotten only when the sidecar restarts; a copy lost while it runs waits for that.
+
+
 def _restore_and_sweep_completions(registry) -> None:
     from tools import async_delegation
 
     # The Agent binds the launch home itself, even when the first drain is in a named profile.
     registry.restore_completions()
     interval = float(async_delegation.ORPHAN_SWEEP_INTERVAL_S)
+    owned = _owned_completion_homes()
     for home in _completion_homes():
         if time.monotonic() - _LAST_COMPLETION_SWEEP.get(home, -float("inf")) < interval:
             continue
         try:
-            with scoped_home(home):
-                if _is_named_profile(home) and home not in _RESTORED_COMPLETION_HOMES:
-                    async_delegation.restore_undelivered_completions(registry.completion_queue)
-                    _RESTORED_COMPLETION_HOMES.add(home)
-                async_delegation.maybe_sweep_orphaned_completions(registry.completion_queue)
+            if home not in owned:
+                _offer_foreign_completions(home, registry.completion_queue)
+            else:
+                with scoped_home(home):
+                    if _is_named_profile(home) and home not in _RESTORED_COMPLETION_HOMES:
+                        async_delegation.restore_undelivered_completions(registry.completion_queue)
+                        _RESTORED_COMPLETION_HOMES.add(home)
+                    async_delegation.maybe_sweep_orphaned_completions(registry.completion_queue)
             # Taken after the Agent stamped its own sweep, so the next entry never lands inside its interval.
             _LAST_COMPLETION_SWEEP[home] = time.monotonic()
         except Exception:  # noqa: BLE001 - retry this home without blocking other profiles or queued events
@@ -317,7 +364,7 @@ def claim_delivery(evt: dict, consumer: str) -> str | None:
         home = Path(get_hermes_home()).resolve()
         if evt.get("reconciliation_profile_home", str(home)) == str(home):
             # A live queue copy can race the transcript-only consumer too. Recheck the same proof here.
-            transport = {"process_id", "consumed", "child_process", "restored", "startup_replay", "reconciliation_profile_home"}
+            transport = {"process_id", "consumed", "child_process", "restored", "startup_replay", "reconciliation_profile_home", "ledger_profile_home"}
             for candidate in _delivered_notifications(home, str(evt.get("delegation_id") or ""))[0]:
                 if {k: v for k, v in candidate.items() if k not in transport} == {k: v for k, v in evt.items() if k not in transport}:
                     return ""  # Web's session receipt acknowledges this admission, not the Agent ledger.

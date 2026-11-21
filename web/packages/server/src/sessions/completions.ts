@@ -322,8 +322,10 @@ export class CompletionDrain {
     try { owner = (await this.deps.store.get(sid)) } catch { return false }
     try { home = this.ownerHome(owner) } catch (error) { home = ''; homeError = (error as Error).message }
     if (home && (await this.isReadOnly(owner))) return false
-    // Reconciliation needs positive profile proof; live events retain the existing admission deferral on home errors.
-    if (evt.reconciliation_profile_home && (!home || canonicalHome(str(evt.reconciliation_profile_home)) !== canonicalHome(home))) return false
+    // Reconciled and read-only replayed results (TAL-2256) need positive profile proof: they are claimed in the owner's home.
+    // Live events retain the existing admission deferral on home errors.
+    const ledgerHome = str(evt.reconciliation_profile_home || evt.ledger_profile_home)
+    if (ledgerHome && (!home || canonicalHome(ledgerHome) !== canonicalHome(home))) return false
     if (evt.reconciliation_profile_home && completionAccepted(owner, completionKey(home, evt))) return true
     if (evt.consumed === true) return true
     // TAL-933 (Agent `should_surface_notification`): a subagent's own process notices stay out of the parent chat unless

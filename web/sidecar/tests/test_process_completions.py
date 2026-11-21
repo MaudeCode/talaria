@@ -19,7 +19,8 @@ def test_startup_replay_matches_only_the_same_transcript_delivery(monkeypatch, t
 
     transcript = {'type': 'async_delegation', 'delegation_id': 'deleg-replayed',
                   'origin_ui_session_id': 'web-parent', 'status': 'completed', 'summary': 'Synthetic result'}
-    live = {**transcript, 'startup_replay': True, 'process_id': 'deleg-replayed', 'consumed': False}
+    # TAL-2256: a read-only foreign offer also carries its ledger home, which is transport, not payload.
+    live = {**transcript, 'startup_replay': True, 'process_id': 'deleg-replayed', 'consumed': False, 'ledger_profile_home': str(tmp_path)}
     if different_field:
         live[different_field] = 'different'
     monkeypatch.setattr(process, '_delivery_api', lambda: SimpleNamespace(claim_event_delivery=lambda event, consumer: None))
@@ -174,6 +175,75 @@ def test_drain_sweeps_dead_owners_in_every_served_home_but_not_live_or_claimed_r
     assert [(e["process_id"], e["origin_ui_session_id"]) for e in result["after_exit"]] == [("live", "web-live")]
 
 
+# TAL-2256: rows written by producers that have exited. 'running' never finished; 'expired' finished past the
+# Agent's replay cap; 'cli' finished without a WebUI origin.
+LEDGER_SEED = """
+now = time.time()
+for did, kind in json.loads(sys.argv[2]):
+    event = {'type': 'async_delegation', 'delegation_id': did, 'status': 'completed', 'dispatched_at': now,
+             'session_key': '' if kind == 'cli' else 'web-' + did, 'origin_ui_session_id': '' if kind == 'cli' else 'web-' + did}
+    ad._persist_dispatch(event)
+    if kind != 'running':
+        ad._persist_completion(event, {'summary': 'synthetic result'})
+    if kind == 'expired':
+        with ad._DB_LOCK, ad._transaction() as conn:
+            conn.execute('UPDATE async_delegations SET completed_at=?, dispatched_at=? WHERE delegation_id=?',
+                         (now - ad._MAX_COMPLETION_REPLAY_AGE_S - 3600,) * 2 + (did,))
+"""
+
+FOREIGN_PROBE = '''
+import os, sqlite3
+from pathlib import Path
+from talaria_sidecar.home import scoped_home
+from talaria_sidecar.methods import process
+base = Path(os.environ['HERMES_HOME'])
+named = base / 'profiles' / 'work'
+def ledger(home):
+    with sqlite3.connect(home / 'state.db') as conn:
+        conn.row_factory = sqlite3.Row
+        return [dict(r) for r in conn.execute('SELECT * FROM async_delegations ORDER BY delegation_id')]
+before = ledger(named)
+process.recover(base)
+ad.ORPHAN_SWEEP_INTERVAL_S = 0
+with scoped_home(base):
+    first = process.drain(256)
+    repeated = process.drain(256)
+after = ledger(named)
+offered = next(e for e in first if e['delegation_id'] == 'named-done')
+with scoped_home(named):
+    claims = [process.claim_delivery(offered, 'webui'), process.claim_delivery(offered, 'webui')]
+launch = {r[0]: (r[1], r[2]) for r in sqlite3.connect(base / 'state.db').execute('SELECT delegation_id, state, delivery_state FROM async_delegations')}
+print(json.dumps({'unchanged': before == after, 'diff': [f"{b['delegation_id']}: {b['state']}/{b['delivery_state']} -> {a['state']}/{a['delivery_state']}" for b, a in zip(before, after) if b != a],
+                  'first': first, 'repeated': repeated, 'claims': claims, 'launch': launch,
+                  'empty_created': (base / 'profiles' / 'empty' / 'state.db').exists()}))
+'''
+
+
+@requires_agent
+def test_launch_drain_leaves_foreign_profile_ledgers_unchanged_and_offers_their_webui_results_once(hermes_home):
+    named, empty = hermes_home / "profiles" / "work", hermes_home / "profiles" / "empty"
+    named.mkdir(parents=True)
+    empty.mkdir()
+    kinds = [["running", "running"], ["expired", "expired"], ["done", "done"], ["cli", "cli"]]
+    _agent(hermes_home, LEDGER_SEED, json.dumps([[f"launch-{did}", kind] for did, kind in kinds[:3]]))
+    _agent(named, LEDGER_SEED, json.dumps([[f"named-{did}", kind] for did, kind in kinds]))
+    result = json.loads(_agent(hermes_home, FOREIGN_PROBE))
+    # Another profile's ledger belongs to whatever process runs that profile: no recovery, no expiry drop.
+    assert result["unchanged"], result["diff"]
+    assert not result["empty_created"]
+    named_events = [e for e in result["first"] if e["delegation_id"].startswith("named-")]
+    assert [(e["delegation_id"], e["restored"], e["ledger_profile_home"]) for e in named_events] == [
+        ("named-done", True, str(named.resolve())),
+    ]
+    assert result["repeated"] == []
+    assert result["claims"][0] and result["claims"][1] is None
+    # The launch ledger keeps the Agent's own recovery and expiry.
+    assert result["launch"] == {
+        "launch-running": ["unknown", "pending"], "launch-expired": ["completed", "dropped"], "launch-done": ["completed", "pending"],
+    }
+    assert sorted(e["delegation_id"] for e in result["first"] if e["delegation_id"].startswith("launch-")) == ["launch-done", "launch-running"]
+
+
 @requires_agent
 def test_failed_named_replay_retries_without_blocking_launch_or_live_events(hermes_home):
     named = hermes_home / "profiles" / "work"
@@ -187,15 +257,15 @@ from talaria_sidecar.home import scoped_home
 from talaria_sidecar.methods import process
 from tools.process_registry import process_registry
 base = Path(get_hermes_home())
-original = ad.restore_undelivered_completions
+original = process._open_ledger
 failed = False
-def flaky(target_queue):
+def flaky(home):
     global failed
-    if Path(get_hermes_home()) != base and not failed:
+    if home.name == 'work' and not failed:
         failed = True
         raise OSError('synthetic ledger read failure')
-    return original(target_queue)
-ad.restore_undelivered_completions = flaky
+    return original(home)
+process._open_ledger = flaky
 process.recover(base)
 process_registry.completion_queue.put({'type': 'completion', 'session_id': 'live-process', 'session_key': 'web-live'})
 with scoped_home(base):
@@ -374,6 +444,7 @@ def test_drain_polls_enter_each_profile_scope_once_per_sweep_interval(monkeypatc
 
     monkeypatch.setattr(process, '_registry', lambda: registry)
     monkeypatch.setattr(process, '_completion_homes', lambda: homes)
+    monkeypatch.setattr(process, '_owned_completion_homes', lambda: set(homes))
     monkeypatch.setattr(process, '_reconcile_delivered_notifications', lambda: [])
     monkeypatch.setattr(process, 'scoped_home', scoped)
     monkeypatch.setattr(process, '_LAST_COMPLETION_SWEEP', {}, raising=False)
