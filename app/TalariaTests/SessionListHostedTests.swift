@@ -2951,46 +2951,52 @@ final class SessionActionsHostedTests: XCTestCase {
         XCTAssertEqual(chatTitles, Array(rowTitles.dropFirst()))
     }
 
-    func testArchiveAndDeleteImmediatelyReplaceTheOpenChatOnPhone() async throws {
-        try await assertArchiveAndDeleteReplaceTheOpenChat(size: HostedSize.phone)
+    func testArchiveImmediatelyReplacesTheOpenChatOnPhone() async throws {
+        try await assertRemovalReplacesTheOpenChat("Archive", size: HostedSize.phone)
     }
 
-    func testArchiveAndDeleteImmediatelyReplaceTheOpenChatAtRegularWidth() async throws {
-        try await assertArchiveAndDeleteReplaceTheOpenChat(size: HostedSize.duoInnerLandscape)
+    func testDeleteImmediatelyReplacesTheOpenChatOnPhone() async throws {
+        try await assertRemovalReplacesTheOpenChat("Delete", size: HostedSize.phone)
     }
 
-    private func assertArchiveAndDeleteReplaceTheOpenChat(size: CGSize) async throws {
-        for title in ["Archive", "Delete"] {
-            let fixture = try FixtureApp([UITestFixtureEnvironment.holdSessionRemovalArgument], for: self)
-            let window = try await openChat(fixture, size: size)
-            let action = try XCTUnwrap(actions(in: try XCTUnwrap(titleMenu(in: window))).first { $0.title == title })
-            HostedAccessibility.activate(action)
-            if title == "Delete" {
-                let presented = await presentedAlert(in: window)
-                let alert = try XCTUnwrap(presented)
-                XCTAssertTrue(HostedAccessibility.tap("Delete", in: alert))
-            }
-            _ = try await requireElement(in: window, label: "Send", "The removal left no New Chat composer")
-            let removed = await awaitNoElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
-            XCTAssertTrue(removed, "The open chat waited for the server's \(title) response")
-            XCTAssertNil(titleMenu(in: window), "An idle New Chat offers session actions")
-            if size == HostedSize.duoInnerLandscape {
-                let split = try XCTUnwrap(HostedAccessibility.splitViewController(under: window.rootViewController))
-                let columnVisible = await awaitCondition { split.displayMode == .oneBesideSecondary }
-                XCTAssertTrue(columnVisible, "Removal hid the column beside New Chat")
-                let primary = try XCTUnwrap(split.viewController(for: .primary))
-                let detail = try XCTUnwrap(split.viewController(for: .secondary))
-                XCTAssertTrue(primary.view.window === window)
-                XCTAssertTrue(detail.view.window === window)
-                XCTAssertLessThanOrEqual(primary.view.convert(primary.view.bounds, to: window).maxX,
-                                         detail.view.convert(detail.view.bounds, to: window).minX + 1)
-            }
-            await releaseHeldRequest(of: fixture)
-            let answered = await awaitCondition { UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains(title == "Archive" ? "/api/session/archive" : "/api/session/delete") } }
-            XCTAssertTrue(answered)
-            window.isHidden = true
-            window.rootViewController = nil
+    func testArchiveImmediatelyReplacesTheOpenChatAtRegularWidth() async throws {
+        try await assertRemovalReplacesTheOpenChat("Archive", size: HostedSize.duoInnerLandscape)
+    }
+
+    func testDeleteImmediatelyReplacesTheOpenChatAtRegularWidth() async throws {
+        try await assertRemovalReplacesTheOpenChat("Delete", size: HostedSize.duoInnerLandscape)
+    }
+
+    private func assertRemovalReplacesTheOpenChat(_ title: String, size: CGSize) async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.holdSessionRemovalArgument], for: self)
+        let window = try await openChat(fixture, size: size)
+        let action = try XCTUnwrap(actions(in: try XCTUnwrap(titleMenu(in: window))).first { $0.title == title })
+        HostedAccessibility.activate(action)
+        if title == "Delete" {
+            let presented = await presentedAlert(in: window)
+            let alert = try XCTUnwrap(presented)
+            XCTAssertTrue(HostedAccessibility.tap("Delete", in: alert))
         }
+        _ = try await requireElement(in: window, label: "Send", "The removal left no New Chat composer")
+        let removed = await awaitNoElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
+        XCTAssertTrue(removed, "The open chat waited for the server's \(title) response")
+        XCTAssertNil(titleMenu(in: window), "An idle New Chat offers session actions")
+        if size == HostedSize.duoInnerLandscape {
+            let split = try XCTUnwrap(HostedAccessibility.splitViewController(under: window.rootViewController))
+            let columnVisible = await awaitCondition { split.displayMode == .oneBesideSecondary }
+            XCTAssertTrue(columnVisible, "Removal hid the column beside New Chat")
+            let primary = try XCTUnwrap(split.viewController(for: .primary))
+            let detail = try XCTUnwrap(split.viewController(for: .secondary))
+            XCTAssertTrue(primary.view.window === window)
+            XCTAssertTrue(detail.view.window === window)
+            XCTAssertLessThanOrEqual(primary.view.convert(primary.view.bounds, to: window).maxX,
+                                     detail.view.convert(detail.view.bounds, to: window).minX + 1)
+        }
+        await releaseHeldRequest(of: fixture)
+        let answered = await awaitCondition { UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains(title == "Archive" ? "/api/session/archive" : "/api/session/delete") } }
+        XCTAssertTrue(answered)
+        window.isHidden = true
+        window.rootViewController = nil
     }
 
     func testLocallyPushedForkMenuTargetsTheForkAndHeldRemovalReturnsToItsParent() async throws {
@@ -3060,61 +3066,67 @@ final class SessionActionsHostedTests: XCTestCase {
     }
 
     func testSidebarRemovalOfTheParentKeepsItsDisplayedFork() async throws {
-        for refused in [false, true] {
-            var scenario = [UITestFixtureEnvironment.forkSessionArgument, UITestFixtureEnvironment.holdSessionRemovalArgument]
-            if refused { scenario.append(UITestFixtureEnvironment.refuseSessionRemovalArgument) }
-            let fixture = try FixtureApp(scenario, for: self)
-            let chats = ChatViewModelCache()
-            let window = try await openChat(fixture, size: HostedSize.duoInnerLandscape, chats: chats)
-            let summary = try await fixture.session()
-            func retainedParent() -> RetainedChat {
-                chats.chat(for: summary, server: UITestFixtureEnvironment.serverURL) {
-                    XCTFail("The mounted parent's view model was created again")
-                    return ChatView.makeViewModel(session: summary, server: UITestFixtureEnvironment.serverURL)
-                }
+        try await assertSidebarRemovalKeepsTheFork(refused: false)
+    }
+
+    func testRefusedSidebarRemovalOfTheParentKeepsItsDisplayedFork() async throws {
+        try await assertSidebarRemovalKeepsTheFork(refused: true)
+    }
+
+    private func assertSidebarRemovalKeepsTheFork(refused: Bool) async throws {
+        var scenario = [UITestFixtureEnvironment.forkSessionArgument, UITestFixtureEnvironment.holdSessionRemovalArgument]
+        if refused { scenario.append(UITestFixtureEnvironment.refuseSessionRemovalArgument) }
+        let fixture = try FixtureApp(scenario, for: self)
+        let chats = ChatViewModelCache()
+        let window = try await openChat(fixture, size: HostedSize.duoInnerLandscape, chats: chats)
+        let summary = try await fixture.session()
+        func retainedParent() -> RetainedChat {
+            chats.chat(for: summary, server: UITestFixtureEnvironment.serverURL) {
+                XCTFail("The mounted parent's view model was created again")
+                return ChatView.makeViewModel(session: summary, server: UITestFixtureEnvironment.serverURL)
             }
-            let retained = retainedParent()
-            XCTAssertEqual(chats.count, 1)
-            try await sendFromComposer("/branch", in: window)
-            _ = try await requireElement(in: window, label: "Fork fixture reply")
-            try await openSidebar(in: window)
-            let parent = try await requireElement(in: window) {
+        }
+        let retained = retainedParent()
+        XCTAssertEqual(chats.count, 1)
+        try await sendFromComposer("/branch", in: window)
+        _ = try await requireElement(in: window, label: "Fork fixture reply")
+        try await openSidebar(in: window)
+        let parent = try await requireElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+                && $0.accessibilityCustomActions?.contains { $0.name == "Archive" } == true
+        }
+        let archive = try XCTUnwrap(parent.accessibilityCustomActions?.first { $0.name == "Archive" })
+        XCTAssertTrue(archive.actionHandler?(archive) ?? false)
+        let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
+        XCTAssertTrue(held)
+        _ = try await requireElement(in: window, label: "Fork fixture reply")
+        XCTAssertEqual(chats.count, 1, "Removing a parent under its fork must not create another retained chat")
+        XCTAssertTrue(retainedParent() === retained, "The fork still depends on its mounted parent's retained chat")
+        fixture.releaseHeldLoads()
+        let answered = await awaitCondition {
+            UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/api/session/archive") }
+        }
+        XCTAssertTrue(answered)
+        _ = try await requireElement(in: window, label: "Fork fixture reply")
+        XCTAssertEqual(chats.count, 1)
+        XCTAssertTrue(retainedParent().viewModel === retained.viewModel, "The archive response replaced the parent's view model")
+        if refused {
+            _ = try await requireElement(in: window) {
                 $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
                     && $0.accessibilityCustomActions?.contains { $0.name == "Archive" } == true
             }
-            let archive = try XCTUnwrap(parent.accessibilityCustomActions?.first { $0.name == "Archive" })
-            XCTAssertTrue(archive.actionHandler?(archive) ?? false)
-            let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
-            XCTAssertTrue(held)
-            _ = try await requireElement(in: window, label: "Fork fixture reply")
-            XCTAssertEqual(chats.count, 1, "Removing a parent under its fork must not create another retained chat")
-            XCTAssertTrue(retainedParent() === retained, "The fork still depends on its mounted parent's retained chat")
-            fixture.releaseHeldLoads()
-            let answered = await awaitCondition {
-                UITestFixtureURLProtocol.answeredPaths.withLock { $0.contains("/api/session/archive") }
+        } else {
+            let gone = await awaitNoElement(in: window) {
+                $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
+                    && $0.accessibilityCustomActions?.contains { $0.name == "Archive" } == true
             }
-            XCTAssertTrue(answered)
-            _ = try await requireElement(in: window, label: "Fork fixture reply")
-            XCTAssertEqual(chats.count, 1)
-            XCTAssertTrue(retainedParent().viewModel === retained.viewModel, "The archive response replaced the parent's view model")
-            if refused {
-                _ = try await requireElement(in: window) {
-                    $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
-                        && $0.accessibilityCustomActions?.contains { $0.name == "Archive" } == true
-                }
-            } else {
-                let gone = await awaitNoElement(in: window) {
-                    $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true
-                        && $0.accessibilityCustomActions?.contains { $0.name == "Archive" } == true
-                }
-                XCTAssertTrue(gone)
-                HostedAccessibility.activate(try await requireElement(in: window, label: "Memory"))
-                let released = await awaitCondition { chats.count == 0 }
-                XCTAssertTrue(released, "Replacing the parent root must release its archived retained chat")
-            }
-            window.isHidden = true
-            window.rootViewController = nil
+            XCTAssertTrue(gone)
+            HostedAccessibility.activate(try await requireElement(in: window, label: "Memory"))
+            let released = await awaitCondition { chats.count == 0 }
+            XCTAssertTrue(released, "Replacing the parent root must release its archived retained chat")
         }
+        window.isHidden = true
+        window.rootViewController = nil
     }
 
     func testPoppingAForkMakesParentRemovalReplaceTheRoot() async throws {

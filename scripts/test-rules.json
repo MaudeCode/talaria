@@ -100,13 +100,14 @@
       ],
       "excludeFilePattern": "PerformanceTests\\.swift$",
       "patterns": [
-        "^\\s*for\\s+(?:\\([^)]*\\b(?:size|fold)\\b[^)]*\\)|size)\\s+in\\s+"
+        "^\\s*for\\s+(?:\\([^)]*\\b(?:size|fold)\\b[^)]*\\)|size)\\s+in\\s+",
+        "^\\s*for\\s+(?:title|refused)\\s+in\\s+\\[(?:\"Archive\",|false,\\s*true\\])"
       ],
       "nearby": {
         "lines": 6,
         "pattern": "\\blet fixture = try FixtureApp\\("
       },
-      "message": "test-audit oversized: put each hosted layout that boots a new app fixture in its own test case (docs/testing.md)"
+      "message": "test-audit oversized: put each hosted scenario that boots a new app fixture in its own test case (docs/testing.md)"
     },
     "leak-pasteboard": {
       "paths": [
