@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Web masks the values a browser automation step types into a page, such as passwords, wherever the step is shown.",
+      "highlight": false,
+      "components": ["web"],
+      "announce": false
+    }
+  ]
+}

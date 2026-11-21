@@ -5,7 +5,8 @@ import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
 import { isRasterDataUri } from './raster-image.js'
 import { displaySetting } from './sessions/display-settings.js'
-import { gutterLines, gutterText, hiddenLookup, snapshotArgs, startedProcessId, toolArgs, toolDisplay, toolName, withResultFocusPaths } from './sessions/tool-display.js'
+import { codeExcerpt, gutterLines, gutterText, hiddenLookup, rawToolName, snapshotArgs, startedProcessId, toolArgs, toolDisplay, toolName, withResultFocusPaths } from './sessions/tool-display.js'
+import { maskTypedBrowserText, typesIntoPage } from './redact-browser-input.js'
 import { cappedFields, codexCommentary, hasNativeImages, isDict, messageText, normalizeAssistantDisplay, normalizeUserDisplay, toolFields, TOOL_ARG_CONTENT_CAP, withoutImageData, withoutReasoningParts } from './sessions/merge.js'
 import { REASONING_FIELDS } from './sessions/reasoning-display.js'
 import { stripAttachedFilesMarker } from './sessions/session.js'
@@ -2573,8 +2574,9 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
  */
 function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean, workspace: string | null, sessionId: string | null): T {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !redacted || typeof redacted !== 'object' || Array.isArray(redacted)) return redacted
-  const record = raw as Record<string, unknown>
+  const record = typedMaskedCall(raw as Record<string, unknown>, enabled)
   const out = { ...redacted } as Record<string, unknown>
+  if (record.result_view !== (raw as Record<string, unknown>).result_view) out.result_view = redactValue(record.result_view, enabled)
   if (record.args !== undefined) out.args = redactArgs(record.args, enabled)
   if (record.input !== undefined) out.input = redactArgs(record.input, enabled)
   // Structured results are redacted by key too (`{ result: { token } }`); text results keep the text redaction.
@@ -2583,7 +2585,7 @@ function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean, workspa
   if (enabled && fnArgs !== undefined && out.function && typeof out.function === 'object') {
     // A JSON-string `arguments` is redacted as parsed args; an object-valued one (`ToolCallSchema` accepts any JSON) directly.
     if (typeof fnArgs !== 'string') out.function = { ...out.function, arguments: redactArgs(fnArgs, enabled) }
-    else try { out.function = { ...out.function, arguments: JSON.stringify(redactArgs(JSON.parse(fnArgs), enabled)) } } catch { /* unparseable: the text redaction stands */ }
+    else try { out.function = { ...out.function, arguments: JSON.stringify(redactArgs(JSON.parse(fnArgs), enabled)) } } catch { out.function = { ...(out.function as Record<string, unknown>), arguments: redactValue(fnArgs, enabled) } /* unparseable: redacted as text */ }
   }
   // TAL-2318: the argument rows, from the arguments redacted by key like `args` (a bridged call's own), each value capped.
   const args = redactArgs(toolArgs(record), enabled)
@@ -2617,6 +2619,65 @@ export function withDisplaySettings(call: Record<string, unknown>, name: unknown
 
 /** TAL-2328: a result view showing the code its call ran: an excerpt without a path (`code` presentation). */
 const showsItsCode = (view: unknown): boolean => isDict(view) && isDict(view.file_excerpt) && view.file_excerpt.path === ''
+
+/** Code the sidecar cut at its cap: the live snapshot's `...` marker, or the bounded `raw_args` text. */
+function isCutCode(code: string): boolean {
+  if (code.length < TOOL_ARG_CONTENT_CAP) return false
+  const length = Array.from(code).length
+  return length === TOOL_ARG_CONTENT_CAP || (length === TOOL_ARG_CONTENT_CAP + 3 && code.endsWith('...'))
+}
+
+/**
+ * TAL-2299: a call's arguments with the values its `browser_exec` code types into a page masked (`maskTypedBrowserText`),
+ * in a bridge's entries too. JSON text is masked as its parsed arguments; text that does not parse and types is withheld.
+ * The same object when nothing is typed.
+ */
+function typedMaskedArgs(name: string, args: unknown): unknown {
+  if (typeof args === 'string') {
+    if (name !== 'browser_exec' && name !== 'tool_call') return args
+    const parsed = jsonOrNull(args)
+    if (parsed === null) return typesIntoPage(args) ? '***' : args
+    const masked = typedMaskedArgs(name, parsed)
+    return masked === parsed ? args : JSON.stringify(masked)
+  }
+  if (!isDict(args)) return args
+  if (name === 'tool_call' && Array.isArray(args.calls)) {
+    const entries = args.calls as unknown[]
+    const calls = entries.map((entry) => {
+      if (!isDict(entry)) return entry
+      const masked = typedMaskedArgs(str(entry.name), entry.arguments)
+      return masked === entry.arguments ? entry : { ...entry, arguments: masked }
+    })
+    return calls.some((entry, i) => entry !== entries[i]) ? { ...args, calls } : args
+  }
+  if (name !== 'browser_exec' || typeof args.code !== 'string') return args
+  const code = maskTypedBrowserText(args.code, isCutCode(args.code))
+  return code === args.code ? args : { ...args, code }
+}
+
+/**
+ * TAL-2299: the display copy of a call, which every public field of it derives from (arguments in each shape, target,
+ * argument rows, raw view, code excerpt): the call itself unless it is a `browser_exec` call or a bridge. The stored call
+ * and private replay keep the code as it ran.
+ */
+function typedMaskedCall(call: Record<string, unknown>, enabled: boolean): Record<string, unknown> {
+  const name = rawToolName(call)
+  if (!enabled || (name !== 'browser_exec' && name !== 'tool_call')) return call
+  const out = { ...call }
+  for (const key of ['args', 'input', 'raw_args'] as const) if (call[key] !== undefined) out[key] = typedMaskedArgs(name, call[key])
+  if (isDict(call.function) && call.function.arguments !== undefined) out.function = { ...call.function, arguments: typedMaskedArgs(name, call.function.arguments) }
+  const view = call.result_view
+  const lines = isDict(view) && showsItsCode(view) ? FileExcerptLineSchema.array().safeParse((view.file_excerpt as Record<string, unknown>).lines).data : undefined
+  if (isDict(view) && lines) {
+    const text = lines.map((line) => line.text).join('\n')
+    const args = toolArgs(call)
+    // An excerpt that is not the call's whole code was cut on the way, so its typing call may sit past the cut.
+    const whole = isDict(args) && typeof args.code === 'string' && args.code.replace(/\n+$/, '') === text
+    const masked = maskTypedBrowserText(text, !whole || isCutCode(text))
+    if (masked !== text) out.result_view = { ...view, file_excerpt: { ...(view.file_excerpt as Record<string, unknown>), ...codeExcerpt({ code: masked }) } }
+  }
+  return out
+}
 
 /**
  * The target is derived in the live order: the sidecar's snapshot (first four arguments, capped) before redaction. TAL-1537:
@@ -2736,7 +2797,8 @@ const jsonOrNull = (text: string): object | null => { try { const value = JSON.p
  * from the sidecar's bounded `raw_args` and `raw_result`, a journaled frame's from its own (already raw) fields, a scene row's
  * from its whole arguments and result text. A frame without one keeps its start frame's.
  */
-function withRawTool(raw: Record<string, unknown>, out: Record<string, unknown>, enabled: boolean): Record<string, unknown> {
+function withRawTool(call: Record<string, unknown>, out: Record<string, unknown>, enabled: boolean): Record<string, unknown> {
+  const raw = typedMaskedCall(call, enabled)
   const { raw_args: _args, raw_result: _result, ...rest } = out
   const rawArgs = rawToolText(raw.raw_args ?? toolArgs(raw), enabled)
   const result = raw.raw_result ?? raw.result ?? raw.output

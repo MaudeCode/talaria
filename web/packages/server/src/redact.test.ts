@@ -762,6 +762,84 @@ describe('target order', () => {
   })
 })
 
+describe('values a browser_exec call types into a page (TAL-2299)', () => {
+  const stored = (code: string): Record<string, unknown> => ({ messages: [{ role: 'assistant', content: '', tool_calls: [{ id: 'a', type: 'function', function: { name: 'browser_exec', arguments: JSON.stringify({ code }) } }] }] })
+  const storedCall = (session: Record<string, unknown>): Record<string, unknown> => ((redactSessionData(session, true).messages as Record<string, unknown>[])[0]!.tool_calls as Record<string, unknown>[])[0]!
+
+  it('masks the typed value of a stored call in its public arguments and its target, leaving the stored call as it was', () => {
+    const session = stored(`fill_input('input[type=password]', 'synthetic-password')`)
+    const before = JSON.stringify(session)
+    const call = storedCall(session)
+    const masked = `fill_input('input[type=password]', '***')`
+    expect(JSON.parse((call.function as { arguments: string }).arguments)).toEqual({ code: masked })
+    expect(call.target).toBe(masked)
+    expect(JSON.stringify(call)).not.toContain('synthetic-password')
+    expect(JSON.stringify(session)).toBe(before)
+  })
+
+  it.each([
+    ['a positional value, each helper at its own position', `fill_input('#user', 'bob'); type_text("hunter2")`, `fill_input('#user', '***'); type_text('***')`],
+    ['a keyword value in any order', `fill_input(text='hunter2', selector='#pass')`, `fill_input(text='***', selector='#pass')`],
+    ['parenthesized adjacent literals', `fill_input('#pass', ('hunter' '2'))`, `fill_input('#pass', '***')`],
+    ['concatenated literals', `fill_input('#pass', 'hun' + 'ter2')`, `fill_input('#pass', '***')`],
+    ['an f-string', `fill_input('#pass', f'{user}-hunter2')`, `fill_input('#pass', '***')`],
+    ['a number', `pin = 123456\nfill_input('#pin', str(pin), timeout=5)`, `pin = ***\nfill_input('#pin', '***', timeout=5)`],
+    ['an assigned variable', `pw = 'hunter2'\nfill_input('#pass', pw)\ngoto('https://example.com/login')`, `pw = '***'\nfill_input('#pass', '***')\ngoto('https://example.com/login')`],
+    ['a tuple target', `sel, pw = '#pass', 'hunter2'\nfill_input(sel, pw)`, `sel, pw = '***', '***'\nfill_input(sel, '***')`],
+    ['a loop variable', `for pw in ['hunter2']:\n    type_text(pw)`, `for pw in ['***']:\n    type_text('***')`],
+    ['a parameter of a function the snippet defines', `def login(sel, pw):\n    fill_input(sel, pw)\nlogin('#pass', 'hunter2')\nclick('#go')`, `def login(sel, pw):\n    fill_input(sel, '***')\nlogin('***', '***')\nclick('#go')`],
+    ['a value stored under a key', `creds = {}\ncreds['pw'] = 'hunter2'\ntype_text(creds['pw'])`, `creds = {}\ncreds['***'] = '***'\ntype_text('***')`],
+    ['a helper called inside a string', `exec("fill_input('#pass', 'hunter2')")`, `exec('***')`],
+    ['a splatted list', `args = ['#pass', 'hunter2']\nfill_input(*args)`, `args = ['***', '***']\nfill_input(*'***')`],
+    ['a splatted dict', `kw = {'text': 'hunter2'}\nfill_input('#pass', **kw)`, `kw = {'***': '***'}\nfill_input('#pass', **'***')`],
+    ['a .value assignment in page script', `js("document.querySelector('#pass').value = 'hunter2'")`, `js("document.querySelector('#pass').value = '***'")`],
+    ['a .value template literal, never a comparison', `js("el.value = \`hunter2\`; el.value == 'shown'")`, `js("el.value = \`***\`; el.value == 'shown'")`],
+    ['a CDP insertion by keyword', `cdp("Input.insertText", text="hunter2")`, `cdp("Input.insertText", text='***')`],
+    ['a CDP insertion by params, through a variable', `pw = 'hunter2'\ncdp('Input.insertText', {'text': pw}, session_id=sid)`, `pw = '***'\ncdp('Input.insertText', {'text': pw}, session_id=sid)`],
+    ['an insertion inside page script', `js("document.execCommand('insertText', false, 'hunter2')")`, `js('***')`],
+    ['CR and CRLF line ends', `fill_input('#pass', 'hunter2')\r\ngoto('https://example.com')\rclick('#go')`, `fill_input('#pass', '***')\r\ngoto('https://example.com')\rclick('#go')`],
+    ['a call the snippet never closes', `fill_input('#pass', 'hunter2`, `fill_input('#pass', '***'`],
+    // Typing code that cannot be separated is withheld whole.
+    ['a stray bracket', `fill_input('#pass', 'hunter2'))`, '***'],
+    ['a quote broken across lines', `fill_input('#pass', 'hun\nter2')`, '***'],
+    ['an aliased helper', `typer = fill_input\ntyper('#pass', 'hunter2')`, '***'],
+    ['an insertion named apart from its call', `method = "Input.insertText"\ncdp(method, {"text": "hunter2"})`, '***'],
+    ['typing calls nested past the work budget', `${'fill_input('.repeat(400)}'hunter2'`, '***'],
+    // An import or a comment naming a helper types nothing.
+    ['a comment naming a helper', `# fill_input the form later\ngoto('https://example.com/a?b=1')\nprint(page_info())`, `# fill_input the form later\ngoto('https://example.com/a?b=1')\nprint(page_info())`],
+    ['an imported helper', `from helpers import fill_input\nfill_input('#p', 'hunter2')`, `from helpers import fill_input\nfill_input('#p', '***')`],
+  ])('shows browser_exec code with %s masked or withheld', (_label, code, expected) => {
+    expect((publicToolFrame({ name: 'browser_exec', args: { code } }, true).args as { code: string }).code).toBe(expected)
+  })
+
+  it('serves the one masked copy to every public field of a call: live, stored, bridged and nested', () => {
+    const code = `pw = 'hunter2'\nfill_input('#pass', pw)`
+    const masked = `pw = '***'\nfill_input('#pass', '***')`
+    const view = toolOutcome({ success: true, output: 'ok' }, 'browser_exec', false, { code }).result_view
+    const live = publicToolFrame({ name: 'browser_exec', args: { code }, raw_args: { code }, result_view: view }, true)
+    expect(live).toMatchObject({ args: { code: masked }, target: `pw = '***'`, raw_args: JSON.stringify({ code: masked }, null, 2), result_view: { file_excerpt: { lines: [{ n: 1, text: `pw = '***'` }, { n: 2, text: `fill_input('#pass', '***')` }], total_lines: 2 } } })
+    // A start frame has no result yet, so its code shows as an argument row.
+    expect(publicToolFrame({ name: 'browser_exec', args: { code } }, true).args_fields).toEqual([{ key: 'code', value: masked, multiline: true }])
+    const bridged = storedCall({ messages: [{ role: 'assistant', content: '', tool_calls: [{ id: 'a', type: 'function', function: { name: 'tool_call', arguments: JSON.stringify({ calls: [{ name: 'browser_exec', arguments: { code } }] }) } }] }] })
+    expect(bridged.target).toBe(`pw = '***'`)
+    const nested = redactNestedMessageContainers({ runtime_journal_snapshot: { tool_calls: [{ name: 'browser_exec', args: { code } }], messages: [{ role: 'assistant', content: [{ type: 'tool_use', id: 'b', name: 'browser_exec', input: { code } }] }] } }, true)
+    // Arguments text that does not parse cannot be separated either.
+    const unparsed = storedCall({ messages: [{ role: 'assistant', content: '', tool_calls: [{ id: 'a', type: 'function', function: { name: 'browser_exec', arguments: `{"code": "fill_input('#pass', 'hunter2')` } }] }] })
+    expect((unparsed.function as { arguments: string }).arguments).toBe('***')
+    for (const shown of [live, bridged, nested, unparsed]) expect(JSON.stringify(shown)).not.toContain('hunter2')
+    // With redaction off the call ships as it ran.
+    expect(publicToolFrame({ name: 'browser_exec', args: { code } }, false).args).toEqual({ code })
+  })
+
+  it('masks every literal of code the sidecar cut at its cap, whose typing call may sit past the cut', () => {
+    const head = `pw = 'hunter2'\ngoto('https://example.com')\n# `
+    const cut = `${head}${'x'.repeat(4000 - head.length)}...`
+    const frame = publicToolFrame({ name: 'browser_exec', args: { code: cut } }, true)
+    expect((frame.args as { code: string }).code).toBe(cut.replace(`'hunter2'`, `'***'`).replace(`'https://example.com'`, `'***'`))
+    expect(frame.target).toBe(`pw = '***'`)
+  })
+})
+
 describe('deferred tool bridges after reload (TAL-2316)', () => {
   it('shows a persisted bridged call as the call it ran, with the live frame\'s name, kind and target, and its result card', () => {
     const fn = (id: string, name: string, args: unknown) => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
