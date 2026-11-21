@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
-import type { Session, Settings } from '../../contracts'
+import type { Command, Session, Settings } from '../../contracts'
 import * as api from '../../api/endpoints'
 import { ApiError } from '../../contracts/common'
 import { dispatch, getStreamState, resetStreamStoreForTests, getTurnIntent } from '../../stream/store'
@@ -15,7 +15,6 @@ import { deferred, IME_ENTERS } from '../../test/fixtures'
 import { resetConnectionsForTests } from '../../stream/connection'
 import { endFirstSend, getFirstSend } from '../chat/firstSend'
 import { returnToComposer } from './composerReturn'
-import { commandCatalog } from '../../../../server/src/tools/commands.ts'
 import { showToast } from '../toast/toast'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -939,9 +938,8 @@ describe('Composer', () => {
     ['/agents/notes.md summarize', true],
     ['/tmp/example.js explain', true],
   ])('routes slash-looking text by its complete command token (TAL-1926): %s', async (text, sendAsText) => {
-    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: commandCatalog([
-      { name: 'agents', description: 'List agents', category: 'Session', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: false, prompt: null },
-    ]) })
+    const agents: Command = { name: 'agents', description: 'List agents', category: 'Session', aliases: [], handler: 'agent', clients: [], unsupported_message: '/agents runs only in the Hermes CLI.', exec: false }
+    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [agents] })
     vi.mocked(api.startChat).mockClear().mockResolvedValue({ stream_id: 'path-message', session_id: 's1' })
     vi.mocked(showToast).mockClear()
     const onLocalCommand = vi.fn(() => Promise.resolve(false))
