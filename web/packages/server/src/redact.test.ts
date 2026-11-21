@@ -797,6 +797,7 @@ describe('values a browser_exec call types into a page (TAL-2299)', () => {
     ['a .value assignment in page script', `js("document.querySelector('#pass').value = 'hunter2'")`, `js("document.querySelector('#pass').value = '***'")`],
     ['a .value template literal, never a comparison', `js("el.value = \`hunter2\`; el.value == 'shown'")`, `js("el.value = \`***\`; el.value == 'shown'")`],
     ['a .value assigned from a page-script variable', `js("const pw = 'hunter2'; el.value = pw")`, `js('***')`],
+    ['a .value assigned an interpolating template', 'js("const pw = \'hunter2\'; el.value = `${pw}`")', `js('***')`],
     ['a .value assigned a concatenation', `js("el.value = 'hun' + 'ter2'")`, `js('***')`],
     ['a CDP insertion of a converted number', `cdp('Input.insertText', {'text': str(123456)})`, `cdp('Input.insertText', {'text': str(***)})`],
     ['a CDP insertion by keyword', `cdp("Input.insertText", text="hunter2")`, `cdp("Input.insertText", text='***')`],

@@ -278,7 +278,8 @@ function typedSpans(code: string, cut: boolean): Span[] {
     if (!literal && skeleton[match.index] !== '.') continue
     const value = innerLiteral(code, match.index + match[0].length)
     // The assigned expression is one literal only when its statement ends there: at a `;`, a line end, or the string's own close.
-    const isolated = value !== null && /^[ \t]*(?:[;\r\n#]|['"]{1,3}$|$)/.test(code.slice(value[1], literal ? literal.end : code.length))
+    // A template that interpolates (`${pw}`) takes its value from the script around it.
+    const isolated = value !== null && !code.slice(value[0], value[1]).includes('${') && /^[ \t]*(?:[;\r\n#]|['"]{1,3}$|$)/.test(code.slice(value[1], literal ? literal.end : code.length))
     if (value && isolated) { spans.push(value); if (literal) followLiteral(literal); continue }
     // Anything else (a variable, a concatenation) takes its value from the script or statement around it, masked whole.
     if (literal) maskLiteral(literal)
