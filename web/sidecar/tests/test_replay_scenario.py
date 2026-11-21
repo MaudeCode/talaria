@@ -48,17 +48,27 @@ def methods(tmp_path, monkeypatch):
     return module.build_methods()
 
 
-def start(methods, ctx, session_id, message):
-    """Runs chat.start on its own thread, as the RPC server does, and returns a getter for its result."""
-    out = {}
-    turn = threading.Thread(target=lambda: out.update(result=methods["chat.start"](ctx, {"session_id": session_id, "user_message": message})))
-    turn.start()
+@pytest.fixture
+def start(methods):
+    """Runs chat.start on its own thread, as the RPC server does, and returns the thread and a getter for its result.
+    Teardown stops and joins every turn it started, so a failed assertion never leaves one waiting for an answer."""
+    turns = []
 
-    def result():
+    def run(ctx, session_id, message):
+        out = {}
+        turn = threading.Thread(target=lambda: out.update(result=methods["chat.start"](ctx, {"session_id": session_id, "user_message": message})))
+        turns.append((ctx, turn))
+        turn.start()
+
+        def result():
+            turn.join(CEILING)
+            assert not turn.is_alive(), "the turn did not settle"
+            return out["result"]
+        return turn, result
+    yield run
+    for ctx, turn in turns:
+        ctx.cancelled = True
         turn.join(CEILING)
-        assert not turn.is_alive(), "the turn did not settle"
-        return out["result"]
-    return turn, result
 
 
 def test_a_scripted_turn_streams_its_tools_and_reply_and_returns_them_as_transcript_rows(methods):
@@ -84,9 +94,9 @@ def test_a_scripted_turn_streams_its_tools_and_reply_and_returns_them_as_transcr
     assert result["status"] == "completed" and result["final_response"] == reply["content"]
 
 
-def test_a_scripted_approval_and_clarification_hold_the_turn_until_its_own_session_answers(methods):
+def test_a_scripted_approval_and_clarification_hold_the_turn_until_its_own_session_answers(methods, start):
     ctx = Ctx()
-    turn, result = start(methods, ctx, "waiting", "clean up")
+    turn, result = start(ctx, "waiting", "clean up")
     approval = ctx.wait_for("approval")
     assert (approval["command"], approval["tool_name"]) == ("rm -rf build", "terminal")
     # Another chat's answer never releases this one.
@@ -106,9 +116,9 @@ def test_a_scripted_approval_and_clarification_hold_the_turn_until_its_own_sessi
     assert ctx.frames[-1] == ("token", {"text": "Cleaned."})
 
 
-def test_an_unmatched_message_keeps_the_contract_turn(methods):
+def test_an_unmatched_message_keeps_the_contract_turn(methods, start):
     ctx = Ctx()
-    _, result = start(methods, ctx, "contract", "contract fixture")
+    _, result = start(ctx, "contract", "contract fixture")
     assert ctx.wait_for("approval")["pattern_key"] == "talaria_contract_fixture"
     methods["approval.respond"](Ctx(), {"session_id": "contract", "choice": "once"})
     assert result()["final_response"] == "talaria-contract"
