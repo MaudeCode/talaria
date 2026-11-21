@@ -89,6 +89,12 @@ class TailscaleTests(unittest.TestCase):
 
 class ServerTests(unittest.TestCase):
     def test_start_serves_a_password_login_and_stop_removes_the_server(self):
+        # A checkout web/.env with another password must not reach the server. Created exclusively, so a developer's
+        # own web/.env is never overwritten.
+        dotenv = SCRIPT.resolve().parents[1] / "web" / ".env"
+        with dotenv.open("x") as hostile:
+            hostile.write("TALARIA_WEB_PASSWORD=checkout-password\n")
+        self.addCleanup(dotenv.unlink)
         started = subprocess.run(
             [sys.executable, str(SCRIPT), "start", "--host", "127.0.0.1"], capture_output=True, text=True
         )

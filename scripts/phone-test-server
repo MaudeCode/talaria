@@ -175,6 +175,8 @@ def start(args):
         "TALARIA_WEB_PASSWORD": password,
         "TALARIA_WEB_SKIP_ONBOARDING": "1",
         "TALARIA_WEB_TEST_NETWORK_BLOCK": "1",
+        # The checkout web/.env would otherwise override this environment, password and state paths included.
+        "TALARIA_WEB_NO_DOTENV": "1",
         "TALARIA_WEB_SIDECAR_COMMAND": json.dumps([python, str(WEB / "sidecar/scripts/replay_sidecar.py")]),
         # `serve` in worker mode: the launcher form clones and installs hermes-agent into the temp state.
         "TALARIA_WEB_WORKER": "1",
